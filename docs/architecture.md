@@ -1031,6 +1031,7 @@ Explicit corrections retain history, require the current result hash, and invali
 
 Submission intent is durable before provider calls, and raw receipts are durable before acceptance.
 A Live run saves its record after every paid call; a Batch collection saves it about once a second and at the end, since an interrupted collection rebuilds acceptance from the saved receipts and results and collects the same provider job again.
+A worker rebuilds acceptance only on its first poll; it saved every later change itself, so a waiting Batch does not reread every saved result.
 SDK-level paid retries are disabled.
 For compiled agent plans, an uncertain submission blocks overlapping work; Guided fresh-run review follows the separate policy above.
 Attaching a provider job still requires matching returned request IDs.

@@ -544,8 +544,12 @@ class Runner:
                 "Review unresolved requests before continuing.",
             )
 
-    def step(self):
-        self.recover()
+    def step(self, recover=True):
+        """One pass of the run. Recovery rebuilds acceptance from the saved
+        responses and results after an interruption; a worker that saved
+        every change its earlier passes made can skip it."""
+        if recover:
+            self.recover()
         if any(row["state"] == "uncertain" for row in self.job["states"].values()):
             self.finish()
             return

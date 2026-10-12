@@ -163,9 +163,13 @@ def run_locked(workspace, identity, store):
             if not store.cancel_requested(identity):
                 progress(True, started=True)
             states = None
+            recovered = False
             while True:
                 runner = Runner(store, identity, provider, current, progress)
-                runner.step()
+                # A Batch can wait for hours, and recovery rereads every saved
+                # response and result, so only the first poll recovers.
+                runner.step(recover=not recovered)
+                recovered = True
                 if runner.job["states"] != states:
                     progress(True)
                     states = runner.job["states"]
