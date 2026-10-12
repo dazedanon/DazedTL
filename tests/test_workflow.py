@@ -1212,12 +1212,9 @@ class WorkflowTests(unittest.TestCase):
         self.engine.runtime_paths = lambda manifest: list(manifest)
         originals = []
 
-        def setup(_source, _options, _version, original, _untranslated):
-            folder = Path(original)
-            originals.append(folder)
-            self.assertEqual(
-                (folder / "unchanged-asset.bin").read_bytes(), b"original asset"
-            )
+        def setup(_source, _options, _version, original, untranslated):
+            # Git reads an untranslated game in place, not an unpacked copy.
+            self.assertEqual((original, untranslated), ("", True))
             configured[0] = True
             return self.engine.git_status(self.game)
 

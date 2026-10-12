@@ -308,18 +308,13 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             )
             state["prepared_source"] = snapshot
             write_json(lifecycle_path(workspace, job["project_id"]), state)
-        original = arguments.get("original", "")
-        if (
-            not original
-            and arguments.get("untranslated")
-            and state.get("prepared_source")
-        ):
-            original = str(restored(state["prepared_source"]["id"])[0])
+        # An untranslated game is its own original: the snapshot above holds
+        # exactly these files, so Git reads them in place.
         result = engine.git_setup(
             source,
             options,
             arguments["version"],
-            original,
+            arguments.get("original", ""),
             arguments.get("untranslated") is True,
         )
         state["git"] = {
