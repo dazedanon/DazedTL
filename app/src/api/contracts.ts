@@ -1148,6 +1148,7 @@ export type TranslationBatch = {
   state: string;
   api_status?: string;
   counts?: Record<string, number>;
+  cancel_error?: string;
 };
 
 export type TranslationIssue = {

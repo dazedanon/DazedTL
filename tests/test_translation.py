@@ -10,6 +10,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+from dazedtl.api.contracts.translation import TranslationBatch
+from dazedtl.api.contracts.validation import _close_contracts
 from dazedtl.storage import WorkspaceLock, write_json
 from dazedtl.translation import organize
 from dazedtl.translation.files import digest, project_path
@@ -24,6 +26,7 @@ from dazedtl.translation.requests import (
 )
 from dazedtl.translation.results import Results
 from dazedtl.translation.runner import Runner
+from pydantic import TypeAdapter
 
 
 def request(identity="scene", speaker="Lili"):
@@ -350,6 +353,11 @@ class TranslationTests(unittest.TestCase):
         self.assertEqual(provider.calls, 1)
         self.assertEqual(current["states"]["one"]["state"], "accepted")
         self.assertEqual(current["states"]["two"]["state"], "failed")
+        # The chunk canceled before submission has no provider status.
+        _close_contracts()
+        TypeAdapter(list[TranslationBatch]).validate_json(
+            json.dumps(self.store.view(current)["batches"]), strict=True
+        )
 
     def test_agent_results_are_reused_by_api_without_another_call(self):
         row = request()

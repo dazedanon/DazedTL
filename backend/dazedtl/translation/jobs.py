@@ -387,8 +387,9 @@ class RunStore:
             "requests": len(job["states"]),
             "batches": [
                 {
-                    key: chunk.get(key)
+                    key: chunk[key]
                     for key in ("id", "state", "api_status", "counts", "cancel_error")
+                    if key in chunk
                 }
                 for chunk in job["batches"]
             ],

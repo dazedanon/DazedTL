@@ -50,6 +50,8 @@ class TranslationBatch(TypedDict):
     state: str
     api_status: NotRequired[str]
     counts: NotRequired[dict[str, int]]
+    # The error class of a provider cancellation that failed.
+    cancel_error: NotRequired[str]
 
 
 class TranslationIssue(TypedDict):
