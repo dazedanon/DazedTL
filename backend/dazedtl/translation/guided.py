@@ -8,7 +8,7 @@ from dazedtl.storage import write_json
 
 from . import context_setup, preparation, reference_folders, speaker_setup
 from .event_text import EventText
-from .files import digest, project_path, read_json
+from .files import digest, project_path, read_json, settled
 from .guided_actions import ADVANCED_CODES, GuidedActions
 from .guided_context import GuidedContext
 from .guided_inputs import GuidedInputs
@@ -148,9 +148,10 @@ class Guided:
         if cached and cached[0] == signature:
             return cached[1]
         value = digest(path.read_bytes())
-        if len(self.observed_files) > 20_000:
-            self.observed_files.clear()
-        self.observed_files[path] = (signature, value)
+        if settled(stat.st_mtime_ns):
+            if len(self.observed_files) > 20_000:
+                self.observed_files.clear()
+            self.observed_files[path] = (signature, value)
         return value
 
     def observed_path(self, root, relative):
