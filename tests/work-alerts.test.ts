@@ -34,7 +34,7 @@ function guided(runs: Partial<Job>[], operations: Partial<Job>[] = []) {
   } as unknown as WorkspaceSnapshot;
 }
 
-test("Guided work the user may have left alerts once it ends or waits, unless it was short", () => {
+test("Guided work the user may have left alerts once when it ends or waits, unless it was short", () => {
   const alerts = new WorkAlerts();
   const run = (status: string, extra: Partial<Job> = {}) => ({
     id: "maps",
@@ -45,27 +45,53 @@ test("Guided work the user may have left alerts once it ends or waits, unless it
     message: "",
     ...extra,
   });
+  const at = (
+    seconds: number,
+    runs: Partial<Job>[],
+    steps: Partial<Job>[] = [],
+  ) => alerts.observe(guided(runs, steps), seconds * 1000);
   // Opening a game only notes where its work stands.
-  assert.equal(alerts.observe(guided([run("complete")]), 0), null);
-  assert.equal(alerts.observe(guided([run("running")]), 1_000), null);
-  assert.equal(alerts.observe(guided([run("running")]), 6_000), null);
-  assert.deepEqual(
-    alerts.observe(
-      guided([run("complete", { availableOutputs: ["Map001.json"] })]),
-      20_000,
-    ),
-    { title: "ホロウワルド", lines: ["Maps & events · Live · Output saved"] },
-  );
-  // A step that ends within seconds ended in front of the user.
-  const setup = (status: string) => ({
-    id: "setup",
-    label: "Set up",
+  assert.equal(at(0, [run("complete")]), null);
+  at(1, [run("running")]);
+  at(6, [run("running")]);
+  const saved = [run("complete", { availableOutputs: ["Map001.json"] })];
+  // Another step may still follow the run.
+  assert.equal(at(20, saved), null);
+  assert.deepEqual(at(24.5, saved), {
+    title: "ホロウワルド",
+    lines: ["Maps & events · Live · Output saved"],
+  });
+  // Set up's steps run one after another, each shorter than the wait, and
+  // call the user back once, after the last.
+  const step = (id: string, status: string) => ({
+    id,
+    label: id,
     status,
     log: [],
     message: "",
   });
-  alerts.observe(guided([], [setup("running")]), 30_000);
-  assert.equal(alerts.observe(guided([], [setup("complete")]), 33_000), null);
+  for (const [seconds, steps] of [
+    [30, [step("Back up original game", "running")]],
+    [33.5, [step("Back up original game", "complete")]],
+    [34.5, [step("Prepare game files", "running")]],
+    [
+      38,
+      [
+        step("Prepare game files", "complete"),
+        step("Save game version", "running"),
+      ],
+    ],
+    [41, [step("Save game version", "running")]],
+    [42, [step("Save game version", "complete")]],
+  ] as const)
+    assert.equal(at(seconds, [], [...steps]), null);
+  assert.deepEqual(at(46, [], [step("Save game version", "complete")])?.lines, [
+    "Save game version · Finished",
+  ]);
+  // A step that ends within seconds ended in front of the user.
+  at(60, [], [step("Apply", "running")]);
+  at(63, [], [step("Apply", "complete")]);
+  assert.equal(at(68, [], [step("Apply", "complete")]), null);
   // A Batch that prepared for a while waits for its cost review.
   const batch = (status: string) => ({
     ...run(status),
@@ -74,13 +100,14 @@ test("Guided work the user may have left alerts once it ends or waits, unless it
     logicalPhase: "database" as const,
     approval: status === "waiting" ? { token: "t", kind: "batch" } : null,
   });
-  alerts.observe(guided([batch("running")]), 40_000);
-  assert.deepEqual(alerts.observe(guided([batch("waiting")]), 60_000)?.lines, [
+  at(70, [batch("running")]);
+  assert.deepEqual(at(90, [batch("waiting")])?.lines, [
     "Database · Batch · Review cost",
   ]);
   // Approving it in the window starts its clock again.
-  alerts.observe(guided([batch("running")]), 61_000);
-  assert.equal(alerts.observe(guided([batch("failed")]), 63_000), null);
+  at(91, [batch("running")]);
+  at(93, [batch("failed")]);
+  assert.equal(at(98, [batch("failed")]), null);
 });
 
 test("Assistant-led alerts come from the assistant, never its helper steps", () => {

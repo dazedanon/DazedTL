@@ -19,7 +19,14 @@ const { Updates } = require("./updates.cjs");
 const { NotificationSound } = require("./sound.cjs");
 
 app.setName("DazedTL");
-if (process.platform === "win32") app.setAppUserModelId("dev.dazedtl.app");
+const appId = "dev.dazedtl.app";
+// Desktop notifications need a fixed toast activator, so the Start menu
+// shortcut that registers them stays valid from one run to the next.
+const toastActivator = "{0F0248AA-BE0C-4113-8B58-2CCD1B97F80E}";
+if (process.platform === "win32") {
+  app.setAppUserModelId(appId);
+  app.setToastActivatorCLSID(toastActivator);
+}
 // The retired Electron preview of DazedMTLTool owns the "DazedTL" folder. Saved
 // runs hold absolute profile paths, so a pre-release "DazedTLNext" profile
 // stays where it is instead of moving to the released name.
@@ -38,8 +45,13 @@ const protocol = require("../../backend/dazedtl/api/protocol.json");
 const methods = new Set(Object.keys(protocol.methods));
 const outputs = new Set();
 const backupFolders = new Set();
-// Shown notifications stay referenced so their click still focuses the window.
+// Shown notifications stay until the user returns, so they can leave the
+// notification center then instead of lingering there.
 const notices = new Set();
+function clearNotices() {
+  for (const notice of notices) notice.close();
+  notices.clear();
+}
 let window,
   backend,
   diagnostics,
@@ -70,6 +82,8 @@ async function finishClose() {
   closeToken = 0;
   clearTimeout(closeTimer);
   if (window && !window.isDestroyed()) window.hide();
+  // Clicked after the app ends, Windows would start a bare Electron.
+  clearNotices();
   if (backend) await backend.close();
   if (restart)
     try {
@@ -115,6 +129,78 @@ app.on("before-quit", (event) => {
   if (!window || window.isDestroyed()) void finishClose();
   else window.close();
 });
+// Where Windows looks for the shortcuts that register notifications.
+const programs = () =>
+  path.join(app.getPath("appData"), "Microsoft/Windows/Start Menu/Programs");
+let notificationsRegistered = false;
+let electronShortcutWatched = false;
+/**
+ * Windows shows a desktop app's notifications under the Start menu shortcut
+ * carrying its app ID, and drops them while there is none. The launcher's
+ * DazedTL shortcut takes the ID while it opens this install, so they read
+ * DazedTL from the first one.
+ */
+function registerNotifications(root) {
+  const link = path.join(programs(), "DazedTL.lnk");
+  if (!fs.existsSync(link)) return;
+  try {
+    const current = shell.readShortcutLink(link);
+    if (
+      path.resolve(current.target).toLowerCase() !==
+      path.join(root, "START.bat").toLowerCase()
+    )
+      return;
+    if (
+      current.appUserModelId !== appId ||
+      current.toastActivatorClsid !== toastActivator
+    )
+      shell.writeShortcutLink(link, "update", {
+        target: current.target,
+        appUserModelId: appId,
+        toastActivatorClsid: toastActivator,
+      });
+    notificationsRegistered = true;
+    removeElectronShortcut();
+  } catch (error) {
+    diagnostics?.failure("desktop.error", error, { operation: "native" });
+  }
+}
+/**
+ * Electron also writes a shortcut named after its executable, "Electron",
+ * which opens a bare Electron, when a run first shows a notification. With
+ * the DazedTL shortcut registered, that one only clutters the Start menu.
+ */
+function removeElectronShortcut() {
+  const stray = path.join(programs(), "Electron.lnk");
+  try {
+    if (
+      !notificationsRegistered ||
+      !fs.existsSync(stray) ||
+      path.resolve(shell.readShortcutLink(stray).target).toLowerCase() !==
+        process.execPath.toLowerCase()
+    )
+      return false;
+    fs.rmSync(stray);
+    return true;
+  } catch (error) {
+    diagnostics?.failure("desktop.error", error, { operation: "native" });
+    return false;
+  }
+}
+/** Electron writes its shortcut in the background, once per run. */
+function watchElectronShortcut() {
+  if (!notificationsRegistered || electronShortcutWatched) return;
+  electronShortcutWatched = true;
+  if (removeElectronShortcut()) return;
+  const watcher = fs.watch(programs(), (_event, name) => {
+    if (name === "Electron.lnk" && removeElectronShortcut()) stop();
+  });
+  const timer = setTimeout(() => stop(), 60_000);
+  const stop = () => {
+    watcher.close();
+    clearTimeout(timer);
+  };
+}
 // Startup failures would otherwise leave a running process without a window.
 function startupFailed(error) {
   diagnostics?.failure("desktop.error", error, { operation: "native" });
@@ -184,13 +270,15 @@ app
     });
     // A window pinned to the taskbar starts DazedTL the way its shortcut does,
     // rather than as a bare Electron.
-    if (process.platform === "win32")
+    if (process.platform === "win32") {
       window.setAppDetails({
-        appId: "dev.dazedtl.app",
+        appId,
         appIconPath: path.join(root, "resources/icon.ico"),
         relaunchCommand: `"${path.join(root, "START.bat")}"`,
         relaunchDisplayName: "DazedTL",
       });
+      registerNotifications(root);
+    }
     backend = new Backend(
       root,
       app.getPath("userData"),
@@ -461,8 +549,21 @@ app
       const error = await shell.openPath(folder);
       if (error) throw new Error(error);
     });
-    // The taskbar entry lights up with a notification until the user returns.
-    window.on("focus", () => window.flashFrame(false));
+    const bringBack = () => {
+      if (window.isDestroyed()) return;
+      if (window.isMinimized()) window.restore();
+      window.show();
+      window.focus();
+    };
+    // A notification and the taskbar entry it lights up last until the user
+    // returns.
+    window.on("focus", () => {
+      window.flashFrame(false);
+      clearNotices();
+    });
+    // Windows reports a click in its notification center here, since the
+    // notification's own click event ends when the popup does.
+    if (process.platform === "win32") Notification.handleActivation(bringBack);
     ipcMain.handle("dazedtl:notify", (event, message) => {
       trusted(event);
       const { title, body, test } = message || {};
@@ -485,17 +586,10 @@ app
         silent: true,
       });
       notices.add(notice);
-      const forget = () => notices.delete(notice);
-      notice.on("click", () => {
-        forget();
-        if (window.isDestroyed()) return;
-        if (window.isMinimized()) window.restore();
-        window.show();
-        window.focus();
-      });
-      notice.on("close", forget);
-      notice.on("failed", forget);
+      notice.on("click", bringBack);
+      notice.on("failed", () => notices.delete(notice));
       notice.show();
+      watchElectronShortcut();
     });
     const sound = new NotificationSound(
       path.join(app.getPath("userData"), "notification-sound"),

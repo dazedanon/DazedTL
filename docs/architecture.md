@@ -967,12 +967,13 @@ Existing plans without a policy retain their original behavior; provider cache a
 ### Notifications
 
 [WorkAlerts](../app/src/app/workAlerts.ts) reads every observation the store publishes, outside rendering, so a window in the background still notices; the first observation of a game only notes where its work stands.
-It calls the user back for work they started that ran at least ten seconds and then ended or waited for approval, measured from when it started working, so an approval given in the window starts the clock again.
+It calls the user back once for work they started that ran at least ten seconds and then ended or waited for approval; steps that follow each other within four seconds, such as Set up's, count as one piece of work, and an approval given in the window starts new work.
 That is every Guided run and step; an Assistant-led game's helper steps belong to its assistant, so only its API runs and Start over count.
 It also calls them back when a copied task leaves waiting with the same copy, which a dismissal never does, when text QA has new questions, and when an Assistant-led run is blocked, done or waiting for an estimate's approval.
 The choices are a browser-profile preference read by [notifications.ts](../app/src/app/notifications.ts), which plays the sound itself.
 A chosen sound file is kept by the main process in the app profile ([sound.cjs](../app/electron/sound.cjs)), only after the interface has decoded it, so an unplayable file leaves the current sound; it plays for at most ten seconds.
-The main process shows the desktop notification only while the window is not focused, except for the Settings test, and lights up the taskbar entry until the window regains focus.
+The main process shows the desktop notification only while the window is not focused, except for the Settings test, and lights up the taskbar entry; regaining focus or closing clears both, since Windows starts a bare Electron for a notification clicked after the app has closed.
+On Windows, notifications show under the Start menu shortcut that carries the app's ID, so the main process gives the launcher's DazedTL shortcut that ID and a fixed toast activator; Electron also writes an `Electron.lnk` beside it at a run's first notification, which opens a bare Electron, so the main process removes that shortcut once it appears.
 
 ## API changes
 

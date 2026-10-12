@@ -25,6 +25,8 @@ import { sentence } from "../ui/displayText.ts";
 
 /** Work that ends sooner than this ended while the user was watching. */
 export const WATCHED_MS = 10_000;
+/** A step that starts this soon after another, such as Set up's next, continues its work. */
+export const FOLLOW_MS = 4_000;
 
 /** Something to come back to the window for, in one open game. */
 export interface WorkAlert {
@@ -41,15 +43,16 @@ interface Work {
   id: string;
   phase: Phase;
   created?: string;
-  /** "Set up · Finished", or for a run, what it waits for. */
+  /** "Back up original game · Finished", or for a run, what it waits for. */
   text: string;
+  failed: boolean;
   /** Waiting is the user's turn; work another line covers says nothing. */
   silentWait?: boolean;
 }
 
 /** A Guided run or estimate in the words History uses. */
 function guidedRun(job: Job): Work {
-  const outcome = historyOutcome(job).label;
+  const outcome = historyOutcome(job);
   return {
     id: job.id,
     // Waiting runs wait for a cost or name approval.
@@ -62,8 +65,11 @@ function guidedRun(job: Job): Work {
     created: job.created,
     text:
       job.mode === "estimate"
-        ? `${historyPhase(job)} · ${outcome}`
-        : `${historyPhase(job)} · ${historyMode(job)} · ${outcome}`,
+        ? `${historyPhase(job)} · ${outcome.label}`
+        : `${historyPhase(job)} · ${historyMode(job)} · ${outcome.label}`,
+    failed: ["failed", "stopped", "canceled", "missing", "review"].includes(
+      outcome.kind,
+    ),
   };
 }
 
@@ -88,6 +94,7 @@ function operation(job: {
     text: `${job.label || "Work"} · ${
       job.status === "complete" ? "Finished" : sentence(job.status)
     }`,
+    failed: job.status !== "complete",
     silentWait: true,
   };
 }
@@ -161,6 +168,14 @@ function needs(snapshot: WorkspaceSnapshot, projectId: string) {
   return found;
 }
 
+/** How a stretch of work ended: its problems, then the step it ended with. */
+function outcome(ended: Work[]) {
+  const lines = ended.filter((item) => item.failed).map((item) => item.text);
+  const final = ended.at(-1);
+  if (final && !final.failed) lines.push(final.text);
+  return lines;
+}
+
 /**
  * Watches one window's observations for moments the user would come back
  * for: work they started that took a while ending or waiting for approval,
@@ -170,8 +185,12 @@ function needs(snapshot: WorkspaceSnapshot, projectId: string) {
  */
 export class WorkAlerts {
   private project: string | null = null;
-  /** User work in progress or waiting, with when it started working. */
-  private work = new Map<string, { phase: Phase; since: number }>();
+  private phases = new Map<string, Phase>();
+  /**
+   * User work from its first step to its last, so Set up's several steps,
+   * or Apply and the work after it, call the user back once.
+   */
+  private stretch: { since: number; last: number; ended: Work[] } | null = null;
   private needs = new Set<string>();
   private copied = new Map<AssistantTaskKind, string>();
 
@@ -181,7 +200,8 @@ export class WorkAlerts {
     const fresh = id !== this.project;
     this.project = id;
     if (fresh) {
-      this.work.clear();
+      this.phases.clear();
+      this.stretch = null;
       this.needs.clear();
       this.copied.clear();
     }
@@ -189,32 +209,41 @@ export class WorkAlerts {
     const first: string[] = [];
     const last: string[] = [];
 
-    const work = new Map<string, { phase: Phase; since: number }>();
-    for (const item of userWork(snapshot, id)) {
-      const before = this.work.get(item.id);
-      const watched =
-        before?.phase === "working" && now - before.since >= WATCHED_MS;
+    const items = userWork(snapshot, id);
+    const working = items.filter((item) => item.phase === "working");
+    let turn = false;
+    for (const item of items) {
+      if (this.phases.get(item.id) !== "working" || !this.stretch) continue;
       if (item.phase === "ended") {
-        if (watched) last.push(item.text);
-        continue;
-      }
-      if (item.phase === "waiting" && watched && !item.silentWait)
+        // It ran until it was seen to end.
+        this.stretch.ended.push(item);
+        this.stretch.last = now;
+      } else if (
+        item.phase === "waiting" &&
+        !item.silentWait &&
+        now - this.stretch.since >= WATCHED_MS
+      ) {
         first.push(item.text);
-      const created = Date.parse(item.created || "");
-      work.set(item.id, {
-        phase: item.phase,
-        // Work running when a game is first observed started when it was
-        // made; work resumed after an approval starts again.
-        since: !before
-          ? fresh && !Number.isNaN(created)
-            ? Math.min(now, created)
-            : now
-          : before.phase === "waiting" && item.phase === "working"
-            ? now
-            : before.since,
-      });
+        turn = true;
+      }
     }
-    this.work = work;
+    this.phases = new Map(items.map((item) => [item.id, item.phase]));
+    // Waiting is the user's turn; what follows an approval is new work.
+    if (turn) this.stretch = null;
+    if (working.length) {
+      // Work running when a game is first observed started when it was made.
+      const made = fresh
+        ? working
+            .map((item) => Date.parse(item.created || ""))
+            .filter((time) => !Number.isNaN(time))
+        : [];
+      this.stretch ??= { since: Math.min(now, ...made), last: now, ended: [] };
+      this.stretch.last = now;
+    } else if (this.stretch && now - this.stretch.last >= FOLLOW_MS) {
+      if (this.stretch.last - this.stretch.since >= WATCHED_MS)
+        last.push(...outcome(this.stretch.ended));
+      this.stretch = null;
+    }
 
     const found = needs(snapshot, id);
     const questions = [...found.keys()].filter(

@@ -272,7 +272,7 @@ Results DazedTL has downloaded stay available after OpenRouter deletes its copy.
 
 **Settings > Notifications** can call you back to DazedTL with a sound, a desktop notification, or both; both start off.
 They come when a translation or other step that took more than a few seconds ends, when work waits for your approval, and when your assistant hands back a task, asks you something or finishes an Assistant-led run.
-The sound plays even while DazedTL is in front, so you hear it from across the room; the desktop notification shows only while DazedTL is in the background, and clicking it brings DazedTL back.
+The sound plays even while DazedTL is in front, so you hear it from across the room; the desktop notification shows only while DazedTL is in the background, clicking it brings DazedTL back, and coming back clears it.
 **Sound** plays the built-in chime or a file you choose, such as an MP3 or WAV, for up to 10 seconds; DazedTL keeps its own copy, so you can move or delete the original.
 **Test notification** tries what you chose.
 
