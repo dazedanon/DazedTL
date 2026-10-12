@@ -2,10 +2,13 @@
 
 import hashlib
 import os
+import queue
 import re
 import shutil
 import stat
+import sys
 import tempfile
+import threading
 import uuid
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -32,7 +35,15 @@ def _cancel(stopped):
 
 
 def _linked(path):
-    return path.is_symlink() or getattr(path, "is_junction", lambda: False)()
+    """A symbolic link or junction, from one look at the path."""
+    try:
+        info = os.lstat(path)
+    except OSError, ValueError:
+        return False
+    return stat.S_ISLNK(info.st_mode) or (
+        sys.platform == "win32"
+        and info.st_reparse_tag == stat.IO_REPARSE_TAG_MOUNT_POINT
+    )
 
 
 def _relative(name):
@@ -49,17 +60,28 @@ def _relative(name):
     return name
 
 
-def _child(root, name):
+def _child(root, name, folders=None):
+    """``name`` under ``root``, refusing a link at any step. A snapshot passes
+    ``folders`` to check each folder once rather than once per file; its
+    final inventory walk would still find a link that appears later."""
     path = Path(root)
+    _refuse_link(path, folders)
+    *parents, leaf = _relative(name).split("/")
+    for part in parents:
+        path /= part
+        _refuse_link(path, folders)
+    path /= leaf
+    _refuse_link(path)
+    return path
+
+
+def _refuse_link(path, folders=None):
+    if folders is not None and path in folders:
+        return
     if _linked(path):
         raise ValueError("Backup operations cannot follow symbolic links or junctions.")
-    for part in _relative(name).split("/"):
-        path /= part
-        if _linked(path):
-            raise ValueError(
-                "Backup operations cannot follow symbolic links or junctions."
-            )
-    return path
+    if folders is not None:
+        folders.add(path)
 
 
 def store_path(game):
@@ -153,10 +175,159 @@ def _inventory(source, source_game, stopped):
     return files, sorted(directories)
 
 
-def _object(root, fingerprint):
+def _object(root, fingerprint, folders=None):
     if not isinstance(fingerprint, str) or not _HASH.fullmatch(fingerprint):
         raise ValueError("Invalid backup content hash.")
-    return _child(root, "objects/" + fingerprint[:2] + "/" + fingerprint)
+    return _child(root, "objects/" + fingerprint[:2] + "/" + fingerprint, folders)
+
+
+# Several files at once hide each file's waits for its creation and disk
+# flush, which dominate a game of many small files, most of all on Windows.
+_WORKERS = 8
+# A file up to this size is read once and stored from memory; a larger one is
+# hashed, then copied.
+_BUFFERED = 16 * 1024 * 1024
+
+
+class _Contents:
+    """What one snapshot's threads stored, with each content hash stored or
+    checked by one thread: Windows refuses to replace a file another thread
+    is reading, as happens when a game holds two identical files. ``folders``
+    holds the folders already checked for links."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.claims = {}
+        self.created = {}
+        self.folders = set()
+
+    def claim(self, fingerprint):
+        """True for the first thread with this content; later ones wait for it."""
+        with self.lock:
+            settled = self.claims.get(fingerprint)
+            if settled is None:
+                self.claims[fingerprint] = threading.Event()
+                return True
+        settled.wait()
+        return False
+
+    def settle(self, fingerprint):
+        self.claims[fingerprint].set()
+
+
+def _keep(root, source, name, signature, contents, stopped):
+    """Stores one source file under its content hash and returns the hash."""
+    _cancel(stopped)
+    path = _child(source, name, contents.folders)
+    with path.open("rb") as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode):
+            raise ValueError("Backups support regular files only.")
+        # A read sized to the file: one sized to the limit allocates the
+        # limit for every file, which costs Windows more than the reading.
+        data = stream.read() if info.st_size <= _BUFFERED else None
+    if data is None:
+        fingerprint, size = _hash_file(path, stopped), info.st_size
+    else:
+        fingerprint, size = hashlib.sha256(data).hexdigest(), len(data)
+    if contents.claim(fingerprint):
+        try:
+            _store_content(root, path, fingerprint, size, data, contents, stopped)
+        finally:
+            contents.settle(fingerprint)
+    if _signature(path) != signature:
+        raise ValueError(
+            "A source file changed during backup. Retry when its writer finishes."
+        )
+    return fingerprint
+
+
+def _store_content(root, path, fingerprint, size, data, contents, stopped):
+    """Content the store holds is checked by size, as reading it back costs
+    more than the backup: its file was synced before taking its name, and
+    restores check its hash. New content is synced before taking its name."""
+    output = _object(root, fingerprint, contents.folders)
+    try:
+        held = output.stat()
+    except FileNotFoundError:
+        pass
+    else:
+        if not stat.S_ISREG(held.st_mode) or held.st_size != size:
+            raise ValueError(
+                "Stored backup content is damaged. Preserve the store and recover it from a trusted copy."
+            )
+        return
+    temporary = _child(root, "temporary/" + uuid.uuid4().hex, contents.folders)
+    try:
+        with temporary.open("xb") as outgoing:
+            if data is None:
+                copied = hashlib.sha256()
+                with path.open("rb") as incoming:
+                    while block := incoming.read(1024 * 1024):
+                        _cancel(stopped)
+                        copied.update(block)
+                        outgoing.write(block)
+                if copied.hexdigest() != fingerprint:
+                    raise ValueError(
+                        "A source file changed during backup. Retry when its writer finishes."
+                    )
+            else:
+                outgoing.write(data)
+            outgoing.flush()
+            os.fsync(outgoing.fileno())
+        output.parent.mkdir(exist_ok=True)
+        temporary.replace(output)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+    contents.created[output] = size
+
+
+def _keep_all(root, source, names, signatures, contents, stopped, progress):
+    """Stores every named file on several threads; each takes the next name
+    when it finishes one. Returns each file's content hash."""
+    queued, lock = iter(names), threading.Lock()
+    stored, finished, failed = {}, queue.SimpleQueue(), threading.Event()
+
+    def halted():
+        return failed.is_set() or stopped()
+
+    def work():
+        try:
+            while not failed.is_set():
+                with lock:
+                    name = next(queued, None)
+                if name is None:
+                    return
+                stored[name] = _keep(
+                    root, source, name, signatures[name], contents, halted
+                )
+                finished.put(name)
+        except BaseException as error:  # noqa: BLE001 - the main thread raises it
+            failed.set()
+            finished.put(error)
+
+    threads = [
+        threading.Thread(target=work, name="backup", daemon=True)
+        for _ in range(_WORKERS)
+    ]
+    for thread in threads:
+        thread.start()
+    try:
+        for count in range(1, len(names) + 1):
+            name = finished.get()
+            if isinstance(name, BaseException):
+                raise name
+            progress(count, name)
+    except BaseException:
+        # Threads stop at their next block; the snapshot removes what they
+        # stored.
+        failed.set()
+        raise
+    finally:
+        for thread in threads:
+            thread.join()
+    return stored
 
 
 def _identity(value):
@@ -196,7 +367,7 @@ def snapshot(
     root = _store(destination, create=True)
     _child(root, "workspace.lock")
     lock = WorkspaceLock(root)
-    created, published = [], False
+    contents, published = _Contents(), False
     try:
         before, directories = _inventory(source, source_game, stopped)
         if not before:
@@ -211,47 +382,15 @@ def snapshot(
             "modes": {},
             "directories": directories,
         }
-        added, verified = 0, set()
-        for index, (name, signature) in enumerate(sorted(before.items()), 1):
-            _cancel(stopped)
-            path = _child(source, name)
-            fingerprint = _hash_file(path, stopped)
-            output = _object(root, fingerprint)
-            if output.exists():
-                if (
-                    fingerprint not in verified
-                    and _hash_file(output, stopped) != fingerprint
-                ):
-                    raise ValueError(
-                        "Stored backup content is damaged. Preserve the store and recover it from a trusted copy."
-                    )
-            else:
-                temporary = _child(root, "temporary/" + uuid.uuid4().hex)
-                try:
-                    with path.open("rb") as incoming, temporary.open("xb") as outgoing:
-                        while block := incoming.read(1024 * 1024):
-                            _cancel(stopped)
-                            outgoing.write(block)
-                        outgoing.flush()
-                        os.fsync(outgoing.fileno())
-                    if _hash_file(temporary, stopped) != fingerprint:
-                        raise ValueError(
-                            "A source file changed during backup. Retry when its writer finishes."
-                        )
-                    output.parent.mkdir(exist_ok=True)
-                    temporary.replace(output)
-                    created.append(output)
-                    added += output.stat().st_size
-                finally:
-                    temporary.unlink(missing_ok=True)
-            verified.add(fingerprint)
-            if _signature(path) != signature:
-                raise ValueError(
-                    "A source file changed during backup. Retry when its writer finishes."
-                )
-            value["files"][name] = fingerprint
-            value["sizes"][name], value["modes"][name] = signature[2], signature[5]
-            progress(index, name)
+        names = sorted(before)
+        stored = _keep_all(root, source, names, before, contents, stopped, progress)
+        for name in names:
+            value["files"][name] = stored[name]
+            value["sizes"][name], value["modes"][name] = (
+                before[name][2],
+                before[name][5],
+            )
+        added = sum(contents.created.values())
         if _inventory(source, source_game, stopped) != (before, directories):
             raise ValueError(
                 "The source inventory changed during backup. No snapshot was published."
@@ -293,7 +432,7 @@ def snapshot(
     finally:
         try:
             if not published:
-                for path in created:
+                for path in contents.created:
                     path.unlink(missing_ok=True)
         finally:
             lock.close()
