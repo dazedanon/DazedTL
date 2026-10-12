@@ -3,6 +3,12 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.8.1] - 2026-10-11
+
+### Fixed
+
+- **Set up:** Back up the original and Save version no longer take several minutes each on large games, most of all on Windows; setting up a 2.5 GB test game on Windows went from about 9 minutes to 1.5.
+
 ## [2.8.0] - 2026-10-11
 
 ### Added
@@ -366,6 +372,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.8.1]: https://github.com/dazedanon/DazedTL/compare/v2.8.0...v2.8.1
 [2.8.0]: https://github.com/dazedanon/DazedTL/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/dazedanon/DazedTL/compare/v2.6.1...v2.7.0
 [2.6.1]: https://github.com/dazedanon/DazedTL/compare/v2.6.0...v2.6.1
