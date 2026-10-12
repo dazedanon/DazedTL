@@ -329,6 +329,7 @@ class GuidedTests(unittest.TestCase):
             engine=SimpleNamespace(
                 source_bindings=lambda _source, _paths: {},
                 original_bytes=lambda *_args: b"",
+                original_blobs=lambda _source, blobs: ((blob, b"") for blob in blobs),
             ),
             clean_drafts=lambda _: None,
             ready=Mock(),
@@ -3016,8 +3017,8 @@ class GuidedTests(unittest.TestCase):
         self.translation.engine.source_bindings = lambda _root, paths: (
             {relative: "original-plugin-blob"} if relative in paths else {}
         )
-        self.translation.engine.original_bytes = lambda *_args: (
-            b"original display implementation"
+        self.translation.engine.original_blobs = lambda _root, blobs: (
+            (blob, b"original display implementation") for blob in blobs
         )
         before = self.guided.event_text.context(
             self.identity, self.native, self.catalog

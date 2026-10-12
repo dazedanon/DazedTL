@@ -502,6 +502,49 @@ class TranslationEngine:
             timeout=30,
         )
 
+    def original_blobs(self, source, blobs):
+        """Yields each blob with its bytes, read through one Git process, which
+        Windows starts far faster than one process per file."""
+        import re
+
+        blobs = list(dict.fromkeys(blobs))
+        if any(
+            not isinstance(blob, str) or not re.fullmatch(r"[0-9a-f]{40,64}", blob)
+            for blob in blobs
+        ):
+            raise ValueError("Choose a verified original source blob.")
+        if not blobs:
+            return
+        purpose = "Git could not read the game's original files"
+        with tempfile.TemporaryFile() as requests:
+            requests.write("".join(blob + "\n" for blob in blobs).encode("ascii"))
+            requests.seek(0)
+            try:
+                process = subprocess.Popen(
+                    ["git", "-C", str(source), "cat-file", "--batch"],
+                    stdin=requests,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+            except OSError as exc:
+                raise ValueError(f"{purpose}: {exc.strerror or exc}") from exc
+            with process:
+                assert process.stdout is not None and process.stderr is not None
+                for blob in blobs:
+                    header = process.stdout.readline().split()
+                    if not header:
+                        # Git stopped, so its error is complete.
+                        detail = process.stderr.read().decode("utf-8", "replace")
+                        raise ValueError(f"{purpose}: {detail.strip() or 'no output'}")
+                    if len(header) != 3 or header[:2] != [blob.encode(), b"blob"]:
+                        process.kill()
+                        raise ValueError(f"{purpose}: {blob} is not a saved file.")
+                    raw = process.stdout.read(int(header[2]))
+                    if len(raw) != int(header[2]) or process.stdout.read(1) != b"\n":
+                        process.kill()
+                        raise ValueError(f"{purpose}: {blob} ended early.")
+                    yield blob, raw
+
     def error_message(self, error):
         from util.version_update import GitWorkflowError
 

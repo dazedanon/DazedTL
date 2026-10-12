@@ -59,22 +59,17 @@ class EventText:
         )
         dependencies, originals, event_inputs, runtime_dependencies = {}, {}, {}, {}
         selected = self.guided.runs.files(native, "advanced")
+        root = Path(native["source"])
         for name, source in sources.items():
             identity, relative = source["identity"], source["relative"]
-            path = project_path(native["source"], relative)
+            path = project_path(root, relative)
             if "original" in identity:
-                original = (str(inputs.source), identity["original"])
-                if original not in self.originals:
-                    self.originals[original] = digest(
-                        inputs.original_bytes(inputs.source, identity["original"])
-                    )
-                dependencies[relative] = self.originals[original]
                 originals[relative] = identity["original"]
+                dependencies[relative] = None
             else:
                 dependencies[relative] = self.guided.observed_digest(path)
             if name in selected:
-                event_inputs[name] = (dependencies[relative], identity, path)
-        root = Path(native["source"])
+                event_inputs[relative] = (identity, path)
         extra = [
             path
             for directory, pattern in (
@@ -94,63 +89,42 @@ class EventText:
             path = project_path(root, relative)
             runtime_dependencies[relative] = self.guided.observed_digest(path)
             if relative in bindings:
-                original = (str(root), bindings[relative])
-                if original not in self.originals:
-                    self.originals[original] = digest(
-                        self.guided.translation.engine.original_bytes(
-                            root, bindings[relative]
-                        )
-                    )
-                dependencies[relative] = self.originals[original]
                 originals[relative] = bindings[relative]
+                dependencies[relative] = None
             else:
                 dependencies[relative] = self.guided.observed_digest(path)
+        # Git reads each original blob once for the life of the app, all
+        # through one process; the selected event files' built-in matches
+        # come from the same bytes.
+        unread = dict.fromkeys(
+            blob for blob in originals.values() if blob not in self.originals
+        )
+        unmatched = {
+            identity["original"]
+            for identity, _path in event_inputs.values()
+            if "original" in identity
+            and (
+                identity["original"] in unread
+                or (self.originals[identity["original"]], catalog["fingerprint"])
+                not in self.hits
+            )
+        }
+        for blob, raw in self.guided.translation.engine.original_blobs(
+            root, [*unread, *sorted(unmatched.difference(unread))]
+        ):
+            self.originals[blob] = digest(raw)
+            if blob in unmatched:
+                self.match(raw, self.originals[blob], catalog)
+        for relative, blob in originals.items():
+            dependencies[relative] = self.originals[blob]
         hits = {key: [] for key in SELECTORS}
-
-        def commands(value):
-            if isinstance(value, list):
-                for item in value:
-                    yield from commands(item)
-            elif isinstance(value, dict):
-                if "code" in value and isinstance(value.get("parameters"), list):
-                    yield value
-                for key, item in value.items():
-                    if key != "_original":
-                        yield from commands(item)
-
-        for fingerprint, identity, path in event_inputs.values():
-            signature = (fingerprint, catalog["fingerprint"])
-            if signature not in self.hits:
-                raw = (
-                    inputs.original_bytes(inputs.source, identity["original"])
-                    if "original" in identity
-                    else path.read_bytes()
-                )
-                found = {key: [] for key in SELECTORS}
-                for command in commands(json.loads(raw.decode("utf-8-sig"))):
-                    key = (
-                        "CODE357"
-                        if command["code"] == 357
-                        else "CODE355655"
-                        if command["code"] in (355, 655)
-                        else None
-                    )
-                    if (
-                        key
-                        and command["parameters"]
-                        and isinstance(command["parameters"][0], str)
-                    ):
-                        control = next(
-                            row for row in catalog["controls"] if row["key"] == key
-                        )
-                        found[key].extend(
-                            marker
-                            for marker in control["builtins"]
-                            if marker in command["parameters"][0]
-                        )
-                self.hits[signature] = found
+        for relative, (identity, path) in event_inputs.items():
+            if "original" not in identity:
+                self.match(None, dependencies[relative], catalog, path)
             for key in SELECTORS:
-                hits[key].extend(self.hits[signature][key])
+                hits[key].extend(
+                    self.hits[(dependencies[relative], catalog["fingerprint"])][key]
+                )
         value = {
             "version": 1,
             "project_id": project_id,
@@ -163,6 +137,47 @@ class EventText:
             "builtins": {key: sorted(set(value)) for key, value in hits.items()},
         }
         return {**value, "fingerprint": digest(value)}
+
+    def match(self, raw, fingerprint, catalog, path=None):
+        """Records the registered built-ins one event file's commands use, once
+        per file content and parser definitions."""
+        signature = (fingerprint, catalog["fingerprint"])
+        if signature in self.hits:
+            return
+
+        def commands(value):
+            if isinstance(value, list):
+                for item in value:
+                    yield from commands(item)
+            elif isinstance(value, dict):
+                if "code" in value and isinstance(value.get("parameters"), list):
+                    yield value
+                for key, item in value.items():
+                    if key != "_original":
+                        yield from commands(item)
+
+        raw = path.read_bytes() if raw is None else raw
+        found = {key: [] for key in SELECTORS}
+        for command in commands(json.loads(raw.decode("utf-8-sig"))):
+            key = (
+                "CODE357"
+                if command["code"] == 357
+                else "CODE355655"
+                if command["code"] in (355, 655)
+                else None
+            )
+            if (
+                key
+                and command["parameters"]
+                and isinstance(command["parameters"][0], str)
+            ):
+                control = next(row for row in catalog["controls"] if row["key"] == key)
+                found[key].extend(
+                    marker
+                    for marker in control["builtins"]
+                    if marker in command["parameters"][0]
+                )
+        self.hits[signature] = found
 
     def request(self, project_id, native):
         catalog = self.catalog()

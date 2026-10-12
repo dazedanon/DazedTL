@@ -1,6 +1,8 @@
 """Real Git journeys for a game's repository: interrupted baselines, a held
-index lock and the GameUpdate config a published patch carries."""
+index lock, original files read in one process and the GameUpdate config a
+published patch carries."""
 
+import hashlib
 import shutil
 import subprocess
 import sys
@@ -116,6 +118,21 @@ assert state["state"] == "needs_repo" and not config.exists(), state
 # An earlier version left a placeholder; it must never be published.
 config.write_text("username=dazed-translations\nrepo=YOUR_PATCH_REPO\nbranch=main\n")
 engine = TranslationEngine(temporary / "profile")
+# Every original file comes out of one Git process with its own bytes, which
+# its blob ID hashes; a missing blob stops the read.
+blobs = [
+    row.split()[2] for row in git(published, "ls-tree", "-r", "original").splitlines()
+]
+read = dict(engine.original_blobs(published, blobs))
+assert len(blobs) > 2 and set(read) == set(blobs), read.keys()
+for blob, raw in read.items():
+    assert hashlib.sha1(b"blob %d\0" % len(raw) + raw).hexdigest() == blob, blob
+try:
+    dict(engine.original_blobs(published, [blobs[0], "0" * 40, blobs[1]]))
+except ValueError as error:
+    assert "is not a saved file" in str(error), error
+else:
+    raise AssertionError("A missing original blob was read.")
 options = {
     "mode": "agent",
     "include_images": False,
