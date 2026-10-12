@@ -12,8 +12,8 @@ from .files import digest, project_path, read_json
 from .refusals import clarified, refused
 
 
-def save(path, record):
-    summary = {
+def summary(record):
+    return {
         "original_id": record["original_id"],
         "batches": [
             {
@@ -30,6 +30,9 @@ def save(path, record):
             for batch in record["batches"]
         ],
     }
+
+
+def save(path, record):
     view = path.with_suffix(".summary.json")
     active = any(
         batch["state"] in {"pending", "sending", "submitted"}
@@ -38,10 +41,10 @@ def save(path, record):
     # Publish protection before sending; publish completion only after its
     # authoritative receipt. Observers read this small derived view, not prompts.
     if active:
-        write_json(view, summary)
+        write_json(view, summary(record))
     write_json(path, record)
     if not active:
-        write_json(view, summary)
+        write_json(view, summary(record))
 
 
 def advance(
@@ -157,9 +160,13 @@ def advance(
             return {"ready": False, "batches": record["batches"]}
         status = provider.status(batch["id"])
         batch.update(api_status=status["api_status"], counts=status.get("counts") or {})
-        save(path, record)
         if not status["ended"]:
+            # The record holds every request of the original Batch, and a
+            # clarification can wait for hours, so a poll that changes only
+            # the provider's progress publishes just the summary.
+            write_json(path.with_suffix(".summary.json"), summary(record))
             return {"ready": False, "batches": record["batches"]}
+        save(path, record)
         mapping = {item["custom_id"]: item["key"] for item in batch["items"]}
         collect = (
             provider.collect_terminal
