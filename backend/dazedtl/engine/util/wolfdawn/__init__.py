@@ -536,8 +536,8 @@ def _expand_wolf_archives(inputs: Union[PathLike, Iterable[PathLike]]) -> list[P
     return archives
 
 
-def _parse_unpack_one_files(stdout: str) -> str | None:
-    for line in (stdout or "").splitlines():
+def _parse_unpack_one_files(stderr: str) -> str | None:
+    for line in (stderr or "").splitlines():
         match = _UNPACK_ONE_DONE_RE.match(line.strip())
         if match:
             return match.group("files")
@@ -597,11 +597,11 @@ def unpack_all(
             )
         res = _run(["unpack", _str(archive), "-o", _str(target)], log_fn=log_fn)
         last_argv = res.argv
-        if res.stdout:
-            log_lines.append(res.stdout.strip())
+        if res.stderr:
+            log_lines.append(res.stderr.strip())
         if res.ok:
             ok += 1
-            files = _parse_unpack_one_files(res.stdout) or "?"
+            files = _parse_unpack_one_files(res.stderr) or "?"
             try:
                 total_files += int(files)
             except ValueError:
