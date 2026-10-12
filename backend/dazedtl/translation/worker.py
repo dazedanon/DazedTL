@@ -162,10 +162,19 @@ def run_locked(workspace, identity, store):
             # answer anything the assistant is waiting on.
             if not store.cancel_requested(identity):
                 progress(True, started=True)
+            states = None
             while True:
                 runner = Runner(store, identity, provider, current, progress)
                 runner.step()
-                progress(True)
+                if runner.job["states"] != states:
+                    progress(True)
+                    states = runner.job["states"]
+                else:
+                    # Republishing the report reads every saved result, and a
+                    # Batch can wait for hours, so a poll that changed no
+                    # request only checks that the sources still match.
+                    verify_evidence(plan["source"], plan["evidence"])
+                    engine.verify_bindings(plan["source"], plan["original_bindings"])
                 if runner.job["status"] != "waiting":
                     return
                 for _ in range(25):
