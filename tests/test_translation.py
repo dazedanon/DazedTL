@@ -495,15 +495,39 @@ class TranslationTests(unittest.TestCase):
             self.assertTrue(refused({"text": text}), text)
 
     def test_batch_wait_resume_and_unordered_collection_keep_one_submission(self):
-        job, plan = self.run_record("batch", [request("one"), request("two")])
+        job, plan = self.run_record(
+            "batch", [request("one"), request("two"), request("three")]
+        )
         provider = BatchProvider()
         Runner(self.store, job["id"], provider, lambda: None).step()
         self.assertEqual(self.store.load(job["id"])[0]["status"], "waiting")
         Runner(self.store, job["id"], provider, lambda: None).step()
         provider.ended = True
+        # A collection does not rewrite its record per response. Interrupted
+        # between acceptances, it resumes from the saved responses and
+        # results and collects the same provider job again.
+        accept = Results.accept
+
+        def interrupted(results, request, *args):
+            if request["id"] == "two":
+                raise KeyboardInterrupt
+            return accept(results, request, *args)
+
+        with (
+            patch("dazedtl.translation.runner.SAVE_INTERVAL", 3600),
+            patch.object(Results, "accept", interrupted),
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            Runner(self.store, job["id"], provider, lambda: None).step()
+        self.assertEqual(
+            {row["state"] for row in self.store.load(job["id"])[0]["states"].values()},
+            {"queued"},
+        )
         Runner(self.store, job["id"], provider, lambda: None).step()
+        current = self.store.load(job["id"])[0]
         self.assertEqual(provider.calls, 1)
-        self.assertEqual(self.store.load(job["id"])[0]["status"], "complete")
+        self.assertEqual(current["status"], "complete")
+        self.assertEqual(current["usage"], {"input_tokens": 10})
         self.assertTrue(all(Results(self.game).get(row) for row in plan["requests"]))
 
     def test_google_structured_batches_split_before_submission_and_keep_saved_groups(

@@ -1,10 +1,13 @@
 """Accepted results are bound to source plus context, shared across all transports."""
 
+import os
 from pathlib import Path
 
 from .files import digest, project_path, read_json, write_project_json
 from .project import WORK
 from .requests import result_value
+
+ACCEPTED = WORK + "/work/accepted"
 
 
 class Results:
@@ -17,7 +20,20 @@ class Results:
             letter not in "0123456789abcdef" for letter in fingerprint
         ):
             raise ValueError("Invalid request identity.")
-        return WORK + "/work/accepted/" + fingerprint + ".json"
+        return ACCEPTED + "/" + fingerprint + ".json"
+
+    def saved(self):
+        """The fingerprints with an accepted result file, from one listing
+        instead of a project_path check per request; get() still checks every
+        file it reads. Names are casefolded, as Windows looks them up."""
+        folder = project_path(self.source, ACCEPTED, exists=False)
+        try:
+            with os.scandir(folder) as entries:
+                return {
+                    entry.name.casefold().removesuffix(".json") for entry in entries
+                }
+        except FileNotFoundError, NotADirectoryError:
+            return set()
 
     def get(self, request):
         path = project_path(self.source, self.relative(request), exists=False)

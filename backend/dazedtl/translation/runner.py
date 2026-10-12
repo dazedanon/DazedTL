@@ -1,8 +1,11 @@
 """Transport-independent acceptance, submission journaling, and safe resume."""
 
+import os
+import time
+
 from dazedtl.storage import write_json
 
-from .files import read_json
+from .files import digest, read_json
 from .refusals import (
     MESSAGE as REFUSAL_MESSAGE,
 )
@@ -15,6 +18,13 @@ from .refusals import (
 )
 from .requests import from_provider
 from .results import Results
+
+# A Batch collection accepts thousands of responses in one pass, and each save
+# rewrites the whole record, so it saves at most this often and once at the
+# end. Every response is saved before it is accepted, and recover() rebuilds
+# acceptance from those files and the results, so an interrupted collection
+# loses nothing and its provider job is only collected again.
+SAVE_INTERVAL = 1.0
 
 
 class Runner:
@@ -31,6 +41,9 @@ class Runner:
         self.results = Results(self.plan["source"])
         self.folder = store.folder(identity)
         self.requests = {row["id"]: row for row in self.plan["requests"]}
+        self.saved = time.monotonic()
+        # Sums of request_usage, kept as rows change; see record_usage.
+        self.request_totals = None
 
     def save(self, status=None, message=None):
         if status is not None:
@@ -38,10 +51,9 @@ class Runner:
         if message is not None:
             self.job["message"] = message
         self.store.save(self.job)
+        self.saved = time.monotonic()
 
     def response_path(self, identity, *, original=False):
-        from .files import digest
-
         suffix = (
             "-clarified"
             if not original and identity in self.job.get("refusal_retries", {})
@@ -68,7 +80,12 @@ class Runner:
             self.job["states"][identity] = {"state": "accepted", "message": ""}
         except ValueError as exc:
             self.job["states"][identity] = {"state": "failed", "message": str(exc)}
-        self.save()
+        # Each Live request is a paid call of its own.
+        if (
+            self.plan["configuration"]["mode"] != "batch"
+            or time.monotonic() - self.saved >= SAVE_INTERVAL
+        ):
+            self.save()
         self.checkpoint()
 
     def record_usage(self, identity, response):
@@ -89,26 +106,44 @@ class Runner:
             count("cache_read_input_tokens"),
             count("cache_creation_input_tokens"),
         )
-        self.job.setdefault("request_usage", {})[identity] = {
+        row = {
             "input_tokens": max(0, count("prompt_tokens") - cached - created),
             "output_tokens": count("completion_tokens"),
             "cache_read_input_tokens": cached,
             "cache_creation_input_tokens": created,
             "thinking_tokens": count("thinking_tokens"),
         }
-        self.job["usage"] = {
-            key: sum(row[key] for row in self.job["request_usage"].values())
-            for key in self.job["request_usage"][identity]
-        }
+        rows = self.job.setdefault("request_usage", {})
+        # Recovery records every saved response again, so summing all rows
+        # each time would cost the square of a large run's requests.
+        if self.request_totals is None:
+            self.request_totals = {
+                key: sum(other[key] for other in rows.values()) for key in row
+            }
+        previous = rows.get(identity, dict.fromkeys(row, 0))
+        for key, value in row.items():
+            self.request_totals[key] += value - previous[key]
+        rows[identity] = row
+        self.job["usage"] = dict(self.request_totals)
 
     def recover(self):
+        # A waiting Batch recovers on every poll, so the saved responses and
+        # results are each listed once rather than looked up per request.
+        try:
+            with os.scandir(self.folder / "responses") as entries:
+                responses = {entry.name for entry in entries if entry.is_file()}
+        except FileNotFoundError:
+            responses = set()
+        accepted = self.results.saved()
         for identity, request in self.requests.items():
-            if self.response_path(identity).exists():
-                self.record_usage(identity, read_json(self.response_path(identity)))
-            if self.results.get(request):
+            path = self.response_path(identity)
+            response = read_json(path) if path.name in responses else None
+            if response is not None:
+                self.record_usage(identity, response)
+            if request["fingerprint"] in accepted and self.results.get(request):
                 self.job["states"][identity] = {"state": "accepted", "message": ""}
-            elif self.response_path(identity).exists():
-                self.accept(identity, read_json(self.response_path(identity)))
+            elif response is not None:
+                self.accept(identity, response)
             elif self.job["states"][identity]["state"] == "sending":
                 self.job["states"][identity] = {
                     "state": "uncertain",
