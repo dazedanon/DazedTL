@@ -346,13 +346,15 @@ class TranslationTests(unittest.TestCase):
         provider = Provider()
         Runner(self.store, job["id"], provider, lambda: None).step()
         write_json(self.store.folder(job["id"]) / "cancel.json", {"requested": True})
-        Runner(self.store, job["id"], provider, lambda: None).step()
+        # The worker exits once a pass leaves the run not waiting, so the pass
+        # that collects the canceled job settles the later chunk too.
         Runner(self.store, job["id"], provider, lambda: None).step()
         current, _plan = self.store.load(job["id"])
         self.assertTrue(provider.canceled)
         self.assertEqual(provider.calls, 1)
         self.assertEqual(current["states"]["one"]["state"], "accepted")
         self.assertEqual(current["states"]["two"]["state"], "failed")
+        self.assertEqual(current["batches"][1]["state"], "canceled")
         # The chunk canceled before submission has no provider status.
         _close_contracts()
         TypeAdapter(list[TranslationBatch]).validate_json(

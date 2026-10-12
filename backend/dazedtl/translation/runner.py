@@ -373,6 +373,10 @@ class Runner:
             else:
                 collected = self.collect(chunk, cancel)
                 if collected is None:
+                    # A canceled run submits nothing more, so the pass that
+                    # collects its canceled job also settles the later chunks.
+                    if cancel and chunk["state"] == "complete":
+                        continue
                     return
                 responses, usage = collected
             # A canceled run starts no clarification but settles a started one.
@@ -513,10 +517,11 @@ class Runner:
                         + ".",
                     }
             chunk.update(state="complete", usage=usage)
-            self.save(
-                "failed",
-                "The provider batch failed. Review remaining work before paying for a retry.",
-            )
+            if not cancel:
+                self.save(
+                    "failed",
+                    "The provider batch failed. Review remaining work before paying for a retry.",
+                )
             return None
         mapping = {item["custom_id"]: item["request"] for item in chunk["items"]}
         responses, errors, usage = self.provider.collect(chunk["id"], mapping)
