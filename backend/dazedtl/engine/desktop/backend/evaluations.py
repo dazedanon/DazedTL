@@ -291,11 +291,11 @@ def _execute(plan, project, vault, log, stopped):
             rows = candidates_with_credentials(options['candidates'], vault)
             # Shared prompt loading migrates portable context. Do that only in
             # an isolated snapshot, never in the original game selected for evaluation.
-            from .manual import ManualJobs
+            from .manual import snapshot_context
             with tempfile.TemporaryDirectory(prefix='context-', dir=project) as temporary:
                 temp = Path(temporary)
                 context_plan = {'context_source': str(engine.resolve_evaluation_game_root(source) or source)}
-                ManualJobs.__new__(ManualJobs)._snapshot_context(temp, context_plan, project.parent)
+                snapshot_context(temp, context_plan, project.parent)
                 root, saved = engine.prepare_run(project, data, rows, game_root=temp / 'game', content_selection=selection,
                                                  stability_segments=0, **config)
                 saved['desktop_source'] = str(source)

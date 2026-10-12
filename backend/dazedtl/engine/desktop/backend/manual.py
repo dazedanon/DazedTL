@@ -82,6 +82,161 @@ def compatible(engine, recorded):
     )
 
 
+def run_plan(workspace, inventory, files, mode, context_source="", *, workflow=None, configuration=None):
+    """The frozen plan of a run over files from an inspected input folder.
+
+    A host can build one for its own isolated local estimate without
+    registering a run."""
+    engine = inventory["engine"]
+    names = {item["name"] for item in inventory["files"]}
+    if not isinstance(files, list) or not files or not all(isinstance(name, str) and name in names for name in files) or len(set(files)) != len(files):
+        raise ValueError("Select unique files from this input folder.")
+    settings = SettingsStore(workspace)
+    described = configuration or settings.describe()
+    values = dict(described["values"])
+    if workflow is not None:
+        from util.engine_options import validate_engine_options
+        if engine == "RPG Maker MV/MZ":
+            described["engines"]["rpgmakermvmz"] = validate_engine_options({"rpgmakermvmz": workflow["engine_options"]})["rpgmakermvmz"]
+        # The engine wraps to the four widths; QA alone reads the message rows.
+        values.update({key: workflow["widths"][key] for key in WRAP_WIDTH_KEYS})
+    active_key = described["active_key"]
+    environment = settings.runtime(values, active_key) if active_key else None
+    if mode in {"translate", "batch", "speakers"} and environment is None:
+        raise ValueError("Configure an API credential in Settings first.")
+    if environment:
+        values["api"] = environment["api"]
+    if mode == 'batch':
+        from util.batch_providers import detect_batch_provider
+        if not detect_batch_provider(values['model'], api_url=values['api'], api_provider=values['API_PROVIDER']):
+            raise ValueError('This endpoint does not support provider Batch jobs. Choose a supported provider before starting.')
+    if mode == "offline":
+        values.update(API_PROVIDER="openai", api="https://api.openai.com/v1", model="gpt-6-luna")
+    runtime_profile = None
+    if engine == "RPG Maker MV/MZ":
+        overrides = described["engines"]["rpgmakermvmz"]
+        runtime_profile = {"engine": "rpgmakermvmz", "version": 1,
+                           "config": {key: value for key, value in overrides.items() if not key.startswith("ENABLED_")},
+                           "enabled_plugins_357": overrides.get("ENABLED_PLUGINS_357", []),
+                           "enabled_patterns_355655": overrides.get("ENABLED_PATTERNS_355655", [])}
+    return {"version": 1, **inventory, "selected": files, "mode": mode, "settings": values, "key_name": active_key,
+            "engines": described["engines"], "runtime_profile": runtime_profile, "signature": signature(engine),
+            "context_source": str(Path(context_source).expanduser().resolve(strict=True)) if context_source else "", "workflow": workflow}
+
+
+def snapshot_context(directory, plan, workspace):
+    """Freezes the shared instructions and the game's portable guidance into a run folder."""
+    from .rpgmaker import import_context
+    context = directory / "context"
+    context.mkdir()
+    for name, path in (("system.md", PROMPT_PATH), ("base-glossary.txt", GLOSSARY_BASE_PATH),
+                       ("translation_contexts.json", TRANSLATION_CONTEXTS_PATH), ("sfx.json", SFX_REFERENCE_PATH)):
+        shutil.copyfile(runtime_data_file(path, workspace), context / name)
+    game = directory / "game"
+    metadata = game / ".dazedtl"
+    metadata.mkdir(parents=True)
+    if plan["context_source"]:
+        source = Path(plan["context_source"])
+        if not source.is_dir() or (source / "skills").is_symlink():
+            raise ValueError("Choose a regular game context folder.")
+        import_context(source, metadata)
+        for name in ("glossary.txt", "translation_quirks.txt"):
+            path = source / name
+            destination = metadata / ("skills/quirks.md" if name == "translation_quirks.txt" else name)
+            if path.is_file() and not destination.exists():
+                if path.is_symlink() or path.stat().st_size > 1_000_000:
+                    raise ValueError("Legacy guidance must be a regular file below 1 MB.")
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(path, destination)
+        for path in (source / "skills").glob("*.md"):
+            destination = metadata / "skills" / ("game.md" if path.name == "translation.md" else path.name)
+            if not destination.exists():
+                if path.is_symlink() or path.stat().st_size > 1_000_000:
+                    raise ValueError("Legacy skills must be regular files below 1 MB.")
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(path, destination)
+        # Read-only engine context needed for face/plugin speaker detection.
+        from util.wolfdawn.cdb_context import SIDECAR_NAME
+        for relative in ("js/plugins.js", "www/js/plugins.js", f"wolf_json/{SIDECAR_NAME}", "wolf_json/db_profile.json"):
+            path = source / relative
+            if path.is_file():
+                if path.is_symlink() or not path.resolve().is_relative_to(source) or path.stat().st_size > 10_000_000:
+                    raise ValueError("Plugin configuration must be a regular file below 10 MB.")
+                target = game / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(path, target)
+    if (plan.get("workflow") or {}).get("wolf_speakers"):
+        atomic_json(context / "wolf_speakers.json", plan["workflow"]["wolf_speakers"])
+    (metadata / "skills").mkdir(exist_ok=True)
+    (metadata / "glossary.txt").touch(exist_ok=True)
+    plan["context_hashes"] = {path.relative_to(directory).as_posix(): digest(path.read_bytes()) for folder in (context, game)
+                              for path in folder.rglob("*") if path.is_file()}
+
+
+def seed_variables(directory, plan, workflow_folder):
+    """Freezes a workflow's translated variable values for the run's event text."""
+    cache = Path(workflow_folder) / "log/var_translation_map.json"
+    if cache.exists():
+        if cache.is_symlink() or cache.stat().st_size > 10_000_000:
+            raise ValueError("The phase variable cache must be a regular file below 10 MB.")
+        raw = cache.read_bytes()
+        json.loads(raw)
+        (directory / "seed").mkdir()
+        (directory / "seed/var_translation_map.json").write_bytes(raw)
+        plan["context_hashes"]["seed/var_translation_map.json"] = digest(raw)
+
+
+def prepare_inputs(directory, plan, stopped=lambda: False):
+    """Copies a planned run's inputs into its folder once, and checks them on every later start."""
+    for folder in ("inputs", "files", "translated", "log"):
+        path = directory / folder
+        if path.is_symlink():
+            raise ValueError("An isolated run folder became a symbolic link.")
+        path.mkdir(exist_ok=True)
+    prepared = directory / "prepared.json"
+    seed = directory / "seed/var_translation_map.json"
+    if not prepared.is_file() and seed.is_file():
+        shutil.copyfile(seed, directory / "log/var_translation_map.json")
+    for item in plan["files"]:
+        if stopped():
+            raise InterruptedError("Stopped while preparing the isolated inputs.")
+        name = item["name"]
+        original = directory / "inputs" / name if prepared.is_file() else Path(plan["source"]) / name
+        source_root = directory / "inputs" if prepared.is_file() else Path(plan["source"])
+        if original.is_symlink() or not original.resolve().is_relative_to(source_root) or digest(original.read_bytes()) != item["sha256"]:
+            raise ValueError("An input changed after planning. Refresh the file list and start a new run.")
+        if not prepared.is_file():
+            for folder in ("inputs", "files"):
+                target = directory / folder / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(original, target)
+        else:
+            working = directory / "files" / name
+            if working.is_symlink() or not working.resolve().is_relative_to(directory / "files") or digest(working.read_bytes()) != item["sha256"]:
+                raise ValueError("The isolated engine input changed. Create a new run.")
+        (directory / "translated" / name).parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(prepared, {"ready": True})
+
+
+def worker_environment(workspace, plan):
+    """A run worker's environment: local runs get no credential and no network."""
+    env = {key: value for key, value in os.environ.items() if key in {
+        "PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL", "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"
+    }}
+    if plan["mode"] in {"estimate", "offline"}:
+        env.update({key: str(value).lower() if isinstance(value, bool) else str(value) for key, value in plan["settings"].items()})
+        env.update(key="local-run-no-credential", API_KEY_OPTIONAL="true", DAZEDTL_TEST_OFFLINE="1")
+    else:
+        runtime = SettingsStore(workspace).runtime(plan["settings"], plan["key_name"])
+        if runtime["api"] != plan["settings"]["api"]:
+            raise ValueError("The saved credential's endpoint changed. Restore the original route before resuming.")
+        env.update(runtime)
+    env.update(PYTHONIOENCODING="utf-8", PYTHONUTF8="1", PYTHON_DOTENV_DISABLED="1", PYTHONNOUSERSITE="1")
+    if os.getenv('DAZEDTL_TEST_OFFLINE') == '1':
+        env['DAZEDTL_TEST_OFFLINE'] = '1'
+    return env
+
+
 class ManualJobs:
     def __init__(self, workspace, lock, *, allow_providers=False):
         self.workspace = Path(workspace)
@@ -167,58 +322,17 @@ class ManualJobs:
             inventory = self.inspect(source, engine, managed=managed or workflow is not None)
             if revision != inventory["revision"]:
                 raise ValueError("The input files changed. Refresh the file list before starting.")
-            names = {item["name"] for item in inventory["files"]}
-            if not isinstance(files, list) or not files or not all(isinstance(name, str) and name in names for name in files) or len(set(files)) != len(files):
-                raise ValueError("Select unique files from this input folder.")
-            settings = SettingsStore(self.workspace)
-            described = configuration or settings.describe()
-            values = dict(described["values"])
-            if workflow is not None:
-                from util.engine_options import validate_engine_options
-                if engine == "RPG Maker MV/MZ":
-                    described["engines"]["rpgmakermvmz"] = validate_engine_options({"rpgmakermvmz": workflow["engine_options"]})["rpgmakermvmz"]
-                # The engine wraps to the four widths; QA alone reads the message rows.
-                values.update({key: workflow["widths"][key] for key in WRAP_WIDTH_KEYS})
-            active_key = described["active_key"]
-            environment = settings.runtime(values, active_key) if active_key else None
-            if mode in {"translate", "batch", "speakers"} and environment is None:
-                raise ValueError("Configure an API credential in Settings first.")
-            if environment:
-                values["api"] = environment["api"]
-            if mode == 'batch':
-                from util.batch_providers import detect_batch_provider
-                if not detect_batch_provider(values['model'], api_url=values['api'], api_provider=values['API_PROVIDER']):
-                    raise ValueError('This endpoint does not support provider Batch jobs. Choose a supported provider before starting.')
-            if mode == "offline":
-                values.update(API_PROVIDER="openai", api="https://api.openai.com/v1", model="gpt-6-luna")
-            runtime_profile = None
-            if engine == "RPG Maker MV/MZ":
-                overrides = described["engines"]["rpgmakermvmz"]
-                runtime_profile = {"engine": "rpgmakermvmz", "version": 1,
-                                   "config": {key: value for key, value in overrides.items() if not key.startswith("ENABLED_")},
-                                   "enabled_plugins_357": overrides.get("ENABLED_PLUGINS_357", []),
-                                   "enabled_patterns_355655": overrides.get("ENABLED_PATTERNS_355655", [])}
-            plan = {"version": 1, **inventory, "selected": files, "mode": mode, "settings": values, "key_name": active_key,
-                    "engines": described["engines"], "runtime_profile": runtime_profile, "signature": signature(engine),
-                    "context_source": str(Path(context_source).expanduser().resolve(strict=True)) if context_source else "", "workflow": workflow}
+            plan = run_plan(self.workspace, inventory, files, mode, context_source, workflow=workflow, configuration=configuration)
             identity = uuid.uuid4().hex
             directory = self.root / "jobs" / identity
             directory.mkdir(parents=True)
             try:
                 self._snapshot_context(directory, plan)
                 if workflow is not None:
-                    cache = self.workspace / "workflows" / workflow["id"] / "log/var_translation_map.json"
-                    if cache.exists():
-                        if cache.is_symlink() or cache.stat().st_size > 10_000_000:
-                            raise ValueError("The phase variable cache must be a regular file below 10 MB.")
-                        raw = cache.read_bytes()
-                        json.loads(raw)
-                        (directory / "seed").mkdir()
-                        (directory / "seed/var_translation_map.json").write_bytes(raw)
-                        plan["context_hashes"]["seed/var_translation_map.json"] = digest(raw)
+                    seed_variables(directory, plan, self.workspace / "workflows" / workflow["id"])
                 atomic_json(directory / "plan.json", plan)
                 job = {"version": 1, "id": identity, "created": timestamp(), "updated": timestamp(), "source": inventory["source"],
-                       "engine": engine, "mode": mode, "model": values["model"], "files": files, "status": "running", "phase": "preparing",
+                       "engine": engine, "mode": mode, "model": plan["settings"]["model"], "files": files, "status": "running", "phase": "preparing",
                        "message": "Preparing an isolated copy of the input files.", "completed": [], "errors": {}, "mismatches": {}, "approval": None,
                        "progress": None, "estimate": None, "log": [], "exports": [], "outputs": {}, "plan_hash": digest((directory / "plan.json").read_bytes())}
                 self.jobs[identity] = job
@@ -234,51 +348,7 @@ class ManualJobs:
             return json.loads(json.dumps(job))
 
     def _snapshot_context(self, directory, plan, workspace=None):
-        from .rpgmaker import import_context
-        context = directory / "context"
-        context.mkdir()
-        for name, path in (("system.md", PROMPT_PATH), ("base-glossary.txt", GLOSSARY_BASE_PATH),
-                           ("translation_contexts.json", TRANSLATION_CONTEXTS_PATH), ("sfx.json", SFX_REFERENCE_PATH)):
-            shutil.copyfile(runtime_data_file(path, workspace or getattr(self, "workspace", None)), context / name)
-        game = directory / "game"
-        metadata = game / ".dazedtl"
-        metadata.mkdir(parents=True)
-        if plan["context_source"]:
-            source = Path(plan["context_source"])
-            if not source.is_dir() or (source / "skills").is_symlink():
-                raise ValueError("Choose a regular game context folder.")
-            import_context(source, metadata)
-            for name in ("glossary.txt", "translation_quirks.txt"):
-                path = source / name
-                destination = metadata / ("skills/quirks.md" if name == "translation_quirks.txt" else name)
-                if path.is_file() and not destination.exists():
-                    if path.is_symlink() or path.stat().st_size > 1_000_000:
-                        raise ValueError("Legacy guidance must be a regular file below 1 MB.")
-                    destination.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copyfile(path, destination)
-            for path in (source / "skills").glob("*.md"):
-                destination = metadata / "skills" / ("game.md" if path.name == "translation.md" else path.name)
-                if not destination.exists():
-                    if path.is_symlink() or path.stat().st_size > 1_000_000:
-                        raise ValueError("Legacy skills must be regular files below 1 MB.")
-                    destination.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copyfile(path, destination)
-            # Read-only engine context needed for face/plugin speaker detection.
-            from util.wolfdawn.cdb_context import SIDECAR_NAME
-            for relative in ("js/plugins.js", "www/js/plugins.js", f"wolf_json/{SIDECAR_NAME}", "wolf_json/db_profile.json"):
-                path = source / relative
-                if path.is_file():
-                    if path.is_symlink() or not path.resolve().is_relative_to(source) or path.stat().st_size > 10_000_000:
-                        raise ValueError("Plugin configuration must be a regular file below 10 MB.")
-                    target = game / relative
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copyfile(path, target)
-        if (plan.get("workflow") or {}).get("wolf_speakers"):
-            atomic_json(context / "wolf_speakers.json", plan["workflow"]["wolf_speakers"])
-        (metadata / "skills").mkdir(exist_ok=True)
-        (metadata / "glossary.txt").touch(exist_ok=True)
-        plan["context_hashes"] = {path.relative_to(directory).as_posix(): digest(path.read_bytes()) for folder in (context, game)
-                                  for path in folder.rglob("*") if path.is_file()}
+        snapshot_context(directory, plan, workspace or getattr(self, "workspace", None))
 
     def _launch(self, job, resume):
         self.stopping.clear()
@@ -305,34 +375,7 @@ class ManualJobs:
                 path = directory / name
                 if path.is_symlink() or digest(path.read_bytes()) != expected:
                     raise ValueError("This run's frozen instructions changed. Start a new run.")
-            for folder in ("inputs", "files", "translated", "log"):
-                path = directory / folder
-                if path.is_symlink():
-                    raise ValueError("An isolated run folder became a symbolic link.")
-                path.mkdir(exist_ok=True)
-            prepared = directory / "prepared.json"
-            seed = directory / "seed/var_translation_map.json"
-            if not prepared.is_file() and seed.is_file():
-                shutil.copyfile(seed, directory / "log/var_translation_map.json")
-            for item in plan["files"]:
-                if self.stopping.is_set():
-                    raise InterruptedError("Stopped while preparing the isolated inputs.")
-                name = item["name"]
-                original = directory / "inputs" / name if prepared.is_file() else Path(plan["source"]) / name
-                source_root = directory / "inputs" if prepared.is_file() else Path(plan["source"])
-                if original.is_symlink() or not original.resolve().is_relative_to(source_root) or digest(original.read_bytes()) != item["sha256"]:
-                    raise ValueError("An input changed after planning. Refresh the file list and start a new run.")
-                if not prepared.is_file():
-                    for folder in ("inputs", "files"):
-                        target = directory / folder / name
-                        target.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copyfile(original, target)
-                else:
-                    working = directory / "files" / name
-                    if working.is_symlink() or not working.resolve().is_relative_to(directory / "files") or digest(working.read_bytes()) != item["sha256"]:
-                        raise ValueError("The isolated engine input changed. Create a new run.")
-                (directory / "translated" / name).parent.mkdir(parents=True, exist_ok=True)
-            atomic_json(prepared, {"ready": True})
+            prepare_inputs(directory, plan, self.stopping.is_set)
             batch_state = None
             from .batches import batch_root, read_document
             batch_directory = batch_root(directory, plan)
@@ -360,20 +403,7 @@ class ManualJobs:
                                       for path in (directory / "translated").rglob("*") if path.is_file() and not path.is_symlink()}
                     self.save(job)
                 return
-            env = {key: value for key, value in os.environ.items() if key in {
-                "PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL", "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"
-            }}
-            if plan["mode"] in {"estimate", "offline"}:
-                env.update({key: str(value).lower() if isinstance(value, bool) else str(value) for key, value in plan["settings"].items()})
-                env.update(key="local-run-no-credential", API_KEY_OPTIONAL="true", DAZEDTL_TEST_OFFLINE="1")
-            else:
-                runtime = SettingsStore(self.workspace).runtime(plan["settings"], plan["key_name"])
-                if runtime["api"] != plan["settings"]["api"]:
-                    raise ValueError("The saved credential's endpoint changed. Restore the original route before resuming.")
-                env.update(runtime)
-            env.update(PYTHONIOENCODING="utf-8", PYTHONUTF8="1", PYTHON_DOTENV_DISABLED="1", PYTHONNOUSERSITE="1")
-            if os.getenv('DAZEDTL_TEST_OFFLINE') == '1':
-                env['DAZEDTL_TEST_OFFLINE'] = '1'
+            env = worker_environment(self.workspace, plan)
             with (directory / "log/startup.txt").open("a", encoding="utf-8") as error_log:
                 process = launch_worker([sys.executable, "-u", str(Path(__file__).with_name("manual_worker.py")), str(directory)],
                                         cwd=directory, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=error_log,

@@ -343,6 +343,16 @@ class Workflows:
             row["name"] for row in inventory["files"] if row["name"] in EVENT_FILES_EXACT or re.fullmatch(r"Map\d+\.json", row["name"])]
         if not files:
             raise ValueError("Import files belonging to this phase in Project first.")
+        mode = "speakers" if phase == "speakers" else project["mode"]
+        job = self.manual.start(str(folder / "files"), "RPG Maker MV/MZ", files, inventory["revision"], mode, project["source"],
+                                workflow=self.phase_workflow(project_id, phase))
+        project["manual_job"] = job["id"]
+        self.save(project)
+        return job
+
+    def phase_workflow(self, project_id, phase):
+        """The engine settings an RPG Maker phase's run freezes."""
+        project = self.projects[project_id]
         settings = dict(project["engine_options"])
         profile = {"database": PHASE0_CONFIG, "dialogue": PHASE1_CONFIG, "variables": PHASE1B_CONFIG, "advanced": PHASE2_CONFIG}.get(phase, {})
         if phase == "advanced":
@@ -351,13 +361,8 @@ class Workflows:
         settings.update(profile)
         if phase == "dialogue":
             settings["CODE408"] = project["phase1_comments"]
-        mode = "speakers" if phase == "speakers" else project["mode"]
-        job = self.manual.start(str(folder / "files"), "RPG Maker MV/MZ", files, inventory["revision"], mode, project["source"],
-                                workflow={"id": project_id, "phase": phase, "engine_options": settings, "widths": project["widths"],
-                                          "glossary_revision": self.documents(project_id)["glossary"]["revision"]})
-        project["manual_job"] = job["id"]
-        self.save(project)
-        return job
+        return {"id": project_id, "phase": phase, "engine_options": settings, "widths": project["widths"],
+                "glossary_revision": self.documents(project_id)["glossary"]["revision"]}
 
     def _wolf_phase(self, project, phase):
         from .wolf import manifest
