@@ -103,15 +103,13 @@ class TranslationEngine:
 
     def detect(self, source):
         from util.project_preparation import rpgmaker_layout
+        from util.project_scanner import detect_wolf_layout
 
         layout = rpgmaker_layout(source)
         if layout:
             return layout["engine"]
         root = Path(source)
-        if (
-            any(root.glob("*.wolf*"))
-            or (root / "Data/BasicData/CommonEvent.dat").is_file()
-        ):
+        if detect_wolf_layout(root)["engine"] == "WOLF":
             return "WOLF"
         if (root / "tyrano").is_dir() or (root / "resources/app/tyrano").is_dir():
             return "TyranoScript"
