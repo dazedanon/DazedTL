@@ -63,9 +63,12 @@ def columns(connection):
     return {row[1] for row in connection.execute("PRAGMA table_info(requests)")}
 
 
-def requests(root, job):
-    """Only positive rejection receipts release a submitted Batch request."""
-    queued = queue(root)
+def requests(root, job, queued=None, records=None):
+    """Only positive rejection receipts release a submitted Batch request.
+
+    A caller that already read the run's queue or ledger passes it in.
+    """
+    queued = queue(root) if queued is None else queued
     if queued:
         evidence = evidence_root(root)
         batches = saved(evidence, "batch_history.json").get("batches", [])
@@ -201,7 +204,7 @@ def requests(root, job):
                 "unused": receipt.get("unused"),
             }
         return
-    rows = ledger_records(root)
+    rows = ledger_records(root) if records is None else records
     if rows is not None:
         for index, row in enumerate(rows):
             state = row["state"]

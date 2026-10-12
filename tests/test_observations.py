@@ -150,7 +150,16 @@ class ObservationTests(unittest.TestCase):
                 write_json(
                     fragment, {"later": {**entry, "payload": '{"Line1":"回復"}'}}
                 )
-                self.assertEqual(observe()["prepared"], 2)
+                # A fragment still being written is no evidence yet, and a
+                # changed run reads its queue (every fragment) once.
+                writing = fragment.with_name("next.json.1.2.tmp")
+                writing.write_text('{"partial', encoding="utf-8")
+                with patch.object(
+                    process_view, "queue", wraps=process_view.queue
+                ) as read_queue:
+                    self.assertEqual(observe()["prepared"], 2)
+                self.assertEqual(read_queue.call_count, 1)
+                writing.unlink()
                 fragment.unlink()
                 self.assertEqual(observe()["prepared"], 1)
                 # Another project can use the same run ID; absolute roots own

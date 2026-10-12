@@ -330,6 +330,10 @@ def queue(root):
             if parts.is_symlink() or not parts.is_dir():
                 raise ValueError("Saved request fragments must be a regular directory.")
             for path in sorted(parts.iterdir()):
+                # A fragment still being written is a temporary file, which
+                # the engine's own reader skips too.
+                if path.name.endswith(".tmp"):
+                    continue
                 if path.suffix != ".json" or path.is_symlink():
                     raise ValueError("Saved request fragments are invalid.")
                 for key, value in _read_cached(str(path), file_stamp(path)).items():
@@ -838,12 +842,14 @@ def attention(requests):
 def request_view(root, job):
     """A run's saved requests for display, read once for its observed
     summary and the inspector's request pages."""
+    # Read the queue and ledger once: during collection the queue is many
+    # fragments, and the summary reuses both.
     requests = queue(root)
     records = ledger_records(root) if not requests else None
     from .request_scope import requests as source_requests
 
     rows = []
-    for item in source_requests(root, job):
+    for item in source_requests(root, job, requests, records):
         row = {
             "index": item["index"],
             "state": item["state"],
@@ -864,6 +870,8 @@ def request_view(root, job):
     latest = attempts(rows)
     groups = request_groups(rows, receipts, job.get("mode"))
     return {
+        "queue": requests,
+        "records": records,
         "rows": rows,
         "groups": groups,
         "files": file_requests(latest, receipts),
@@ -920,7 +928,7 @@ def request_page(view, group=None, index=None):
 def summary(root, job, view=None):
     if view is None:
         view = request_view(root, job)
-    requests = queue(root)
+    requests = view["queue"]
     batches = saved(evidence_root(root), "batch_history.json").get("batches", [])
     submitted = {
         key for batch in batches for key in batch.get("custom_ids", {}).values()
@@ -952,7 +960,7 @@ def summary(root, job, view=None):
     validated = None
     usage = None
     uncertain = 0
-    records = ledger_records(root) if not requests else None
+    records = view["records"]
     if records is not None:
         rows = [(row["state"], row["usage"], row["error"]) for row in records]
         prepared = len(rows)
