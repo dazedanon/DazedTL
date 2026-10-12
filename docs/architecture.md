@@ -1052,7 +1052,8 @@ Each version-two snapshot is a complete path-to-content manifest with file sizes
 No delta chain or live-file hardlinks are used.
 Snapshot identity covers file content, paths, modes and directories, so unchanged captures reuse a manifest.
 Backup presentation checks manifest and payload availability instead of treating a profile reference as proof that its files still exist.
-Each observation checks shared object directories and payload sizes once, without retaining availability across observations.
+A poll checks shared object directories and payload sizes, and reuses that check while the snapshot's manifest and object folders keep their modification times ([record_status](../backend/dazedtl/translation/backups.py)).
+Adding or removing an object changes its folder's time; a payload changed in place keeps those times, so only the full hash checks below notice it.
 Electron opens only backup folders the backend returns as available.
 Full content hashes are still verified at restore and reuse boundaries.
 The managed store has its own writer lock.

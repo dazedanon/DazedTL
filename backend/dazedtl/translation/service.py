@@ -391,7 +391,7 @@ class Translation:
         ):
             if saved_lifecycle.get(key):
                 saved_lifecycle[key] = backups.record_status(
-                    project.root, saved_lifecycle[key], kind=kind
+                    project.root, saved_lifecycle[key], kind=kind, reuse=True
                 )
         # A deleted store leaves nothing to recover, so retire its records
         # instead of warning about them on every read. A store that kept its

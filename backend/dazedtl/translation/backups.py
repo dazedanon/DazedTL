@@ -16,7 +16,7 @@ from pathlib import Path, PurePosixPath
 
 from dazedtl.storage import WorkspaceLock, staging_folder, write_json
 
-from .files import digest, read_json
+from .files import digest, read_json, settled
 
 STORE_RELATIVE = ".dazedtl/backups/v2"
 _ID = re.compile(r"[0-9a-f]{32}")
@@ -785,13 +785,67 @@ def lookup(game, legacy_root, identity):
     raise BackupMissing("The backup is unavailable. Its files were not changed.")
 
 
-def record_status(game, record, *, kind):
-    """Inspect saved references without recreating stores or hashing every blob."""
+# Polls show whether each saved backup is still there. A snapshot's manifest
+# never changes, and adding or removing an object changes its shard folder's
+# modification time; a poll reuses a check while these times hold. An object
+# changed in place keeps them, so restores still verify every hash.
+_CHECKED = {}
+
+
+def _stamp(path):
+    value = os.lstat(path)
+    return (value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+
+
+def _store_stamps(directory, value):
+    objects = Path(directory).parent.parent / "objects"
+    return (
+        _stamp(Path(directory) / "manifest.json"),
+        _stamp(objects),
+        *(
+            _stamp(objects / prefix)
+            for prefix in sorted({f[:2] for f in value["files"].values()})
+        ),
+    )
+
+
+def _checked(location, game):
+    """verify(full=False) for a poll, reused while the snapshot's manifest and
+    object folders are unchanged."""
+    cached = _CHECKED.get(location)
+    try:
+        if cached and _store_stamps(location, cached[1]) == cached[0]:
+            return cached[1]
+    except OSError:
+        pass
+    value = manifest(location, game)
+    if value["version"] != 2:
+        return verify(location, source=game, full=False)
+    before = _store_stamps(location, value)
+    _available_objects(location, value, lambda: False)
+    # A store that changed during the check, or too recently for its times
+    # to show the next change, is checked again next time.
+    if _store_stamps(location, value) == before and settled(
+        *(stamp[2] for stamp in before)
+    ):
+        if len(_CHECKED) > 64:
+            _CHECKED.clear()
+        _CHECKED[location] = (before, value)
+    return value
+
+
+def record_status(game, record, *, kind, reuse=False):
+    """Inspect saved references without recreating stores or hashing every
+    blob. A poll passes `reuse` to skip checks whose store has not changed."""
     result = dict(record)
     try:
         location = lookup(game, Path(record["path"]).parent, record["id"])
         result["path"] = str(location)
-        value = verify(location, source=game, full=False)
+        value = (
+            _checked(location, game)
+            if reuse
+            else verify(location, source=game, full=False)
+        )
         if value["kind"] != kind:
             raise ValueError("The saved backup has the wrong content type.")
     except BackupMissing:

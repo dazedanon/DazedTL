@@ -2,6 +2,7 @@
 
 import os
 import shutil
+import time
 import unittest
 from contextlib import nullcontext
 from pathlib import Path
@@ -61,6 +62,32 @@ class BackupTests(unittest.TestCase):
         self.assertTrue(missing["issue"])
         self.assertFalse(self.work.exists())
         self.assertEqual(saved, before)
+
+    def test_a_polls_reused_backup_check_still_sees_a_removed_object(self):
+        # Polls reuse the check while the store's folders are unchanged; a
+        # removed object changes its folder, so it never reads as available.
+        saved = backups.snapshot(self.game, self.store, source_game=True)
+        settled = time.time_ns() - 3600 * 10**9
+        objects = self.store / "objects"
+        for path in (
+            objects,
+            *objects.iterdir(),
+            Path(saved["path"]) / "manifest.json",
+        ):
+            os.utime(path, ns=(settled, settled))
+
+        def available():
+            return backups.record_status(self.game, saved, kind="source", reuse=True)[
+                "available"
+            ]
+
+        self.assertTrue(available())
+        with patch.object(
+            backups, "_available_objects", side_effect=AssertionError("checked again")
+        ):
+            self.assertTrue(available())
+        next(objects.glob("*/*")).unlink()
+        self.assertFalse(available())
 
     def test_checkpoint_reuses_content_and_remains_independently_restorable_after_move(
         self,
