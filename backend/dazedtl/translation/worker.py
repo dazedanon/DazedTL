@@ -23,6 +23,26 @@ from dazedtl.translation.project import ProjectWorkspace, scope
 from dazedtl.translation.runner import Runner
 
 
+def every(seconds, check):
+    """``check`` at most once per ``seconds``; once true it stays true.
+
+    Backups ask whether to stop for every file and block they read, and on
+    Windows each answer lists every running process to find the app.
+    """
+    last, answer = -seconds, False
+
+    def checked():
+        nonlocal last, answer
+        now = time.monotonic()
+        if not answer and now - last >= seconds:
+            # Set first, so the backup's other threads skip this round.
+            last = now
+            answer = bool(check())
+        return answer
+
+    return checked
+
+
 def run(workspace, identity, owner_pid, owner_token):
     store = RunStore(
         workspace, owner_alive=lambda: alive(workspace, owner_pid, owner_token)
@@ -52,11 +72,12 @@ def run_locked(workspace, identity, store):
                     verify_evidence(plan["source"], plan["evidence"])
                 last_update = 0.0
                 progressed = watch_action(plan["action"])
+                stopped = every(0.2, lambda: store.stopped(identity))
 
                 def update(message):
                     nonlocal last_update
                     progressed()
-                    if store.stopped(identity):
+                    if stopped():
                         raise InterruptedError(
                             "Stopped at an operation checkpoint; completed writes and backups were retained."
                         )
@@ -71,7 +92,7 @@ def run_locked(workspace, identity, store):
                         workspace,
                         job,
                         plan,
-                        lambda: store.stopped(identity),
+                        stopped,
                         update,
                     )
                 finally:
