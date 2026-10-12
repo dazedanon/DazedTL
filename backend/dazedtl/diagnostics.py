@@ -178,20 +178,35 @@ class Diagnostics:
             handler.close()
 
 
+def _worker_diagnostics():
+    """The app's diagnostics, from a worker it started; None outside the app."""
+    directory = os.environ.get(FOLDER)
+    if not directory:
+        return None
+    from dazedtl.compatibility.runtime import ENGINE_ROOT
+
+    return Diagnostics(
+        directory, Path(__file__).resolve().parents[2], ENGINE_ROOT, rotate=False
+    )
+
+
+def worker_failure(error, operation):
+    """Records where a worker's unexpected error happened, as the backend
+    records its own; the worker's job keeps only a generic message."""
+    diagnostics = _worker_diagnostics()
+    if diagnostics:
+        diagnostics.failure(error, operation)
+
+
 def watch_action(action):
     """Watches a worker's action from the calling thread, recording in the
     app's diagnostics when it goes quiet and when it moves on again.
 
     Returns the action's progress callback; outside the app it does nothing.
     """
-    directory = os.environ.get(FOLDER)
-    if not directory:
+    diagnostics = _worker_diagnostics()
+    if not diagnostics:
         return lambda: None
-    from dazedtl.compatibility.runtime import ENGINE_ROOT
-
-    diagnostics = Diagnostics(
-        directory, Path(__file__).resolve().parents[2], ENGINE_ROOT, rotate=False
-    )
     watchdog = Watchdog(
         PROGRESS_STALL_SECONDS,
         lambda state, label, seconds, frame: diagnostics.hang(

@@ -554,10 +554,17 @@ class TranslationEngine:
                         raise ValueError(f"{purpose}: {blob} ended early.")
                     yield blob, raw
 
-    def error_message(self, error):
+    def expected(self, error):
+        """Whether an error's own message says what to fix; any other error
+        is a fault the user can only report."""
         from util.version_update import GitWorkflowError
 
-        if isinstance(error, (ValueError, OSError, GitWorkflowError, ProviderFailure)):
+        return isinstance(
+            error, (ValueError, OSError, GitWorkflowError, ProviderFailure)
+        )
+
+    def error_message(self, error):
+        if self.expected(error):
             return str(error)
         return (
             "Operation failed ("
