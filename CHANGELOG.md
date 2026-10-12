@@ -3,6 +3,17 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.10.0] - 2026-10-12
+
+### Added
+
+- **Settings:** a new Notifications tab plays a sound, shows a desktop notification, or both, when a translation or other long step finishes, when work waits for your approval, and when your assistant hands back a task or needs you. Choose your own sound file or keep the built-in chime.
+
+### Fixed
+
+- **Translate:** a Batch estimate for a very large game, such as one with about 1,000 maps, no longer stops with "Choose a regular JSON file within the supported size limit."
+- **Translate:** the app responds faster while a very large Batch run is shown, for example during its cost review.
+
 ## [2.9.1] - 2026-10-12
 
 ### Added
@@ -399,6 +410,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.10.0]: https://github.com/dazedanon/DazedTL/compare/v2.9.1...v2.10.0
 [2.9.1]: https://github.com/dazedanon/DazedTL/compare/v2.9.0...v2.9.1
 [2.9.0]: https://github.com/dazedanon/DazedTL/compare/v2.8.2...v2.9.0
 [2.8.2]: https://github.com/dazedanon/DazedTL/compare/v2.8.1...v2.8.2
