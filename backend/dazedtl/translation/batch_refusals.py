@@ -53,6 +53,12 @@ def journal(root, batch_id):
     )
 
 
+def started(root, batch_id):
+    """Whether the Batch's clarification journal exists; it then holds the
+    Batch's responses, which need not be collected again."""
+    return journal(root, batch_id).exists()
+
+
 def load(path, batch_id, requests):
     """The saved journal, if it still belongs to this Batch and its requests."""
     # Records before version 2 held the params of every request in the Batch,
@@ -89,6 +95,13 @@ def advance(
     allow_submit=True,
     reserve=lambda _items: nullcontext(True),
 ):
+    """Clarifies the original Batch's refused requests in Batches of their own.
+
+    `responses` and `usage` are the original Batch's results; they may be None
+    once its journal has started, which keeps them. Every outcome carries the
+    Batch's responses and usage so far: the original ones while a
+    clarification is unfinished, merged with the clarified ones once all end.
+    """
     path = journal(root, batch_id)
     if path.exists():
         record = load(path, batch_id, requests)
@@ -143,11 +156,21 @@ def advance(
         }
         with commit():
             save(path, record)
+
+    def unfinished(**state):
+        return {
+            "ready": False,
+            **state,
+            "responses": record["original_responses"],
+            "usage": record["original_usage"],
+            "batches": record["batches"],
+        }
+
     for batch in record["batches"]:
         if batch["state"] in {"complete", "failed"}:
             continue
         if batch["state"] == "sending":
-            return {"ready": False, "uncertain": True, "batches": record["batches"]}
+            return unfinished(uncertain=True)
         if batch["state"] == "pending":
             if not allow_submit:
                 batch["state"] = "failed"
@@ -155,11 +178,7 @@ def advance(
                 continue
             with reserve(batch["items"]) as available:
                 if not available:
-                    return {
-                        "ready": False,
-                        "waiting_capacity": True,
-                        "batches": record["batches"],
-                    }
+                    return unfinished(waiting_capacity=True)
                 with commit():
                     batch["state"] = "sending"
                     save(path, record)
@@ -180,7 +199,7 @@ def advance(
                 # Retain returned IDs before releasing shared token capacity.
                 batch.update(id=result["id"], state="submitted")
                 save(path, record)
-            return {"ready": False, "batches": record["batches"]}
+            return unfinished()
         status = provider.status(batch["id"])
         batch.update(api_status=status["api_status"], counts=status.get("counts") or {})
         if not status["ended"]:
@@ -188,7 +207,7 @@ def advance(
             # clarification can wait for hours, so a poll that changes only
             # the provider's progress publishes just the summary.
             write_json(path.with_suffix(".summary.json"), summary(record))
-            return {"ready": False, "batches": record["batches"]}
+            return unfinished()
         save(path, record)
         mapping = {item["custom_id"]: item["key"] for item in batch["items"]}
         collect = (
@@ -199,7 +218,7 @@ def advance(
         part, errors, used = collect(batch["id"], mapping)
         matched = set(part) | {mapping[key] for key in errors if key in mapping}
         if set(part) - set(mapping.values()) or matched != set(mapping.values()):
-            return {"ready": False, "uncertain": True, "batches": record["batches"]}
+            return unfinished(uncertain=True)
         batch.update(state="complete", responses=part, usage=used)
         save(path, record)
     merged, total = (

@@ -5,6 +5,7 @@ import time
 
 from dazedtl.storage import write_json
 
+from .batch_refusals import advance, started
 from .files import digest, read_json
 from .refusals import (
     MESSAGE as REFUSAL_MESSAGE,
@@ -360,86 +361,22 @@ class Runner:
                     chunk["cancel_error"] = type(exc).__name__
                 chunk["cancel_requested"] = True
                 self.save()
-            status = self.provider.status(chunk["id"])
-            chunk.update(api_status=status["api_status"], counts=status["counts"])
-            if not status["ended"]:
-                self.save(
-                    "waiting",
-                    "Provider batch is still processing."
-                    if not cancel
-                    else "Cancellation requested. Waiting for the provider's final status and any completed results.",
-                )
-                return
-            if status["terminal_failure"]:
-                mapping = {
-                    item["custom_id"]: item["request"] for item in chunk["items"]
-                }
-                responses, errors, usage = self.provider.collect_terminal(
-                    chunk["id"], mapping
-                )
-                matched = set(responses) | {
-                    mapping[identity] for identity in errors if identity in mapping
-                }
-                if chunk.get("attached") and matched != set(mapping.values()):
-                    chunk["state"] = "unmatched"
-                    for item in chunk["items"]:
-                        if item["request"] not in matched:
-                            self.job["states"][item["request"]] = {
-                                "state": "uncertain",
-                                "message": "The attached terminal job did not verify this request ID.",
-                            }
-                    for identity, response in responses.items():
-                        self.accept(identity, response)
-                    self.save(
-                        "uncertain",
-                        "Verify the attached provider job before preparing any retry.",
-                    )
-                    return
-                for identity, response in responses.items():
-                    self.accept(identity, response)
-                for item in chunk["items"]:
-                    if self.job["states"][item["request"]]["state"] != "accepted":
-                        self.job["states"][item["request"]] = {
-                            "state": "failed",
-                            "message": "Provider job ended with "
-                            + status["api_status"]
-                            + ".",
-                        }
-                chunk.update(state="complete", usage=usage)
-                self.save(
-                    "failed",
-                    "The provider batch failed. Review remaining work before paying for a retry.",
-                )
-                return
-            mapping = {item["custom_id"]: item["request"] for item in chunk["items"]}
-            responses, errors, usage = self.provider.collect(chunk["id"], mapping)
-            known_errors = {
-                mapping[identity] for identity in errors if identity in mapping
-            }
-            unmatched = set(mapping.values()) - set(responses) - known_errors
-            if unmatched:
-                for identity in unmatched:
-                    if self.job["states"][identity]["state"] != "accepted":
-                        self.job["states"][identity] = {
-                            "state": "uncertain",
-                            "message": "The provider results did not identify this request. Reconcile the job; do not resubmit it.",
-                        }
-                for identity, response in responses.items():
-                    if identity in mapping.values():
-                        self.accept(identity, response)
-                chunk["state"] = "unmatched"
-                self.save(
-                    "uncertain",
-                    "Returned request IDs are incomplete or belong to another job. Attach the matching job before proceeding.",
-                )
-                return
-            if (
+            clarifying = (
                 self.plan["configuration"].get("refusalRetry") == REFUSAL_POLICY
                 and not cancel
-            ):
+            )
+            if clarifying and started(self.folder, chunk["id"]):
+                # The clarification journal holds this job's responses, and a
+                # clarification can wait for hours, so a poll does not
+                # download the job's whole output again.
+                responses = usage = None
+            else:
+                collected = self.collect(chunk, cancel)
+                if collected is None:
+                    return
+                responses, usage = collected
+            if clarifying:
                 from contextlib import contextmanager
-
-                from .batch_refusals import advance
 
                 @contextmanager
                 def retry_commit():
@@ -465,6 +402,7 @@ class Runner:
                     commit=retry_commit,
                 )
                 chunk["clarification_batches"] = retried["batches"]
+                responses, usage = retried["responses"], retried["usage"]
                 if not retried["ready"]:
                     usage_keys = set(usage).union(
                         *(batch.get("usage", {}) for batch in retried["batches"])
@@ -477,9 +415,9 @@ class Runner:
                         )
                         for key in usage_keys
                     }
-                    # Every poll until the clarification ends collects the
-                    # original job again; only responses still queued are new,
-                    # and the final pass below accepts every response again.
+                    # The first poll accepts the original responses; only those
+                    # an interruption left queued are new later, and the final
+                    # pass below accepts every response again.
                     for identity, response in responses.items():
                         state = self.job["states"][identity]["state"]
                         if state == "queued" and not refused(
@@ -494,7 +432,8 @@ class Runner:
                         else "Waiting for the Batch clarification of refused requests.",
                     )
                     return
-                responses, usage = retried["responses"], retried["usage"]
+            # Only a started clarification leaves the provider job uncollected.
+            assert responses is not None and usage is not None
             for item in chunk["items"]:
                 identity = item["request"]
                 if identity in responses:
@@ -517,6 +456,80 @@ class Runner:
                 )
                 return
         self.finish()
+
+    def collect(self, chunk, cancel):
+        """The ended provider job's responses and usage, or None when this
+        pass ends with the job still processing, failed or unmatched."""
+        status = self.provider.status(chunk["id"])
+        chunk.update(api_status=status["api_status"], counts=status["counts"])
+        if not status["ended"]:
+            self.save(
+                "waiting",
+                "Provider batch is still processing."
+                if not cancel
+                else "Cancellation requested. Waiting for the provider's final status and any completed results.",
+            )
+            return None
+        if status["terminal_failure"]:
+            mapping = {item["custom_id"]: item["request"] for item in chunk["items"]}
+            responses, errors, usage = self.provider.collect_terminal(
+                chunk["id"], mapping
+            )
+            matched = set(responses) | {
+                mapping[identity] for identity in errors if identity in mapping
+            }
+            if chunk.get("attached") and matched != set(mapping.values()):
+                chunk["state"] = "unmatched"
+                for item in chunk["items"]:
+                    if item["request"] not in matched:
+                        self.job["states"][item["request"]] = {
+                            "state": "uncertain",
+                            "message": "The attached terminal job did not verify this request ID.",
+                        }
+                for identity, response in responses.items():
+                    self.accept(identity, response)
+                self.save(
+                    "uncertain",
+                    "Verify the attached provider job before preparing any retry.",
+                )
+                return None
+            for identity, response in responses.items():
+                self.accept(identity, response)
+            for item in chunk["items"]:
+                if self.job["states"][item["request"]]["state"] != "accepted":
+                    self.job["states"][item["request"]] = {
+                        "state": "failed",
+                        "message": "Provider job ended with "
+                        + status["api_status"]
+                        + ".",
+                    }
+            chunk.update(state="complete", usage=usage)
+            self.save(
+                "failed",
+                "The provider batch failed. Review remaining work before paying for a retry.",
+            )
+            return None
+        mapping = {item["custom_id"]: item["request"] for item in chunk["items"]}
+        responses, errors, usage = self.provider.collect(chunk["id"], mapping)
+        known_errors = {mapping[identity] for identity in errors if identity in mapping}
+        unmatched = set(mapping.values()) - set(responses) - known_errors
+        if unmatched:
+            for identity in unmatched:
+                if self.job["states"][identity]["state"] != "accepted":
+                    self.job["states"][identity] = {
+                        "state": "uncertain",
+                        "message": "The provider results did not identify this request. Reconcile the job; do not resubmit it.",
+                    }
+            for identity, response in responses.items():
+                if identity in mapping.values():
+                    self.accept(identity, response)
+            chunk["state"] = "unmatched"
+            self.save(
+                "uncertain",
+                "Returned request IDs are incomplete or belong to another job. Attach the matching job before proceeding.",
+            )
+            return None
+        return responses, usage
 
     def finish(self):
         states = {row["state"] for row in self.job["states"].values()}

@@ -128,6 +128,7 @@ The clarification identifies the existing fictional source and the owner's adult
 Live retains both attempts and their usage; Batch submits only refused rows through the same Batch provider and retains successful originals.
 The [retry journal](../backend/dazedtl/translation/batch_refusals.py) records intent before submission and saves returned job IDs before polling, including across restarts.
 It keeps the original Batch's responses and the clarified payloads it sends; the original payloads stay with the run.
+A clarification can wait for hours, so its polls read this small journal instead of downloading the original output again.
 The guided adapter waits before native consume, while the background monitor can finish the same authorized retry after interruption.
 Uncertain submissions are never retried automatically, and repeated refusals remain untranslated.
 Original payloads and responses remain available beside the clarification evidence.

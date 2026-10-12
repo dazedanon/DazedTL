@@ -590,6 +590,8 @@ class TranslationTests(unittest.TestCase):
     ):
         # A Batch refusal must not become a Live call, resend successful rows,
         # or reset its retry allowance when polling resumes in another worker.
+        # Its journal keeps the original responses, so an interruption before
+        # their acceptance loses none and the original job is collected once.
         from dazedtl.translation.refusals import CLARIFICATION, POLICY
 
         refusal = {
@@ -612,12 +614,15 @@ class TranslationTests(unittest.TestCase):
             job["plan_sha256"] = digest(plan)
             self.store.save(job)
 
+            collected = []
+
             class Provider(BatchProvider):
                 def submit(self, items):
                     super().submit(items)
                     return {"id": "original" if self.calls == 1 else "clarification"}
 
                 def collect(self, identity, mapping):
+                    collected.append(identity)
                     return (
                         {
                             key: (
@@ -645,19 +650,34 @@ class TranslationTests(unittest.TestCase):
 
             provider = Provider()
             provider.ended = True
-            Runner(self.store, job["id"], provider, lambda: None).step()
-            current, _ = self.store.load(job["id"])
-            self.assertEqual(current["status"], "waiting")
-            self.assertEqual(current["states"]["good"]["state"], "accepted")
+            accept = Runner.accept
+
+            def interrupted(runner, identity, response):
+                if identity == "good":
+                    raise KeyboardInterrupt
+                accept(runner, identity, response)
+
+            with (
+                patch.object(Runner, "accept", interrupted),
+                self.assertRaises(KeyboardInterrupt),
+            ):
+                Runner(self.store, job["id"], provider, lambda: None).step()
             self.assertEqual(len(provider.items), 1)
             self.assertEqual(
                 provider.items[0]["params"]["messages"],
                 [{"role": "user", "content": CLARIFICATION}],
             )
+            provider.ended = False
+            Runner(self.store, job["id"], provider, lambda: None).step()
+            current, _ = self.store.load(job["id"])
+            self.assertEqual(current["status"], "waiting")
+            self.assertEqual(current["states"]["good"]["state"], "accepted")
+            provider.ended = True
             Runner(self.store, job["id"], provider, lambda: None).step()
             Runner(self.store, job["id"], provider, lambda: None).step()
             current, frozen = self.store.load(job["id"])
             self.assertEqual(provider.calls, 2)
+            self.assertEqual(collected, ["original", "clarification"])
             self.assertEqual(frozen, plan)
             self.assertEqual(
                 current["states"]["refused"]["state"],
@@ -728,7 +748,7 @@ class TranslationTests(unittest.TestCase):
                 waiting = advance(
                     self.root, "original", requests, None, None, Provider()
                 )
-                self.assertFalse(waiting["ready"])
+                self.assertEqual(waiting["responses"], responses)
                 for other in (changed, {"good": requests["good"]}):
                     with self.assertRaises(ValueError):
                         advance(self.root, "original", other, None, None, Provider())
