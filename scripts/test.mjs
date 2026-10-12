@@ -47,7 +47,12 @@ for (const [command, args] of commands) {
   }
   const result = spawnSync(command, args, {
     cwd: root,
-    env: { ...process.env, NODE_OPTIONS: "" },
+    env: {
+      ...process.env,
+      NODE_OPTIONS: "",
+      // Python prints where it waits just before this deadline stops it.
+      DAZEDTL_TEST_DEADLINE: String(Date.now() + remaining),
+    },
     stdio: "inherit",
     timeout: remaining,
     killSignal: "SIGKILL",

@@ -39,6 +39,7 @@ Run the full behavior suite with `node scripts/test.mjs` (or `npm test` from `ap
 It uses the local Python environment and Node's built-in test runner, with one enforced wall-clock budget including startup, fixtures, and teardown.
 The budget is 10 seconds; `DAZEDTL_TEST_BUDGET` sets another in seconds, which [CI](#live-test) does for its slower runners.
 The runner reports the five slowest Python tests to make runtime regressions visible.
+If Python is still running a second before the budget ends, it prints every thread's stack, which names the test and line it waits on.
 Tests use temporary workspaces and controlled API responses; no provider, game folder or credentials are needed.
 
 For focused iteration, use `.venv/bin/python -I -B -m unittest discover -s tests -t . -p test_projects.py` or `node --test --test-isolation=none tests/application.test.ts` from the root.

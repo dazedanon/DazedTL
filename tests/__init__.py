@@ -1,7 +1,10 @@
 """Tests import only this checkout's backend, never a user's engine workspace."""
 
+import faulthandler
+import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -11,6 +14,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 # Windows may name the temporary folder by its 8.3 short name, such as
 # RUNNER~1, while the app resolves the game folders it opens to long names.
 tempfile.tempdir = str(Path(tempfile.gettempdir()).resolve())
+# A suite stopped at its runtime budget (scripts/test.mjs) first shows the
+# test and line every thread waits on.
+if deadline := os.environ.get("DAZEDTL_TEST_DEADLINE"):
+    faulthandler.dump_traceback_later(max(0.1, int(deadline) / 1000 - time.time() - 1))
 
 
 def load_tests(loader, tests, pattern):
