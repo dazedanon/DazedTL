@@ -879,7 +879,11 @@ PROTECTED = [
             ("*", "**/*[code=320]/**"),
             ("*", "**/*[code=324]/**"),
             ("*", "**/*[code=325]/**"),
-            ("database:*", "*/name"),
+            # Animation and tileset names are editor labels, set aside above.
+            *(
+                (f"database:{name}", "*/name")
+                for name in sorted(_DATABASE - {"Animations", "Tilesets"})
+            ),
             ("database:*", "*/description"),
             ("database:*", "*/message*"),
             ("database:*", "*/nickname"),

@@ -106,6 +106,7 @@ GAME = {
         ],
     },
     "www/data/System.json": {"gameTitle": "森の村", "switches": ["", "フラグ"]},
+    "www/data/Animations.json": [None, {"name": "爆発"}],
 }
 
 
@@ -219,6 +220,8 @@ class CensusTests(unittest.TestCase):
                 ("**/*[code=101]/parameters/0", "asset_name"),
                 ("events/*/name", "identifier"),
                 ("switches/*", "identifier"),
+                # Editor labels, though other database names are player text.
+                ("*/name", "identifier"),
             },
         )
         fields = {**census.fields(result), "json": {"*/text"}}
