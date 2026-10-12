@@ -103,7 +103,7 @@ export function setupView(w: GuidedWorkspace): TaskView {
         </Button>
       </>
     ) : (
-      "A copy you can restore, kept inside this game’s folder."
+      "An untouched copy you can restore. Later steps read the original text from it."
     );
 
   const ace = stepStatus("ace_extract", !aceNeedsExport);
