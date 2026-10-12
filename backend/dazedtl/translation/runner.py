@@ -474,8 +474,12 @@ class Runner:
                         )
                         for key in usage_keys
                     }
+                    # Every poll until the clarification ends collects the
+                    # original job again; only responses still queued are new,
+                    # and the final pass below accepts every response again.
                     for identity, response in responses.items():
-                        if not refused(
+                        state = self.job["states"][identity]["state"]
+                        if state == "queued" and not refused(
                             response, self.requests[identity]["sources"].values()
                         ):
                             self.accept(identity, response)
