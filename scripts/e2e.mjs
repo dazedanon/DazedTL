@@ -676,6 +676,13 @@ async function translateTask(page, task, check) {
   await page.click("Apply reviewed files");
   await page.waitText("Saved translations applied.");
   await until(`${task} to reach the game files`, check);
+  // Apply's own follow-up work runs on after the files change, and the app
+  // refuses the next action until it ends.
+  await until(
+    `${task} to finish`,
+    async () => !(await page.call("workspace_snapshot")).application.running,
+    5 * 60_000,
+  );
 }
 
 // --------------------------------------------------------------------- main
