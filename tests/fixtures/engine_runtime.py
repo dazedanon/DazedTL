@@ -226,6 +226,7 @@ try:
         from dazedtl.settings.preferences import (
             BATTLE_MESSAGE_USERS,
             CHOICE_COLLECTION,
+            PAGE_PACKING,
             SAME_LINE_SPEAKERS,
             SPEAKER_CONTEXT,
         )
@@ -424,6 +425,96 @@ try:
                     menus.clear()
                     parse([command(401, ["こんにちは"]), menu])
                     assert len(menus) == visits, (generation, menus)
+            # Small event pages of a file share one labelled request; a page
+            # of more than 10 entries keeps its own, so no other scene bleeds
+            # into a conversation. Choice menus travel with their page in
+            # play order. A reply of the wrong length writes nothing of it.
+            sent = []
+
+            def answer(text, history, *_args):
+                sent.append((list(text), history))
+                packed = isinstance(history, dict) and history["instructions"][
+                    0
+                ].startswith(parser.PACKED_PAGES)
+                short = packed and sent_mode == "short"
+                return [[f"EN {line}" for line in text][: len(text) - short], [0, 0]]
+
+            def box(text):
+                return [name(""), command(401, [text])]
+
+            def choice_menu(*labels):
+                return command(102, [list(labels), 1, 0, 2, 0])
+
+            def event(identity, *commands):
+                return {"id": identity, "list": [*commands, command(0, [])]}
+
+            def common_events():
+                talk = [line for n in range(11) for line in box(f"話{n}")]
+                return [
+                    None,
+                    event(1, *box("やあ")),
+                    event(2, *box("看板"), choice_menu("はい", "いいえ")),
+                    event(3, *talk[:10], choice_menu("行く", "残る"), *talk[10:]),
+                    event(4, *box("さようなら")),
+                ]
+
+            talk = [f"話{n}" for n in range(11)]
+            expected = [
+                (
+                    [*talk[:5], "行く", "残る", *talk[5:]],
+                    {
+                        "instructions": [
+                            parser.PAGE_MENUS + "\n- choice menu at lines 6-7"
+                        ],
+                        "source_items": [],
+                    },
+                ),
+                (
+                    ["やあ", "看板", "はい", "いいえ", "さようなら"],
+                    {
+                        "instructions": [
+                            parser.PACKED_PAGES
+                            + "\n- common event 1: line 1"
+                            + "\n- common event 2: lines 2-4, choice menu at lines 3-4"
+                            + "\n- common event 4: line 5"
+                        ],
+                        "source_items": [],
+                    },
+                ),
+            ]
+            with patch.multiple(
+                parser, CODE102=True, translateAI=extensions.point(answer)
+            ):
+                for generation, sent_mode, calls_made in (
+                    ({**policy, "pagePacking": PAGE_PACKING}, "", 2),
+                    ({**policy, "pagePacking": PAGE_PACKING}, "short", 2),
+                    (policy, "", 6),
+                ):
+                    configure_states({"engine": "MVMZ"}, temporary, generation)
+                    sent.clear()
+                    data, _tokens, error = parser.parseCommonEvents(
+                        common_events(), "CommonEvents.json"
+                    )
+                    assert error is None and len(sent) == calls_made, sent
+                    if calls_made == 2:
+                        assert sent == expected, sent
+                    packed = sent_mode != "short"
+                    assert data[1]["list"][1]["parameters"][0].startswith(
+                        "EN" if packed else "やあ"
+                    ), data[1]
+                    assert data[2]["list"][2]["parameters"][0] == (
+                        ["EN はい", "EN いいえ"] if packed else ["はい", "いいえ"]
+                    ), data[2]
+                    assert data[3]["list"][1]["parameters"][0].startswith("EN"), data[3]
+                    assert data[3]["list"][10]["parameters"][0] == [
+                        "EN 行く",
+                        "EN 残る",
+                    ]
+                    assert data[4]["list"][1]["parameters"][0].startswith(
+                        "EN" if packed else "さようなら"
+                    ), data[4]
+            configure_states({"engine": "MVMZ"}, temporary, policy)
+
             # Pass state belongs to each call and thread; a parse error restores it.
             configure_states({"engine": "MVMZ"}, temporary, policy)
             entered, release = threading.Event(), threading.Event()

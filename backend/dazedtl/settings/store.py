@@ -456,6 +456,7 @@ class Settings:
             "choiceCollection": preferences.CHOICE_COLLECTION,
             "speakerContext": preferences.SPEAKER_CONTEXT,
             "sameLineSpeakers": preferences.SAME_LINE_SPEAKERS,
+            "pagePacking": preferences.PAGE_PACKING,
             "battleMessageUsers": preferences.BATTLE_MESSAGE_USERS,
         }
 
@@ -1076,6 +1077,7 @@ class Settings:
                 "choiceCollection": preferences.CHOICE_COLLECTION,
                 "speakerContext": preferences.SPEAKER_CONTEXT,
                 "sameLineSpeakers": preferences.SAME_LINE_SPEAKERS,
+                "pagePacking": preferences.PAGE_PACKING,
                 "battleMessageUsers": preferences.BATTLE_MESSAGE_USERS,
                 "entriesPerRequest": entries,
                 "inputRate": input_rate,

@@ -159,6 +159,11 @@ New MV/MZ runs also freeze a battle-message-users policy, the database parser's 
 A skill granted any other way, such as by a plugin, has no users, and its battler stays gender neutral, as does a state message's, whose subject is whichever battler has the state.
 Its second version also reads the party: when System's starting party and every actor a Change Party Member command or an `addActor` script adds come to one named actor, that actor uses every skill no enemy uses, other actors are left out of the notes, and a state's message1, which shows when a party member gains the state, names that actor; an `addActor` whose actor is not a number leaves the party unknown.
 Runs frozen with the first version keep its requests.
+New MV/MZ runs also freeze a page-packing policy, the event parser's `PAGE_PACKING`: in maps, common events and troops, a page of at most `SHARED_PAGE_ENTRIES` (10) message boxes and choices shares a request with the file's other short pages, each labelled with its event and page, because each request otherwise repeats the full system prompt.
+A longer page keeps a request of its own, so no other scene's speakers or subjects bleed into a conversation, and its choice menus join that request in play order when the page fits one request; the parser's other lists keep their requests.
+A packed reply of the wrong length writes none of its pages, which stay untranslated for a retry.
+On a 970-map game this cut a Maps & events estimate from 4,089 to 2,173 requests and from 23.5 to 14.0 million input tokens.
+Assistant-led organize applies the same 10-line rule to API requests (`SHARED_LINES` in [organize.py](../backend/dazedtl/translation/organize.py)).
 Estimates, Live and Batch use these policies; older frozen runs retain their original parser and request identities.
 
 ### Batch execution and recovery

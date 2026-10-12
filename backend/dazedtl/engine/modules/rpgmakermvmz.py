@@ -8,6 +8,7 @@ import threading
 import time
 import traceback
 import copy
+from contextlib import contextmanager
 from pathlib import Path
 import shutil
 from colorama import Fore
@@ -1203,6 +1204,73 @@ def _apply_choice_original(cmd, index: int, raw_source: str) -> None:
         orig_list[index] = raw_source
 
 
+def _choice_job(cmd):
+    """A code 102 command's choices that need translation, with their
+    positions, plugin condition clauses and sources for writing them back."""
+    job = {"choices": [], "indexes": [], "conditions": [], "sources": []}
+    for choice in range(len(cmd["parameters"][0])):
+        rawSource = _choice_source(cmd, choice)
+        currentChoice = _choice_current(cmd, choice)
+        jaString = rawSource.replace(" 。", ".")
+
+        # Avoid Empty Strings
+        if not jaString.strip():
+            continue
+
+        if not _text_needs_translation(currentChoice):
+            continue
+
+        # Preserve plugin condition clauses outside the model.
+        conditionPrefix, jaString = _split_choice_condition_prefix(jaString)
+        jaString, conditionSuffix = _split_choice_condition_suffix(jaString)
+
+        job["conditions"].append((conditionPrefix, conditionSuffix))
+        job["choices"].append(jaString)
+        job["indexes"].append(choice)
+        job["sources"].append(rawSource)
+    return job
+
+
+def _translate_choices(job, history):
+    """A choice menu's own request, with the page's earlier lines as context."""
+    if len(history) > 0:
+        return translateAI(
+            job["choices"],
+            {
+                "instructions": [ctx("events.choice")],
+                "source_items": history,
+            },
+            True,
+        )
+    return translateAI(job["choices"], ctx("events.choice"))
+
+
+def _apply_choices(cmd, job, translated, filename):
+    """Writes a menu's translations back with their condition clauses."""
+    if len(translated) != len(job["choices"]):
+        if filename not in MISMATCH:
+            MISMATCH.append(filename)
+        return
+    for idx, translatedText in enumerate(translated):
+        originalIndex = job["indexes"][idx]
+
+        # Apply formatting
+        conditionPrefix, conditionSuffix = job["conditions"][idx]
+        if translatedText != "":
+            translatedText = (
+                conditionPrefix
+                + translatedText[0].upper()
+                + translatedText[1:]
+                + conditionSuffix
+            )
+        else:
+            translatedText = conditionPrefix + translatedText + conditionSuffix
+
+        # Set the translation back to the original position
+        cmd["parameters"][0][originalIndex] = translatedText
+        _apply_choice_original(cmd, originalIndex, job["sources"][idx])
+
+
 def _choice_condition_end(text: str, start: int) -> int | None:
     """Return the end of a balanced lowercase ``if(...)``/``en(...)`` clause."""
     if not isinstance(text, str) or not text.startswith(("if(", "en("), start):
@@ -1906,45 +1974,85 @@ def parseMap(data, filename):
         lbTokens = translateLBNames(events)
         totalTokens[0] += lbTokens[0]
         totalTokens[1] += lbTokens[1]
-        
-        for event in events:
-            if event is not None:
-                # Normalize note to a safe string
-                note_val = event.get("note") or ""
-                if not isinstance(note_val, str):
-                    note_val = str(note_val) if note_val is not None else ""
 
-                # This translates ID of events. (May break the game)
-                if "<namePop:" in note_val:
-                    tok = translateNoteOmitSpace(event, r"<namePop:\s?([\w一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]+)")
-                    if tok and isinstance(tok, (list, tuple)):
-                        totalTokens[0] += tok[0]
-                        totalTokens[1] += tok[1]
-                if "<LB:" in note_val:
-                    tok = translateNoteOmitSpace(event, r"<LB:(.*?)\s?>.*")
-                    if tok and isinstance(tok, (list, tuple)):
-                        totalTokens[0] += tok[0]
-                        totalTokens[1] += tok[1]
-                if "<dn:" in note_val:
-                    tok = translateNoteOmitSpace(event, r"<dn:\s*(.*)>.*")
-                    if tok and isinstance(tok, (list, tuple)):
-                        totalTokens[0] += tok[0]
-                        totalTokens[1] += tok[1]
-
-                for page in event["pages"]:
-                    if page is not None:
-                        totalTokensPage = [0, 0]
-                        try:
-                            totalTokensPage = searchCodes(page, pbar, [], filename)
-                            totalTokens[0] += totalTokensPage[0]
-                            totalTokens[1] += totalTokensPage[1]
-                        except Exception as e:
-                            traceback.print_exc()
-                            return [data, totalTokens, e]
-                        finally:
-                            # Persist progress only if this page produced tokens
-                            checkSave(data, filename, totalTokensPage)
+        with _packed_pages() as packer:
+            failed = _parse_event_pages(
+                data,
+                filename,
+                pbar,
+                packer,
+                totalTokens,
+                _map_pages(events, totalTokens),
+            )
+            if failed:
+                return failed
     return [data, totalTokens, None]
+
+
+def _map_pages(events, totalTokens):
+    """A map's event pages with their labels, after each event's notes."""
+    for event in events:
+        if event is not None:
+            # Normalize note to a safe string
+            note_val = event.get("note") or ""
+            if not isinstance(note_val, str):
+                note_val = str(note_val) if note_val is not None else ""
+
+            # This translates ID of events. (May break the game)
+            if "<namePop:" in note_val:
+                tok = translateNoteOmitSpace(event, r"<namePop:\s?([\w一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]+)")
+                if tok and isinstance(tok, (list, tuple)):
+                    totalTokens[0] += tok[0]
+                    totalTokens[1] += tok[1]
+            if "<LB:" in note_val:
+                tok = translateNoteOmitSpace(event, r"<LB:(.*?)\s?>.*")
+                if tok and isinstance(tok, (list, tuple)):
+                    totalTokens[0] += tok[0]
+                    totalTokens[1] += tok[1]
+            if "<dn:" in note_val:
+                tok = translateNoteOmitSpace(event, r"<dn:\s*(.*)>.*")
+                if tok and isinstance(tok, (list, tuple)):
+                    totalTokens[0] += tok[0]
+                    totalTokens[1] += tok[1]
+
+            for number, page in enumerate(event["pages"], 1):
+                if page is not None:
+                    yield page, f"event {event.get('id')}, page {number}"
+
+
+def _parse_event_pages(data, filename, pbar, packer, totalTokens, pages):
+    """Translates (page, label) pairs in order, small ones packed together
+    when packer is set; None, or the [data, tokens, error] that ended it."""
+    for page, label in pages:
+        totalTokensPage = [0, 0]
+        try:
+            if packer is not None:
+                packer.label = label
+            totalTokensPage = searchCodes(page, pbar, [], filename)
+            if packer is not None:
+                sent = packer.settle()
+                totalTokensPage = [totalTokensPage[0] + sent[0], totalTokensPage[1] + sent[1]]
+            totalTokens[0] += totalTokensPage[0]
+            totalTokens[1] += totalTokensPage[1]
+        except Exception as e:
+            traceback.print_exc()
+            return [data, totalTokens, e]
+        finally:
+            # Persist progress only if this page produced tokens
+            checkSave(data, filename, totalTokensPage)
+    if packer is None:
+        return None
+    sent = [0, 0]
+    try:
+        sent = packer.flush()
+        totalTokens[0] += sent[0]
+        totalTokens[1] += sent[1]
+    except Exception as e:
+        traceback.print_exc()
+        return [data, totalTokens, e]
+    finally:
+        checkSave(data, filename, sent)
+    return None
 
 
 def _normalize_sg_desc(text: str) -> str:
@@ -2103,19 +2211,21 @@ def parseCommonEvents(data, filename):
 
     with tqdm(total=totalLines, bar_format=BAR_FORMAT, position=POSITION, leave=LEAVE, desc=filename) as pbar:
         PBAR = pbar
-        for page in data:
-            if page is not None:
-                totalTokensPage = [0, 0]
-                try:
-                    totalTokensPage = searchCodes(page, pbar, [], filename)
-                    totalTokens[0] += totalTokensPage[0]
-                    totalTokens[1] += totalTokensPage[1]
-                except Exception as e:
-                    traceback.print_exc()
-                    return [data, totalTokens, e]
-                finally:
-                    # Persist progress only if this page produced tokens
-                    checkSave(data, filename, totalTokensPage)
+        with _packed_pages() as packer:
+            failed = _parse_event_pages(
+                data,
+                filename,
+                pbar,
+                packer,
+                totalTokens,
+                (
+                    (page, f"common event {page.get('id')}")
+                    for page in data
+                    if page is not None
+                ),
+            )
+            if failed:
+                return failed
     return [data, totalTokens, None]
 
 
@@ -2169,21 +2279,23 @@ def parseTroops(data, filename):
 
     with tqdm(total=totalLines, bar_format=BAR_FORMAT, position=POSITION, leave=LEAVE, desc=filename) as pbar:
         PBAR = pbar
-        for troop in data:
-            if troop is not None:
-                for page in troop["pages"]:
-                    if page is not None:
-                        totalTokensPage = [0, 0]
-                        try:
-                            totalTokensPage = searchCodes(page, pbar, [], filename)
-                            totalTokens[0] += totalTokensPage[0]
-                            totalTokens[1] += totalTokensPage[1]
-                        except Exception as e:
-                            traceback.print_exc()
-                            return [data, totalTokens, e]
-                        finally:
-                            # Persist progress only if this page produced tokens
-                            checkSave(data, filename, totalTokensPage)
+        with _packed_pages() as packer:
+            failed = _parse_event_pages(
+                data,
+                filename,
+                pbar,
+                packer,
+                totalTokens,
+                (
+                    (page, f"troop {troop.get('id')}, page {number}")
+                    for troop in data
+                    if troop is not None
+                    for number, page in enumerate(troop["pages"], 1)
+                    if page is not None
+                ),
+            )
+            if failed:
+                return failed
     return [data, totalTokens, None]
 
 
@@ -3277,6 +3389,159 @@ def _message_end(commands, start, allowed):
 # them again. Older runs keep the native two-pass behavior.
 CHOICE_COLLECTION = False
 _EVENT_PASS = threading.local()
+# Set from the run's frozen request policy (pagePacking): event pages of one
+# file with at most SHARED_PAGE_ENTRIES message boxes and choices share a
+# request, each page labelled, instead of each costing a request of its own.
+# Longer pages keep their own requests, so no other scene bleeds into them.
+PAGE_PACKING = False
+SHARED_PAGE_ENTRIES = 10
+# Both notes ask for each line's own format: told only to keep pages'
+# speakers apart, a model wrote a packed request's names as [Name]: labels,
+# which pass 2 strips as nameplates.
+SAME_FORMAT = "Keep every line in the same format as its source line, including any name at its start."
+PACKED_PAGES = "These lines come from separate event pages; read each page as its own scene. " + SAME_FORMAT + " The pages:"
+PAGE_MENUS = "These lines are one event page in play order. " + SAME_FORMAT + " A choice menu's lines are its options:"
+_PAGE_PACKING = threading.local()
+
+
+def _line_span(first, last):
+    return f"line {first}" if first == last else f"lines {first}-{last}"
+
+
+def _page_lines(list401, choices):
+    """A page's dialogue and choice menus in play order, with each menu's
+    line span counted from 1."""
+    lines, menus, taken = [], [], 0
+    for _cmd, job, _history, position in choices:
+        lines += list401[taken:position]
+        taken = position
+        menus.append((len(lines) + 1, len(lines) + len(job["choices"])))
+        lines += job["choices"]
+    lines += list401[taken:]
+    return lines, menus
+
+
+def _menus_written(translated, list401, choices, filename):
+    """Writes a page's menus from a reply in _page_lines order and returns
+    its dialogue's translations, for pass 2."""
+    dialogue, cursor, taken = [], 0, 0
+    for cmd, job, _history, position in choices:
+        dialogue += translated[cursor : cursor + position - taken]
+        cursor += position - taken
+        taken = position
+        count = len(job["choices"])
+        _apply_choices(cmd, job, translated[cursor : cursor + count], filename)
+        cursor += count
+    return dialogue + translated[cursor:]
+
+
+def _reply_fits(translated, lines, filenames):
+    """A reply has one line per line sent and no chunk failed; otherwise the
+    files are marked, and nothing of it is written so it can be retried."""
+    if len(translated) == len(lines) and not getattr(
+        THREAD_CTX, "last_translation_had_mismatch", False
+    ):
+        return True
+    with LOCK:
+        for filename in filenames:
+            if filename not in MISMATCH:
+                MISMATCH.append(filename)
+    return False
+
+
+class _PagePacker:
+    """The small event pages of one file, waiting to share a request."""
+
+    def __init__(self):
+        self.limit = _request_size()
+        self.shared = min(SHARED_PAGE_ENTRIES, self.limit)
+        self.label = ""
+        self.jobs = []
+
+    def defer(self, page, pbar, filename, list401, choices, lists, snapshots):
+        self.jobs.append(
+            {
+                "page": page,
+                "pbar": pbar,
+                "filename": filename,
+                "label": self.label,
+                "list401": list401,
+                "choices": choices,
+                "lists": lists,
+                "snapshots": snapshots,
+                "entries": len(_page_lines(list401, choices)[0]),
+            }
+        )
+
+    def settle(self):
+        """Sends the waiting pages once the newest no longer fits with them."""
+        if len(self.jobs) > 1 and sum(job["entries"] for job in self.jobs) > self.limit:
+            newest = self.jobs.pop()
+            tokens = self.flush()
+            self.jobs = [newest]
+            return tokens
+        return [0, 0]
+
+    def flush(self):
+        """Translates the waiting pages in one request, then writes each back
+        as its own pass 2 would."""
+        jobs, self.jobs = self.jobs, []
+        if not jobs:
+            return [0, 0]
+        lines, notes, pages = [], [], []
+        for job in jobs:
+            page, menus = _page_lines(job["list401"], job["choices"])
+            first = len(lines) + 1
+            lines += page
+            pages.append(page)
+            notes.append(
+                f"- {job['label']}: {_line_span(first, len(lines))}"
+                + "".join(
+                    f", choice menu at {_line_span(first + start - 1, first + end - 1)}"
+                    for start, end in menus
+                )
+            )
+        response = translateAI(
+            lines,
+            {"instructions": [PACKED_PAGES + "\n" + "\n".join(notes)], "source_items": []},
+        )
+        tokens = [response[1][0], response[1][1]]
+        fits = _reply_fits(response[0], lines, [job["filename"] for job in jobs])
+        position = 0
+        for job, page in zip(jobs, pages):
+            list401TL = (
+                _menus_written(
+                    response[0][position : position + len(page)],
+                    job["list401"],
+                    job["choices"],
+                    job["filename"],
+                )
+                if fits
+                else []
+            )
+            position += len(page)
+            _apply_event_parameter_originals(job["snapshots"])
+            written = searchCodes(
+                job["page"], job["pbar"], [list401TL, *job["lists"]], job["filename"]
+            )
+            _apply_event_parameter_originals(job["snapshots"])
+            tokens[0] += written[0]
+            tokens[1] += written[1]
+        return tokens
+
+
+@contextmanager
+def _packed_pages():
+    """A packer for one file's event pages under PAGE_PACKING, else None."""
+    if not PAGE_PACKING or SPEAKER_PARSE_MODE or PREFLIGHT_COUNT_MODE:
+        yield None
+        return
+    previous = getattr(_PAGE_PACKING, "packer", None)
+    _PAGE_PACKING.packer = _PagePacker()
+    try:
+        yield _PAGE_PACKING.packer
+    finally:
+        _PAGE_PACKING.packer = previous
 
 
 def searchCodes(page, pbar, jobList, filename):
@@ -3313,6 +3578,10 @@ def _searchCodes(page, pbar, jobList, filename):
         list325 = []
         list657 = []
         setData = True
+    # Under PAGE_PACKING the file loop's packer may take this page's dialogue
+    # and choice menus at the end of pass 1, when the page is small.
+    packer = getattr(_PAGE_PACKING, "packer", None) if setData else None
+    pageChoices = []
     textHistory = []
     match = []
     totalTokens = [0, 0]
@@ -5215,75 +5484,18 @@ def _searchCodes(page, pbar, jobList, filename):
 
             ### Event Code: 102 Show Choice
             if "code" in codeList[i] and codeList[i]["code"] == 102 and CODE102 is True:
-                choiceList = []
-                conditionList = []
-                choiceIndexMap = []  # Track which original indices we're processing
-                choiceSourceList = []
-                
-                # Process each string in the parameters list
-                for choice in range(len(codeList[i]["parameters"][0])):
-                    rawSource = _choice_source(codeList[i], choice)
-                    currentChoice = _choice_current(codeList[i], choice)
-                    jaString = rawSource.replace(" 。", ".")
-
-                    # Avoid Empty Strings
-                    if not jaString.strip():
-                        continue
-
-                    if not _text_needs_translation(currentChoice):
-                        continue
-
-                    # Preserve plugin condition clauses outside the model.
-                    conditionPrefix, jaString = _split_choice_condition_prefix(jaString)
-                    jaString, conditionSuffix = _split_choice_condition_suffix(jaString)
-                    
-                    # Store the formatting and cleaned string
-                    conditionList.append((conditionPrefix, conditionSuffix))
-                    choiceList.append(jaString)
-                    choiceIndexMap.append(choice)
-                    choiceSourceList.append(rawSource)
-
-                # Translate the list
-                if len(choiceList) > 0:
-                    if len(textHistory) > 0:
-                        response = translateAI(
-                            choiceList,
-                            {
-                                "instructions": [ctx("events.choice")],
-                                "source_items": textHistory,
-                            },
-                            True,
-                        )
-                    else:
-                        response = translateAI(choiceList, ctx("events.choice"))
-                    
-                    translatedTextList = response[0]
+                choiceJob = _choice_job(codeList[i])
+                if choiceJob["choices"] and packer is not None:
+                    # The page's size decides at its end whether the menu
+                    # joins a packed request or gets its own as before.
+                    pageChoices.append(
+                        (codeList[i], choiceJob, list(textHistory), len(list401))
+                    )
+                elif choiceJob["choices"]:
+                    response = _translate_choices(choiceJob, textHistory)
                     totalTokens[0] += response[1][0]
                     totalTokens[1] += response[1][1]
-
-                    # Check Mismatch and set translations
-                    if len(translatedTextList) == len(choiceList):
-                        for idx, translatedText in enumerate(translatedTextList):
-                            originalIndex = choiceIndexMap[idx]
-                            
-                            # Apply formatting
-                            conditionPrefix, conditionSuffix = conditionList[idx]
-                            if translatedText != "":
-                                translatedText = (
-                                    conditionPrefix
-                                    + translatedText[0].upper()
-                                    + translatedText[1:]
-                                    + conditionSuffix
-                                )
-                            else:
-                                translatedText = conditionPrefix + translatedText + conditionSuffix
-                            
-                            # Set the translation back to the original position
-                            codeList[i]["parameters"][0][originalIndex] = translatedText
-                            _apply_choice_original(codeList[i], originalIndex, choiceSourceList[idx])
-                    else:
-                        if filename not in MISMATCH:
-                            MISMATCH.append(filename)
+                    _apply_choices(codeList[i], choiceJob, response[0], filename)
 
             ### Event Code: 111 Script
             if "code" in codeList[i] and codeList[i]["code"] == 111 and CODE111 is True:
@@ -5444,8 +5656,45 @@ def _searchCodes(page, pbar, jobList, filename):
         list657TL = []
         PBAR = pbar
 
+        pageLines, pageMenus = _page_lines(list401, pageChoices)
+        deferred = packer is not None and 0 < len(pageLines) <= packer.shared
+        # A longer page's menus join its own dialogue request when the page
+        # fits one; otherwise each menu keeps a request of its own.
+        folded = (
+            packer is not None
+            and not deferred
+            and bool(pageChoices)
+            and bool(list401)
+            and len(pageLines) <= packer.limit
+        )
+        if not deferred and not folded:
+            for cmd, job, history, _position in pageChoices:
+                response = _translate_choices(job, history)
+                totalTokens[0] += response[1][0]
+                totalTokens[1] += response[1][1]
+                _apply_choices(cmd, job, response[0], filename)
+
         # 401
-        if len(list401) > 0:
+        if folded:
+            response = translateAI(
+                pageLines,
+                {
+                    "instructions": [
+                        PAGE_MENUS
+                        + "\n"
+                        + "\n".join(
+                            f"- choice menu at {_line_span(first, last)}"
+                            for first, last in pageMenus
+                        )
+                    ],
+                    "source_items": [],
+                },
+            )
+            totalTokens[0] += response[1][0]
+            totalTokens[1] += response[1][1]
+            if _reply_fits(response[0], pageLines, [filename]):
+                list401TL = _menus_written(response[0], list401, pageChoices, filename)
+        elif len(list401) > 0 and not deferred:
             response = translateAI(list401, "")
             list401TL = response[0]
             totalTokens[0] += response[1][0]
@@ -5576,6 +5825,27 @@ def _searchCodes(page, pbar, jobList, filename):
                         MISMATCH.append(filename)
 
         # Start Pass 2
+        if deferred:
+            packer.defer(
+                page,
+                pbar,
+                filename,
+                list401,
+                pageChoices,
+                [
+                    list122TL,
+                    list355655TL,
+                    list108TL,
+                    list356TL,
+                    list357TL,
+                    list324TL,
+                    list408TL,
+                    list325TL,
+                    list657TL,
+                ],
+                parameterSourceSnapshots,
+            )
+            return totalTokens
         if setData:
             # Direct (non-batched) handlers can write during pass 1. Preserve
             # those sources before pass 2 so nested handlers can consult them.
