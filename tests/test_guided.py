@@ -2680,6 +2680,19 @@ class GuidedTests(unittest.TestCase):
                 "batches": [{"id": batch["id"], "custom_ids": batch["custom_ids"]}],
             },
         )
+        # Each poll shows a run in full and compact (logless) views. Both must
+        # reuse one summary, or a large run rereads every request on each poll.
+        job["log"] = ["Items.json: prepared"]
+        from dazedtl.compatibility import process_view
+
+        with patch.object(
+            process_view, "summary", wraps=process_view.summary
+        ) as summarize:
+            for _ in range(2):
+                with self.guided.observations.read():
+                    self.guided.run_view(identity)
+                    self.guided.run_view(identity, compact=True)
+        self.assertEqual(summarize.call_count, 1)
         frozen = {path: path.read_bytes() for path in root.rglob("*") if path.is_file()}
         self.assertFalse(
             self.guided.preview(self.identity, "start", options={"mode": "estimate"})[

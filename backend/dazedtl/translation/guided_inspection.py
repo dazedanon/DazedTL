@@ -129,8 +129,6 @@ class RunInspection:
         except OSError, ValueError, KeyError:
             job["outputsAvailable"] = False
             job["availableOutputs"] = []
-        if compact:
-            job["log"] = []
         from dazedtl.compatibility.speaker_results import summary as name_summary
 
         job["nameTranslation"] = name_summary(
@@ -221,6 +219,10 @@ class RunInspection:
                 outputsAvailable=False,
                 appliedOutputs=[],
             )
+        if compact:
+            # Only now: the process summary reads old Live receipts from the
+            # log, and its cache serves the full and compact views alike.
+            job["log"] = []
         return job
 
     def discard_preparation(self, project_id, run_id):
