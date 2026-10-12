@@ -10,7 +10,7 @@ from . import context_setup, preparation, reference_folders, speaker_setup
 from .event_text import EventText
 from .files import digest, project_path, read_json, settled
 from .full_estimate import FullEstimate
-from .guided_actions import ADVANCED_CODES, GuidedActions
+from .guided_actions import GuidedActions
 from .guided_context import GuidedContext
 from .guided_inputs import GuidedInputs
 from .guided_inspection import RunInspection
@@ -218,13 +218,7 @@ class Guided:
         if native["id"] not in existing:
             # Another game's optional text targets are not an audit of this game.
             # Retain existing project choices and all frozen runs when reopening.
-            options = {
-                **native["engine_options"],
-                **dict.fromkeys(ADVANCED_CODES, False),
-                "CODE122_VAR_RANGES": "",
-                "ENABLED_PLUGINS_357": [],
-                "ENABLED_PATTERNS_355655": [],
-            }
+            options = {**native["engine_options"], **EventText.unset()}
             options.update(
                 {
                     key: False

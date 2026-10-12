@@ -19,7 +19,18 @@ CODES = (
     "CODE108",
 )
 SELECTORS = {"CODE357": "ENABLED_PLUGINS_357", "CODE355655": "ENABLED_PATTERNS_355655"}
-FIELDS = (*CODES, "CODE122_VAR_RANGES", *SELECTORS.values())
+# Each code's built-in handlers keeping spaces or joining words with U+00A0,
+# and its exact commands left untranslated.
+WORDED = {
+    "CODE356": ("SPACES_356", "NBSP_356", "KEEP_356"),
+    "CODE108": ("SPACES_108", "NBSP_108", "KEEP_108"),
+}
+FIELDS = (
+    *CODES,
+    "CODE122_VAR_RANGES",
+    *SELECTORS.values(),
+    *(key for keys in WORDED.values() for key in keys),
+)
 LABELS = (
     "Variable assignments (122)",
     "MZ plugin commands (357)",
@@ -35,12 +46,12 @@ COVERAGE = {
     "CODE122": "IDs select the assignment's starting variable only. Check its entire start/end range, operation, expression, and every internal use. The parser replaces the expression with a quoted translation.",
     "CODE357": "Registered plugin names match headers by substring and use fixed argument keys across commands. Built-in handlers also apply. Individual commands or argument keys cannot be excluded here.",
     "CODE355655": "Registered patterns translate their captured text. Built-in script handlers also apply. Variable-writing patterns are not restricted by the Code 122 variable IDs.",
-    "CODE356": "One switch enables all built-in MV command handlers. There is no per-command or per-event filter.",
+    "CODE356": "One switch enables all built-in MV command handlers. Findings can name exact commands to leave untranslated and how each handler joins words; there is no per-event filter.",
     "CODE657": "Processes the value of メッセージ = ... entries. Other keys are internal and skipped. There is no per-occurrence filter.",
     "CODE320": "Processes actor-name changes throughout selected files. There is no per-actor filter. AutoNamePopup can also process supported actor names independently.",
     "CODE324": "Processes nickname changes throughout selected files. There is no per-actor filter.",
     "CODE325": "Processes profile changes throughout selected files. There is no per-actor filter.",
-    "CODE108": "Processes the installed comment/notetag patterns throughout selected files. There is no per-pattern checkbox.",
+    "CODE108": "Processes the installed comment/notetag patterns throughout selected files. Findings can name exact comments to leave untranslated and how each marker joins words; there is no per-pattern checkbox.",
 }
 
 
@@ -209,4 +220,13 @@ def validate_options(options, source):
 
     if not isinstance(options, dict) or set(options) - set(FIELDS):
         raise ValueError("Unknown event-text setting.")
-    return validate_engine_options({"rpgmakermvmz": options}, source)["rpgmakermvmz"]
+    values = validate_engine_options({"rpgmakermvmz": options}, source)["rpgmakermvmz"]
+    if any(key in values for keys in WORDED.values() for key in keys[:2]):
+        builtins = {row["key"]: row["builtins"] for row in catalog(source)["controls"]}
+        for code, (spaces, nbsp, _keep) in WORDED.items():
+            chosen = [*values.get(spaces, []), *values.get(nbsp, [])]
+            if set(chosen) - set(builtins[code]) or len(set(chosen)) != len(chosen):
+                raise ValueError(
+                    "Choose one spacing for each installed built-in handler."
+                )
+    return values

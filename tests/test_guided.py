@@ -258,6 +258,8 @@ class GuidedTests(unittest.TestCase):
                     if key == "CODE357"
                     else ["AddCmnt("]
                     if key == "CODE355655"
+                    else ["D_TEXT ", "CommonPopup"]
+                    if key == "CODE356"
                     else [],
                 }
                 for key in event_text.CODES
@@ -2949,7 +2951,7 @@ class GuidedTests(unittest.TestCase):
             self.guided.execute(self.identity, preview["token"])
         self.assertEqual(self.started, [("native", "advanced", True)] * 2)
 
-    def event_report(self):
+    def event_report(self, commands=()):
         write_json(
             self.source / "Map001.json",
             {
@@ -2957,7 +2959,8 @@ class GuidedTests(unittest.TestCase):
                     {
                         "code": 357,
                         "parameters": ["TextPicture", "show", "", {"text": "表示"}],
-                    }
+                    },
+                    *commands,
                 ]
             },
         )
@@ -2985,6 +2988,7 @@ class GuidedTests(unittest.TestCase):
                 "observations": [],
                 "exclusions": [],
                 "evidence": [ref],
+                **({"spacing": {}, "keep": []} if key in event_text.WORDED else {}),
             }
             for key in event_text.CODES
         }
@@ -3105,6 +3109,10 @@ class GuidedTests(unittest.TestCase):
                 "invalid",
             ),
             (lambda r: r["sources"]["CODE356"].update(targets=["D_TEXT"]), "invalid"),
+            (
+                lambda r: r["sources"]["CODE356"].update(spacing={"D_TEXT": "nbsp"}),
+                "invalid",
+            ),
         ):
             value = deepcopy(report)
             mutate(value)
@@ -3135,6 +3143,36 @@ class GuidedTests(unittest.TestCase):
         self.native["engine_options"]["ENABLED_PLUGINS_357"] = ["not-installed"]
         with self.assertRaises(ValueError):
             self.guided.event_text.require(self.identity, self.native)
+
+    def test_event_findings_keep_only_commands_found_in_the_selected_events(self):
+        # A mistyped command to keep would silently leave an internal value,
+        # such as DTextPicture's [マップ表示名] placeholder, to translation.
+        placeholder = "D_TEXT [マップ表示名] 24"
+        _, report = self.event_report(
+            [
+                {"code": 356, "parameters": [text]}
+                for text in (placeholder, "D_TEXT 時刻 24")
+            ]
+        )
+        report["sources"]["CODE356"].update(
+            decision="enable",
+            coverage="safe",
+            spacing={"D_TEXT ": "nbsp", "CommonPopup": "underscore"},
+            keep=[placeholder + " "],
+        )
+        write_json(self.source / event_text.REPORT, report)
+        with self.assertRaisesRegex(ValueError, "not in the selected event files"):
+            self.guided.event_text_request(self.identity, apply=True)
+        self.assertEqual(self.native["engine_options"], {})
+        report["sources"]["CODE356"]["keep"] = [placeholder]
+        write_json(self.source / event_text.REPORT, report)
+        applied = self.guided.event_text_request(self.identity, apply=True)
+        self.assertEqual(applied["findings"]["enabled"], ["CODE357", "CODE356"])
+        options = self.native["engine_options"]
+        self.assertEqual(
+            (options["NBSP_356"], options["SPACES_356"], options["KEEP_356"]),
+            (["D_TEXT "], [], [placeholder]),
+        )
 
     def test_empty_registry_selection_needs_effective_builtin_coverage_and_picker_is_project_owned(
         self,

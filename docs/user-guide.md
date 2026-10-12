@@ -64,6 +64,7 @@ Edit what it wrote in **Guidance**.
 
 **Event text sources**: copy the investigation to your assistant.
 It finds which variables, plugin commands and scripts hold text players see and turns those on.
+It also decides how English words stay together in plugin commands and which internal values, such as placeholders, stay untranslated.
 Change any choice under **Source choices**; **Other event text** in Translate translates them later.
 
 **Line widths** fills in from your assistant's measurements, which it checks in the running game, and you can change them.

@@ -26,7 +26,30 @@ CODES = (
     "CODE108",
 )
 SELECTORS = {"CODE357": "ENABLED_PLUGINS_357", "CODE355655": "ENABLED_PATTERNS_355655"}
-FIELDS = (*CODES, "CODE122_VAR_RANGES", *SELECTORS.values())
+# Plugins split these codes' commands on spaces. Their findings say how each
+# built-in handler joins a translation's words and which exact commands stay
+# untranslated, kept in these options.
+WORDED = {
+    "CODE356": ("SPACES_356", "NBSP_356", "KEEP_356"),
+    "CODE108": ("SPACES_108", "NBSP_108", "KEEP_108"),
+}
+SPACING = {"space", "nbsp", "underscore"}
+FIELDS = (
+    *CODES,
+    "CODE122_VAR_RANGES",
+    *SELECTORS.values(),
+    *(key for keys in WORDED.values() for key in keys),
+)
+FINDING = {
+    "decision",
+    "confidence",
+    "coverage",
+    "reason",
+    "targets",
+    "observations",
+    "exclusions",
+    "evidence",
+}
 REPORT = ".dazedtl/guided/event-text-findings.json"
 # The ways JSON without \u escapes can write a command code of 357, 355 or
 # 655: that number, or any number with a fraction or exponent.
@@ -36,7 +59,28 @@ RECEIPT = "guided_event_text"
 VIEWS = {"audit", "sources", "advanced-run", "variables"}
 
 
+def commands(value):
+    """Every event command in parsed RPG Maker JSON."""
+    if isinstance(value, list):
+        for item in value:
+            yield from commands(item)
+    elif isinstance(value, dict):
+        if "code" in value and isinstance(value.get("parameters"), list):
+            yield value
+        for key, item in value.items():
+            if key != "_original":
+                yield from commands(item)
+
+
 class EventText:
+    @staticmethod
+    def unset():
+        """Every event-text option with nothing chosen."""
+        return {
+            key: False if key in CODES else "" if key == "CODE122_VAR_RANGES" else []
+            for key in FIELDS
+        }
+
     def __init__(self, guided):
         self.guided = guided
         self.originals = {}
@@ -47,11 +91,8 @@ class EventText:
 
     def options(self, native):
         values = {
-            key: native["engine_options"].get(
-                key,
-                False if key in CODES else "" if key == "CODE122_VAR_RANGES" else [],
-            )
-            for key in FIELDS
+            key: native["engine_options"].get(key, value)
+            for key, value in self.unset().items()
         }
         return self.guided.backend.guided_event_text_options(values)
 
@@ -148,18 +189,6 @@ class EventText:
         signature = (fingerprint, catalog["fingerprint"])
         if signature in self.hits:
             return
-
-        def commands(value):
-            if isinstance(value, list):
-                for item in value:
-                    yield from commands(item)
-            elif isinstance(value, dict):
-                if "code" in value and isinstance(value.get("parameters"), list):
-                    yield value
-                for key, item in value.items():
-                    if key != "_original":
-                        yield from commands(item)
-
         raw = read()
         found = {key: [] for key in SELECTORS}
         # Only commands coded 357, 355 or 655 hold built-ins; a file whose
@@ -225,6 +254,7 @@ class EventText:
                 "observations": [],
                 "exclusions": [],
                 "evidence": [],
+                **({"spacing": {}, "keep": []} if key in WORDED else {}),
             }
             for key in CODES
         }
@@ -235,24 +265,23 @@ Read immutable original game bytes when an original blob is supplied (`git cat-f
 For 122, check the entire start/end assignment range, operation and expression, all variable uses, comparisons, internal keys, IDs, filenames, and plugin/script consumers. The parser checks only the starting ID and replaces the expression; keep mixed, unproven or internally used assignments off.
 For 357, report actual installed plugin names, commands and argument keys. Registered selections use fixed keys and substring header matches, plus the built-ins listed in the request. For 355/655, report capture boundaries and multiline behavior, plus every built-in match. Its variable-writing patterns are not protected by 122 IDs.
 For 356, one switch enables every built-in handler; found command names are evidence, not individual configurable filters. Check 657 message values, 108 supported notetags, and 320/324/325 display changes against actual actor context.
-Only recommend enable/high/safe when every occurrence affected by the proposed supported settings is verified player-visible and safe, including built-ins and overlapping registry matches. Otherwise report review or skip with mixed/uncertain coverage. Explicitly list excluded internal/logic uses and unsupported finer filtering. Do not claim an exclusion is enforced when it shares enabled coverage. Keep uncertain sources off. Report missing glossary evidence for review; retain existing selective glossary/context behavior.
+356 and 108 translations join their words with "_" by default, since plugins split commands on spaces. For each built-in handler or marker found, read how its plugin parses and draws the text, and set its spacing: "space" when the plugin reads the rest of the text or joins the words back, and a space cannot change how it reads its other arguments (such as a trailing number read as a size); "nbsp" (U+00A0, drawn as a space) when it splits only on the plain space, as MV's command356 split(" ") does, and uses one argument whole; "underscore" only when it splits on any whitespace, such as a \\s pattern, which U+00A0 also matches. Underscores a plugin draws as they are do not hold a source off; note them in observations.
+keep lists the exact original parameters[0] of each 356 command or 108 comment holding an internal value, such as a placeholder, key or file name; the engine leaves those untranslated.
+Only recommend enable/high/safe when translating every remaining occurrence affected by the proposed settings is safe: text players see, or text they cannot reach, such as labels on unused test maps. Internal values must be left out by targets or keep, including built-ins and overlapping registry matches. Otherwise report review or skip with mixed/uncertain coverage. Explicitly list excluded internal/logic uses and unsupported finer filtering. Do not claim an exclusion is enforced unless targets or keep enforce it. Keep uncertain sources off. Report missing glossary evidence for review; retain existing selective glossary/context behavior.
 Do not modify engine code, settings files, game text, scripts, glossary, or profiles. Do not run translation, estimation, providers, or a paid service. Write only a complete evidence report `{REPORT}` inside this game, atomically, apply it as described below, then stop. The user controls translation and Apply in DazedTL.
 
 Report schema (replace every example; do not publish a template):
 ```json
 {json.dumps(report, ensure_ascii=False, indent=2)}
 ```
-Preserve all identity fields exactly and cover every listed source, with no extra settings. decision is enable/skip/review; confidence high/medium/low; coverage safe/mixed/uncertain/none. targets is compact variable IDs/ranges for 122, exact registered IDs for 357 and 355/655, and [] for coarse switches. observations and exclusions are lists of concise strings describing actual IDs, plugins, commands, keys, captures and exclusions with locations. Each source requires a reason and 1-50 evidence references {{"file":"game-relative JSON/JS/Ruby source", "sha256":"hash from request dependencies", "location":"precise event/page/command or plugin line"}}. Cite inspected dependencies only. New handlers or regexes belong in exclusions as unsupported work, never in targets.
+Preserve all identity fields exactly and cover every listed source, with no extra settings. decision is enable/skip/review; confidence high/medium/low; coverage safe/mixed/uncertain/none. targets is compact variable IDs/ranges for 122, exact registered IDs for 357 and 355/655, and [] for coarse switches. observations and exclusions are lists of concise strings describing actual IDs, plugins, commands, keys, captures and exclusions with locations. Each source requires a reason and 1-50 evidence references {{"file":"game-relative JSON/JS/Ruby source", "sha256":"hash from request dependencies", "location":"precise event/page/command or plugin line"}}. Cite inspected dependencies only. New handlers or regexes belong in exclusions as unsupported work, never in targets. CODE356 and CODE108 also take spacing, which maps built-in handlers or markers listed for that code in the request to space, nbsp or underscore (unlisted ones use underscore), and keep, a list of exact original parameters[0] strings from the selected event files.
 After saving, run `{command} --apply`. It validates the report and saves its recommendations as this game's source choices: sources reported enable/high/safe turn on with their targets, and every other source turns off. A stale, foreign or invalid report is rejected with the reason; fix the report and run the command again. If it reports a running action or unsaved guided options, ask the user to let the action finish or to save or discard the options in DazedTL, then run it again.
 """
 
     def inspect(self, project_id, native):
         catalog = self.catalog()
         context = self.context(project_id, native, catalog)
-        defaults = {
-            key: False if key in CODES else "" if key == "CODE122_VAR_RANGES" else []
-            for key in FIELDS
-        }
+        defaults = self.unset()
         rows: list[dict[str, Any]] = [
             dict(
                 row,
@@ -358,16 +387,7 @@ After saving, run `{command} --apply`. It validates the report and saves its rec
                 if (
                     not isinstance(finding, dict)
                     or set(finding)
-                    != {
-                        "decision",
-                        "confidence",
-                        "coverage",
-                        "reason",
-                        "targets",
-                        "observations",
-                        "exclusions",
-                        "evidence",
-                    }
+                    != (FINDING | {"spacing", "keep"} if key in WORDED else FINDING)
                     or finding["decision"] not in {"enable", "skip", "review"}
                     or finding["confidence"] not in {"high", "medium", "low"}
                     or finding["coverage"] not in {"safe", "mixed", "uncertain", "none"}
@@ -399,6 +419,42 @@ After saving, run `{command} --apply`. It validates the report and saves its rec
                     raise ValueError(
                         "Coarse code switches cannot select individual commands or occurrences."
                     )
+                notes = []
+                if key in WORDED:
+                    spacing, keep = finding["spacing"], finding["keep"]
+                    if (
+                        not isinstance(spacing, dict)
+                        or set(spacing) - set(row["builtins"])
+                        or set(spacing.values()) - SPACING
+                    ):
+                        raise ValueError(
+                            "Spacing must map this code's built-in handlers to space, nbsp or underscore."
+                        )
+                    if (
+                        not isinstance(keep, list)
+                        or len(keep) > 500
+                        or any(
+                            not isinstance(value, str) or not 1 <= len(value) <= 4000
+                            for value in keep
+                        )
+                    ):
+                        raise ValueError(
+                            "Commands to keep must be a bounded list of exact command texts."
+                        )
+                    spaces, nbsp, kept = WORDED[key]
+                    for mode, option, label in (
+                        ("space", spaces, "Keeps spaces"),
+                        ("nbsp", nbsp, "Joins words with no-break spaces"),
+                    ):
+                        proposed[option] = sorted(
+                            name for name, value in spacing.items() if value == mode
+                        )
+                        if proposed[option]:
+                            notes.append(
+                                f"{label}: {', '.join(name.strip() for name in proposed[option])}."
+                            )
+                    proposed[kept] = keep
+                    notes.extend("Left untranslated: " + value for value in keep)
                 proposed = self.guided.backend.guided_event_text_options(proposed)
                 refs = finding["evidence"]
                 if not isinstance(refs, list) or not 1 <= len(refs) <= 50:
@@ -421,7 +477,7 @@ After saving, run `{command} --apply`. It validates the report and saves its rec
                     coverageStatus=finding["coverage"],
                     reason=finding["reason"],
                     targets=proposed.get(SELECTORS.get(key, "CODE122_VAR_RANGES"), []),
-                    observations=finding["observations"],
+                    observations=[*notes, *finding["observations"]],
                     exclusions=finding["exclusions"],
                     evidence=refs,
                 )
@@ -444,14 +500,7 @@ After saving, run `{command} --apply`. It validates the report and saves its rec
             return {
                 **result,
                 "status": "invalid",
-                "recommended": {
-                    key: False
-                    if key in CODES
-                    else ""
-                    if key == "CODE122_VAR_RANGES"
-                    else []
-                    for key in FIELDS
-                },
+                "recommended": self.unset(),
                 "message": "Findings could not be used. " + str(exc),
             }
 
@@ -537,6 +586,12 @@ After saving, run `{command} --apply`. It validates the report and saves its rec
             raise ValueError(findings["message"])
         if findings["reportId"] != report_id:
             raise ValueError("The findings changed. Reload them before applying.")
+        missing = self.unmatched(native, findings["recommended"])
+        if missing:
+            raise ValueError(
+                "These commands to keep are not in the selected event files' original text: "
+                + "; ".join(missing)
+            )
         updated = self.guided.backend.workflows.apply_investigation_settings(
             native["id"],
             revision,
@@ -545,6 +600,45 @@ After saving, run `{command} --apply`. It validates the report and saves its rec
             {"reportId": report_id},
         )
         return self.guided.preferences(updated)
+
+    def unmatched(self, native, options):
+        """Commands to keep that match no selected event file's original 356
+        command or 108 comment, which would leave their internal values to
+        translation."""
+        wanted = {
+            code: set(options[keys[2]])
+            for code, keys in (("356", WORDED["CODE356"]), ("108", WORDED["CODE108"]))
+            if options[keys[2]]
+        }
+        if not wanted:
+            return []
+        inputs = self.guided.inputs(native)
+        sources = inputs.sources(
+            sorted(self.guided.supported_files(native)),
+            inputs.record()["inputs"],
+            self.guided.observed_digest,
+        )
+        selected = self.guided.runs.files(native, "advanced")
+        root = Path(native["source"])
+        blobs, documents = [], []
+        for name, source in sources.items():
+            if name in selected:
+                if "original" in source["identity"]:
+                    blobs.append(source["identity"]["original"])
+                else:
+                    path = self.guided.observed_path(root, source["relative"])
+                    documents.append(path.read_bytes())
+        documents.extend(
+            raw
+            for _blob, raw in self.guided.translation.engine.original_blobs(root, blobs)
+        )
+        for raw in documents:
+            for command in commands(json.loads(raw.decode("utf-8-sig"))):
+                values = wanted.get(str(command["code"]))
+                if values and command["parameters"]:
+                    text = command["parameters"][0]
+                    values.discard(text if isinstance(text, str) else None)
+        return sorted(value for values in wanted.values() for value in values)
 
     def require(self, project_id, native):
         current = self.status(project_id, native)

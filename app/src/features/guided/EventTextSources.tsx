@@ -204,9 +204,9 @@ export function EventTextSources({
                     ))}
                   </ul>
                   <p>
-                    Listed exclusions are evidence. If they share enabled
-                    handler coverage, the engine cannot isolate them; keep that
-                    coverage off.
+                    Listed exclusions are evidence. The engine leaves out only
+                    text outside the targets and commands listed as left
+                    untranslated.
                   </p>
                 </>
               )}
