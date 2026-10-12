@@ -678,6 +678,7 @@ def routes(app):
             lambda value, _params: value,
         ),
         "guided_payload": (app.guided.payload, lambda value, _params: value),
+        "guided_requests": (app.guided.requests, lambda value, _params: value),
         "guided_name_results": (app.guided.name_results, lambda value, _params: value),
         "guided_file_preview": (app.guided.file_preview, lambda value, _params: value),
         "guided_discard_preparation": (

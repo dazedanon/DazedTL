@@ -345,6 +345,7 @@ Technical starts with the run record and exposes collection errors, provider rec
 Request failures stay with the selected attempt’s response and technical payload; request-bound provider errors do not become run-wide diagnostics.
 File-only legacy validation evidence stays explicitly scoped to its file without identifying a guessed failed request.
 The picker is the sole request navigation control and has no hidden failure or file filters.
+It lists one page of the selected group's requests, with Previous and Next for longer groups, and the inspector reads each page through `guided_requests` when it needs it.
 Raw worker logs are not a separate content view: Technical ends with the retained log tail, which the compatibility readers still use as evidence.
 Other-activity records open with their status, saved result and log in the same presentation.
 Request selection and tabs persist locally without storing payloads in browser preferences.
@@ -852,6 +853,8 @@ Returning to the window rechecks outside edits through `workspace_recheck`, whic
 It also imports a report saved for a copied image task, including a finished task's report the assistant saves again for the user's redo requests, and the Image Manager runs the same import every few seconds while a task waits, so results arrive while DazedTL keeps the focus; a rejected report is remembered by its hash, so it is reported once and retried only after the file changes.
 Guided reports are read by the observer, and plugin reports are validated by the project helper's continue command the assistant runs.
 Saved run indexes keep these observations small; full request bodies are checked at execution/inspection boundaries.
+Request rows stay out of observations: a run's [process summary](../backend/dazedtl/compatibility/process_view.py) carries each file's request counts, states and the Batches holding its submitted requests, the inspector's request groups, and the first requests needing attention.
+Its request revision changes whenever a displayed request does, so an open inspector reads its page again.
 New observation work must use bounded summaries or cached derivations with explicit invalidation.
 Do not add whole-game parsing or full request-history reconstruction to a polling snapshot.
 Measure nontrivial additions with representative generated data; keep authoritative source, artifact and spending checks at their execution or explicit inspection boundaries.
@@ -860,7 +863,7 @@ Each Guided observation reuses ownership, run metadata and name-reuse reads with
 It lists each game and working-copy folder once, and reuses a listed file's digest across observations while its stat signature holds, so routine polls neither resolve paths nor reread unchanged files ([ObservedFiles](../backend/dazedtl/translation/files.py)).
 A file changed within the last two seconds is read again, because a second change within one clock tick can keep its signature.
 A poll starts no process per file: Other event text reads every original it has not hashed yet through one Git process, and Git status runs its full inspection only after Git's metadata changes, asking `git status` alone every few seconds for the working tree ([git_status_cache.py](../backend/dazedtl/translation/git_status_cache.py)).
-The bounded [history display cache](../backend/dazedtl/compatibility/observations.py) retains compact plan headers and process summaries across observations.
+The bounded [history display cache](../backend/dazedtl/compatibility/observations.py) retains compact plan headers, process summaries and each run's grouped requests across observations; the inspector's request pages read the same grouped requests.
 Plan hashes, in-memory job state, and artifact metadata invalidate those summaries, including new/deleted queue fragments, clarification receipts, output files and SQLite journals.
 Files changing during a read are not cached.
 Imported Batch roots use fresh readers.

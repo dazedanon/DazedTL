@@ -57,6 +57,7 @@ from dazedtl.api.contracts.runs import (
     NameTranslationPage,
     PreparationDiscarded,
     ProviderDetails,
+    RequestPage,
     RunPayload,
     SettledEstimate,
 )
@@ -542,6 +543,13 @@ class RunControlRequest(TypedDict):
     run_id: NotRequired[str]
 
 
+class GuidedRequestsRequest(TypedDict):
+    project_id: str
+    run_id: str
+    group: NotRequired[str | None]
+    index: NotRequired[int | None]
+
+
 class GuidedNameResultsRequest(TypedDict):
     project_id: str
     run_id: str
@@ -639,6 +647,7 @@ METHODS: dict[str, Method] = {
     "translation_speakers": Method(TranslationSpeakersRequest, SpeakerScan),
     "guided_inspect": Method(RunRequest, Job, refresh=False),
     "guided_payload": Method(RunIndexRequest, RunPayload, refresh=False),
+    "guided_requests": Method(GuidedRequestsRequest, RequestPage, refresh=False),
     "guided_name_results": Method(
         GuidedNameResultsRequest, NameTranslationPage, refresh=False
     ),

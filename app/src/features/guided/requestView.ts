@@ -1,11 +1,15 @@
-import type { Job, RunPayload, RunProcess } from "../../api/contracts.ts";
-import { groupedRequests, requestStateLabel } from "./translationView.ts";
+import type {
+  Job,
+  ProcessRequest,
+  RunPayload,
+  RunProcess,
+} from "../../api/contracts.ts";
+import { requestStateLabel } from "./translationView.ts";
 import { batchOutcome, type ProviderBatch } from "./batchView.ts";
 
-type Request = NonNullable<RunProcess["requests"]>[number];
 /** A provider count never identifies a row; only a bound receipt can do that. */
 export function requestOutcome(
-  row: Pick<Request, "state" | "providerFinished">,
+  row: Pick<ProcessRequest, "state" | "providerFinished">,
 ) {
   if (row.state === "failed" || row.state === "rejected")
     return {
@@ -35,109 +39,36 @@ export function requestOutcome(
   };
 }
 
-export type RequestRow = ReturnType<typeof groupedRequests>[number] & {
+export type RequestRow = ProcessRequest & {
   outcome: ReturnType<typeof requestOutcome>;
 };
-export function requestRows(
-  rows: NonNullable<RunProcess["requests"]>,
-): RequestRow[] {
-  // Group interleaved worker receipts by file, retaining stable request numbers
-  // and original indices for payload reads and clarification selection.
-  const files = new Map<string, RequestRow[]>();
-  for (const row of groupedRequests(rows)) {
-    const key = row.file || "";
-    if (!files.has(key)) files.set(key, []);
-    files.get(key)!.push({ ...row, outcome: requestOutcome(row) });
-  }
-  return [...files.values()].flat();
-}
-export type RequestBatch = {
-  id: string;
-  label: string;
-  rows: RequestRow[];
+export const requestRows = (rows: ProcessRequest[]): RequestRow[] =>
+  rows.map((row) => ({ ...row, outcome: requestOutcome(row) }));
+export type RequestBatch = NonNullable<RunProcess["groups"]>[number] & {
   provider?: ProviderBatch;
   clarifications: ProviderBatch[];
 };
 
-/** Counts and file names cannot establish which provider batch owns a request. */
-export function requestBatches(
-  process: RunProcess,
-  mode?: string | null,
-): RequestBatch[] {
-  const rows =
-    process.requests ||
-    Array.from({ length: process.prepared || 0 }, (_, index) => ({
-      index,
-      state: "unknown",
-      sourceItems: 0,
-    }));
-  if (mode !== "batch")
-    return [
-      {
-        id: "requests",
-        label: "Requests",
-        rows: requestRows(rows),
-        clarifications: [],
-      },
-    ];
-  const assigned = new Set<number>();
-  const providers = process.batches || [];
-  const originals = new Map(
-    providers
-      .filter((provider) => !provider.clarification)
-      .map((provider) => [provider.id, provider]),
+/**
+ * The backend groups requests by the Batch receipts holding them; the current
+ * provider status of each comes from the observed receipts.
+ */
+export function requestBatches(process: RunProcess): RequestBatch[] {
+  const receipts = new Map(
+    (process.batches || []).map((batch) => [batch.id, batch]),
   );
-  const owners = new Map(
-    providers.map((provider) => [
-      provider.id,
-      provider.clarification && provider.originalBatchId
-        ? originals.get(provider.originalBatchId) || provider
-        : provider,
-    ]),
-  );
-  const batches: RequestBatch[] = [...new Set(owners.values())].map(
-    (provider, index) => {
-      const clarifications = providers.filter(
-        (child) => child !== provider && owners.get(child.id) === provider,
-      );
-      const indices = new Set(
-        [provider, ...clarifications].flatMap(
-          (batch) => batch.requestIndices || [],
-        ),
-      );
-      const included = rows.filter((row) => indices.has(row.index));
-      included.forEach((row) => assigned.add(row.index));
-      return {
-        id: provider.id,
-        label: `Batch ${index + 1}${provider.clarification ? " · Clarification" : ""}`,
-        provider,
-        clarifications,
-        rows: requestRows(included).sort((a, b) => a.index - b.index),
-      };
-    },
-  );
-  const remaining = rows.filter((row) => !assigned.has(row.index));
-  const queued = remaining.filter((row) =>
-    ["queued", "prepared"].includes(row.state),
-  );
-  const unlinked = remaining.filter(
-    (row) => !["queued", "prepared"].includes(row.state),
-  );
-  if (queued.length)
-    batches.push({
-      id: "unsent",
-      label: "Not submitted",
-      rows: requestRows(queued),
-      clarifications: [],
-    });
-  if (unlinked.length)
-    batches.push({
-      id: "unlinked",
-      label: "Requests without a batch receipt",
-      rows: requestRows(unlinked),
-      clarifications: [],
-    });
-  return batches;
+  return (process.groups || []).map((group) => {
+    const [provider, ...clarifications] = group.batches.map((id) =>
+      receipts.get(id),
+    );
+    return {
+      ...group,
+      provider,
+      clarifications: clarifications.filter(
+        (batch): batch is ProviderBatch => !!batch,
+      ),
+    };
+  });
 }
 
 /** A finished original must not hide its pending or failed clarification. */

@@ -147,14 +147,46 @@ class ValidationIssue(TypedDict):
 
 
 class ProcessRequest(TypedDict):
+    """A source request at its latest attempt; `indices` lists every attempt."""
+
     index: int
+    indices: list[int]
     state: str
-    file: NotRequired[str | None]
+    file: str | None
     sourceItems: int
-    clarificationOf: NotRequired[int]
-    retryOf: NotRequired[int]
-    preview: NotRequired[str]
     providerFinished: NotRequired[bool]
+
+
+class SubmittedRequests(TypedDict):
+    batches: list[str]
+    finished: bool
+
+
+class FileRequests(TypedDict):
+    first: int
+    requests: int
+    lines: int
+    done: int
+    states: list[str]
+    submitted: NotRequired[list[SubmittedRequests]]
+
+
+class RequestGroup(TypedDict):
+    id: str
+    label: str
+    batches: list[str]
+    total: int
+    files: int
+    first: int | None
+
+
+class RequestPage(TypedDict):
+    group: str | None
+    rows: list[ProcessRequest]
+    offset: int
+    total: int
+    previous: int | None
+    next: int | None
 
 
 class FreshStart(TypedDict):
@@ -170,7 +202,6 @@ class ProviderBatch(TypedDict):
     provider: NotRequired[str]
     canCancel: NotRequired[bool]
     total: NotRequired[int | None]
-    requestIndices: NotRequired[list[int]]
     clarification: NotRequired[bool]
     originalBatchId: NotRequired[str]
     counts: dict[str, int | None]
@@ -202,7 +233,10 @@ class RunProcess(TypedDict):
     validationIssues: NotRequired[list[ValidationIssue]]
     uncertain: NotRequired[int]
     duplicateSubmissions: NotRequired[int]
-    requests: NotRequired[list[ProcessRequest]]
+    files: NotRequired[dict[str, FileRequests]]
+    groups: NotRequired[list[RequestGroup]]
+    attention: NotRequired[list[ProcessRequest]]
+    requestRevision: NotRequired[str]
     freshStart: NotRequired[FreshStart | None]
     sourceItems: NotRequired[int | None]
     submittedItems: NotRequired[int | None]

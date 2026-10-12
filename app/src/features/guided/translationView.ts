@@ -3,7 +3,6 @@ import type {
   Job,
   Phase,
   RunPayload,
-  RunProcess,
 } from "../../api/contracts.ts";
 import { type DisplayState, displayLabels } from "../../ui/displayStatus.ts";
 
@@ -34,31 +33,6 @@ export const requestStateLabel = (state: string) =>
       received: "Not validated",
     }) as Record<string, string>
   )[state] || state;
-
-/** Keep raw receipt indices stable while presenting one selection per source request. */
-export function groupedRequests(rows: NonNullable<RunProcess["requests"]>) {
-  const groups: ((typeof rows)[number] & {
-    indices: number[];
-    number: number;
-  })[] = [];
-  const owners = new Map<number, (typeof groups)[number]>();
-  for (const row of rows) {
-    // Clarifications and validation retries are attempts at the same lines.
-    const first = row.clarificationOf ?? row.retryOf;
-    const parent = first == null ? undefined : owners.get(first);
-    if (parent && parent.file === row.file) {
-      parent.indices.push(row.index);
-      parent.state = row.state;
-      parent.providerFinished = row.providerFinished;
-      owners.set(row.index, parent);
-    } else {
-      const group = { ...row, indices: [row.index], number: groups.length + 1 };
-      groups.push(group);
-      owners.set(row.index, group);
-    }
-  }
-  return groups;
-}
 
 /** Attempt changes use the already loaded receipt, without another backend read. */
 export function requestAttempt(payload: RunPayload, index: number) {
@@ -253,28 +227,21 @@ export function fileLines(
   name: string,
 ): { done: number; total: number | null; running?: boolean } {
   const latest = fileRun(state.runs, phase, name, state.sourceStatus.retired);
-  // One row per source request, at its latest attempt; duplicates never count.
+  // One count per source request, at its latest attempt; duplicates never count.
   const requests = (run?: Job) =>
-    run && !run.temporary
-      ? groupedRequests(run.process?.requests || []).filter(
-          (row) => row.file === name && row.state !== "unused",
-        )
-      : [];
+    run && !run.temporary ? run.process?.files?.[name] : undefined;
   // The run saved this file whole, whether or not the run itself finished.
   const finished = (run: Job) =>
     !!run.availableOutputs?.includes(name) &&
     !run.partialOutputs?.includes(name);
   const translated =
-    latest && !requests(latest).length && finished(latest)
+    latest && !requests(latest)?.requests && finished(latest)
       ? fileMetricRun(state.runs, phase, name, state.sourceStatus.retired)
       : undefined;
-  const run = translated && requests(translated).length ? translated : latest;
-  const rows = requests(run);
-  const sum = (items: typeof rows) =>
-    items.reduce((total, row) => total + row.sourceItems, 0);
-  const done = sum(
-    rows.filter((row) => ["validated", "saved"].includes(row.state)),
-  );
+  const run =
+    translated && requests(translated)?.requests ? translated : latest;
+  const lines = requests(run);
+  const done = lines?.done ?? 0;
   if (settledWithoutRequests(state, phase, name, latest))
     return { done, total: done };
   if (run && run.mode !== "batch" && activeWorker(run))
@@ -288,7 +255,7 @@ export function fileLines(
     !finished(run)
   )
     return { done, total: null };
-  return { done, total: rows.length ? sum(rows) : null };
+  return { done, total: lines?.requests ? lines.lines : null };
 }
 /**
  * The files an event-code task covers: the selected event files and every
@@ -435,10 +402,8 @@ export function fileStatus(name: string, run?: Job, settled = false) {
   if (run.temporary) {
     return activeWorker(run) ? (run.approval ? awaiting : progress) : idle;
   }
-  const rows = groupedRequests(
-    run.process?.requests?.filter((row) => row.file === name) || [],
-  );
-  const states = rows.map((row) => row.state);
+  const requests = run.process?.files?.[name];
+  const states = requests?.states || [];
   const working = activeWorker(run);
   // A submission without a provider receipt may still be at the provider, so
   // its reason is checking before sending again, not rejected lines. A Live
@@ -458,30 +423,27 @@ export function fileStatus(name: string, run?: Job, settled = false) {
     invalid || states.some((state) => ["rejected", "failed"].includes(state));
   if (!noRequests && (run.workerStatus ?? run.status) !== "complete") {
     if (working && run.approval) return awaiting;
-    const submitted = rows.filter((row) => row.state === "submitted");
+    // Submitted requests, grouped by the Batch receipts holding their latest
+    // attempt (a clarification sits under the original request).
+    const submitted = requests?.submitted || [];
     if (run.mode === "batch" && submitted.length) {
       // A retained submission protects against duplicate charges; it does not
-      // establish current provider activity. Match the latest attempt to its
-      // Batch receipts, including any clarification under the original index.
+      // establish current provider activity.
       const batches = run.process?.batches || [];
-      const belongs = (
-        batch: (typeof batches)[number],
-        row: (typeof submitted)[number],
-      ) => batch.requestIndices?.includes(row.indices.at(-1)!);
       if (
         batches.some(
           (batch) =>
             providerBatchActive(batch.status) &&
-            submitted.some((row) => belongs(batch, row)),
+            submitted.some((group) => group.batches.includes(batch.id)),
         )
       )
         return progress;
       const finished = submitted.every(
-        (row) =>
-          row.providerFinished &&
+        (group) =>
+          group.finished &&
           batches.some(
             (batch) =>
-              belongs(batch, row) &&
+              group.batches.includes(batch.id) &&
               ["completed", "ended"].includes(batch.status),
           ),
       );

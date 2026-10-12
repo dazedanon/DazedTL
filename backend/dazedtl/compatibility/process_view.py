@@ -637,20 +637,290 @@ def no_request_files(root, job, items):
     )
 
 
-def source_preview(source):
-    """Bound observer data to a source excerpt, without copying full prompts."""
-    text = ""
-    for value in source.values():
-        if isinstance(value, str):
-            text += (" " if text else "") + " ".join(value[:161].split())
-        if len(text) > 160:
+REQUEST_PAGE = 100
+
+
+def attempts(rows):
+    """One row per source request, at its latest attempt.
+
+    Clarifications and validation retries are attempts at the same lines, so
+    each joins its first attempt's row while both belong to the same file.
+    """
+    result, owners = [], {}
+    for row in rows:
+        first = row.get("clarificationOf", row.get("retryOf"))
+        parent = owners.get(first) if first is not None else None
+        if parent is not None and parent["file"] == row["file"]:
+            parent["indices"].append(row["index"])
+            parent["state"] = row["state"]
+            parent.pop("providerFinished", None)
+            if row.get("providerFinished"):
+                parent["providerFinished"] = True
+            owners[row["index"]] = parent
+            continue
+        request = {
+            "index": row["index"],
+            "indices": [row["index"]],
+            "state": row["state"],
+            "file": row["file"],
+            "sourceItems": row["sourceItems"],
+        }
+        if row.get("providerFinished"):
+            request["providerFinished"] = True
+        result.append(request)
+        owners[row["index"]] = request
+    return result
+
+
+def by_file(rows):
+    """Each file's requests together, files in the order of their first one."""
+    files = {}
+    for row in rows:
+        files.setdefault(row["file"] or "", []).append(row)
+    return [row for group in files.values() for row in group]
+
+
+def providers(root, requests, batches):
+    """Provider receipts in display order, with the request indices they bind.
+
+    Only a receipt's own request keys establish membership; counts and file
+    names never assign a request to a Batch.
+    """
+    indices = {key: index for index, key in enumerate(requests)}
+    result = [
+        {
+            "id": batch["id"],
+            "indices": {
+                indices[key]
+                for key in (batch.get("custom_ids") or {}).values()
+                if key in indices
+            },
+        }
+        for batch in batches
+    ]
+    from .batch_refusals import records as clarification_records
+
+    for record in clarification_records(evidence_root(root)) if batches else []:
+        for batch in record["batches"]:
+            if batch["id"]:
+                result.append(
+                    {
+                        "id": batch["id"],
+                        "clarification": True,
+                        "original": record["original_id"],
+                        "indices": {
+                            indices[item["key"]]
+                            for item in batch["items"]
+                            if item["key"] in indices
+                        },
+                    }
+                )
+    return result
+
+
+def request_groups(rows, receipts, mode):
+    """The inspector's request groups: each provider Batch with its
+    clarifications, then requests never submitted and requests without a
+    Batch receipt. Live runs have one group."""
+    if mode != "batch":
+        return [
+            {
+                "id": "requests",
+                "label": "Requests",
+                "batches": [],
+                "rows": by_file(attempts(rows)),
+            }
+        ]
+    originals = {row["id"]: row for row in receipts if not row.get("clarification")}
+    owners = {
+        row["id"]: originals.get(row.get("original"), row)
+        if row.get("clarification") and row.get("original")
+        else row
+        for row in receipts
+    }
+    groups, assigned = [], set()
+    for number, owner in enumerate(
+        {id(owner): owner for owner in owners.values()}.values(), 1
+    ):
+        children = [
+            row for row in receipts if row is not owner and owners[row["id"]] is owner
+        ]
+        indices = owner["indices"].union(*(row["indices"] for row in children))
+        included = [row for row in rows if row["index"] in indices]
+        assigned.update(row["index"] for row in included)
+        groups.append(
+            {
+                "id": owner["id"],
+                "label": f"Batch {number}"
+                + (" · Clarification" if owner.get("clarification") else ""),
+                "batches": [owner["id"], *(row["id"] for row in children)],
+                # Attempts keep the order of their first request.
+                "rows": attempts(included),
+            }
+        )
+    remaining = [row for row in rows if row["index"] not in assigned]
+    for identity, label, kept in (
+        ("unsent", "Not submitted", True),
+        ("unlinked", "Requests without a batch receipt", False),
+    ):
+        chosen = [
+            row for row in remaining if (row["state"] in {"queued", "prepared"}) == kept
+        ]
+        if chosen:
+            groups.append(
+                {
+                    "id": identity,
+                    "label": label,
+                    "batches": [],
+                    "rows": by_file(attempts(chosen)),
+                }
+            )
+    return groups
+
+
+def file_requests(requests, receipts):
+    """Each file's requests at their latest attempts, for its list row: line
+    amounts, states, the first request to inspect, and the provider Batches
+    holding its submitted requests."""
+    batches = {}
+    for receipt in receipts:
+        for index in receipt["indices"]:
+            batches.setdefault(index, []).append(receipt["id"])
+    files = {}
+    for row in requests:
+        if not row["file"]:
+            continue
+        entry = files.setdefault(
+            row["file"],
+            {"first": row["index"], "requests": 0, "lines": 0, "done": 0, "states": []},
+        )
+        if row["state"] not in entry["states"]:
+            entry["states"].append(row["state"])
+        if row["state"] != "unused":
+            entry["requests"] += 1
+            entry["lines"] += row["sourceItems"]
+            if row["state"] in {"validated", "saved"}:
+                entry["done"] += row["sourceItems"]
+        if row["state"] == "submitted":
+            submitted = {
+                "batches": batches.get(row["indices"][-1], []),
+                "finished": bool(row.get("providerFinished")),
+            }
+            if submitted not in entry.setdefault("submitted", []):
+                entry["submitted"].append(submitted)
+    return files
+
+
+def attention(requests):
+    """The first request of each kind a reader may need: an uncertain
+    submission, one still at the provider, and a failed or rejected one.
+    Whether a request at the provider is unconfirmed depends on its run."""
+    first = {}
+    for row in requests:
+        for kind, matches in (
+            ("uncertain", row["state"] == "uncertain"),
+            (
+                "submitted",
+                row["state"] == "submitted" and not row.get("providerFinished"),
+            ),
+            ("failed", row["state"] in {"failed", "rejected"}),
+        ):
+            if matches:
+                first.setdefault(kind, row)
+        if len(first) == 3:
             break
-    return text[:160] + ("…" if len(text) > 160 else "")
+    return sorted(
+        {row["index"]: row for row in first.values()}.values(),
+        key=lambda row: row["index"],
+    )
 
 
-def summary(root, job):
+def request_view(root, job):
+    """A run's saved requests for display, read once for its observed
+    summary and the inspector's request pages."""
     requests = queue(root)
-    request_indices = {key: index for index, key in enumerate(requests)}
+    records = ledger_records(root) if not requests else None
+    from .request_scope import requests as source_requests
+
+    rows = []
+    for item in source_requests(root, job):
+        row = {
+            "index": item["index"],
+            "state": item["state"],
+            "file": item["file"],
+            "sourceItems": len(item["source"]),
+        }
+        if item.get("providerFinished"):
+            row["providerFinished"] = True
+        if records and item["index"] < len(records):
+            for key in ("clarificationOf", "retryOf"):
+                if key in records[item["index"]]:
+                    row[key] = records[item["index"]][key]
+        if (item.get("error") or {}).get("code") == "replaced_response":
+            row["replaced"] = True
+        rows.append(row)
+    batches = saved(evidence_root(root), "batch_history.json").get("batches", [])
+    receipts = providers(root, requests, batches)
+    latest = attempts(rows)
+    groups = request_groups(rows, receipts, job.get("mode"))
+    return {
+        "rows": rows,
+        "groups": groups,
+        "files": file_requests(latest, receipts),
+        "attention": attention(latest),
+        "revision": digest(groups)[:16],
+    }
+
+
+def request_page(view, group=None, index=None):
+    """One page of a request group: the group's page holding `index`, else
+    the first page of `group` (a Batch or clarification ID), else of the
+    first group."""
+    groups = view["groups"]
+
+    def named(row):
+        return group in {row["id"], *row["batches"]}
+
+    def holds(row):
+        return any(index in request["indices"] for request in row["rows"])
+
+    holding = [row for row in groups if holds(row)] if index is not None else []
+    chosen = next(
+        (row for row in holding if named(row)),
+        holding[0]
+        if holding
+        else next((row for row in groups if named(row)), groups[0] if groups else None),
+    )
+    if chosen is None:
+        return {
+            "group": None,
+            "rows": [],
+            "offset": 0,
+            "total": 0,
+            "previous": None,
+            "next": None,
+        }
+    rows = chosen["rows"]
+    position = next(
+        (number for number, row in enumerate(rows) if index in row["indices"]), 0
+    )
+    offset = position - position % REQUEST_PAGE
+    return {
+        "group": chosen["id"],
+        "rows": rows[offset : offset + REQUEST_PAGE],
+        "offset": offset,
+        "total": len(rows),
+        "previous": rows[offset - REQUEST_PAGE]["index"] if offset else None,
+        "next": rows[offset + REQUEST_PAGE]["index"]
+        if offset + REQUEST_PAGE < len(rows)
+        else None,
+    }
+
+
+def summary(root, job, view=None):
+    if view is None:
+        view = request_view(root, job)
+    requests = queue(root)
     batches = saved(evidence_root(root), "batch_history.json").get("batches", [])
     submitted = {
         key for batch in batches for key in batch.get("custom_ids", {}).values()
@@ -735,9 +1005,7 @@ def summary(root, job):
                     key: (usage or {}).get(key, 0) + batch["usage"].get(key, 0)
                     for key in ("input_tokens", "output_tokens")
                 }
-    from .request_scope import requests as source_requests
-
-    items = list(source_requests(root, job))
+    items = view["rows"]
     # A request's latest attempt decides whether it was rejected.
     latest = set(
         {
@@ -751,11 +1019,7 @@ def summary(root, job):
         if row["state"] == "rejected" and (not records or row["index"] in latest)
     ]
     rejected = len(rejected_items)
-    unresolved = [
-        row
-        for row in rejected_items
-        if (row.get("error") or {}).get("code") != "replaced_response"
-    ]
+    unresolved = [row for row in rejected_items if not row.get("replaced")]
     validation_files = set(job.get("mismatches", {})) | {
         row["file"] for row in unresolved if row["file"]
     }
@@ -819,13 +1083,6 @@ def summary(root, job):
                 "total": len(batch["custom_ids"])
                 if isinstance(batch.get("custom_ids"), dict)
                 else None,
-                "requestIndices": sorted(
-                    {
-                        request_indices[key]
-                        for key in (batch.get("custom_ids") or {}).values()
-                        if key in request_indices
-                    }
-                ),
                 "counts": counts,
             }
         )
@@ -845,13 +1102,6 @@ def summary(root, job):
                         "counts": batch.get("counts", {}),
                         "clarification": True,
                         "originalBatchId": record["original_id"],
-                        "requestIndices": sorted(
-                            {
-                                request_indices[item["key"]]
-                                for item in batch["items"]
-                                if item["key"] in request_indices
-                            }
-                        ),
                     }
                 )
     billed = [batch.get("usage") or {} for batch in batches] + [
@@ -922,26 +1172,19 @@ def summary(root, job):
         "runErrors": list(dict.fromkeys(run_errors)),
         "usage": usage,
         "fileMetrics": file_metrics(job),
-        "requests": [
+        # Request rows stay out of observation; the inspector pages them.
+        "files": view["files"],
+        "groups": [
             {
-                "index": row["index"],
-                "state": row["state"],
-                "file": row["file"],
-                "sourceItems": len(row["source"]),
-                "preview": source_preview(row["source"]),
-                **({"providerFinished": True} if row.get("providerFinished") else {}),
-                **(
-                    {
-                        key: records[row["index"]][key]
-                        for key in ("clarificationOf", "retryOf")
-                        if key in records[row["index"]]
-                    }
-                    if records and row["index"] < len(records)
-                    else {}
-                ),
+                **{key: group[key] for key in ("id", "label", "batches")},
+                "total": len(group["rows"]),
+                "files": len({row["file"] for row in group["rows"] if row["file"]}),
+                "first": group["rows"][0]["index"] if group["rows"] else None,
             }
-            for row in items
+            for group in view["groups"]
         ],
+        "attention": view["attention"],
+        "requestRevision": view["revision"],
         "retryBlocked": bool(
             uncertain
             or any(row["state"] in {"submitted", "received"} for row in items)
@@ -970,7 +1213,7 @@ def phase_feedback(job):
         }
     if job.get("mode") == "translate":
         process = job.get("process") or {}
-        requests = process.get("requests") or []
+        requests = sum(group["total"] for group in process.get("groups") or [])
         if job.get("status") == "complete":
             message = (
                 "Translation finished. Review rejected responses before applying the saved output."
@@ -984,9 +1227,13 @@ def phase_feedback(job):
                 "itemProgress": None,
             }
         if job.get("status") == "running" and requests:
+            # Live requests never finish at the provider without a response,
+            # so attention names the first one still waiting there.
             message = (
                 "Waiting for the provider response."
-                if any(row["state"] == "submitted" for row in requests)
+                if any(
+                    row["state"] == "submitted" for row in process.get("attention", [])
+                )
                 else "Processing translation responses and saving progress."
             )
             # Keep the worker's current filename for per-file activity. Its
@@ -1187,7 +1434,21 @@ def payload(root, index):
             row["state"],
             row.get("error") or error,
         )
-        value["unused"] = row.get("unused")
+        unused = row.get("unused")
+        if unused:
+            # Link only the requests whose validated responses the file uses.
+            states = {
+                item["index"]: item["state"] for item in source_requests(root, {})
+            }
+            unused = {
+                **unused,
+                "appliedRequests": [
+                    index
+                    for index in unused["appliedRequests"]
+                    if states.get(index) in {"validated", "saved"}
+                ],
+            }
+        value["unused"] = unused
         from dazedtl.translation.refusals import MESSAGE, refused
 
         from .batch_refusals import records as clarification_records

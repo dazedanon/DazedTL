@@ -14,7 +14,6 @@ import {
   fileLines,
   fileMetricRun,
   fileStatus,
-  groupedRequests,
   settledWithoutRequests,
 } from "./translationView";
 import type { RequestInspectionTarget } from "./ProcessPanel";
@@ -82,10 +81,10 @@ export function TranslateWorkspace({
       owner(name),
       currentEstimate,
     );
-    const request = groupedRequests(job?.process?.requests || []).find(
-      (row) => row.file === name,
-    );
-    inspect(job || null, { file: name, index: request?.index });
+    inspect(job || null, {
+      file: name,
+      index: job?.process?.files?.[name]?.first,
+    });
   };
   return (
     <div className="translation-workspace">

@@ -266,7 +266,8 @@ class BatchValidationTests(unittest.TestCase):
                 write_json(root / "job.json", job)
                 write_json(root / "log/batch_requests.json", queue)
                 value = process_view.summary(root, job)
-                self.assertEqual(value["requests"][2]["state"], "received", change)
+                rows = process_view.request_view(root, job)["rows"]
+                self.assertEqual(rows[2]["state"], "received", change)
                 self.assertEqual(value["unused"], 0, change)
                 self.assertTrue(value["retryBlocked"], change)
 
@@ -344,7 +345,7 @@ class BatchValidationTests(unittest.TestCase):
             }
             value = process_view.summary(root, job)
             self.assertEqual(
-                [row["state"] for row in value["requests"]],
+                [row["state"] for row in process_view.request_view(root, job)["rows"]],
                 ["validated", "rejected", "received"],
             )
             self.assertEqual(
@@ -421,7 +422,8 @@ class BatchValidationTests(unittest.TestCase):
                 if change == "missing":
                     (root / "log/mismatchHistory.txt").unlink()
                 value = process_view.summary(root, job)
-                self.assertEqual(value["requests"][1]["state"], "received", change)
+                rows = process_view.request_view(root, job)["rows"]
+                self.assertEqual(rows[1]["state"], "received", change)
                 self.assertTrue(value["retryBlocked"], change)
                 self.assertEqual(
                     value["validationIssues"],

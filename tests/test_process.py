@@ -304,12 +304,11 @@ class ProcessTests(unittest.TestCase):
                 record(params, filename="Other.json", response=refusal)
                 retry = record(clarified(params), parent=None if legacy else original)
                 before = evidence.path.read_bytes()
-                summary = process_view.summary(
-                    root, {"mode": "translate", "status": "running"}
-                )
+                job = {"mode": "translate", "status": "running"}
+                summary = process_view.summary(root, job)
+                (group,) = process_view.request_view(root, job)["groups"]
                 self.assertEqual(
-                    [row.get("clarificationOf") for row in summary["requests"]],
-                    [None, None, 0],
+                    [row["indices"] for row in group["rows"]], [[0, 2], [1]]
                 )
                 self.assertTrue(summary["retryBlocked"])
                 original_payload = process_view.payload(root, 0)
@@ -400,6 +399,152 @@ class ProcessTests(unittest.TestCase):
                             ),
                         )
 
+    def test_inspector_requests_group_attempts_by_file_and_batch_receipt(self):
+        # Observations no longer carry request rows; the inspector reads these
+        # groups a page at a time, so attempts and Batch membership are settled
+        # here once. A retry must not become another source request.
+        def row(index, state, file, **extra):
+            return {
+                "index": index,
+                "state": state,
+                "file": file,
+                "sourceItems": 1,
+                **extra,
+            }
+
+        original, other = (
+            row(0, "rejected", "Items.json"),
+            row(1, "validated", "Other.json"),
+        )
+        retry = row(2, "submitted", "Items.json", clarificationOf=0)
+        self.assertEqual(
+            [
+                (request["indices"], request["state"])
+                for request in process_view.attempts([original, other, retry])
+            ],
+            [([0, 2], "submitted"), ([1], "validated")],
+        )
+        self.assertEqual(original["state"], "rejected")
+        validation = row(2, "submitted", "Items.json", retryOf=0)
+        self.assertEqual(len(process_view.attempts([original, other, validation])), 2)
+        for foreign in ({"file": "Foreign.json"}, {"clarificationOf": 99}):
+            self.assertEqual(
+                len(process_view.attempts([original, other, {**retry, **foreign}])),
+                3,
+            )
+        # The latest attempt must not inherit a finished marker from its parent.
+        (latest,) = process_view.attempts(
+            [
+                row(0, "submitted", None, providerFinished=True),
+                row(1, "submitted", None, clarificationOf=0),
+            ]
+        )
+        self.assertNotIn("providerFinished", latest)
+        rows = [
+            row(0, "submitted", "CommonEvents.json"),
+            row(1, "submitted", "Map001.json"),
+            row(2, "received", "CommonEvents.json"),
+            row(3, "queued", "CommonEvents.json"),
+            row(4, "uncertain", "Map001.json"),
+        ]
+        receipts = [
+            {"id": "original", "indices": {0, 2}},
+            {
+                "id": "retry",
+                "indices": {2},
+                "clarification": True,
+                "original": "original",
+            },
+            {"id": "other", "indices": {1}},
+            {"id": "legacy", "indices": set()},
+        ]
+
+        def groups(receipts, mode="batch"):
+            return [
+                (group["id"], group["batches"], [row["index"] for row in group["rows"]])
+                for group in process_view.request_groups(rows, receipts, mode)
+            ]
+
+        self.assertEqual(
+            groups(receipts),
+            [
+                ("original", ["original", "retry"], [0, 2]),
+                ("other", ["other"], [1]),
+                ("legacy", ["legacy"], []),
+                ("unsent", [], [3]),
+                ("unlinked", [], [4]),
+            ],
+        )
+        # A clarification whose original is missing stays its own group, and
+        # counts or file names never fill a Batch without its receipt keys.
+        orphan = [receipts[0], {**receipts[1], "original": "missing"}, *receipts[2:]]
+        self.assertEqual(
+            groups(orphan)[:2],
+            [("original", ["original"], [0, 2]), ("retry", ["retry"], [2])],
+        )
+        self.assertEqual(
+            groups([{**receipt, "indices": set()} for receipt in receipts])[0][2], []
+        )
+        # Live requests are one group, each file's requests together.
+        self.assertEqual(
+            groups(receipts, "translate"), [("requests", [], [0, 2, 3, 1, 4])]
+        )
+        requests = process_view.attempts(rows)
+        files = process_view.file_requests(requests, receipts)
+        self.assertEqual(
+            files["CommonEvents.json"],
+            {
+                "first": 0,
+                "requests": 3,
+                "lines": 3,
+                "done": 0,
+                "states": ["submitted", "received", "queued"],
+                "submitted": [{"batches": ["original"], "finished": False}],
+            },
+        )
+        self.assertEqual(
+            [request["index"] for request in process_view.attention(requests)], [0, 4]
+        )
+        # A clarification with its own index cannot borrow its parent's Batch.
+        clarified = process_view.attempts(
+            [
+                row(0, "rejected", "Items.json"),
+                {**retry, "clarificationOf": 0, "index": 1},
+            ]
+        )
+        for held, batches in (({0}, []), ({1}, ["retry"])):
+            self.assertEqual(
+                process_view.file_requests(
+                    clarified, [{"id": "retry", "indices": held}]
+                )["Items.json"]["submitted"],
+                [{"batches": batches, "finished": False}],
+            )
+        # A page holds the requested index; a clarification ID names its group.
+        view = {
+            "groups": [
+                {
+                    "id": "batch",
+                    "batches": ["batch", "clarification"],
+                    "rows": [{"index": n, "indices": [n]} for n in range(250)],
+                },
+                {
+                    "id": "unsent",
+                    "batches": [],
+                    "rows": [{"index": 250, "indices": [250, 251]}],
+                },
+            ]
+        }
+
+        def page(group, index):
+            value = process_view.request_page(view, group, index)
+            return (value["group"], value["offset"], value["previous"], value["next"])
+
+        self.assertEqual(page(None, 201), ("batch", 200, 100, None))
+        self.assertEqual(page("clarification", None), ("batch", 0, None, 100))
+        self.assertEqual(page("batch", 251), ("unsent", 0, None, None))
+        self.assertEqual(page("missing", 999), ("batch", 0, None, 100))
+        self.assertIsNone(process_view.request_page({"groups": []})["group"])
+
     def test_older_live_retries_count_once_only_after_a_replaced_attempt(self):
         # Runs saved before retries recorded their first attempt showed a
         # fully translated file as 50 / 100 lines. Only a replaced attempt
@@ -422,14 +567,23 @@ class ProcessTests(unittest.TestCase):
                     "UPDATE requests SET error=? WHERE id=1",
                     (json.dumps({"code": "replaced_response", "message": "Replaced"}),),
                 )
-            value = process_view.summary(
-                root, {"mode": "translate", "status": "complete"}
-            )
+            job = {"mode": "translate", "status": "complete"}
+            value = process_view.summary(root, job)
+            (group,) = process_view.request_view(root, job)["groups"]
             self.assertEqual(
-                [row.get("retryOf") for row in value["requests"]],
-                [None, None, 0, None, None],
+                [row["indices"] for row in group["rows"]], [[0, 2], [3], [4], [1]]
             )
             self.assertEqual(value["rejected"], 1)
+            self.assertEqual(
+                value["files"]["Map001.json"],
+                {
+                    "first": 0,
+                    "requests": 3,
+                    "lines": 3,
+                    "done": 2,
+                    "states": ["validated", "rejected"],
+                },
+            )
 
     def test_completed_live_rejections_release_only_exact_returned_attempts(self):
         # Old Live rows stopped at "received" and blocked all later estimates.
@@ -598,20 +752,23 @@ class ProcessTests(unittest.TestCase):
             write_json(root / "log/batch_state.json", state)
             job = {"mode": "batch", "status": "running"}
             value = process_view.summary(root, job)
-            self.assertEqual(
-                [row["state"] for row in value["requests"]], ["submitted", "submitted"]
-            )
-            self.assertEqual(
-                [batch["requestIndices"] for batch in value["batches"]], [[0], [1]]
-            )
+            groups = process_view.request_view(root, job)["groups"]
             # The inspector may identify finished rows without pretending a
             # response was downloaded or authorizing another paid submission.
             self.assertEqual(
-                [row.get("providerFinished", False) for row in value["requests"]],
-                [True, False],
+                [
+                    (group["id"], row["state"], row.get("providerFinished", False))
+                    for group in groups
+                    for row in group["rows"]
+                ],
+                [("first", "submitted", True), ("second", "submitted", False)],
             )
             self.assertEqual(
-                [row["preview"] for row in value["requests"]], ["薬", "薬"]
+                value["files"]["Items.json"]["submitted"],
+                [
+                    {"batches": ["first"], "finished": True},
+                    {"batches": ["second"], "finished": False},
+                ],
             )
             self.assertEqual((value["uncertain"], value["received"]), (0, 0))
             self.assertTrue(value["retryBlocked"])
@@ -630,8 +787,9 @@ class ProcessTests(unittest.TestCase):
                 write_json(root / "log/batch_history.json", {"batches": history})
                 write_json(root / "log/batch_state.json", manifest)
                 value = process_view.summary(root, job)
-                self.assertEqual(value["requests"][0]["state"], "uncertain", change)
-                self.assertNotIn("providerFinished", value["requests"][0], change)
+                row = process_view.request_view(root, job)["rows"][0]
+                self.assertEqual(row["state"], "uncertain", change)
+                self.assertNotIn("providerFinished", row, change)
                 self.assertTrue(value["retryBlocked"], change)
             # Aggregate partial success cannot identify which source finished;
             # a new clarification must not inherit the original's completion.
@@ -663,17 +821,8 @@ class ProcessTests(unittest.TestCase):
             self.assertFalse(
                 any(
                     row.get("providerFinished")
-                    for row in process_view.summary(root, job)["requests"]
+                    for row in process_view.request_view(root, job)["rows"]
                 )
-            )
-            # A long source stays bounded on the observer, not the full prompt.
-            self.assertEqual(
-                len(
-                    process_view.source_preview(
-                        {"Line1": "a" * 5000, "Line2": "b" * 5000}
-                    )
-                ),
-                161,
             )
 
     def test_source_locations_accept_native_event_originals_without_indexing_metadata(
@@ -1890,7 +2039,10 @@ class ProcessTests(unittest.TestCase):
         self.assertEqual(process_view.phase_feedback(job), {})
         job.update(
             phase="preparing",
-            process={"requests": [{"state": "submitted"}]},
+            process={
+                "groups": [{"total": 1}],
+                "attention": [{"state": "submitted"}],
+            },
             itemProgress={"file": "Map010.json", "current": 25, "total": 5887},
         )
         live = process_view.phase_feedback(job)
@@ -1898,7 +2050,7 @@ class ProcessTests(unittest.TestCase):
         self.assertEqual({**job, **live}["itemProgress"], job["itemProgress"])
         self.assertIn("Waiting", live["message"])
         # Rejected receipts do not end the worker's parsing of this file.
-        job["process"]["requests"] = [{"state": "rejected"}]
+        job["process"]["attention"] = [{"state": "rejected"}]
         self.assertEqual(
             {**job, **process_view.phase_feedback(job)}["itemProgress"],
             job["itemProgress"],

@@ -251,6 +251,12 @@ export const api = {
       request("guided_inspect", { project_id, run_id }),
     payload: (project_id: string, run_id: string, index: number) =>
       request("guided_payload", { project_id, run_id, index }),
+    requests: (
+      project_id: string,
+      run_id: string,
+      group: string | null,
+      index: number | null,
+    ) => request("guided_requests", { project_id, run_id, group, index }),
     nameResults: (project_id: string, run_id: string, offset = 0) =>
       request("guided_name_results", { project_id, run_id, offset }),
     filePreview: (project_id: string, name: string, offset = 0, query = "") =>

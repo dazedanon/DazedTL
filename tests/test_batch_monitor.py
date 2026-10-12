@@ -129,7 +129,12 @@ class BatchMonitorTests(unittest.TestCase):
         # Batch and retain its receipt across app restart, without a Live fallback.
         # A second refusal must stay visible in the inspector even though native
         # consume receives an empty body to prevent accepting it as dialogue.
-        from dazedtl.compatibility.process_view import batch_results, payload, summary
+        from dazedtl.compatibility.process_view import (
+            batch_results,
+            payload,
+            request_view,
+            summary,
+        )
         from dazedtl.translation.refusals import CLARIFICATION, POLICY
 
         for retry_text in (
@@ -210,7 +215,7 @@ class BatchMonitorTests(unittest.TestCase):
                     )
                     self.assertEqual(batch_results(root), original)
                     self.assertEqual(
-                        summary(root, job)["requests"][0]["state"], "submitted"
+                        request_view(root, job)["rows"][0]["state"], "submitted"
                     )
                     pending = payload(root, 0)["responseAttempts"]
                     self.assertEqual(
@@ -283,12 +288,14 @@ class BatchMonitorTests(unittest.TestCase):
                         [row["id"] for row in summary(root, job)["batches"]],
                         ["paid", "retry"],
                     )
+                    # The clarification joins its original's group: both
+                    # receipts hold the same request.
                     self.assertEqual(
                         [
-                            row["requestIndices"]
-                            for row in summary(root, job)["batches"]
+                            (group["batches"], group["first"], group["total"])
+                            for group in summary(root, job)["groups"]
                         ],
-                        [[0], [0]],
+                        [(["paid", "retry"], 0, 1)],
                     )
                     self.assertEqual(
                         summary(root, job)["batches"][1]["originalBatchId"], "paid"

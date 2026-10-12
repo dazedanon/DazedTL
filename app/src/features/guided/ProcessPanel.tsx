@@ -1,6 +1,11 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { ChevronRight, LoaderCircle } from "lucide-react";
-import type { Job, NameTranslationPage, RunPayload } from "../../api/contracts";
+import type {
+  Job,
+  NameTranslationPage,
+  RequestPage,
+  RunPayload,
+} from "../../api/contracts";
 import { Button } from "../../ui/Button";
 import { ComboBox } from "../../ui/ComboBox";
 import { Message } from "../../ui/Feedback";
@@ -9,16 +14,12 @@ import { ProtectedText, RequestSource } from "./RequestSource";
 import { RequestTechnical } from "./RequestTechnical";
 import { ExpandableText } from "../../ui/ExpandableText";
 import { historyOutcome } from "./historyView";
-import {
-  activeRun,
-  groupedRequests,
-  requestAttempt,
-  translatedLines,
-} from "./translationView";
+import { activeRun, requestAttempt, translatedLines } from "./translationView";
 import {
   requestOutcome,
   requestBatches,
   requestBatchOutcome,
+  requestRows,
   payloadForBatch,
   type RequestBatch,
 } from "./requestView";
@@ -72,26 +73,20 @@ const unconfirmed = (
     row.state === "submitted" &&
     !row.providerFinished);
 /** The request to read first: an unconfirmed submission, then a failed or
-    rejected one. */
+    rejected one. The observed attention rows hold each kind's first request
+    at its latest attempt, so a later attempt that passed settles it. */
 function issueRequest(job: Job) {
-  // A later attempt that passed validation settles the request.
-  const requests = groupedRequests(job.process?.requests || []);
+  const requests = job.process?.attention || [];
   return (
     requests.find((row) => unconfirmed(job, row)) ||
     requests.find((row) => ["failed", "rejected"].includes(row.state))
   );
 }
+/** Without a named group, the request page opens the first group holding it. */
 function issueView(job: Job): InspectorView {
   const issue = issueRequest(job);
   return issue
-    ? {
-        index: issue.index,
-        tab: "response",
-        batch:
-          requestBatches(job.process!, job.mode).find((group) =>
-            group.rows.some((row) => row.indices.includes(issue.index)),
-          )?.id || null,
-      }
+    ? { index: issue.index, tab: "response", batch: null }
     : { index: 0, tab: "source", batch: null };
 }
 /** The last view of this run, or none so it opens on what needs attention. */
@@ -123,6 +118,10 @@ export function runLabel(job: Job) {
 type Props = {
   job: Job;
   readPayload?: (index: number) => Promise<RunPayload>;
+  readRequests?: (
+    group: string | null,
+    index: number | null,
+  ) => Promise<RequestPage>;
   initialRequest?: RequestInspectionTarget;
   readNames?: (offset: number) => Promise<NameTranslationPage>;
   compact?: boolean;
@@ -141,6 +140,7 @@ export function ProcessPanel(props: Props) {
 function RequestProcess({
   job,
   readPayload,
+  readRequests,
   readNames,
   initialRequest,
   actions,
@@ -157,14 +157,7 @@ function RequestProcess({
               ? "response"
               : "json"
             : "source",
-          batch:
-            initialRequest.index == null
-              ? "file"
-              : requestBatches(process, job.mode).find((batch) =>
-                  batch.rows.some((row) =>
-                    row.indices.includes(initialRequest.index!),
-                  ),
-                )?.id || null,
+          batch: initialRequest.index == null ? "file" : null,
         }
       : savedView(job.id) || issueView(job),
   );
@@ -180,26 +173,62 @@ function RequestProcess({
   const tabId = useId();
   const attemptTabId = useId();
   const batches = process.batches || [];
-  const groups = requestBatches(process, job.mode);
-  const selectedBatch =
-    job.mode === "batch"
-      ? groups.find(
-          (batch) =>
-            batch.id === view.batch ||
-            batch.clarifications.some((child) => child.id === view.batch),
-        ) ||
-        (view.batch === null
-          ? groups[0]
-          : ["unsent", "unlinked"].includes(view.batch || "")
-            ? groups.find((batch) =>
-                batch.rows.some((row) => row.indices.includes(view.index)),
-              )
-            : undefined)
-      : groups[0];
+  const groups = requestBatches(process);
+  // A Batch run opened on a file without a linked request selects no group.
+  const fileOnly = job.mode === "batch" && view.batch === "file";
+  const group = view.batch === "file" ? null : view.batch;
+  // Requests arrive a page at a time. Choosing within the loaded page keeps
+  // it; another page, group or receipt revision reads again, and the loaded
+  // page stays visible while a receipt revision refreshes it.
+  const [loaded, setLoaded] = useState<{
+    group: string | null;
+    anchor: number | null;
+    page: RequestPage;
+  } | null>(null);
+  const holds =
+    !!loaded &&
+    loaded.group === group &&
+    view.index >= 0 &&
+    loaded.page.rows.some((row) => row.indices.includes(view.index));
+  const anchor = holds ? loaded.anchor : view.index >= 0 ? view.index : null;
+  const pageRead = useRead(
+    readRequests && !fileOnly
+      ? JSON.stringify([group, anchor, process.requestRevision || ""])
+      : null,
+    () => readRequests!(group, anchor),
+  );
+  useOnChange(pageRead.value, (value) => {
+    if (value) setLoaded({ group, anchor, page: value });
+  });
+  const pageError =
+    pageRead.error === undefined
+      ? ""
+      : pageRead.error instanceof Error
+        ? pageRead.error.message
+        : "Saved requests unavailable.";
+  const page =
+    !fileOnly && loaded?.group === group && loaded.anchor === anchor
+      ? loaded.page
+      : null;
+  // The page names the group that holds the request; until it arrives, the
+  // view's own group stays selected.
+  const selectedBatch = fileOnly
+    ? undefined
+    : groups.find((batch) =>
+        page
+          ? batch.id === page.group
+          : batch.id === view.batch || batch.batches.includes(view.batch || ""),
+      ) || (job.mode === "batch" ? undefined : groups[0]);
   const selectedProviders = selectedBatch?.provider
     ? [selectedBatch.provider, ...selectedBatch.clarifications]
     : [];
-  const requests = selectedBatch?.rows || [];
+  const requests =
+    page && page.group === selectedBatch?.id ? requestRows(page.rows) : [];
+  // Paging stays in place while another page of the same group loads.
+  const pages =
+    page ||
+    (loaded && loaded.page.group === selectedBatch?.id ? loaded.page : null);
+  const pageLoading = pageRead.pending && !page;
   const selected =
     view.index < 0
       ? undefined
@@ -232,7 +261,7 @@ function RequestProcess({
   useOnChange(payloadRead.value, (value) => {
     if (value) setPayload(value);
   });
-  const busy = payloadRead.pending;
+  const busy = payloadRead.pending || (pageLoading && view.index >= 0);
   const error =
     payloadRead.error === undefined
       ? ""
@@ -270,11 +299,7 @@ function RequestProcess({
   const choose = (number: number) => change({ index: number });
   function openBatch(batch: RequestBatch) {
     setAttemptSelection(null);
-    change({
-      batch: batch.id,
-      index: batch.rows[0]?.index || 0,
-      tab: "source",
-    });
+    change({ batch: batch.id, index: batch.first ?? 0, tab: "source" });
   }
   const outcomeOf = (
     row: { state: string; providerFinished?: boolean },
@@ -345,9 +370,7 @@ function RequestProcess({
   const legacyIssues = (process.validationIssues || []).filter(
     (issue) =>
       (!selectedFile || issue.file === selectedFile) &&
-      !groupedRequests(process.requests || []).some(
-        (row) => row.file === issue.file && row.state === "rejected",
-      ),
+      !process.files?.[issue.file]?.states.includes("rejected"),
   );
   const issue = issueRequest(job);
   return (
@@ -403,12 +426,7 @@ function RequestProcess({
                   const outcome = requestBatchOutcome(batch, job);
                   const count = batch.provider
                     ? batch.provider.total
-                    : batch.rows.length;
-                  const files = [
-                    ...new Set(
-                      batch.rows.map((row) => row.file).filter(Boolean),
-                    ),
-                  ];
+                    : batch.total;
                   const clarificationCount = batch.clarifications.every(
                     (child) => child.total != null,
                   )
@@ -467,10 +485,10 @@ function RequestProcess({
                                   : "Includes clarification"}
                               </small>
                             )}
-                          {!!files.length && (
+                          {!!batch.files && (
                             <small>
-                              {files.length}{" "}
-                              {files.length === 1 ? "file" : "files"}
+                              {batch.files}{" "}
+                              {batch.files === 1 ? "file" : "files"}
                             </small>
                           )}
                         </span>
@@ -501,14 +519,19 @@ function RequestProcess({
                   selectionOnly
                   aria-label="Choose request"
                   value={index == null ? "" : String(index)}
-                  placeholder="No requests"
+                  placeholder={
+                    pageLoading ? "Reading requests…" : "No requests"
+                  }
                   disabled={!requests.length}
                   options={requests.map((row, position) => {
                     const outcome = outcomeOf(row, row.outcome);
+                    const number = page!.offset + position + 1;
+                    const label = `Request ${number.toLocaleString()} of ${page!.total.toLocaleString()}`;
                     return {
                       value: String(row.index),
-                      label: `Request ${position + 1} of ${requests.length}`,
-                      searchText: `Request ${position + 1}\n${outcome.label}`,
+                      label,
+                      // Typed numbers match with or without separators.
+                      searchText: `${label}\nRequest ${number}\n${outcome.label}`,
                       description: outcome.label,
                       tone:
                         outcome.group === "failed"
@@ -521,6 +544,28 @@ function RequestProcess({
                   onChange={(value) => choose(Number(value))}
                 />
               </div>
+              {pages && (pages.previous != null || pages.next != null) && (
+                <div className="request-pages">
+                  <Button
+                    variant="quiet"
+                    disabled={pageRead.pending || pages.previous == null}
+                    onClick={() =>
+                      change({ batch: pages.group, index: pages.previous! })
+                    }
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    variant="quiet"
+                    disabled={pageRead.pending || pages.next == null}
+                    onClick={() =>
+                      change({ batch: pages.group, index: pages.next! })
+                    }
+                  >
+                    Next
+                  </Button>
+                </div>
+              )}
               {selectionOutcome && contentTab !== "file" && (
                 <span
                   className="request-outcome"
@@ -606,6 +651,16 @@ function RequestProcess({
                 : undefined
             }
           >
+            <Message message={pageError} />
+            {pageError && (
+              <Button
+                variant="quiet"
+                disabled={pageRead.pending}
+                onClick={pageRead.retry}
+              >
+                Retry reading requests
+              </Button>
+            )}
             <Message message={error} />
             {(error || retrying) && readPayload && (
               <Button
@@ -644,23 +699,15 @@ function RequestProcess({
                   the validated responses below.
                 </p>
                 <div className="request-references">
-                  {visiblePayload.unused.appliedRequests
-                    .filter((index) =>
-                      requests.some(
-                        (row) =>
-                          row.index === index &&
-                          ["validated", "saved"].includes(row.state),
-                      ),
-                    )
-                    .map((index) => (
-                      <Button
-                        key={index}
-                        variant="quiet"
-                        onClick={() => choose(index)}
-                      >
-                        View used request {index + 1}
-                      </Button>
-                    ))}
+                  {visiblePayload.unused.appliedRequests.map((index) => (
+                    <Button
+                      key={index}
+                      variant="quiet"
+                      onClick={() => choose(index)}
+                    >
+                      View used request {index + 1}
+                    </Button>
+                  ))}
                 </div>
               </div>
             )}
@@ -746,7 +793,7 @@ function RequestProcess({
                     : "No saved request is linked to this file in this attempt."}{" "}
                   File contents shows its current text.
                 </p>
-              ) : selectedBatch?.provider && !requests.length ? (
+              ) : selectedBatch?.provider && !selectedBatch.total ? (
                 <p className="muted">
                   The saved receipt does not identify this batch’s requests.
                   Technical contains the retained receipts and failure details.

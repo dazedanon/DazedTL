@@ -321,6 +321,28 @@ class RunInspection:
             )
         return payload(folder, index)
 
+    def requests(self, project_id, run_id, group=None, index=None):
+        """One page of a run's request group, read when the inspector needs it."""
+        _, native = self.guided.record(project_id)
+        if (
+            run_id not in self.guided.owned_runs(native)
+            or run_id not in self.guided.backend.manual.jobs
+        ):
+            raise ValueError("Choose a translation run owned by this project.")
+        if group is not None and not isinstance(group, str):
+            raise ValueError("Choose a request group from this run.")
+        if index is not None and (type(index) is not int or index < 0):
+            raise ValueError("Choose a valid request index.")
+        from dazedtl.compatibility.process_view import request_page
+
+        with self.guided.observations.read():
+            view = self.guided.observations.requests(
+                self.guided.backend.manual.folder(run_id),
+                self.guided.backend.manual.jobs[run_id],
+                self.guided.run_configuration(run_id),
+            )
+            return request_page(view, group, index)
+
     def file_preview(self, project_id, name, offset=0, query=""):
         _, native = self.guided.record(project_id)
         if name not in self.guided.supported_files(native):

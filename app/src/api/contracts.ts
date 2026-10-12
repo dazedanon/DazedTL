@@ -178,15 +178,46 @@ export type ValidationIssue = {
   rejected: number | null;
 };
 
+/** A source request at its latest attempt; `indices` lists every attempt. */
 export type ProcessRequest = {
   index: number;
+  indices: number[];
   state: string;
-  file?: string | null;
+  file: string | null;
   sourceItems: number;
-  clarificationOf?: number;
-  retryOf?: number;
-  preview?: string;
   providerFinished?: boolean;
+};
+
+export type SubmittedRequests = {
+  batches: string[];
+  finished: boolean;
+};
+
+export type FileRequests = {
+  first: number;
+  requests: number;
+  lines: number;
+  done: number;
+  states: string[];
+  submitted?: SubmittedRequests[];
+};
+
+export type RequestGroup = {
+  id: string;
+  label: string;
+  batches: string[];
+  total: number;
+  files: number;
+  first: number | null;
+};
+
+export type RequestPage = {
+  group: string | null;
+  rows: ProcessRequest[];
+  offset: number;
+  total: number;
+  previous: number | null;
+  next: number | null;
 };
 
 export type FreshStart = {
@@ -202,7 +233,6 @@ export type ProviderBatch = {
   provider?: string;
   canCancel?: boolean;
   total?: number | null;
-  requestIndices?: number[];
   clarification?: boolean;
   originalBatchId?: string;
   counts: Record<string, number | null>;
@@ -234,7 +264,10 @@ export type RunProcess = {
   validationIssues?: ValidationIssue[];
   uncertain?: number;
   duplicateSubmissions?: number;
-  requests?: ProcessRequest[];
+  files?: Record<string, FileRequests>;
+  groups?: RequestGroup[];
+  attention?: ProcessRequest[];
+  requestRevision?: string;
   freshStart?: FreshStart | null;
   sourceItems?: number | null;
   submittedItems?: number | null;
@@ -2700,6 +2733,13 @@ export type RunControlRequest = {
   run_id?: string;
 };
 
+export type GuidedRequestsRequest = {
+  project_id: string;
+  run_id: string;
+  group?: string | null;
+  index?: number | null;
+};
+
 export type GuidedNameResultsRequest = {
   project_id: string;
   run_id: string;
@@ -2808,6 +2848,7 @@ export type RpcContract = {
   };
   guided_inspect: { request: RunRequest; response: Job };
   guided_payload: { request: RunIndexRequest; response: RunPayload };
+  guided_requests: { request: GuidedRequestsRequest; response: RequestPage };
   guided_name_results: {
     request: GuidedNameResultsRequest;
     response: NameTranslationPage;

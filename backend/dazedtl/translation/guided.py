@@ -98,6 +98,7 @@ class Guided:
         self.discard_preparation = self.inspection.discard_preparation
         self.settle_empty_estimate = self.inspection.settle_empty_estimate
         self.payload = self.inspection.payload
+        self.requests = self.inspection.requests
         self.file_preview = self.inspection.file_preview
         self.name_results = self.inspection.name_results
         self.provider_details = self.inspection.provider_details

@@ -56,6 +56,8 @@ class RunObservations:
         self.local = threading.local()
         self.plans = OrderedDict()
         self.processes = OrderedDict()
+        # Request views are shared read-only; callers must not modify them.
+        self.views = OrderedDict()
         self.request_rows = 0
         self.digests = {}
 
@@ -126,29 +128,68 @@ class RunObservations:
         return self.once(("plan", identity), read)
 
     def process(self, root, job, plan):
+        """A run's process summary; its request rows stay in `requests`."""
         if self.session is None or not plan or plan.get("batch_link"):
             return process_view.summary(root, job)
         root = Path(root)
         try:
-            signature = (digest(job), process_stamp(root))
+            stamp = process_stamp(root)
         except OSError, ValueError:
             return process_view.summary(root, job)
+        signature = (digest(job), stamp)
         cached = self.processes.get(root)
         if cached and cached[0] == signature:
             self.processes.move_to_end(root)
             return deepcopy(cached[1])
-        value = process_view.summary(root, job)
+        # The summary shares parts of the cached request view, so callers
+        # always receive their own copy.
+        value = process_view.summary(root, job, self.view(root, job, stamp))
+        self.processes.pop(root, None)
+        if self.unchanged(root, stamp):
+            self.processes[root] = (signature, value)
+            while len(self.processes) > 128:
+                self.processes.popitem(last=False)
+        return deepcopy(value)
+
+    def requests(self, root, job, plan):
+        """A run's display requests, shared with its observed summary."""
+        if self.session is None or not plan or plan.get("batch_link"):
+            return process_view.request_view(root, job)
+        root = Path(root)
         try:
-            unchanged = signature[1] == process_stamp(root)
+            stamp = process_stamp(root)
         except OSError, ValueError:
-            unchanged = False
-        previous = self.processes.pop(root, None)
+            return process_view.request_view(root, job)
+        return self.view(root, job, stamp)
+
+    def view(self, root, job, stamp):
+        # Only these job fields change a request's displayed state.
+        signature = (
+            stamp,
+            job.get("mode"),
+            job.get("status"),
+            bool(job.get("dazedtl_submission_intent")),
+        )
+        cached = self.views.get(root)
+        if cached and cached[0] == signature:
+            self.views.move_to_end(root)
+            return cached[1]
+        value = process_view.request_view(root, job)
+        previous = self.views.pop(root, None)
         if previous:
-            self.request_rows -= len(previous[1]["requests"])
-        if unchanged and len(value["requests"]) <= 20_000:
-            self.processes[root] = (signature, deepcopy(value))
-            self.request_rows += len(value["requests"])
-            while len(self.processes) > 128 or self.request_rows > 20_000:
-                _, removed = self.processes.popitem(last=False)
-                self.request_rows -= len(removed[1]["requests"])
+            self.request_rows -= len(previous[1]["rows"])
+        if self.unchanged(root, stamp) and len(value["rows"]) <= 20_000:
+            self.views[root] = (signature, value)
+            self.request_rows += len(value["rows"])
+            while len(self.views) > 128 or self.request_rows > 20_000:
+                _, removed = self.views.popitem(last=False)
+                self.request_rows -= len(removed[1]["rows"])
         return value
+
+    @staticmethod
+    def unchanged(root, stamp):
+        # Files changing during a read are not cached.
+        try:
+            return stamp == process_stamp(root)
+        except OSError, ValueError:
+            return False

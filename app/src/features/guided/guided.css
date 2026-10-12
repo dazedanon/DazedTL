@@ -135,10 +135,15 @@
   flex: 1;
 }
 .request-picker {
-  width: 22ch;
+  /* Fits "Request 99,999 of 99,999" beside the toggle. */
+  width: 28ch;
   min-width: 0;
   max-width: 100%;
   font-variant-numeric: tabular-nums;
+}
+.request-pages {
+  display: flex;
+  gap: var(--space-1);
 }
 .payload-inspector {
   min-width: 0;

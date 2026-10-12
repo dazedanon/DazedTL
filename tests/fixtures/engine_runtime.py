@@ -1142,7 +1142,12 @@ try:
                 assert usage["openrouter_cost"] == 0.001 and len(sent_batches) == 3
             finally:
                 provider.client.close()
-        from dazedtl.compatibility.process_view import payload, source_values, summary
+        from dazedtl.compatibility.process_view import (
+            payload,
+            request_view,
+            source_values,
+            summary,
+        )
         from dazedtl.compatibility.request_parameters import configure_builders
         from dazedtl.compatibility.run_evidence import Evidence
         from dazedtl.settings.preferences import GENERATION_PARAMETERS
@@ -1257,7 +1262,8 @@ try:
             None,
             ["Heal"],
         ]
-        result = summary(live_root, {"mode": "translate", "status": "complete"})
+        live_job = {"mode": "translate", "status": "complete"}
+        result = summary(live_root, live_job)
         # The retry resends the first request's lines, so they count once.
         assert (
             result["received"],
@@ -1265,7 +1271,9 @@ try:
             result["rejected"],
             result["retryBlocked"],
         ) == (4, 2, 1, False), result
-        assert [row.get("retryOf") for row in result["requests"]] == [
+        assert [
+            row.get("retryOf") for row in request_view(live_root, live_job)["rows"]
+        ] == [
             None,
             0,
             None,

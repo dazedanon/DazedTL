@@ -125,14 +125,24 @@ class ObservationTests(unittest.TestCase):
                 with cache.read():
                     return cache.process(folder, current, plan)
 
-            with patch.object(
-                process_view, "summary", wraps=process_view.summary
-            ) as summarize:
+            with (
+                patch.object(
+                    process_view, "summary", wraps=process_view.summary
+                ) as summarize,
+                patch.object(
+                    process_view, "request_view", wraps=process_view.request_view
+                ) as read_requests,
+            ):
                 first = observe()
-                self.assertEqual(first["requests"][0]["state"], "saved")
-                first["requests"][0]["state"] = "changed by UI"
-                self.assertEqual(observe()["requests"][0]["state"], "saved")
+                self.assertEqual(first["files"][filename]["states"], ["saved"])
+                first["files"][filename]["states"][0] = "changed by UI"
+                self.assertEqual(observe()["files"][filename]["states"], ["saved"])
                 self.assertEqual(summarize.call_count, 1)
+                # The inspector's request pages reuse the observed requests.
+                with cache.read():
+                    view = cache.requests(root, job, plan)
+                self.assertEqual(view["files"][filename]["states"], ["saved"])
+                self.assertEqual(read_requests.call_count, 1)
                 output.unlink()
                 self.assertTrue(observe()["retryBlocked"])
                 self.assertEqual(summarize.call_count, 2)
@@ -200,15 +210,19 @@ class ObservationTests(unittest.TestCase):
                 signature = process_view.file_stamp(path)
                 with cache.read():
                     self.assertEqual(
-                        cache.process(root, job, plan)["requests"][0]["state"],
-                        "prepared",
+                        cache.process(root, job, plan)["files"]["Map001.json"][
+                            "states"
+                        ],
+                        ["prepared"],
                     )
                 connection.execute("UPDATE requests SET state='submitted'")
                 connection.commit()
                 self.assertEqual(process_view.file_stamp(path), signature)
                 with cache.read():
                     view = cache.process(root, job, plan)
-                    self.assertEqual(view["requests"][0]["state"], "submitted")
+                    self.assertEqual(
+                        view["files"]["Map001.json"]["states"], ["submitted"]
+                    )
                     self.assertTrue(view["retryBlocked"])
             finally:
                 connection.close()

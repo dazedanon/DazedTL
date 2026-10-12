@@ -32,72 +32,29 @@ import {
   translatedLines,
   translationStopLabel,
   observedRun,
-  groupedRequests,
   requestAttempt,
 } from "../app/src/features/guided/translationView.ts";
 
-test("clarification selection groups stable receipt indices and keeps each attempt's response and usage", () => {
-  // A retry must not create another source selection or overwrite the original
-  // while a late receipt changes the group's latest status.
-  const original = {
-    index: 0,
-    state: "rejected",
-    file: "Items.json",
-    sourceItems: 1,
-  };
-  const other = {
-    index: 1,
-    state: "validated",
-    file: "Other.json",
-    sourceItems: 1,
-  };
-  const retry = {
-    ...original,
-    index: 2,
-    clarificationOf: 0,
-    state: "submitted",
-  };
-  const rows = [original, other, retry];
-  assert.deepEqual(
-    groupedRequests(rows).map((row) => [
-      row.number,
-      row.index,
-      row.indices,
-      row.state,
-    ]),
-    [
-      [1, 0, [0, 2], "submitted"],
-      [2, 1, [1], "validated"],
-    ],
-  );
-  assert.equal(original.state, "rejected");
-  // A validation retry resends the same lines; they count once.
-  assert.deepEqual(
-    groupedRequests([
-      original,
-      other,
-      { ...retry, clarificationOf: undefined, retryOf: 0 },
-    ]).map((row) => [row.indices, row.sourceItems]),
-    [
-      [[0, 2], 1],
-      [[1], 1],
-    ],
-  );
-  assert.equal(
-    groupedRequests([original, other, { ...retry, file: "Foreign.json" }])
+/** A file's observed requests, one per state given, as the backend sums them. */
+function requested(
+  states: string[],
+  submitted = states.includes("submitted")
+    ? [{ batches: [] as string[], finished: false }]
+    : undefined,
+) {
+  const counted = states.filter((state) => state !== "unused");
+  return {
+    first: 0,
+    requests: counted.length,
+    lines: counted.length,
+    done: counted.filter((state) => ["validated", "saved"].includes(state))
       .length,
-    3,
-  );
-  assert.equal(
-    groupedRequests([original, other, { ...retry, clarificationOf: 99 }])
-      .length,
-    3,
-  );
-  assert.equal(
-    groupedRequests([original, other, { ...retry, state: "validated" }])[0]
-      .state,
-    "validated",
-  );
+    states: [...new Set(states)],
+    ...(submitted && { submitted }),
+  };
+}
+
+test("request attempts keep each response and usage, and receipts alone never read as validated", () => {
   const first = {
     index: 0,
     state: "rejected",
@@ -123,95 +80,54 @@ test("clarification selection groups stable receipt indices and keeps each attem
   // Attempt selection must show the failed original independently of a passed retry.
   assert.equal(requestOutcome(requestAttempt(payload, 0)).group, "failed");
   assert.equal(requestOutcome(requestAttempt(payload, 1)).group, "finished");
-});
-
-test("request choices identify finished receipts and retain file groups, previews and receipt indices", () => {
-  const rows = requestRows([
-    {
-      index: 0,
-      file: "CommonEvents.json",
-      state: "submitted",
-      sourceItems: 1,
-      preview: "The locked door",
-      providerFinished: true,
-    },
-    {
-      index: 1,
+  const rows = requestRows(
+    (
+      [
+        [0, "submitted", true],
+        [1, "received"],
+        [2, "submitted"],
+        [3, "queued"],
+        [4, "uncertain"],
+        [5, "failed"],
+        [6, "rejected"],
+      ] as const
+    ).map(([index, state, providerFinished]) => ({
+      index,
+      indices: [index],
+      state,
       file: "Map001.json",
-      state: "received",
       sourceItems: 1,
-      preview: "A silver key",
-    },
-    {
-      index: 2,
-      file: "CommonEvents.json",
-      state: "submitted",
-      sourceItems: 2,
-      preview: "The open door",
-    },
-    { index: 3, file: "Map001.json", state: "queued", sourceItems: 1 },
-    { index: 4, file: "Map001.json", state: "rejected", sourceItems: 1 },
-    { index: 5, file: "CommonEvents.json", state: "uncertain", sourceItems: 1 },
-    {
-      index: 6,
-      file: "Map001.json",
-      state: "submitted",
-      sourceItems: 1,
-      clarificationOf: 4,
-    },
-    { index: 7, file: "Other.json", state: "failed", sourceItems: 1 },
-  ]);
-  assert.deepEqual(
-    rows.map((row) => row.index),
-    [0, 2, 5, 1, 3, 4, 7],
+      ...(providerFinished && { providerFinished }),
+    })),
   );
+  const outcome = (group: string) =>
+    rows.filter((row) => row.outcome.group === group).map((row) => row.index);
   // Receiving a body alone must not display a successful validation outcome.
-  assert.deepEqual(
-    rows
-      .filter((row) => row.outcome.group === "finished")
-      .map((row) => row.index),
-    [0],
-  );
-  assert.deepEqual(
-    rows
-      .filter((row) => row.outcome.group === "failed")
-      .map((row) => row.index),
-    [7],
-  );
-  assert.deepEqual(
-    rows
-      .filter((row) => row.outcome.group === "pending")
-      .map((row) => row.index),
-    [2, 5, 1, 3, 4],
-  );
-  assert.equal(rows.find((row) => row.index === 1)?.preview, "A silver key");
-  // The latest attempt must not inherit a finished marker from its parent.
-  const retry = requestRows([
-    { index: 0, state: "submitted", providerFinished: true, sourceItems: 1 },
-    { index: 1, state: "submitted", clarificationOf: 0, sourceItems: 1 },
-  ]);
-  assert.equal(retry[0].outcome.group, "pending");
+  assert.deepEqual(outcome("finished"), [0]);
+  assert.deepEqual(outcome("failed"), [5, 6]);
+  assert.deepEqual(outcome("pending"), [1, 2, 3, 4]);
 });
 
-test("batch groups deduplicate linked clarifications while preserving membership and separate replies", () => {
+test("request groups read current provider receipts and keep each clarification's replies separate", () => {
   const process = {
     errors: [],
-    requests: [
+    groups: [
       {
-        index: 0,
-        state: "submitted",
-        file: "CommonEvents.json",
-        sourceItems: 1,
+        id: "original",
+        label: "Batch 1",
+        batches: ["original", "retry"],
+        total: 2,
+        files: 1,
+        first: 0,
       },
-      { index: 1, state: "submitted", file: "Map001.json", sourceItems: 1 },
       {
-        index: 2,
-        state: "received",
-        file: "CommonEvents.json",
-        sourceItems: 1,
+        id: "unsent",
+        label: "Not submitted",
+        batches: [],
+        total: 1,
+        files: 1,
+        first: 3,
       },
-      { index: 3, state: "queued", file: "CommonEvents.json", sourceItems: 1 },
-      { index: 4, state: "uncertain", file: "Map001.json", sourceItems: 1 },
     ],
     batches: [
       {
@@ -219,41 +135,28 @@ test("batch groups deduplicate linked clarifications while preserving membership
         status: "completed",
         total: 2,
         counts: { succeeded: 2 },
-        requestIndices: [0, 2],
       },
       {
         id: "retry",
         status: "in_progress",
         total: 1,
         counts: {},
-        requestIndices: [2],
         clarification: true,
         originalBatchId: "original",
       },
-      {
-        id: "other",
-        status: "completed",
-        total: 1,
-        counts: { succeeded: 1 },
-        requestIndices: [1],
-      },
-      { id: "legacy", status: "completed", total: 5, counts: {} },
     ],
   };
-  const groups = requestBatches(process, "batch");
+  const groups = requestBatches(process);
   assert.deepEqual(
-    groups.map((group) => [group.id, group.rows.map((row) => row.index)]),
+    groups.map((group) => [
+      group.id,
+      group.provider?.id,
+      group.clarifications.map((batch) => batch.id),
+    ]),
     [
-      ["original", [0, 2]],
-      ["other", [1]],
-      ["legacy", []],
-      ["unsent", [3]],
-      ["unlinked", [4]],
+      ["original", "original", ["retry"]],
+      ["unsent", undefined, []],
     ],
-  );
-  assert.deepEqual(
-    groups[0].clarifications.map((batch) => batch.id),
-    ["retry"],
   );
   assert.equal(groups[0].provider?.total, 2); // A retry does not add another source request.
   const job = {
@@ -287,33 +190,6 @@ test("batch groups deduplicate linked clarifications while preserving membership
     ],
   };
   assert.equal(requestBatchOutcome(failed, job)?.failed, true);
-  // Similar files or overlapping indices cannot link an orphan to a different parent.
-  const orphan = requestBatches(
-    {
-      ...process,
-      batches: process.batches.map((batch) =>
-        batch.id === "retry" ? { ...batch, originalBatchId: "missing" } : batch,
-      ),
-    },
-    "batch",
-  );
-  assert.deepEqual(orphan[0].clarifications, []);
-  assert.deepEqual(
-    orphan[1].rows.map((row) => row.index),
-    [2],
-  );
-  // Counts, same-file requests and missing mappings cannot fill a provider batch.
-  assert.equal(
-    requestBatches(
-      {
-        ...process,
-        batches: process.batches.map(({ requestIndices, ...batch }) => batch),
-      },
-      "batch",
-    )[0].rows.length,
-    0,
-  );
-  assert.equal(requestBatches(process, "translate").length, 1);
   const original = {
     index: 2,
     state: "rejected",
@@ -427,9 +303,7 @@ test("a later event-code task cannot inherit completion from map outputs or an o
     availableOutputs: [],
     outputs: {},
     process: {
-      requests: [
-        { index: 0, file: "Map001.json", state: "uncertain", sourceItems: 1 },
-      ],
+      files: { "Map001.json": requested(["uncertain"]) },
       errors: [],
     },
   };
@@ -447,7 +321,7 @@ test("a later event-code task cannot inherit completion from map outputs or an o
     status: "stopped",
     process: {
       ...partial.process,
-      requests: [{ ...partial.process.requests[0], state: "submitted" }],
+      files: { "Map001.json": requested(["submitted"]) },
     },
   };
   assert.equal(
@@ -461,7 +335,7 @@ test("a later event-code task cannot inherit completion from map outputs or an o
     mode: "translate",
     status: "running",
     partialOutputs: ["Map001.json"],
-    process: { requests: [], errors: [] },
+    process: { files: {}, errors: [] },
   };
   assert.equal(fileStatus("Map001.json", writing).label, "Working");
   assert.equal(
@@ -474,15 +348,17 @@ test("a later event-code task cannot inherit completion from map outputs or an o
     status: "failed",
     process: {
       ...partial.process,
-      requests: [{ ...partial.process.requests[0], state: "queued" }],
+      files: { "Map001.json": requested(["queued"]) },
     },
   };
   assert.equal(fileStatus("Map001.json", unsent).state, "not_started");
   // A failed request returned no lines to review, unlike a rejected reply.
-  const failedRow = { ...partial.process.requests[0], state: "failed" };
   const failed = {
     ...unsent,
-    process: { ...partial.process, requests: [failedRow] },
+    process: {
+      ...partial.process,
+      files: { "Map001.json": requested(["failed"]) },
+    },
   };
   assert.equal(fileStatus("Map001.json", failed).state, "not_started");
   assert.equal(
@@ -490,7 +366,7 @@ test("a later event-code task cannot inherit completion from map outputs or an o
       ...failed,
       process: {
         ...partial.process,
-        requests: [failedRow, { ...failedRow, index: 1, state: "rejected" }],
+        files: { "Map001.json": requested(["failed", "rejected"]) },
       },
     }).state,
     "needs_review",
@@ -1018,9 +894,7 @@ test("new attempts supersede historical warnings without releasing submission pr
     process: {
       failed: 82,
       retryBlocked: false,
-      requests: [
-        { index: 0, file: "Items.json", state: "failed", sourceItems: 1 },
-      ],
+      files: { "Items.json": requested(["failed"]) },
     },
   } as Job;
   const next = {
@@ -1448,12 +1322,13 @@ test("file status follows active and automatically monitored Batch work before r
     partialOutputs: ["Items.json"],
     process: {
       retryBlocked: true,
-      requests: [
-        { index: 0, file: "Items.json", state: "submitted", sourceItems: 1 },
-      ],
-      batches: [
-        { id: "paid", status: "in_progress", requestIndices: [0], counts: {} },
-      ],
+      files: {
+        "Items.json": requested(
+          ["submitted"],
+          [{ batches: ["paid"], finished: false }],
+        ),
+      },
+      batches: [{ id: "paid", status: "in_progress", counts: {} }],
       errors: [],
     },
     log: [],
@@ -1507,9 +1382,7 @@ test("file status follows active and automatically monitored Batch work before r
     ...checkpoint,
     process: {
       ...checkpoint.process!,
-      requests: [
-        { index: 0, file: "Items.json", state: "received", sourceItems: 1 },
-      ],
+      files: { "Items.json": requested(["received"]) },
     },
   };
   assert.equal(fileStatus("Items.json", received).label, "Needs review");
@@ -1660,14 +1533,13 @@ test("file status follows active and automatically monitored Batch work before r
       errors: [],
       batches: checkpoint.process!.batches,
       noRequestFiles: ["Empty.json", "Missing.json"],
-      requests: [
-        ...checkpoint.process!.requests!,
-        { index: 1, file: "Saved.json", state: "saved", sourceItems: 1 },
-        { index: 2, file: "Partial.json", state: "rejected", sourceItems: 1 },
-        { index: 3, file: "Failed.json", state: "failed", sourceItems: 1 },
-        { index: 4, file: "Queued.json", state: "queued", sourceItems: 1 },
-        { index: 5, file: "Partial.json", state: "validated", sourceItems: 1 },
-      ],
+      files: {
+        ...checkpoint.process!.files,
+        "Saved.json": requested(["saved"]),
+        "Partial.json": requested(["rejected", "validated"]),
+        "Failed.json": requested(["failed"]),
+        "Queued.json": requested(["queued"]),
+      },
       validationIssues: [{ file: "Partial.json", rejected: 1 }],
     },
   };
@@ -1797,15 +1669,25 @@ test("file status follows active and automatically monitored Batch work before r
       assert.equal(needsSubmissionReview(ended), true);
     }
   }
-  for (const batches of [
-    [],
-    [{ ...provider, requestIndices: undefined }],
-    [{ ...provider, requestIndices: [1] }],
+  // Only a receipt holding the file's latest attempt counts.
+  for (const [batches, holders] of [
+    [[], ["paid"]],
+    [[provider], []],
+    [[provider], ["other"]],
   ]) {
     assert.equal(
       fileStatus("Items.json", {
         ...checkpoint,
-        process: { ...checkpoint.process!, batches },
+        process: {
+          ...checkpoint.process!,
+          batches,
+          files: {
+            "Items.json": requested(
+              ["submitted"],
+              [{ batches: holders as string[], finished: false }],
+            ),
+          },
+        },
       }).label,
       "Needs review",
     );
@@ -1830,60 +1712,36 @@ test("file status follows active and automatically monitored Batch work before r
     originalBatchId: provider.id,
   };
   const original = { ...provider, status: "completed" };
+  const holding = (batches: string[], finished = false) => ({
+    "Items.json": requested(["submitted"], [{ batches, finished }]),
+  });
+  const clarified = {
+    ...stopped,
+    process: { ...stopped.process!, files: holding(["paid", "retry"]) },
+  };
   assert.equal(
     fileStatus("Items.json", {
-      ...stopped,
-      process: { ...stopped.process!, batches: [original, clarification] },
+      ...clarified,
+      process: { ...clarified.process, batches: [original, clarification] },
     }).label,
     "Working",
   );
   assert.equal(
     fileStatus("Items.json", {
-      ...stopped,
+      ...clarified,
       process: {
-        ...stopped.process!,
+        ...clarified.process,
         batches: [original, { ...clarification, status: "cancelled" }],
       },
     }).label,
     "Needs review",
-  );
-  // A grouped retry with its own index cannot borrow its parent's active receipt.
-  const retried = {
-    ...stopped,
-    process: {
-      ...stopped.process!,
-      requests: [
-        { index: 0, file: "Items.json", state: "rejected", sourceItems: 1 },
-        {
-          index: 1,
-          file: "Items.json",
-          state: "submitted",
-          sourceItems: 1,
-          clarificationOf: 0,
-        },
-      ],
-    },
-  };
-  assert.equal(fileStatus("Items.json", retried).label, "Needs review");
-  assert.equal(
-    fileStatus("Items.json", {
-      ...retried,
-      process: {
-        ...retried.process,
-        batches: [original, { ...clarification, requestIndices: [1] }],
-      },
-    }).label,
-    "Working",
   );
   const finished = {
     ...monitoring,
     process: {
       ...monitoring.process,
       batches: [original],
-      requests: monitoring.process.requests!.map((row) => ({
-        ...row,
-        providerFinished: true,
-      })),
+      files: holding(["paid"], true),
     },
   };
   assert.equal(fileStatus("Items.json", finished).label, "Working");
@@ -1916,41 +1774,23 @@ test("Live inspection and file progress follow current receipts without Batch co
     progress: { file: "Items.json", current: 0, total: 1 },
     itemProgress: { file: "Items.json", current: 12, total: 50 },
     process: {
-      requests: [
-        { index: 0, file: "Items.json", state: "submitted", sourceItems: 50 },
-      ],
+      files: { "Items.json": requested(["submitted"]) },
       errors: [],
     },
   } as Job;
   assert.equal(fileStatus("Items.json", live).label, "Working");
-  assert.equal(
-    fileStatus("Items.json", {
-      ...live,
-      process: {
-        ...live.process!,
-        requests: [
-          { index: 0, file: "Items.json", state: "validated", sourceItems: 50 },
-        ],
-      },
-    }).label,
-    "Working",
-  );
-  const rejected = {
-    index: 1,
-    file: "Items.json",
-    state: "rejected",
-    sourceItems: 50,
-  };
-  assert.equal(
-    fileStatus("Items.json", {
-      ...live,
-      process: {
-        ...live.process!,
-        requests: [...live.process!.requests!, rejected],
-      },
-    }).label,
-    "Working",
-  );
+  for (const states of [["validated"], ["submitted", "rejected"]])
+    assert.equal(
+      fileStatus("Items.json", {
+        ...live,
+        process: {
+          ...live.process!,
+          files: { "Items.json": requested(states) },
+        },
+      }).label,
+      "Working",
+    );
+  const rejected = { "Items.json": requested(["rejected"]) };
   // Before the first file finishes, only itemProgress identifies active parsing.
   // All receipts can be rejected while the worker continues to its next request.
   const betweenRequests = {
@@ -1958,7 +1798,7 @@ test("Live inspection and file progress follow current receipts without Batch co
     progress: undefined,
     process: {
       errors: [],
-      requests: [rejected],
+      files: rejected,
       validationIssues: [{ file: "Items.json", rejected: 1 }],
     },
   };
@@ -2030,7 +1870,7 @@ test("Live inspection and file progress follow current receipts without Batch co
         status,
         availableOutputs: ["Items.json"],
         partialOutputs: ["Items.json"],
-        process: { errors: [], requests: [rejected] },
+        process: { errors: [], files: rejected },
       };
       assert.equal(fileStatus("Items.json", partial).label, "Needs review");
       assert.equal(fileStatus("Items.json", partial).state, "needs_review");
@@ -2039,15 +1879,10 @@ test("Live inspection and file progress follow current receipts without Batch co
         "Needs review",
       );
     }
+  // A clarification sent for a rejected reply is the request's latest attempt.
   const clarified = {
     ...live,
-    process: {
-      errors: [],
-      requests: [
-        rejected,
-        { ...rejected, index: 2, state: "submitted", clarificationOf: 1 },
-      ],
-    },
+    process: { errors: [], files: { "Items.json": requested(["submitted"]) } },
   };
   assert.equal(fileStatus("Items.json", clarified).state, "working");
   const completed = {
@@ -2062,9 +1897,9 @@ test("Live inspection and file progress follow current receipts without Batch co
   assert.equal(observedRun(live, { ...completed, id: "foreign" }), live);
 });
 
-test("file line amounts count each source request once at its latest attempt", () => {
-  // A retried request must not count its lines twice, and duplicate
-  // responses never add lines.
+test("file line amounts follow the latest run's saved and prepared lines", () => {
+  // The observed summary counts each source request once, at its latest
+  // attempt, without duplicate responses.
   const run = {
     id: "run",
     status: "complete",
@@ -2076,12 +1911,16 @@ test("file line amounts count each source request once at its latest attempt", (
     message: "",
     process: {
       errors: [],
-      requests: [
-        { index: 0, state: "validated", file: "Items.json", sourceItems: 40 },
-        { index: 1, state: "rejected", file: "Items.json", sourceItems: 10 },
-        { index: 2, state: "validated", file: "Other.json", sourceItems: 5 },
-        { index: 3, state: "unused", file: "Items.json", sourceItems: 7 },
-      ],
+      files: {
+        "Items.json": {
+          first: 0,
+          requests: 2,
+          lines: 50,
+          done: 40,
+          states: ["validated", "rejected", "unused"],
+        },
+        "Other.json": requested(["validated"]),
+      },
     },
   } as Job;
   const state = (runs: Job[], noRequests = {}) =>
@@ -2096,16 +1935,13 @@ test("file line amounts count each source request once at its latest attempt", (
     ...run,
     process: {
       ...run.process!,
-      requests: [
-        ...run.process!.requests!,
-        {
-          index: 4,
-          state: "validated",
-          file: "Items.json",
-          sourceItems: 10,
-          clarificationOf: 1,
+      files: {
+        "Items.json": {
+          ...run.process!.files!["Items.json"],
+          done: 50,
+          states: ["validated", "unused"],
         },
-      ],
+      },
     },
   } as Job;
   assert.deepEqual(lines(state([retried])), { done: 50, total: 50 });
@@ -2146,7 +1982,7 @@ test("file line amounts count each source request once at its latest attempt", (
     status: "complete",
     created: "2026-10-05T11:00:00+00:00",
     changedOutputs: [],
-    process: { errors: [], requests: [] },
+    process: { errors: [], files: {} },
   };
   assert.deepEqual(lines(state([rerun, whole])), { done: 40, total: 50 });
   assert.deepEqual(lines(state([{ ...rerun, status: "running" }, whole])), {
