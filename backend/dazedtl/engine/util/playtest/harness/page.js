@@ -906,7 +906,10 @@
         if (item && item.name && $gameParty.numItems(item) < 1)
           $gameParty.gainItem(item, amount);
     for (const actor of $gameParty.members()) {
-      const types = new Set(actor.skillTypes());
+      // MV lists an actor's skill types only as added ones.
+      const types = new Set(
+        actor.skillTypes ? actor.skillTypes() : actor.addedSkillTypes(),
+      );
       for (const skill of $dataSkills)
         if (
           skill &&
@@ -1137,7 +1140,10 @@
               ...Array(current._skillWindow.maxItems()).keys(),
             ].find((index) =>
               current._skillWindow.isEnabled(
-                current._skillWindow.itemAt(index),
+                // MV's skill list has no itemAt.
+                current._skillWindow.itemAt
+                  ? current._skillWindow.itemAt(index)
+                  : current._skillWindow._data[index],
               ),
             );
             if (usable === undefined) await press("cancel");
