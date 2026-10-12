@@ -3,6 +3,13 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.11.2] - 2026-10-12
+
+### Fixed
+
+- **Translate:** Claude estimates now count input tokens the way Anthropic bills them. They used to count only the shared instructions that way and the rest with a generic count, so a large Batch estimate read about 10% low: 19.2 instead of 21.5 million input tokens on a 970-map game.
+- **Assistant-led:** API estimates on Claude now count input tokens the way Anthropic bills them; a large estimate used to read about a third low.
+
 ## [2.11.1] - 2026-10-12
 
 ### Changed
@@ -441,6 +448,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.11.2]: https://github.com/dazedanon/DazedTL/compare/v2.11.1...v2.11.2
 [2.11.1]: https://github.com/dazedanon/DazedTL/compare/v2.11.0...v2.11.1
 [2.11.0]: https://github.com/dazedanon/DazedTL/compare/v2.10.0...v2.11.0
 [2.10.0]: https://github.com/dazedanon/DazedTL/compare/v2.9.1...v2.10.0
