@@ -74,7 +74,6 @@ from dazedtl.api.contracts.settings import (
 from dazedtl.api.contracts.translation import (
     BackupCatalog,
     GameUpdateStatus,
-    OrganizedRun,
     PreparedHandoff,
     ProjectOptions,
     ReleaseInspection,
@@ -690,7 +689,7 @@ METHODS: dict[str, Method] = {
     "translation_save_document": Method(SaveDocumentRequest, Documents),
     "translation_prepare": Method(ProjectRequest, PreparedHandoff),
     "translation_compile": Method(InputPathRequest, TranslationJob),
-    "translation_organize": Method(TranslationOrganizeRequest, OrganizedRun),
+    "translation_organize": Method(TranslationOrganizeRequest, TranslationJob),
     "translation_run": Method(RunRequest, TranslationJob, refresh=False),
     "translation_request": Method(RunIndexRequest, RequestPreview, refresh=False),
     "translation_results": Method(RunRequest, TranslationResults, refresh=False),

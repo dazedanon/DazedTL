@@ -52,9 +52,18 @@ export const finishingRun = (
 ) =>
   jobs.find(
     (job) =>
+      job.kind === "translation" &&
       job.finishes === declined.id &&
       !estimateOutdated(job) &&
       ["ready", "running", "waiting", "interrupted", "stopped"].includes(
         job.status,
       ),
   );
+
+/** The latest operation estimating a run's declined lines, which compiles
+    and prices their requests before the API run exists. */
+export const declinedEstimate = (
+  jobs: TranslationJob[],
+  declined: TranslationJob,
+) =>
+  jobs.find((job) => job.kind === "operation" && job.finishes === declined.id);

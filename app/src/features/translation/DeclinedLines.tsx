@@ -13,12 +13,15 @@ import { StatusPanel } from "../../ui/StatusPanel";
 export function DeclinedLines({
   run,
   finishing,
+  estimate,
   state,
   action,
 }: {
   run: TranslationJob;
   /** The API run already translating them, which its own panel shows. */
   finishing: TranslationJob | undefined;
+  /** The latest estimate DazedTL prepared for them, or is preparing. */
+  estimate: TranslationJob | undefined;
   state: TranslationState;
   action: ReturnType<typeof useAction>;
 }) {
@@ -61,6 +64,8 @@ export function DeclinedLines({
             pending={action.busy && action.key === "estimate-declined"}
             pendingText="Estimating…"
             error={action.key === "estimate-declined" ? action.error : ""}
+            // A finished estimate shows as the API run instead.
+            job={estimate?.status === "complete" ? undefined : estimate}
             onClick={() =>
               void action.run(
                 async () => {

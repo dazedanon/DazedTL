@@ -466,20 +466,3 @@ class TranslationResults(TypedDict):
     path: str
     translated: int
     missing: dict[str, int]
-
-
-class OrganizeSummary(TypedDict):
-    """Counts only, so the assistant reads no game text back."""
-
-    units: int
-    requests: int
-    scenes: int
-    kinds: dict[str, int]
-    named_speakers: int
-    plan: str
-    coverage: NotRequired[Coverage]
-
-
-class OrganizedRun(TypedDict):
-    run: TranslationJob
-    summary: OrganizeSummary

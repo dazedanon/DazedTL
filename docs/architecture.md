@@ -857,6 +857,7 @@ Request rows stay out of observations: a run's [process summary](../backend/daze
 Its request revision changes whenever a displayed request does, so an open inspector reads its page again.
 New observation work must use bounded summaries or cached derivations with explicit invalidation.
 Do not add whole-game parsing or full request-history reconstruction to a polling snapshot.
+Requests, the project helper's included, run one at a time behind the lock every snapshot needs, so work that takes seconds on a big game starts an operation worker instead of running in the request.
 Measure nontrivial additions with representative generated data; keep authoritative source, artifact and spending checks at their execution or explicit inspection boundaries.
 Cached display state never authorizes paid work or file publication.
 Each Guided observation reuses ownership, run metadata and name-reuse reads within that observation.
@@ -1014,6 +1015,7 @@ Tracked game-source dependencies bind to their original-branch blobs; untracked 
 Both API transports consume the same logical request builder.
 Request IDs, speaker/scene context and protected tokens survive adapter conversion.
 Organize derives version-two plans from engine-neutral source units that Len's extractor saves, so parsing and injection stay in Len's per-engine tools and the assistant never rewrites the game's text.
+Organize and compile start such an operation: the app checks drafts, ownership and the settings the run freezes, and the [run compiler](../backend/dazedtl/translation/run_compiler.py) groups the units, compiles, prices and saves the run in its worker, since thousands of requests take tens of seconds; the helper waits and replies with the run.
 A census the tool takes from the prepared source backup decides scope; organize --complete requires its coverage, so the assistant's extractor can't narrow it.
 An Assistant only run can mark requests declined; an API run compiled from the same plan finishes them, and the declined run reads them as accepted once their results exist.
 Version-two source plans require per-line text types and explicit nullable speakers.

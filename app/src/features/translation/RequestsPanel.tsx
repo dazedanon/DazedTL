@@ -8,6 +8,7 @@ import type {
 import { useApplication } from "../../app/ApplicationProvider";
 import { useAction } from "../../state/useAction";
 import { flushDrafts } from "../../state/leaveGuards";
+import { ActionControl } from "../../ui/ActionControl";
 import { Button } from "../../ui/Button";
 import { Section } from "../../ui/Section";
 import { Message } from "../../ui/Feedback";
@@ -22,6 +23,8 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
   const [reviewedRetry, setReviewedRetry] = useState(false);
   const [receipt, setReceipt] = useState("");
   const [attach, setAttach] = useState({ run: "", index: 0, id: "" });
+  // The operation compiling the plan; its run joins the list once saved.
+  const [compiling, setCompiling] = useState("");
   const jobs = state.jobs.filter((job) => job.kind === "translation");
   const inspect = (job: TranslationJob, index = 0) =>
     action.run(async () => {
@@ -29,7 +32,10 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
     });
   return (
     <>
-      <Message message={action.error} onDismiss={action.clear} />
+      <Message
+        message={action.key === "compile" ? "" : action.error}
+        onDismiss={action.clear}
+      />
       <Section
         title="Translation runs"
         hint="Only saved, validated results count as translated"
@@ -430,17 +436,28 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
             onChange={(event) => setPath(event.target.value)}
           />
         </label>
-        <Button
+        <ActionControl
+          label="Compile and review remaining work"
           disabled={state.active || action.busy || !path}
+          pending={action.busy && action.key === "compile"}
+          pendingText="Starting…"
+          error={action.key === "compile" ? action.error : ""}
+          job={state.jobs.find((job) => job.id === compiling)}
           onClick={() =>
-            action.run(async () => {
-              await flushDrafts();
-              await api.translation.compile(state.projectId, path);
-            })
+            void action.run(
+              async () => {
+                await flushDrafts();
+                const started = await api.translation.compile(
+                  state.projectId,
+                  path,
+                );
+                setCompiling(started.id);
+              },
+              "",
+              "compile",
+            )
           }
-        >
-          Compile and review remaining work
-        </Button>
+        />
       </Section>
     </>
   );

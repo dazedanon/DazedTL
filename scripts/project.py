@@ -92,6 +92,24 @@ def wait(workspace, params, run, minutes):
     return run
 
 
+def prepared(workspace, project_id, operation):
+    """Waits while DazedTL compiles the run organize or compile started, then
+    replies with the run, and organize's counts, as soon as it is saved; a
+    refusal fails the command."""
+    params = {"project_id": project_id, "run_id": operation["id"]}
+    # A check costs the app next to nothing, so the reply follows the run.
+    pause = 0.25
+    while operation["status"] in {"ready", "running", "waiting"}:
+        time.sleep(pause)
+        pause = min(pause * 2, 1)
+        operation = call(workspace, "translation_run", params)
+    if operation["status"] != "complete":
+        raise ValueError(operation["message"])
+    result = operation["result"]
+    run = call(workspace, "translation_run", {**params, "run_id": result["run"]})
+    return {"run": run, "summary": result["summary"]} if "summary" in result else run
+
+
 def awaiting_answers(workspace, params, minutes):
     """Waits while open QA questions wait for the user's answers in the app."""
     deadline = time.monotonic() + minutes * 60
@@ -343,7 +361,7 @@ def main():
     compile_plan.add_argument("--input", required=True)
     organize = commands.add_parser(
         "organize",
-        help="Group the extracted source units into requests and compile the run; replies with counts only",
+        help="Group the extracted source units into requests and compile the run, which can take a few minutes on a big game; replies with counts only",
     )
     organize.add_argument("--input", required=True)
     organize.add_argument(
@@ -531,6 +549,8 @@ def main():
                     ),
                 )
             result = call(args.workspace, method, params)
+            if args.command in {"compile", "organize"}:
+                result = prepared(args.workspace, args.project, result)
             if args.command == "run" and args.wait > 0:
                 result = wait(args.workspace, params, result, args.wait)
             if args.command == "qa":

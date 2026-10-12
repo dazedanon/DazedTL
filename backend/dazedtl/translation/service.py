@@ -1,6 +1,5 @@
 """One project service shared by the Electron UI and the external agent helper."""
 
-import hashlib
 import json
 import threading
 import time
@@ -16,71 +15,21 @@ from dazedtl.settings.execution import (
 )
 from dazedtl.storage import write_bytes, write_json
 
-from . import backups, census, delivery, organize, progress_report
-from .compilation import compile_requests, verify_compilation
+from . import backups, delivery, organize, progress_report, run_compiler
+from .compilation import verify_compilation
 from .files import digest, evidence, project_path, read_json, verify_evidence
 from .game_update import GameUpdate
 from .helper_command import LOOPBACK_NOTE, git_note, helper_command
 from .jobs import Jobs, declined_message, now
 from .operations import (
-    census_path,
     checkout_issue,
     lifecycle,
     reconcile_missing_backups,
     require_baseline,
 )
 from .project import ADDED, WORK, ProjectWorkspace, options, scope
-from .requests import LINE_KEYS, plan_input, quote
+from .requests import LINE_KEYS
 from .results import Results
-
-SCOPE_RULES = WORK + "/work/scope-rules.json"
-CENSUS_UNCOVERED = WORK + "/work/census-uncovered.json"
-
-
-def require_coverage(scope):
-    """Complete means the tool saw every Japanese run the game holds
-    extracted or set aside by a rule; the assistant's word is not enough."""
-    if scope is None:
-        raise ValueError(
-            "Run census first: --complete needs the tool's own count of the game's Japanese text."
-        )
-    if scope["stale"]:
-        raise ValueError(
-            "The game's source changed after the census. Run census again."
-        )
-    if scope["needs_dump"]:
-        raise ValueError(
-            "The census can't read "
-            + ", ".join(scope["needs_dump"][:5])
-            + ". Decode it with Len's tools into a folder in the game, then run census --decoded <folder>."
-        )
-    if scope["untraced"] > max(50, scope["unit_runs"] // 4):
-        raise ValueError(
-            f"The census never saw {scope['untraced']:,} of your units' Japanese runs, so it can't read where this game keeps its text. Decode it with Len's tools and run census --decoded <folder>."
-        )
-    if scope["uncovered"]:
-        fields = "; ".join(
-            f"{row['kind']} {row['field']}: {row['runs']:,}"
-            for row in scope["uncovered_fields"][:8]
-        )
-        raise ValueError(
-            f"{scope['uncovered']:,} Japanese runs in the game are not extracted ({fields}). Extract them, or set aside text the player never sees with a rule in "
-            + SCOPE_RULES
-            + "; "
-            + CENSUS_UNCOVERED
-            + " lists each location."
-        )
-
-
-def require_whole_messages(messages):
-    """Units hold whole messages: requests carry a fixed number of units, so
-    a unit per stored line multiplies requests and cuts sentences apart."""
-    if messages and messages[0] * 2 > messages[1]:
-        raise ValueError(
-            f"Your units split {messages[0]:,} of {messages[1]:,} checked RPG Maker messages into a unit per line. "
-            "Save each message, a run of consecutive 401 or 405 lines, as one unit with its lines joined by newlines, "
-            "then organize again; a unit per line multiplies requests and cuts sentences apart."
-        )
 
 
 def priced_mode(finishes, run_mode, project_mode):
@@ -667,12 +616,29 @@ Additional project instructions:
         return self.engine.release_inspect(project.root, release)
 
     def compile(self, project_id, input_path):
-        return self._compile(project_id, input_path)
+        return self._prepare(project_id, "compile", {"input_path": input_path})
 
-    def _compile(self, project_id, input_path, *, mode=None, finishes=None):
-        """A run of the plan's requests. A run that finishes another run's
-        declined requests uses the API mode given and quotes only what has no
-        saved translation yet."""
+    def _prepare(self, project_id, action, arguments, *, mode=None, finishes=None):
+        """Starts the operation that compiles a run. Only drafts, ownership
+        and the settings the run freezes are read here: compiling, pricing and
+        saving a big game's requests take a worker tens of seconds, which must
+        not hold the dispatch the interface and the helper share. A run that
+        finishes another run's declined requests uses the API mode given."""
+        if self.jobs.running(project_id, "operation"):
+            # An assistant whose command timed out may organize again.
+            preparing = next(
+                (
+                    job
+                    for job in self.jobs.store.list(project_id)
+                    if job.get("action") in run_compiler.ACTIONS
+                    and job["status"] in {"running", "waiting"}
+                ),
+                None,
+            )
+            if preparing:
+                raise ValueError(
+                    f"DazedTL is still preparing requests in run {preparing['id']}. Wait for that run to finish first."
+                )
         self.idle(project_id)
         self.clean_drafts(project_id)
         legacy = self.legacy_record(project_id)
@@ -685,89 +651,41 @@ Additional project instructions:
                 "Resume and reconcile the saved phased run before creating a new request corpus. Its paid work and outputs were retained."
             )
         _record, project = self.project(project_id)
+        if "input_path" in arguments:
+            project.artifact(arguments["input_path"])
         selected = project.read()["options"]
-        require_baseline(
-            self.engine, project.root, selected, lifecycle(self.workspace, project_id)
-        )
-        raw_path = project.artifact(input_path)
-        raw = plan_input(read_json(raw_path))
         cfg, batch_provider = self.api_configuration(mode or selected["mode"])
-        if cfg["mode"] != "agent" and not raw["complete"] and not finishes:
+        if cfg["mode"] == "batch" and not batch_provider:
             raise ValueError(
-                "API cost review requires the complete independently audited request corpus."
+                "This route does not support Batch execution. Choose a supported connection or explicitly select Live."
             )
-        # Declined lines keep the Assistant only run's larger requests, so
-        # their translations land where that run reads them.
-        if (
-            not finishes
-            and cfg["entries_per_request"]
-            and any(
-                len(batch["sources"]) > cfg["entries_per_request"]
-                for batch in raw["batches"]
+        frozen = {"configuration": cfg, "batch": bool(batch_provider)}
+        if action == "organize":
+            frozen.update(
+                lines=organize.AGENT_LINES
+                if selected["mode"] == "agent"
+                else entries_per_request(self.settings),
+                characters=organize.AGENT_CHARACTERS
+                if selected["mode"] == "agent"
+                else organize.MAX_CHARACTERS,
             )
-        ):
-            raise ValueError(
-                "A batch exceeds the configured entries per request. Split at a coherent boundary with source context, or adjust the model setting."
-            )
-        inputs = list(
-            dict.fromkeys(
-                [input_path, *raw["inputs"], *self.guidance_inputs(project.root)]
-            )
+        job = self.jobs.store.create(
+            project_id,
+            {
+                "version": 1,
+                "kind": "operation",
+                "source": str(project.root),
+                "options": selected,
+                "action": action,
+                "arguments": arguments,
+                "label": "Estimate declined lines"
+                if finishes
+                else "Prepare translation requests",
+                "compile": frozen,
+                "finishes": finishes,
+            },
         )
-        for path in inputs:
-            project_path(project.root, path, exists=False)
-        bindings = self.engine.source_bindings(project.root, raw["inputs"])
-        before = evidence(
-            project.root, [path for path in inputs if path not in bindings]
-        )
-        requests, compiler = compile_requests(
-            self.engine, project.root, selected, raw, cfg["language"]
-        )
-        verify_evidence(project.root, before)
-        self.engine.verify_bindings(project.root, bindings)
-        self.jobs.store.overlapping(
-            project_id, {row["fingerprint"] for row in requests}
-        )
-        limits = None
-        if cfg["mode"] != "agent":
-            if cfg["mode"] == "batch" and not batch_provider:
-                raise ValueError(
-                    "This route does not support Batch execution. Choose a supported connection or explicitly select Live."
-                )
-            limits = self.engine.batch_limits(cfg) if batch_provider else None
-            for request in requests:
-                request["params"] = self.engine.payload(request, cfg)
-                if limits and len(limits) > 2 and limits[2]:
-                    request["input_tokens"] = self.engine.input_tokens(
-                        request["params"]
-                    )
-        results = Results(project.root)
-        pending = [row for row in requests if not results.get(row)]
-        estimate = (
-            quote(pending, cfg, self.engine.token_count)
-            if cfg["mode"] != "agent"
-            else None
-        )
-        plan = {
-            "version": 1,
-            "kind": "translation",
-            "source": str(project.root),
-            "options": selected,
-            "scope_sha256": scope(selected),
-            "configuration": cfg,
-            "requests": requests,
-            "complete": raw["complete"],
-            "evidence": before,
-            "original_bindings": bindings,
-            "compiler": compiler,
-            "input_path": input_path,
-            "batch_limits": limits,
-        }
-        if finishes:
-            plan.update(label="Declined requests", finishes=finishes)
-        job = self.jobs.store.create(project_id, plan, estimate)
-        self.refresh_progress(project_id, plan)
-        return self.jobs.store.view(job)
+        return self.jobs.start(job["id"], project_id)
 
     def api_configuration(self, mode, *, cached_only=False):
         """The settings a run compiled now would freeze, with the Batch route
@@ -784,68 +702,38 @@ Additional project instructions:
         return cfg, batch_provider
 
     def organize(self, project_id, input_path, complete=False):
-        """Compiles a run from the lines Len's extractor saved, so the
-        assistant never reads or rewrites the game's text to group it."""
+        """Starts compiling a run from the lines Len's extractor saved, so the
+        assistant never reads or rewrites the game's text to group it; the
+        helper waits for the run."""
         if type(complete) is not bool:
             raise ValueError("Say whether the line inventory is complete.")
-        self.idle(project_id)
         _record, project = self.project(project_id)
-        units = organize.units_input(read_json(project.artifact(input_path)))
         if project.read()["options"]["mode"] != "agent" and not complete:
             raise ValueError(
                 "API estimates need every line extracted. Run census, cover it, then organize again with --complete."
             )
-        coverage, messages = self.scope_coverage(project_id, project.root, units)
-        require_whole_messages(messages)
-        if complete:
-            require_coverage(coverage)
-            write_json(
-                self.inventory_path(project_id),
-                {"census_sha256": self.census_sha256(project_id), "units": len(units)},
-            )
-        if project.read()["options"]["mode"] == "agent":
-            lines, characters = organize.AGENT_LINES, organize.AGENT_CHARACTERS
-        else:
-            lines, characters = (
-                entries_per_request(self.settings),
-                organize.MAX_CHARACTERS,
-            )
-        value = organize.plan(units, input_path, complete, lines, characters)
-        relative = organize.plan_path(value)
-        path = project_path(project.root, relative, exists=False)
-        if not path.exists() or read_json(path) != value:
-            write_json(path, value)
-        summary = organize.summary(units, value)
-        if coverage is not None:
-            summary["coverage"] = coverage
-        return {"run": self.compile(project_id, relative), "summary": summary}
-
-    def coverage_path(self, project_id):
-        return self.workspace / "translation/projects" / project_id / "coverage.json"
+        return self._prepare(
+            project_id, "organize", {"input_path": input_path, "complete": complete}
+        )
 
     def saved_coverage(self, project_id):
         """The last coverage organize found, for Progress."""
         try:
-            return read_json(self.coverage_path(project_id))
+            return read_json(run_compiler.coverage_path(self.workspace, project_id))
         except ValueError, OSError:
             return None
-
-    def inventory_path(self, project_id):
-        return self.workspace / "translation/projects" / project_id / "inventory.json"
-
-    def census_sha256(self, project_id):
-        path = census_path(self.workspace, project_id)
-        return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
 
     def require_inventory(self, project_id, translated):
         """A patch holds the whole census: organize --complete accepted the
         units against the latest census, and the text export counts them all."""
         try:
-            inventory = read_json(self.inventory_path(project_id))
+            inventory = read_json(
+                run_compiler.inventory_path(self.workspace, project_id)
+            )
         except ValueError, OSError:
             inventory = None
-        if not inventory or inventory["census_sha256"] != self.census_sha256(
-            project_id
+        if not inventory or inventory["census_sha256"] != run_compiler.census_sha256(
+            self.workspace, project_id
         ):
             raise ValueError(
                 "Package needs the whole census extracted: run organize --complete with your units after the latest census."
@@ -854,65 +742,6 @@ Additional project instructions:
             raise ValueError(
                 f"The text export counts {translated:,} lines, fewer than the {inventory['units']:,} organize --complete accepted. Export every unit before packaging."
             )
-
-    def scope_coverage(self, project_id, root, units):
-        """How the census is covered by these units, the glossary and the
-        scope rules, saved for Progress, with the RPG Maker messages the
-        units split line by line; None before a census. The uncovered runs
-        go to a file by location, so the extractor can be fixed."""
-        path = census_path(self.workspace, project_id)
-        if not path.exists():
-            self.coverage_path(project_id).unlink(missing_ok=True)
-            return None, None
-        value = read_json(path)
-        state = lifecycle(self.workspace, project_id)
-        snapshot = state.get("prepared_source") or state.get("source_backup")
-        rules_file = project_path(root, SCOPE_RULES, exists=False)
-        rules = census.rules_input(
-            read_json(rules_file) if rules_file.exists() else None,
-            census.fields(value),
-            census.files(value),
-        )
-        report, uncovered = census.coverage(
-            value,
-            [unit["source"] for unit in units],
-            self.engine.glossary_terms(root),
-            rules,
-        )
-        report.update(
-            stale=not snapshot or value.get("snapshot") != snapshot["id"],
-            source="assistant_dump" if value["decoded"] else "tool",
-            needs_dump=[] if value["decoded"] else value["needs_dump"],
-            unreadable=len(value["unreadable"]),
-            uncovered_fields=census.summary(uncovered),
-        )
-        write_json(
-            project_path(root, CENSUS_UNCOVERED, exists=False),
-            {"uncovered": uncovered, "unreadable": value["unreadable"]},
-        )
-        write_json(self.coverage_path(project_id), {**report, "checked_at": now()})
-        return report, census.split_messages(value, [unit["source"] for unit in units])
-
-    def guidance_inputs(self, source):
-        root = Path(source)
-        result = []
-        for relative in (
-            ".dazedtl/glossary.txt",
-            ".dazedtl/reference-games.json",
-            ".dazedtl/skills/game.md",
-            ".dazedtl/skills/quirks.md",
-        ):
-            path = project_path(root, relative, exists=False)
-            if path.is_file():
-                result.append(relative)
-        folder = root / ".dazedtl/skills"
-        if folder.is_dir():
-            result.extend(
-                path.relative_to(root).as_posix()
-                for path in folder.glob("*.md")
-                if path.relative_to(root).as_posix() not in result
-            )
-        return result
 
     def validate_current(self, project_id, plan):
         _record, project = self.project(project_id)
@@ -974,7 +803,7 @@ Additional project instructions:
                 "Line IDs repeat across this run's requests. Read each request's result instead."
             )
         # Guidance may change after translating; the lines the IDs name may not.
-        guidance = set(self.guidance_inputs(plan["source"]))
+        guidance = set(run_compiler.guidance_inputs(plan["source"]))
         sources = {
             path: value
             for path, value in plan["evidence"].items()
@@ -1122,13 +951,18 @@ Additional project instructions:
         self.refresh_progress(project_id, plan)
         return self.jobs.store.view(job)
 
-    def declined_run(self, project_id, run_id):
-        job, plan = self.jobs.store.load(run_id, project_id)
-        if plan["kind"] != "translation" or plan["configuration"]["mode"] != "agent":
+    def declined_record(self, project_id, run_id):
+        """An Assistant only run's index, without reading its plan."""
+        job = self.jobs.store.record(run_id, project_id)
+        if job["kind"] != "translation" or job["mode"] != "agent":
             raise ValueError(
                 "Only Assistant only runs have declined requests; API runs retry provider refusals themselves."
             )
-        return self.jobs.store.settled(job), plan
+        return self.jobs.store.settled(job)
+
+    def declined_run(self, project_id, run_id):
+        job = self.declined_record(project_id, run_id)
+        return job, self.jobs.store.load(run_id, project_id)[1]
 
     def decline(self, project_id, run_id, batch_id, reason):
         """Sets aside a request the assistant won't translate, so it carries
@@ -1160,7 +994,7 @@ Additional project instructions:
         """An API estimate for the requests the assistant declined. It
         compiles the same plan, so their translations land where the
         assistant's run reads them."""
-        job, plan = self.declined_run(project_id, run_id)
+        job = self.declined_record(project_id, run_id)
         states = {row["state"] for row in job["states"].values()}
         if "declined" not in states:
             raise ValueError("No declined requests remain in this run.")
@@ -1168,11 +1002,8 @@ Additional project instructions:
             raise ValueError(
                 "Your assistant is still translating this run. Estimate the declined requests once it has finished."
             )
-        return self._compile(
-            project_id,
-            plan["input_path"],
-            mode=self.default_mode(),
-            finishes=run_id,
+        return self._prepare(
+            project_id, "compile", {}, mode=self.default_mode(), finishes=run_id
         )
 
     def translator_prompt(self, project_id, run_id):

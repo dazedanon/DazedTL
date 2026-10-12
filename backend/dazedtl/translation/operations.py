@@ -206,6 +206,11 @@ def take_census(
 
 
 def execute(engine, workspace, job, plan, stopped, progress=lambda _message: None):
+    from . import run_compiler  # It builds on this module.
+
+    if plan["action"] in run_compiler.ACTIONS:
+        # Compiling a run changes no lifecycle record, so it never writes one.
+        return run_compiler.prepare(engine, workspace, job, plan, progress)
     with ExitStack() as resources:
         return _execute(engine, workspace, job, plan, stopped, progress, resources)
 

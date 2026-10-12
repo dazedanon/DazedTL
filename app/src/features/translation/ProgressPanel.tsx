@@ -29,6 +29,7 @@ import {
   approvalUntold,
   attemptJobs,
   awaitingQuote,
+  declinedEstimate,
   declinedRun,
   estimateOutdated,
   finishingRun,
@@ -90,10 +91,12 @@ export function ProgressPanel({
     !untold &&
     !estimateOutdated(run) &&
     now - new Date(activity!).getTime() > QUIET_MINUTES * 60_000;
+  // Declined lines report their own estimate beside its button.
   const operation = attempt.find(
     (job) =>
       job.kind === "operation" &&
       job.action !== "start_over" &&
+      !job.finishes &&
       ["running", "waiting"].includes(job.status),
   );
   const total = text && (text.total ?? text.discovered);
@@ -200,6 +203,7 @@ export function ProgressPanel({
         <DeclinedLines
           run={declined}
           finishing={finishingRun(attempt, declined)}
+          estimate={declinedEstimate(attempt, declined)}
           state={state}
           action={action}
         />

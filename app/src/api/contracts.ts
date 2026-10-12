@@ -1535,22 +1535,6 @@ export type TranslationResults = {
   missing: Record<string, number>;
 };
 
-/** Counts only, so the assistant reads no game text back. */
-export type OrganizeSummary = {
-  units: number;
-  requests: number;
-  scenes: number;
-  kinds: Record<string, number>;
-  named_speakers: number;
-  plan: string;
-  coverage?: Coverage;
-};
-
-export type OrganizedRun = {
-  run: TranslationJob;
-  summary: OrganizeSummary;
-};
-
 export type PreferenceValues = {
   language: string;
   model: string;
@@ -2925,7 +2909,7 @@ export type RpcContract = {
   translation_compile: { request: InputPathRequest; response: TranslationJob };
   translation_organize: {
     request: TranslationOrganizeRequest;
-    response: OrganizedRun;
+    response: TranslationJob;
   };
   translation_run: { request: RunRequest; response: TranslationJob };
   translation_request: { request: RunIndexRequest; response: RequestPreview };

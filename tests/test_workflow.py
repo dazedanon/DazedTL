@@ -31,12 +31,8 @@ from dazedtl.translation.operations import (
 )
 from dazedtl.translation.project import DEFAULTS, WORK, ProjectWorkspace, scope
 from dazedtl.translation.requests import plan_input
-from dazedtl.translation.service import (
-    CENSUS_UNCOVERED,
-    IMAGE_UNITS,
-    SCOPE_RULES,
-    Translation,
-)
+from dazedtl.translation.run_compiler import CENSUS_UNCOVERED, SCOPE_RULES
+from dazedtl.translation.service import IMAGE_UNITS, Translation
 
 
 class Engine:
@@ -203,6 +199,14 @@ class WorkflowTests(unittest.TestCase):
         self.service = Translation(
             self.profile, self.projects, self.settings, self.engine
         )
+        # Organize and compile only start a worker; prepared() runs its
+        # operation here instead.
+        jobs, start = self.service.jobs, self.service.jobs.start
+        jobs.start = lambda identity, project_id: (
+            jobs.store.view(jobs.store.record(identity))
+            if jobs.store.record(identity)["kind"] == "operation"
+            else start(identity, project_id)
+        )
         self.plan_path = WORK + "/work/requests.json"
         write_json(
             self.game / self.plan_path,
@@ -222,6 +226,18 @@ class WorkflowTests(unittest.TestCase):
             },
         )
 
+    def prepared(self, operation):
+        """Runs the operation organize or compile started, as its worker
+        would, and returns the run it saved with organize's counts; a refusal
+        raises, as the helper reports it."""
+        self.assertEqual(operation["kind"], "operation")
+        job, plan = self.service.jobs.store.load(operation["id"], self.identity)
+        result = execute(self.engine, self.profile, job, plan, lambda: False)
+        run = self.service.run(self.identity, result["run"])
+        return (
+            {"run": run, "summary": result["summary"]} if "summary" in result else run
+        )
+
     def test_agent_receipt_review_and_mode_switch_keep_the_same_saved_work(self):
         raw = read_json(self.game / self.plan_path)
         note = (
@@ -229,7 +245,7 @@ class WorkflowTests(unittest.TestCase):
         )
         raw["batches"][0]["qa_notes"] = {"line": note}
         write_json(self.game / self.plan_path, raw)
-        run = self.service.compile(self.identity, self.plan_path)
+        run = self.prepared(self.service.compile(self.identity, self.plan_path))
         self.assertEqual(run["qa_requests"], [{"id": "scene", "index": 0, "notes": 1}])
         preview = self.service.request(self.identity, run["id"], 0)
         self.assertEqual(preview["request"]["context"]["qa_notes"], {"line": note})
@@ -273,7 +289,7 @@ class WorkflowTests(unittest.TestCase):
         self.service.save(
             self.identity, selected["revision"], {**selected["options"], "mode": "live"}
         )
-        reused = self.service.compile(self.identity, self.plan_path)
+        reused = self.prepared(self.service.compile(self.identity, self.plan_path))
         self.assertEqual(reused["status"], "complete")
         self.assertEqual(reused["quote"]["requests"], 0)
         self.assertEqual(self.engine.reports[-1]["phases"]["qa"], "complete")
@@ -320,7 +336,7 @@ class WorkflowTests(unittest.TestCase):
             selected["revision"],
             {**selected["options"], "mode": "agent"},
         )
-        organized = self.service.organize(self.identity, units)
+        organized = self.prepared(self.service.organize(self.identity, units))
         self.assertEqual(organized["run"]["requests"], 2)
         self.assertEqual(organized["summary"]["named_speakers"], 1)
         self.assertNotIn("はい", json.dumps(organized, ensure_ascii=False))
@@ -365,7 +381,7 @@ class WorkflowTests(unittest.TestCase):
         prompt = self.service.translator_prompt(self.identity, run)["handoff"]
         self.assertIn("- 1: b/1", prompt)
         self.assertIn(f"accept --run {run}", prompt)
-        finishing = self.service.finish(self.identity, run)
+        finishing = self.prepared(self.service.finish(self.identity, run))
         self.assertEqual(
             (finishing["mode"], finishing["finishes"], finishing["quote"]["requests"]),
             ("batch", run, 1),
@@ -452,12 +468,12 @@ class WorkflowTests(unittest.TestCase):
             {"version": 1, "units": [{"id": "a", "scene": "s", "source": "はい。"}]},
         )
         with self.assertRaisesRegex(ValueError, "Run census first"):
-            self.service.organize(self.identity, units, True)
+            self.prepared(self.service.organize(self.identity, units, True))
         census()
         # The assistant's extractor skipped a line: the census names its
         # field and location, never its text.
         with self.assertRaises(ValueError) as refused:
-            self.service.organize(self.identity, units, True)
+            self.prepared(self.service.organize(self.identity, units, True))
         self.assertIn("[code=401]/parameters/0: 1", str(refused.exception))
         self.assertNotIn("秘密", str(refused.exception))
         missing = read_json(self.game / CENSUS_UNCOVERED)["uncovered"]
@@ -476,7 +492,7 @@ class WorkflowTests(unittest.TestCase):
             },
         )
         with self.assertRaisesRegex(ValueError, "player reads"):
-            self.service.organize(self.identity, units, True)
+            self.prepared(self.service.organize(self.identity, units, True))
         (self.game / SCOPE_RULES).unlink()
         write_json(
             self.game / units,
@@ -490,7 +506,7 @@ class WorkflowTests(unittest.TestCase):
         )
         # Nameplates are covered by the glossary, comments set aside built in.
         self.engine.glossary = ["リリ"]
-        organized = self.service.organize(self.identity, units, True)
+        organized = self.prepared(self.service.organize(self.identity, units, True))
         coverage = organized["summary"]["coverage"]
         self.assertEqual(
             (coverage["uncovered"], coverage["set_aside"], coverage["source"]),
@@ -508,7 +524,7 @@ class WorkflowTests(unittest.TestCase):
         )
         back_up()
         with self.assertRaisesRegex(ValueError, "Run census again"):
-            self.service.organize(self.identity, units, True)
+            self.prepared(self.service.organize(self.identity, units, True))
         census()
         with self.assertRaisesRegex(ValueError, "after the latest census"):
             self.service.require_inventory(self.identity, 2)
@@ -524,7 +540,7 @@ class WorkflowTests(unittest.TestCase):
         write_json(self.game / self.plan_path, raw)
         self.assertEqual(plan_input(raw, allow_legacy=True), raw)
         with self.assertRaises(ValueError):
-            self.service.compile(self.identity, self.plan_path)
+            self.prepared(self.service.compile(self.identity, self.plan_path))
         selected = self.project.read()["options"]
         cfg = configuration(self.settings, "live")
         requests, _compiler = compile_requests(
@@ -598,7 +614,7 @@ class WorkflowTests(unittest.TestCase):
         self.service.save(
             self.identity, selected["revision"], {**selected["options"], "mode": "live"}
         )
-        run = self.service.compile(self.identity, self.plan_path)
+        run = self.prepared(self.service.compile(self.identity, self.plan_path))
         _job, frozen = self.service.jobs.store.load(run["id"])
         before = (
             (self.game / (WORK + "/progress.json")).read_bytes()
@@ -671,7 +687,7 @@ class WorkflowTests(unittest.TestCase):
         self.service.save(
             self.identity, selected["revision"], {**selected["options"], "mode": "live"}
         )
-        run = self.service.compile(self.identity, self.plan_path)
+        run = self.prepared(self.service.compile(self.identity, self.plan_path))
         job, plan = self.service.jobs.store.load(run["id"])
         path = WORK + "/work/report.json"
 
@@ -690,7 +706,7 @@ class WorkflowTests(unittest.TestCase):
         report("Awaiting approval to spend $0.01.", "On approval: start the run.")
         # An approval in the app is noted so Progress can remind the user to
         # tell the assistant; one the assistant sends through the helper is not.
-        other = self.service.compile(self.identity, self.plan_path)
+        other = self.prepared(self.service.compile(self.identity, self.plan_path))
         helper = assistant_dispatch(
             SimpleNamespace(closing=False, translation=self.service),
             lambda _name, params: self.service.start(**params),
@@ -778,7 +794,7 @@ class WorkflowTests(unittest.TestCase):
         self.engine.branch = "main"
         (Path(state["source_backup"]["path"]) / "manifest.json").unlink()
         with self.assertRaises(ValueError):
-            self.service.compile(self.identity, self.plan_path)
+            self.prepared(self.service.compile(self.identity, self.plan_path))
         for action, arguments in (
             ("rpgmaker_prepare", {}),
             ("git_setup", {"version": "1.0"}),
@@ -804,7 +820,7 @@ class WorkflowTests(unittest.TestCase):
         self.service.save(
             self.identity, selected["revision"], {**selected["options"], "mode": "live"}
         )
-        run = self.service.compile(self.identity, self.plan_path)
+        run = self.prepared(self.service.compile(self.identity, self.plan_path))
         _job, plan = self.service.jobs.store.load(run["id"])
         write_json(self.profile / "settings/settings.json", self.settings_data)
         self.assertEqual(
@@ -862,7 +878,7 @@ class WorkflowTests(unittest.TestCase):
         # notes the user keeps, the project's options and the backups; a paid
         # API run still waiting at its provider must refuse it.
         self.projects.choose_method(self.identity, "len")
-        run = self.service.compile(self.identity, self.plan_path)
+        run = self.prepared(self.service.compile(self.identity, self.plan_path))
         job, _plan = self.service.jobs.store.load(run["id"])
         job["status"] = "waiting"
         self.service.jobs.store.save(job)
@@ -947,7 +963,7 @@ class WorkflowTests(unittest.TestCase):
         report = WORK + "/work/investigation.md"
         (self.game / report).write_text("Engine investigation")
         self.service.identify(self.identity, "MVMZ", report)
-        run = self.service.compile(self.identity, self.plan_path)
+        run = self.prepared(self.service.compile(self.identity, self.plan_path))
         run_folder = self.service.jobs.store.folder(run["id"])
         saved_run = {
             path.name: path.read_bytes()

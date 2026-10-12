@@ -83,7 +83,8 @@ It packs whole scenes of one group and field into requests: in the API modes of 
 A request holding several scenes names which lines belong to each, so the model keeps their speakers and context apart.
 A larger scene splits into even parts, each carrying the scene's earlier lines as source context.
 Requests hold a number of units, each repeating the shared guidance, so organize refuses units that split most RPG Maker messages of three or more lines into a unit per line.
-Each request takes its first unit's ID, and the plan is saved under .dazedtl/len-method/work/plans by its content, then compiled.
+Each request takes its first unit's ID, and the plan is saved under .dazedtl/len-method/work/plans by its content.
+DazedTL then compiles and prices the requests in an operation that Progress shows, and the helper waits for the run it saves.
 The reply holds counts only; errors name unit IDs without repeating game text.
 Move game text only with scripts, never by pasting or retyping it.
 
