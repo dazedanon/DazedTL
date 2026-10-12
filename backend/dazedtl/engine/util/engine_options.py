@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import ast
+from copy import deepcopy
 from functools import lru_cache
 from pathlib import Path
+from stat import S_ISREG
 
 from util.config_integration import ConfigIntegration
 from util.id_ranges import normalize_id_ranges
@@ -70,12 +72,25 @@ def _literals(path_string, modified):
 
 
 def engine_options(code_root=PROJECT_ROOT):
-    result = {}
-    for engine, label in ENGINE_LABELS.items():
+    """Each engine's option schema, parsed again only after its module changes."""
+    modules = []
+    for engine in ENGINE_LABELS:
         path = Path(code_root) / "modules" / (engine + ".py")
-        if not path.is_file():
+        try:
+            value = path.stat()
+        except OSError:
             continue
-        literals = _literals(str(path), path.stat().st_mtime_ns)
+        if S_ISREG(value.st_mode):
+            modules.append((engine, str(path), value.st_mtime_ns, value.st_size))
+    return deepcopy(_engine_options(tuple(modules)))
+
+
+@lru_cache(maxsize=16)
+def _engine_options(modules):
+    result = {}
+    for engine, path_string, modified, _size in modules:
+        label, path = ENGINE_LABELS[engine], Path(path_string)
+        literals = _literals(path_string, modified)
         if engine == "rpgmakermvmz":
             integration = ConfigIntegration()
             values = integration.read_current_config(path)
