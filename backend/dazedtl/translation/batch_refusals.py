@@ -9,7 +9,7 @@ from typing import Any
 from dazedtl.storage import write_json
 
 from .files import digest, project_path, read_json
-from .refusals import clarified, refused
+from .refusals import clarified, clarifies, refused
 
 
 def summary(record):
@@ -47,6 +47,34 @@ def save(path, record):
         write_json(view, summary(record))
 
 
+def journal(root, batch_id):
+    return project_path(
+        root, "log/clarifications/" + digest(batch_id) + ".json", exists=False
+    )
+
+
+def load(path, batch_id, requests):
+    """The saved journal, if it still belongs to this Batch and its requests."""
+    # Records before version 2 held the params of every request in the Batch,
+    # about 26 KB each, so a large Batch's record can exceed the usual cap.
+    record = read_json(path, limit=None)
+    if record.get("version") == 2:
+        # The clarified payloads are the only requests the journal sends; the
+        # original Batch's own payloads stay with its run.
+        same = set(record["keys"]) == set(requests) and all(
+            item["key"] in requests and clarifies(item["params"], requests[item["key"]])
+            for batch in record["batches"]
+            for item in batch["items"]
+        )
+    else:
+        same = record["requests"] == requests
+    if record["original_id"] != batch_id or not same:
+        raise ValueError(
+            "The saved clarification scope changed. Keep its provider receipts for recovery."
+        )
+    return record
+
+
 def advance(
     root,
     batch_id,
@@ -61,15 +89,9 @@ def advance(
     allow_submit=True,
     reserve=lambda _items: nullcontext(True),
 ):
-    path = project_path(
-        root, "log/clarifications/" + digest(batch_id) + ".json", exists=False
-    )
+    path = journal(root, batch_id)
     if path.exists():
-        record = read_json(path)
-        if record["original_id"] != batch_id or record["requests"] != requests:
-            raise ValueError(
-                "The saved clarification scope changed. Keep its provider receipts for recovery."
-            )
+        record = load(path, batch_id, requests)
     else:
         rejected = {
             key: value
@@ -112,8 +134,9 @@ def advance(
         if items:
             chunks.append({"state": "pending", "id": "", "items": items})
         record = {
+            "version": 2,
             "original_id": batch_id,
-            "requests": requests,
+            "keys": list(requests),
             "original_responses": responses,
             "original_usage": usage,
             "batches": chunks,
@@ -161,7 +184,7 @@ def advance(
         status = provider.status(batch["id"])
         batch.update(api_status=status["api_status"], counts=status.get("counts") or {})
         if not status["ended"]:
-            # The record holds every request of the original Batch, and a
+            # The record holds every response of the original Batch, and a
             # clarification can wait for hours, so a poll that changes only
             # the provider's progress publishes just the summary.
             write_json(path.with_suffix(".summary.json"), summary(record))

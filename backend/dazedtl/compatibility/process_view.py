@@ -1401,7 +1401,7 @@ def payload(root, index, job=None):
                     len(keys),
                     entry,
                     original_id,
-                    record["requests"][key],
+                    entry["params"],
                     original,
                     "rejected" if refused(original) else "received",
                     {"message": MESSAGE} if refused(original) else None,

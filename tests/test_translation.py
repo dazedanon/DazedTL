@@ -688,6 +688,58 @@ class TranslationTests(unittest.TestCase):
         self.assertEqual(provider.calls, 2)
         self.assertEqual(self.store.load(job["id"])[0]["status"], "uncertain")
 
+    def test_clarification_journal_keeps_its_scope_and_continues_earlier_records(
+        self,
+    ):
+        # The journal sends only its saved clarified payloads, so a changed
+        # request or Batch must stop it. A record from before version 2, which
+        # kept every original request, must still continue its run.
+        from dazedtl.translation.batch_refusals import advance, journal
+
+        requests = {
+            "good": {
+                "model": "fixture",
+                "messages": [{"role": "user", "content": "a"}],
+            },
+            "refused": {
+                "model": "fixture",
+                "messages": [{"role": "user", "content": "b"}],
+            },
+        }
+        responses = {
+            "good": {"text": '{"line":"Yes."}'},
+            "refused": {"text": "I cannot translate explicit sexual content."},
+        }
+
+        class Provider:
+            def submit(self, _items):
+                return {"id": "clarification"}
+
+            def status(self, _identity):
+                return {"ended": False, "api_status": "running", "counts": {}}
+
+        advance(self.root, "original", requests, responses, {}, Provider())
+        path = journal(self.root, "original")
+        record = json.loads(path.read_bytes())
+        self.assertNotIn("requests", record)
+        changed = {**requests, "refused": {**requests["refused"], "model": "other"}}
+        for version in (2, None):
+            with self.subTest(version=version):
+                waiting = advance(
+                    self.root, "original", requests, None, None, Provider()
+                )
+                self.assertFalse(waiting["ready"])
+                for other in (changed, {"good": requests["good"]}):
+                    with self.assertRaises(ValueError):
+                        advance(self.root, "original", other, None, None, Provider())
+            # The same journal as an earlier version wrote it.
+            record = {
+                key: value
+                for key, value in record.items()
+                if key not in {"version", "keys"}
+            }
+            write_json(path, {**record, "requests": requests})
+
     def test_unknown_batch_submission_and_wrong_job_results_stay_blocked(self):
         for failure in (True, False):
             with self.subTest(submission_failure=failure):

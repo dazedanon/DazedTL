@@ -127,6 +127,7 @@ New API runs also freeze a [single clarification retry](../backend/dazedtl/trans
 The clarification identifies the existing fictional source and the owner's adult-character statement without changing source facts or asking the provider to disregard its rules.
 Live retains both attempts and their usage; Batch submits only refused rows through the same Batch provider and retains successful originals.
 The [retry journal](../backend/dazedtl/translation/batch_refusals.py) records intent before submission and saves returned job IDs before polling, including across restarts.
+It keeps the original Batch's responses and the clarified payloads it sends; the original payloads stay with the run.
 The guided adapter waits before native consume, while the background monitor can finish the same authorized retry after interruption.
 Uncertain submissions are never retried automatically, and repeated refusals remain untranslated.
 Original payloads and responses remain available beside the clarification evidence.

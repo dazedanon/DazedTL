@@ -92,7 +92,18 @@ def refusal_reason(response):
     )
 
 
+def _appended(params):
+    return {
+        **params,
+        "messages": [*params["messages"], {"role": "user", "content": CLARIFICATION}],
+    }
+
+
 def clarified(params):
-    result = deepcopy(params)
-    result["messages"].append({"role": "user", "content": CLARIFICATION})
-    return result
+    return deepcopy(_appended(params))
+
+
+def clarifies(sent, params):
+    """Whether a saved payload is the clarification of `params`, compared
+    without copying the request."""
+    return sent == _appended(params)

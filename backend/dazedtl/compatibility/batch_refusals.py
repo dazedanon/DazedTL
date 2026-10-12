@@ -26,7 +26,8 @@ def records(root, *, details=False):
 
     if details:
         return [
-            read_json(path)
+            # Records before version 2 held every original request's params.
+            read_json(path, limit=None)
             for path in sorted(folder.glob("*.json"))
             if not path.name.endswith(".summary.json")
         ]
