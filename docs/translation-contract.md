@@ -57,7 +57,8 @@ The untranslated flag is an attestation after source inspection, not permission 
 
 ## Source units
 
-Len's extractor saves every line in scope as source units, and organize turns them into requests, so the assistant never reads or rewrites the game's text to group it.
+Len's extractor saves everything in scope as source units, and organize turns them into requests, so the assistant never reads or rewrites the game's text to group it.
+A unit is one message as the player reads it, with the lines an engine stores separately, such as RPG Maker's consecutive 401 commands, joined by newlines.
 Use units-format for an example.
 The authoritative validator and grouping are in [organize.py](../backend/dazedtl/translation/organize.py).
 The file is an object with version 1 and units, a list in play order; each unit has these fields:
@@ -66,7 +67,7 @@ The file is an object with version 1 and units, a list in play order; each unit 
 | --- | --- |
 | id | Required. Unique single-line text of at most 240 characters that the engine's injector maps back to its location. |
 | scene | Required. The engine's scene, such as an event page, common event, scenario label or table. A scene's units stay together. |
-| source | Required. The Japanese line exactly as the injector will replace it. |
+| source | Required. The Japanese message exactly as the injector will replace it. |
 | group | The file or area a scene belongs to; defaults to the scene. Small scenes of one group share a request. |
 | kind | dialogue, narration, ui, or unknown (the default) when the extractor cannot tell. |
 | speaker | A name the extractor's rules found, or null (the default). UI has no speaker. |
@@ -81,6 +82,7 @@ Run organize --input with the units file, adding --complete once the units cover
 It packs whole scenes of one group and field into requests: in the API modes of at most the model's entries per request and 8,000 source characters, and in Assistant only of up to 250 lines and 12,000 characters, Len's batch size, since the assistant reads each request's shared guidance again.
 A request holding several scenes names which lines belong to each, so the model keeps their speakers and context apart.
 A larger scene splits into even parts, each carrying the scene's earlier lines as source context.
+Requests hold a number of units, each repeating the shared guidance, so organize refuses units that split most RPG Maker messages of three or more lines into a unit per line.
 Each request takes its first unit's ID, and the plan is saved under .dazedtl/len-method/work/plans by its content, then compiled.
 The reply holds counts only; errors name unit IDs without repeating game text.
 Move game text only with scripts, never by pasting or retyping it.

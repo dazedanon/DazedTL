@@ -197,6 +197,37 @@ class CensusTests(unittest.TestCase):
             [("comment", "# メモ"), ("say", "やあ"), ("stmt:define", "エリ")],
         )
 
+    def test_units_that_split_messages_line_by_line_are_counted(self):
+        # A unit per 401 line nearly doubled a game's API requests; a
+        # nameplate line kept as the speaker must not look like a split.
+        message = ["リリ", "よく来たな。", "森へ行け。", "気をつけて。"]
+        result = scan(
+            {
+                "www/data/CommonEvents.json": [
+                    None,
+                    {
+                        "list": [
+                            command(101, "", 0, 0, 2),
+                            *(command(401, line) for line in message),
+                            command(101, "", 0, 0, 2),
+                            command(401, "ああ。"),
+                            command(401, "そうだ。"),
+                        ]
+                    },
+                ]
+            }
+        )
+        # (split, judged): only messages of three or more lines are judged,
+        # once their lines after the first are extracted.
+        for sources, expected in (
+            (message + ["ああ。", "そうだ。"], (1, 1)),
+            (["リリ\nよく来たな。\n森へ行け。\n気をつけて。"], (0, 1)),
+            (["よく来たな。\n森へ行け。\n気をつけて。", "リリ"], (0, 1)),
+            (["よく来たな。"], (0, 0)),
+        ):
+            with self.subTest(sources=sources):
+                self.assertEqual(census.split_messages(result, sources), expected)
+
     def test_coverage_counts_extracted_set_aside_and_uncovered_runs(self):
         result = scan(GAME)
         # An extractor may join a message's lines; runs still match.

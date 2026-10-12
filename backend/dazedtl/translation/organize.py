@@ -36,6 +36,8 @@ FIELDS = {
     "max_lines",
     "max_characters",
 }
+# A unit is one message as the player sees it: the lines an engine stores
+# apart, such as RPG Maker's consecutive 401 commands, joined by newlines.
 EXAMPLE = {
     "version": VERSION,
     "units": [
@@ -43,7 +45,7 @@ EXAMPLE = {
             "id": "Map001/event3/page0/12",
             "group": "Map001",
             "scene": "Map001/event3/page0",
-            "source": "\\C[2]リリ\\C[0]、こっちだよ。",
+            "source": "\\C[2]リリ\\C[0]、こっちだよ。\nはやく来て！",
             "kind": "dialogue",
             "speaker": "リリ",
             "tokens": ["\\C[2]", "\\C[0]"],

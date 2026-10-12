@@ -17,6 +17,7 @@ import struct
 import zlib
 from collections import Counter
 from functools import cache, lru_cache
+from itertools import pairwise
 from pathlib import PurePosixPath
 
 VERSION = 1
@@ -1154,6 +1155,59 @@ def summary(uncovered, limit=20):
         {"kind": kind, "field": field, "runs": count}
         for (kind, field), count in counts.most_common(limit)
     ]
+
+
+# One stored line of an RPG Maker message: a 401 or 405 command's text.
+_MESSAGE_LINE = re.compile(r"(.+/list)/(\d+)/parameters/0")
+_MESSAGE_FIELDS = ("*[code=401]/parameters/0", "*[code=405]/parameters/0")
+
+
+def split_messages(census, sources):
+    """(split, judged) RPG Maker messages of three or more lines, each a run
+    of consecutive 401 or 405 commands, that units hold one line per unit.
+    A message is judged once its lines after the first are extracted, and is
+    split when two of them are units of their own that no unit joins. The
+    first line is left out because an extractor may keep a nameplate line
+    as its unit's speaker."""
+    lines = {}
+    for entry in census["entries"]:
+        if entry["kind"].split(":", 1)[0] in _RM and entry["field"].endswith(
+            _MESSAGE_FIELDS
+        ):
+            match = _MESSAGE_LINE.fullmatch(entry["location"])
+            if match:
+                lines.setdefault((entry["file"], match[1], entry["field"]), []).append(
+                    (int(match[2]), tuple(entry["runs"]))
+                )
+    alone, joined, extracted = set(), set(), set()
+    for text in sources:
+        found = runs(text)
+        alone.add(tuple(found))
+        joined.update(pairwise(found))
+        extracted.update(found)
+    split = judged = 0
+    for rows in lines.values():
+        rows.sort()
+        messages = [[rows[0]]]
+        for row in rows[1:]:
+            if row[0] == messages[-1][-1][0] + 1:
+                messages[-1].append(row)
+            else:
+                messages.append([row])
+        for message in messages:
+            body = [found for _index, found in message[1:]]
+            if len(body) < 2 or not all(
+                run in extracted for found in body for run in found
+            ):
+                continue
+            judged += 1
+            split += any(
+                first in alone
+                and second in alone
+                and (first[-1], second[0]) not in joined
+                for first, second in pairwise(body)
+            )
+    return split, judged
 
 
 # --- The scan -------------------------------------------------------------------

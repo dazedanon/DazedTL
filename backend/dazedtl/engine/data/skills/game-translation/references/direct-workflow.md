@@ -20,7 +20,9 @@ Translate names and terminology before dependent dialogue when that prevents rep
 
 ## Organize the extracted lines without rewriting them
 
-Under DazedTL's project helper, the extractor saves every line in scope as source units, and `organize` groups them into requests and compiles the run.
+Under DazedTL's project helper, the extractor saves everything in scope as source units, and `organize` groups them into requests and compiles the run.
+A unit is one message as the player reads it: join the lines an engine stores separately, such as RPG Maker's consecutive `401` commands, with newlines.
+Requests hold a fixed number of units, each repeating the shared guidance, so a unit per stored line multiplies requests and cuts sentences apart; organize refuses RPG Maker units split that way.
 Run the helper's `units-format` for the file's shape: stable occurrence IDs the injector maps back, scene and group keys in play order, kinds, evidenced speakers or null, literal protected tokens and layout bounds.
 Move game text only with scripts; never paste, retype or summarize the Japanese or its translation in replies or hand-written files.
 
@@ -29,7 +31,7 @@ Move game text only with scripts; never paste, retype or summarize the Japanese 
 ```
 
 Run the helper's `census` first; `--complete` is accepted only once the units cover everything it counted, and API estimates require it.
-Coverage matches each counted run of Japanese by occurrence across the whole game: a unit's source must hold the text exactly as the game stores it, speaker prefixes and brackets included where the engine keeps them in the line, and each occurrence needs its own unit.
+Coverage matches each counted run of Japanese by occurrence across the whole game: a unit's source must hold the text exactly as the game stores it, speaker prefixes and brackets included where the engine keeps them in the line, and each occurrence needs its own unit, though one unit covers every line of its message.
 Rules apply before units, so text a rule sets aside never takes the unit for the same words where the player reads them.
 When organize names text that isn't extracted, fix the extractor using the locations in `.dazedtl/len-method/work/census-uncovered.json`; set aside text players never see only with scope rules in `.dazedtl/len-method/work/scope-rules.json`.
 The reply holds counts only, and errors name unit IDs, so fix the extractor and organize again.
