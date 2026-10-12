@@ -42,7 +42,6 @@ build output are excluded; see the skill's `README.md` before adapting a referen
 | UAssetGUI | `C++/Unreal/UAssetGUI/UAssetGUI.exe` | https://github.com/atenfyr/UAssetGUI |
 | FModel | `C++/FModel/FModel.exe` | https://github.com/4sval/FModel |
 | Unity and BepInEx reference assemblies for VBV (`UnityEngine*.dll`, `Unity.TextMeshPro.dll`, `BepInEx.dll`, `0Harmony.dll`) | `Unity BepInEx Text Layout Plugin/VBV/References/` | copy from the target game's `*_Data/Managed/` and your BepInEx `core/` folder |
-| WolfDawn `wolf` CLI | `DAZEDTL_ROOT/util/wolfdawn/bin/windows/wolf.exe` | build from https://gitgud.io/zero64801/wolfdawn at the tag in `PROVENANCE.md` next to it |
 | Ghidra | anywhere on PATH | https://github.com/NationalSecurityAgency/ghidra |
 | IDA Pro | anywhere | commercial, https://hex-rays.com |
 | x64dbg | anywhere | https://x64dbg.com |
@@ -58,7 +57,9 @@ The references mention them for context only.
 - `il2dump` and `Il2CppLifter`: the author's own Rust tools for protected IL2CPP binaries.
 - `IL2CPP-Trainer-Template`: native trainer skeleton, out of scope for translation.
 - `DazedMTLTool`: superseded by the live DazedTL application at `DAZEDTL_ROOT`. Upstream: https://github.com/dazedanon/DazedMTLTool
-- WolfDawn: use the live DazedTL installation at `DAZEDTL_ROOT/util/wolfdawn/bin/windows/wolf.exe` (or `linux/wolf`). Its pinned source and update instructions are in `DAZEDTL_ROOT/util/wolfdawn/bin/PROVENANCE.md`. Upstream: https://gitgud.io/zero64801/wolfdawn
+- WolfDawn: use the live DazedTL installation at `DAZEDTL_ROOT/util/wolfdawn/bin/windows/wolf.exe` (or `linux/wolf`).
+  The upstream commit it was built from is in `DAZEDTL_ROOT/util/wolfdawn/.wolf_version.json`, and its update instructions are in `DAZEDTL_ROOT/util/wolfdawn/bin/PROVENANCE.md`.
+  Upstream: https://gitgud.io/zero64801/wolfdawn
 - `forge-mvmz`: the live DazedTL application carries the same overlay under `util/forge/` (`upstream/Forge_MV.js`, `Forge_MZ.js`).
 - The finished mod projects goblin-toybox, ntrmeishi, Sodom and natuiso, and the IDA databases for Wolf RPG.
 - The LiveMaker `translation_work/` tree.

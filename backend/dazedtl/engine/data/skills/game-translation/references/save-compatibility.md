@@ -21,7 +21,7 @@ faces the same identity problem across game versions rather than across patches.
 |---|---|---|
 | TyranoScript | `patch_src/save_compat.js` (the migration shim: stamps new saves with `(line, ordinal, kind)` and re-derives the resume index on load, wired in by one line added to `index.html`) and `scripts/test_remap.js` (the proof: parses every scenario before and after, remaps all 24k elements, reports exact / same-line / wrong-line) | `TyranoScript (AjinSyoujyo)\` |
 | RPG Maker MV/MZ | `translate_save.py` - the string-rewriting kind: MV LZString and MZ zlib codecs, safe-section allowlist, round-trip assert | `RPG Maker MVMZ (BroodGeneral)\` |
-| Wolf RPG | `wolf save-update save.sav --game DataEN/BasicData/Game.dat` - standard and GamePro Pro formats | WolfDawn `wolf` CLI (not bundled, see `tools/THIRD-PARTY.md`) |
+| Wolf RPG | `wolf save-update save.sav --game DataEN/BasicData/Game.dat` - standard and GamePro Pro formats | WolfDawn `wolf` CLI, bundled with DazedTL |
 
 Those are two different problems sharing one file. TyranoScript's is the **index**
 problem (the save points at a position your edits moved). RPG Maker's and Wolf's is

@@ -115,7 +115,7 @@ first and go to the source for detail.
 |---|---|
 | **`DAZEDTL_ROOT`** | **The deepest RPG Maker knowledge base here. Read it before writing any new extractor.** Live modules, utilities, data and tests of DazedTL, the multi-engine tool for RPG Maker MV/MZ/VX Ace, Wolf, SRPG Studio and CSV. Subsystem map in its own section above. |
 | `DazedMTLTool` (older, not bundled) | The predecessor GUI MTL tool (OpenAI/Gemini/Mistral-compatible). Superseded by DazedTL above. |
-| `WolfDawn` (not bundled; build the `wolf` CLI from the tag in DazedTL's `util/wolfdawn/bin/PROVENANCE.md`, see `tools/THIRD-PARTY.md`) | Rust Wolf RPG framework: unpack/decompile/extract/inject/repack/save-fix/round-trip verify. |
+| `WolfDawn` (bundled with DazedTL: `DAZEDTL_ROOT/util/wolfdawn/bin/windows/wolf.exe` or `linux/wolf`) | Rust Wolf RPG framework: unpack/decompile/extract/inject/repack/save-fix/round-trip verify, Wolf Pro own-key archives and protected data files included. |
 | `forge-mvmz` (not bundled; DazedTL carries the same overlay under `util/forge/`) | RPG Maker MV/MZ in-game editor overlay (F10) - jump maps, set vars/switches, run events. For reaching untranslated scenes during testing. |
 
 ## Support / RE - not bundled, see `tools/THIRD-PARTY.md`

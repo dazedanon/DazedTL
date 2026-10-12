@@ -54,7 +54,6 @@ THIRD_PARTY = [
     ("UAssetGUI", "C++/Unreal/UAssetGUI/UAssetGUI.exe"),
     ("FModel", "C++/FModel/FModel.exe"),
     ("VBV reference DLLs", "Unity BepInEx Text Layout Plugin/VBV/References/UnityEngine.dll"),
-    ("WolfDawn wolf CLI", "DAZEDTL_ROOT/util/wolfdawn/bin/windows/wolf.exe"),
 ]
 
 
@@ -72,7 +71,8 @@ def main() -> int:
         print(f"  MISSING  tools/{rel}")
     shared = {rel: DAZEDTL_ROOT / rel for rel in (
         "util/len_translation.py", "util/len_git.py", "util/skills/system.py", "scripts/len_translation.py",
-        "util/ace/rv2json.py", "util/ace/rgssad.py", "data/skills/project_setup.md")}
+        "util/ace/rv2json.py", "util/ace/rgssad.py", "data/skills/project_setup.md",
+        "util/wolfdawn/bin/windows/wolf.exe", "util/wolfdawn/bin/linux/wolf")}
     missing_shared = [rel for rel, path in shared.items() if not path.is_file()]
     print(f"shared     : {len(shared) - len(missing_shared)}/{len(shared)} present")
     for rel in missing_shared:
@@ -80,7 +80,7 @@ def main() -> int:
 
     print("\nthird-party:")
     for name, rel in THIRD_PARTY:
-        path = DAZEDTL_ROOT / rel.removeprefix("DAZEDTL_ROOT/") if rel.startswith("DAZEDTL_ROOT/") else TOOLS / rel
+        path = TOOLS / rel
         state = "present" if path.exists() else "absent "
         print(f"  {state}  {name:45s} {path}")
     print("\nAbsent third-party tools are listed with download sources in tools/THIRD-PARTY.md.")
