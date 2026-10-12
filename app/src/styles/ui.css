@@ -1128,6 +1128,12 @@ pre {
   > .action-control-feedback:empty {
   display: none;
 }
+/* A job's state line keeps the edge its detail lines up with. */
+.action-row-actions
+  > .action-control:not(.action-control--inline)
+  .job-status-heading {
+  justify-content: flex-end;
+}
 /* Feedback lengthens the actions, so the label keeps the buttons' top edge. */
 .action-row:has(> .action-row-actions .action-control-feedback:not(:empty)) {
   align-items: start;
@@ -1178,6 +1184,11 @@ pre {
      controls to the start. */
   .action-row-actions > .action-control:not(.action-control--inline) {
     text-align: start;
+  }
+  .action-row-actions
+    > .action-control:not(.action-control--inline)
+    .job-status-heading {
+    justify-content: flex-start;
   }
 }
 /* Compact lists are dense rows without a panel, for lists that already sit
