@@ -432,6 +432,23 @@ def logical_request(batch, context):
     return value
 
 
+def sent_tokens(params, count_tokens):
+    """A request's input tokens counted as Guided's estimate counts them: the
+    system blocks and messages as the model reads them, without the request
+    body's JSON escaping and keys or its response schema."""
+
+    def text(content):
+        if isinstance(content, str):
+            return content
+        return "".join(
+            block.get("text", "") for block in content if isinstance(block, dict)
+        )
+
+    sent = [text(params.get("system") or [])]
+    sent += [text(message["content"]) for message in params.get("messages", [])]
+    return count_tokens("\n".join(part for part in sent if part)) + 8
+
+
 def quote(requests, configuration, count_tokens):
     rates = configuration["rates"]
     if any(
@@ -441,15 +458,17 @@ def quote(requests, configuration, count_tokens):
         for key in ("input", "output")
     ):
         raise ValueError("Choose valid model pricing before estimating API work.")
-    inputs = sum(
-        count_tokens(json.dumps(item["params"], ensure_ascii=False))
-        for item in requests
-    )
+    inputs = sum(sent_tokens(item["params"], count_tokens) for item in requests)
     outputs = sum(
         max(
             1,
             math.ceil(
-                count_tokens(json.dumps(item["sources"], ensure_ascii=False)) * 2.5
+                count_tokens(
+                    json.dumps(
+                        provider_sources(item, configuration), ensure_ascii=False
+                    )
+                )
+                * 2.5
             ),
         )
         for item in requests

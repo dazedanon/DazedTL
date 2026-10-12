@@ -186,6 +186,7 @@ This is the spending decision inside the same assistant conversation or app run.
 The user can instead approve the quote on the Progress tab, which starts the run without the assistant; inspect the run before starting it.
 A quote stops being approvable once API settings or the translation mode change after it; start refuses it, so compile and review a new plan.
 A quote is an estimate, not a guaranteed bill or an unlimited retry allowance.
+It counts input tokens as Guided's estimate does, from the text each request sends, and output as 2.5 times the source payload the model echoes.
 New runs include one context-clarification retry for a confirmed provider refusal, with any additional usage billed in the originally selected mode.
 Only refused requests are retried; a second refusal stays unresolved.
 Batch clarification jobs retain their own provider IDs and never switch to Live.
