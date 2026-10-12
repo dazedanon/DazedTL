@@ -394,6 +394,55 @@ try:
             with patch.object(parser, "CODE101", False):
                 parse([name("Hana"), command(401, ["こんにちは"])])
                 assert calls == [(["こんにちは"], "")] and not names, calls
+            # Plugins split 356 commands on spaces, so each handler joins a
+            # translation's words its own way. A kept placeholder stays, and
+            # must not shift the next translation onto the wrong command.
+            english = {"時刻": "Current time", "共鳴度+3": "Resonance +3"}
+            english["地図"] = "World map"
+            with patch.multiple(
+                parser,
+                CODE356=True,
+                CODE108=True,
+                NBSP_356=["CommonPopup"],
+                SPACES_108=["text_indicator"],
+                KEEP_356=["D_TEXT [マップ表示名] 24"],
+                translateAI=extensions.point(
+                    lambda text, *_: [[english[value] for value in text], [0, 0]]
+                ),
+            ):
+                result = parse(
+                    [
+                        command(356, ["D_TEXT [マップ表示名] 24"]),
+                        command(356, ["D_TEXT 時刻 24"]),
+                        command(356, ["CommonPopup add text:共鳴度+3 count:60"]),
+                        command(108, ["text_indicator : 地図"]),
+                    ]
+                )
+            assert [row["parameters"][0] for row in result[:4]] == [
+                "D_TEXT [マップ表示名] 24",
+                "D_TEXT Current_time 24",
+                "CommonPopup add text:Resonance\u00a0+3 count:60",
+                "text_indicator : World map",
+            ], result
+            # Batch runs carry these lists through their saved runtime profile.
+            from util.runtime_profile import apply_batch_runtime_profile
+
+            with patch.multiple(
+                parser,
+                CODE356=False,
+                NBSP_356=[],
+                ENABLED_PLUGINS_357=set(),
+                ENABLED_PATTERNS_355655=set(),
+            ):
+                apply_batch_runtime_profile(
+                    parser,
+                    {
+                        "engine": "rpgmakermvmz",
+                        "version": 1,
+                        "config": {"CODE356": True, "NBSP_356": ["CommonPopup"]},
+                    },
+                )
+                assert parser.NBSP_356 == ["CommonPopup"], parser.NBSP_356
             # A parser exception fails its file. It used to be masked by an
             # unbound result, or saved and reported as a completed translation.
             data, tokens, error = parser.parseSystem(

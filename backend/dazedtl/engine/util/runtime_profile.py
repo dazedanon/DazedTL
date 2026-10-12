@@ -6,6 +6,7 @@ import copy
 from pathlib import Path
 from typing import Any
 
+from util.engine_options import WORD_LISTS
 from util.id_ranges import normalize_id_ranges
 
 
@@ -60,7 +61,7 @@ def normalize_batch_runtime_profile(profile: Any) -> dict[str, Any] | None:
     raw_config = profile.get("config")
     if not isinstance(raw_config, dict) or not raw_config:
         raise ValueError("Batch runtime profile has no RPG Maker configuration")
-    config: dict[str, bool | int | str] = {}
+    config: dict[str, bool | int | str | list[str]] = {}
     for key, value in raw_config.items():
         if not isinstance(key, str):
             raise ValueError("Batch runtime profile contains an invalid setting name")
@@ -68,6 +69,13 @@ def normalize_batch_runtime_profile(profile: Any) -> dict[str, Any] | None:
             if not isinstance(value, str):
                 raise ValueError(f"Batch runtime setting {key} has an invalid value")
             config[key] = normalize_id_ranges(value) if value.strip() else ""
+            continue
+        if key in WORD_LISTS:
+            if not isinstance(value, list) or not all(
+                isinstance(item, str) for item in value
+            ):
+                raise ValueError(f"Batch runtime setting {key} has an invalid value")
+            config[key] = sorted(set(value))
             continue
         if not isinstance(value, (bool, int)):
             raise ValueError(f"Batch runtime setting {key} has an invalid value")

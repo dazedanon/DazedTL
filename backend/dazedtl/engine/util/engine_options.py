@@ -31,6 +31,8 @@ ENGINE_OPTION_KEYS = {
              "ARMORFLAG", "WEAPONFLAG", "SKILLFLAG"),
     "srpg": ("FIXTEXTWRAP", "IGNORETLTEXT"),
 }
+# Free-text lists an investigation sets for the RPG Maker engine, not choices.
+WORD_LISTS = ("SPACES_356", "NBSP_356", "KEEP_356", "SPACES_108", "NBSP_108", "KEEP_108")
 ENGINE_LABELS = {"rpgmakermvmz": "RPG Maker MV/MZ", "csv": "CSV", "wolf": "Wolf RPG (legacy)", "srpg": "SRPG Studio"}
 LABELS = {
     "FIRSTLINESPEAKERS": "First dialogue line contains the speaker", "INLINE401SPEAKERS": "Detect inline speaker names",
@@ -47,6 +49,9 @@ LABELS = {
     "CODE356": "Plugin commands (356)", "CODE320": "Character name changes (320)", "CODE324": "Nickname changes (324)",
     "CODE325": "Profile changes (325)", "CODE111": "Conditional branch text (111)", "CODE108": "Supported comments (108)",
     "ENABLED_PLUGINS_357": "Enabled plugin text handlers", "ENABLED_PATTERNS_355655": "Enabled script text handlers",
+    "SPACES_356": "Plugin command handlers keeping spaces", "NBSP_356": "Plugin command handlers joining words with no-break spaces",
+    "KEEP_356": "Plugin commands left untranslated", "SPACES_108": "Comment markers keeping spaces",
+    "NBSP_108": "Comment markers joining words with no-break spaces", "KEEP_108": "Comments left untranslated",
     "CSV_DELIMITER": "Delimiter", "SOURCE_COLUMN": "Source column", "TARGET_COLUMN": "Target column",
     "SPEAKER_COLUMN": "Speaker column (0 disables)", "PARSE_NAME_TAGS": "Parse :name[] tags", "PARSE_M_MARKERS": "Parse \\M markers",
     "SCENARIOFLAG": "Scenario database", "OPTIONSFLAG": "Options database", "NPCFLAG": "NPC database", "DBNAMEFLAG": "Database names",
@@ -95,11 +100,13 @@ def _engine_options(modules):
             integration = ConfigIntegration()
             values = integration.read_current_config(path)
             values.update({key: sorted(value) for key, value in integration.read_plugin_config(path).items()})
+            values.update({key: literals[key] for key in WORD_LISTS if isinstance(literals.get(key), list)})
         else:
             values = {key: literals[key] for key in ENGINE_OPTION_KEYS[engine] if key in literals}
         fields = []
         for key, value in values.items():
-            kind = "boolean" if isinstance(value, bool) else "integer" if isinstance(value, int) else "choices" if isinstance(value, list) else "string"
+            kind = ("boolean" if isinstance(value, bool) else "integer" if isinstance(value, int) else "strings" if key in WORD_LISTS
+                    else "choices" if isinstance(value, list) else "string")
             field = {"key": key, "label": LABELS.get(key, key.replace("_", " ").capitalize()), "type": kind, "default": value}
             if key in {"SOURCE_COLUMN", "TARGET_COLUMN", "SPEAKER_COLUMN"}:
                 field.update(min=-1 if key == "SPEAKER_COLUMN" else 0, max=99, display_offset=1)
@@ -132,12 +139,14 @@ def validate_engine_options(overrides, code_root=PROJECT_ROOT):
             valid = (kind == "boolean" and isinstance(value, bool)
                      or kind == "integer" and type(value) is int and field["min"] <= value <= field["max"]
                      or kind in {"string", "select"} and isinstance(value, str) and len(value) <= 16000
-                     or kind == "choices" and isinstance(value, list) and all(isinstance(item, str) and item in field["choices"] for item in value))
+                     or kind == "choices" and isinstance(value, list) and all(isinstance(item, str) and item in field["choices"] for item in value)
+                     or kind == "strings" and isinstance(value, list) and len(value) <= 2000
+                     and all(isinstance(item, str) and 0 < len(item) <= 4000 for item in value))
             if not valid or kind == "select" and value not in field["choices"]:
                 raise ValueError(f"Invalid value for {field['label']}.")
             if key == "CODE122_VAR_RANGES" and value.strip():
                 value = normalize_id_ranges(value)
-            result[engine][key] = sorted(set(value)) if kind == "choices" else value
+            result[engine][key] = sorted(set(value)) if kind in {"choices", "strings"} else value
     return result
 
 

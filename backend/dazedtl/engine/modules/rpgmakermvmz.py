@@ -295,6 +295,17 @@ CODE324 = False
 CODE325 = False
 CODE111 = False
 CODE108 = False
+# Plugins split a 356 command (and many read a 108 comment) on spaces, so a
+# translation's words are joined with "_" by default. Built-in handlers named
+# in SPACES_* keep plain spaces, and those in NBSP_* join words with U+00A0,
+# which MV's command356 split(" ") keeps whole and draws as a space. Exact
+# commands or comments in KEEP_* are internal values and stay untranslated.
+SPACES_356: list = []
+NBSP_356: list = []
+KEEP_356: list = []
+SPACES_108: list = []
+NBSP_108: list = []
+KEEP_108: list = []
 
 # ─── Plugin Manager ──────────────────────────────────────────────────────────
 # All known code-357 headerMapping entries. Enable entries via ENABLED_PLUGINS_357.
@@ -1110,7 +1121,10 @@ def _code408_progress_units(codeList) -> int:
 
 
 def _code108_match(text: str):
-    """Return the player-facing portion selected by the code-108 pass."""
+    """Return the marker and player-facing portion selected by the code-108
+    pass, or None for a comment it leaves alone."""
+    if text in KEEP_108:
+        return None
     patterns = (
         ("info:", r"info:([^,]+)"),
         ("ActiveMessage:", r"<ActiveMessage:(.*)>?"),
@@ -1122,8 +1136,17 @@ def _code108_match(text: str):
     )
     for marker, pattern in patterns:
         if marker in text:
-            return re.search(pattern, text)
+            match = re.search(pattern, text)
+            return (marker, match) if match else None
     return None
+
+
+def _join_words(text: str, handler: str, spaces, nbsp) -> str:
+    """Keeps a translated plugin argument's words together the way its
+    handler's plugin reads them; see SPACES_356."""
+    if handler in spaces:
+        return text
+    return text.replace(" ", "\u00a0" if handler in nbsp else "_")
 
 
 def _code108_progress_units(codeList) -> int:
@@ -5224,10 +5247,11 @@ def _searchCodes(page, pbar, jobList, filename):
                     i += 1
                     continue
 
-                match = _code108_match(jaString)
-                if match is None:
+                found = _code108_match(jaString)
+                if found is None:
                     i += 1
                     continue
+                marker, match = found
 
                 # Need to remove outside code and put it back later
                 if match:
@@ -5258,7 +5282,9 @@ def _searchCodes(page, pbar, jobList, filename):
                         for char in charList:
                             translatedText = translatedText.replace(char, "")
                         translatedText = translatedText.replace('"', '"')
-                        translatedText = translatedText.replace(" ", "_")
+                        translatedText = _join_words(
+                            translatedText, marker, SPACES_108, NBSP_108
+                        )
                         translatedText = jaString.replace(match.group(1), translatedText)
 
                         # Add >
@@ -5274,7 +5300,9 @@ def _searchCodes(page, pbar, jobList, filename):
                 oldjaString = jaString
 
                 # Skip if IGNORETLTEXT is enabled and no Japanese text
-                if IGNORETLTEXT and not _has_japanese_text(jaString):
+                if (
+                    IGNORETLTEXT and not _has_japanese_text(jaString)
+                ) or jaString in KEEP_356:
                     i += 1
                     continue
 
@@ -5300,20 +5328,24 @@ def _searchCodes(page, pbar, jobList, filename):
                     continue
 
                 # Want to translate this script
+                handler = ""
                 if "D_TEXT " in jaString:
-                    regex = r"D_TEXT\s*(.+?)(?:\s+\d+)?$"
+                    handler, regex = "D_TEXT ", r"D_TEXT\s*(.+?)(?:\s+\d+)?$"
                 elif "ShowInfo" in jaString:
-                    regex = r"ShowInfo\s(.*)"
+                    handler, regex = "ShowInfo", r"ShowInfo\s(.*)"
                 elif "PushGab" in jaString:
-                    regex = r"PushGab\s(.*)"
+                    handler, regex = "PushGab", r"PushGab\s(.*)"
                 elif "addLog" in jaString:
-                    regex = r"addLog\s(.*)"
+                    handler, regex = "addLog", r"addLog\s(.*)"
                 elif "DW_" in jaString:
-                    regex = r"DW_.*\s\d+\s(.+)"
+                    handler, regex = "DW_", r"DW_.*\s\d+\s(.+)"
                 elif "CommonPopup" in jaString:
-                    regex = r"CommonPopup\sadd\stext:(.+?)(?=\s+count:|\s*$)"
+                    handler, regex = (
+                        "CommonPopup",
+                        r"CommonPopup\sadd\stext:(.+?)(?=\s+count:|\s*$)",
+                    )
                 elif "AddCustomChoice" in jaString:
-                    regex = r"AddCustomChoice\s\d+\s(.+)\s\d"
+                    handler, regex = "AddCustomChoice", r"AddCustomChoice\s\d+\s(.+)\s\d"
                 else:
                     regex = r""
 
@@ -5359,8 +5391,9 @@ def _searchCodes(page, pbar, jobList, filename):
                                 for char in charList:
                                     translatedText = translatedText.replace(char, "")
 
-                            # Cant have spaces?
-                            translatedText = translatedText.replace(" ", "_")
+                            translatedText = _join_words(
+                                translatedText, handler, SPACES_356, NBSP_356
+                            )
                             if "D_TEXT " not in jaString:
                                 translatedText = translatedText.replace("__", "_")
 
@@ -5387,7 +5420,10 @@ def _searchCodes(page, pbar, jobList, filename):
                         totalTokens[1] += response[1][1]
 
                         # Set Data
-                        updated = jaString.replace(text, translatedText.replace(" ", "_"))
+                        updated = jaString.replace(
+                            text,
+                            _join_words(translatedText, "namePop", SPACES_356, NBSP_356),
+                        )
                         codeList[i]["parameters"][0] = updated
 
                 if "LL_InfoPopupWIndowMV" in jaString:
@@ -5406,8 +5442,12 @@ def _searchCodes(page, pbar, jobList, filename):
                                 translatedText = list356[0]
                                 list356.pop(0)
 
-                                # Replace spaces with underscores as original format expects
-                                translatedText = translatedText.replace(" ", "_")
+                                translatedText = _join_words(
+                                    translatedText,
+                                    "LL_InfoPopupWIndowMV",
+                                    SPACES_356,
+                                    NBSP_356,
+                                )
 
                                 # Put Args Back
                                 translatedText = jaString.replace(text, translatedText)
@@ -5426,7 +5466,12 @@ def _searchCodes(page, pbar, jobList, filename):
                         totalTokens[1] += response[1][1]
 
                         # Set Data
-                        translatedText = translatedText.replace(" ", "_")
+                        translatedText = _join_words(
+                            translatedText,
+                            "OriginMenuStatus SetParam",
+                            SPACES_356,
+                            NBSP_356,
+                        )
                         translatedText = jaString.replace(text, translatedText)
                         codeList[i]["parameters"][0] = translatedText
 
@@ -5447,7 +5492,12 @@ def _searchCodes(page, pbar, jobList, filename):
 
                         # Textwrap & Replace Whitespace
                         translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
-                        translatedText = translatedText.replace(" ", "_")
+                        translatedText = _join_words(
+                            translatedText,
+                            "LL_GalgeChoiceWindowMV setMessageText",
+                            SPACES_356,
+                            NBSP_356,
+                        )
 
                         # Replace and Set
                         translatedText = match.group(0).replace(match.group(1), translatedText)
@@ -5476,7 +5526,12 @@ def _searchCodes(page, pbar, jobList, filename):
 
                         # Replace Strings
                         for j in range(len(choiceListTL)):
-                            choiceListTL[j] = choiceListTL[j].replace(" ", "_")
+                            choiceListTL[j] = _join_words(
+                                choiceListTL[j],
+                                "LL_GalgeChoiceWindowMV setChoices",
+                                SPACES_356,
+                                NBSP_356,
+                            )
                             translatedText = translatedText.replace(choiceList[j], choiceListTL[j])
 
                         # Set Data
