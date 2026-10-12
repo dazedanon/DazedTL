@@ -136,7 +136,8 @@ export default function Updates({ running }: { running: boolean }) {
                   ? state.outcome.from
                   : ""
             }
-            releases={state.staged ? state.notes.staged : state.notes.installed}
+            releases={state.notes.releases}
+            recent={state.notes.recent}
           />
         )}
       </PageBody>

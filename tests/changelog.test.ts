@@ -57,7 +57,7 @@ test("release notes become the changelog's newest entry, and malformed notes sto
     assert.throws(() => parseNotes(malformed));
 });
 
-test("an update shows the notes of every release after the installed one", (t) => {
+test("release notes list every release and count the new ones", (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-notes-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const entry = (version: string) => ({
@@ -74,17 +74,23 @@ test("an update shows the notes of every release after the installed one", (t) =
     path.join(dir, "release/notes.md"),
     "### Added\n- In the beta.\n",
   );
-  const versions = (after: string | null, upTo: string) =>
-    releaseNotes(dir, after, upTo).map((release) => release.version);
+  const notes = (upTo: string, after: string | null) => {
+    const { releases, recent } = releaseNotes(dir, upTo, after);
+    return [releases.map((release) => release.version), recent];
+  };
 
-  assert.deepEqual(versions("2.0.0", "2.1.0"), ["2.1.0", "2.0.1"]);
-  assert.deepEqual(versions(null, "2.0.1"), ["2.0.1"]);
+  assert.deepEqual(notes("2.1.0", "2.0.0"), [["2.1.0", "2.0.1", "2.0.0"], 2]);
+  assert.deepEqual(notes("2.0.1", null), [["2.0.1", "2.0.0"], 1]);
   // After Go back, the newer version it left names no range.
-  assert.deepEqual(versions("2.1.0", "2.0.1"), ["2.0.1"]);
-  assert.deepEqual(versions("2.1.0", "2.2.0-beta.1"), ["2.2.0-beta.1"]);
-  assert.deepEqual(releaseNotes(dir, null, "2.2.0-beta.1")[0].sections, [
-    { kind: "Added", items: ["In the beta."] },
+  assert.deepEqual(notes("2.0.1", "2.1.0"), [["2.0.1", "2.0.0"], 1]);
+  assert.deepEqual(notes("2.2.0-beta.1", "2.1.0"), [
+    ["2.2.0-beta.1", "2.1.0", "2.0.1", "2.0.0"],
+    1,
   ]);
+  assert.deepEqual(
+    releaseNotes(dir, "2.2.0-beta.1", null).releases[0].sections,
+    [{ kind: "Added", items: ["In the beta."] }],
+  );
   fs.rmSync(path.join(dir, "CHANGELOG.md"));
-  assert.deepEqual(versions("2.0.0", "2.1.0"), []);
+  assert.deepEqual(notes("2.1.0", "2.0.0"), [[], 0]);
 });

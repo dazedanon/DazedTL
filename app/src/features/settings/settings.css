@@ -111,14 +111,22 @@
 .field-row + .connection-panel {
   margin-top: var(--space-5);
 }
-/* What's new: each kind of change labels its list in the form's label
-   column, and a release's version and date head its rows when the notes span
-   several. */
+/* Release notes: what's new, then earlier versions. Each kind of change
+   labels its list in the form's label column, and a release's version and
+   date head its rows when a group holds several. */
 .release-notes {
   display: grid;
   justify-items: start;
-  gap: var(--space-3);
+  gap: var(--space-4);
   margin-top: var(--space-6);
+}
+.release-notes-group {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+}
+.release-notes-group + .release-notes-group {
+  margin-top: var(--space-4);
 }
 .release-notes h2,
 .release-notes h3 {

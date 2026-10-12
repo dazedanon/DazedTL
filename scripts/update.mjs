@@ -604,17 +604,17 @@ export function applyPending(root = checkout) {
 }
 
 /**
- * What changed after `after` up to `upTo`, newest first, as the changelog in
- * `dir` lists it; without `after`, `upTo`'s own entry. A prerelease's entry is
- * the pending notes it carries. Unreadable notes are left out, so they never
- * stand in the way of an update.
+ * Every release the changelog in `dir` lists up to `upTo`, newest first, and
+ * how many of them are new: those after `after`, or without it `upTo`'s own
+ * entry. A prerelease's entry is the pending notes it carries. Unreadable
+ * notes are left out, so they never stand in the way of an update.
  * @param {string} dir
- * @param {string | null} after
  * @param {string} upTo
- * @returns {import("./changelog.mjs").Release[]}
+ * @param {string | null} after
+ * @returns {{ releases: import("./changelog.mjs").Release[], recent: number }}
  */
-export function releaseNotes(dir, after, upTo) {
-  if (!isVersion(upTo)) return [];
+export function releaseNotes(dir, upTo, after) {
+  if (!isVersion(upTo)) return { releases: [], recent: 0 };
   if (!isVersion(after) || compare(after, upTo) >= 0) after = null;
   const read = (name) =>
     fs.readFileSync(path.join(dir, ...name.split("/")), "utf8");
@@ -630,20 +630,25 @@ export function releaseNotes(dir, after, upTo) {
   } catch {
     // Keep what was readable.
   }
-  return releases.filter(
-    ({ version, sections }) =>
-      sections.length &&
-      isVersion(version) &&
-      compare(version, upTo) <= 0 &&
-      (after ? compare(version, after) > 0 : compare(version, upTo) === 0),
-  );
+  releases = releases
+    .filter(
+      ({ version, sections }) =>
+        sections.length && isVersion(version) && compare(version, upTo) <= 0,
+    )
+    .sort((a, b) => compare(b.version, a.version));
+  return {
+    releases,
+    recent: releases.filter(({ version }) =>
+      after ? compare(version, after) > 0 : version === upTo,
+    ).length,
+  };
 }
 
 /**
  * What the app shows: versions, a staged or requested swap, its outcome, and
- * the notes of the staged release and of the installed one. The installed
- * notes reach back to `since`, the version an update replaced, which the last
- * outcome names until the app has seen it.
+ * the release notes: the staged copy's, new after the installed version, or
+ * the install's, new since `since`, the version an update replaced, which the
+ * last outcome names until the app has seen it.
  */
 export function status(root = checkout, since = "") {
   const { next, previous, revert, result } = folders(root);
@@ -657,14 +662,13 @@ export function status(root = checkout, since = "") {
     previous: readJson(path.join(previous, "meta.json"))?.version ?? null,
     revert: fs.existsSync(revert),
     result: outcome,
-    notes: {
-      staged: staged ? releaseNotes(next, current.version, staged) : [],
-      installed: releaseNotes(
-        root,
-        since || (outcome?.ok ? outcome.from : null),
-        current.version,
-      ),
-    },
+    notes: staged
+      ? releaseNotes(next, staged, current.version)
+      : releaseNotes(
+          root,
+          current.version,
+          since || (outcome?.ok ? outcome.from : null),
+        ),
   };
 }
 

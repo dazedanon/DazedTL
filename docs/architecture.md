@@ -1104,7 +1104,8 @@ Releases still keep `.node-version`, `.python-version` and the other files 2.0.0
 Files outside the manifest, such as `.venv`, `.runtime` and downloaded models, are never touched, and Git checkouts are left to Git.
 "Restart to update" closes through the usual save handshake, refuses while a run is active, and relaunches through START with the app's switches, which waits for the old process to exit.
 The backup also serves "Go back"; automatic checks skip the version the user went back from.
-Settings > Updates shows the [changelog](../CHANGELOG.md) entries from the staged copy, which its manifest covers, for every version after the installed one, and after an update the installed entries since the version it replaced.
+Settings > Updates shows the whole [changelog](../CHANGELOG.md), newest first and a few versions at a time, from the staged copy, which its manifest covers, or else from the install.
+It leads with what's new: the versions after the installed one, after an update those since the version it replaced, or else the installed version's own entry.
 
 Every tracked path stays within 185 characters, checked by [paths.mjs](../scripts/paths.mjs).
 Windows Explorer and Python stop at 260 characters unless long paths are enabled, and Explorer unpacks a GitHub ZIP into a doubled top folder.

@@ -49,10 +49,11 @@ export type UpdateState = {
     message: string;
   } | null;
   /**
-   * CHANGELOG.md entries, newest first: what the staged release brings, and
-   * what the installed version changed since the one an update replaced.
+   * Every CHANGELOG.md entry up to the staged release, or else the installed
+   * version, newest first. The first `recent` are new: the staged release's,
+   * those since the version an update replaced, or the installed version's.
    */
-  notes: { staged: ReleaseNotes[]; installed: ReleaseNotes[] };
+  notes: { releases: ReleaseNotes[]; recent: number };
 };
 /** One release's Keep a Changelog entry; a prerelease has no date. */
 export type ReleaseNotes = {

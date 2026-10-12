@@ -18,7 +18,7 @@ const fs = require("node:fs");
  *   checkedAt: string,
  *   error: string,
  *   outcome: { ok: boolean, version: string, from: string, message: string } | null,
- *   notes: { staged: Release[], installed: Release[] },
+ *   notes: { releases: Release[], recent: number },
  * }} UpdateState
  * @typedef {{ version: string, date: string, sections: { kind: string, items: string[] }[] }} Release
  */
@@ -64,7 +64,7 @@ class Updates {
       checkedAt: typeof saved.checkedAt === "string" ? saved.checkedAt : "",
       error: "",
       outcome: null,
-      notes: { staged: [], installed: [] },
+      notes: { releases: [], recent: 0 },
     };
     this.busy = false;
   }
@@ -131,7 +131,8 @@ class Updates {
   async refresh() {
     const { outcome } = this.state;
     const status = await this.run(["status", outcome?.ok ? outcome.from : ""]);
-    this.set({
+    /** @type {Partial<UpdateState>} */
+    const change = {
       git: status.git,
       version: status.version,
       staged: status.staged || "",
@@ -139,7 +140,7 @@ class Updates {
       previous: status.previous || "",
       status: status.staged || status.revert ? "ready" : this.state.status,
       notes: status.notes,
-    });
+    };
     if (status.result) {
       const outcome = { message: "", ...status.result };
       // Going back starts from the skipped version; any other install
@@ -148,10 +149,12 @@ class Updates {
         outcome.ok && outcome.from !== this.state.skipped
           ? ""
           : this.state.skipped;
-      this.set({ outcome, skipped });
+      // One change, so the notes never show without the version they start
+      // from.
+      this.set({ ...change, outcome, skipped });
       this.save();
       await this.run(["seen"]);
-    }
+    } else this.set(change);
   }
 
   /** Reads the install and checks for updates now and then every day. */
