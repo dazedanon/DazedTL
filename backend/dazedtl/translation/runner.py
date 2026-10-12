@@ -140,7 +140,10 @@ class Runner:
             response = read_json(path) if path.name in responses else None
             if response is not None:
                 self.record_usage(identity, response)
-            if request["fingerprint"] in accepted and self.results.get(request):
+            fingerprint = request["fingerprint"]
+            if fingerprint in accepted and self.results.get(
+                request, accepted[fingerprint]
+            ):
                 self.job["states"][identity] = {"state": "accepted", "message": ""}
             elif response is not None:
                 self.accept(identity, response)

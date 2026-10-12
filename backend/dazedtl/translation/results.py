@@ -3,6 +3,8 @@
 import os
 from pathlib import Path
 
+from dazedtl.storage import write_json
+
 from .files import digest, project_path, read_json, write_project_json
 from .project import WORK
 from .requests import result_value
@@ -23,20 +25,27 @@ class Results:
         return ACCEPTED + "/" + fingerprint + ".json"
 
     def saved(self):
-        """The fingerprints with an accepted result file, from one listing
-        instead of a project_path check per request; get() still checks every
-        file it reads. Names are casefolded, as Windows looks them up."""
+        """The accepted result files by fingerprint, for get(), from one
+        listing of their checked folder instead of project_path per request,
+        whose path resolution costs most on Windows. A name that is not a
+        regular file maps to None, which get() checks as usual. Names are
+        casefolded, as Windows looks them up."""
         folder = project_path(self.source, ACCEPTED, exists=False)
         try:
             with os.scandir(folder) as entries:
                 return {
-                    entry.name.casefold().removesuffix(".json") for entry in entries
+                    entry.name.casefold().removesuffix(".json"): Path(entry.path)
+                    if entry.is_file(follow_symlinks=False)
+                    else None
+                    for entry in entries
                 }
         except FileNotFoundError, NotADirectoryError:
-            return set()
+            return {}
 
-    def get(self, request):
-        path = project_path(self.source, self.relative(request), exists=False)
+    def get(self, request, path=None):
+        """The request's accepted result, or None; path is its file when
+        saved() or the caller has already checked it."""
+        path = path or project_path(self.source, self.relative(request), exists=False)
         if not path.exists():
             return None
         value = read_json(path)
@@ -55,7 +64,8 @@ class Results:
 
     def accept(self, request, translations, provenance):
         output = result_value(request, translations)
-        old = self.get(request)
+        path = project_path(self.source, self.relative(request), exists=False)
+        old = self.get(request, path)
         if old:
             if old["translations"] != output:
                 raise ValueError(
@@ -70,7 +80,7 @@ class Results:
             "result_sha256": digest(output),
             "provenance": provenance,
         }
-        write_project_json(self.source, self.relative(request), value)
+        write_json(path, value)
         return value
 
     def correct(self, request, translations, replaces_sha256, provenance):
