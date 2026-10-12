@@ -188,7 +188,12 @@ def _organize(engine, workspace, job, plan, progress):
         )
     progress(f"Grouping {len(units):,} lines into requests")
     value = organize.plan(
-        units, input_path, complete, frozen["lines"], frozen["characters"]
+        units,
+        input_path,
+        complete,
+        frozen["lines"],
+        frozen["characters"],
+        frozen.get("shared"),
     )
     relative = organize.plan_path(value)
     path = project_path(root, relative, exists=False)

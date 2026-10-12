@@ -80,6 +80,7 @@ Keep nameplate text separate from speaker labels, and do not deduplicate lines b
 
 Run organize --input with the units file, adding --complete once the units cover the [census](#census-and-scope).
 It packs whole scenes of one group and field into requests: in the API modes of at most the model's entries per request and 8,000 source characters, and in Assistant only of up to 250 lines and 12,000 characters, Len's batch size, since the assistant reads each request's shared guidance again.
+In the API modes only scenes of at most 10 lines share a request; a longer scene gets its own, so another scene's speakers and subjects can't bleed into it.
 A request holding several scenes names which lines belong to each, so the model keeps their speakers and context apart.
 A larger scene splits into even parts, each carrying the scene's earlier lines as source context.
 Requests hold a number of units, each repeating the shared guidance, so organize refuses units that split most RPG Maker messages of three or more lines into a unit per line.

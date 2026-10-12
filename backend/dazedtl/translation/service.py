@@ -668,6 +668,7 @@ Additional project instructions:
                 characters=organize.AGENT_CHARACTERS
                 if selected["mode"] == "agent"
                 else organize.MAX_CHARACTERS,
+                shared=None if selected["mode"] == "agent" else organize.SHARED_LINES,
             )
         job = self.jobs.store.create(
             project_id,

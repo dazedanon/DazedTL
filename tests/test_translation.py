@@ -1168,6 +1168,13 @@ class TranslationTests(unittest.TestCase):
         # The same units always give the same plan and plan file.
         again = organize.plan(units, "work/source-units.json", False, 4)
         self.assertEqual(organize.plan_path(again), organize.plan_path(value))
+        # Only short scenes share a request when shared is set, so a
+        # conversation never takes another scene's speakers and subjects.
+        for shared, expected in ((None, [8, 1]), (2, [3, 5, 1])):
+            larger = organize.plan(
+                units, "work/source-units.json", False, 50, shared=shared
+            )
+            self.assertEqual([len(b["sources"]) for b in larger["batches"]], expected)
         summary = organize.summary(units, value)
         self.assertEqual(
             (summary["units"], summary["requests"], summary["scenes"]), (9, 4, 4)

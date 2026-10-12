@@ -23,6 +23,10 @@ AGENT_LINES = 250
 AGENT_CHARACTERS = 12000
 # Earlier lines of a split scene that travel with each later part.
 CONTEXT_LINES = 8
+# In API requests only scenes this short share a request, such as signs,
+# one-line remarks and choice menus; a longer conversation gets its own, so
+# another scene's speakers and subjects can't bleed into it.
+SHARED_LINES = 10
 KINDS = {"dialogue", "narration", "ui", "unknown"}
 FIELDS = {
     "id",
@@ -228,12 +232,12 @@ def _parts(scene, lines, characters):
     return parts
 
 
-def plan(units, input_path, complete, lines, characters=MAX_CHARACTERS):
+def plan(units, input_path, complete, lines, characters=MAX_CHARACTERS, shared=None):
     """A version-2 source plan: whole scenes of one group and field share a
-    request of at most lines units and characters of source; larger scenes
-    split with their earlier lines as context. A request holding several
-    scenes names which lines belong to each, so context stays apart. Each
-    request takes its first line's ID."""
+    request of at most lines units and characters of source, if each has at
+    most shared lines; larger scenes split with their earlier lines as
+    context. A request holding several scenes names which lines belong to
+    each, so context stays apart. Each request takes its first line's ID."""
     scenes = []
     for unit in units:
         if not scenes or scenes[-1][0]["scene"] != unit["scene"]:
@@ -256,6 +260,10 @@ def plan(units, input_path, complete, lines, characters=MAX_CHARACTERS):
                     }
                 )
                 start += len(part)
+            continue
+        if shared is not None and len(scene) > shared:
+            current = None
+            requests.append({"units": list(scene), "field": key[1], "context": []})
             continue
         if (
             current
