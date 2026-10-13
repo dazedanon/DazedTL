@@ -411,7 +411,9 @@ Explicit text Apply is a full overwrite: it binds the frozen candidate and desti
 Its review names the files edited in the game since their last Apply, whose edits it replaces.
 Its one-use confirmation retains the reviewed file list for execution guards.
 A failed confirmation keeps its error visible and offers Refresh preview; it cannot resend the consumed token or automatically execute the replacement review.
-Apply captures the actual overwritten bytes for rollback at execution.
+Apply captures the actual overwritten bytes for rollback at execution, backing up every file before its first write so its receipt is saved once.
+A finished batch keeps only those backups, and the next review discards reviews older than their 20 minutes with the copies they froze.
+An Apply review lists the files it overwrites without comparing their text, which took minutes on a large game; a restore's review shows the start of each file's [diff](../backend/dazedtl/compatibility/text.py), matched window by window after each change.
 Fitting, QA and restore keep their existing exact-before checks; no background synchronization is performed.
 Reviewed Apply accepts saved partial output regardless of earlier Batch status, unresolved requests, provider work or collection.
 It validates and freezes the saved JSON without requiring translation completion; untranslated content stays as saved.
