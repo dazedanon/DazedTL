@@ -13,12 +13,13 @@ import sys
 import tempfile
 import threading
 import time
+from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from pathlib import Path
 
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest, project_path
 
-from .estimate_pricing import count
+from .estimate_pricing import count, start, stop
 
 LABELS = {
     "database": "Database files",
@@ -82,21 +83,39 @@ def run(plan, log):
     folder = Path(plan["folder"])
     options = plan["options"]
     report = Activity(log, options["tasks"])
-    rows = []
     with tempfile.TemporaryDirectory(prefix="full-estimate-", dir=folder) as temporary:
         root = Path(temporary)
         report("Copying the game's current text")
         inventory = stage(root / "source", folder, plan["project"], options["files"])
         report.copied()
-        for task in options["tasks"]:
+        # Each task has its own worker processes, so they run side by side;
+        # the first that fails stops the others.
+        failed = threading.Event()
+        report.stopped = lambda: log.stopped() or failed.is_set()
+
+        def estimate(task):
             if not task["files"]:
-                rows.append(row(task, {}))
-                continue
-            estimate = estimate_task(
-                root / task["phase"], folder, plan, inventory, task, report
-            )
+                return row(task, {})
+            try:
+                value = estimate_task(
+                    root / task["phase"], folder, plan, inventory, task, report
+                )
+            except BaseException:
+                failed.set()
+                raise
             report(f"{LABELS[task['phase']]} · estimated", task["phase"], state="done")
-            rows.append(row(task, estimate))
+            return row(task, value)
+
+        with ThreadPoolExecutor(max_workers=len(options["tasks"]) or 1) as pool:
+            futures = [pool.submit(estimate, task) for task in options["tasks"]]
+            wait(futures, return_when=FIRST_EXCEPTION)
+            if failed.is_set():
+                wait(futures)
+                for future in futures:
+                    error = future.exception()
+                    if error is not None and not isinstance(error, InterruptedError):
+                        raise error
+            rows = [future.result() for future in futures]
     return {
         "fingerprint": options["fingerprint"],
         "model": options["model"],
@@ -164,16 +183,25 @@ def estimate_task(directory, folder, plan, inventory, task, log):
         directory / "attempt.json",
         {"files": task["files"], "resume": False, "batch_resume_state": None},
     )
-    estimate = launch(
-        directory, worker_environment(workspace, native), label, phase, log
+    # Claude's count starts with the estimate, so its startup overlaps it.
+    counting = (
+        start(directory, workspace, native) if plan["options"]["claudeCount"] else None
     )
-    if (
-        plan["options"]["claudeCount"]
-        and estimate.get("provider") == "anthropic"
-        and estimate.get("approximate_input")
-    ):
-        log(f"{label} · counting Claude tokens", phase, state="counting")
-        estimate = count(directory, workspace, native, estimate, log.stopped)
+    try:
+        estimate = launch(
+            directory, worker_environment(workspace, native), label, phase, log
+        )
+        if (
+            counting is not None
+            and estimate.get("provider") == "anthropic"
+            and estimate.get("approximate_input")
+        ):
+            log(f"{label} · counting Claude tokens", phase, state="counting")
+            estimate = count(
+                directory, workspace, native, estimate, log.stopped, process=counting
+            )
+    finally:
+        stop(counting)
     return estimate
 
 
