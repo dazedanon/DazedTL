@@ -445,6 +445,10 @@ class Settings:
         connection = self._connection(self._read())
         return self._configured(connection) and bool(connection["model"].strip())
 
+    def language(self):
+        """The target language, which needs no connection or model prices."""
+        return self._read()["values"]["language"]
+
     def guided_configuration(self, mode, *, cached_only=False):
         from .execution import configuration
 

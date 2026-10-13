@@ -246,15 +246,11 @@ class GuidedRuns:
             .get("documents", {})
         ):
             return
-        configuration = self.guided.observations.once(
-            ("configuration", "batch", True),
-            lambda: self.guided.settings.guided_configuration(
-                "batch", cached_only=True
-            ),
-        )
+        # Only the language: every snapshot runs this, and a connection
+        # without cached prices must not make the project unavailable.
         rows = [
             row
-            for row in self.name_reuse(native, configuration.get("language"))
+            for row in self.name_reuse(native, self.guided.settings.language())
             if row["runId"] not in published
         ]
         if not rows:

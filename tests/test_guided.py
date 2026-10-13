@@ -316,6 +316,7 @@ class GuidedTests(unittest.TestCase):
             prepare_engine=lambda **_kwargs: None,
             describe=lambda: {"revision": self.settings_revision},
             guided_configuration=guided_configuration,
+            language=lambda: self.configuration["language"],
             connection_summary=lambda: {"name": "Fixture connection"},
         )
         self.backend.manual = SimpleNamespace(
@@ -698,8 +699,11 @@ class GuidedTests(unittest.TestCase):
         # Paid names stayed in the declined run's own glossary, so the game's
         # never showed them. Collecting a completed run copies its glossary
         # over the game's, so a Batch that may still complete is left to that.
+        # Every snapshot runs this, so it must not need prices, which are
+        # uncached after a restart: that read "Project unavailable".
         identity, _root, _plan = self.declined_names_run()
         self.native["manual_job"] = identity
+        self.uncached = True
         glossary = {"text": "# Game Characters\nミカ (Mika)", "revision": "r1"}
         saved = []
 
