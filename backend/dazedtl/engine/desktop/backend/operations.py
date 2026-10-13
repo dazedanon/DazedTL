@@ -11,7 +11,7 @@ import threading
 import uuid
 
 from .project import atomic_json, digest
-from .manual import timestamp
+from .manual import system_environment, timestamp
 from util import extensions
 
 
@@ -70,14 +70,12 @@ class Operations:
             plan = directory / "plan.json"
             if plan.is_symlink() or digest(plan.read_bytes()) != job["plan_hash"]:
                 raise ValueError("The saved action changed. Preview it again.")
-            environment = {key: value for key, value in os.environ.items() if key in {
-                "PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL", "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH",
-                "LOCALAPPDATA", "APPDATA", "ProgramFiles", "ProgramFiles(x86)", "HOME", "USERPROFILE",
-                "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_ATTR_NOSYSTEM",
+            environment = system_environment(
+                "ProgramFiles", "ProgramFiles(x86)", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_ATTR_NOSYSTEM",
                 # Text QA and the release playtest run the game in the app's
                 # Electron.
                 "DAZEDTL_ELECTRON",
-            }}
+            )
             environment.update(DAZEDTL_DESKTOP_WORKSPACE=str(self.root.parent), PYTHONUTF8="1", PYTHONIOENCODING="utf-8", PYTHONNOUSERSITE="1", PYTHON_DOTENV_DISABLED="1")
             if os.getenv('DAZEDTL_TEST_OFFLINE') == '1':
                 environment['DAZEDTL_TEST_OFFLINE'] = '1'

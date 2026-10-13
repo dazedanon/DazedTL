@@ -6,7 +6,6 @@ import base64
 import io
 import json
 import math
-import os
 import re
 import shutil
 import subprocess
@@ -14,6 +13,7 @@ import sys
 import time
 from pathlib import Path
 
+from .manual import system_environment
 from .project import atomic_json, digest
 
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
@@ -229,9 +229,7 @@ class ImageStore:
         operation_dir.mkdir(parents=True, exist_ok=True)
         atomic_json(operation_dir / "request.json", {**data, "source_path": str(source), 'layer_folder': str(folder)})
         with (operation_dir / "renderer.log").open("w", encoding="utf-8", newline="\n") as log:
-            env = {key: value for key, value in os.environ.items() if key in {
-                "PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL", "HOME", "USERPROFILE", "LOCALAPPDATA", "FONTCONFIG_PATH"
-            }}
+            env = system_environment("FONTCONFIG_PATH")
             env.update(PYTHON_DOTENV_DISABLED="1", DAZEDTL_TEST_OFFLINE="1", PYTHONIOENCODING="utf-8")
             process = subprocess.Popen([sys.executable, str(Path(__file__).with_name("image_worker.py")), str(operation_dir / "request.json")],
                                        stdout=log, stderr=log, cwd=operation_dir, env=env)
