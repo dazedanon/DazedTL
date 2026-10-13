@@ -102,6 +102,9 @@ class FullEstimate:
                     "model": defaults["model"],
                     "batchSupported": defaults["batch_supported"],
                     "policy": policy,
+                    # A launch with providers disabled keeps Claude's
+                    # approximate count rather than reach Anthropic.
+                    "claudeCount": self.guided.backend.manual.allow_providers,
                     "files": {name: sources[name]["relative"] for name in names},
                     "tasks": [
                         {

@@ -536,6 +536,7 @@ class GuidedTests(unittest.TestCase):
         }
         self.backend.workflows.phase_workflow = lambda _owner, phase: {"phase": phase}
         self.backend.manual.request_policy = {"model": "fixture-model"}
+        self.backend.manual.allow_providers = False
         plans = []
         self.backend.operations.start.side_effect = lambda plan: (
             plans.append(plan) or {"id": "estimate"}
@@ -546,6 +547,8 @@ class GuidedTests(unittest.TestCase):
             [(task["phase"], task["noSources"]) for task in options["tasks"]],
             [("database", False), ("dialogue", False), ("advanced", True)],
         )
+        # A launch with providers disabled never reaches Anthropic's count.
+        self.assertIs(options["claudeCount"], False)
         self.backend.operations.jobs["estimate"] = {
             "id": "estimate",
             "action": "full_estimate",

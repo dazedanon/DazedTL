@@ -113,7 +113,11 @@ def estimate_task(directory, folder, plan, inventory, task, log):
         {"files": task["files"], "resume": False, "batch_resume_state": None},
     )
     estimate = launch(directory, worker_environment(workspace, native), label, log)
-    if estimate.get("provider") == "anthropic" and estimate.get("approximate_input"):
+    if (
+        plan["options"]["claudeCount"]
+        and estimate.get("provider") == "anthropic"
+        and estimate.get("approximate_input")
+    ):
         log(f"{label} · counting Claude tokens")
         estimate = count(directory, workspace, native, estimate, log.stopped)
     return estimate
