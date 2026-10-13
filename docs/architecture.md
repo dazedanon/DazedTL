@@ -62,6 +62,7 @@ Existing historical runs remain intact.
 Paid review requires that matching estimate and rechecks it before the one-use submission.
 Cost dialogs focus on price, selected scope and approval; an optional Preview request opens the existing prepared text, context and exact payload without preparing or submitting work.
 Preview request shows requests an estimate kept: estimates keep them on connections that support Batch, while Live-only connections estimate from token counts and offer no preview; Batch review previews its collected requests.
+Every RPG Maker estimate parses all its files in one worker process, as Batch collection does; a process per file took seconds each on Windows.
 Closing the preview returns to the same approval.
 Speaker interpretation stays with the user.
 Translate keeps its game text tasks below the shared phase navigation: Database files, Maps & events (including CommonEvents and Troops), and Other event text.
@@ -83,6 +84,7 @@ Estimates count tokens with the GPT-4 encoder, except that Claude estimates in b
 They send each cached instruction prefix and an evenly spread sample of 24 whole requests to Anthropic's free token-count endpoint and scale the approximate count of the rest by the sample; if any count fails, the whole estimate keeps the approximate count.
 A Translate estimate's worker has no credential or network, so a finished Claude estimate is counted again before its run completes: [estimate_pricing.py](../backend/dazedtl/compatibility/estimate_pricing.py) prices its kept requests in a separate process that opens the network only for that endpoint, with the run's own credential.
 The count runs on the run's worker thread, so snapshots never wait on it, and stopping or discarding the estimate ends it.
+Its process starts beside the estimate and waits for the key until the requests are ready, so its startup overlaps the estimate.
 A Batch preparation counts the requests it submits itself, so the estimate leading into it, and every estimate in a launch with providers disabled, keeps the approximate count.
 A speaker approval's run counts the name requests it would send the same way.
 A cost review whose estimate kept the approximate Claude count says so.
@@ -91,6 +93,7 @@ Inspection leaves Review cost available, while Translate always prepares again.
 Approval rechecks the temporary preparation’s current inputs before the native one-use approval controls submission.
 Once approved, the frozen request remains authoritative for recovery and is never silently rebuilt.
 The fresh Batch speaker check validates unresolved nameplates against frozen files and the current glossary before collection; it retains its separate approval if translation is needed.
+The estimate leading into a Batch scans the nameplates beside its own worker, and the preparation reuses that scan when its frozen inputs match the estimate's ([reusable_speaker_scan](../backend/dazedtl/engine/desktop/backend/manual.py)), so it reads the files once more instead of twice.
 Nameplates may contain character names or other display labels, so the review does not assume a character identity.
 This small preparation uses Live pricing to avoid waiting for a separate name Batch, and the review distinguishes it from the selected Batch mode for file text.
 The file-text Batch receives its own cost review after names are resolved.
@@ -139,6 +142,7 @@ It covers each task's whole file group, independent of the selection, so transla
 [full_estimate.py](../backend/dazedtl/translation/full_estimate.py) starts it as a tool operation, never as a run, so it creates no preparation, approval or history run, and no paid work can follow from it.
 The [worker](../backend/dazedtl/compatibility/full_estimate.py) builds each task's frozen plan with the engine helpers and request policy a Translate estimate uses and runs the same offline estimate worker, starting each file from its saved translation, working copy or game file as a run would, so its figures match each task's own estimate.
 A Claude estimate is then counted again as a Translate estimate is (see [Estimates and approval](#estimates-and-approval)); a failed count keeps the approximate figures, which the task says.
+The tasks run side by side, each with its own workers and count and with its inputs linked to the operation's one staged copy; the first task that fails stops the others.
 The newest finished operation holds the saved estimate.
 It reads current while every task's estimate inputs match: files, sources, guidance, options, layout, connection and prices.
 They are computed with the Live configuration, since one estimate prices both Batch and Live; switching between them only changes which total leads.
@@ -907,6 +911,8 @@ Cached display state never authorizes paid work or file publication.
 Each Guided observation reuses ownership, run metadata and name-reuse reads within that observation.
 It lists each game and working-copy folder once, and reuses a listed file's digest across observations while its stat signature holds, so routine polls neither resolve paths nor reread unchanged files ([ObservedFiles](../backend/dazedtl/translation/files.py)).
 A file changed within the last two seconds is read again, because a second change within one clock tick can keep its signature.
+Action guards and run inventories reuse digests the same way through the engine's [file_digest](../backend/dazedtl/engine/desktop/backend/project.py), so an estimate's preview and confirmation and the Batch preparation after it read each game file once.
+A run copies its input folder once and the engine's working inputs share those files, since runs only read them.
 A poll starts no process per file: Other event text reads every original it has not hashed yet through one Git process, and Git status runs its full inspection only after Git's metadata changes, asking `git status` alone every few seconds for the working tree ([git_status_cache.py](../backend/dazedtl/translation/git_status_cache.py)).
 The bounded [history display cache](../backend/dazedtl/compatibility/observations.py) retains compact plan headers, process summaries and each run's grouped requests across observations; the inspector's request pages read the same grouped requests.
 Plan hashes, in-memory job state, and artifact metadata invalidate those summaries, including new/deleted queue fragments, clarification receipts, output files and SQLite journals.
