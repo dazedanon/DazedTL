@@ -1347,16 +1347,21 @@ def live_payload(row, index, total):
     }
 
 
-def payload(root, index, job=None):
+def payload(root, index, job=None, prepared=False):
     """One saved request with its responses. The run's job decides states
-    such as an unconfirmed submission, as in the request rows."""
+    such as an unconfirmed submission, as in the request rows. Prepared
+    numbers only the queue, as its submission review counts it, without the
+    Live names pass before a Batch."""
     job = job or {}
     if type(index) is not int or index < 0:
         raise ValueError("Choose a valid request index.")
     requests = queue(root)
-    names = queued_names(root, requests)
+    if prepared and not requests:
+        raise ValueError("This run kept no prepared requests to preview.")
+    names = [] if prepared else queued_names(root, requests)
+    total = len(names) + len(requests)
     if index < len(names):
-        return ledger_payload(names, index)
+        return ledger_payload(names, index, total)
     if requests:
         keys = list(requests)
         position = index - len(names)
@@ -1390,7 +1395,7 @@ def payload(root, index, job=None):
         )
         value = batch_payload(
             index,
-            len(keys),
+            total,
             entry,
             custom_id,
             entry["params"],
@@ -1443,7 +1448,7 @@ def payload(root, index, job=None):
                 )
                 detail = batch_payload(
                     index,
-                    len(keys),
+                    total,
                     entry,
                     original_id,
                     entry["params"],
@@ -1474,7 +1479,7 @@ def payload(root, index, job=None):
                 error = row.get("error") if response is not None else None
                 detail = batch_payload(
                     index,
-                    len(keys),
+                    total,
                     entry,
                     item["custom_id"],
                     item["params"],
@@ -1497,14 +1502,14 @@ def payload(root, index, job=None):
     rows = ledger_records(root)
     if rows is None:
         raise ValueError("Exact payloads were not recorded for this older Live run.")
-    return ledger_payload(rows, index)
+    return ledger_payload(rows, index, len(rows))
 
 
-def ledger_payload(rows, index):
+def ledger_payload(rows, index, total):
     """A saved Live request with every attempt at its lines."""
     if index >= len(rows):
         raise ValueError("This request is no longer available.")
-    value = live_payload(rows[index], index, len(rows))
+    value = live_payload(rows[index], index, total)
     parent = attempt_root(rows, index)
     group = [
         number
@@ -1514,7 +1519,7 @@ def ledger_payload(rows, index):
     if len(group) > 1:
         value["responseAttempts"] = []
         for number in group:
-            detail = live_payload(rows[number], number, len(rows))
+            detail = live_payload(rows[number], number, total)
             value["responseAttempts"].append(
                 {
                     "kind": "original"

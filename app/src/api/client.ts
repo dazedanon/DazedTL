@@ -249,8 +249,12 @@ export const api = {
       }),
     inspect: (project_id: string, run_id: string) =>
       request("guided_inspect", { project_id, run_id }),
-    payload: (project_id: string, run_id: string, index: number) =>
-      request("guided_payload", { project_id, run_id, index }),
+    payload: (
+      project_id: string,
+      run_id: string,
+      index: number,
+      prepared = false,
+    ) => request("guided_payload", { project_id, run_id, index, prepared }),
     requests: (
       project_id: string,
       run_id: string,

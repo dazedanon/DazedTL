@@ -1309,11 +1309,21 @@ class ProcessTests(unittest.TestCase):
             with patch.dict("sys.modules", {"util.batch_providers": provider}):
                 self.assertEqual(
                     [
-                        process_view.payload(root, index, job)["source"]
-                        for index in range(4)
+                        (value["source"], value["total"])
+                        for value in (
+                            process_view.payload(root, index, job) for index in range(4)
+                        )
                     ],
-                    [{"Line1": "兵士"}] * 2 + [{"Line1": "村"}] * 2,
+                    [({"Line1": "兵士"}, 4)] * 2 + [({"Line1": "村"}, 4)] * 2,
                 )
+                # The submission review numbers only the queue it submits.
+                prepared = process_view.payload(root, 1, job, prepared=True)
+                self.assertEqual(
+                    (prepared["source"], prepared["index"], prepared["total"]),
+                    ({"Line1": "村"}, 1, 2),
+                )
+                with self.assertRaises(ValueError):
+                    process_view.payload(root, 2, job, prepared=True)
                 self.assertEqual(
                     len(process_view.payload(root, 0, job)["responseAttempts"]), 2
                 )

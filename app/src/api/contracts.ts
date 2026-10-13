@@ -2772,6 +2772,10 @@ export type GuidedRequestsRequest = {
   index?: number | null;
 };
 
+export type GuidedPayloadRequest = RunIndexRequest & {
+  prepared?: boolean;
+};
+
 export type GuidedNameResultsRequest = {
   project_id: string;
   run_id: string;
@@ -2879,7 +2883,7 @@ export type RpcContract = {
     response: SpeakerScan;
   };
   guided_inspect: { request: RunRequest; response: Job };
-  guided_payload: { request: RunIndexRequest; response: RunPayload };
+  guided_payload: { request: GuidedPayloadRequest; response: RunPayload };
   guided_requests: { request: GuidedRequestsRequest; response: RequestPage };
   guided_name_results: {
     request: GuidedNameResultsRequest;

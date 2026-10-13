@@ -61,7 +61,7 @@ Approved work is retained before signaling the worker, including separately appr
 Existing historical runs remain intact.
 Paid review requires that matching estimate and rechecks it before the one-use submission.
 Cost dialogs focus on price, selected scope and approval; an optional Preview request opens the existing prepared text, context and exact payload without preparing or submitting work.
-Preview request shows requests an estimate kept: estimates keep them on connections that support Batch, while Live-only connections estimate from token counts and offer no preview; Batch review previews its collected requests.
+Preview request shows requests an estimate kept: estimates keep them on connections that support Batch, while Live-only connections estimate from token counts and offer no preview; Batch review previews the collected requests it submits, numbered like its request count, without the Live names pass sent before it.
 Every RPG Maker estimate parses all its files in one worker process, as Batch collection does; a process per file took seconds each on Windows.
 Closing the preview returns to the same approval.
 Speaker interpretation stays with the user.

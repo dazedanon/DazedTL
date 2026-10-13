@@ -549,6 +549,11 @@ class GuidedRequestsRequest(TypedDict):
     index: NotRequired[int | None]
 
 
+class GuidedPayloadRequest(RunIndexRequest):
+    # Number only the queued requests, as their submission review counts them.
+    prepared: NotRequired[bool]
+
+
 class GuidedNameResultsRequest(TypedDict):
     project_id: str
     run_id: str
@@ -645,7 +650,7 @@ METHODS: dict[str, Method] = {
     "guided_apply_speakers": Method(GuidedApplySpeakersRequest, GuidedPreferences),
     "translation_speakers": Method(TranslationSpeakersRequest, SpeakerScan),
     "guided_inspect": Method(RunRequest, Job, refresh=False),
-    "guided_payload": Method(RunIndexRequest, RunPayload, refresh=False),
+    "guided_payload": Method(GuidedPayloadRequest, RunPayload, refresh=False),
     "guided_requests": Method(GuidedRequestsRequest, RequestPage, refresh=False),
     "guided_name_results": Method(
         GuidedNameResultsRequest, NameTranslationPage, refresh=False

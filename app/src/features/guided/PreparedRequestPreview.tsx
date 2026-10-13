@@ -34,8 +34,9 @@ export function PreparedRequestPreview({
   const tabId = useId();
   const [tab, setTab] = useState<(typeof tabs)[number]["id"]>("text");
   const [index, setIndex] = useState(0);
+  // Numbered as the review counts them, without a names pass sent before.
   const request = useRead(`${projectId}:${runId}:${index}`, () =>
-    api.guided.payload(projectId, runId, index),
+    api.guided.payload(projectId, runId, index, true),
   );
   // The request count stays visible while the next request loads.
   const [total, setTotal] = useState(0);
@@ -71,7 +72,9 @@ export function PreparedRequestPreview({
           />
           <div className="prepared-request-navigation">
             <span>
-              {total ? `Request ${index + 1} of ${total}` : "Prepared request"}
+              {total
+                ? `Request ${(index + 1).toLocaleString()} of ${total.toLocaleString()}`
+                : "Prepared request"}
             </span>
             {total > 1 && (
               <div className="actions">

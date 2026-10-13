@@ -303,13 +303,15 @@ class RunInspection:
         self.discard_preparation(project_id, run_id)
         return {"files": settled}
 
-    def payload(self, project_id, run_id, index):
+    def payload(self, project_id, run_id, index, prepared=False):
         _, native = self.guided.record(project_id)
         if (
             run_id not in self.guided.owned_runs(native)
             or run_id not in self.guided.backend.manual.jobs
         ):
             raise ValueError("Choose a translation run owned by this project.")
+        if type(prepared) is not bool:
+            raise ValueError("Choose whether to read prepared requests.")
         from dazedtl.compatibility.process_view import payload, queue
 
         folder = self.guided.backend.manual.folder(run_id)
@@ -319,7 +321,7 @@ class RunInspection:
             raise ValueError(
                 "This estimate kept no requests to preview. Estimates keep them when the connection supports Batch."
             )
-        return payload(folder, index, self.guided.backend.manual.jobs[run_id])
+        return payload(folder, index, self.guided.backend.manual.jobs[run_id], prepared)
 
     def requests(self, project_id, run_id, group=None, index=None):
         """One page of a run's request group, read when the inspector needs it."""
