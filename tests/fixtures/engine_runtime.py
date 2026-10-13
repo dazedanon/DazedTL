@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import socket
 import sys
 import threading
@@ -926,6 +927,9 @@ try:
         def claude_stream(req):
             body = json.loads(req.content)
             assert body["stream"] and body["max_tokens"] == 32768, body
+            return claude_reply(body, '{"Line1": "Potion"}', claude_stops.pop(0))
+
+        def claude_reply(body, text, stop="end_turn"):
             events = (
                 {
                     "type": "message_start",
@@ -948,15 +952,12 @@ try:
                 {
                     "type": "content_block_delta",
                     "index": 0,
-                    "delta": {"type": "text_delta", "text": '{"Line1": "Potion"}'},
+                    "delta": {"type": "text_delta", "text": text},
                 },
                 {"type": "content_block_stop", "index": 0},
                 {
                     "type": "message_delta",
-                    "delta": {
-                        "stop_reason": claude_stops.pop(0),
-                        "stop_sequence": None,
-                    },
+                    "delta": {"stop_reason": stop, "stop_sequence": None},
                     "usage": {"output_tokens": 3},
                 },
                 {"type": "message_stop"},
@@ -1023,6 +1024,81 @@ try:
         )
         assert guided["text"] == '{"Line1": "Potion"}' and guided["refusal"], guided
         assert not claude_stops
+        # The names review prices Claude by Claude's own count of the request
+        # the names translation then sends, and never counts where the
+        # network is blocked.
+        from util.translation_task import TranslationTaskCore
+
+        names_root = temporary / "names"
+        names_root.mkdir()
+        os.chdir(names_root)
+        claude_bodies = []
+
+        def claude_names(req):
+            body = json.loads(req.content)
+            claude_bodies.append(body)
+            if req.url.path.endswith("/count_tokens"):
+                return httpx2.Response(
+                    200, json={"input_tokens": len(json.dumps(body))}
+                )
+            lines = re.findall(r'"(Line\d+)"', body["messages"][-1]["content"])
+            return claude_reply(body, json.dumps(dict.fromkeys(lines, "Elder")))
+
+        names = ["村長", "宿屋の主人"]
+        names_config = translation.TranslationConfig(
+            model="claude-opus-5-5",
+            prompt="Translate the supplied text.",
+            vocab="",
+            batchSize=30,
+            useSfxReference=False,
+        )
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "API_PROVIDER": "anthropic",
+                    "key": "fixture-key",
+                    "api": "https://api.anthropic.com",
+                },
+            ),
+            patch.multiple(
+                translation.openai,
+                base_url=translation.openai.base_url,
+                api_key=translation.openai.api_key,
+            ),
+            patch.object(
+                anthropic,
+                "Anthropic",
+                side_effect=lambda **kwargs: native_anthropic(
+                    **kwargs,
+                    http_client=httpx2.Client(
+                        transport=httpx2.MockTransport(claude_names)
+                    ),
+                ),
+            ),
+        ):
+            estimate = TranslationTaskCore._estimate_grouped_speakers(
+                names, "Name each speaker.", names_config, names_config.model
+            )
+            assert estimate["approximate_input"] and not claude_bodies, estimate
+            del os.environ["DAZEDTL_TEST_OFFLINE"]
+            estimate = TranslationTaskCore._estimate_grouped_speakers(
+                names, "Name each speaker.", names_config, names_config.model
+            )
+            counts = list(claude_bodies)
+            claude_bodies.clear()
+            output = translation.translateAI(names, "Name each speaker.", names_config)
+        assert output[0] == ["Elder", "Elder"], output
+        assert not estimate["approximate_input"], estimate
+        [sent] = claude_bodies
+        sent = {
+            key: value
+            for key, value in sent.items()
+            if key not in {"max_tokens", "stream"}
+        }
+        # The cached prefix alone and the whole request, counted in parallel.
+        assert len(counts) == 2 and sent in counts, (counts, sent)
+        assert estimate["input_tokens"] == len(json.dumps(sent)), estimate
         configure_builders(translation, None)
         # Real native collect -> submit -> fetch -> consume must reach the
         # installed inline adapter, including aliases already bound by history.

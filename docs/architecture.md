@@ -84,6 +84,7 @@ They send each cached instruction prefix and an evenly spread sample of 24 whole
 A Translate estimate's worker has no credential or network, so a finished Claude estimate is counted again before its run completes: [estimate_pricing.py](../backend/dazedtl/compatibility/estimate_pricing.py) prices its kept requests in a separate process that opens the network only for that endpoint, with the run's own credential.
 The count runs on the run's worker thread, so snapshots never wait on it, and stopping or discarding the estimate ends it.
 A Batch preparation counts the requests it submits itself, so the estimate leading into it, and every estimate in a launch with providers disabled, keeps the approximate count.
+A speaker approval's run counts the name requests it would send the same way.
 A cost review whose estimate kept the approximate Claude count says so.
 The [Batch pricing adapter](../backend/dazedtl/compatibility/batch_pricing.py) calculates new GPT-6.1 Sol cached quotes from native token counts and frozen input/output rates using its [documented cache rates](https://developers.openai.com/api/docs/models/gpt-6.1-sol); saved historical estimates remain unchanged.
 Inspection leaves Review cost available, while Translate always prepares again.

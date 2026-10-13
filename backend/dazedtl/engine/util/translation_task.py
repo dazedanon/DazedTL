@@ -237,13 +237,22 @@ class TranslationTaskCore:
 
     @staticmethod
     def _estimate_grouped_speakers(speakers, history, config, model):
-        """Estimate grouped speaker requests locally without calling a model API."""
+        """Estimate grouped speaker requests before any is sent.
+
+        A native Claude model's input is Claude's own count of the requests
+        translateAI will send; the rest is the approximate count.
+        """
         from util.translation import (
+            CONTEXT_SOURCE,
+            _request_context_parts,
+            buildClaudeRequest,
+            countClaudeTokens,
             countTokens,
-            createContext,
+            createContextParts,
             getPricingConfig,
             isClaudeNative,
         )
+        from util import claude_tokens
 
         names = [str(name).strip() for name in speakers if str(name).strip()]
         batch_size = max(1, int(getattr(config, "batchSize", 1) or 1))
@@ -254,12 +263,15 @@ class TranslationTaskCore:
         output_rate = float(pricing["outputAPICost"]) / 1_000_000
         native_claude = isClaudeNative(model_name)
 
-        input_tokens = 0
+        # Like translateAI, every request carries the instructions and each
+        # later one the previous request's names as source context; the
+        # English it also shows for those names isn't known yet.
+        source, instructions = _request_context_parts(history)
+        requests = []
+        sizes = []
+        cached_tokens = []  # each request's cached prompt
+        regular_tokens = []  # each request's input after it
         output_tokens = 0
-        estimated_cost = 0.0
-        seen_batch_sizes = set()
-        current_history = history
-
         for offset in range(0, len(names), batch_size):
             name_batch = names[offset:offset + batch_size]
             request_payload = json.dumps(
@@ -267,43 +279,52 @@ class TranslationTaskCore:
                 indent=4,
                 ensure_ascii=False,
             )
-            static_system, vocab_text, user = createContext(
-                config, request_payload, "json", current_history
+            static_system, glossary_text, sfx_text, user = createContextParts(
+                config, request_payload, "json", source
             )
-            request_tokens = countTokens(
-                static_system + vocab_text, user, current_history
+            vocab_text = glossary_text + sfx_text
+            request_input, request_output = countTokens(
+                static_system + vocab_text, user, instructions + source
             )
-            request_input = max(0, int(request_tokens[0]))
-            request_output = max(0, int(request_tokens[1]))
-            input_tokens += request_input
-            output_tokens += request_output
-
+            static_tokens = countTokens(static_system, "", "")[0] if native_claude else 0
+            sizes.append(len(name_batch))
+            cached_tokens.append(static_tokens)
+            regular_tokens.append(max(0, request_input - static_tokens))
+            output_tokens += max(0, request_output)
             if native_claude:
-                static_tokens = countTokens(static_system, "", "")[0]
-                regular_tokens = max(0, request_input - static_tokens)
-                # Match the translator's conservative cold-cache estimate: the
-                # first request for each output-schema size writes the cached
-                # prompt; repeated sizes receive the cache-read discount.
-                cache_multiplier = 2.0 if len(name_batch) not in seen_batch_sizes else 0.10
-                estimated_cost += (
-                    static_tokens * input_rate * cache_multiplier
-                    + regular_tokens * input_rate
-                    + request_output * output_rate
-                )
-                seen_batch_sizes.add(len(name_batch))
-            else:
-                estimated_cost += (
-                    request_input * input_rate + request_output * output_rate
-                )
-            current_history = name_batch[-max_history:]
+                requests.append(buildClaudeRequest(
+                    static_system, user, source, "json", model_name, len(name_batch),
+                    vocab_text=vocab_text, context_kind=CONTEXT_SOURCE,
+                    request_instructions=instructions,
+                ))
+            source = name_batch[-max_history:]
+
+        regular_input = sum(regular_tokens)
+        counted = None
+        if requests:
+            counted = countClaudeTokens(requests, regular_tokens, "📊 Speaker estimate:")
+        if counted is not None:
+            cached_tokens = [
+                counted.prefixes[claude_tokens.split(params)[0]] for params in requests
+            ]
+            regular_input = round(regular_input * counted.scale)
+
+        estimated_cost = regular_input * input_rate + output_tokens * output_rate
+        # Match the translator's conservative cold-cache estimate: the first
+        # request for each output-schema size writes the cached prompt;
+        # repeated sizes receive the cache-read discount.
+        for index, (size, tokens) in enumerate(zip(sizes, cached_tokens)):
+            estimated_cost += tokens * input_rate * (0.10 if size in sizes[:index] else 2.0)
 
         return {
             "model": model_name,
-            "request_count": (len(names) + batch_size - 1) // batch_size,
-            "input_tokens": input_tokens,
+            "request_count": len(sizes),
+            "input_tokens": sum(cached_tokens) + regular_input,
             "output_tokens": output_tokens,
             "estimated_cost": estimated_cost,
             "cold_cache": native_claude,
+            # Claude bills more tokens than the approximate count holds.
+            "approximate_input": bool(requests) and counted is None,
         }
 
     @extensions.point
@@ -823,8 +844,9 @@ class TranslationTaskCore:
                 "No speaker API calls have been made."
             )
             from util.skills import ctx
-            estimate = self._estimate_grouped_speakers(
-                pending, ctx("names.speaker"), mvmz.TRANSLATION_CONFIG, mvmz.MODEL
+            estimate = self._emit_batch_output(
+                self._estimate_grouped_speakers,
+                pending, ctx("names.speaker"), mvmz.TRANSLATION_CONFIG, mvmz.MODEL,
             )
             self.emit_log(
                 f"📊 Speaker estimate: {int(estimate.get('request_count', 0))} grouped request(s), "
@@ -921,8 +943,9 @@ class TranslationTaskCore:
             "speaker(s); no speaker API calls have been made."
         )
         from util.skills import ctx
-        estimate = self._estimate_grouped_speakers(
-            pending, ctx("names.npc"), wolfdawn.TRANSLATION_CONFIG, wolfdawn.MODEL
+        estimate = self._emit_batch_output(
+            self._estimate_grouped_speakers,
+            pending, ctx("names.npc"), wolfdawn.TRANSLATION_CONFIG, wolfdawn.MODEL,
         )
         self.emit_log(
             f"📊 Speaker estimate: {int(estimate.get('request_count', 0))} grouped request(s), "

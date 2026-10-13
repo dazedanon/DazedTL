@@ -2212,6 +2212,31 @@ def _get_anthropic_client():
     return anthropic.Anthropic(api_key=key)
 
 
+def countClaudeTokens(requests, approximate, log_prefix):
+    """Claude's own count of an estimate's requests (see claude_tokens.count).
+
+    Anthropic bills by Claude's tokenizer, which differs from the approximate
+    encoder. When the endpoint can't count them, this says why and returns None.
+    """
+    # A local run blocks the network, where the client would only retry.
+    unavailable = "a local run has no network"
+    if os.getenv("DAZEDTL_TEST_OFFLINE") != "1":
+        try:
+            return claude_tokens.count(
+                _get_anthropic_client().with_options(timeout=30),
+                requests,
+                approximate,
+            )
+        except Exception as error:
+            unavailable = f"{type(error).__name__}: {error}"
+    print(
+        f"{log_prefix} Claude's token count was unavailable ({unavailable}); "
+        "input tokens are approximate.",
+        flush=True,
+    )
+    return None
+
+
 def _estimate_openai_cache_reads(prompt_token_sequences):
     """Estimate automatic OpenAI prefix-cache hits for an ordered request set.
 
@@ -2353,26 +2378,8 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
     est_provider = next(iter(providers), getBatchProvider(est_model))
     counted = None
     if est_provider == "anthropic":
-        # Anthropic bills by Claude's tokenizer, which differs from the
-        # approximate encoder above; count with it when the endpoint answers.
-        # A local run blocks the network, where the client would only retry.
-        unavailable = "a local run has no network"
-        if os.getenv("DAZEDTL_TEST_OFFLINE") != "1":
-            try:
-                counted = claude_tokens.count(
-                    _get_anthropic_client().with_options(timeout=30),
-                    request_params,
-                    request_dynamic,
-                )
-            except Exception as error:
-                unavailable = f"{type(error).__name__}: {error}"
-        if counted is None:
-            print(
-                f"{log_prefix} Claude's token count was unavailable ({unavailable}); "
-                "input tokens are approximate.",
-                flush=True,
-            )
-        else:
+        counted = countClaudeTokens(request_params, request_dynamic, log_prefix)
+        if counted is not None:
             prefix_tokens = {p: counted.prefixes[p] for p in prefix_tokens}
             dynamic_tokens = round(dynamic_tokens * counted.scale)
             print(
