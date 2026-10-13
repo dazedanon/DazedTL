@@ -1324,6 +1324,14 @@ try:
             assert batch_rows[1]["error"]["code"] == "validation_failed", batch_rows[1]
             assert len(sent_batches) == 2
             translation.set_batch_phase(None)
+            # The run's new speaker names go out Live before any Batch phase;
+            # OpenRouter's Live route refuses the Batch endpoint pin.
+            names = translation.buildOpenAIRequest(
+                "Translate.", "村長", [], 0, "json", router_model, 1
+            )
+            assert names["extra_body"]["provider"] == {"require_parameters": True}, (
+                names
+            )
             openrouter_pricing.configure(translation, None)
             configure_builders(translation, None)
             translation.STRICT_STRUCTURED_OUTPUTS = False

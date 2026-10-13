@@ -120,6 +120,10 @@ def configure_builders(
             params = provider_defaults(native(*args, **kwargs), policy)
             params = completion_budget(params, max_output_tokens)
             if _name == "buildOpenAIRequest":
+                # A Batch run translates new speaker names Live before any
+                # Batch phase starts; OpenRouter's Live route refuses the
+                # Batch endpoint pin.
+                queued = batch and translation.get_batch_phase() is not None
                 if structured_outputs:
                     arguments = _signature.bind(*args, **kwargs).arguments
                     if (
@@ -129,10 +133,10 @@ def configure_builders(
                         params = structured_output(
                             params,
                             translation.createTranslationSchema(arguments["numLines"]),
-                            live=not batch,
+                            live=not queued,
                         )
                 params = host_routing(params, openrouter_host)
-                if structured_outputs and batch:
+                if structured_outputs and queued:
                     params = batch_routing(params, openrouter_batch)
             if record is not None:
                 record(params)
