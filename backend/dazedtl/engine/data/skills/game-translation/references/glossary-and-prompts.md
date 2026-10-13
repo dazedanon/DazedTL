@@ -241,7 +241,7 @@ Naive substring matching floods the prompt with irrelevant approved terms that c
 - **Match against the current batch only and deliberately exclude conversation history**, or terms from three batches ago get resent and produce spurious terminology in unrelated scenes.
 - Split the source side of an entry on `,` and `、` so one row `様, さま (sama)` covers both spellings.
 - When the payload is JSON, reduce it to its string **values** before matching (strip the ```json fence, `json.loads`, collect strings) so structural keys like `Line1` never trigger a hit.
-- Parse rows with `^(.+?)\s*\(([^()]*)\)` capturing only the FIRST paren group, so a rich row like `サンク (Sank) - Male; protagonist...` still keys on `Sank`. Fall back to `^(.+?)\s+[–-]\s+(.+)$`, then to a bare line.
+- Parse rows by their FIRST balanced paren group, so a rich row like `サンク (Sank) - Male; protagonist...` still keys on `Sank` and a translation keeps its own parentheses (`農夫の魂（夫） (Farmer's Soul (Husband))`). Fall back to `^(.+?)\s+[–-]\s+(.+)$`, then to a bare line.
 
 ### The user turn is labelled, separately fenced blocks
 

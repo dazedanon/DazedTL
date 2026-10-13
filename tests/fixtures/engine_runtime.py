@@ -233,6 +233,17 @@ try:
         from modules import rpgmakermvmz as parser
         from util import extensions
 
+        # A nameplate translated with its own parentheses was saved, then read
+        # back as another source, so the run dropped every paid name.
+        saved_names = parser._merge_speaker_rows_into_game_characters(
+            "", [("農夫の魂（夫）", "Farmer's Soul (Husband)")]
+        )
+        with patch.object(parser, "VOCAB", saved_names):
+            assert (
+                parser._vocab_speaker_lookup("農夫の魂（夫）")
+                == "Farmer's Soul (Husband)"
+            ), saved_names
+
         # MV and Ace print the battler's name right before a particle-first
         # battle message; stripping the space after Taro printed "Arinafell!".
         assert parser._strip_taro_placeholder('"Taro fell!"') == " fell!"

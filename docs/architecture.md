@@ -700,6 +700,7 @@ Explicit Save writes the editor's guidance over the current files through the na
 It reports successful writes if a later document save fails and retains remaining drafts.
 Guidance has no revision-conflict workflow; paid estimates still bind the actual saved inputs used for translation.
 The shared plain-text editor retains glossary category headers, source (translation) entries and same-line notes; engine parsing and per-batch selection remain unchanged.
+An entry's translation is its first balanced parenthesized group ([split_glossary_row](../backend/dazedtl/engine/util/vocab.py)), so a translation may hold its own parentheses.
 Measured layout values are saved automatically when their project-bound report and source evidence are valid.
 The observer and project helper use the same reconciliation, deferring writes during active work or pending option edits.
 Each report is consumed once; later manual widths are retained until an explicitly requested new measurement establishes a new baseline.

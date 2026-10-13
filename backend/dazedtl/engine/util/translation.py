@@ -35,7 +35,7 @@ from util.provider_costs import cache_write_multiplier, has_billed_cache_writes
 from util import claude_tokens, request_debug
 from util import extensions
 from util.sfx_reference import build_sfx_reference_text
-from util.vocab import decorative_glossary_alias
+from util.vocab import decorative_glossary_alias, split_glossary_row
 
 # The fixed GPT-4 token counter is shared by translation and Len estimates.
 # Prefer its shipped table on clean/offline installations; explicit process
@@ -3780,12 +3780,11 @@ def parseVocabWithCategories(vocabText):
         # Parse vocabulary term - extract both Japanese and English parts.
         # Rich entries may continue after the first parenthesized translation,
         # e.g. "サンク (Sank) - Male; protagonist..."; only "Sank" is the match key.
-        paren_match = re.match(r'^(.+?)\s*\(([^()]*)\)', line)
+        paren_match = split_glossary_row(line)
         dash_match = re.match(r'^(.+?)\s+[–-]\s+(.+)$', line)
         if paren_match:
-            japanese_term = paren_match.group(1).strip()
-            english_term = paren_match.group(2).strip()
-            
+            japanese_term, english_term, _rest = paren_match
+
             # Create a tuple with both terms for matching
             term_pair = (japanese_term, english_term)
             if term_pair not in seen:
@@ -4076,10 +4075,10 @@ def _vocab_term_in_text(term, text):
 def _render_decorative_vocab_alias(line: str, source_alias: str,
                                    target_alias: str) -> str:
     """Render the first ``source (target)`` pair without its label marker."""
-    match = re.match(r'^(.+?)\s*\(([^()]*)\)', line)
-    if match is None:
+    row = split_glossary_row(line)
+    if row is None:
         return line
-    return f"{source_alias} ({target_alias}){line[match.end():]}"
+    return f"{source_alias} ({target_alias}){row[2]}"
 
 
 def _collect_json_string_values(value):

@@ -184,6 +184,27 @@ def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", str(s)).strip().casefold()
 
 
+def split_glossary_row(line: str) -> tuple[str, str, str] | None:
+    """Split a ``source (translation)`` row into source, translation and rest.
+
+    The translation is the first balanced parenthesized group, so a nameplate
+    such as ``農夫の魂（夫） (Farmer's Soul (Husband))`` keeps its own
+    parentheses, and rich rows continue after it (``サンク (Sank) - Male``).
+    """
+    start = line.find("(")
+    while start != -1:
+        depth = 0
+        for end in range(start, len(line)):
+            depth += {"(": 1, ")": -1}.get(line[end], 0)
+            if depth == 0:
+                source = line[:start].strip()
+                if source:
+                    return source, line[start + 1 : end].strip(), line[end + 1 :]
+                break
+        start = line.find("(", start + 1)
+    return None
+
+
 _SECTION_PAIR_RE = re.compile(
     r"^(.+?)\s+\((.+)\)\s*$",
 )

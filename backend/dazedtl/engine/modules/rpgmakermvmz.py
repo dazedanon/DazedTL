@@ -33,6 +33,7 @@ from util.translation import (
     split_vocab_source_aliases,
     translateAI as sharedtranslateAI,
 )
+from util.vocab import split_glossary_row
 from util.speakers import SPEAKER_BRACKET_INNER, strip_speaker_prefix
 from util import extensions, rpgmaker_qa_lint
 from util.skills import ctx, load_system_prompt
@@ -6744,10 +6745,11 @@ def _get_actor_map() -> dict:
         try:
             m: dict = {}
             for line in VOCAB.splitlines():
-                match = re.search(r"\(([^()]+)\)\s*-\s*.*?\bactor\s+ID\s+(\d+)\b", line, re.IGNORECASE)
+                row = split_glossary_row(line)
+                match = row and re.match(r"\s*-\s*.*?\bactor\s+ID\s+(\d+)\b", row[2], re.IGNORECASE)
                 if match:
-                    name = match.group(1).strip()
-                    aid = int(match.group(2))
+                    name = row[1]
+                    aid = int(match.group(1))
                     if name:
                         m[aid] = name
             if m:
@@ -7201,8 +7203,6 @@ def _merge_speaker_rows_into_game_characters(content: str, generated_pairs):
     if game_match:
         existing_lines = game_match.group(0).splitlines()[1:]
 
-    pair_pattern = re.compile(r"^(.+?)\s+\(([^()]*)\)(.*)$")
-
     def _row_keys(source: str) -> set[str]:
         keys = set()
         for alias in split_vocab_source_aliases(source):
@@ -7214,11 +7214,11 @@ def _merge_speaker_rows_into_game_characters(content: str, generated_pairs):
         stripped = raw.strip()
         if not stripped:
             continue
-        pair = pair_pattern.match(stripped)
+        pair = split_glossary_row(stripped)
         if not pair:
             parsed_existing.append((stripped, None, set(), False))
             continue
-        source = pair.group(1).strip()
+        source = pair[0]
         aliases = split_vocab_source_aliases(source)
         parsed_existing.append(
             (stripped, source, _row_keys(source), len(aliases) > 1)
@@ -7256,9 +7256,9 @@ def _merge_speaker_rows_into_game_characters(content: str, generated_pairs):
         line = str(raw).strip()
         if not line or line in seen_raw:
             continue
-        pair = pair_pattern.match(line)
+        pair = split_glossary_row(line)
         if pair:
-            source = pair.group(1).strip()
+            source = pair[0]
             keys = _row_keys(source)
             # Already covered by curated Game Characters (slash/NFKC/lookalike).
             if keys and (keys & covered_keys):
