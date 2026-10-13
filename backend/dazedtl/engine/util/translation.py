@@ -30,7 +30,11 @@ from util.paths import (
     replace_with_retry,
     unlink_with_retry,
 )
-from util.provider_costs import cache_write_multiplier, has_billed_cache_writes
+from util.provider_costs import (
+    cache_read_multiplier,
+    cache_write_multiplier,
+    has_billed_cache_writes,
+)
 from util import claude_tokens, request_debug
 from util import extensions
 from util.sfx_reference import build_sfx_reference_text
@@ -2509,9 +2513,11 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
     cache_kind = None
     if est_provider == "anthropic" and cache_write_tok > 0:
         # Claude's explicit 1-hour cache writes the prefix once at 2x input
-        # price, then reads it at 0.10x. Batch pricing halves both charges.
+        # price, then reads it at the model's read rate. Batch pricing halves
+        # both charges.
         batch_cached = (cache_write_tok * in_rate * 2.00
-                        + cache_read_tok * in_rate * 0.10
+                        + cache_read_tok * in_rate
+                        * cache_read_multiplier(est_provider, est_model)
                         + dynamic_tokens * in_rate
                         + output_tokens * out_rate) * 0.50
         cache_kind = "explicit"
@@ -5536,14 +5542,13 @@ def calculateCost(inputTokens, outputTokens, model):
             live_write_multiplier = cache_write_multiplier(
                 "anthropic", model, "5m"
             )
-            batch_write_multiplier = cache_write_multiplier(
-                getBatchProvider(model) or "anthropic", model
-            )
-            cost = (cr * br * 0.10
+            batch_provider = getBatchProvider(model) or "anthropic"
+            batch_write_multiplier = cache_write_multiplier(batch_provider, model)
+            cost = (cr * br * cache_read_multiplier("anthropic", model)
                     + cw * br * live_write_multiplier
                     + reg * br + out * orr
                     # Batch API tokens: same rates, then the 50% batch discount.
-                    + (bcr * br * 0.10
+                    + (bcr * br * cache_read_multiplier(batch_provider, model)
                        + bcw * br * batch_write_multiplier
                        + breg * br + bout * orr) * 0.50)
             _thread_local.file_cache_read  = 0
@@ -5602,7 +5607,9 @@ def calculateCost(inputTokens, outputTokens, model):
         ) * pricing["inputAPICost"] * cache_write_multiplier(
             "anthropic", model, "5m"
         )
-        read_cost    = (read_batches  * static_tok / 1_000_000) * pricing["inputAPICost"] * 0.10
+        read_cost    = (
+            read_batches * static_tok / 1_000_000
+        ) * pricing["inputAPICost"] * cache_read_multiplier("anthropic", model)
         regular_cost = (regular_tok / 1_000_000) * pricing["inputAPICost"]
         inputCost    = write_cost + read_cost + regular_cost
     else:
@@ -6638,12 +6645,14 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
             "anthropic", config.model, "5m"
         )
         _call_cost = (
-            _delta_cr  * _br * 0.10 +
+            _delta_cr  * _br * cache_read_multiplier("anthropic", config.model) +
             _delta_cw  * _br * _live_write_multiplier +
             _delta_reg * _br +
             _delta_out * _or +
             # Batch API tokens: same rates, then the 50% batch discount.
-            (_delta_bcr  * _br * 0.10 +
+            (_delta_bcr  * _br * cache_read_multiplier(
+                batch_provider or "anthropic", config.model
+            ) +
              _delta_bcw  * _br * _batch_write_multiplier +
              _delta_breg * _br +
              _delta_bout * _or) * 0.50

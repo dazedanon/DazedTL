@@ -31,6 +31,22 @@ def cache_write_multiplier(provider: str, model: str,
     return 1.0
 
 
+def cache_read_multiplier(provider: str, model: str) -> float:
+    """Return cache-read price as a multiple of regular input pricing.
+
+    Anthropic reads cost 0.05 times regular input on Claude Opus 5.5 and
+    Sonnet 5.5 and 0.025 times on Claude Fable 5.1 and Mythos 5.1; every other
+    route here prices them at 0.1 times.
+    """
+    if str(provider or "").strip().lower() == "anthropic":
+        name = str(model or "").lower()
+        if re.search(r"claude-(?:fable|mythos)-5-1(?:\D|$)", name):
+            return 0.025
+        if re.search(r"claude-(?:opus|sonnet)-5-5(?:\D|$)", name):
+            return 0.05
+    return 0.10
+
+
 def has_billed_cache_writes(provider: str, model: str) -> bool:
     """Return whether cache writes have a distinct price for this route."""
     return cache_write_multiplier(provider, model) != 1.0

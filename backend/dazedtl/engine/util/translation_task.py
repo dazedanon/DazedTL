@@ -291,6 +291,7 @@ class TranslationTaskCore:
             isClaudeNative,
         )
         from util import claude_tokens
+        from util.provider_costs import cache_read_multiplier
 
         names = [str(name).strip() for name in speakers if str(name).strip()]
         batch_size = max(1, int(getattr(config, "batchSize", 1) or 1))
@@ -352,7 +353,11 @@ class TranslationTaskCore:
         # request for each output-schema size writes the cached prompt;
         # repeated sizes receive the cache-read discount.
         for index, (size, tokens) in enumerate(zip(sizes, cached_tokens)):
-            estimated_cost += tokens * input_rate * (0.10 if size in sizes[:index] else 2.0)
+            estimated_cost += tokens * input_rate * (
+                cache_read_multiplier("anthropic", model_name)
+                if size in sizes[:index]
+                else 2.0
+            )
 
         return {
             "model": model_name,
