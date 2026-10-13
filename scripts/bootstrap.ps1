@@ -26,7 +26,21 @@ try {
     New-Item -ItemType Directory -Force $runtime | Out-Null
     $archive = Join-Path $runtime "$name.zip"
     Write-Host "Downloading Node $version..."
-    Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $archive
+    # Up to three tries, as START.sh's curl --retry: a lost connection or a
+    # busy server is tried again, a missing file fails at once.
+    for ($try = 1; ; $try++) {
+      try {
+        Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $archive
+        break
+      } catch {
+        $status = [int]$_.Exception.Response.StatusCode
+        if ($status -and $status -ne 408 -and $status -ne 429 -and $status -lt 500) { throw }
+        $reason = $_.Exception.Message
+        if ($try -ge 3) { throw "Node could not be downloaded ($reason) Check the internet connection, then start DazedTL again." }
+        Write-Host "The Node download failed ($reason) Trying again..."
+        Start-Sleep -Seconds (2 * $try)
+      }
+    }
     # .NET instead of Get-FileHash and Expand-Archive: started from a
     # PowerShell 7 terminal, Windows PowerShell inherits a module path whose
     # modules it cannot load.

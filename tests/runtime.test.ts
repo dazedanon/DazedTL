@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import http from "node:http";
 import path from "node:path";
 import test from "node:test";
 import { root, requireNode } from "../scripts/dependencies.mjs";
+import { retried } from "../scripts/setup.mjs";
 import { windowSize } from "../app/electron/window-size.cjs";
 import { EventEmitter } from "node:events";
 import os from "node:os";
@@ -291,6 +293,41 @@ test("Node updates can launch the app while setup retains its exact runtime pin"
   } finally {
     Object.defineProperty(process.versions, "node", descriptor);
   }
+});
+
+test("setup downloads try again after a lost connection or a busy server, never after a missing file", async (t) => {
+  t.mock.method(console, "log", () => {});
+  // The error fetch reports when the server drops the connection.
+  const server = http.createServer((request) => request.socket.destroy());
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const lost = await fetch(
+    `http://127.0.0.1:${(server.address() as { port: number }).port}`,
+  ).catch((error) => error);
+  server.close();
+  const busy = Object.assign(new Error("Busy"), { response: { status: 503 } });
+  const missing = Object.assign(new Error("Missing"), { status: 404 });
+  const attempts = (...failures: Error[]) => {
+    const tried = { count: 0 };
+    const attempt = async () => {
+      const failure = failures[tried.count++];
+      if (failure) throw failure;
+      return "archive";
+    };
+    return { tried, attempt };
+  };
+  const flaky = attempts(lost, busy);
+  assert.equal(await retried("Electron", flaky.attempt, 0), "archive");
+  assert.equal(flaky.tried.count, 3);
+  const absent = attempts(missing);
+  await assert.rejects(retried("Electron", absent.attempt, 0), missing);
+  assert.equal(absent.tried.count, 1);
+  const offline = attempts(lost, lost, lost);
+  await assert.rejects(
+    retried("Electron", offline.attempt, 0),
+    /^Error: Electron could not be downloaded \(\w+\)\. Check the internet/,
+  );
+  assert.equal(offline.tried.count, 3);
 });
 
 test("paths inside the home folder read home-relative, and only there", () => {

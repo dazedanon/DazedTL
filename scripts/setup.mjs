@@ -7,6 +7,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
+import { setTimeout as delay } from "node:timers/promises";
 import {
   app,
   root,
@@ -74,14 +75,55 @@ export function pinned(test) {
   throw new Error(`DazedTL has no pinned runtime for ${platform}.`);
 }
 
+/** A dropped connection or a busy server, which another try can get past. */
+function transient(error) {
+  const status = error?.status ?? error?.response?.status;
+  if (status) return status === 408 || status === 429 || status >= 500;
+  // fetch reports a failed or cut connection as a TypeError with its cause.
+  return error instanceof TypeError && error.cause !== undefined;
+}
+
+/**
+ * Runs a download up to three times, since a first start on a flaky network
+ * can lose a connection; a missing file or a wrong checksum fails at once.
+ */
+export async function retried(label, attempt, pause = 2000) {
+  for (let tries = 1; ; tries++) {
+    try {
+      return await attempt();
+    } catch (error) {
+      if (!transient(error)) throw error;
+      const reason =
+        error.cause?.code ||
+        error.status ||
+        error.response?.status ||
+        error.message;
+      if (tries === 3)
+        throw new Error(
+          `${label} could not be downloaded (${reason}). Check the internet connection, then start DazedTL again.`,
+          { cause: error },
+        );
+      console.log(`The ${label} download failed (${reason}). Trying again…`);
+      await delay(tries * pause);
+    }
+  }
+}
+
 /** Downloads a pinned file into memory and checks its published checksum. */
-export async function download({ hash, url }, label) {
+export function download(pin, label) {
+  return retried(label, () => downloadOnce(pin, label));
+}
+
+async function downloadOnce({ hash, url }, label) {
   const response = await fetch(url, {
     headers: { "User-Agent": "DazedTL" },
     signal: AbortSignal.timeout(15 * 60_000),
   });
   if (!response.ok || !response.body)
-    throw new Error(`${label} could not be downloaded (${response.status}).`);
+    throw Object.assign(
+      new Error(`${label} could not be downloaded (${response.status}).`),
+      { status: response.status },
+    );
   const total = Number(response.headers.get("content-length")) || 0;
   const chunks = [];
   let received = 0;
@@ -219,13 +261,15 @@ export async function installElectron(electron) {
   if (!executable)
     throw new Error(`Electron has no build for ${process.platform}.`);
   const { downloadArtifact } = require("@electron/get");
-  const archive = await downloadArtifact({
-    version: require("./package.json").version,
-    artifactName: "electron",
-    platform: process.platform,
-    arch: process.arch,
-    checksums: require("./checksums.json"),
-  });
+  const archive = await retried("Electron", () =>
+    downloadArtifact({
+      version: require("./package.json").version,
+      artifactName: "electron",
+      platform: process.platform,
+      arch: process.arch,
+      checksums: require("./checksums.json"),
+    }),
+  );
   const dist = path.join(electron, "dist");
   fs.rmSync(dist, { recursive: true, force: true });
   unzip(fs.readFileSync(archive), dist);
