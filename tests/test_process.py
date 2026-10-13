@@ -2047,6 +2047,14 @@ class ProcessTests(unittest.TestCase):
         self.assertIn(
             "Provider work has finished", process_view.phase_feedback(job)["message"]
         )
+        # A refusal clarification still waits after its original Batch ended.
+        clarification = {"status": "in_progress", "counts": {}, "clarification": True}
+        job["process"]["batches"].append(clarification)
+        self.assertIn("clarification", process_view.phase_feedback(job)["message"])
+        clarification["status"] = "completed"
+        self.assertIn(
+            "Provider work has finished", process_view.phase_feedback(job)["message"]
+        )
         job.update(status="failed", message="Actual provider failure")
         self.assertEqual(process_view.phase_feedback(job), {})
         job.update(mode="translate", status="running", phase="translate")

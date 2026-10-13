@@ -1209,6 +1209,16 @@ def phase_feedback(job):
         }
     if phase.startswith("poll"):
         batches = (job.get("process") or {}).get("batches", [])
+        ended = {"completed", "ended", "failed", "expired", "cancelled", "canceled"}
+        # The original Batch has ended, so its counts would read as finished.
+        if any(
+            row.get("clarification") and row.get("status") not in ended
+            for row in batches
+        ):
+            return {
+                "message": "Waiting for the Batch clarification of refused requests.",
+                "progress": None,
+            }
         counts = [row.get("counts") or {} for row in batches]
         done = sum(row.get("succeeded") or 0 for row in counts)
         pending = sum(row.get("processing") or 0 for row in counts)
@@ -1217,11 +1227,7 @@ def phase_feedback(job):
             if counts and any(counts)
             else ""
         )
-        terminal = bool(batches) and all(
-            row.get("status")
-            in {"completed", "ended", "failed", "expired", "cancelled", "canceled"}
-            for row in batches
-        )
+        terminal = bool(batches) and all(row.get("status") in ended for row in batches)
         message = (
             "Provider work has finished. Results are collected automatically."
             if terminal
