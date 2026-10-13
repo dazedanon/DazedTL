@@ -1093,11 +1093,14 @@ class TranslationTaskCore:
         if not matching_files:
             return _completed_result() if estimate_only else "Success"
 
-        # Batch collection and consumption are local, CPU/file-heavy phases.
-        # Reuse one imported RPG Maker process for the whole phase instead of
-        # paying heavyweight SDK/module startup once per file. Consume remains
-        # strictly ordered, preserving glossary harvest semantics.
-        if is_mvmz and batch_phase in ("collect", "estimate", "consume"):
+        # Batch collection and consumption are local, CPU/file-heavy phases,
+        # as is every estimate. Reuse one imported RPG Maker process for the
+        # whole phase instead of paying heavyweight SDK/module startup once per
+        # file, which takes seconds on Windows. Consume remains strictly
+        # ordered, preserving glossary harvest semantics.
+        if is_mvmz and (
+            batch_phase in ("collect", "estimate", "consume") or estimate_only
+        ):
             observed = set()
 
             def _handle_persistent_result(filename, result):
@@ -1120,6 +1123,8 @@ class TranslationTaskCore:
                 for filename in matching_files:
                     if filename not in observed:
                         _handle_file_result(filename, worker_result)
+            if not batch_phase:
+                return _completed_result()
             return "Fail" if had_failure else total_cost
 
         # Pass 2 is always sequential: each file may harvest names into

@@ -1051,7 +1051,32 @@ try:
         # The names review prices Claude by Claude's own count of the request
         # the names translation then sends, and never counts where the
         # network is blocked.
-        from util.translation_task import TranslationTaskCore
+        from util.translation_task import TranslationTask, TranslationTaskCore
+
+        # Every RPG Maker estimate runs its files in one worker; a worker per
+        # file took seconds each on Windows for Live-only connections.
+        launches = []
+
+        def one_worker(task, files, estimate_only, batch_phase, file_result_callback):
+            launches.append((list(files), batch_phase))
+            for file in files:
+                file_result_callback(file, "[Input: 10][Output: 2]")
+            return "Success"
+
+        estimate_task = TranslationTask(
+            temporary,
+            ("RPG Maker MV/MZ", (".json",), None),
+            estimate_only=True,
+        )
+        with (
+            patch.dict(os.environ, {"fileThreads": "4"}),
+            patch.object(TranslationTask, "run_module_in_process", one_worker),
+        ):
+            estimate_task._run_files(["Map001.json", "Map002.json"], True)
+        assert launches == [(["Map001.json", "Map002.json"], None)], launches
+        assert estimate_task.estimate_summary["input_tokens"] == 20, (
+            estimate_task.estimate_summary
+        )
 
         names_root = temporary / "names"
         names_root.mkdir()
