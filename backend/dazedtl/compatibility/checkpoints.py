@@ -42,16 +42,24 @@ def _json_digest(path, signature):
     return digest(raw)
 
 
-def outputs(root, plan):
-    root = Path(root)
+def _index(root):
+    """The run's checkpoint receipts, or None before its first checkpoint."""
     path = project_path(root, INDEX, exists=False)
     if not path.exists():
-        return {}
+        return None
     record = read_json(path)
     if record.get("version") != 1 or record.get("plan_hash") != digest(
         (root / "plan.json").read_bytes()
     ):
         raise ValueError("Progress checkpoints do not match this saved run.")
+    return record
+
+
+def outputs(root, plan):
+    root = Path(root)
+    record = _index(root)
+    if record is None:
+        return {}
     allowed = {row["name"] for row in plan["files"]}
     result = {}
     for name, expected in record.get("files", {}).items():
@@ -110,18 +118,20 @@ def install(module, root, plan):
         ):
             path = Path(file).resolve()
             if path.parent == root / "files" and path.name in names:
-                retained = outputs(root, plan)
-                if path.name in retained:
+                # Only the reopened file's receipt matters: checking every
+                # saved output made each file's start slower as a run went on.
+                expected = ((_index(root) or {}).get("files") or {}).get(path.name)
+                output = root / "translated" / path.name
+                if expected and output.is_file():
                     raw = project_path(root, "translated/" + path.name).read_bytes()
-                    if digest(raw) != retained[path.name]:
-                        raise ValueError(
-                            "The saved progress changed while reopening it."
+                    if digest(raw) == expected and isinstance(
+                        decode_json(raw), (dict, list)
+                    ):
+                        stream = io.StringIO(
+                            raw.decode(kwargs.get("encoding") or "utf-8-sig")
                         )
-                    stream = io.StringIO(
-                        raw.decode(kwargs.get("encoding") or "utf-8-sig")
-                    )
-                    stream.name = str(path)
-                    return stream
+                        stream.name = str(path)
+                        return stream
         return native(file, *args, **kwargs)
 
     module.saveProgress.layer(LAYER, save)

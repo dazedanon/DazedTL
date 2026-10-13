@@ -1370,6 +1370,10 @@ class ProcessTests(unittest.TestCase):
             # Never bless bytes written after the last durable checkpoint receipt.
             write_bytes(root / "translated/Items.json", b'{"different":"unreceipted"}')
             self.assertEqual(checkpoints.outputs(root, plan), {})
+            with replacement.open(
+                root / "files/Items.json", encoding="utf-8"
+            ) as stream:
+                self.assertEqual(json.load(stream), source)
             # Batch consumption keeps its frozen request grouping and uses receipts.
             plan["mode"] = "batch"
             write_json(root / "plan.json", plan)
