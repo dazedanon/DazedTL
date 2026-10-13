@@ -109,13 +109,15 @@ function copyCheckout() {
 }
 
 // A DTextPicture placeholder for the map's name, a HUD label, a CommonPopup
-// popup and a MOG_EventIndicators label, for Other event text.
+// popup, a MOG_EventIndicators label and a script notice no installed
+// handler captures, for Other event text.
 const placeholder = "D_TEXT [マップ表示名] 24";
 const eventCommands = [
   [356, placeholder],
   [356, "D_TEXT 現在の時刻 24"],
   [356, "CommonPopup add text:共鳴度+3 count:60"],
   [108, "text_indicator : 世界地図の端"],
+  [355, "Notice.show('宝箱を見つけた');"],
 ];
 
 /** Copies the MZ fixture game into a folder named like a Japanese release. */
@@ -661,11 +663,11 @@ const readJson = (file) =>
   JSON.parse(fs.readFileSync(path.join(game, file), "utf8"));
 const translated = (value) =>
   typeof value === "string" && value.startsWith("Tested ");
-/** The fixture chief's plugin command and comment texts, in order. */
+/** The fixture chief's plugin command, comment and script texts, in order. */
 const eventTexts = () =>
   readJson("data/Map001.json")
     .events[1].pages[0].list.filter((command) =>
-      [356, 108].includes(command.code),
+      [356, 108, 355].includes(command.code),
     )
     .map((command) => command.parameters[0]);
 
@@ -882,13 +884,18 @@ try {
     ];
     // The assistant read how each plugin parses its text: DTextPicture joins
     // the words back, CommonPopupCore keeps one argument per space and MOG
-    // splits its comment on " : ". The placeholder is an internal value.
+    // splits its comment on " : ". The placeholder is an internal value, and
+    // the notice needs a pattern of the game's own.
     const findings = {
+      CODE355655: {
+        custom: [{ name: "notice", regex: String.raw`Notice\.show\('(.*)'\)` }],
+      },
       CODE356: {
         spacing: { "D_TEXT ": "space", CommonPopup: "nbsp" },
         keep: [placeholder],
+        custom: [],
       },
-      CODE108: { spacing: { text_indicator: "space" }, keep: [] },
+      CODE108: { spacing: { text_indicator: "space" }, keep: [], custom: [] },
     };
     const sources = Object.fromEntries(
       request.controls.map(({ key }) => [
@@ -902,6 +909,7 @@ try {
           observations: [],
           exclusions: [],
           evidence,
+          ...(key === "CODE357" ? { custom: [] } : {}),
           ...(key in findings ? findings[key] : {}),
         },
       ]),
@@ -918,22 +926,26 @@ try {
       }),
     );
     const { findings: applied } = JSON.parse(helper(`${command} --apply`));
-    if (applied.enabled.join() !== "CODE356,CODE108")
+    if (applied.enabled.join() !== "CODE355655,CODE356,CODE108")
       throw new Error(`The findings enabled ${applied.enabled.join()}.`);
     await page.click(/^Source choices/);
     await page.click(/^MV plugin commands/);
-    await page.evaluate(
-      `document.querySelector(".translation-source-detail details").open = true`,
-    );
+    const details = `document.querySelector(".translation-source-detail details").open = true`;
+    await page.evaluate(details);
     await page.waitText(`Left untranslated: ${placeholder}`);
     await page.shot("event-text-sources");
+    await page.click(/^Script text/);
+    await page.waitText("1 pattern written for this game.");
+    await page.evaluate(details);
+    await page.waitText("Custom pattern notice:");
+    await page.shot("event-text-custom");
   });
 
   await step("Translate and apply other event text", async () => {
     // A started stage also reads "In progress" to screen readers.
     await page.click(/^3Translate/);
     await translateTask(page, "Other event text", () => {
-      const [kept, label, popup, comment] = eventTexts();
+      const [kept, label, popup, comment, notice] = eventTexts();
       const nbsp = String.fromCharCode(0xa0);
       // Only the popup's plugin needs its words held together.
       return (
@@ -942,7 +954,8 @@ try {
         new RegExp(
           `^CommonPopup add text:Tested${nbsp}\\S+${nbsp}\\+3 count:60$`,
         ).test(popup) &&
-        /^text_indicator : Tested \S+$/.test(comment)
+        /^text_indicator : Tested \S+$/.test(comment) &&
+        /^Notice\.show\('Tested [a-z]+'\);$/.test(notice)
       );
     });
   });
