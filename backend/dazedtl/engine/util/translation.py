@@ -2484,7 +2484,7 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
     print(f"{log_prefix}                 ${live_cost:.4f} (live API)", flush=True)
     if unestimated_thinking:
         print(
-            f"{log_prefix} NOTE: Gemini thinking tokens are billed as output and cannot "
+            f"{log_prefix} NOTE: This model's thinking tokens are billed as output and cannot "
             "be predicted before the run; they are not included above.",
             flush=True,
         )
