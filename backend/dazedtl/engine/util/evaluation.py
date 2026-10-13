@@ -30,7 +30,7 @@ import zipfile
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Iterable
 
@@ -51,7 +51,7 @@ from util.paths import (
     replace_with_retry,
     staging_folder,
 )
-from util.provider_costs import cache_write_multiplier
+from util.provider_costs import cache_read_multiplier, cache_write_multiplier
 from util.project_scanner import find_data_folder
 from util.sfx_reference import sfx_reference_identity
 from util.skills import load_system_prompt
@@ -476,22 +476,22 @@ def _normalize_history(history: Any) -> list[str]:
     return [str(history)]
 
 
-def pricing_for(model: str, *, on_date: date | None = None) -> dict[str, float]:
+def pricing_for(model: str, provider: str = "") -> dict[str, float]:
     """Return provider Batch API rates per million tokens.
 
     Pinned evaluation models use audited rates; other models use the tool's
-    live pricing catalog or provider-family fallback with the batch discount.
+    live pricing catalog or provider-family fallback with the batch discount
+    and the provider's cache-read rate for that model.
     """
-    model_l = str(model or "").lower()
-    today = on_date or date.today()
+    model_l = str(model or "").strip().lower()
     if "gpt-5.6-terra" in model_l:
         return {"input": 1.00, "cached_input": 0.10, "output": 6.00}
     if "gemini-3.6-flash" in model_l:
         return {"input": 0.75, "cached_input": 0.075, "output": 3.75}
-    if "claude-sonnet-5" in model_l:
-        if today < date(2026, 9, 1):
-            return {"input": 1.00, "cached_input": 0.10, "output": 5.00}
-        return {"input": 1.50, "cached_input": 0.15, "output": 7.50}
+    # Only Sonnet 5 itself: later Sonnet 5.x ids share this prefix but have
+    # their own prices.
+    if re.search(r"(?:^|[/.])claude-sonnet-5$", model_l):
+        return {"input": 1.00, "cached_input": 0.10, "output": 5.00}
     # The normal pricing resolver combines the live LiteLLM catalog with the
     # tool's provider-family fallbacks. Evaluation jobs use provider Batch APIs,
     # so apply the standard 50% batch discount here.
@@ -502,7 +502,7 @@ def pricing_for(model: str, *, on_date: date | None = None) -> dict[str, float]:
         raise ValueError(f"No usable pricing is available for model {model!r}")
     return {
         "input": input_rate,
-        "cached_input": input_rate * 0.10,
+        "cached_input": input_rate * cache_read_multiplier(provider, model),
         "output": output_rate,
     }
 
@@ -1521,7 +1521,7 @@ def _candidate_rates(candidate: dict) -> dict[str, float]:
             # OpenRouter publishes live routing rates and does not expose the
             # OpenAI Batch API, so no provider batch discount applies.
             return openrouter_rates
-    rates = pricing_for(candidate["model"])
+    rates = pricing_for(candidate["model"], candidate.get("provider", ""))
     if candidate.get("execution", "batch") == "live":
         # pricing_for returns provider Batch API rates. Live endpoints use the
         # undiscounted rates from the same pricing source.
