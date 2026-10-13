@@ -338,7 +338,7 @@ test("external project reports refresh even while no app job is running", async 
   await store.refresh();
   assert.equal(calls, 1);
   t.mock.timers.tick(2000);
-  await store.refresh();
+  await turn();
   assert.equal(calls, 2);
   store.stop();
   t.mock.timers.tick(10000);
