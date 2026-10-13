@@ -1,7 +1,6 @@
 """Paid names must remain inspectable and reusable after declining map work."""
 
 import re
-import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -9,15 +8,10 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from dazedtl.compatibility import speaker_results
-from dazedtl.compatibility.runtime import ENGINE_ROOT
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest
 
 from tests.engine import point
-
-# Receipts read glossary rows with the engine's own parser, as in the app.
-if str(ENGINE_ROOT) not in sys.path:
-    sys.path.insert(0, str(ENGINE_ROOT))
 
 
 class SpeakerResultTests(unittest.TestCase):

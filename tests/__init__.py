@@ -11,6 +11,9 @@ from pathlib import Path
 from tests.probe import Probe
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+# The app activates its bundled engine at startup; code that reads engine
+# helpers, such as glossary rows, needs it in every test module too.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend/dazedtl/engine"))
 # Windows may name the temporary folder by its 8.3 short name, such as
 # RUNNER~1, while the app resolves the game folders it opens to long names.
 tempfile.tempdir = str(Path(tempfile.gettempdir()).resolve())
