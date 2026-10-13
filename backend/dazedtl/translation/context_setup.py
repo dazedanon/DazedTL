@@ -135,6 +135,7 @@ def inspect(
         "layoutReportId": None,
         "layoutApplication": "applied" if applied else "none",
         "layoutMessage": "",
+        "layoutUnmeasured": False,
         "layoutStatus": "saved"
         if applied
         or reviews.get("layout") == digest(native["widths"])
@@ -164,73 +165,71 @@ def inspect(
         ):
             return result
         layout = report.get("layout")
-        if layout is not None:
+        if layout is None:
+            # The assistant could not measure the windows; the widths stay.
+            return {**result, "layoutUnmeasured": True}
+        if (
+            not isinstance(layout, dict)
+            or set(layout) != {"widths", "reason", "evidence"}
+            or not isinstance(layout["widths"], dict)
+            or not set(WIDTHS) <= set(layout["widths"]) <= {*WIDTHS, ROWS}
+        ):
+            raise ValueError(
+                "Layout recommendations need four widths, a reason and source evidence."
+            )
+        if (
+            any(
+                type(value) is not int
+                or not (1 <= value <= 20 if key == ROWS else 20 <= value <= 300)
+                for key, value in layout["widths"].items()
+            )
+            or layout["widths"]["faceWidth"] > layout["widths"]["width"]
+        ):
+            raise ValueError("Layout recommendations contain invalid character limits.")
+        if (
+            not isinstance(layout["reason"], str)
+            or not 1 <= len(layout["reason"].strip()) <= 4000
+            or not isinstance(layout["evidence"], list)
+            or not 1 <= len(layout["evidence"]) <= 20
+        ):
+            raise ValueError(
+                "Layout recommendations need a reason and inspected source evidence."
+            )
+        for ref in layout["evidence"]:
             if (
-                not isinstance(layout, dict)
-                or set(layout) != {"widths", "reason", "evidence"}
-                or not isinstance(layout["widths"], dict)
-                or not set(WIDTHS) <= set(layout["widths"]) <= {*WIDTHS, ROWS}
+                not isinstance(ref, dict)
+                or set(ref) != {"file", "sha256", "location"}
+                or not isinstance(ref["sha256"], str)
+                or not re.fullmatch(r"[0-9a-f]{64}", ref["sha256"])
+                or not isinstance(ref["location"], str)
+                or not 1 <= len(ref["location"].strip()) <= 1000
             ):
                 raise ValueError(
-                    "Layout recommendations need four widths, a reason and source evidence."
+                    "Layout evidence needs a source path, hash and location."
                 )
             if (
-                any(
-                    type(value) is not int
-                    or not (1 <= value <= 20 if key == ROWS else 20 <= value <= 300)
-                    for key, value in layout["widths"].items()
-                )
-                or layout["widths"]["faceWidth"] > layout["widths"]["width"]
+                not isinstance(ref["file"], str)
+                or len(ref["file"]) > 2000
+                or any(part.startswith(".") for part in ref["file"].split("/"))
+                or Path(ref["file"]).suffix.lower()
+                not in {".json", ".js", ".rb", ".ini", ".ttf", ".otf"}
             ):
                 raise ValueError(
-                    "Layout recommendations contain invalid character limits."
+                    "Cite inspected game sources or fonts for layout recommendations."
                 )
             if (
-                not isinstance(layout["reason"], str)
-                or not 1 <= len(layout["reason"].strip()) <= 4000
-                or not isinstance(layout["evidence"], list)
-                or not 1 <= len(layout["evidence"]) <= 20
+                not consumed
+                and observed_digest(project_path(native["source"], ref["file"]))
+                != ref["sha256"]
             ):
-                raise ValueError(
-                    "Layout recommendations need a reason and inspected source evidence."
-                )
-            for ref in layout["evidence"]:
-                if (
-                    not isinstance(ref, dict)
-                    or set(ref) != {"file", "sha256", "location"}
-                    or not isinstance(ref["sha256"], str)
-                    or not re.fullmatch(r"[0-9a-f]{64}", ref["sha256"])
-                    or not isinstance(ref["location"], str)
-                    or not 1 <= len(ref["location"].strip()) <= 1000
-                ):
-                    raise ValueError(
-                        "Layout evidence needs a source path, hash and location."
-                    )
-                if (
-                    not isinstance(ref["file"], str)
-                    or len(ref["file"]) > 2000
-                    or any(part.startswith(".") for part in ref["file"].split("/"))
-                    or Path(ref["file"]).suffix.lower()
-                    not in {".json", ".js", ".rb", ".ini", ".ttf", ".otf"}
-                ):
-                    raise ValueError(
-                        "Cite inspected game sources or fonts for layout recommendations."
-                    )
-                if (
-                    not consumed
-                    and observed_digest(project_path(native["source"], ref["file"]))
-                    != ref["sha256"]
-                ):
-                    return result
+                return result
         return {
             **result,
             "layout": layout,
-            "layoutReportId": report_id if layout else None,
+            "layoutReportId": report_id,
             "layoutApplication": ("applied" if applied else "manual")
             if consumed
-            else "pending"
-            if layout
-            else result["layoutApplication"],
+            else "pending",
         }
     except OSError, ValueError, TypeError, KeyError:
         return result

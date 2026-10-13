@@ -161,6 +161,8 @@ class ContextSetup(TypedDict):
     layoutReportId: NotRequired[str | None]
     layoutApplication: NotRequired[Literal["none", "pending", "applied", "manual"]]
     layoutMessage: NotRequired[str]
+    # The current request's report says the windows could not be measured.
+    layoutUnmeasured: NotRequired[bool]
 
 
 class ReferenceFolder(TypedDict):

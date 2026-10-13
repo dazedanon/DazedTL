@@ -68,6 +68,7 @@ It also decides how English words stay together in plugin commands and which int
 Change any choice under **Source choices**; **Other event text** in Translate translates them later.
 
 **Line widths** fills in from your assistant's measurements, which it checks in the running game, and you can change them.
+If your assistant cannot measure the game's windows, its task still finishes and the current widths stay; change them yourself if needed and save.
 Message rows is how many rows one message window shows; Text QA keeps its corrections within it.
 
 **Cost estimate** shows what translating the whole game costs with your API key before you translate anything.

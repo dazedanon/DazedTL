@@ -1758,6 +1758,17 @@ class GuidedTests(unittest.TestCase):
         )
         self.assertIsNone(self.guided.context_status(self.identity)["layout"])
         self.backend.workflows.apply_layout_settings.assert_not_called()
+        # A report that could not measure the windows finishes the task and
+        # keeps the widths; another game's report says nothing.
+        unmeasured = {**report, "layout": None}
+        write_json(
+            self.source / context_setup.REPORT,
+            {**unmeasured, "project_id": "another-game"},
+        )
+        self.assertFalse(self.guided.context_status(self.identity)["layoutUnmeasured"])
+        write_json(self.source / context_setup.REPORT, unmeasured)
+        self.assertTrue(self.guided.context_status(self.identity)["layoutUnmeasured"])
+        self.backend.workflows.apply_layout_settings.assert_not_called()
         write_json(self.source / context_setup.REPORT, report)
         self.backend.running = lambda: True
         self.assertEqual(

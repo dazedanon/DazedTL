@@ -249,12 +249,14 @@ export function layoutView(w: GuidedWorkspace): TaskView {
   } = w;
   const measuring = handoff("line_widths");
   // Measured widths save themselves, so a measurement that came back is done,
-  // never waiting for a review; one that could not be saved is blocked.
+  // never waiting for a review; one that could not be saved is blocked. A
+  // report that could not measure the windows is done and keeps the widths.
+  const unmeasured = !!discovery.layoutUnmeasured && !measuring.waiting;
   const taskState: AssistantTaskState = discovery.layoutMessage
     ? "blocked"
     : measuring.waiting
       ? "waiting"
-      : discovery.layout
+      : discovery.layout || discovery.layoutUnmeasured
         ? "done"
         : "not_started";
   const remeasure = "Remeasure only if the game's windows or fonts change.";
@@ -291,19 +293,21 @@ export function layoutView(w: GuidedWorkspace): TaskView {
               ? "Retry measured widths to save them, or keep the current widths and continue."
               : taskState === "waiting"
                 ? "Measured widths are saved automatically when your assistant reports them."
-                : taskState === "done"
-                  ? discovery.layoutApplication === "pending"
-                    ? "Measured widths are saved automatically after current work or option edits finish."
-                    : discovery.layoutApplication === "manual"
-                      ? `Your edited widths are kept. ${remeasure}`
-                      : `The measured widths are saved above. ${remeasure}`
-                  : "Optional. Your assistant measures the game's message windows and fonts; you can keep the current widths and continue."
+                : unmeasured
+                  ? "Your assistant could not measure the game's windows, so the widths above stay as they are; its reply says what it could not see."
+                  : taskState === "done"
+                    ? discovery.layoutApplication === "pending"
+                      ? "Measured widths are saved automatically after current work or option edits finish."
+                      : discovery.layoutApplication === "manual"
+                        ? `Your edited widths are kept. ${remeasure}`
+                        : `The measured widths are saved above. ${remeasure}`
+                    : "Optional. Your assistant measures the game's message windows and fonts; you can keep the current widths and continue."
           }
           results={[
             {
               id: "layout",
               title: "Measured widths",
-              state: taskState,
+              state: unmeasured ? "skipped" : taskState,
               detail:
                 "Dialogue, portrait, list and note widths and message rows, checked in the running game.",
               action: copyTask(

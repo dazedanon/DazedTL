@@ -206,4 +206,37 @@ test("copied tasks wait for a newer result, and dismissed ones read Not started"
   assert.deepEqual(assistantTasks(names("2026-10-07T10:40:00.000+00:00")), []);
   // A copy recorded before tasks named their last result finishes as before.
   assert.deepEqual(assistantTasks(names()), []);
+
+  // A line width report saved after the copy finishes the task, measured or
+  // not; until it comes back the task waits.
+  const widths = (contextSetup: object, resultAt: string | null) => ({
+    records: [
+      {
+        kind: "line_widths",
+        requestId: "request",
+        copiedAt: "2026-10-07T10:00:00.000+00:00",
+        resultAt,
+        dismissed: false,
+      } as AssistantTaskRecord,
+    ],
+    guided: {
+      ...names().guided,
+      contextSetup: { documents: {}, layout: null, ...contextSetup },
+    } as unknown as GuidedState,
+  });
+  const back = "2026-10-07T10:20:00.000+00:00";
+  assert.deepEqual(
+    assistantTasks(widths({ layoutUnmeasured: true }, back)),
+    [],
+  );
+  assert.deepEqual(
+    assistantTasks(widths({ layoutUnmeasured: true }, null)).map(
+      (task) => task.state,
+    ),
+    ["waiting"],
+  );
+  assert.deepEqual(
+    assistantTasks(widths({}, back)).map((task) => task.state),
+    ["waiting"],
+  );
 });

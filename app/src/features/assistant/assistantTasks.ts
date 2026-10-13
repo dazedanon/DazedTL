@@ -145,7 +145,9 @@ function standing(
     if (!guided || !copied) return { state: "idle" };
     if (guided.contextSetup.layoutMessage)
       return { state: "blocked", detail: guided.contextSetup.layoutMessage };
-    return back && guided.contextSetup.layout
+    // A report that could not measure the windows finishes the task too.
+    return back &&
+      (guided.contextSetup.layout || guided.contextSetup.layoutUnmeasured)
       ? { state: "finished" }
       : waiting();
   }
