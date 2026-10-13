@@ -3,6 +3,17 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.13.2] - 2026-10-13
+
+### Changed
+
+- **Translate:** after you decline or close a cost review, clicking **Translate** again reuses that estimate while the files and settings are unchanged, instead of estimating every file again. Its window marks Estimate cost as Reused.
+- **Context:** **Estimate again** in Cost estimate waits until something the estimate depends on changes, since it would give the same result. Updating DazedTL now also marks a saved estimate Outdated.
+
+### Fixed
+
+- **Translate:** Preview request in a Batch review pages through every request the Batch will submit. When names and labels were translated with Live first, it showed only those name requests, such as "Request 1 of 1", and none of the Batch's own.
+
 ## [2.13.1] - 2026-10-13
 
 ### Fixed
@@ -493,6 +504,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.13.2]: https://github.com/dazedanon/DazedTL/compare/v2.13.1...v2.13.2
 [2.13.1]: https://github.com/dazedanon/DazedTL/compare/v2.13.0...v2.13.1
 [2.13.0]: https://github.com/dazedanon/DazedTL/compare/v2.12.0...v2.13.0
 [2.12.0]: https://github.com/dazedanon/DazedTL/compare/v2.11.2...v2.12.0
