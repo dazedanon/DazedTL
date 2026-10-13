@@ -3,6 +3,12 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.13.1] - 2026-10-13
+
+### Fixed
+
+- **Project:** after DazedTL restarts, a Guided game whose last Batch was declined or stopped opens normally again. Since 2.13.0 it showed "Project unavailable" with "Model pricing is unknown. Set explicit rates in Settings before estimating." until something looked up the model's prices again.
+
 ## [2.13.0] - 2026-10-13
 
 ### Changed
@@ -487,6 +493,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.13.1]: https://github.com/dazedanon/DazedTL/compare/v2.13.0...v2.13.1
 [2.13.0]: https://github.com/dazedanon/DazedTL/compare/v2.12.0...v2.13.0
 [2.12.0]: https://github.com/dazedanon/DazedTL/compare/v2.11.2...v2.12.0
 [2.11.2]: https://github.com/dazedanon/DazedTL/compare/v2.11.1...v2.11.2
