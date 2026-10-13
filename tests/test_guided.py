@@ -231,6 +231,7 @@ class GuidedTests(unittest.TestCase):
         )
         self.backend = SimpleNamespace(
             workflows=workflows,
+            allow_providers=False,
             running=lambda: False,
             guided_text_state=lambda *_: {"publications": [], "qa": {}},
             guided_text_publication=lambda *_: {},

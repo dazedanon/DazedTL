@@ -225,7 +225,7 @@ Individual requests remain intact, and provider file/request limits still apply.
 A shared connection/model lock accounts for other Guided runs, clarification attempts and uncertain submissions before reserving capacity.
 Partial request progress does not release a pending job’s tokens.
 Only the owning worker advances its approved queue; the background monitor restarts that worker after interruption and collects its retained responses.
-A fully successful provider receipt with a matching submission manifest remains submitted while awaiting download; missing fetched responses or conflicting evidence retain submission uncertainty and outstanding work is never automatically resubmitted.
+An ended provider receipt with a matching submission manifest and counts covering every request, a canceled or expired one included, remains submitted while awaiting download, as does a Batch the provider is still canceling; missing fetched responses or conflicting evidence retain submission uncertainty and outstanding work is never automatically resubmitted.
 The [submission journal](../backend/dazedtl/compatibility/batch_continuation.py) records a create the provider refused outright with a client error, such as OpenRouter's HTTP 402, so its requests read as never sent and a new approval may send them; timeouts, conflicts, server errors and lost responses can follow a successful create and stay uncertain.
 The worker also records a submission attempt that failed before journaling any create, such as one whose SDK client could not be built, so its requests read as never sent too; an approved run without either record, including older runs and a worker killed mid-attempt, stays uncertain.
 A journaled create's requests stay uncertain until its receipt reaches the saved manifests, also beside earlier submitted chunks.
@@ -237,6 +237,7 @@ Unknown or conflicting responses retain their recovery guard.
 Consumed Batch history plus a matching frozen plan and unchanged, complete output receipts settle finished requests without inventing per-request validation.
 Missing outputs and native mismatches retain unresolved receipt states; identical text in different known files does not create an overlap.
 The backend-owned [Batch monitor](../backend/dazedtl/translation/batch_monitor.py) checks interrupted runs automatically across registered projects, independently of the current screen and native worker pointer.
+A worker that ends after every provider Batch ended, such as one that finds its Batch canceled, leaves the results to the monitor's next check, and its run reads as collecting rather than failed until then.
 A Batch approval binds the full frozen queue and plan.
 After an app interruption, the original worker continues that unchanged approved queue, skipping recorded provider requests and preserving already collected results.
 Explicit stops, provider cancellations, newer approved overlapping runs, changed scope and uncertain submission outcomes prevent automatic continuation.
@@ -376,7 +377,7 @@ The observed `workerStatus` retains the actual worker state separately from publ
 File ownership, saved metrics and task completion use that worker state, so a background check cannot promote an older run or make its whole scope look queued.
 Automatic Batch monitoring cannot mark every file as submitted or override saved progress: In progress for provider work requires the file's latest submitted requests to be mapped to an explicitly active provider Batch, using the shared provider-state rules.
 Terminal, unknown, missing or unrelated Batch receipts cannot make retained submissions appear active.
-Pending collection also requires matching completed-Batch and finished-request evidence.
+Pending collection also requires matching ended-Batch and finished-request evidence.
 These display rules never settle submissions or release execution guards.
 A finished Batch collection can identify files with no new requests only when its recorded builder provenance covers the selected scope; deduplicated callers remain included, and absent legacy evidence stays unknown.
 Provider-waiting rows and active Batch stages use the shared activity indicator, while cost approval and files with no requests stay still.

@@ -836,7 +836,7 @@ function RequestProcess({
                     <p className="muted" role="status">
                       {selected?.providerFinished &&
                       visiblePayload.state === "submitted"
-                        ? "Waiting to download the response."
+                        ? "Waiting to download the result."
                         : ["prepared", "queued"].includes(visiblePayload.state)
                           ? "This request has not been sent."
                           : visiblePayload.state === "submitted" &&

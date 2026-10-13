@@ -538,13 +538,14 @@ export function fileStatus(
         )
       )
         return progress;
+      // An ended Batch, canceled or expired ones included, finished every
+      // request it held; collection downloads what it returned.
       const finished = submitted.every(
         (group) =>
           group.finished &&
           batches.some(
             (batch) =>
-              group.batches.includes(batch.id) &&
-              ["completed", "ended"].includes(batch.status),
+              group.batches.includes(batch.id) && terminalBatch(batch.status),
           ),
       );
       if (finished) return progress;

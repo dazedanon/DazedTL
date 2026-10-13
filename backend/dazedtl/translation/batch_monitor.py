@@ -11,6 +11,9 @@ from dazedtl.compatibility.openrouter_batch import ResultsUnavailable
 from dazedtl.compatibility.preparations import temporary
 from dazedtl.compatibility.process_view import saved
 
+# Worker states after which this monitor finishes a run's saved Batches.
+ENDED = {"stopped", "interrupted", "failed", "canceled"}
+
 
 class BatchMonitor:
     def __init__(self, guided):
@@ -118,24 +121,72 @@ class BatchMonitor:
             job = self.backend.manual.jobs[identity]
             if (
                 self.stopping.is_set()
-                or job["status"] not in {"stopped", "interrupted", "failed", "canceled"}
+                or job["status"] not in ENDED
                 or self.backend.manual.controller(identity).running()
                 or self._owned(identity) != expected
             ):
                 raise ValueError("The Batch owner or worker changed during collection.")
             yield
 
+    def _checks(self, identity, job):
+        """Whether this monitor checks a run: a saved Batch whose worker ended."""
+        return (
+            self.backend.allow_providers
+            and not self.stopping.is_set()
+            and job.get("mode") == "batch"
+            and not temporary(job)
+            and job["status"] in ENDED
+            and not self.backend.manual.controller(identity).running()
+        )
+
+    def view(self, identity):
+        """This monitor's latest view of a run. A worker that ended after every
+        provider Batch ended, with every request submitted, leaves the results
+        to the next check, which collects them; until then the run reads as
+        collecting rather than failed."""
+        if identity in self.views:
+            return self.views[identity]
+        job = self.backend.manual.jobs.get(identity)
+        if (
+            not job
+            or identity in self.settled
+            or identity in self.consumed
+            or job.get("dazedtl_batch_results_error")
+            or not self._checks(identity, job)
+        ):
+            return None
+        try:
+            root = self.backend.manual.folder(identity)
+            history = saved(root, "batch_history.json").get("batches", [])
+            # The saved receipts are read first: they rule out older runs
+            # without reading their plans.
+            collectable = (
+                bool(history)
+                and all(
+                    batch.get("api_status") in batch_control.TERMINAL
+                    for batch in history
+                )
+                and saved(root, "batch_state.json").get("status")
+                in {"submitted", "partially_submitted"}
+                and not batch_control.unsent_requests(root)
+                and not batch_control.no_successful_results(root)
+                and bool(self._owned(identity))
+            )
+        except OSError, ValueError:
+            return None
+        return (
+            {
+                "state": "collecting",
+                "message": "Provider work has finished. Results are collected automatically.",
+            }
+            if collectable
+            else None
+        )
+
     def check(self, identity):
         with self.backend.context():
             job = self.backend.manual.jobs[identity]
-            if (
-                not self.backend.allow_providers
-                or self.stopping.is_set()
-                or job.get("mode") != "batch"
-                or temporary(job)
-                or job["status"] not in {"stopped", "interrupted", "failed", "canceled"}
-                or self.backend.manual.controller(identity).running()
-            ):
+            if not self._checks(identity, job):
                 self.views.pop(identity, None)
                 return
             root = self.backend.manual.folder(identity)

@@ -666,7 +666,7 @@ class Guided:
                 job
                 for job in paid
                 if job["status"] in {"ready", "running", "waiting"}
-                or self.batch_monitor.views.get(job["id"], {}).get("state")
+                or (self.batch_monitor.view(job["id"]) or {}).get("state")
                 in {"monitoring", "collecting"}
             ),
             None,

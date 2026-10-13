@@ -657,3 +657,70 @@ class BatchMonitorTests(unittest.TestCase):
                 monitor.backend.manual.consume_batch.assert_not_called()
                 provider.submit.assert_not_called()
                 provider.live.assert_not_called()
+
+    def test_a_worker_that_found_its_batch_ended_reads_as_collecting_until_checked(
+        self,
+    ):
+        # A worker that finds its Batch canceled exits failed and leaves the
+        # results to the next check, up to 30 seconds later; meanwhile its run
+        # read as a failed, unconfirmed submission.
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            monitor, job, _ = self.fixture(root)
+            batch = {
+                "id": "paid",
+                "provider": "openai",
+                "custom_ids": {"one": "key"},
+                "api_status": "cancelled",
+            }
+            history = {"batches": [batch]}
+            state = {"status": "submitted", "batches": [batch]}
+            queue = {"key": {"payload": '{"Line1":"薬"}', "params": {}}}
+            job["status"] = "failed"
+
+            def save(history=history, state=state, queue=queue):
+                write_json(root / "log/batch_history.json", history)
+                write_json(root / "log/batch_state.json", state)
+                write_json(root / "log/batch_requests.json", queue)
+
+            save()
+            self.assertEqual(monitor.view("run")["state"], "collecting")
+            # Only runs the next check collects read that way: not without
+            # providers, while a worker runs, with unsent requests, before
+            # every Batch ended, after collection, or with nothing to collect.
+            ended = {**batch, "request_counts": {"succeeded": 0, "canceled": 1}}
+            for change in (
+                lambda: setattr(monitor.backend, "allow_providers", False),
+                lambda: job.update(status="running"),
+                lambda: save(queue={**queue, "unsent": queue["key"]}),
+                lambda: save(
+                    history={"batches": [{**batch, "api_status": "in_progress"}]}
+                ),
+                lambda: save(state={**state, "status": "fetched"}),
+                lambda: save(history={"batches": [ended]}),
+            ):
+                change()
+                self.assertIsNone(monitor.view("run"))
+                monitor.backend.allow_providers = True
+                job["status"] = "failed"
+                save()
+            monitor.views["run"] = {"state": "error", "message": "Retrying"}
+            self.assertEqual(monitor.view("run")["state"], "error")
+            monitor.views.clear()
+            provider = Mock()
+            provider.status.return_value = {
+                "api_status": "cancelled",
+                "counts": {"succeeded": 1, "canceled": 0},
+            }
+            provider.collect_terminal.return_value = (
+                {"key": {"text": '{"Line1":"Medicine"}'}},
+                [],
+                {},
+            )
+            with patch.object(
+                batch_control, "TranslationProvider", return_value=provider
+            ):
+                monitor.tick()
+            monitor.backend.manual.consume_batch.assert_called_once_with("run")
+            self.assertIsNone(monitor.view("run"))
+            provider.submit.assert_not_called()

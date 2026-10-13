@@ -1543,6 +1543,27 @@ test("file status follows active and automatically monitored Batch work before r
     fileStatus("Items.json", { ...checkpoint, status: "stopped" }).label,
     "Working",
   );
+  // A worker that found its Batch canceled exits failed; the requests the
+  // provider finished wait for collection, not for a submission check.
+  const canceled: Job = {
+    ...checkpoint,
+    status: "failed",
+    phase: "failed",
+    outputs: {},
+    availableOutputs: [],
+    partialOutputs: [],
+    process: {
+      ...checkpoint.process!,
+      files: {
+        "Items.json": requested(
+          ["submitted"],
+          [{ batches: ["paid"], finished: true }],
+        ),
+      },
+      batches: [{ id: "paid", status: "cancelled", counts: {} }],
+    },
+  };
+  assert.equal(fileStatus("Items.json", canceled).label, "Working");
   assert.equal(
     fileStatus("Items.json", {
       ...checkpoint,

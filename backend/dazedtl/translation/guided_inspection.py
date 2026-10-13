@@ -156,7 +156,7 @@ class RunInspection:
         # A worker may resume or finish while an earlier monitor read is in
         # flight. Its activity and completion take precedence over that view.
         monitoring = (
-            self.guided.batch_monitor.views.get(identity)
+            self.guided.batch_monitor.view(identity)
             if job["workerStatus"] in {"stopped", "interrupted", "failed", "canceled"}
             else None
         )

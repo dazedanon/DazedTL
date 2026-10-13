@@ -116,25 +116,39 @@ def requests(root, job, queued=None, records=None):
                 )
                 == len(mapping)
             )
-            # A successful provider receipt proves submission while the native
-            # runner waits for other batches before downloading their responses.
-            # Keep the paid-work guard until download; a fetched-but-missing
+            # An ended provider receipt whose counts cover every request proves
+            # submission until its results are downloaded: while the native
+            # runner waits for other batches, and after a cancellation or
+            # expiry until the app collects what the provider returned. Keep
+            # the paid-work guard until download; a fetched-but-missing
             # response or mismatched manifest remains uncertain.
             awaiting_results = (
-                batch.get("api_status") in {"completed", "ended"}
+                batch.get("api_status")
+                in {"completed", "ended", "cancelled", "canceled", "expired"}
                 and state.get("status") in {"submitted", "partially_submitted"}
                 and manifests.get(batch.get("id")) == mapping
                 and bool(mapping)
-                and type(counts.get("succeeded")) is int
-                and counts["succeeded"] == len(mapping)
                 and all(
-                    type(counts.get(key)) is int and counts[key] == 0
-                    for key in ("processing", "errored", "canceled", "expired")
+                    type(counts.get(key)) is int and counts[key] >= 0
+                    for key in (
+                        "processing",
+                        "succeeded",
+                        "errored",
+                        "canceled",
+                        "expired",
+                    )
                 )
+                and counts["processing"] == 0
+                and sum(
+                    counts[key]
+                    for key in ("succeeded", "errored", "canceled", "expired")
+                )
+                == len(mapping)
             )
             for custom, key in mapping.items():
-                # Display evidence only: never release the paid-work guard or
-                # assign partial aggregate counts to individual requests.
+                # Display evidence only: the provider finished every request of
+                # an ended Batch, but its counts never say which succeeded, and
+                # finishing never releases the paid-work guard.
                 provider_finished[key] = (
                     provider_finished.get(key, True) and awaiting_results
                 )
@@ -146,10 +160,17 @@ def requests(root, job, queued=None, records=None):
                     ),
                     None,
                 )
-                # Multiple submissions retain the strictest known outcome.
+                # Multiple submissions retain the strictest known outcome. A
+                # Batch being canceled is still at the provider.
                 pending = (
                     batch.get("api_status")
-                    in {"validating", "in_progress", "finalizing"}
+                    in {
+                        "validating",
+                        "in_progress",
+                        "finalizing",
+                        "cancelling",
+                        "canceling",
+                    }
                     and manifests.get(batch.get("id")) == mapping
                 )
                 outcome = (

@@ -719,7 +719,7 @@ class ProcessTests(unittest.TestCase):
                     for p, data in original.items():
                         p.write_bytes(data)
 
-    def test_completed_batch_waits_for_download_without_losing_submission_protection(
+    def test_ended_batch_waits_for_download_without_losing_submission_protection(
         self,
     ):
         with TemporaryDirectory() as temporary:
@@ -808,22 +808,37 @@ class ProcessTests(unittest.TestCase):
             ):
                 rows = list(request_scope.requests(root, job))
             self.assertFalse(rows[0]["providerFinished"])
-            partial = {
-                **first,
-                "custom_ids": {"first-request": "one", "second-request": "two"},
-                "request_counts": {**first["request_counts"], "errored": 1},
-            }
-            write_json(root / "log/batch_history.json", {"batches": [partial]})
-            write_json(
-                root / "log/batch_state.json",
-                {"status": "submitted", "batches": [partial]},
-            )
-            self.assertFalse(
-                any(
-                    row.get("providerFinished")
-                    for row in process_view.request_view(root, job)["rows"]
+            # An ended Batch finished every request it held, failed and
+            # canceled ones included, though its counts never say which; one
+            # still being canceled is at the provider. Neither is in doubt
+            # while the app collects it, and neither releases the guard.
+            for status, counts, finished in (
+                ("completed", {"errored": 1}, True),
+                ("cancelled", {"canceled": 1}, True),
+                ("cancelling", {"processing": 1}, False),
+            ):
+                partial = {
+                    **first,
+                    "api_status": status,
+                    "custom_ids": {"first-request": "one", "second-request": "two"},
+                    "request_counts": {**first["request_counts"], **counts},
+                }
+                write_json(root / "log/batch_history.json", {"batches": [partial]})
+                write_json(
+                    root / "log/batch_state.json",
+                    {"status": "submitted", "batches": [partial]},
                 )
-            )
+                value = process_view.summary(root, job)
+                self.assertEqual(
+                    [
+                        (row["state"], row.get("providerFinished", False))
+                        for row in process_view.request_view(root, job)["rows"]
+                    ],
+                    [("submitted", finished)] * 2,
+                    status,
+                )
+                self.assertEqual(value["uncertain"], 0, status)
+                self.assertTrue(value["retryBlocked"], status)
 
     def test_source_locations_accept_native_event_originals_without_indexing_metadata(
         self,
