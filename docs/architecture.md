@@ -64,6 +64,7 @@ Paid review requires that matching estimate and rechecks it before the one-use s
 Cost dialogs focus on price, selected scope and approval; an optional Preview request opens the existing prepared text, context and exact payload without preparing or submitting work.
 Preview request shows requests an estimate kept: estimates keep them on connections that support Batch, while Live-only connections estimate from token counts and offer no preview; Batch review previews the collected requests it submits, numbered like its request count, without the Live names pass sent before it.
 Every RPG Maker estimate parses all its files in one worker process, as Batch collection does; a process per file took seconds each on Windows.
+Live RPG Maker translation reuses its worker processes the same way, one per concurrent file, each handed the next file when it finishes one; a file that fails ends its worker, and a fresh one takes the files after it.
 Closing the preview returns to the same approval.
 Speaker interpretation stays with the user.
 Translate keeps its game text tasks below the shared phase navigation: Database files, Maps & events (including CommonEvents and Troops), and Other event text.

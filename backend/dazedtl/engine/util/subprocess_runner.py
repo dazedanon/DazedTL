@@ -93,8 +93,10 @@ def run_handler(project_root, module_name, filename, estimate_only):
                 json.loads(runtime_profile_json),
             )
 
-        filenames = list(filename) if isinstance(filename, (list, tuple)) else [filename]
-        multi_file = isinstance(filename, (list, tuple))
+        # A reused Live worker is handed its files one at a time, so they may
+        # arrive as an iterator rather than a list.
+        multi_file = not isinstance(filename, str)
+        filenames = filename if multi_file else [filename]
 
         # A persistent RPG Maker batch worker holds these scopes across every
         # file in the phase. Consume loads fetched results/cache once; collect
@@ -213,6 +215,22 @@ def run_handler(project_root, module_name, filename, estimate_only):
         sys.exit(1)
 
 
+def file_arguments(value):
+    """The files a worker's file argument names: one file, a JSON list read
+    from standard input, or, for a reused Live worker, file names written to
+    standard input one per line as each is handed to it."""
+    if value == "--files-from-stdin":
+        files = json.load(sys.stdin)
+        if not isinstance(files, list) or not files or not all(
+            isinstance(item, str) and item for item in files
+        ):
+            raise ValueError("Invalid multi-file input")
+        return files
+    if value == "--files-streamed":
+        return (line.strip() for line in sys.stdin if line.strip())
+    return value
+
+
 if __name__ == "__main__":
     if len(sys.argv) != 5:
         print("ERROR:Invalid arguments")
@@ -220,14 +238,11 @@ if __name__ == "__main__":
     
     project_root = sys.argv[1]
     module_name = sys.argv[2]
-    filename = sys.argv[3]
-    if filename == "--files-from-stdin":
-        filename = json.load(sys.stdin)
-        if not isinstance(filename, list) or not filename or not all(
-            isinstance(item, str) and item for item in filename
-        ):
-            print("ERROR:Invalid multi-file input")
-            sys.exit(1)
+    try:
+        filename = file_arguments(sys.argv[3])
+    except ValueError as exc:
+        print(f"ERROR:{exc}")
+        sys.exit(1)
     estimate_only = sys.argv[4].lower() == 'true'
     
     run_handler(project_root, module_name, filename, estimate_only)

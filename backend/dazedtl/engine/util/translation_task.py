@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import queue
 import re
 import subprocess
 import sys
@@ -156,6 +157,17 @@ def _lazy_module_handler(module_name, handler_name):
         return getattr(module, handler_name)(*args, **kwargs)
 
     return run
+
+
+def _process_error(text):
+    """The error a failed worker reported, from its "ERROR:" line or the last
+    exception it printed, else all it wrote."""
+    for line in text.split("\n"):
+        if line.startswith("ERROR:"):
+            return line[6:]
+        if ("NameError:" in line or "Error:" in line) and ":" in line:
+            return line.split(":", 1)[1].strip()
+    return text
 
 
 def translation_module(name):
@@ -755,20 +767,7 @@ class TranslationTaskCore:
                 except:
                     clean_error = "Unicode encoding error in process output"
 
-                # Check if stderr contains the actual exception message
-                # Format from subprocess_runner.py: "ERROR:actual error message"
-                actual_error = clean_error
-                for line in clean_error.split('\n'):
-                    if line.startswith('ERROR:'):
-                        actual_error = line[6:]  # Remove 'ERROR:' prefix
-                        break
-                    # Check for exception lines in traceback
-                    if 'NameError:' in line or 'Error:' in line:
-                        # Extract just the error message part
-                        if ':' in line:
-                            actual_error = line.split(':', 1)[1].strip()
-                            break
-
+                actual_error = _process_error(clean_error)
                 self.emit_log(f"❌ Process error: {actual_error}")
                 # Return the actual error so it can be used to determine if file is unsupported
                 return ("SUBPROCESS_ERROR", actual_error)
@@ -776,6 +775,184 @@ class TranslationTaskCore:
         except Exception as e:
             self.emit_log(f"❌ Failed to run module process: {str(e)}")
             return "Fail"
+
+    def _run_live_files(self, files, workers, handle_result):
+        """Translates RPG Maker files on reused workers, each taking the next
+        file when it finishes one, as many at once as the run allows files.
+
+        A worker that fails a file exits and another takes the files after it,
+        so a failure stays the file's own as with a worker per file. Returns
+        whether a file's result asked the run to stop.
+        """
+        pending = list(reversed(files))
+        taking, reporting = threading.Lock(), threading.Lock()
+        stopped = []
+
+        def take():
+            with taking:
+                if self.should_stop or stopped or not pending:
+                    return None
+                return pending.pop()
+
+        def report(filename, result):
+            with reporting:
+                if handle_result(filename, result):
+                    stopped.append(filename)
+
+        def work():
+            while not self.should_stop and not stopped:
+                with taking:
+                    if not pending:
+                        return
+                self.run_module_stream(take, report)
+
+        threads = [
+            threading.Thread(target=work, daemon=True)
+            for _ in range(min(workers, len(files)))
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        return bool(stopped)
+
+    def run_module_stream(self, take, report):
+        """One reused worker, handed the file take() returns whenever it
+        finishes the last, until take() has none or a file fails. Reports each
+        file's result as a worker per file returned it."""
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+        env.pop("BATCH_PHASE", None)
+        env.pop("DAZED_BATCH_RUNTIME_PROFILE", None)
+        if self.should_stop:
+            return
+        try:
+            process = subprocess.Popen(
+                [
+                    sys.executable,
+                    str(self.runner_script),
+                    str(self.project_root),
+                    self.module_info[0],
+                    "--files-streamed",
+                    "False",
+                ],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=str(self.project_root),
+                env=env,
+                bufsize=1,
+            )
+        except Exception as exc:
+            self.emit_log(f"❌ Failed to run module process: {exc}")
+            filename = take()
+            if filename is not None:
+                report(filename, "Fail")
+            return
+        with self.mutex:
+            stopped_at_launch = self.should_stop
+            if not stopped_at_launch:
+                self.running_processes.append(process)
+        if stopped_at_launch:
+            process.kill()
+            process.wait()
+            return
+
+        finished = queue.Queue()
+        stderr_lines = []
+        # Chunks that kept their original text in the file being translated,
+        # counted as a worker per file counted them.
+        mismatches = [0]
+
+        def read_stdout():
+            for line in iter(process.stdout.readline, ""):
+                line = line.strip()
+                kind, _, value = line.partition(":")
+                if kind == "MISMATCH_EVENT":
+                    mismatches[0] += 1
+                if kind == "PROGRESS":
+                    try:
+                        desc, current, total = line.split(":", 3)[1:]
+                        self.item_progress_signal.emit(desc, int(current), int(total))
+                    except ValueError:
+                        pass
+                elif kind in {"FILE_RESULT", "FILE_ERROR"}:
+                    try:
+                        payload = json.loads(value)
+                        filename = payload["filename"]
+                    except (ValueError, KeyError, TypeError) as exc:
+                        stderr_lines.append(f"Invalid multi-file result marker: {exc}")
+                        continue
+                    count, mismatches[0] = mismatches[0], 0
+                    if kind == "FILE_ERROR":
+                        result = (
+                            "SUBPROCESS_ERROR",
+                            payload.get("error") or "Unknown error",
+                        )
+                        self.emit_log(f"❌ Process error: {result[1]}")
+                    else:
+                        result = payload.get("result") or "Fail"
+                        if count:
+                            result = (
+                                "VALIDATION_MISMATCH",
+                                "Translation validation failed after all retries; "
+                                "original text was preserved for failed chunks",
+                                result,
+                                count,
+                            )
+                    finished.put((filename, result))
+                elif line and kind != "RESULT":
+                    self.emit_log(line)
+            finished.put(None)
+
+        def read_stderr():
+            for line in iter(process.stderr.readline, ""):
+                stderr_lines.append(line.strip())
+
+        readers = [
+            threading.Thread(target=read_stdout, daemon=True),
+            threading.Thread(target=read_stderr, daemon=True),
+        ]
+        for reader in readers:
+            reader.start()
+        current = take()
+        try:
+            while current is not None:
+                try:
+                    process.stdin.write(current + "\n")
+                    process.stdin.flush()
+                except OSError:
+                    break
+                done = finished.get()
+                if done is None:
+                    break
+                filename, result = done
+                current = None
+                if not self.should_stop:
+                    report(filename, result)
+                if isinstance(result, tuple) and result[0] == "SUBPROCESS_ERROR":
+                    # The worker exits after a failed file.
+                    break
+                current = take()
+        finally:
+            try:
+                process.stdin.close()
+            except OSError:
+                pass
+            process.wait()
+            for reader in readers:
+                reader.join(timeout=1.0)
+            with self.mutex:
+                if process in self.running_processes:
+                    self.running_processes.remove(process)
+        if current is not None and not self.should_stop:
+            # The worker exited without finishing the file it was handed.
+            error = _process_error("\n".join(stderr_lines).strip() or "Unknown error")
+            self.emit_log(f"❌ Process error: {error}")
+            report(current, ("SUBPROCESS_ERROR", error))
 
     def _adopt_requests(self):
         """Queues the estimate's requests instead of collecting them again.
@@ -1259,6 +1436,15 @@ class TranslationTaskCore:
                 if _handle_file_result(filename, result):
                     break
             return "Fail" if had_failure else total_cost
+
+        # Live RPG Maker translation reuses its workers too: a worker per file
+        # imported the engine and read every map for actor names again, about
+        # two seconds a file on Linux and more on Windows.
+        if is_mvmz and not estimate_only and not batch_phase:
+            stopped = self._run_live_files(
+                matching_files, max(1, threads), _handle_file_result
+            )
+            return "Stopped" if stopped else _completed_result()
 
         # Estimate cache accounting now claims prompt-cache writes under a
         # cross-process lock, so estimation can safely use the configured file

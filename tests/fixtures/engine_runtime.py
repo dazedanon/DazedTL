@@ -1202,6 +1202,64 @@ try:
         assert estimate_task.estimate_summary["input_tokens"] == 20, (
             estimate_task.estimate_summary
         )
+        # Live translation reuses its workers too; a worker per file took two
+        # seconds a file. A file that fails ends its worker without failing the
+        # files after it, and chunks that kept their original text count as a
+        # worker per file counted them.
+        live_root = temporary / "live-workers"
+        live_root.mkdir()
+        runner = live_root / "runner.py"
+        runner.write_text(
+            "import json, os, sys\n"
+            "for line in sys.stdin:\n"
+            "    name = line.strip()\n"
+            "    with open('launches.txt', 'a') as f:\n"
+            "        f.write(f'{os.getpid()} {name}\\n')\n"
+            "    if name == 'Map002.json':\n"
+            "        print('FILE_ERROR:' + json.dumps({'filename': name, 'error': 'Broken.'}), flush=True)\n"
+            "        sys.exit(1)\n"
+            "    if name == 'Map004.json':\n"
+            "        sys.exit(3)\n"
+            "    if name == 'Map003.json':\n"
+            "        print('MISMATCH_EVENT:' + name, flush=True)\n"
+            "        print('MISMATCH_EVENT:' + name, flush=True)\n"
+            "    print('FILE_RESULT:' + json.dumps({'filename': name, 'result': '[Input: 1]', 'mismatch_count': 1}), flush=True)\n",
+            encoding="utf-8",
+        )
+        live_task = TranslationTask(
+            live_root, ("RPG Maker MV/MZ", (".json",), None), runner_script=runner
+        )
+        errors, mismatched, done = [], [], []
+        live_task.file_error_signal.connect(lambda *args: errors.append(args))
+        live_task.file_mismatch_signal.connect(lambda *args: mismatched.append(args))
+        live_task.progress_signal.connect(lambda *args: done.append(args[2]))
+        maps = [f"Map00{number}.json" for number in range(1, 6)]
+        with patch.dict(os.environ, {"fileThreads": "1"}):
+            assert live_task._run_files(maps, False) == "Fail"
+        workers = {}
+        for row in (live_root / "launches.txt").read_text().splitlines():
+            worker, handed = row.split()
+            workers.setdefault(worker, []).append(handed)
+        assert list(workers.values()) == [
+            ["Map001.json", "Map002.json"],
+            ["Map003.json", "Map004.json"],
+            ["Map005.json"],
+        ], workers
+        assert done == maps, done
+        assert [name for name, _ in errors] == ["Map002.json", "Map004.json"], errors
+        assert errors[0][1] == "Broken.", errors
+        assert [name for name, _ in mismatched] == ["Map003.json"], mismatched
+        assert live_task._run_mismatch_count == 2, live_task._run_mismatch_count
+        # Concurrent files share the queue: each file goes to one worker once.
+        (live_root / "launches.txt").unlink()
+        many = [f"Map1{number:02d}.json" for number in range(12)]
+        with patch.dict(os.environ, {"fileThreads": "3"}):
+            assert live_task._run_files(many, False) not in {"Fail", "Stopped"}
+        handed = [
+            row.split()[1]
+            for row in (live_root / "launches.txt").read_text().splitlines()
+        ]
+        assert sorted(handed) == many, handed
         # That worker saves a Batch's files one after another; a file missing
         # a result must not keep the files after it from saving theirs.
         from contextlib import redirect_stdout
