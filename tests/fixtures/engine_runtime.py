@@ -1105,6 +1105,7 @@ try:
         # The names review prices Claude by Claude's own count of the request
         # the names translation then sends, and never counts where the
         # network is blocked.
+        from util import claude_tokens
         from util.translation_task import TranslationTask, TranslationTaskCore
 
         # Every RPG Maker estimate runs its files in one worker; a worker per
@@ -1177,6 +1178,13 @@ try:
                     http_client=httpx2.Client(
                         transport=httpx2.MockTransport(claude_names)
                     ),
+                ),
+            ),
+            patch.object(
+                claude_tokens,
+                "http_client",
+                lambda timeout: httpx2.Client(
+                    transport=httpx2.MockTransport(claude_names)
                 ),
             ),
         ):

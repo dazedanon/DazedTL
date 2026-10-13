@@ -137,7 +137,6 @@ if __name__ == "__main__":
     os.environ.pop("DAZEDTL_TEST_OFFLINE", None)
     # Everything loads while the estimate may still run; the key arrives
     # once its requests are ready to count.
-    import anthropic  # noqa: F401
     from util.translation import estimateTranslationCosts
 
     secret = sys.stdin.readline().strip()

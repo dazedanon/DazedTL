@@ -8,8 +8,14 @@ sample of whole requests, then scales the approximate count of everything
 after the prefix by what the sample measured.
 """
 
+import os
+import random
+import time
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
+from types import SimpleNamespace
 from typing import NamedTuple
+
+import httpx
 
 # Smaller request sets are counted whole; a larger one's sample spans every
 # file in queue order.
@@ -18,6 +24,49 @@ WORKERS = 8
 # The request fields the endpoint counts; max_tokens and sampling settings are
 # not input.
 FIELDS = ("model", "system", "messages", "output_config", "thinking", "tools", "tool_choice")
+
+
+# Statuses the Anthropic SDK retries, with its retry count and delays.
+RETRIED = {408, 409, 429}
+RETRIES = 2
+
+
+def http_client(timeout):
+    """The HTTP client counts go through."""
+    return httpx.Client(timeout=timeout)
+
+
+class CountClient:
+    """Anthropic's token-count endpoint, called as the Anthropic SDK calls it
+    but without importing the SDK, which takes seconds on Windows; ``count``
+    uses it as ``client.messages.count_tokens(**fields).input_tokens``."""
+
+    def __init__(self, api_key, base_url=None, *, timeout=30.0):
+        base = (base_url or os.environ.get("ANTHROPIC_BASE_URL") or "https://api.anthropic.com")
+        base = base.strip().rstrip("/")
+        if base.endswith("/v1"):
+            base = base[:-3]
+        self.url = base + "/v1/messages/count_tokens"
+        self.headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
+        self.client = http_client(timeout)
+        self.messages = self
+
+    def count_tokens(self, **fields):
+        for attempt in range(RETRIES + 1):
+            try:
+                response = self.client.post(self.url, headers=self.headers, json=fields)
+            except httpx.TransportError:
+                if attempt == RETRIES:
+                    raise
+            else:
+                if not (
+                    (response.status_code in RETRIED or response.status_code >= 500)
+                    and attempt < RETRIES
+                ):
+                    response.raise_for_status()
+                    return SimpleNamespace(input_tokens=int(response.json()["input_tokens"]))
+            time.sleep(min(8.0, 0.5 * 2**attempt) * (1 - 0.25 * random.random()))
+        raise RuntimeError("Claude's token count could not be read.")
 
 
 class Count(NamedTuple):

@@ -2271,10 +2271,11 @@ def countClaudeTokens(requests, approximate, log_prefix):
     unavailable = "a local run has no network"
     if os.getenv("DAZEDTL_TEST_OFFLINE") != "1":
         try:
+            key = os.getenv("key", "").strip()
+            if not key:
+                raise ValueError("no Claude API key")
             return claude_tokens.count(
-                _get_anthropic_client().with_options(timeout=30),
-                requests,
-                approximate,
+                claude_tokens.CountClient(key), requests, approximate
             )
         except Exception as error:
             unavailable = f"{type(error).__name__}: {error}"

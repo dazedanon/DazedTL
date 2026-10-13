@@ -370,14 +370,12 @@ class TranslationEngine:
         """Claude's own count of these requests' input, or None when its
         endpoint can't count them; Guided's estimate counts the same way."""
         from util import claude_tokens
-        from util.batch_providers import get_client
 
-        try:
-            client = get_client(
-                "anthropic", api_key=secret, api_url=configuration["endpoint"]
-            ).with_options(timeout=30)
-        except RuntimeError:  # A keyless connection.
+        if not str(secret or "").strip():  # A keyless connection.
             return None
+        client = claude_tokens.CountClient(
+            str(secret).strip(), configuration["endpoint"] or None
+        )
         return claude_tokens.input_tokens(
             client, [item["params"] for item in requests], self.token_count
         )
