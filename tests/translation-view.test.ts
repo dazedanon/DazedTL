@@ -538,6 +538,15 @@ test("main-text tasks combine verified files across runs independently of select
   );
   // Unless no run translated it: then the check found nothing to translate.
   assert.equal(fileStatus("Armors.json", undefined, true, true).label, "Done");
+  // Output already in the game stays Applied after such a check.
+  assert.equal(
+    fileStatus(
+      "Armors.json",
+      { ...empty, appliedOutputs: ["Armors.json"] },
+      true,
+    ).label,
+    "Applied",
+  );
   const armors = { ...empty, id: "armors", process: { errors: [] } };
   for (const [created, status, complete] of [
     ["2026-10-05T11:00:00+00:00", "failed", true],

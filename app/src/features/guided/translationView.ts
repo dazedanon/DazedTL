@@ -475,7 +475,14 @@ export function fileStatus(
   const complete = fileState("ready");
   const progress = fileState("working");
   const nothing = fileState("done", "Nothing to translate in this file.");
-  if (settled) return untranslated ? nothing : complete;
+  // A check that needs no requests keeps the output the file already has,
+  // in the game or not.
+  if (settled)
+    return untranslated
+      ? nothing
+      : run?.appliedOutputs?.includes(name)
+        ? fileState("applied")
+        : complete;
   if (!run || !run.files?.includes(name) || run.retiredFiles?.includes(name))
     return idle;
   if (nothingFound(name, run, untranslated)) return nothing;
