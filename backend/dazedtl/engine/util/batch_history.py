@@ -1119,6 +1119,19 @@ def missing_result_count() -> tuple[int, int]:
     return present, expected
 
 
+def submitted_result_keys() -> set[str]:
+    """Result keys of every request the active run's Batches sent."""
+    with _batch_file_lock():
+        state = _read_batch_file(BATCH_STATE_FILE)
+        history = _read_history_unlocked()
+    keys = set()
+    for batch_id in _active_batch_ids(state):
+        entry = _find_entry(history, batch_id)
+        if entry:
+            keys.update((entry.get("custom_ids") or {}).values())
+    return keys
+
+
 def active_fetched_batch_ids() -> list[str]:
     """Batch ids associated with the current fetched active run."""
     with _batch_file_lock():

@@ -2051,7 +2051,43 @@ def take_batch_result(
 
 class BatchResultUnavailableError(RuntimeError):
     """A Batch phase stopped before a Live request nobody approved: consume
-    found no fetched result, or collection met text it could not queue."""
+    found no fetched result, or collection met text it could not queue.
+
+    ``cause`` names a consume miss: "unreturned" when the Batch sent the
+    request but the provider returned no result for it, "changed" when the
+    Batch sent no request like it, or None when its requests are unknown."""
+
+    def __init__(self, message, cause=None):
+        super().__init__(message)
+        self.cause = cause
+
+
+# A consume miss is the file's failure reason beside its name in the run's
+# banner, so it says what happened and what to do in plain words.
+MISSING_BATCH_RESULT = {
+    "unreturned": "The Batch ended without translating some of this file's "
+    "lines, for example because it was canceled.",
+    "changed": "Some of this file's lines no longer match the Batch's "
+    "translations, for example because the file changed after the Batch was "
+    "prepared.",
+    None: "The Batch has no translation for some of this file's lines.",
+}
+MISSING_BATCH_RESULT_NEXT = (
+    "No full-price request was sent. Translate this file again with Live or a "
+    "new Batch."
+)
+
+
+def _missing_batch_result_cause(key):
+    from util.batch_history import submitted_result_keys
+
+    try:
+        submitted = submitted_result_keys()
+    except BatchFileCorruptionError:
+        return None
+    if not submitted:
+        return None
+    return "unreturned" if key in submitted else "changed"
 
 
 @extensions.point
@@ -2063,11 +2099,11 @@ def require_batch_result(
         payload, language, cache_context, request_context
     )
     if result is None:
+        cause = _missing_batch_result_cause(
+            get_cache_key(payload, language, cache_context, request_context)
+        )
         raise BatchResultUnavailableError(
-            "[BATCH] No fetched result matches this request. The consume pass "
-            "was stopped without making a full-price live request. For older "
-            "batches, restore/re-download with the collect-time glossary freeze, "
-            "or re-collect. For a full-price retry use normal Translate."
+            f"{MISSING_BATCH_RESULT[cause]} {MISSING_BATCH_RESULT_NEXT}", cause
         )
     return result
 

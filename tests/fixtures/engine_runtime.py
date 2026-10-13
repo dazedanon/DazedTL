@@ -1504,6 +1504,22 @@ try:
             }
             assert batch_rows[1]["error"]["code"] == "validation_failed", batch_rows[1]
             assert len(sent_batches) == 2
+            # A miss tells a request the Batch never sent from one it sent
+            # without a result, as a canceled Batch leaves; neither goes Live.
+            for source, results, cause in (
+                (["盾"], translation._batch_results, "changed"),
+                (["回復", "毒"], {}, "unreturned"),
+            ):
+                with patch.object(translation, "_batch_results", results):
+                    try:
+                        translation.translateAI(
+                            source, [], config, filename="Items.json"
+                        )
+                    except translation.BatchResultUnavailableError as error:
+                        assert error.cause == cause, (source, error.cause)
+                    else:
+                        raise AssertionError(f"No Batch result for {source}.")
+            assert len(sent_batches) == 2
             translation.set_batch_phase(None)
             # The run's new speaker names go out Live before any Batch phase;
             # OpenRouter's Live route refuses the Batch endpoint pin.

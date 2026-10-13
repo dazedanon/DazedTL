@@ -151,7 +151,8 @@ Merge on read in sorted filename order with `setdefault` so first write wins, sk
 **A batch consume pass must fail closed when a result is missing, never fall through to a live call.** A batch run exists to pay 50%. A missing result that silently re-issues at full price, multiplied over thousands of chunks, is an unbounded surprise bill with no signal to the user. Three layers:
 
 1. The retry decorator checks the phase at call time and invokes the **unwrapped** function during consume, so a deterministic consume error is not retried five times.
-2. The result lookup raises a distinct `BatchResultUnavailableError` when no fetched result matches the payload-plus-context key, with a message naming the fix (redownload with the collect-time glossary freeze, or re-collect).
+2. The result lookup raises a distinct `BatchResultUnavailableError` when no fetched result matches the payload-plus-context key.
+   Its plain message names the cause from the Batch history: the Batch sent that request but the provider returned no result for it, as a canceled Batch leaves, or the Batch never sent a request like it because the file or its request changed; either way the fix is to translate the file again with Live or a new Batch.
 3. A belt-and-braces raise of the same error inside the retry loop on the live-call branch, so control reaching a live request while phase is consume is a crash rather than a charge.
 
 Allow a fallback to a legacy context-free cache key ONLY when the stored state's `cache_key_version < 2`.

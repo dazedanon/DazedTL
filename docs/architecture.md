@@ -244,6 +244,7 @@ Incomplete submissions retain their downloaded responses while the approved rema
 Unapproved or changed work requires its own estimate and paid review; an app restart does not require a second approval for the unchanged original queue.
 Clarification receipts can extend as later original chunks arrive, preserving both original responses and settled retries without repeating them.
 Local consume failures with received responses expose Retry saving results instead of an automatic restart loop; Batches with confirmed zero successes are left failed without attempting an empty consume pass.
+A request without a fetched result stops its file before any Live request; the file's failure reason, written once by the [engine](../backend/dazedtl/engine/util/translation.py), tells a request the Batch sent but got nothing back for, as a canceled Batch leaves, from one the Batch never sent.
 No pause/resume monitoring control is presented.
 
 ### Evidence and validation
