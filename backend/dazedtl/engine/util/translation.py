@@ -1589,7 +1589,8 @@ def _write_batch_file(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_file = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     with open(tmp_file, "w", encoding="utf-8", newline="\n") as f:
-        json.dump(data, f, ensure_ascii=False)
+        # json.dumps uses the C encoder; json.dump encodes in Python.
+        f.write(json.dumps(data, ensure_ascii=False))
     # The app's poll reads queue snapshots and fragments while they change.
     replace_with_retry(tmp_file, path)
 

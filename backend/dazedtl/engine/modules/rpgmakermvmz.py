@@ -720,7 +720,9 @@ def saveProgress(data, filename, *, force=False):
         )
         final_path = os.path.join("translated", filename)
         with open(tmp_path, "w", encoding="utf-8", newline="\n") as outFile:
-            json.dump(data, outFile, ensure_ascii=False, indent=4)
+            # json.dumps uses the C encoder; json.dump encodes in Python,
+            # many times slower on a large map.
+            outFile.write(json.dumps(data, ensure_ascii=False, indent=4))
             outFile.flush()
             try:
                 os.fsync(outFile.fileno())
