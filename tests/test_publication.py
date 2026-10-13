@@ -52,12 +52,22 @@ class PublicationTests(unittest.TestCase):
         )
         newer = b'{"text":"manual edit after preview"}'
         write_bytes(self.root / "data/A.json", newer)
-        result = p.publish(self.folder, self.root, plan)
+        # The batch backs up every file before its first write, so an edit
+        # made in between must be backed up again before it is overwritten.
+        during = b'{"text":"manual edit while publishing"}'
+
+        def editing(path, raw):
+            write_bytes(path, raw)
+            if path == self.root / "data/A.json":
+                write_bytes(self.root / "data/B.json", during)
+
+        with patch.object(p, "write_bytes", side_effect=editing):
+            result = p.publish(self.folder, self.root, plan)
         self.assertEqual(
-            (self.root / "data/A.json").read_bytes(), self.after["data/A.json"]
+            {name: (self.root / name).read_bytes() for name in self.after}, self.after
         )
         restore, _ = p.restore_candidates(self.folder, self.root, result["publication"])
-        self.assertEqual(restore["data/A.json"], newer)
+        self.assertEqual(restore, {"data/A.json": newer, "data/B.json": during})
         with self.assertRaises(ValueError):
             p.publish(self.folder, self.root, plan)
 

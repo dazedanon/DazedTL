@@ -76,7 +76,9 @@ def freeze(
     for index, (name, raw) in enumerate(sorted(candidates.items())):
         target = project_path(root, name)
         before = target.read_bytes()
-        write_bytes(base / f"{index}.before", before)
+        # A full overwrite backs up the bytes it replaces when it publishes.
+        if not overwrite:
+            write_bytes(base / f"{index}.before", before)
         write_bytes(base / f"{index}.after", raw)
         rows.append(
             {
@@ -132,6 +134,14 @@ def load(folder, plan):
     return base, row
 
 
+def _back_up(base, row, target):
+    """Saves the bytes a full overwrite replaces, as the game holds them now."""
+    before = target.read_bytes()
+    row["before"], row["mode"] = digest(before), target.stat().st_mode & 0o777
+    write_bytes(base / f"{row['index']}.before", before)
+    return before
+
+
 def publish(folder, root, plan, log=lambda _: None):
     base, record = load(folder, plan)
     index = Path(folder) / "source-inputs.json"
@@ -146,41 +156,46 @@ def publish(folder, root, plan, log=lambda _: None):
         raise ValueError(
             "Publication ownership or applied output state changed. Review again."
         )
+    overwrite = record.get("overwrite")
     payloads = []
     for row in record["files"]:
         target = project_path(root, row["path"])
-        before = project_path(base, f"{row['index']}.before").read_bytes()
         after = project_path(base, f"{row['index']}.after").read_bytes()
-        if (
-            digest(before) != row["before"]
-            or digest(after) != row["after"]
-            or (
-                not record.get("overwrite")
-                and digest(target.read_bytes()) != row["before"]
+        before = (
+            None
+            if overwrite
+            else project_path(base, f"{row['index']}.before").read_bytes()
+        )
+        if digest(after) != row["after"] or (
+            not overwrite
+            and (
+                digest(before) != row["before"]
+                or digest(target.read_bytes()) != row["before"]
             )
         ):
             raise ValueError(
                 "A source, destination or frozen candidate changed. Review again."
             )
-        payloads.append((target, row, before, after))
+        payloads.append([target, row, before, after])
     log("Publishing the reviewed batch; backups are retained.")
+    if overwrite:
+        # Explicit full-file Apply backs up the bytes present at the actual
+        # overwrite, including edits made after its preview. Backing up every
+        # file before the first write saves the receipt once: saved per file,
+        # its writes grew with the square of the batch's files.
+        for payload in payloads:
+            payload[2] = _back_up(base, payload[1], payload[0])
     record["state"] = "publishing"
     write_json(base / "receipt.json", record)
     attempted = []
     try:
         for target, row, before, after in payloads:
-            if record.get("overwrite"):
-                # Explicit full-file Apply backs up the bytes present at the
-                # actual overwrite, including edits made after its preview.
-                before = target.read_bytes()
-                row["before"], row["mode"] = (
-                    digest(before),
-                    target.stat().st_mode & 0o777,
-                )
-                write_bytes(base / f"{row['index']}.before", before)
+            if digest(target.read_bytes()) != row["before"]:
+                if not overwrite:
+                    raise ValueError("A runtime file changed during publication.")
+                # The game file changed since its backup moments ago.
+                before = _back_up(base, row, target)
                 write_json(base / "receipt.json", record)
-            elif digest(target.read_bytes()) != row["before"]:
-                raise ValueError("A runtime file changed during publication.")
             attempted.append((target, row, before, after))
             write_bytes(target, after)
             target.chmod(row["mode"])
