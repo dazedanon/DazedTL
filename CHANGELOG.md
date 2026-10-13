@@ -3,6 +3,21 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.12.0] - 2026-10-12
+
+### Added
+
+- **Context:** the new **Cost estimate** task shows what translating the whole game with your API key costs before you translate anything: Database files, Maps & events and Other event text over all their files, each with its cost, in Batch or Live. It is free, and it reads **Outdated** once the guidance, sources, game files or model change.
+
+### Changed
+
+- **Context:** the Other event text investigation and its **Source choices** moved from Translate to a new Context task, **Event text sources**, so the sources are chosen before the cost estimate; **Other event text** in Translate now only translates them.
+- **Context:** **Event text sources** findings now keep spaces in translated plugin labels and popups where the plugin allows it, instead of underscores, and leave placeholders untranslated instead of turning off their whole source; investigate again in games already in progress.
+
+### Fixed
+
+- **Translate:** **Other event text** no longer says "Saved translations applied." after Maps & events is applied, before its own translations are.
+
 ## [2.11.2] - 2026-10-12
 
 ### Fixed
@@ -448,6 +463,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.12.0]: https://github.com/dazedanon/DazedTL/compare/v2.11.2...v2.12.0
 [2.11.2]: https://github.com/dazedanon/DazedTL/compare/v2.11.1...v2.11.2
 [2.11.1]: https://github.com/dazedanon/DazedTL/compare/v2.11.0...v2.11.1
 [2.11.0]: https://github.com/dazedanon/DazedTL/compare/v2.10.0...v2.11.0
