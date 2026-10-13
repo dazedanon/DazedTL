@@ -3809,7 +3809,15 @@ def getPricingConfig(model):
         cfg = {"inputAPICost": 0.30,  "outputAPICost": 0.90,  "batchSize": 40, "frequencyPenalty": 0.0}
     elif "mistral" in model or "pixtral" in model:
         cfg = {"inputAPICost": 2.00,  "outputAPICost": 6.00,  "batchSize": 40, "frequencyPenalty": 0.0}
-    elif "claude-opus-4-5" in model or "claude-opus-4-6" in model:
+    elif "claude-fable" in model or "claude-mythos" in model:
+        cfg = {"inputAPICost": 10.00, "outputAPICost": 50.00, "batchSize": 30, "frequencyPenalty": 0.05}
+    elif "claude-opus-5-5" in model:
+        cfg = {"inputAPICost": 4.00,  "outputAPICost": 20.00, "batchSize": 30, "frequencyPenalty": 0.05}
+    elif (
+        "claude-opus-4-5" in model or "claude-opus-4-6" in model
+        or "claude-opus-4-7" in model or "claude-opus-4-8" in model
+        or "claude-opus-5" in model
+    ):
         cfg = {"inputAPICost": 5.00,  "outputAPICost": 25.00, "batchSize": 30, "frequencyPenalty": 0.05}
     elif "claude-opus" in model or model == "claude-3-opus":
         # Opus 4, 4.1, 3 — $15/$75
@@ -3823,6 +3831,9 @@ def getPricingConfig(model):
     elif "haiku" in model:
         # Unknown haiku version — use current flagship pricing as best guess
         cfg = {"inputAPICost": 1.00,  "outputAPICost": 5.00,  "batchSize": 30, "frequencyPenalty": 0.05}
+    elif "claude-sonnet-5" in model:
+        # Sonnet 5 and 5.5
+        cfg = {"inputAPICost": 2.00,  "outputAPICost": 10.00, "batchSize": 30, "frequencyPenalty": 0.05}
     elif "sonnet" in model or "claude" in model:
         cfg = {"inputAPICost": 3.00,  "outputAPICost": 15.00, "batchSize": 30, "frequencyPenalty": 0.05}
     elif "gemini-3.6-flash" in model:
