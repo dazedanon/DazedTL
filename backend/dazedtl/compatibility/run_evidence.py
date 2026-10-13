@@ -1,6 +1,7 @@
 """Local payload and usage evidence; recording never calls a provider."""
 
 import json
+import os
 import re
 import sqlite3
 import threading
@@ -108,14 +109,46 @@ class Evidence:
             if not text_refusal(row.get("response"), (row.get("source"),))
         }
 
+    def unsent(self):
+        """An estimate or Batch collection only builds requests it never sends."""
+        return self.mode == "estimate" or (
+            self.mode == "batch"
+            and os.getenv("BATCH_PHASE", "").strip().lower() == "collect"
+        )
+
+    @contextmanager
+    def session(self):
+        """Shares one connection among an unsent pass's writes until it ends.
+
+        Such a pass records thousands of requests in quick succession, and
+        opening the database and waiting for the disk on each one took most
+        of an estimate's time on Windows. A crash while nothing is sent costs
+        only local work, so its commits skip the disk wait and keep their
+        journal file.
+        """
+        if getattr(self.local, "connection", None) is not None or not self.unsent():
+            yield
+            return
+        connection = sqlite3.connect(self.path, timeout=10)
+        try:
+            connection.execute("PRAGMA synchronous=OFF")
+            connection.execute("PRAGMA journal_mode=TRUNCATE")
+            self.local.connection = connection
+            yield
+        finally:
+            self.local.connection = None
+            connection.close()
+
     @contextmanager
     def connect(self):
-        connection = sqlite3.connect(self.path, timeout=10)
+        shared = getattr(self.local, "connection", None)
+        connection = shared or sqlite3.connect(self.path, timeout=10)
         try:
             with connection:
                 yield connection
         finally:
-            connection.close()
+            if shared is None:
+                connection.close()
 
     def found_text(self, filename):
         with self.translatable_lock:
@@ -363,6 +396,10 @@ class Evidence:
         call_signature = signature(translation.translateAI)
 
         def validated(native, *args, **kwargs):
+            with self.session():
+                return checked(native, *args, **kwargs)
+
+        def checked(native, *args, **kwargs):
             bound = call_signature.bind(*args, **kwargs)
             text = bound.arguments.get("text")
             filename = bound.arguments.get("filename")
