@@ -41,6 +41,41 @@ def collect(engine, files, progress):
         engine.setSpeakerParseMode(False)
 
 
+def configure_environment(widths):
+    """Engine settings for the scan; prepare() adds the run paths and blocks
+    network access."""
+    # This process never receives API credentials or inherits the user's .env.
+    for key in list(os.environ):
+        if any(token in key.lower() for token in ("api_key", "secret", "token")) or (
+            key in {"key", "api", "organization", "org"}
+        ):
+            os.environ.pop(key, None)
+    os.environ.update(
+        {
+            "model": "gpt-6-luna",
+            "API_PROVIDER": "openai",
+            "key": "desktop-broker-only",
+            "api": "https://api.openai.com/v1",
+            "language": "English",
+            "timeout": "45",
+            "width": str(widths["width"]),
+            "faceWidth": str(widths["faceWidth"]),
+            "listWidth": str(widths["listWidth"]),
+            "noteWidth": str(widths["noteWidth"]),
+            "batchsize": "50",
+            "convertQuotes": "true",
+            "useSfxReference": "true",
+        }
+    )
+    for key in (
+        "BATCH_PHASE",
+        "BATCH_PROVIDER",
+        "TRANSLATION_LOG_REQUESTS",
+        "API_KEY_OPTIONAL",
+    ):
+        os.environ.pop(key, None)
+
+
 def run_scan(plan, log):
     from desktop.backend.workflow_actions import validate_plan
     from util import paths
@@ -108,9 +143,7 @@ def run_scan(plan, log):
                 },
             },
         )
-        from desktop.backend.rpgmaker_worker import configure_environment
-
-        configure_environment(root, {**project["widths"], "batchsize": 50})
+        configure_environment(project["widths"])
         from desktop.backend.manual_environment import prepare
 
         prepare(root)  # Local mode removes credentials and blocks network access.
