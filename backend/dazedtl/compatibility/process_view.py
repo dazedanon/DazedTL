@@ -137,6 +137,8 @@ def ledger_records(root):
     )
     stamp = ledger_stamp(root)
     rows = _ledger_records(str(root), stamp, consumed)
+    if rows is None:
+        return None
     if not consumed:
         from .live_validation import reconcile
 
@@ -158,6 +160,8 @@ def _ledger_records(root, signature, consumed):
         return None
     with closing(connection):
         names = {row[1] for row in connection.execute("PRAGMA table_info(requests)")}
+        if not names:
+            return None  # A worker opens the file before creating its tables.
         fields = (
             "id",
             "params",

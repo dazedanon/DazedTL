@@ -196,21 +196,29 @@ class ObservationTests(unittest.TestCase):
                     observe(current=pending)["batches"][0]["status"], "cancelling"
                 )
 
-    def test_live_receipts_in_wal_invalidate_both_summary_and_ledger_caches(self):
-        # A committed WAL update need not touch the main database file. Caching
-        # only that file leaves prepared rows visible after provider submission.
+    def test_new_and_wal_ledger_writes_invalidate_both_summary_and_ledger_caches(
+        self,
+    ):
+        # A worker opens its ledger before creating the tables, so a poll can
+        # read an empty database. A committed WAL update need not touch the
+        # main database file. Caching only that file leaves prepared rows
+        # visible after provider submission.
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
-            evidence = Evidence(root, "translate")
-            evidence.local.filename, evidence.local.sources = "Map001.json", ["owned"]
-            evidence.prepared(
-                {"messages": [{"role": "user", "content": '{"Line1":"薬"}'}]}
-            )
             path = root / "log/dazedtl-process.sqlite3"
+            path.parent.mkdir()
+            sqlite3.connect(path).close()
             cache = RunObservations()
             job, plan = (
                 {"mode": "translate", "status": "running"},
                 {"mode": "translate"},
+            )
+            with cache.read():
+                self.assertEqual(cache.process(root, job, plan)["files"], {})
+            evidence = Evidence(root, "translate")
+            evidence.local.filename, evidence.local.sources = "Map001.json", ["owned"]
+            evidence.prepared(
+                {"messages": [{"role": "user", "content": '{"Line1":"薬"}'}]}
             )
             connection = sqlite3.connect(path)
             try:
