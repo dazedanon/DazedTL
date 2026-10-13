@@ -9,6 +9,7 @@ import sys
 import threading
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 root, temporary = map(Path, sys.argv[1:])
 sys.path.insert(0, str(root / "backend/dazedtl/engine"))
@@ -100,6 +101,7 @@ _run_git(raced, "read-tree", "main")
 from dazedtl.compatibility.guided import guard_context
 from dazedtl.compatibility.observations import RunObservations
 from dazedtl.compatibility.translation import TranslationEngine
+from desktop.backend import project as project_files
 from desktop.backend.workflow_actions import action_guard
 from util import gameupdate_config as updater
 from util.game_settings import load_game_update, save_game_wrap_widths
@@ -170,6 +172,15 @@ with engine.context():
     assert action_guard({"source": str(published)}, temporary / "workflow") == guard
     save_game_wrap_widths(published, {"width": 70})
     assert action_guard({"source": str(published)}, temporary / "workflow") != guard
+    # Guards reuse the digests of files that kept their stat signature, so a
+    # data file rewritten at the same size must still read as changed.
+    system = published / "data/System.json"
+    with patch.object(project_files, "SETTLED_NS", -1):
+        guard = action_guard({"source": str(published)}, temporary / "workflow")
+        raw = system.read_bytes()
+        system.write_bytes(raw[:-1] + (b" " if raw[-1:] != b" " else b"\n"))
+        assert action_guard({"source": str(published)}, temporary / "workflow") != guard
+    system.write_bytes(raw)
 
     # A poll's guard parts match the engine's, and follow a changed plugin.
     def shared():

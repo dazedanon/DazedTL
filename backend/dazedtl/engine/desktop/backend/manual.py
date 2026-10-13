@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import threading
@@ -15,7 +16,7 @@ from pathlib import Path, PurePosixPath
 from util.game_settings import WRAP_WIDTH_KEYS
 from util.paths import PROMPT_PATH, GLOSSARY_BASE_PATH, TRANSLATION_CONTEXTS_PATH, SFX_REFERENCE_PATH, runtime_data_file
 from util.translation_task import TRANSLATION_MODULE_SPECS, format_estimate_total, translation_module
-from .project import atomic_json, digest
+from .project import atomic_json, digest, file_digest
 from .settings import SettingsStore
 from util import extensions
 
@@ -213,16 +214,28 @@ def prepare_inputs(directory, plan, stopped=lambda: False):
         name = item["name"]
         original = directory / "inputs" / name if prepared.is_file() else Path(plan["source"]) / name
         source_root = directory / "inputs" if prepared.is_file() else Path(plan["source"])
-        if original.is_symlink() or not original.resolve().is_relative_to(source_root) or digest(original.read_bytes()) != item["sha256"]:
+        if original.is_symlink() or not original.resolve().is_relative_to(source_root):
+            raise ValueError("An input changed after planning. Refresh the file list and start a new run.")
+        raw = original.read_bytes()
+        if digest(raw) != item["sha256"]:
             raise ValueError("An input changed after planning. Refresh the file list and start a new run.")
         if not prepared.is_file():
-            for folder in ("inputs", "files"):
-                target = directory / folder / name
+            frozen, working = directory / "inputs" / name, directory / "files" / name
+            for target in (frozen, working):
                 target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(original, target)
+            frozen.write_bytes(raw)
+            # Runs only read their inputs, so the engine's copy can be the same
+            # file; every run copies the whole input folder, and a second copy
+            # took seconds on Windows for a large game.
+            try:
+                os.link(frozen, working)
+            except OSError:
+                working.write_bytes(raw)
         else:
             working = directory / "files" / name
-            if working.is_symlink() or not working.resolve().is_relative_to(directory / "files") or digest(working.read_bytes()) != item["sha256"]:
+            if working.is_symlink() or not working.resolve().is_relative_to(directory / "files"):
+                raise ValueError("The isolated engine input changed. Create a new run.")
+            if not os.path.samestat(working.stat(), original.stat()) and digest(working.read_bytes()) != item["sha256"]:
                 raise ValueError("The isolated engine input changed. Create a new run.")
         (directory / "translated" / name).parent.mkdir(parents=True, exist_ok=True)
     atomic_json(prepared, {"ready": True})
@@ -318,13 +331,13 @@ class ManualJobs:
                 if name.startswith(".") or not name.endswith(extensions):
                     continue
                 path = Path(directory) / name
-                if path.is_symlink() or not path.is_file() or path.stat().st_size > 100_000_000:
+                info = path.lstat()
+                if not stat.S_ISREG(info.st_mode) or info.st_size > 100_000_000:
                     raise ValueError("Input files must be regular files below 100 MB.")
                 relative = path.relative_to(root).as_posix()
                 relative_file(relative)
-                raw = path.read_bytes()
-                files.append({"name": relative, "bytes": len(raw), "sha256": digest(raw)})
-                total_bytes += len(raw)
+                files.append({"name": relative, "bytes": info.st_size, "sha256": file_digest(path, info)})
+                total_bytes += info.st_size
                 if len(files) > 10000 or total_bytes > 2_000_000_000:
                     raise ValueError("Choose a smaller input folder (up to 10,000 files or 2 GB).")
         if not files:

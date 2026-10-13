@@ -5,13 +5,14 @@ from dataclasses import asdict, is_dataclass
 import json
 import os
 from pathlib import Path
+import stat
 import shutil
 import uuid
 
 from util.ace import rgssad
 from util.game_settings import without_game_update
 from util.project_preparation import _game_path, rpgmaker_layout
-from .project import digest
+from .project import digest, file_digest
 from . import wolf
 
 LABELS = {
@@ -53,7 +54,7 @@ def regular(root, path):
 
 def file_hash(root, path):
     path = regular(root, path)
-    return digest(path.read_bytes()) if path.is_file() else None
+    return file_digest(path) if path.is_file() else None
 
 
 def settings_hash(root):
@@ -74,8 +75,15 @@ def tree_hashes(root, folder):
         for name in folders:
             _game_path(root, Path(directory) / name)
         for name in sorted(files):
+            # The walk checked this file's folders; only the file itself can
+            # still be a link.
             path = Path(directory) / name
-            result[path.relative_to(folder).as_posix()] = file_hash(root, path)
+            info = os.lstat(path)
+            if stat.S_ISLNK(info.st_mode):
+                raise ValueError(f"Preparation cannot write through a symlink or junction: {path}")
+            if not stat.S_ISREG(info.st_mode):
+                raise ValueError(f"Expected a regular file: {path}")
+            result[path.relative_to(folder).as_posix()] = file_digest(path, info)
     return result
 
 
@@ -104,7 +112,7 @@ def describe_game(source, files=True):
 def action_guard(project, folder):
     """Bind a confirmation to its current source, outputs and portable guidance."""
     root, folder = Path(project["source"]), Path(folder)
-    layout = describe_game(root)
+    layout = describe_game(root, files=False)
     return {**guard_context(root, layout), "data": tree_hashes(root, Path(layout["data"])),
             "files": tree_hashes(folder, folder / "files"), "translated": tree_hashes(folder, folder / "translated"),
             "variables": file_hash(folder, folder / "log/var_translation_map.json")}
