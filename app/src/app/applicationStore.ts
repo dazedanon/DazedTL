@@ -39,6 +39,8 @@ export class ApplicationStore {
   private requested = false;
   private epoch = 0;
   private readingEpoch = -1;
+  /** The read in flight waits for writes before taking its ticket. */
+  private waiting = false;
   private mutations = 0;
   /** Reads that failed in a row; any successful read resets it. */
   private failures = 0;
@@ -152,7 +154,9 @@ export class ApplicationStore {
       this.idleWaiters.clear();
     }
     if (this.inFlight) {
-      if (this.readingEpoch !== this.epoch) this.requested = true;
+      // A read still waiting for writes to finish observes them anyway.
+      if (!this.waiting && this.readingEpoch !== this.epoch)
+        this.requested = true;
       return this.inFlight;
     }
     this.inFlight = this.read().finally(() => {
@@ -180,8 +184,11 @@ export class ApplicationStore {
   private async read() {
     do {
       this.requested = false;
-      if (this.mutations)
+      if (this.mutations) {
+        this.waiting = true;
         await new Promise<void>((resolve) => this.idleWaiters.add(resolve));
+        this.waiting = false;
+      }
       if (!this.started || this.value.stopped) return;
       const ticket = this.epoch;
       this.readingEpoch = ticket;
