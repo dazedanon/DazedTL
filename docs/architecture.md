@@ -93,7 +93,7 @@ Inspection leaves Review cost available, while Translate always prepares again.
 Approval rechecks the temporary preparation’s current inputs before the native one-use approval controls submission.
 Once approved, the frozen request remains authoritative for recovery and is never silently rebuilt.
 The fresh Batch speaker check validates unresolved nameplates against frozen files and the current glossary before collection; it retains its separate approval if translation is needed.
-The estimate leading into a Batch scans the nameplates beside its own worker, and the preparation reuses that scan when its frozen inputs match the estimate's ([reusable_speaker_scan](../backend/dazedtl/engine/desktop/backend/manual.py)), so it reads the files once more instead of twice.
+The estimate leading into a Batch scans the nameplates beside its own worker, and the preparation reuses that scan and submits the estimate's own requests when its frozen plan matches the estimate's ([adoptable_requests](../backend/dazedtl/engine/desktop/backend/manual.py)); it reads the files again only to collect after its names step translated names.
 Nameplates may contain character names or other display labels, so the review does not assume a character identity.
 This small preparation uses Live pricing to avoid waiting for a separate name Batch, and the review distinguishes it from the selected Batch mode for file text.
 The file-text Batch receives its own cost review after names are resolved.
