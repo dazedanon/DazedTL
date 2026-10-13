@@ -959,6 +959,14 @@ try {
         "The playtest could not play the game. The game folder has no RPG Maker engine scripts to play.",
         2 * 60_000,
       );
+      // Its operation ends after the result shows, and the app refuses the
+      // next action until it does.
+      await until(
+        "the playtest to finish",
+        async () =>
+          !(await page.call("workspace_snapshot")).application.running,
+        2 * 60_000,
+      );
       await page.shot("playtest");
     },
   );
