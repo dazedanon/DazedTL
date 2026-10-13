@@ -218,11 +218,24 @@ def prepare_inputs(directory, plan, stopped=lambda: False):
     atomic_json(prepared, {"ready": True})
 
 
+# Workers start from these variables instead of the whole environment, which
+# may hold provider keys. Claude's SDK looks for its settings under APPDATA or
+# the home folder whenever a client is created, and Windows has no home folder
+# without USERPROFILE.
+SYSTEM_VARIABLES = ("PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL", "LD_LIBRARY_PATH",
+                    "DYLD_LIBRARY_PATH", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA")
+
+
+def system_environment(*names):
+    """This process's system variables and ``names``, for a worker to start from."""
+    # Windows lists every variable name in capitals.
+    wanted = {name.upper() if os.name == "nt" else name for name in (*SYSTEM_VARIABLES, *names)}
+    return {key: value for key, value in os.environ.items() if key in wanted}
+
+
 def worker_environment(workspace, plan):
     """A run worker's environment: local runs get no credential and no network."""
-    env = {key: value for key, value in os.environ.items() if key in {
-        "PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL", "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"
-    }}
+    env = system_environment()
     if plan["mode"] in {"estimate", "offline"}:
         env.update({key: str(value).lower() if isinstance(value, bool) else str(value) for key, value in plan["settings"].items()})
         env.update(key="local-run-no-credential", API_KEY_OPTIONAL="true", DAZEDTL_TEST_OFFLINE="1")

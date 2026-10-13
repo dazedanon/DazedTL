@@ -1485,6 +1485,23 @@ try:
         runs.folder(run["id"]).mkdir(parents=True)
         outcome = runs._event(run, {"event": "finished", "args": [True, "Done"]})
         assert run["status"] == "running" and outcome["status"] == "complete"
+        # A run worker keeps the user's folders, where Claude's SDK looks for
+        # settings whenever a client is created (failing on Windows without
+        # them), and none of the app's provider keys.
+        import anthropic
+        from desktop.backend.manual import worker_environment
+
+        folders = {"HOME": str(temporary), "APPDATA": str(temporary)}
+        with patch.dict(os.environ, {**folders, "ANTHROPIC_API_KEY": "app-key"}):
+            environment = worker_environment(
+                temporary, {"mode": "offline", "settings": {}}
+            )
+        assert (
+            folders.items() <= environment.items()
+            and "ANTHROPIC_API_KEY" not in environment
+        )
+        with patch.dict(os.environ, environment, clear=True):
+            anthropic.Anthropic(api_key="run-key")
     for module_name, module in list(sys.modules.items()):
         if module_name.startswith(
             ("util.", "modules.", "desktop.backend.")
