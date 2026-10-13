@@ -81,15 +81,15 @@ test("a Batch estimate's file counts belong to the step that reported them", () 
   let activity = estimateActivity(flow(run("preparing", 4)));
   assert.deepEqual(
     activity.steps.map((step) => step.id),
-    ["check", "estimate", "requests"],
+    ["check", "estimate", "batch"],
   );
-  assert.equal(activity.current, "requests");
+  assert.equal(activity.current, "batch");
   assert.equal(activity.count?.key, "speakers:run");
   assert.equal(activity.fraction, 0);
   // After approved names, the scan's last count is not the requests'.
   activity = estimateActivity(flow(run("preparing", 10), true));
   assert.equal(activity.count, undefined);
   activity = estimateActivity(flow(run("collect", 3)));
-  assert.equal(activity.count?.key, "requests:run");
+  assert.equal(activity.count?.key, "batch:run");
   assert.equal(activity.fraction, 0.3);
 });

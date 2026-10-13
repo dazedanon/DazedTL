@@ -116,7 +116,7 @@ Existing Live resumes retain their frozen settings and require explicit review; 
 New remaining work requires a fresh estimate and spending review.
 The compact footer keeps Translate and available Apply actions beside the selected scope.
 Translate immediately opens one stable estimate dialog; preparation, cost approval, no-work results and actionable failures stay inside it.
-While it works, the dialog shows the [steps](../app/src/features/guided/estimateActivity.ts) to the cost review: Check files and Estimate cost, then for Batch Build requests, which also holds any names review and name pass.
+While it works, the dialog shows the [steps](../app/src/features/guided/estimateActivity.ts) to the cost review: Check files and Estimate cost, then for Batch Prepare Batch, which also holds any names review and name pass.
 Each finished step shows how long it took, the current one its file count and remaining time, and the footer the time since Translate, so a large game's wait is visible from the start.
 Each Batch phase starts its own file count, so a speaker scan the Batch has to repeat is never read as its requests' progress.
 Files differ widely in how long they take, so [remaining time](../app/src/ui/workTime.ts) follows the last half minute's pace, appears only once that pace has been measured for long enough, and grows while one file takes longer than usual.

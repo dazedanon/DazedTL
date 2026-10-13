@@ -1,12 +1,12 @@
 import type { Job, Progress } from "../../api/contracts";
 import type { TranslationFlowState } from "./useTranslationFlow";
 
-export type EstimateStepId = "check" | "estimate" | "requests";
+export type EstimateStepId = "check" | "estimate" | "batch";
 
 const labels: Record<EstimateStepId, string> = {
   check: "Check files",
   estimate: "Estimate cost",
-  requests: "Build requests",
+  batch: "Prepare Batch",
 };
 
 /** What a Translate estimate is doing, as steps toward its cost review. */
@@ -37,16 +37,17 @@ function counted(job: Job | undefined) {
 
 /**
  * The steps from Translate to the cost review and where the flow stands.
- * A Live estimate opens its review once it is priced; a Batch one first
- * builds every request it would submit, after any names the glossary lacks
- * are reviewed and translated.
+ * A Live estimate opens its review once it is priced. A Batch one then
+ * prepares the requests it would submit, after any names the glossary lacks
+ * are reviewed and translated: usually the estimate's own requests, otherwise
+ * built again file by file.
  */
 export function estimateActivity(
   value: TranslationFlowState,
 ): EstimateActivity {
   const ids: EstimateStepId[] =
     value.mode === "batch"
-      ? ["check", "estimate", "requests"]
+      ? ["check", "estimate", "batch"]
       : ["check", "estimate"];
   const steps = ids.map((id) => ({ id, label: labels[id] }));
   const at = (
@@ -91,28 +92,32 @@ export function estimateActivity(
     (!value.job?.nameTranslation ||
       value.job.nameTranslation.state === "running")
   )
-    return at("requests", "Translating names and labels…");
+    return at("batch", "Translating names and labels…");
   const job = value.runId ? value.job : undefined;
-  if (!job) return at("requests", "Checking the selected files…");
+  if (!job) return at("batch", "Checking the selected files…");
   const progress = counted(job);
   if (job.phase === "preparing")
     // Each Batch phase counts its files afresh. The Batch reuses the
     // estimate's speaker scan; a count before collecting is a scan it had to
     // repeat, which leaves the bar for the requests themselves.
     return progress && !value.namesApproved
-      ? at("requests", "Finding speaker names…", {
+      ? at("batch", "Finding speaker names…", {
           job,
           key: "speakers",
           fraction: 0,
         })
-      : at("requests", "Starting the Batch preparation…");
+      : at("batch", "Starting the Batch preparation…");
+  // Reusing the estimate's requests passes through collecting at once;
+  // building them again counts files.
   if (job.phase === "collect")
     return at(
-      "requests",
-      progress && progress.current === progress.total
-        ? "Finishing the Batch requests…"
-        : "Building Batch requests…",
+      "batch",
+      !progress
+        ? "Preparing the Batch requests…"
+        : progress.current < progress.total
+          ? "Building Batch requests…"
+          : "Finishing the Batch requests…",
       { job },
     );
-  return at("requests", "Pricing the Batch requests…", { fraction: 1 });
+  return at("batch", "Pricing the Batch requests…", { fraction: 1 });
 }
