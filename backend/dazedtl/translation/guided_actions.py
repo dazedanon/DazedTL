@@ -274,7 +274,9 @@ class GuidedActions:
             raise ValueError("Choose a supported guided action.")
         self.guided.settings.prepare_engine()
         value = self.guided.backend.workflows.state(native["id"])
-        if action not in {"backup_source", "use_source_backup"}:
+        # Readiness checks the source backup itself, reading every saved
+        # file's record, so ready actions skip this separate check.
+        if action not in {"backup_source", "use_source_backup"} | READY_ACTIONS:
             self.guided.source_preserved(project_id)
         self.require_ready(
             project_id,
@@ -808,7 +810,9 @@ class GuidedActions:
             self.guided.idle(
                 isolated_workers=action in {"export_selected", "refresh_sources"}
             )
-        if action not in {"backup_source", "use_source_backup"}:
+        # Readiness checks the source backup itself, reading every saved
+        # file's record, so ready actions skip this separate check.
+        if action not in {"backup_source", "use_source_backup"} | READY_ACTIONS:
             self.guided.source_preserved(project_id)
         self.require_ready(
             project_id,
