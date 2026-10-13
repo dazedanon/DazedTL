@@ -92,9 +92,12 @@ export function historyOutcome(job: Job): HistoryOutcome {
           ? "Estimating"
           : job.phase === "poll_capacity"
             ? "Waiting for capacity"
-            : atProvider
-              ? "At provider"
-              : "In progress",
+            : // The provider has finished; the app downloads its results.
+              job.process?.monitoring?.state === "collecting"
+              ? "Receiving results"
+              : atProvider
+                ? "At provider"
+                : "In progress",
       // Requests at the provider are submitted, not merely prepared.
       detail:
         atProvider && !output && !requestDetail && prepared != null
