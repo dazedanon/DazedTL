@@ -477,6 +477,7 @@ export type ContextSetup = {
   layoutApplication?: "none" | "pending" | "applied" | "manual";
   layoutMessage?: string;
   layoutUnmeasured?: boolean;
+  layoutRejected?: string;
 };
 
 export type ReferenceFolder = {

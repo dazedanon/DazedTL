@@ -136,6 +136,7 @@ def inspect(
         "layoutApplication": "applied" if applied else "none",
         "layoutMessage": "",
         "layoutUnmeasured": False,
+        "layoutRejected": "",
         "layoutStatus": "saved"
         if applied
         or reviews.get("layout") == digest(native["widths"])
@@ -144,95 +145,134 @@ def inspect(
     }
     if not request_value:
         return result
-    try:
-        path = project_path(native["source"], REPORT)
-        report = read_json(path, limit=200_000)
-        report_id = (
-            digest(
-                {"request_id": report.get("request_id"), "layout": report.get("layout")}
-            )
-            if isinstance(report, dict)
-            else None
-        )
-        consumed = receipt.get("reportId") == report_id and report_id is not None
-        if (
-            not isinstance(report, dict)
-            or type(report.get("version")) is not int
-            or report["version"] != 1
-            or report.get("request_id") != request_value.get("request_id")
-            and not consumed
-            or report.get("project_id") != project_id
-        ):
-            return result
-        layout = report.get("layout")
-        if layout is None:
-            # The assistant could not measure the windows; the widths stay.
-            return {**result, "layoutUnmeasured": True}
-        if (
-            not isinstance(layout, dict)
-            or set(layout) != {"widths", "reason", "evidence"}
-            or not isinstance(layout["widths"], dict)
-            or not set(WIDTHS) <= set(layout["widths"]) <= {*WIDTHS, ROWS}
-        ):
-            raise ValueError(
-                "Layout recommendations need four widths, a reason and source evidence."
-            )
-        if (
-            any(
-                type(value) is not int
-                or not (1 <= value <= 20 if key == ROWS else 20 <= value <= 300)
-                for key, value in layout["widths"].items()
-            )
-            or layout["widths"]["faceWidth"] > layout["widths"]["width"]
-        ):
-            raise ValueError("Layout recommendations contain invalid character limits.")
-        if (
-            not isinstance(layout["reason"], str)
-            or not 1 <= len(layout["reason"].strip()) <= 4000
-            or not isinstance(layout["evidence"], list)
-            or not 1 <= len(layout["evidence"]) <= 20
-        ):
-            raise ValueError(
-                "Layout recommendations need a reason and inspected source evidence."
-            )
-        for ref in layout["evidence"]:
-            if (
-                not isinstance(ref, dict)
-                or set(ref) != {"file", "sha256", "location"}
-                or not isinstance(ref["sha256"], str)
-                or not re.fullmatch(r"[0-9a-f]{64}", ref["sha256"])
-                or not isinstance(ref["location"], str)
-                or not 1 <= len(ref["location"].strip()) <= 1000
-            ):
-                raise ValueError(
-                    "Layout evidence needs a source path, hash and location."
-                )
-            if (
-                not isinstance(ref["file"], str)
-                or len(ref["file"]) > 2000
-                or any(part.startswith(".") for part in ref["file"].split("/"))
-                or Path(ref["file"]).suffix.lower()
-                not in {".json", ".js", ".rb", ".ini", ".ttf", ".otf"}
-            ):
-                raise ValueError(
-                    "Cite inspected game sources or fonts for layout recommendations."
-                )
-            if (
-                not consumed
-                and observed_digest(project_path(native["source"], ref["file"]))
-                != ref["sha256"]
-            ):
-                return result
-        return {
-            **result,
-            "layout": layout,
-            "layoutReportId": report_id,
-            "layoutApplication": ("applied" if applied else "manual")
-            if consumed
-            else "pending",
-        }
-    except OSError, ValueError, TypeError, KeyError:
+    path = project_path(native["source"], REPORT, exists=False)
+    if not path.is_file() and not path.is_symlink():
         return result
+
+    def rejected(message):
+        # This task's report, but one the app cannot use; the assistant reads
+        # why through the helper and saves it again.
+        return {**result, "layoutRejected": message}
+
+    try:
+        report = read_json(path, limit=200_000)
+    except OSError:
+        # Read again on the next poll, such as while the file is replaced.
+        return result
+    except ValueError:
+        return rejected(
+            "Save the line width report as one JSON object of at most 200 KB."
+        )
+    if not isinstance(report, dict):
+        return rejected("Save the line width report as one JSON object.")
+    report_id = digest(
+        {"request_id": report.get("request_id"), "layout": report.get("layout")}
+    )
+    consumed = receipt.get("reportId") == report_id
+    if report.get("project_id") != project_id:
+        return result
+    if report.get("request_id") != request_value.get("request_id") and not consumed:
+        # An earlier request's report; one saved since this request was made
+        # names the wrong request.
+        try:
+            earlier = path.stat().st_mtime <= request_path.stat().st_mtime
+        except OSError:
+            return result
+        return (
+            result
+            if earlier
+            else rejected(
+                "The line width report's request_id is not this task's requestId."
+            )
+        )
+    if type(report.get("version")) is not int or report["version"] != 1:
+        return rejected("Save the line width report with version 1.")
+    if "layout" not in report:
+        return rejected(
+            "Include layout in the line width report: the measured values, or null when they could not be measured."
+        )
+    layout = report["layout"]
+    if layout is None:
+        # The assistant could not measure the windows; the widths stay.
+        return {**result, "layoutUnmeasured": True}
+    try:
+        check_layout(layout, native["source"], consumed, observed_digest)
+    except ValueError as exc:
+        return rejected(str(exc))
+    except TypeError, KeyError:
+        return rejected("The line width report does not match its schema.")
+    return {
+        **result,
+        "layout": layout,
+        "layoutReportId": report_id,
+        "layoutApplication": ("applied" if applied else "manual")
+        if consumed
+        else "pending",
+    }
+
+
+def check_layout(layout, source, consumed, observed_digest):
+    """Raises with what is wrong with measured layout recommendations."""
+    if (
+        not isinstance(layout, dict)
+        or set(layout) != {"widths", "reason", "evidence"}
+        or not isinstance(layout["widths"], dict)
+        or not set(WIDTHS) <= set(layout["widths"]) <= {*WIDTHS, ROWS}
+    ):
+        raise ValueError(
+            "Layout recommendations need four widths, a reason and source evidence."
+        )
+    if (
+        any(
+            type(value) is not int
+            or not (1 <= value <= 20 if key == ROWS else 20 <= value <= 300)
+            for key, value in layout["widths"].items()
+        )
+        or layout["widths"]["faceWidth"] > layout["widths"]["width"]
+    ):
+        raise ValueError("Layout recommendations contain invalid character limits.")
+    if (
+        not isinstance(layout["reason"], str)
+        or not 1 <= len(layout["reason"].strip()) <= 4000
+        or not isinstance(layout["evidence"], list)
+        or not 1 <= len(layout["evidence"]) <= 20
+    ):
+        raise ValueError(
+            "Layout recommendations need a reason and inspected source evidence."
+        )
+    for ref in layout["evidence"]:
+        if (
+            not isinstance(ref, dict)
+            or set(ref) != {"file", "sha256", "location"}
+            or not isinstance(ref["sha256"], str)
+            or not re.fullmatch(r"[0-9a-f]{64}", ref["sha256"])
+            or not isinstance(ref["location"], str)
+            or not 1 <= len(ref["location"].strip()) <= 1000
+        ):
+            raise ValueError("Layout evidence needs a source path, hash and location.")
+        if (
+            not isinstance(ref["file"], str)
+            or len(ref["file"]) > 2000
+            or any(part.startswith(".") for part in ref["file"].split("/"))
+            or Path(ref["file"]).suffix.lower()
+            not in {".json", ".js", ".rb", ".ini", ".ttf", ".otf"}
+        ):
+            raise ValueError(
+                "Cite inspected game sources or fonts for layout recommendations."
+            )
+        # Applied widths keep their evidence as it was when they were saved.
+        if consumed:
+            continue
+        try:
+            current = observed_digest(project_path(source, ref["file"]))
+        except OSError, ValueError:
+            raise ValueError(
+                f"Layout evidence {ref['file']} is not a readable file in the game."
+            ) from None
+        if current != ref["sha256"]:
+            raise ValueError(
+                f"Layout evidence {ref['file']} has a sha256 that does not match the file."
+            )
 
 
 def layout_update(native, setup, request_value):
@@ -357,6 +397,7 @@ on screen as the measurement steps describe, and say in `reason` what the captur
 could not be seen; otherwise save the report with `layout` null and report the unresolved geometry.
 The app automatically saves verified widths as the project’s character limits; the user does not
 need to accept them in Layout. Read `{command}` to confirm `layoutApplication` is `applied`.
+If it shows `layoutRejected`, fix what it names and save the report again.
 An active operation or pending option edits may defer the save. Later manual width edits are retained.
 Do not change unrelated guidance, translate text or submit API work as part of remeasurement.
 """

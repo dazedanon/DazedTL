@@ -69,6 +69,7 @@ Change any choice under **Source choices**; **Other event text** in Translate tr
 
 **Line widths** fills in from your assistant's measurements, which it checks in the running game, and you can change them.
 If your assistant cannot measure the game's windows, its task still finishes and the current widths stay; change them yourself if needed and save.
+If the app cannot use your assistant's report, Line widths says why; copy the measurement task again or keep the current widths.
 Message rows is how many rows one message window shows; Text QA keeps its corrections within it.
 
 **Cost estimate** shows what translating the whole game costs with your API key before you translate anything.

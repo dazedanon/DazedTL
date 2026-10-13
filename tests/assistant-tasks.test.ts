@@ -239,4 +239,19 @@ test("copied tasks wait for a newer result, and dismissed ones read Not started"
     assistantTasks(widths({}, back)).map((task) => task.state),
     ["waiting"],
   );
+  // A report the app cannot use is blocked with its reason, even one another
+  // task saved; a new copy waits for its own report.
+  const reason = { layoutRejected: "Layout evidence needs a hash." };
+  for (const sources of [
+    widths(reason, back),
+    { ...widths(reason, back), records: [] },
+  ])
+    assert.deepEqual(
+      assistantTasks(sources).map((task) => [task.state, task.detail]),
+      [["blocked", reason.layoutRejected]],
+    );
+  assert.deepEqual(
+    assistantTasks(widths(reason, null)).map((task) => task.state),
+    ["waiting"],
+  );
 });

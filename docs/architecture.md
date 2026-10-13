@@ -758,6 +758,7 @@ The task's main copy action stays in its footer; an optional companion task, suc
 Each copy reply names its handoff: the task's kind, request id and the result files it expects back.
 A task whose assistant keeps working after its first results also names the file it saves last, and reads Waiting until that file is saved after the copy; Names & glossary ends with its measured line widths, which its prompt saves last even when nothing could be measured.
 A widths report with no measurement finishes the line width task as Done with its result Skipped, and the widths stay as they are.
+A widths report for the current request that the app cannot use reads Blocked with its reason, whichever task saved it, and the helper's context status gives the assistant the same reason; an earlier request's report is ignored.
 The [Application](../backend/dazedtl/api/server.py) records it in the [assistant task registry](../backend/dazedtl/translation/assistant_tasks.py) and strips it from the reply, so features keep their own requests, reports and validation.
 The snapshot lists the records with the newest time an expected file was saved, read from file times only, and [assistantTasks.ts](../app/src/features/assistant/assistantTasks.ts) derives each task's display state from that and its feature's observed state, so the Project page list, the top-bar count and each feature's panel agree.
 Dismissing marks a record abandoned: the task leaves the list and its feature stops showing Waiting until the next copy, while saved requests and reports stay.

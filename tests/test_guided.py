@@ -1768,6 +1768,25 @@ class GuidedTests(unittest.TestCase):
         self.assertFalse(self.guided.context_status(self.identity)["layoutUnmeasured"])
         write_json(self.source / context_setup.REPORT, unmeasured)
         self.assertTrue(self.guided.context_status(self.identity)["layoutUnmeasured"])
+
+        # A report the app cannot use says why, so the task is not left
+        # waiting; an earlier request's report still says nothing.
+        def rejected(value):
+            write_json(self.source / context_setup.REPORT, value)
+            return self.guided.context_status(self.identity)["layoutRejected"]
+
+        self.assertIn(
+            "reason", rejected({**report, "layout": {**report["layout"], "reason": ""}})
+        )
+        stale = deepcopy(report)
+        stale["layout"]["evidence"][0]["sha256"] = "0" * 64
+        self.assertIn("windows.js", rejected(stale))
+        self.assertIn("request_id", rejected({**report, "request_id": "older-task"}))
+        earlier = request_path.stat().st_mtime - 10
+        os.utime(self.source / context_setup.REPORT, (earlier, earlier))
+        self.assertEqual(
+            self.guided.context_status(self.identity)["layoutRejected"], ""
+        )
         self.backend.workflows.apply_layout_settings.assert_not_called()
         write_json(self.source / context_setup.REPORT, report)
         self.backend.running = lambda: True

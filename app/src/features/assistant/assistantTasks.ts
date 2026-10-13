@@ -142,12 +142,19 @@ function standing(
     return unfinishedCopy(record) ? waiting() : { state: "finished" };
   }
   if (kind === "line_widths") {
-    if (!guided || !copied) return { state: "idle" };
-    if (guided.contextSetup.layoutMessage)
-      return { state: "blocked", detail: guided.contextSetup.layoutMessage };
+    if (!guided) return { state: "idle" };
+    const setup = guided.contextSetup;
+    // A report the app cannot save or use is blocked whichever task saved
+    // it, such as Names & glossary, which ends with the widths; a copy that
+    // nothing came back to since waits for its own report.
+    if (setup.layoutMessage)
+      return { state: "blocked", detail: setup.layoutMessage };
+    if (copied && !back) return waiting();
+    if (setup.layoutRejected)
+      return { state: "blocked", detail: setup.layoutRejected };
+    if (!copied) return { state: "idle" };
     // A report that could not measure the windows finishes the task too.
-    return back &&
-      (guided.contextSetup.layout || guided.contextSetup.layoutUnmeasured)
+    return setup.layout || setup.layoutUnmeasured
       ? { state: "finished" }
       : waiting();
   }

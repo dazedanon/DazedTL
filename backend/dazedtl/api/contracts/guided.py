@@ -163,6 +163,8 @@ class ContextSetup(TypedDict):
     layoutMessage: NotRequired[str]
     # The current request's report says the windows could not be measured.
     layoutUnmeasured: NotRequired[bool]
+    # Why the current request's report could not be used.
+    layoutRejected: NotRequired[str]
 
 
 class ReferenceFolder(TypedDict):
