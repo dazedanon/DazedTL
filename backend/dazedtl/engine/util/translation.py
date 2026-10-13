@@ -11,11 +11,9 @@ import time
 import random
 import unicodedata
 import tiktoken
-import openai
-import anthropic
 import urllib.request
 from urllib.parse import urlparse
-from openai import APIError, APIConnectionError, RateLimitError, APIStatusError
+from importlib import import_module
 import hashlib
 import threading
 import uuid
@@ -36,6 +34,49 @@ from util import claude_tokens, request_debug
 from util import extensions
 from util.sfx_reference import build_sfx_reference_text
 from util.vocab import decorative_glossary_alias, split_glossary_row
+
+class _LazyModule:
+    """A provider SDK that loads on its first real use.
+
+    Importing both SDKs took most of a worker's startup, seconds on Windows,
+    and estimates and Batch collection never call a provider. Settings
+    assigned before the SDK loads are kept, read back without loading it,
+    and applied once it does.
+    """
+
+    def __init__(self, name):
+        object.__setattr__(self, "_name", name)
+        object.__setattr__(self, "_settings", {})
+        object.__setattr__(self, "_module", None)
+
+    def _load(self):
+        if self._module is None:
+            module = import_module(self._name)
+            for key, value in self._settings.items():
+                setattr(module, key, value)
+            object.__setattr__(self, "_module", module)
+        return self._module
+
+    def __getattr__(self, name):
+        if self._module is None and name in self._settings:
+            return self._settings[name]
+        return getattr(self._load(), name)
+
+    def __setattr__(self, name, value):
+        if self._module is None:
+            self._settings[name] = value
+        else:
+            setattr(self._module, name, value)
+
+    def __delattr__(self, name):
+        if self._module is None and name in self._settings:
+            del self._settings[name]
+        else:
+            delattr(self._load(), name)
+
+
+openai = _LazyModule("openai")
+anthropic = _LazyModule("anthropic")
 
 # The fixed GPT-4 token counter is shared by translation and Len estimates.
 # Prefer its shipped table on clean/offline installations; explicit process
@@ -3348,7 +3389,7 @@ def callMistral(params, retries=6):
             response = raw.parse()
             limiter.update(raw.headers)
             return response
-        except RateLimitError as e:
+        except openai.RateLimitError as e:
             last_error = e
             resp = getattr(e, "response", None)
             limiter.update(getattr(resp, "headers", None))
@@ -3358,7 +3399,7 @@ def callMistral(params, retries=6):
             except (AttributeError, TypeError, ValueError):
                 pass
             time.sleep(retry_after if retry_after is not None else min(60, 2 ** attempt + random.random() * 2))
-        except APIStatusError as e:
+        except openai.APIStatusError as e:
             last_error = e
             # Mistral rejects unsupported params with 400/422 — downgrade the
             # structured-output format once and retry immediately.
@@ -3370,7 +3411,7 @@ def callMistral(params, retries=6):
                 time.sleep(min(45, 2 ** attempt + random.random()))
                 continue
             raise Exception(f"Mistral API error ({e.status_code}): {e}")
-        except APIConnectionError as e:
+        except openai.APIConnectionError as e:
             last_error = e
             if attempt < retries:
                 time.sleep(min(45, 2 ** attempt + random.random()))
@@ -4997,7 +5038,7 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
     # Call API (reaches here only for non-Claude providers)
     try:
         response = openai.chat.completions.create(**params)
-    except APIStatusError as e:
+    except openai.APIStatusError as e:
         # Strict structured runs keep the provider error for the evidence and
         # retry guards instead of retrying with a weaker output format.
         if STRICT_STRUCTURED_OUTPUTS and formatType == "json" and numLines is not None:
@@ -5017,7 +5058,7 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
             params["response_format"] = responseFormat
             try:
                 response = openai.chat.completions.create(**params)
-            except APIStatusError as fallback_error:
+            except openai.APIStatusError as fallback_error:
                 if fallback_error.status_code == 400 and "input should be 'json_schema'" in str(fallback_error).lower():
                     raise Exception(f"API requires json_schema response format but rejected the schema. Original error: {e}")
                 raise Exception(f"API call failed: {e}. Fallback also failed: {fallback_error}")
@@ -5033,7 +5074,7 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
                 raise Exception(f"API call failed: {e}. Fallback also failed: {fallback_error}")
         else:
             raise Exception(f"API status error ({e.status_code}): {e}")
-    except (APIConnectionError, RateLimitError) as e:
+    except (openai.APIConnectionError, openai.RateLimitError) as e:
         # These should always be retried
         raise Exception(f"API connection/rate limit error - retrying... Error: {e}")
     except Exception as e:

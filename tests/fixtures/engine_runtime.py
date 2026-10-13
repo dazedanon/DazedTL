@@ -7,6 +7,7 @@ import socket
 import sys
 import threading
 from copy import deepcopy
+from importlib import import_module
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -52,6 +53,12 @@ try:
         from desktop.backend.manual import compatible, signature
         from util.paths import PROMPT_PATH, runtime_data_file
         from util.skills import load_project_setup, load_system_prompt
+
+        # The app and its estimate workers start without the provider SDKs,
+        # which took seconds of every worker's startup on Windows.
+        for module in ("util.batch_providers", "util.translation"):
+            import_module(module)
+        assert not {"anthropic", "openai"} & set(sys.modules), "An SDK loaded."
 
         # A real saved run recorded this pre-version byte hash; it must still pass
         # the native resume guard, alongside plans that record the version.

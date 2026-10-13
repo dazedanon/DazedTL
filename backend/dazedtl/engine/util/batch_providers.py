@@ -15,8 +15,6 @@ import tempfile
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-import anthropic
-import openai
 from util import extensions
 
 
@@ -113,7 +111,11 @@ def get_client(provider: str, *, api_key: str | None = None,
             key = "not-needed"
         elif not key:
             raise RuntimeError(f"{batch_provider_label(provider)} requires an API key")
+    # Each SDK loads with its first client; importing both took most of a
+    # worker's startup, seconds on Windows.
     if provider == PROVIDER_ANTHROPIC:
+        import anthropic
+
         kwargs = {"api_key": key}
         if max_retries is not None:
             kwargs["max_retries"] = max_retries
@@ -123,6 +125,8 @@ def get_client(provider: str, *, api_key: str | None = None,
                 base_url = base_url[:-3]
             kwargs["base_url"] = base_url
         return anthropic.Anthropic(**kwargs)
+    import openai
+
     if provider == PROVIDER_GEMINI:
         kwargs = dict(
             api_key=key,
