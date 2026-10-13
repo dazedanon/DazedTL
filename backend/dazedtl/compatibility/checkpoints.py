@@ -2,10 +2,9 @@
 
 import io
 import os
-import threading
 from pathlib import Path
 
-from dazedtl.storage import write_json
+from dazedtl.storage import exclusive, write_json
 from dazedtl.translation.files import (
     Digests,
     decode_json,
@@ -15,6 +14,7 @@ from dazedtl.translation.files import (
 )
 
 INDEX = "log/dazedtl-checkpoints.json"
+LOCK = "log/dazedtl-checkpoints.lock"
 
 
 def can_collect_outputs(job):
@@ -115,7 +115,6 @@ def install(module, root, plan):
     root = Path(root).resolve()
     names = {row["name"] for row in plan["files"]}
     plan_hash = digest((root / "plan.json").read_bytes())
-    lock = threading.Lock()
 
     def save(native, data, filename, *args, **kwargs):
         saved = native(data, filename, *args, **kwargs)
@@ -124,7 +123,9 @@ def install(module, root, plan):
             raw = path.read_bytes()
             if not isinstance(decode_json(raw), (dict, list)):
                 raise ValueError("The engine checkpoint is not game JSON.")
-            with lock:
+            # Concurrent files save from separate worker processes, so a lock
+            # private to one worker let another's receipt overwrite its own.
+            with exclusive(project_path(root, LOCK, exists=False)):
                 index = project_path(root, INDEX, exists=False)
                 record = (
                     read_json(index)

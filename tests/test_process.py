@@ -1412,6 +1412,46 @@ class ProcessTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 checkpoints.outputs(root, plan)
 
+    def test_concurrent_file_workers_keep_every_checkpoint_receipt(self):
+        # Concurrent files save from separate workers, each with its own
+        # checkpoint layer. A lock private to each let one worker's receipt
+        # replace another's, so a stopped run's finished files read as unsaved
+        # and were translated again.
+        from dazedtl.compatibility import checkpoints
+
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            names = [
+                f"Map{worker}{number:02d}.json"
+                for worker in range(4)
+                for number in range(30)
+            ]
+            plan = {"mode": "translate", "files": [{"name": name} for name in names]}
+            write_json(root / "plan.json", plan)
+
+            def worker(index):
+                module = SimpleNamespace(
+                    saveProgress=point(
+                        lambda data, name, **_: (
+                            write_json(root / "translated" / name, data),
+                            True,
+                        )[1]
+                    ),
+                    open=point(open),
+                )
+                checkpoints.install(module, root, plan)
+                for name in names[index * 30 : (index + 1) * 30]:
+                    module.saveProgress([{"name": name}], name)
+
+            workers = [
+                threading.Thread(target=worker, args=(index,)) for index in range(4)
+            ]
+            for thread in workers:
+                thread.start()
+            for thread in workers:
+                thread.join()
+            self.assertEqual(sorted(checkpoints.outputs(root, plan)), sorted(names))
+
     def test_consumed_batch_recovers_only_exact_validated_translations_without_inventing_raw_responses(
         self,
     ):
