@@ -3,6 +3,7 @@
 ### Changed
 
 - **Translate:** names and labels translated with Live before a Batch now join the game glossary in **Context** > **Guidance** even when you decline the Batch, so you can see and edit them there. Completed runs already added them.
+- **Translate:** cost estimates and Batch preparation take less time on large games, about a third less on Linux and up to a fifth less on Windows.
 
 ### Fixed
 
