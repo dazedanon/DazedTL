@@ -94,6 +94,9 @@ class GuidedContext:
                         if key in documents
                     ),
                 ],
+                # The assistant keeps investigating after these; the task
+                # ends with its measured widths.
+                "finish": guided / "context-findings.json",
             }
             text = (
                 speaker_setup.instructions(request, command)

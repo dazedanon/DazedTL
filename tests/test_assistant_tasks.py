@@ -32,6 +32,15 @@ class AssistantTaskTests(unittest.TestCase):
             os.utime(report, (later, later))
             [row] = tasks.view(PROJECT)
             self.assertGreaterEqual(row["resultAt"], row["copiedAt"])
+            self.assertNotIn("finishedAt", row)
+            # A task that keeps working after its results reads its last one.
+            last = Path(folder, "last.json")
+            tasks.copied(PROJECT, {**handoff, "finish": last})
+            self.assertIsNone(tasks.view(PROJECT)[0]["finishedAt"])
+            last.write_text("{}")
+            os.utime(last, (later, later))
+            [row] = tasks.view(PROJECT)
+            self.assertGreaterEqual(row["finishedAt"], row["copiedAt"])
 
             tasks.dismiss(PROJECT, "qa")
             self.assertTrue(AssistantTasks(folder).view(PROJECT)[0]["dismissed"])

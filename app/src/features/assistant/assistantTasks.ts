@@ -94,6 +94,22 @@ const savedSinceCopy = (record?: AssistantTaskRecord) =>
   Date.parse(record.resultAt) >= Date.parse(record.copiedAt);
 
 /**
+ * A copied task its assistant is still working on: nothing came back since
+ * the copy, or the result it saves last has not. A dismissed task is not.
+ */
+export function unfinishedCopy(record?: AssistantTaskRecord) {
+  if (!record || record.dismissed) return false;
+  if (!savedSinceCopy(record)) return true;
+  return (
+    record.finishedAt !== undefined &&
+    !(
+      record.finishedAt &&
+      Date.parse(record.finishedAt) >= Date.parse(record.copiedAt)
+    )
+  );
+}
+
+/**
  * Each kind from its feature's own saved state. `back` says whether a result
  * the copied task expects was saved since the copy; a task without a record
  * (copied before records existed) counts only when its feature waits.
@@ -121,7 +137,9 @@ function standing(
         guided.contextSetup.status === "waiting"
         ? waiting(saved ? `${saved} of ${rows.length} saved` : "")
         : { state: "idle" };
-    return { state: "finished" };
+    // The assistant goes on to the speaker slips, glossary and line widths
+    // after its first results; the widths come last.
+    return unfinishedCopy(record) ? waiting() : { state: "finished" };
   }
   if (kind === "line_widths") {
     if (!guided || !copied) return { state: "idle" };

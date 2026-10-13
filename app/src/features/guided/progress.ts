@@ -1,4 +1,5 @@
 import type {
+  AssistantTaskRecord,
   GuidedState,
   GuidedStep,
   ImageForeignWork,
@@ -8,6 +9,7 @@ import type {
   TranslationState,
 } from "../../api/contracts";
 import { investigationResults } from "./contextView.ts";
+import { unfinishedCopy } from "../assistant/assistantTasks.ts";
 import { nothingToTranslate } from "./eventTextSelection.ts";
 import { guidanceAvailability } from "./guidanceReview.ts";
 import { pluginsComplete } from "../plugins/pluginTask.ts";
@@ -33,6 +35,8 @@ export type ObservedWork = {
   /** Work another project saved in the game folder, waiting for a choice. */
   pluginsForeign?: PluginForeignWork;
   imagesForeign?: ImageForeignWork;
+  /** Copied assistant tasks, so a task its assistant still works on is not done. */
+  assistantTasks?: AssistantTaskRecord[];
 };
 
 /** Tasks that need the user's choice before their work can continue. */
@@ -55,6 +59,7 @@ export function completedTasks(
     widthsDirty = false,
     plugins,
     images,
+    assistantTasks = [],
   }: { values?: Values; widthsDirty?: boolean } & ObservedWork = {},
 ) {
   const sourceBackup = translation.lifecycle.source_backup;
@@ -89,7 +94,10 @@ export function completedTasks(
       (state.comparisons.status === "ready" && phaseComplete("variables")))
       ? ["other-event-text"]
       : []),
-    ...(investigationResults(state).every((row) => row.saved) ? ["names"] : []),
+    ...(investigationResults(state).every((row) => row.saved) &&
+    !unfinishedCopy(assistantTasks.find((row) => row.kind === "names"))
+      ? ["names"]
+      : []),
     // Current findings settle the sources, and so do sources chosen by hand.
     ...(state.eventText.status === "ready" || state.eventText.enabled.length
       ? ["event-sources"]

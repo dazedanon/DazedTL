@@ -2323,6 +2323,7 @@ export type AssistantTaskRecord = {
   copiedAt: string;
   resultAt: string | null;
   dismissed: boolean;
+  finishedAt?: string | null;
 };
 
 export type WorkspaceSnapshot = {

@@ -302,7 +302,8 @@ def review(path, documents, native, name, revision, choice):
 
 
 def instructions(value, command):
-    return f"""
+    return (
+        f"""
 ## Save guidance and optional layout recommendations
 
 Keep this investigation focused on speaker formats, reusable glossary/context, and measured UI layout.
@@ -322,7 +323,13 @@ completes guidance setup; no document hashes, completion report or review receip
 Read `{command}` to confirm the saved files are available.
 
 Do not execute translation, paid name translation or API submission as part of this setup task.
-""" + layout_instructions(value, command)
+"""
+        + layout_instructions(value, command)
+        + f"""
+Save `{REPORT}` last, after every other step of this task, including the speaker slip reviews
+and guidance files: the app shows this task as finished once that report is saved.
+"""
+    )
 
 
 def layout_instructions(value, command):
@@ -348,7 +355,7 @@ Replace layout null with the measured values and their evidence:
 Those values are schema examples, not measurements. `messageRows` is the rows one message window
 shows before the game starts a new window. Use only measured values with source evidence, confirmed
 on screen as the measurement steps describe, and say in `reason` what the captures showed or what
-could not be seen; otherwise omit the optional layout record and report the unresolved geometry.
+could not be seen; otherwise save the report with `layout` null and report the unresolved geometry.
 The app automatically saves verified widths as the project’s character limits; the user does not
 need to accept them in Layout. Read `{command}` to confirm `layoutApplication` is `applied`.
 An active operation or pending option edits may defer the save. Later manual width edits are retained.

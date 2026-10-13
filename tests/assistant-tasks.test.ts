@@ -172,4 +172,38 @@ test("copied tasks wait for a newer result, and dismissed ones read Not started"
     ]),
     [["image_discovery", "waiting", "2026-10-05T08:00:00Z"]],
   );
+
+  // Names & glossary saves its first results long before its assistant
+  // stops; it waits until the widths it saves last arrive.
+  const names = (finishedAt?: string | null) => ({
+    records: [
+      {
+        kind: "names",
+        requestId: "request",
+        copiedAt: "2026-10-07T10:00:00.000+00:00",
+        resultAt: "2026-10-07T10:05:00.000+00:00",
+        dismissed: false,
+        ...(finishedAt !== undefined && { finishedAt }),
+      } as AssistantTaskRecord,
+    ],
+    guided: {
+      speakerSetup: { status: "applied", reportId: "report", rules: [] },
+      speakerScan: { available: true, names: [], files: 1 },
+      contextSetup: {
+        status: "ready",
+        documents: Object.fromEntries(
+          ["glossary", "quirks", "game"].map((name) => [
+            name,
+            { exists: true },
+          ]),
+        ),
+      },
+      eventText: { status: "missing" },
+    } as unknown as GuidedState,
+  });
+  for (const finishedAt of [null, "2026-10-06T09:00:00.000+00:00"])
+    assert.equal(assistantWaiting("names", names(finishedAt)).waiting, true);
+  assert.deepEqual(assistantTasks(names("2026-10-07T10:40:00.000+00:00")), []);
+  // A copy recorded before tasks named their last result finishes as before.
+  assert.deepEqual(assistantTasks(names()), []);
 });

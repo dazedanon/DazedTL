@@ -3,8 +3,10 @@
 Each feature's copy reply says what it handed out: its kind, request id and
 the result files it expects back. One record per kind keeps when it was
 copied, so the app can say what is still waiting without asking each
-feature, and whether anything came back since. The features keep their own
-requests, reports and validation.
+feature, and whether anything came back since. A task that keeps working
+after its first results also names the file it saves last, so it does not
+read finished early. The features keep their own requests, reports and
+validation.
 """
 
 from __future__ import annotations
@@ -75,6 +77,7 @@ class AssistantTasks:
                 "requestId": str(handoff.get("requestId") or ""),
                 "copiedAt": _time(),
                 "expects": [str(path) for path in handoff.get("expects", [])],
+                **({"finish": str(handoff["finish"])} if handoff.get("finish") else {}),
             }
             self._save(project_id, tasks)
 
@@ -99,19 +102,27 @@ class AssistantTasks:
         """
         rows = []
         for kind, record in self._load(project_id).items():
-            saved = []
-            for path in record.get("expects", []):
-                try:
-                    saved.append(Path(path).stat().st_mtime)
-                except OSError:
-                    continue
-            rows.append(
-                {
-                    "kind": kind,
-                    "requestId": record.get("requestId", ""),
-                    "copiedAt": record.get("copiedAt", ""),
-                    "resultAt": _time(max(saved)) if saved else None,
-                    "dismissed": bool(record.get("dismissed")),
-                }
-            )
+            saved = [
+                time
+                for path in record.get("expects", [])
+                if (time := _saved(path)) is not None
+            ]
+            row = {
+                "kind": kind,
+                "requestId": record.get("requestId", ""),
+                "copiedAt": record.get("copiedAt", ""),
+                "resultAt": _time(max(saved)) if saved else None,
+                "dismissed": bool(record.get("dismissed")),
+            }
+            if record.get("finish"):
+                finished = _saved(record["finish"])
+                row["finishedAt"] = None if finished is None else _time(finished)
+            rows.append(row)
         return sorted(rows, key=lambda row: row["copiedAt"])
+
+
+def _saved(path):
+    try:
+        return Path(path).stat().st_mtime
+    except OSError:
+        return None

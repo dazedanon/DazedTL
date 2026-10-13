@@ -25,6 +25,7 @@ import { Button } from "../../../ui/Button";
 import { projectActivity } from "../ActivityHistory";
 import type { RequestInspectionTarget } from "../ProcessPanel";
 import { investigationResults } from "../contextView";
+import { unfinishedCopy } from "../../assistant/assistantTasks";
 import {
   type SelectorKey,
   type SourcePickerDraft,
@@ -229,7 +230,12 @@ export function useGuidedWorkspace({
   const scan = state.speakerScan;
   const discovery = state.contextSetup;
   const investigation = investigationResults(state);
-  const investigationDone = investigation.every((row) => row.saved);
+  // The copied task goes on after its results; its notice stays until it stops.
+  const investigationDone =
+    investigation.every((row) => row.saved) &&
+    !unfinishedCopy(
+      application.snapshot?.assistantTasks.find((row) => row.kind === "names"),
+    );
   const [setupCopiedOpen, setSetupCopiedOpen] = useState(false);
   const scanOptionsDirty =
     JSON.stringify(values.engine_options) !==
@@ -1479,6 +1485,7 @@ export function useGuidedWorkspace({
     widthsDirty,
     plugins: application.snapshot?.plugins,
     images: application.snapshot?.images,
+    assistantTasks: application.snapshot?.assistantTasks,
   });
   const needsReview = reviewTasks({
     pluginsForeign: application.snapshot?.pluginsForeign,

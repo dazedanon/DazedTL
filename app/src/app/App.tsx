@@ -178,6 +178,7 @@ export default function App() {
           images: application.snapshot?.images,
           pluginsForeign: application.snapshot?.pluginsForeign,
           imagesForeign: application.snapshot?.imagesForeign,
+          assistantTasks: application.snapshot?.assistantTasks,
         })
       : null;
   const amounts = progress && guidedState ? projectAmounts(guidedState) : null;

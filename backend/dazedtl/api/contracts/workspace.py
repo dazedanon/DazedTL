@@ -63,6 +63,9 @@ class AssistantTaskRecord(TypedDict):
     # When a result the task expects was last saved, from file times.
     resultAt: str | None
     dismissed: bool
+    # When the result the task saves last was saved, for a task that keeps
+    # working after its first results; null until it is.
+    finishedAt: NotRequired[str | None]
 
 
 class WorkspaceSnapshot(TypedDict):

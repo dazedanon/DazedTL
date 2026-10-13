@@ -44,10 +44,11 @@ export function ContextWorkspace({
     ["failed", "unavailable"].includes(row.status),
   );
   const handoff = useHandoff("names");
-  // Saved results complete the task; reading them over is advice, not a
-  // review the app waits for.
+  // Saved results complete the task once its assistant stops; reading them
+  // over is advice, not a review the app waits for.
+  const finishing = saved === results.length && handoff.waiting;
   const taskState = withHandoff(
-    saved === results.length
+    saved === results.length && !handoff.waiting
       ? "done"
       : problem
         ? "blocked"
@@ -72,9 +73,11 @@ export function ContextWorkspace({
             ? "Look over the guidance before translating."
             : taskState === "blocked"
               ? problem!.detail
-              : taskState === "waiting"
-                ? "Results appear here as your assistant saves them."
-                : "Your assistant finds speaker formats, running jokes and terms, and writes the glossary and game context; a local scan collects names."
+              : finishing
+                ? "Your assistant is still investigating; the task finishes when it saves the line widths."
+                : taskState === "waiting"
+                  ? "Results appear here as your assistant saves them."
+                  : "Your assistant finds speaker formats, running jokes and terms, and writes the glossary and game context; a local scan collects names."
         }
         results={results.map((row) => ({
           id: row.id,
