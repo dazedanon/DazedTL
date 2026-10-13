@@ -38,7 +38,10 @@ def start(directory, workspace, plan):
         != "anthropic"
     ):
         return None
-    with (Path(directory) / "log/startup.txt").open("a", encoding="utf-8") as errors:
+    # A run started a moment ago has not made its log folder yet.
+    log = Path(directory) / "log"
+    log.mkdir(exist_ok=True)
+    with (log / "startup.txt").open("a", encoding="utf-8") as errors:
         return subprocess.Popen(
             [sys.executable, "-u", str(Path(__file__).resolve()), str(directory)],
             cwd=directory,
