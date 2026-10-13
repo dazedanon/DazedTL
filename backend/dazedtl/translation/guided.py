@@ -609,6 +609,8 @@ class Guided:
             return self._state(project_id)
 
     def _state(self, project_id):
+        # Before anything reads the glossary this observation.
+        self.runs.publish_names(project_id, self.record(project_id)[1])
         context = self.context_status(project_id)
         project, native = self.record(project_id)
         value = self.backend.workflows.state(native["id"])

@@ -18,6 +18,8 @@ class GuidedRuns:
     def __init__(self, guided):
         self.guided = guided
         self.comparison_files = {}
+        # The game glossary revision a name publish last failed on.
+        self.name_failures = {}
 
     def records(self, project_id):
         return self.guided.observations.once(
@@ -207,6 +209,91 @@ class GuidedRuns:
             "file_versions": versions,
             "reused_names": reused_names,
         }
+
+    def publish_names(self, project_id, native):
+        """Adds paid names the game glossary lacks once no run can collect it.
+
+        Collecting a completed run copies its glossary, names included, over
+        the game's and refuses one changed since the run began. A Batch
+        declined or stopped before its own approval, with nothing sent, can
+        never complete, so the names it paid for are added here, once per run."""
+        from dazedtl.compatibility.batch_continuation import APPROVAL
+        from dazedtl.compatibility.process_view import evidence_root, saved
+        from dazedtl.compatibility.speaker_results import merge_missing
+
+        jobs = getattr(getattr(self.guided.backend, "manual", None), "jobs", {})
+        latest = jobs.get(native.get("manual_job") or "")
+        if (
+            not latest
+            or latest.get("mode") != "batch"
+            or latest.get(APPROVAL)
+            or latest.get("status") in {"ready", "running", "waiting"}
+            or self.guided.backend.running()
+            or self.guided.translation.jobs.running()
+        ):
+            return
+        path = self.guided.path(project_id, "published-names")
+        published = set(read_json(path).get("runs", [])) if path.exists() else set()
+        root = self.guided.backend.manual.folder(latest["id"])
+        if (
+            latest["id"] in published
+            # Approving the names records submission intent too; only a sent
+            # Batch can still be continued without the Batch's own approval.
+            or saved(evidence_root(root), "batch_history.json").get("batches")
+            or "glossary"
+            in self.guided.backend.workflows.state(native["id"])
+            .get("draft", {})
+            .get("documents", {})
+        ):
+            return
+        configuration = self.guided.observations.once(
+            ("configuration", "batch", True),
+            lambda: self.guided.settings.guided_configuration(
+                "batch", cached_only=True
+            ),
+        )
+        rows = [
+            row
+            for row in self.name_reuse(native, configuration.get("language"))
+            if row["runId"] not in published
+        ]
+        if not rows:
+            return
+        try:
+            glossary = self.guided.backend.workflows.documents(native["id"])["glossary"]
+        except OSError, ValueError:
+            return
+        if self.name_failures.get(project_id) == glossary["revision"]:
+            return
+        from util.translation import (
+            parseVocabWithCategories,
+            speaker_source_lookup_keys,
+            split_vocab_source_aliases,
+        )
+
+        text, added = merge_missing(
+            glossary["text"],
+            rows,
+            parseVocabWithCategories,
+            split_vocab_source_aliases,
+            speaker_source_lookup_keys,
+        )
+        try:
+            if added:
+                self.guided.backend.workflows.document_save(
+                    native["id"], "glossary", glossary["revision"], text
+                )
+            write_json(
+                path,
+                {
+                    "version": 1,
+                    "runs": sorted(published | {row["runId"] for row in rows}),
+                },
+            )
+        except OSError, ValueError:
+            # The names stay reusable from their runs; try again once the
+            # glossary changes.
+            self.name_failures[project_id] = glossary["revision"]
 
     def name_reuse(self, native, language):
         return self.guided.observations.once(

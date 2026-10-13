@@ -607,9 +607,8 @@ class GuidedTests(unittest.TestCase):
             self.guided.execute(self.identity, preview["token"])
         self.assertEqual(self.started, [])
 
-    def test_canceled_batch_keeps_paid_names_in_quotes_without_crossing_ownership(self):
-        # Protect paying for the same names again after declining the map Batch,
-        # while keeping unrelated projects, languages and source passes isolated.
+    def declined_names_run(self):
+        """A map Batch declined after its names were translated and saved."""
         identity = "paid-names"
         root = self.backend.manual.folder(identity)
         plan = {
@@ -630,6 +629,8 @@ class GuidedTests(unittest.TestCase):
             "files": ["Items.json"],
             "dazedtl_preapproval": True,
             "dazedtl_approved": True,
+            # Approving the names records it, though no Batch was approved.
+            "dazedtl_submission_intent": True,
             "estimate": {"speakers": ["回想部屋"]},
             "log": ["Speaker translations saved to the game glossary."],
             "plan_hash": digest((root / "plan.json").read_bytes()),
@@ -639,6 +640,12 @@ class GuidedTests(unittest.TestCase):
         self.backend.saved_run_configuration = lambda run: read_json(
             self.backend.manual.folder(run) / "plan.json"
         )
+        return identity, root, plan
+
+    def test_canceled_batch_keeps_paid_names_in_quotes_without_crossing_ownership(self):
+        # Protect paying for the same names again after declining the map Batch,
+        # while keeping unrelated projects, languages and source passes isolated.
+        identity, root, plan = self.declined_names_run()
         reused = self.guided.runs.name_reuse(self.native, "English")
         self.assertEqual(
             reused,
@@ -686,6 +693,58 @@ class GuidedTests(unittest.TestCase):
             {"version": 1, "inputs": {}, "retired_runs": [identity]},
         )
         self.assertEqual(self.guided.runs.name_reuse(self.native, "English"), [])
+
+    def test_declined_batch_adds_its_paid_names_to_the_game_glossary_once(self):
+        # Paid names stayed in the declined run's own glossary, so the game's
+        # never showed them. Collecting a completed run copies its glossary
+        # over the game's, so a Batch that may still complete is left to that.
+        identity, _root, _plan = self.declined_names_run()
+        self.native["manual_job"] = identity
+        glossary = {"text": "# Game Characters\nミカ (Mika)", "revision": "r1"}
+        saved = []
+
+        def save(_owner, name, revision, text):
+            self.assertEqual((name, revision), ("glossary", glossary["revision"]))
+            saved.append(text)
+            glossary.update(text=text, revision=f"r{len(saved) + 1}")
+
+        drafts = {"glossary": {"text": "", "revision": "r1"}}
+        self.backend.workflows.documents = lambda _: {"glossary": dict(glossary)}
+        self.backend.workflows.document_save = save
+        self.backend.workflows.state = lambda _: {
+            "project": self.native,
+            "draft": {"documents": drafts},
+        }
+        fake = SimpleNamespace(
+            parseVocabWithCategories=lambda text: [
+                ((source.strip(), target), line, "")
+                for line in text.splitlines()
+                if " (" in line
+                for source, target in [line.removesuffix(")").split(" (", 1)]
+            ],
+            split_vocab_source_aliases=lambda source: [source],
+            speaker_source_lookup_keys=lambda source: [source],
+        )
+        job = self.backend.manual.jobs[identity]
+        with patch.dict("sys.modules", {"util.translation": fake}):
+            self.guided.runs.publish_names(self.identity, self.native)
+            drafts.clear()
+            job["dazedtl_batch_approval"] = {"requests": 1}
+            self.guided.runs.publish_names(self.identity, self.native)
+            self.assertEqual(saved, [])
+            del job["dazedtl_batch_approval"]
+            self.guided.runs.publish_names(self.identity, self.native)
+            self.assertEqual(
+                saved,
+                [
+                    "# Game Characters\nミカ (Mika)\n\n"
+                    + "# Speakers\n回想部屋 (Recollection Room)\n\n"
+                ],
+            )
+            # Removing them from the game glossary is the user's choice.
+            glossary["text"] = "# Game Characters\nミカ (Mika)"
+            self.guided.runs.publish_names(self.identity, self.native)
+        self.assertEqual(len(saved), 1)
 
     def test_translation_preparation_survives_reopen_and_cancel_targets_its_estimate(
         self,

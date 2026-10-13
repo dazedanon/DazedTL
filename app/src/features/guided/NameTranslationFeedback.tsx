@@ -88,7 +88,7 @@ function NameResults({ read, close }: { read: Reader; close: () => void }) {
     >
       <DialogHeader
         title="Translated names and labels"
-        description="Saved in this run’s glossary for the file translation. These entries let you review the wording."
+        description="Saved in this run’s glossary for its files. When the run ends, they join the game glossary, where you can edit them."
         onClose={close}
       />
       <DialogBody>

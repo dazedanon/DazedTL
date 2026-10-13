@@ -86,6 +86,7 @@ Translate has five tasks.
    Translate the database first, and try a small early scene before the rest.
 2. Choose **Batch** (often half the price, but can take hours) or **Live** (results arrive as you watch), and the model.
 3. Click **Translate**, check the estimate and approve it.
+   With **Batch**, names and labels the glossary lacks are translated first with Live, after their own review; they join the glossary even if you then decline the Batch.
 4. Click **Apply** to write the translations into the game.
 
 Approved Batch work carries on after DazedTL restarts.

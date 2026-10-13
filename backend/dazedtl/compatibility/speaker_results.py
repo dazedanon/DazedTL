@@ -305,9 +305,21 @@ def merge_missing(text, rows, parse, aliases, keys, base_separator=""):
     if section:
         return text[: section.end()] + entries + text[section.end() :], added
     prefix = text[:boundary]
-    return prefix + (
-        newline if prefix and not prefix.endswith("\n") else ""
-    ) + newline + "# Speakers" + newline + entries + newline + text[boundary:], added
+    if not prefix.strip():
+        prefix = ""
+    elif not prefix.endswith("\n"):
+        prefix += newline
+    # A blank line before the new section, unless it opens the glossary.
+    return (
+        prefix
+        + (newline if prefix else "")
+        + "# Speakers"
+        + newline
+        + entries
+        + newline
+        + text[boundary:],
+        added,
+    )
 
 
 def seed(root, plan, rows):

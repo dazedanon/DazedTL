@@ -99,6 +99,8 @@ The shared observer exposes pending, saved and unavailable outcomes; Batch revie
 Name feedback is a compact secondary note below the reviewed cost and file scope, or beneath the active preparation status, with its inspection action adjacent.
 Approval alone never establishes success.
 Declining or stopping the file Batch keeps approved names reusable in the next run’s frozen glossary, with current glossary entries and aliases taking precedence.
+Paid names also join the game glossary: collecting a completed run copies its glossary over the game’s and refuses one changed since the run began, so the observer adds names the game glossary lacks only once the latest run is a Batch that can never complete: declined or stopped before its own approval, with no Batch sent ([publish_names](../backend/dazedtl/translation/guided_runs.py)).
+It adds each run’s names once, to the Speakers section, while no run or operation is active and no glossary draft is open; a name the user later removes stays removed.
 Reuse is bound to the project, target language and source pass, participates in estimate identity, and preserves the shared guidance and drafts.
 Older runs, including those whose first receipt version called a finished save unavailable as a whole, can recover exact entries only from retained approved names, native save evidence and that run’s glossary.
 Closing preparation after approving names preserves the paid run.
