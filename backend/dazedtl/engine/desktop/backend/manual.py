@@ -135,6 +135,26 @@ def run_plan(workspace, inventory, files, mode, context_source="", *, workflow=N
             "context_source": str(Path(context_source).expanduser().resolve(strict=True)) if context_source else "", "workflow": workflow}
 
 
+def speaker_scan_inputs(plan):
+    """What a speaker scan of a run's files depends on; an estimate's scan
+    serves a Batch preparation whose plan matches it here."""
+    keys = ("engine", "signature", "files", "selected", "settings", "engines",
+            "runtime_profile", "context_hashes", "workflow")
+    return digest(json.dumps({key: plan.get(key) for key in keys}, ensure_ascii=False, sort_keys=True).encode())
+
+
+def reusable_speaker_scan(plan):
+    """The names a Batch preparation's frozen estimate scan found, or None
+    when the scan read other inputs and the preparation must scan itself."""
+    scanned = plan.get("scanned_speakers")
+    if (plan.get("mode") != "batch" or not isinstance(scanned, dict)
+            or scanned.get("inputs") != speaker_scan_inputs(plan)
+            or not isinstance(scanned.get("collected"), list)
+            or not all(isinstance(name, str) for name in scanned["collected"])):
+        return None
+    return list(scanned["collected"])
+
+
 def snapshot_context(directory, plan, workspace):
     """Freezes the shared instructions and the game's portable guidance into a run folder."""
     from .rpgmaker import import_context

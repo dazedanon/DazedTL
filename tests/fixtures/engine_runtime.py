@@ -50,7 +50,12 @@ try:
     assert app.state()["project"] is None
     assert app.backend.source == ENGINE_ROOT
     with app.backend.context():
-        from desktop.backend.manual import compatible, signature
+        from desktop.backend.manual import (
+            compatible,
+            reusable_speaker_scan,
+            signature,
+            speaker_scan_inputs,
+        )
         from util.paths import PROMPT_PATH, runtime_data_file
         from util.skills import load_project_setup, load_system_prompt
 
@@ -59,6 +64,20 @@ try:
         for module in ("util.batch_providers", "util.translation"):
             import_module(module)
         assert not {"anthropic", "openai"} & set(sys.modules), "An SDK loaded."
+        # A Batch preparation reuses its estimate's speaker scan only when it
+        # read the same inputs; a changed file must be scanned again.
+        scan_plan = {
+            "mode": "batch",
+            "files": [{"name": "Map001.json", "sha256": "a"}],
+            "selected": ["Map001.json"],
+        }
+        scan_plan["scanned_speakers"] = {
+            "inputs": speaker_scan_inputs(scan_plan),
+            "collected": ["村長"],
+        }
+        assert reusable_speaker_scan(scan_plan) == ["村長"]
+        scan_plan["files"] = [{"name": "Map001.json", "sha256": "b"}]
+        assert reusable_speaker_scan(scan_plan) is None
 
         # A real saved run recorded this pre-version byte hash; it must still pass
         # the native resume guard, alongside plans that record the version.

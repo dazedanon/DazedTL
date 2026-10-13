@@ -165,8 +165,16 @@ class TranslationTaskCore:
     def initialize(self, project_root, module_info, estimate_only=False, selected_files=None,
                  parse_speakers=False, batch_mode=False, batch_resume_state=None,
                  batch_workflow_return=None, *, code_root=None, runner_script=None,
-                 runtime_profile=None, resume_cached=False, preserve_batch_queue=False):
+                 runtime_profile=None, resume_cached=False, preserve_batch_queue=False,
+                 speaker_scan=None, scanned_speakers=None):
         self.project_root = Path(project_root)
+        # An estimate heading into a Batch records its speaker scan, keyed by
+        # the inputs it read; that Batch's preparation reuses the names
+        # instead of reading every file again.
+        self.speaker_scan = speaker_scan
+        self.scanned_speakers = (
+            list(scanned_speakers) if scanned_speakers is not None else None
+        )
         self.code_root = Path(code_root) if code_root is not None else self.project_root
         self.runner_script = Path(runner_script) if runner_script is not None else self.code_root / "util/subprocess_runner.py"
         self.runtime_profile_override = runtime_profile
@@ -751,15 +759,74 @@ class TranslationTaskCore:
             self.emit_log(f"❌ Failed to run module process: {str(e)}")
             return "Fail"
 
+    def _speaker_parser(self):
+        """The RPG Maker parser, configured as this run's files will be read."""
+        import modules.rpgmakermvmz as mvmz
+        mvmz.refreshRuntimeConfig()
+        if self.batch_runtime_profile is not None:
+            from util.runtime_profile import apply_batch_runtime_profile
+
+            apply_batch_runtime_profile(mvmz, self.batch_runtime_profile)
+        return mvmz
+
+    def _scan_mvmz_speakers(self, mvmz, matching_files, on_file):
+        """Collect every file's nameplates in speaker-parse mode, which makes no
+        API calls; ``on_file(filename, error)`` follows each file. Returns
+        the files that failed, or None when the run stopped."""
+        failures = []
+        for filename in matching_files:
+            if self.should_stop:
+                return None
+            error = None
+            if not _is_nontranslatable_mvmz_file(filename):
+                try:
+                    mvmz.handleMVMZ(filename, False)
+                except Exception as exc:
+                    failures.append(filename)
+                    line = traceback.extract_tb(sys.exc_info()[2])[-1].lineno
+                    error = f"{exc} | Line: {line}"
+            on_file(filename, error)
+        return failures
+
+    def _record_speaker_scan(self, matching_files):
+        """An estimate's speaker scan for the Batch preparation after it.
+
+        It runs beside the estimate's own worker, quietly: the estimate's
+        progress and messages stay its own, and a scan that fails or stops
+        is simply not recorded.
+        """
+        try:
+            mvmz = self._speaker_parser()
+            mvmz.resetSpeakerState()
+            mvmz.setSpeakerParseMode(True)
+            try:
+                failures = self._scan_mvmz_speakers(
+                    mvmz, matching_files, lambda *_args: None
+                )
+                collected = list(dict.fromkeys(
+                    name for name in mvmz.SPEAKER_COLLECTED if name
+                ))
+            finally:
+                mvmz.setSpeakerParseMode(False)
+            if failures is None or failures:
+                return
+            path = self.project_root / "log/speaker_scan.json"
+            temporary = path.with_name(path.name + ".tmp")
+            temporary.write_text(
+                json.dumps(
+                    {"version": 1, "inputs": self.speaker_scan, "collected": collected},
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            os.replace(temporary, path)
+        except Exception as exc:
+            self.emit_log(f"Speaker scan for the Batch was not saved: {exc}")
+
     def _prepare_mvmz_speakers(self, matching_files, *, emit_progress=False):
         """Scan selected RPG Maker files, then resolve all new speakers together."""
         try:
-            import modules.rpgmakermvmz as mvmz
-            mvmz.refreshRuntimeConfig()
-            if self.batch_runtime_profile is not None:
-                from util.runtime_profile import apply_batch_runtime_profile
-
-                apply_batch_runtime_profile(mvmz, self.batch_runtime_profile)
+            mvmz = self._speaker_parser()
         except Exception as exc:
             self.emit_log(f"❌ Could not start speaker preflight: {exc}")
             return False
@@ -770,38 +837,40 @@ class TranslationTaskCore:
         completed = 0
         scan_failures = []
         try:
-            self.status_signal.emit("Scanning speakers…")
-            self.emit_log(
-                f"🔎 Scanning {total_files} file(s) for unresolved speakers "
-                "without making API calls…"
-            )
-            for filename in matching_files:
-                if self.should_stop:
-                    return False
-                if _is_nontranslatable_mvmz_file(filename):
-                    self._report_unsupported_mvmz_file(filename)
+            if self.scanned_speakers is not None:
+                mvmz.SPEAKER_COLLECTED.extend(self.scanned_speakers)
+                completed = total_files
+                self.emit_log(
+                    f"🔎 Reusing the estimate's speaker scan of {total_files} file(s)."
+                )
+            else:
+                self.status_signal.emit("Scanning speakers…")
+                self.emit_log(
+                    f"🔎 Scanning {total_files} file(s) for unresolved speakers "
+                    "without making API calls…"
+                )
+
+                def scanned(filename, error):
+                    nonlocal completed
+                    if _is_nontranslatable_mvmz_file(filename):
+                        self._report_unsupported_mvmz_file(filename)
+                    elif error is not None:
+                        self.emit_log(
+                            f"❌ Error scanning speakers in {filename}: {error}"
+                        )
+                        self.file_error_signal.emit(filename, error.rsplit(" | Line: ", 1)[0])
                     completed += 1
                     self.status_signal.emit(
                         f"Scanning speakers… {completed}/{total_files}"
                     )
                     if emit_progress:
                         self.emit_progress(completed, total_files, filename)
-                    continue
-                try:
-                    mvmz.handleMVMZ(filename, False)
-                except Exception as exc:
-                    scan_failures.append(filename)
-                    tb_line = str(traceback.extract_tb(sys.exc_info()[2])[-1].lineno)
-                    self.emit_log(
-                        f"❌ Error scanning speakers in {filename}: {exc} | Line: {tb_line}"
-                    )
-                    self.file_error_signal.emit(filename, str(exc))
-                completed += 1
-                self.status_signal.emit(
-                    f"Scanning speakers… {completed}/{total_files}"
+
+                scan_failures = self._scan_mvmz_speakers(
+                    mvmz, matching_files, scanned
                 )
-                if emit_progress:
-                    self.emit_progress(completed, total_files, filename)
+                if scan_failures is None:
+                    return False
 
             if scan_failures:
                 self.emit_log(
@@ -1532,12 +1601,24 @@ class TranslationTaskCore:
                     )
                     estimate_started = time.monotonic()
                     estimate_kept = False
+                    # This process only waits for the estimate's worker, so
+                    # it scans speakers meanwhile for the Batch that follows.
+                    speaker_scan = None
+                    if self.speaker_scan and "mv/mz" in str(self.module_info[0]).lower():
+                        speaker_scan = threading.Thread(
+                            target=self._record_speaker_scan,
+                            args=(list(matching_files),),
+                            daemon=True,
+                        )
+                        speaker_scan.start()
                     try:
                         total_cost = self._run_files(
                             matching_files,
                             True,
                             batch_phase="estimate",
                         )
+                        if speaker_scan is not None:
+                            speaker_scan.join()
                         if total_cost not in {"Fail", "Stopped"} and not self.should_stop:
                             estimate = self._emit_batch_output(
                                 estimateTranslationCosts

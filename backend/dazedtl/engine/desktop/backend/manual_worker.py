@@ -40,6 +40,7 @@ def main():
     try:
         from desktop.backend.manual_environment import prepare
         plan = prepare(root)
+        from desktop.backend.manual import reusable_speaker_scan, speaker_scan_inputs
         from util.translation_task import TranslationTask, translation_module
         task = TranslationTask(root, translation_module(plan["engine"]), code_root=ROOT,
                                runner_script=Path(__file__).with_name("manual_file_worker.py"),
@@ -47,7 +48,9 @@ def main():
                                batch_mode=plan["mode"] == "batch", selected_files=attempt["files"],
                                batch_resume_state=attempt.get("batch_resume_state"),
                                runtime_profile=plan.get("runtime_profile"), resume_cached=attempt["resume"],
-                               preserve_batch_queue=bool(plan.get('batch_link')))
+                               preserve_batch_queue=bool(plan.get('batch_link')),
+                               speaker_scan=speaker_scan_inputs(plan) if plan["mode"] == "estimate" and plan.get("scan_speakers") else None,
+                               scanned_speakers=reusable_speaker_scan(plan))
         last_progress = [0.0]
         for name in ("log", "progress", "file_error", "file_mismatch", "status", "batch_phase", "estimate_ready", "speaker_confirmation"):
             getattr(task, name + "_signal").connect(lambda *args, event=name: emit(event, *args))

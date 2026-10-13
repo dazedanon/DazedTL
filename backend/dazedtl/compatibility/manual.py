@@ -155,6 +155,10 @@ def manual_jobs(source, workspace, lock, allow_providers):
         # False when a Batch preparation follows the estimate and counts the
         # requests it submits itself.
         claude_count = True
+        # An estimate that a Batch preparation follows scans speakers for it,
+        # and that preparation reuses the scan.
+        speaker_scan = False
+        scanned_speakers = None
         controllers: dict[str, Any] | None = None
 
         def __init__(self, *args, **kwargs):
@@ -446,6 +450,8 @@ def manual_jobs(source, workspace, lock, allow_providers):
                     item.reused_names = self.reused_names
                     item.temporary_preparation = self.temporary_preparation
                     item.claude_count = self.claude_count
+                    item.speaker_scan = self.speaker_scan
+                    item.scanned_speakers = self.scanned_speakers
                     result = item.start(source, engine, files, *args, **kwargs)
                     self.controllers[result["id"]] = self.controllers.pop("preparing")
                     self.active = result["id"]
@@ -475,6 +481,10 @@ def manual_jobs(source, workspace, lock, allow_providers):
                 plan["dazedtl_reserved_sources"] = deepcopy(self.reserved_sources)
             if not self.claude_count:
                 plan["dazedtl_claude_count"] = False
+            if self.speaker_scan:
+                plan["scan_speakers"] = True
+            if self.scanned_speakers is not None:
+                plan["scanned_speakers"] = deepcopy(self.scanned_speakers)
             if self.request_policy is not None:
                 if self.request_policy["model"] != plan["settings"]["model"]:
                     raise ValueError(

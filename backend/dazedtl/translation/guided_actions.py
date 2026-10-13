@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 from dazedtl.storage import write_json
 
 from . import backups, preparation
-from .files import digest, evidence, project_path, verify_evidence
+from .files import digest, evidence, project_path, read_json, verify_evidence
 from .operations import lifecycle, verify_guided_review
 
 if TYPE_CHECKING:
@@ -1017,6 +1017,28 @@ class GuidedActions:
                 "Source work changed after review. Playtest and record the current pass again."
             )
 
+    def scanned_speakers(self, identity):
+        """The speaker scan an estimate recorded for the Batch after it; the
+        preparation's worker uses it only when its own inputs match."""
+        try:
+            value = read_json(
+                project_path(
+                    self.guided.backend.manual.folder(identity),
+                    "log/speaker_scan.json",
+                )
+            )
+        except OSError, ValueError:
+            return None
+        if (
+            not isinstance(value, dict)
+            or value.get("version") != 1
+            or not isinstance(value.get("inputs"), str)
+            or not isinstance(value.get("collected"), list)
+            or not all(isinstance(name, str) for name in value["collected"])
+        ):
+            return None
+        return {"inputs": value["inputs"], "collected": value["collected"]}
+
     def _start(
         self,
         project_id,
@@ -1100,6 +1122,16 @@ class GuidedActions:
             self.guided.backend.manual.claude_count = not (
                 mode == "estimate" and run_inputs and run_inputs["mode"] == "batch"
             )
+            # That estimate also scans speakers beside its own worker, and the
+            # preparation reuses the scan instead of reading every file again.
+            self.guided.backend.manual.speaker_scan = bool(
+                mode == "estimate" and run_inputs and run_inputs["mode"] == "batch"
+            )
+            self.guided.backend.manual.scanned_speakers = (
+                self.scanned_speakers(estimate["jobId"])
+                if mode == "batch" and estimate
+                else None
+            )
             job = self.guided.backend.guided_phase(native["id"], phase, files)
             if run_inputs:
                 self.guided.runs.remember(
@@ -1117,6 +1149,8 @@ class GuidedActions:
             self.guided.backend.manual.reused_names = None
             self.guided.backend.manual.reserved_sources = None
             self.guided.backend.manual.claude_count = True
+            self.guided.backend.manual.speaker_scan = False
+            self.guided.backend.manual.scanned_speakers = None
             if mode == "estimate":
                 current = self.guided.backend.workflows.projects[native["id"]]
                 self.guided.backend.workflows.update(
