@@ -47,6 +47,12 @@ SPEAKER_PREFIX_OPTIONAL_RE = re.compile(
 )
 
 
+# A names pass translates the speakers of many files together, so its requests
+# belong to no game file. Run records keep them under this name instead, which
+# the app's run inspector (compatibility/process_view.py) reads back.
+NAMES_FILE = "speakers"
+
+
 def strip_speaker_prefix(text: str) -> str:
     """Remove a leading ``[Speaker]:`` / ``[Speaker]|`` / ``[Speaker]：`` prefix."""
     if not text:

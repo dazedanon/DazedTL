@@ -521,7 +521,7 @@ def translateSpeakerNames(speakers) -> list[int] | bool:
     if not pending:
         return [0, 0]
     THREAD_CTX.last_translation_had_mismatch = False
-    response = translateAI(pending, ctx("names.npc"))
+    response = translateAI(pending, ctx("names.npc"), filename=wolf_speakers.NAMES_FILE)
     translated = response[0] if isinstance(response[0], list) else [response[0]]
     if (
         bool(getattr(THREAD_CTX, "last_translation_had_mismatch", False))
@@ -812,15 +812,16 @@ def getResultString(translatedData, translationTime, filename):
         )
 
 
-def translateAI(text, history, history_ctx=None):
-    """Thin wrapper around the shared translation entry point."""
+def translateAI(text, history, history_ctx=None, *, filename=None):
+    """Thin wrapper around the shared translation entry point. ``filename``
+    records the request under another file than the one being parsed."""
     global PBAR, MISMATCH, FILENAME
     TRANSLATION_CONFIG.estimateMode = bool(ESTIMATE)
     result = sharedtranslateAI(
         text=text,
         history=history,
         config=TRANSLATION_CONFIG,
-        filename=FILENAME,
+        filename=filename or FILENAME,
         pbar=PBAR,
         lock=LOCK,
         mismatchList=MISMATCH,

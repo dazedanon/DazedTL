@@ -34,7 +34,7 @@ from util.translation import (
     translateAI as sharedtranslateAI,
 )
 from util.vocab import split_glossary_row
-from util.speakers import SPEAKER_BRACKET_INNER, strip_speaker_prefix
+from util.speakers import NAMES_FILE, SPEAKER_BRACKET_INNER, strip_speaker_prefix
 from util import extensions, rpgmaker_qa_lint
 from util.skills import ctx, load_system_prompt
 from util.paths import (
@@ -7023,12 +7023,13 @@ def resetActorMapCache():
 
 
 @extensions.point
-def translateAI(text, history, history_ctx=None, *, glossary_names=()):
+def translateAI(text, history, history_ctx=None, *, glossary_names=(), filename=None):
     """
     Legacy wrapper function for the new shared translation utility.
     This maintains compatibility with existing code while using the new shared implementation.
     ``glossary_names`` adds the glossary entries of names the request mentions
-    only in its instructions.
+    only in its instructions. ``filename`` records the request under another
+    file than the one being parsed.
     """
     global PBAR, MISMATCH, FILENAME
     
@@ -7043,9 +7044,9 @@ def translateAI(text, history, history_ctx=None, *, glossary_names=()):
     # Call the new shared translation function
     # Prefer thread-local filename for logging; fall back to global
     try:
-        tl_filename = getattr(THREAD_CTX, "filename", FILENAME)
+        tl_filename = filename or getattr(THREAD_CTX, "filename", FILENAME)
     except Exception:
-        tl_filename = FILENAME
+        tl_filename = filename or FILENAME
 
     # Speaker-parse mode: bypass all non-speaker translations to save tokens
     if SPEAKER_PARSE_MODE and not getattr(THREAD_CTX, "in_speaker", False):
@@ -7331,10 +7332,12 @@ def finalizeSpeakerParse():
             try:
                 THREAD_CTX.in_speaker = True
                 # Full list; translateAI chunks with the Settings batch size.
+                # The names come from every scanned file, not the last one.
                 resp = translateAI(
                     to_translate,
                     ctx("names.speaker"),
                     True,
+                    filename=NAMES_FILE,
                 )
             finally:
                 THREAD_CTX.in_speaker = False
