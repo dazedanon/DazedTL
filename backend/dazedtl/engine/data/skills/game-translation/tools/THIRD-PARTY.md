@@ -18,7 +18,8 @@ build output are excluded; see the skill's `README.md` before adapting a referen
 | Tool | Location under `tools/` | How to build |
 |---|---|---|
 | Il2CppDumper-ManualReg (the fork that reads metadata v39 and memory dumps) | `.NET/Il2CppDumper-ManualReg/` | `dotnet build -c Release Il2CppDumper.sln` with the .NET 8 SDK. Output: `Il2CppDumper/bin/Release/net8.0/Il2CppDumper.exe`. Read `MANUAL_REG_NOTE.md`. |
-| wolf_rpg_decode, wolf_unpack | `C++/Wolf/wolf_rpg_decode/`, `C++/Wolf/wolf_unpack/` | Prebuilt Windows exes are included under `target/release/`. Rebuild with `cargo build --release` if needed. |
+| wolf_rpg_decode, wolf_unpack | `C++/Wolf/wolf_rpg_decode/`, `C++/Wolf/wolf_unpack/` | `cargo build --release` in each folder. Output: `target/release/`. WolfDawn covers the same ground and ships with DazedTL. |
+| tts_jp (the natuiso auto-voice hook) | `C++/Trois/tts_jp/` | Build `tts_jp.c` as a 32-bit DLL with MSVC; its `#pragma comment(linker, ...)` lines set the exports. |
 | SheepClickerTL, VBV, LoserLifeATest, TextExtractor, find_bubble, Il2CppStringDump, HitonatsuTL and the other `.csproj` projects | their own folders | `dotnet build` in the project folder. Each `.csproj` references game or BepInEx assemblies by path. Point those references at your own copies. |
 | BakinApi, BakinRes, BakinTL and BakinTranslationHook | the Artesia and Miyutsure example folders | Build with the `csc` commands in their `README.md` / `BUILD.md`, using the selected game's assemblies. The supplied source ships; old game-specific executables and DLLs do not. |
 

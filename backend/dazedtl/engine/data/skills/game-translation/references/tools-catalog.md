@@ -49,7 +49,7 @@ so read the Bakin section at the bottom of this file before adapting anything Ba
 |---|---|---|
 | `Unreal` | `README.md`, `scripts/`, `python/` bundled. `retoc.exe` (IoStore), `repak.exe` (pak), `UAssetGUI.exe` (JSON) are downloads placed in `retoc/`, `repak/`, `UAssetGUI/` | Unreal 4/5 |
 | `FModel` | `FModel.exe` (download) | Unreal asset browser |
-| `Wolf` | `wolf_rpg_decode` and `wolf_unpack` (Rust sources plus prebuilt `target/release/*.exe`), `parse_ce.py`/`analyze.py`, `RE/` notes. The IDA `.i64` databases are not bundled | Wolf RPG |
+| `Wolf` | `wolf_rpg_decode` and `wolf_unpack` (Rust sources; build with `cargo build --release`), `parse_ce.py`/`analyze.py`, `RE/` notes. The IDA `.i64` databases are not bundled | Wolf RPG |
 | `Yuris` | `yuris_text.py` (key, unpack, text and literal units, patch, pack for YPF 200-500 / YSTB through 555) over `yuris_decompiler`, plus a patch suite (locale, font, nameplate, inpaint) | YU-RIS |
 | `Trois` | `dxa_unpack.py`, `find_text_images.py` (OCR), `script_tl.py`, `patch_*.py` | Trois DXA |
 | `Godot` | PCK extract/repack, scene/script patch, vertical-text, save unlock | Godot |
