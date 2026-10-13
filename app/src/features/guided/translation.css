@@ -462,6 +462,10 @@
 .name-translation-feedback > button {
   font: inherit;
 }
+.name-translation-unsaved {
+  flex-basis: 100%;
+  min-width: 0;
+}
 .translation-cost-review {
   display: flex;
   flex-direction: column;

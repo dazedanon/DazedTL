@@ -3,6 +3,7 @@
 import re
 from functools import lru_cache
 from pathlib import Path
+from typing import TypeGuard
 
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest, project_path
@@ -30,7 +31,8 @@ def install(module, root):
         if not names:
             return native()
         value = {
-            "version": 1,
+            # Version 2 verifies each name; version 1 all of them at once.
+            "version": 2,
             "planHash": digest((root / "plan.json").read_bytes()),
             "state": "running",
             "count": len(names),
@@ -46,17 +48,18 @@ def install(module, root):
             return result
         try:
             glossary = project_path(root, "game/.dazedtl/glossary.txt").read_bytes()
-            rows = [
-                {"source": name, "translation": module._vocab_speaker_lookup(name)}
-                for name in names
-            ]
-            if any(
-                not isinstance(row["translation"], str)
-                or not module._speaker_translation_valid(
-                    row["source"], row["translation"]
-                )
-                for row in rows
-            ):
+            rows, unsaved = [], []
+            for name in names:
+                translation = module._vocab_speaker_lookup(name)
+                if isinstance(translation, str) and module._speaker_translation_valid(
+                    name, translation
+                ):
+                    rows.append({"source": name, "translation": translation})
+                else:
+                    unsaved.append(name)
+            # A name that does not read back must not discard the others' paid
+            # wording; it is reported, and the next run asks for it again.
+            if not rows:
                 raise ValueError("Saved names could not be verified.")
             write_bytes(project_path(root, "log/" + GLOSSARY, exists=False), glossary)
             record(
@@ -65,6 +68,7 @@ def install(module, root):
                     "state": "saved",
                     "glossaryHash": digest(glossary),
                     "rows": rows,
+                    **({"unsaved": unsaved} if unsaved else {}),
                 }
             )
         except OSError, ValueError:
@@ -78,16 +82,47 @@ def install(module, root):
 def _glossary_rows(path, stamp):
     # Legacy recovery accepts exact, unambiguous saved entries only. It does
     # not guess aliases, identity, or a translation from the current project.
+    from util.vocab import split_glossary_row
+
     rows = {}
     for line in Path(path).read_text(encoding="utf-8-sig").splitlines():
-        match = re.fullmatch(r"\s*(.+?)\s+\(([^()]+)\)(?:\s+-.*)?\s*", line)
-        if match:
-            source, target = match.groups()
-            rows.setdefault(source, set()).add(target)
+        row = split_glossary_row(line.strip())
+        if row and row[1] and re.fullmatch(r"(?:\s+-.*)?\s*", row[2]):
+            rows.setdefault(row[0], set()).add(row[1])
     return {
         source: next(iter(targets))
         for source, targets in rows.items()
         if len(targets) == 1
+    }
+
+
+def _approved(names) -> TypeGuard[list[str]]:
+    """A list of distinct, nonempty source names."""
+    return (
+        isinstance(names, list)
+        and bool(names)
+        and all(isinstance(name, str) and name for name in names)
+        and len(set(names)) == len(names)
+    )
+
+
+def _recovered(root, names):
+    """The approved names a finished native save left in this run's glossary."""
+    glossary = project_path(root, "game/.dazedtl/glossary.txt")
+    entries = _glossary_rows(str(glossary), file_stamp(glossary))
+    rows = [
+        {"source": name, "translation": entries[name]}
+        for name in names
+        if name in entries
+    ]
+    if not rows:
+        return None
+    unsaved = [name for name in names if name not in entries]
+    return {
+        "state": "saved",
+        "count": len(rows),
+        "rows": rows,
+        **({"unsaved": unsaved} if unsaved else {}),
     }
 
 
@@ -113,7 +148,7 @@ def read(root, job):
             raise ValueError("The name result belongs to a changed plan.")
         if value:
             if (
-                value.get("version") != 1
+                value.get("version") not in {1, 2}
                 or value.get("planHash") != job.get("plan_hash")
                 or type(value.get("count")) is not int
                 or value["count"] <= 0
@@ -127,12 +162,26 @@ def read(root, job):
                 or job.get("phase") not in {"preparing", None}
             ):
                 state = "unavailable"
+            if (
+                value["version"] == 1
+                and value["state"] == "unavailable"
+                and _approved(names)
+                and len(names) == value["count"]
+            ):
+                # Version 1 gave up on every name when one did not read back,
+                # after the native save had finished, so that run's glossary
+                # still holds the names.
+                recovered = _recovered(root, names)
+                if recovered:
+                    return recovered
             if state != "saved":
                 return {"state": state, "count": value["count"], "rows": []}
-            rows = value.get("rows")
+            rows, unsaved = value.get("rows"), value.get("unsaved", [])
             if (
                 not isinstance(rows, list)
-                or len(rows) != value["count"]
+                or not rows
+                or not isinstance(unsaved, list)
+                or len(rows) + len(unsaved) != value["count"]
                 or any(
                     not isinstance(row, dict)
                     or set(row) != {"source", "translation"}
@@ -141,25 +190,28 @@ def read(root, job):
                     )
                     for row in rows
                 )
+                or any(not isinstance(name, str) or not name for name in unsaved)
             ):
                 raise ValueError("Name result mapping changed.")
-            if len({row["source"] for row in rows}) != len(rows):
+            sources = [row["source"] for row in rows] + unsaved
+            if len(set(sources)) != len(sources):
                 raise ValueError("Name result sources are duplicated.")
             glossary = project_path(root, "log/" + GLOSSARY)
             if _verified_digest(str(glossary), file_stamp(glossary)) != value.get(
                 "glossaryHash"
             ):
                 raise ValueError("The retained name glossary is missing or changed.")
-            return {"state": "saved", "count": len(rows), "rows": rows}
+            return {
+                "state": "saved",
+                "count": len(rows),
+                "rows": rows,
+                **({"unsaved": unsaved} if unsaved else {}),
+            }
 
         # Existing in-flight workers predate the receipt. Their approved source
         # list plus native save confirmation and retained glossary can still
         # show exact results; approval or a later Batch phase alone cannot.
-        if (
-            not isinstance(names, list)
-            or not names
-            or not all(isinstance(name, str) and name for name in names)
-        ):
+        if not _approved(names):
             return reused_summary(root, job, plan)
         if (job.get("approval") or {}).get("kind") == "speakers":
             return None
@@ -167,17 +219,8 @@ def read(root, job):
             "Speaker translations saved to the game glossary." in line
             for line in job.get("log", [])
         )
-        if complete:
-            glossary = project_path(root, "game/.dazedtl/glossary.txt")
-            entries = _glossary_rows(str(glossary), file_stamp(glossary))
-            if all(name in entries for name in names):
-                return {
-                    "state": "saved",
-                    "count": len(names),
-                    "rows": [
-                        {"source": name, "translation": entries[name]} for name in names
-                    ],
-                }
+        if complete and (recovered := _recovered(root, names)):
+            return recovered
         state = (
             "running"
             if job.get("status") == "running" and job.get("phase") == "preparing"

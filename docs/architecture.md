@@ -94,12 +94,13 @@ Nameplates may contain character names or other display labels, so the review do
 This small preparation uses Live pricing to avoid waiting for a separate name Batch, and the review distinguishes it from the selected Batch mode for file text.
 The file-text Batch receives its own cost review after names are resolved.
 The [name-result adapter](../backend/dazedtl/compatibility/speaker_results.py) retains the native save outcome and a verified glossary snapshot independently of the later Batch decision.
+It verifies each name against that glossary: one that does not read back is shown as not saved and asked for again by the next run, and never discards the others.
 The shared observer exposes pending, saved and unavailable outcomes; Batch review and the request inspector’s Technical tab show the result with bounded, read-only translation inspection.
 Name feedback is a compact secondary note below the reviewed cost and file scope, or beneath the active preparation status, with its inspection action adjacent.
 Approval alone never establishes success.
 Declining or stopping the file Batch keeps approved names reusable in the next run’s frozen glossary, with current glossary entries and aliases taking precedence.
 Reuse is bound to the project, target language and source pass, participates in estimate identity, and preserves the shared guidance and drafts.
-Older runs can recover exact entries only from retained approved names, native save evidence and that run’s glossary.
+Older runs, including those whose first receipt version called a finished save unavailable as a whole, can recover exact entries only from retained approved names, native save evidence and that run’s glossary.
 Closing preparation after approving names preserves the paid run.
 Read-only provider details resolve the submitted connection from canonical settings by its recorded runtime name, endpoint and organization, regardless of the active account.
 Provider monitoring and new runs have independent isolated workers.

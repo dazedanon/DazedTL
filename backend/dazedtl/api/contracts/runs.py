@@ -118,6 +118,8 @@ class NameTranslation(TypedDict):
     reused: NotRequired[bool]
     count: int
     rows: list[NameTranslationRow]
+    # Names a saved result could not read back; the next run asks for them.
+    unsaved: NotRequired[list[str]]
 
 
 class NameTranslationPage(TypedDict):

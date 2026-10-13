@@ -6,6 +6,7 @@ import { ActionBar } from "../../ui/ActionBar";
 import { Button } from "../../ui/Button";
 import { Message } from "../../ui/Feedback";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
+import { ExpandableText } from "../../ui/ExpandableText";
 import { Modal } from "../../ui/Modal";
 import { useRead } from "../../state/useRead";
 
@@ -57,6 +58,16 @@ export function NameTranslationFeedback({
       )}
       {!saved && value.state !== "running" && (
         <span>Check this run’s log before retrying paid work.</span>
+      )}
+      {saved && !!value.unsaved?.length && (
+        <div className="name-translation-unsaved translation-error">
+          <ExpandableText
+            text={`Not saved: ${value.unsaved.join(", ")}. The next run asks for ${value.unsaved.length === 1 ? "it" : "them"} again.`}
+            label="Names not saved"
+            appearance="inline"
+            limit={160}
+          />
+        </div>
       )}
       {open && read && <NameResults read={read} close={() => setOpen(false)} />}
     </section>

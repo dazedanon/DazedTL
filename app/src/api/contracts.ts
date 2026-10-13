@@ -149,6 +149,7 @@ export type NameTranslation = {
   reused?: boolean;
   count: number;
   rows: NameTranslationRow[];
+  unsaved?: string[];
 };
 
 export type NameTranslationPage = {

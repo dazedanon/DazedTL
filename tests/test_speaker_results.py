@@ -1,6 +1,7 @@
 """Paid names must remain inspectable and reusable after declining map work."""
 
 import re
+import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -8,10 +9,15 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from dazedtl.compatibility import speaker_results
+from dazedtl.compatibility.runtime import ENGINE_ROOT
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest
 
 from tests.engine import point
+
+# Receipts read glossary rows with the engine's own parser, as in the app.
+if str(ENGINE_ROOT) not in sys.path:
+    sys.path.insert(0, str(ENGINE_ROOT))
 
 
 class SpeakerResultTests(unittest.TestCase):
@@ -97,6 +103,56 @@ class SpeakerResultTests(unittest.TestCase):
         self.assertEqual(speaker_results.reusable([(self.root, self.job)]), [])
         with self.assertRaises(ValueError):
             speaker_results.page(self.root, self.job)
+
+    def test_an_unreadable_name_keeps_the_other_paid_names(self):
+        # One nameplate that did not read back marked all 245 of a run's paid
+        # names unavailable, so the next run asked to pay for them again.
+        module = self.translator(3)
+        module._vocab_speaker_lookup = {"名前0": "Name 0", "名前1": "Name 1"}.get
+        speaker_results.install(module, self.root)
+        self.assertTrue(module.finalizeSpeakerParse())
+        self.job.update(status="canceled", phase="canceled")
+        value = speaker_results.summary(self.root, self.job)
+        self.assertEqual(
+            (value["state"], value["count"], value["unsaved"]),
+            ("saved", 2, ["名前2"]),
+        )
+        self.assertEqual(
+            [
+                row["source"]
+                for row in speaker_results.reusable([(self.root, self.job)])
+            ],
+            ["名前0", "名前1"],
+        )
+        # Version 1 recorded that as unavailable after the save had finished;
+        # the run's glossary still holds the names, parentheses included.
+        write_json(
+            self.root / "log" / speaker_results.RECEIPT,
+            {
+                "version": 1,
+                "planHash": self.job["plan_hash"],
+                "state": "unavailable",
+                "count": 2,
+            },
+        )
+        write_bytes(
+            self.glossary,
+            "# Game Characters\n農夫の魂（夫） (Farmer's Soul (Husband))\n".encode(),
+        )
+        self.job["estimate"] = {"speakers": ["農夫の魂（夫）", "名前0"]}
+        value = speaker_results.read(self.root, self.job)
+        self.assertEqual(
+            (value["rows"], value["unsaved"]),
+            (
+                [
+                    {
+                        "source": "農夫の魂（夫）",
+                        "translation": "Farmer's Soul (Husband)",
+                    }
+                ],
+                ["名前0"],
+            ),
+        )
 
     def test_failure_and_legacy_approval_never_imply_saved_names(self):
         module = self.translator()
