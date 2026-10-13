@@ -102,7 +102,9 @@ def run_handler(project_root, module_name, filename, estimate_only):
         cache_scope = nullcontext()
         queue_scope = nullcontext()
         batch_phase = os.getenv("BATCH_PHASE", "").strip().lower()
-        if batch_phase == "consume":
+        # An estimate in one worker has nobody to share its cache with while
+        # it runs; a durable write per request took seconds on Windows.
+        if batch_phase == "consume" or (multi_file and estimate_only and not batch_phase):
             from util.translation import deferred_translation_cache_writes
 
             cache_scope = deferred_translation_cache_writes()
