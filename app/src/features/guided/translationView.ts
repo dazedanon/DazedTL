@@ -406,6 +406,11 @@ export function fileStatus(name: string, run?: Job, settled = false) {
   const requests = run.process?.files?.[name];
   const states = requests?.states || [];
   const working = activeWorker(run);
+  // After a restart the app's monitor finishes a stopped worker's Batch and
+  // then saves its results.
+  const monitored = ["monitoring", "collecting"].includes(
+    run.process?.monitoring?.state || "",
+  );
   // A submission without a provider receipt may still be at the provider, so
   // its reason is checking before sending again, not rejected lines. A Live
   // request still marked sent when its worker stopped is one of them.
@@ -456,11 +461,12 @@ export function fileStatus(name: string, run?: Job, settled = false) {
       states.some((state) => ["queued", "prepared"].includes(state))
     )
       return progress;
-    if (!saved || (partial && working)) {
+    if (!saved || (partial && (working || monitored))) {
+      // Received results are written by this run, including while a Batch
+      // waits at the provider for a clarification of refused requests.
       if (
-        working &&
-        states.some((state) => ["received", "validated"].includes(state)) &&
-        (run.mode !== "batch" || run.phase === "consume")
+        (working || monitored) &&
+        states.some((state) => ["received", "validated"].includes(state))
       )
         return progress;
       // Item progress identifies the file still being parsed between requests,

@@ -1385,9 +1385,24 @@ test("file status follows active and automatically monitored Batch work before r
       files: { "Items.json": requested(["received"]) },
     },
   };
-  assert.equal(fileStatus("Items.json", received).label, "Needs review");
+  // The running worker writes received results, also while a clarification of
+  // refused requests waits at the provider; a stopped one left them unwritten.
+  assert.equal(fileStatus("Items.json", received).label, "Working");
+  const unwritten = { ...received, status: "stopped" };
+  assert.equal(fileStatus("Items.json", unwritten).label, "Needs review");
+  // After a restart, the app's monitor waits for the clarification and saves.
   assert.equal(
-    fileStatus("Items.json", { ...received, availableOutputs: [] }).label,
+    fileStatus("Items.json", {
+      ...unwritten,
+      process: {
+        ...unwritten.process!,
+        monitoring: { state: "monitoring", message: "" },
+      },
+    }).label,
+    "Working",
+  );
+  assert.equal(
+    fileStatus("Items.json", { ...unwritten, availableOutputs: [] }).label,
     "Blocked",
   );
   assert.equal(
@@ -1563,16 +1578,19 @@ test("file status follows active and automatically monitored Batch work before r
       mixed.files!.map((name) => fileStatus(name, refreshed)),
       expected,
     );
+    // Partial.json holds results the monitor saves; the observed run below
+    // covers it.
     for (const name of [
       "Saved.json",
-      "Partial.json",
       "Failed.json",
       "Empty.json",
       "Untouched.json",
       "Missing.json",
     ])
+      // The observer keeps the stopped worker's own status beside the
+      // monitor's public activity.
       assert.deepEqual(
-        fileStatus(name, refreshed),
+        fileStatus(name, { ...refreshed, workerStatus: "interrupted" }),
         fileStatus(name, beforeRefresh),
       );
   }
@@ -1581,7 +1599,7 @@ test("file status follows active and automatically monitored Batch work before r
     [
       "working",
       "ready",
-      "needs_review",
+      "working",
       "not_started",
       "working",
       "ready",
@@ -1608,9 +1626,15 @@ test("file status follows active and automatically monitored Batch work before r
         monitoring: { state, message: "Checking this run" },
       },
     };
+    // Results the monitor will save read as they do under a running worker.
+    const saving = state === "monitoring" || state === "collecting";
     assert.deepEqual(
       mixed.files!.map((name) => fileStatus(name, observed)),
-      stable,
+      mixed.files!.map((name, index) =>
+        saving && name === "Partial.json"
+          ? fileStatus(name, mixed)
+          : stable[index],
+      ),
     );
     assert.equal(
       fileRun([completed, observed], "database", "Items.json"),
