@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- **Setup:** the first start tries a download again when the connection drops, instead of stopping with "fetch failed". If a download still fails, it says which one and to check the internet connection.
 - **Translate:** after **Retry saving results**, files saved by an earlier attempt keep their cost and time instead of reading $0.0000 and 0.0s, so the run's total cost is right again.
 - **Translate:** a Database Batch no longer fails to save with "No fetched result matches this request" for **States.json** and the files after it. **Retry saving results** now saves a Batch that already failed this way from its existing results, without sending anything again.
 - **Translate:** when a canceled or partly failed Batch has no result for some of a file's lines, only that file stays unsaved, and the banner says in plain words what happened and to translate the file again with Live or a new Batch. Before, it read "No fetched result matches this request" with advice about a glossary freeze, and the files after it were not saved either.
