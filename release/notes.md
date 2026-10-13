@@ -7,6 +7,7 @@
 
 ### Fixed
 
+- **Translate:** preparing a Batch no longer sends a paid Live request for each map place label and some plugin texts, such as `<LB:村>` notes, before you approve the Batch. They are now part of the Batch and its cost review, which also makes preparing a Batch faster.
 - **Translate:** Claude Batch and Live translation on Windows no longer fail with "Could not determine home directory.", and Claude cost estimates there use Claude's own token count instead of an approximate one.
 - **Translate:** for a Claude model, the **Live** cost review and **Review names and labels** now count input tokens the way Anthropic bills them, as the Batch review has since 2.11.2; they read about 10% and a third low. When Anthropic's token count can't be reached, the review says the input is approximate.
 - **Translate:** a Batch that failed before anything was sent, for example because its connection could not be set up, now reads "Failed · unsent" in Run history instead of "Check submission", and translating those files again no longer warns that it may charge twice.
