@@ -36,9 +36,10 @@ from util.batch_providers import (
     cancel_batch as provider_cancel_batch,
     download_results as provider_download_results,
     get_client as get_provider_client,
+    one_hour_writes,
     retrieve_batch as provider_retrieve_batch,
 )
-from util.provider_costs import cache_read_multiplier, cache_write_multiplier
+from util.provider_costs import batch_write_weight, cache_read_multiplier
 from util import extensions
 
 BATCH_HISTORY_FILE = Path("log/batch_history.json")
@@ -551,13 +552,17 @@ def _usage_from_message(u) -> dict:
         or getattr(u, "output_thinking_tokens", None)
         or 0
     ) or 0
-    return {
+    usage = {
         "input_tokens": inp,
         "output_tokens": out,
         "cache_read_input_tokens": cr,
         "cache_creation_input_tokens": cw,
         "thinking_tokens": thinking,
     }
+    one_hour = one_hour_writes(u)
+    # A response without the split counts as one-hour, the dearer cache.
+    usage["cache_creation_1h_input_tokens"] = cw if one_hour is None else one_hour
+    return usage
 
 
 @extensions.point
@@ -572,10 +577,11 @@ def _price_usage(usage: dict, model: str, provider: str = "anthropic") -> float:
     out = usage.get("output_tokens", 0) or 0
     thinking = usage.get("thinking_tokens", 0) or 0
     # Thinking tokens are billed as output on Anthropic.
-    write_multiplier = cache_write_multiplier(provider, model)
     raw = (
         cr * br * cache_read_multiplier(provider, model)
-        + cw * br * write_multiplier
+        + batch_write_weight(
+            provider, model, cw, usage.get("cache_creation_1h_input_tokens")
+        ) * br
         + inp * br
         + (out + thinking) * orr
     )
@@ -666,6 +672,7 @@ def _result_entry_from_message(msg) -> dict:
         "cache_read_input_tokens": cr,
         "cache_creation_input_tokens": cw,
     }
+    entry["cache_creation_1h_input_tokens"] = part["cache_creation_1h_input_tokens"]
     if part.get("thinking_tokens"):
         entry["thinking_tokens"] = part["thinking_tokens"]
     return entry

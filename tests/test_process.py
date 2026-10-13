@@ -1542,6 +1542,18 @@ class ProcessTests(unittest.TestCase):
                 batch_evidence.preserve(
                     root, {"key": {**entry, "payload": '{"Line1":"Changed"}'}}, {}, {}
                 )
+            # A response downloaded again can record usage the first download
+            # did not; it is the same paid response, unlike changed text.
+            batch_evidence.preserve(
+                root,
+                {},
+                {"key": {**results["key"], "cache_creation_1h_input_tokens": 0}},
+                {},
+            )
+            with self.assertRaisesRegex(ValueError, "conflicts"):
+                batch_evidence.preserve(
+                    root, {}, {"key": {**results["key"], "text": "{}"}}, {}
+                )
 
     def test_source_overlap_survives_new_chunking_and_protects_approval_send_gap(self):
         # Protect duplicated payment when a second review arrives before the

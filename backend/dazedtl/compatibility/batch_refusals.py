@@ -38,7 +38,7 @@ def records(root, *, details=False):
 
 
 def effective_results(root, previous, current):
-    from .batch_evidence import merge
+    from .batch_evidence import extends, merge
     from .process_view import saved
 
     receipt = saved(root, RESULTS)
@@ -49,7 +49,10 @@ def effective_results(root, previous, current):
     for source in (previous, current):
         for key, value in source.items():
             if key in original:
-                if value != original[key] and value != effective.get(key):
+                if not any(
+                    value == kept or extends(kept, value)
+                    for kept in (original[key], effective.get(key))
+                ):
                     raise ValueError(
                         "Batch results conflict with the retained clarification receipts."
                     )

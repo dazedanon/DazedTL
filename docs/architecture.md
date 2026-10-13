@@ -82,6 +82,9 @@ App restarts can continue the unchanged approved queue and its saved clarificati
 Legacy estimate continuation records remain readable for recovery.
 Each pending Batch or speaker approval opens once in a focused cost review with visible token counts, mode-specific pricing, prepared file scope and an explicit Decline action.
 Cost comparisons use plain labels for totals without prompt caching and with estimated prompt caching, explain reuse of repeated instructions, and include cache creation without promising savings.
+Claude requests cache their instructions for five minutes in both Live and Batch.
+A Batch starts most of its requests together, so many write the cache instead of reading it: two of three real Claude Batches read it on about one request in ten, and a five-minute write costs 1.25 times input where a one-hour write costs twice.
+Receipts price each write at the lifetime Anthropic reports for it, and results saved without that split count as one-hour, which every Batch used before.
 Estimates count tokens with the GPT-4 encoder, except that Claude estimates in both methods use [Claude's own count](../backend/dazedtl/engine/util/claude_tokens.py), because Anthropic bills by a tokenizer that turns the same text into more tokens.
 They send each cached instruction prefix and an evenly spread sample of 24 whole requests to Anthropic's free token-count endpoint and scale the approximate count of the rest by the sample; if any count fails, the whole estimate keeps the approximate count.
 A Translate estimate's worker has no credential or network, so a finished Claude estimate is counted again before its run completes: [estimate_pricing.py](../backend/dazedtl/compatibility/estimate_pricing.py) prices its kept requests in a separate process that opens the network only for that endpoint, with the run's own credential.

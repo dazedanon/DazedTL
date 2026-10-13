@@ -308,9 +308,8 @@ class TranslationEngine:
             "request_instructions": "\n\n".join(text for text in instructions if text),
         }
         if configuration["protocol"] == "anthropic":
-            params: dict[str, Any] = buildClaudeRequest(
-                **shared, cache_ttl="1h" if configuration["mode"] == "batch" else "5m"
-            )
+            # Batch requests use the five-minute cache too; see translateAI.
+            params: dict[str, Any] = buildClaudeRequest(**shared)
             params.pop("temperature", None)
             params["output_config"] = {
                 "format": {

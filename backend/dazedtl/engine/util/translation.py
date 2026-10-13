@@ -31,6 +31,7 @@ from util.paths import (
     unlink_with_retry,
 )
 from util.provider_costs import (
+    batch_write_weight,
     cache_read_multiplier,
     cache_write_multiplier,
     has_billed_cache_writes,
@@ -2424,8 +2425,8 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
     """Print a cost estimate for the queued batch requests and return it.
 
     For Claude, cached-prefix accounting mirrors what Anthropic bills: each distinct cached
-    prefix is written once (2x input rate at the 1h TTL) and read by every other
-    request that shares it (0.10x); everything is then halved by the batch
+    prefix is written once (1.25x input at the 5m TTL, 2x at 1h) and read by every
+    other request that shares it; everything is then halved by the batch
     discount. Cache hits inside a batch are best-effort, so the no-cache batch
     figure is the worst-case bound. OpenAI automatic cache reads and separately
     billed GPT-5.6+ cache writes are estimated from 1,024+ token prefixes.
@@ -2447,6 +2448,7 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
     enc = tiktoken.encoding_for_model("gpt-4")
     prefix_count = {}   # cached prefix text -> how many requests reuse it
     prefix_tokens = {}  # cached prefix text -> token count
+    prefix_ttl = {}  # cached prefix text -> the cache lifetime it asks for
     dynamic_tokens = 0
     request_params = []
     request_dynamic = []  # each request's approximate tokens after its prefix
@@ -2466,6 +2468,7 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
             prefix_count[prefix] = prefix_count.get(prefix, 0) + 1
             if prefix not in prefix_tokens:
                 prefix_tokens[prefix] = len(enc.encode(prefix))
+                prefix_ttl[prefix] = claude_tokens.cache_ttl(params)
         msg_text = "\n".join(str(m.get("content", "")) for m in params.get("messages", []))
         message_tokens = enc.encode(msg_text)
         prompt_token_sequences.append(message_tokens)
@@ -2512,10 +2515,14 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
     live_cost = comparison["live_cost"]
     cache_kind = None
     if est_provider == "anthropic" and cache_write_tok > 0:
-        # Claude's explicit 1-hour cache writes the prefix once at 2x input
-        # price, then reads it at the model's read rate. Batch pricing halves
-        # both charges.
-        batch_cached = (cache_write_tok * in_rate * 2.00
+        # Claude's explicit cache writes each prefix once at its lifetime's
+        # write rate, then reads it at the model's read rate. Batch pricing
+        # halves both charges.
+        write_cost = sum(
+            tokens * cache_write_multiplier(est_provider, est_model, prefix_ttl[prefix])
+            for prefix, tokens in prefix_tokens.items()
+        )
+        batch_cached = (write_cost * in_rate
                         + cache_read_tok * in_rate
                         * cache_read_multiplier(est_provider, est_model)
                         + dynamic_tokens * in_rate
@@ -4730,11 +4737,13 @@ def _anthropic_content_text(content) -> str:
 class _AnthropicCompat:
     """OpenAI-shaped wrapper around an Anthropic response (text + usage)."""
     class _Usage:
-        def __init__(self, prompt, completion, cr, cw):
+        def __init__(self, prompt, completion, cr, cw, cw_1h=None):
             self.prompt_tokens               = prompt
             self.completion_tokens           = completion
             self.cache_read_input_tokens     = cr
             self.cache_creation_input_tokens = cw
+            # How many writes used the one-hour cache; None when unrecorded.
+            self.cache_creation_1h_input_tokens = cw_1h
         @property
         def model_extra(self):
             return {
@@ -4746,9 +4755,9 @@ class _AnthropicCompat:
             def __init__(self, c): self.content = c
         def __init__(self, c):
             self.message = _AnthropicCompat._Choice._Msg(c)
-    def __init__(self, text, prompt, output, cr, cw):
+    def __init__(self, text, prompt, output, cr, cw, cw_1h=None):
         self.choices = [_AnthropicCompat._Choice(text)]
-        self.usage   = _AnthropicCompat._Usage(prompt, output, cr, cw)
+        self.usage   = _AnthropicCompat._Usage(prompt, output, cr, cw, cw_1h)
 
 
 def _context_heading(kind):
@@ -5440,6 +5449,8 @@ _FILE_COST_COUNTERS = (
     "file_output",
     "file_batch_read",
     "file_batch_write",
+    # The part of file_batch_write that used the one-hour cache.
+    "file_batch_write_1h",
     "file_batch_regular",
     "file_batch_output",
 )
@@ -5534,6 +5545,7 @@ def calculateCost(inputTokens, outputTokens, model):
             out = getattr(_thread_local, 'file_output',      0)
             bcr  = getattr(_thread_local, 'file_batch_read',    0)
             bcw  = getattr(_thread_local, 'file_batch_write',   0)
+            bcw1h = getattr(_thread_local, 'file_batch_write_1h', 0)
             breg = getattr(_thread_local, 'file_batch_regular', 0)
             bout = getattr(_thread_local, 'file_batch_output',  0)
             pricing  = getPricingConfig(model)
@@ -5543,13 +5555,12 @@ def calculateCost(inputTokens, outputTokens, model):
                 "anthropic", model, "5m"
             )
             batch_provider = getBatchProvider(model) or "anthropic"
-            batch_write_multiplier = cache_write_multiplier(batch_provider, model)
             cost = (cr * br * cache_read_multiplier("anthropic", model)
                     + cw * br * live_write_multiplier
                     + reg * br + out * orr
                     # Batch API tokens: same rates, then the 50% batch discount.
                     + (bcr * br * cache_read_multiplier(batch_provider, model)
-                       + bcw * br * batch_write_multiplier
+                       + batch_write_weight(batch_provider, model, bcw, bcw1h) * br
                        + breg * br + bout * orr) * 0.50)
             _thread_local.file_cache_read  = 0
             _thread_local.file_cache_write = 0
@@ -5557,6 +5568,7 @@ def calculateCost(inputTokens, outputTokens, model):
             _thread_local.file_output      = 0
             _thread_local.file_batch_read    = 0
             _thread_local.file_batch_write   = 0
+            _thread_local.file_batch_write_1h = 0
             _thread_local.file_batch_regular = 0
             _thread_local.file_batch_output  = 0
             _thread_local.file_cost_window_active = False
@@ -5706,6 +5718,7 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
     if not hasattr(_thread_local, 'file_batch_read'):
         _thread_local.file_batch_read    = 0
         _thread_local.file_batch_write   = 0
+        _thread_local.file_batch_write_1h = 0
         _thread_local.file_batch_regular = 0
         _thread_local.file_batch_output  = 0
     # Snapshot accumulators so end-of-call delta only counts tokens from this call.
@@ -5715,6 +5728,7 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
     _prev_out = _thread_local.file_output
     _prev_bcr  = _thread_local.file_batch_read
     _prev_bcw  = _thread_local.file_batch_write
+    _prev_bcw1h = getattr(_thread_local, 'file_batch_write_1h', 0)
     _prev_breg = _thread_local.file_batch_regular
     _prev_bout = _thread_local.file_batch_output
     _thread_local.file_cost_ready = False  # will be set True at end of translateAI
@@ -6042,12 +6056,15 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
         if queue_for_batch:
             numLines = len(clean_tItem) if isinstance(tItem, list) else 1
             if batch_provider == "anthropic":
+                # The five-minute cache, as Live requests use: a Batch starts
+                # most of its requests together, so many write the cache
+                # instead of reading it, and a five-minute write costs 1.25x
+                # input where a one-hour write costs 2x.
                 params = buildClaudeRequest(
                     static_system, user, request_history, formatType,
                     config.model, numLines, vocab_text=vocab_text,
                     context_kind=CONTEXT_SOURCE,
                     request_instructions=persistent_instructions,
-                    cache_ttl="1h",
                 )
             else:
                 params = buildOpenAIRequest(
@@ -6172,6 +6189,7 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                     batch_result.get("completion_tokens", 0) or 0,
                     batch_result.get("cache_read_input_tokens", 0) or 0,
                     batch_result.get("cache_creation_input_tokens", 0) or 0,
+                    batch_result.get("cache_creation_1h_input_tokens"),
                 )
                 from_batch = True
                 _write_request_debug_log(
@@ -6254,8 +6272,14 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                 # Accumulate into per-file thread-local counters. Batch API
                 # usage is billed at 50% so it goes into its own counters.
                 if from_batch:
+                    one_hour = getattr(usage, "cache_creation_1h_input_tokens", None)
                     _thread_local.file_batch_read    += batch_cache_read
                     _thread_local.file_batch_write   += batch_cache_write
+                    # A result saved before Anthropic's TTL split was recorded
+                    # used the one-hour cache, as every Batch then did.
+                    _thread_local.file_batch_write_1h = getattr(
+                        _thread_local, 'file_batch_write_1h', 0
+                    ) + (batch_cache_write if one_hour is None else int(one_hour))
                     _thread_local.file_batch_regular += batch_regular
                     _thread_local.file_batch_output  += batch_output
                 elif _is_claude_model:
@@ -6636,11 +6660,9 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
         _delta_out = getattr(_thread_local, 'file_output',      0) - _prev_out
         _delta_bcr  = getattr(_thread_local, 'file_batch_read',    0) - _prev_bcr
         _delta_bcw  = getattr(_thread_local, 'file_batch_write',   0) - _prev_bcw
+        _delta_bcw1h = getattr(_thread_local, 'file_batch_write_1h', 0) - _prev_bcw1h
         _delta_breg = getattr(_thread_local, 'file_batch_regular', 0) - _prev_breg
         _delta_bout = getattr(_thread_local, 'file_batch_output',  0) - _prev_bout
-        _batch_write_multiplier = cache_write_multiplier(
-            batch_provider or "anthropic", config.model
-        )
         _live_write_multiplier = cache_write_multiplier(
             "anthropic", config.model, "5m"
         )
@@ -6653,7 +6675,10 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
             (_delta_bcr  * _br * cache_read_multiplier(
                 batch_provider or "anthropic", config.model
             ) +
-             _delta_bcw  * _br * _batch_write_multiplier +
+             batch_write_weight(
+                 batch_provider or "anthropic", config.model,
+                 _delta_bcw, _delta_bcw1h,
+             ) * _br +
              _delta_breg * _br +
              _delta_bout * _or) * 0.50
         )

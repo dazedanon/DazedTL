@@ -94,6 +94,16 @@ def _text(content):
     return "".join(block.get("text", "") for block in content or [] if isinstance(block, dict))
 
 
+def cache_ttl(params):
+    """The cache lifetime a request asks for, "5m" or "1h", or None when it
+    caches nothing."""
+    blocks = _prefix_blocks(params)
+    if not blocks:
+        return None
+    control = blocks[-1].get("cache_control") or {}
+    return "1h" if str(control.get("ttl", "")).lower() == "1h" else "5m"
+
+
 def split(params):
     """A request's cached system prefix and the system text after it."""
     blocks = params.get("system") or []

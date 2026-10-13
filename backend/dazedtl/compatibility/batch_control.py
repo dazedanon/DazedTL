@@ -8,6 +8,7 @@ from typing import Any
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, project_path
 
+from .batch_evidence import extends
 from .process_view import batch_results, evidence_root, queue, saved
 from .translation import TranslationProvider
 
@@ -189,7 +190,11 @@ def collect(
         if set(part) - set(batch["custom_ids"].values()):
             raise ValueError("Received results are outside this Batch’s saved scope.")
         for key, value in part.items():
-            if key in results and results[key] != value:
+            if (
+                key in results
+                and results[key] != value
+                and not extends(results[key], value)
+            ):
                 raise ValueError(
                     "Received results conflict with a saved response. Existing results were retained."
                 )

@@ -31,6 +31,22 @@ def cache_write_multiplier(provider: str, model: str,
     return 1.0
 
 
+def batch_write_weight(provider: str, model: str, writes: float,
+                       one_hour: float | None = None) -> float:
+    """Return Batch cache writes as regular-input tokens.
+
+    ``one_hour`` is how many of the writes used the one-hour cache, which
+    Anthropic reports beside the total; the rest used the five-minute cache.
+    Without it every write counts as one-hour, the only cache Claude Batches
+    asked for before they moved to the five-minute one.
+    """
+    one_hour = writes if one_hour is None else min(writes, one_hour)
+    return (
+        one_hour * cache_write_multiplier(provider, model, "1h")
+        + (writes - one_hour) * cache_write_multiplier(provider, model, "5m")
+    )
+
+
 def cache_read_multiplier(provider: str, model: str) -> float:
     """Return cache-read price as a multiple of regular input pricing.
 

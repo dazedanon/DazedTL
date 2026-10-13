@@ -353,6 +353,14 @@ def cancel_batch(provider: str, batch_id: str, *, client=None) -> dict:
     return {"id": batch_id, "api_status": status, "raw": batch}
 
 
+def one_hour_writes(usage: Any) -> int | None:
+    """How many of a message's cache writes used the one-hour cache, or None
+    when Anthropic's response did not say."""
+    split = getattr(usage, "cache_creation", None)
+    value = getattr(split, "ephemeral_1h_input_tokens", None)
+    return int(value) if isinstance(value, int) else None
+
+
 def _empty_usage() -> dict:
     return {
         "input_tokens": 0,
@@ -544,18 +552,25 @@ def _download_anthropic(client, batch_id: str, custom_ids: dict):
         cr = int(getattr(usage, "cache_read_input_tokens", 0) or 0)
         cw = int(getattr(usage, "cache_creation_input_tokens", 0) or 0)
         thinking = int(getattr(usage, "thinking_tokens", 0) or 0)
+        one_hour = one_hour_writes(usage)
+        # A response without the split counts as one-hour, the dearer cache.
+        one_hour = cw if one_hour is None else one_hour
         results[key] = {
             "text": text,
             "prompt_tokens": inp + cr + cw,
             "completion_tokens": out,
             "cache_read_input_tokens": cr,
             "cache_creation_input_tokens": cw,
+            "cache_creation_1h_input_tokens": one_hour,
             **({"thinking_tokens": thinking} if thinking else {}),
         }
         totals["input_tokens"] += inp
         totals["output_tokens"] += out
         totals["cache_read_input_tokens"] += cr
         totals["cache_creation_input_tokens"] += cw
+        totals["cache_creation_1h_input_tokens"] = (
+            totals.get("cache_creation_1h_input_tokens", 0) + one_hour
+        )
         totals["thinking_tokens"] += thinking
     return results, errors, totals
 

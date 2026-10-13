@@ -9,10 +9,20 @@ from .process_view import saved
 ARCHIVE = "dazedtl-batch-evidence.json"
 
 
+def extends(retained, value):
+    """Whether ``value`` is ``retained`` with fields added, as a response
+    downloaded again records usage an older download did not."""
+    return (
+        isinstance(retained, dict)
+        and isinstance(value, dict)
+        and all(key in value and value[key] == item for key, item in retained.items())
+    )
+
+
 def merge(previous, current):
     result = dict(previous)
     for key, value in current.items():
-        if key in result and result[key] != value:
+        if key in result and result[key] != value and not extends(result[key], value):
             raise ValueError(
                 "Batch evidence conflicts with an already retained request or response."
             )

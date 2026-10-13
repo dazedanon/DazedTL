@@ -104,7 +104,7 @@ def estimate_worker(_launch, _arguments, cwd, **_options):
     queue = Path(cwd) / "log/estimate_requests.json"
     payload = json.dumps({"Line1": "薬"}, ensure_ascii=False)
     params = translation.buildClaudeRequest(
-        "Translate.", f"```json\n{payload}\n```", [], "json", model, 1, cache_ttl="1h"
+        "Translate.", f"```json\n{payload}\n```", [], "json", model, 1
     )
     translation.queue_batch_request(payload, "English", params, provider="anthropic")
     translation.flush_batch_queue(force=True, queue_file=queue)

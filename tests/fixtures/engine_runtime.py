@@ -1910,6 +1910,27 @@ try:
         )
     )
     assert refusal["refusal"] and refusal["prompt_tokens"] == 5
+    # Batch cache writes are billed by the cache each request used: one-hour
+    # at 2x input, five-minute at 1.25x. A result saved before Anthropic's
+    # split was recorded counts as one-hour, as every Batch then asked for.
+    split = batch_history._result_entry_from_message(
+        SimpleNamespace(
+            content=[],
+            usage=SimpleNamespace(
+                input_tokens=0,
+                output_tokens=0,
+                cache_read_input_tokens=0,
+                cache_creation_input_tokens=100,
+                cache_creation=SimpleNamespace(ephemeral_1h_input_tokens=0),
+            ),
+        )
+    )
+    assert split["cache_creation_1h_input_tokens"] == 0, split
+    price = lambda **usage: batch_history._price_usage(
+        {"cache_creation_input_tokens": 100, **usage}, "claude-opus-5-5"
+    )
+    five_minute = price(cache_creation_1h_input_tokens=0)
+    assert abs(price() / five_minute - 2 / 1.25) < 1e-9, (price(), five_minute)
     # A run reads as finished only once its worker has exited and its outputs
     # are recorded; an Apply review taken earlier freezes files still changing.
     with app.backend.context():
