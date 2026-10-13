@@ -3,7 +3,7 @@
 import json
 import re
 import threading
-from copy import deepcopy
+from copy import copy, deepcopy
 from pathlib import Path
 
 from dazedtl.storage import write_json
@@ -90,7 +90,18 @@ LAYER = "state-groups"
 def configure(module, translation, root, limit):
     local = threading.local()
 
-    def context(call):
+    def grouping_config():
+        """The config groups are chosen with, and whether it holds a Batch's
+        glossary freeze. A Batch built its requests with that freeze, while
+        saving them harvests names from earlier files into the live glossary."""
+        glossary = translation.batch_glossary_freeze()
+        if glossary is None:
+            return module.TRANSLATION_CONFIG, False
+        config = copy(module.TRANSLATION_CONFIG)
+        config.vocab = glossary
+        return config, True
+
+    def context(call, config):
         if call["kind"] != "basic" or not isinstance(call["history"], str):
             return None
         text = call["text"]
@@ -115,7 +126,7 @@ def configure(module, translation, root, limit):
         )
         options = call.get("options", {})
         system, glossary, sfx, _ = translation.createContextParts(
-            module.TRANSLATION_CONFIG,
+            config,
             payload,
             "json",
             [],
@@ -241,6 +252,11 @@ def configure(module, translation, root, limit):
                 / ("dazedtl-state-groups-" + digest(filename)[:16] + ".json")
             )
             identity = digest({"calls": calls, "limit": limit, "policy": POLICY})
+            config, batch = grouping_config()
+
+            def keyed(call):
+                return context(call, config)
+
             if path.exists():
                 saved = read_json(path)
                 if saved.get("policy") != POLICY:
@@ -254,13 +270,21 @@ def configure(module, translation, root, limit):
                     )
                 remaining = remaining_calls(calls, frozen)
                 chosen = saved["groups"]
+                if batch:
+                    # A Batch that submitted its estimate's requests saved no
+                    # grouping before saving results, and earlier releases
+                    # grouped there by the harvested live glossary.
+                    regrouped = groups(frozen, limit, keyed)
+                    if regrouped != chosen:
+                        chosen = regrouped
+                        write_json(path, {**saved, "groups": chosen})
             else:
                 frozen = calls
                 remaining = [
                     (index, list(range(len(call["text"]))))
                     for index, call in enumerate(calls)
                 ]
-                chosen = groups(calls, limit, context)
+                chosen = groups(calls, limit, keyed)
                 write_json(
                     path,
                     {

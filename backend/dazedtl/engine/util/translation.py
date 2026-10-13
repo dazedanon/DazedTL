@@ -85,8 +85,12 @@ anthropic = _LazyModule("anthropic")
 os.environ.setdefault("TIKTOKEN_CACHE_DIR", str(DATA_DIR / "tokenizers"))
 
 
-def _batch_freeze_glossary_text(fallback=""):
-    """Collect-time glossary freeze used for legacy (v4) batch key recovery."""
+def batch_glossary_freeze():
+    """Glossary text a Batch built its requests with, or None.
+
+    Collect and consume read the freeze taken before collection, restoring it
+    from batch state when its file is missing. Other phases, and Batches
+    without a freeze, have none."""
     try:
         from util.vocab import (
             BATCH_GLOSSARY_FREEZE_FILE,
@@ -101,6 +105,14 @@ def _batch_freeze_glossary_text(fallback=""):
                 return BATCH_GLOSSARY_FREEZE_FILE.read_text(encoding="utf-8")
     except Exception:
         pass
+    return None
+
+
+def _batch_freeze_glossary_text(fallback=""):
+    """Collect-time glossary freeze used for legacy (v4) batch key recovery."""
+    frozen = batch_glossary_freeze()
+    if frozen is not None:
+        return frozen
     if fallback is not None and fallback != "":
         return fallback
     try:

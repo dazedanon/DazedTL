@@ -178,6 +178,7 @@ File line counts and rejected-request counts follow each request's latest attemp
 Each clarification retains the original source and instructions with one appended clarification.
 New MV/MZ state runs also freeze compatible state-call grouping before submission.
 The app adapter delegates extraction and field writing to the native state handler, groups only calls with identical instructions and matched system/glossary/SFX context within the saved request limit, and reuses the saved response partition during consume.
+A Batch matches glossary context against its glossary freeze, never the live glossary that consume grows with names from earlier files, so a Batch that submitted its estimate's requests partitions them as the estimate did ([state_requests](../backend/dazedtl/compatibility/state_requests.py)).
 Grouped requests carry their state-ID and field associations as context beside the unchanged LineN source/output schema.
 Actor-substitution calls and note calls retain their original boundaries.
 New MV/MZ runs freeze a single-pass choice policy, the [event parser's](../backend/dazedtl/engine/modules/rpgmakermvmz.py) `CHOICE_COLLECTION`: built-in menu choices are visited only on the first event pass, retaining their scene context.

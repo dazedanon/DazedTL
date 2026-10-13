@@ -1612,7 +1612,7 @@ class ProcessTests(unittest.TestCase):
         emitted = []
         malformed = [False]
         module = SimpleNamespace(
-            TRANSLATION_CONFIG=SimpleNamespace(langRegex="項目|他")
+            TRANSLATION_CONFIG=SimpleNamespace(langRegex="項目|他", vocab="")
         )
         module._entry_field_needs_translation = lambda item, field: str(
             item.get(field, "")
@@ -1651,20 +1651,24 @@ class ProcessTests(unittest.TestCase):
 
         module.parseSS = point(parse)
 
-        def context(_config, payload, _format, _history, speaker_names=()):
+        def context(config, payload, _format, _history, speaker_names=()):
             assert speaker_names == ("ミカ",), speaker_names
             values = list(json.loads(payload).values())
             glossary = next(
                 (value.split("語彙")[1] for value in values if "語彙" in value), ""
-            )
+            ) + "".join(term for term in config.vocab.split() if term in payload)
             return "Frozen game context", glossary, "", payload
 
+        freeze: list[str | None] = [None]
         translation = SimpleNamespace(
-            protect_script_codes=lambda value: (value, {}), createContextParts=context
+            protect_script_codes=lambda value: (value, {}),
+            createContextParts=context,
+            batch_glossary_freeze=lambda: freeze[0],
         )
         with TemporaryDirectory() as temporary:
             state_requests.configure(module, translation, temporary, 50)
             actual = module.parseSS(deepcopy(data), "States.json")
+            built = deepcopy(emitted)
             self.assertEqual(len(emitted), 8)
             self.assertEqual(sum(len(row[0]) for row in emitted), 112)
             self.assertTrue(all(len(row[0]) <= 50 for row in emitted))
@@ -1715,6 +1719,35 @@ class ProcessTests(unittest.TestCase):
             module.parseSS(changed, "States.json")
             self.assertTrue(emitted)
             self.assertEqual({row[1] for row in emitted}, {"State instructions"})
+            # Saving a Batch groups by its glossary freeze, not by names that
+            # earlier files harvested, whether it submitted its estimate's
+            # requests (nothing saved) or a save stored a harvested grouping.
+            translation.createContextParts = context
+            module.TRANSLATION_CONFIG.vocab = "項目5_name"
+            harvested = Path(temporary) / "harvested"
+            state_requests.configure(module, translation, harvested, 50)
+            emitted.clear()
+            module.parseSS(deepcopy(data), "States.json")
+            self.assertNotEqual(emitted, built)
+            state_requests.restore(module)
+            freeze[0] = ""
+            batch = Path(temporary) / "batch"
+            state_requests.configure(module, translation, batch, 50)
+            emitted.clear()
+            self.assertEqual(module.parseSS(deepcopy(data), "States.json"), actual)
+            self.assertEqual(emitted, built)
+            grouping = (batch / "log" / saved.name).read_bytes()
+            (batch / "log" / saved.name).write_bytes(
+                (harvested / "log" / saved.name).read_bytes()
+            )
+            emitted.clear()
+            self.assertEqual(module.parseSS(deepcopy(data), "States.json"), actual)
+            self.assertEqual(emitted, built)
+            self.assertEqual(
+                json.loads((batch / "log" / saved.name).read_bytes()),
+                json.loads(grouping),
+            )
+            state_requests.restore(module)
 
     def test_process_counts_payload_and_partial_failure_do_not_rewrite_queue(self):
         with TemporaryDirectory() as temporary:
