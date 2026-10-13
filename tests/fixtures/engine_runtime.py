@@ -51,6 +51,7 @@ try:
     assert app.backend.source == ENGINE_ROOT
     with app.backend.context():
         from desktop.backend.manual import (
+            adoptable_requests,
             compatible,
             reusable_speaker_scan,
             signature,
@@ -78,6 +79,33 @@ try:
         assert reusable_speaker_scan(scan_plan) == ["村長"]
         scan_plan["files"] = [{"name": "Map001.json", "sha256": "b"}]
         assert reusable_speaker_scan(scan_plan) is None
+        # It submits its estimate's requests only when it froze the same plan.
+        adopt = temporary / "adopt"
+        (adopt / "seed").mkdir(parents=True)
+        estimate_plan = {
+            "mode": "estimate",
+            "settings": {"model": "m"},
+            "context_hashes": {},
+        }
+        (adopt / "seed/estimate_plan.json").write_text(json.dumps(estimate_plan))
+        batch_plan = {
+            "mode": "batch",
+            "settings": {"model": "m"},
+            "context_hashes": {
+                "seed/estimate_plan.json": "x",
+                "seed/batch_requests.json": "y",
+            },
+            "adopt_requests": {
+                "plan": "seed/estimate_plan.json",
+                "queue": "seed/batch_requests.json",
+                "ignore": ["mode"],
+            },
+        }
+        assert (
+            adoptable_requests(adopt, batch_plan) == adopt / "seed/batch_requests.json"
+        )
+        batch_plan["settings"] = {"model": "other"}
+        assert adoptable_requests(adopt, batch_plan) is None
 
         # A real saved run recorded this pre-version byte hash; it must still pass
         # the native resume guard, alongside plans that record the version.

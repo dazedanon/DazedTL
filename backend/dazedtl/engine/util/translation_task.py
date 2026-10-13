@@ -179,8 +179,13 @@ class TranslationTaskCore:
                  parse_speakers=False, batch_mode=False, batch_resume_state=None,
                  batch_workflow_return=None, *, code_root=None, runner_script=None,
                  runtime_profile=None, resume_cached=False, preserve_batch_queue=False,
-                 speaker_scan=None, scanned_speakers=None):
+                 speaker_scan=None, scanned_speakers=None, adopted_requests=None):
         self.project_root = Path(project_root)
+        # The estimate's request queue, built from the same frozen inputs; a
+        # fresh Batch preparation whose names step changed nothing submits it
+        # instead of collecting the same requests again.
+        self.adopted_requests = adopted_requests
+        self._speakers_translated = False
         # An estimate heading into a Batch records its speaker scan, keyed by
         # the inputs it read; that Batch's preparation reuses the names
         # instead of reading every file again.
@@ -772,6 +777,36 @@ class TranslationTaskCore:
             self.emit_log(f"❌ Failed to run module process: {str(e)}")
             return "Fail"
 
+    def _adopt_requests(self):
+        """Queues the estimate's requests instead of collecting them again.
+
+        Only an RPG Maker preparation whose names step translated nothing
+        builds exactly the estimate's requests; any other run collects.
+        """
+        if (
+            not self.adopted_requests
+            or self._speakers_translated
+            or self.preserve_batch_queue
+            or "mv/mz" not in str(self.module_info[0]).lower()
+        ):
+            return False
+        try:
+            queue = json.loads(Path(self.adopted_requests).read_text(encoding="utf-8"))
+            if not isinstance(queue, dict) or not queue:
+                return False
+            from util.translation import (
+                BATCH_QUEUE_FILE,
+                _batch_file_lock,
+                _write_batch_file,
+            )
+
+            with _batch_file_lock():
+                _write_batch_file(BATCH_QUEUE_FILE, queue)
+            return True
+        except Exception as exc:
+            self.emit_log(f"[BATCH] The estimate's requests were not reused: {exc}")
+            return False
+
     def _speaker_parser(self):
         """The RPG Maker parser, configured as this run's files will be read."""
         import modules.rpgmakermvmz as mvmz
@@ -964,6 +999,7 @@ class TranslationTaskCore:
                     f"[Cost: ${cost:.4f}] ✓"
                 )
             self.emit_log("✅ Speaker translations saved to the game glossary.")
+            self._speakers_translated = True
             return True
         finally:
             mvmz.setSpeakerParseMode(False)
@@ -1446,13 +1482,20 @@ class TranslationTaskCore:
                                 f"[BATCH] Could not freeze glossary context: {exc}"
                             )
                         self._emit_batch_phase("collect")
-                        self.emit_log("[BATCH] Pass 1/2: collecting requests...")
-                        self.emit_log(
-                            "[BATCH] Pass 1 queues the main translation requests without "
-                            "per-speaker API calls; unresolved speakers were resolved in "
-                            "the preflight glossary step when needed."
-                        )
-                        total_cost = self._run_files(matching_files, False, batch_phase="collect")
+                        if self._adopt_requests():
+                            self.emit_log(
+                                "[BATCH] Pass 1/2: reusing the requests the estimate "
+                                "built from the same files and settings."
+                            )
+                            total_cost = "Success"
+                        else:
+                            self.emit_log("[BATCH] Pass 1/2: collecting requests...")
+                            self.emit_log(
+                                "[BATCH] Pass 1 queues the main translation requests without "
+                                "per-speaker API calls; unresolved speakers were resolved in "
+                                "the preflight glossary step when needed."
+                            )
+                            total_cost = self._run_files(matching_files, False, batch_phase="collect")
                         if self.should_stop:
                             self.finished_signal.emit(False, "Translation stopped")
                             return

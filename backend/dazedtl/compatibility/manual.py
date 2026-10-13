@@ -77,6 +77,45 @@ def canceled_before_submission(job, directory, *, finishing=False):
     return True
 
 
+# What a Batch preparation's plan adds to, or changes from, its estimate's.
+PREPARATION_KEYS = (
+    "mode",
+    "scan_speakers",
+    "scanned_speakers",
+    "dazedtl_claude_count",
+    "dazedtl_reserved_sources",
+)
+
+
+def seed_requests(directory, plan, estimate):
+    """Gives a Batch preparation its estimate's plan and requests. Its worker
+    submits them instead of collecting the same requests again when its own
+    final plan matches the estimate's (see the engine's adoptable_requests)."""
+    from .process_view import queue
+
+    try:
+        raw_plan = (estimate / "plan.json").read_bytes()
+        requests = queue(estimate)
+    except OSError, ValueError:
+        return
+    if not requests:
+        return
+    raw_queue = json.dumps(requests, ensure_ascii=False).encode()
+    seed = Path(directory) / "seed"
+    seed.mkdir(exist_ok=True)
+    for name, raw in (
+        ("estimate_plan.json", raw_plan),
+        ("batch_requests.json", raw_queue),
+    ):
+        (seed / name).write_bytes(raw)
+        plan["context_hashes"]["seed/" + name] = hashlib.sha256(raw).hexdigest()
+    plan["adopt_requests"] = {
+        "plan": "seed/estimate_plan.json",
+        "queue": "seed/batch_requests.json",
+        "ignore": list(PREPARATION_KEYS),
+    }
+
+
 def manual_jobs(source, workspace, lock, allow_providers):
     # Load an isolated module namespace so its launcher layer never changes the
     # preserved application's controller.
@@ -166,6 +205,8 @@ def manual_jobs(source, workspace, lock, allow_providers):
         # and that preparation reuses the scan.
         speaker_scan = False
         scanned_speakers = None
+        # That estimate's run folder, whose requests the preparation may reuse.
+        adopt_from = None
         controllers: dict[str, Any] | None = None
 
         def __init__(self, *args, **kwargs):
@@ -476,6 +517,7 @@ def manual_jobs(source, workspace, lock, allow_providers):
                     item.claude_count = self.claude_count
                     item.speaker_scan = self.speaker_scan
                     item.scanned_speakers = self.scanned_speakers
+                    item.adopt_from = self.adopt_from
                     result = item.start(source, engine, files, *args, **kwargs)
                     self.controllers[result["id"]] = self.controllers.pop("preparing")
                     self.active = result["id"]
@@ -509,6 +551,8 @@ def manual_jobs(source, workspace, lock, allow_providers):
                 plan["scan_speakers"] = True
             if self.scanned_speakers is not None:
                 plan["scanned_speakers"] = deepcopy(self.scanned_speakers)
+            if self.adopt_from is not None:
+                seed_requests(directory, plan, Path(self.adopt_from))
             if self.request_policy is not None:
                 if self.request_policy["model"] != plan["settings"]["model"]:
                     raise ValueError(

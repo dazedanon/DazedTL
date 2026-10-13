@@ -140,7 +140,12 @@ def speaker_scan_inputs(plan):
     serves a Batch preparation whose plan matches it here."""
     keys = ("engine", "signature", "files", "selected", "settings", "engines",
             "runtime_profile", "context_hashes", "workflow")
-    return digest(json.dumps({key: plan.get(key) for key in keys}, ensure_ascii=False, sort_keys=True).encode())
+    inputs = {key: plan.get(key) for key in keys}
+    # A preparation's copies of its estimate's plan and requests are not inputs.
+    seeds = plan.get("adopt_requests") if isinstance(plan.get("adopt_requests"), dict) else {}
+    inputs["context_hashes"] = {name: hashed for name, hashed in (inputs["context_hashes"] or {}).items()
+                                if name not in (seeds.get("plan"), seeds.get("queue"))}
+    return digest(json.dumps(inputs, ensure_ascii=False, sort_keys=True).encode())
 
 
 def reusable_speaker_scan(plan):
@@ -153,6 +158,31 @@ def reusable_speaker_scan(plan):
             or not all(isinstance(name, str) for name in scanned["collected"])):
         return None
     return list(scanned["collected"])
+
+
+def adoptable_requests(directory, plan):
+    """The estimate's request queue a Batch preparation may submit instead of
+    collecting, or None. It qualifies only when the preparation froze the
+    estimate's plan exactly, apart from the keys that name the run's mode."""
+    spec = plan.get("adopt_requests")
+    if plan.get("mode") != "batch" or not isinstance(spec, dict):
+        return None
+    try:
+        estimate = json.loads((directory / spec["plan"]).read_text(encoding="utf-8"))
+        seeds = {spec["plan"], spec["queue"]}
+        ignore = {*spec.get("ignore", ()), "adopt_requests"}
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+    def frozen(value):
+        result = {key: item for key, item in value.items() if key not in ignore}
+        result["context_hashes"] = {name: hashed for name, hashed in (value.get("context_hashes") or {}).items()
+                                    if name not in seeds}
+        return result
+
+    if not isinstance(estimate, dict) or estimate.get("mode") != "estimate" or frozen(estimate) != frozen(plan):
+        return None
+    return directory / spec["queue"]
 
 
 def snapshot_context(directory, plan, workspace):

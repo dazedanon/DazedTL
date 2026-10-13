@@ -1132,6 +1132,13 @@ class GuidedActions:
                 if mode == "batch" and estimate
                 else None
             )
+            # It may also submit the estimate's requests instead of building
+            # the same ones again.
+            self.guided.backend.manual.adopt_from = (
+                str(self.guided.backend.manual.folder(estimate["jobId"]))
+                if mode == "batch" and estimate
+                else None
+            )
             job = self.guided.backend.guided_phase(native["id"], phase, files)
             if run_inputs:
                 self.guided.runs.remember(
@@ -1151,6 +1158,7 @@ class GuidedActions:
             self.guided.backend.manual.claude_count = True
             self.guided.backend.manual.speaker_scan = False
             self.guided.backend.manual.scanned_speakers = None
+            self.guided.backend.manual.adopt_from = None
             if mode == "estimate":
                 current = self.guided.backend.workflows.projects[native["id"]]
                 self.guided.backend.workflows.update(
