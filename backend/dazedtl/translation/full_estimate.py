@@ -8,6 +8,7 @@ binds to are unchanged.
 """
 
 from copy import deepcopy
+from datetime import datetime
 
 from .files import digest
 
@@ -18,6 +19,20 @@ PHASES = ("database", "dialogue", "advanced")
 # between them keeps it current; the least demanding mode's configuration
 # stands for both.
 MODE = "translate"
+
+
+def took(job):
+    """Seconds an operation ran, from its start to its last record."""
+    try:
+        return max(
+            0.0,
+            (
+                datetime.fromisoformat(job["updated"])
+                - datetime.fromisoformat(job["created"])
+            ).total_seconds(),
+        )
+    except KeyError, TypeError, ValueError:
+        return None
 
 
 class FullEstimate:
@@ -158,5 +173,6 @@ class FullEstimate:
             "job": jobs[0] if jobs else None,
             "result": result,
             "finished": saved["updated"] if saved else None,
+            "took": took(saved) if saved else None,
             "current": current,
         }

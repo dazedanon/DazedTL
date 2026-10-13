@@ -73,6 +73,7 @@ Message rows is how many rows one message window shows; Text QA keeps its correc
 **Cost estimate** shows what translating the whole game costs with your API key before you translate anything.
 Click **Estimate cost**: it estimates Database files, Maps & events and Other event text over all their files, with the model shown beside it, and lists each task's cost.
 Estimating is free and translates nothing; for Claude models it uses Anthropic's free token count.
+On a large game this can take several minutes: each task shows how far it has got and about how long is left, and a finished estimate says how long it took.
 The other tasks use your assistant's plan, not your API key.
 If you change the guidance, the source choices, the game's files or the model, the estimate reads **Outdated**; click **Estimate again**.
 
@@ -86,6 +87,7 @@ Translate has five tasks.
    Translate the database first, and try a small early scene before the rest.
 2. Choose **Batch** (often half the price, but can take hours) or **Live** (results arrive as you watch), and the model.
 3. Click **Translate**, check the estimate and approve it.
+   Until the estimate is ready, its window shows each step, how far it has got and about how long is left.
    With **Batch**, names and labels the glossary lacks are translated first with Live, after their own review; they join the glossary even if you then decline the Batch.
 4. Click **Apply** to write the translations into the game.
 

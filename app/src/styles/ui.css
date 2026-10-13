@@ -1545,6 +1545,14 @@ pre {
 .step-progress > li[data-state="current"]::before {
   background: var(--color-accent);
 }
+/* A current step that counts its work fills its bar as far as it has got. */
+.step-progress > li[data-fill]::before {
+  background: linear-gradient(
+    to right,
+    var(--color-accent) var(--step-fill),
+    var(--color-border) var(--step-fill)
+  );
+}
 /* Left unfinished behind the current step: half its bar. */
 .step-progress > li[data-state="started"] {
   color: var(--color-label);

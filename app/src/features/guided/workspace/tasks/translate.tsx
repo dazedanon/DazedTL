@@ -234,7 +234,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
     : !baseline
       ? "Set up the game before translating."
       : preparing
-        ? "Checking the selected files · please wait"
+        ? "Estimating the cost · please wait"
         : current?.approval
           ? "Awaiting your cost approval"
           : activeRun(current)

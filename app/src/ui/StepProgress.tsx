@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { StatusIcon } from "./StatusIcon";
 
 export type StepState = "done" | "current" | "started" | "next" | "blocked";
@@ -9,7 +9,9 @@ export type StepState = "done" | "current" | "started" | "next" | "blocked";
  * next step reads at a glance. `current` past the last step marks them all
  * done. Steps someone else reports, such as an assistant's phases, give their
  * own `state`: `started` is one left unfinished behind the current step. A
- * `detail` line names what the bar alone cannot, such as Blocked.
+ * `detail` line names what the bar alone cannot, such as Blocked. A current
+ * step that counts its work gives the share done as `fraction`, which fills
+ * its bar that far.
  */
 export function StepProgress({
   label,
@@ -22,6 +24,7 @@ export function StepProgress({
     label: string;
     state?: StepState;
     detail?: ReactNode;
+    fraction?: number;
   }[];
   current?: number;
 }) {
@@ -31,11 +34,21 @@ export function StepProgress({
         const state =
           step.state ??
           (index < current ? "done" : index === current ? "current" : "next");
+        const fill =
+          state === "current" && step.fraction !== undefined
+            ? Math.min(1, Math.max(0, step.fraction))
+            : undefined;
         return (
           <li
             key={step.id}
             data-state={state}
             aria-current={state === "current" ? "step" : undefined}
+            data-fill={fill === undefined ? undefined : ""}
+            style={
+              fill === undefined
+                ? undefined
+                : ({ "--step-fill": `${fill * 100}%` } as CSSProperties)
+            }
           >
             <span>
               {step.label}

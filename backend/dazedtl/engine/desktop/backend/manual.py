@@ -539,6 +539,8 @@ class ManualJobs:
             elif kind == "batch_phase":
                 job["phase"] = args[0]
                 job["batch_detail"] = args[1]
+                # Each phase counts its files afresh.
+                job["progress"] = None
                 if args[0] == "submit":
                     job.update(status="waiting", approval={"token": uuid.uuid4().hex, "kind": "batch", "detail": args[1]})
             elif kind == "speaker_confirmation":

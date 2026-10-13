@@ -96,6 +96,7 @@ class Operations:
                         if event.get("event") == "log":
                             job["log"] = (job["log"] + [str(event["message"])[:4000]])[-80:]
                             job["message"] = str(event["message"])[:1000]
+                            job["activity"] = event.get("activity")
                         elif event.get("event") == "finished":
                             job.update(status=event["status"], message=event["message"], result=event.get("result"))
                         self.save(job)
@@ -128,6 +129,7 @@ class Operations:
             self.stopping.set()
             self._request_stop()
             self.jobs[identity]["message"] = "Stopping at the next safe boundary. Completed writes are retained."
+            self.jobs[identity]["stopping"] = True
             self.save(self.jobs[identity])
             return self.jobs[identity]
 

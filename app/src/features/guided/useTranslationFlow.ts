@@ -15,6 +15,8 @@ export type TranslationFlowState = {
   phase: Phase;
   mode: "batch" | "translate";
   files: string[];
+  /** When Translate was clicked, for the time the flow has taken. */
+  started: number;
   stage:
     | "preparing"
     | "estimating"
@@ -145,6 +147,7 @@ export function useTranslationFlow(options: Options) {
         phase: latest.current.phase,
         mode: latest.current.mode,
         files: [...files],
+        started: Date.now(),
         stage: "preparing",
       },
     };

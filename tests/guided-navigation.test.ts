@@ -317,8 +317,12 @@ test("the Project page continues with the next step and keeps a later saved posi
   state.fullEstimate = {
     status: "complete",
     message: "",
+    started: null,
+    progress: null,
+    stopping: false,
     result: { model: "m", batchSupported: true, tasks: [] },
     finished: null,
+    took: null,
     current: false,
   };
   assert.deepEqual(finished(), [

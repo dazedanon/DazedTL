@@ -11,6 +11,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -28,24 +29,73 @@ WORKER = Path(__file__).with_name("manual_worker.py")
 ENGINE = "RPG Maker MV/MZ"
 
 
+class Activity:
+    """Where each task stands, reported as the operation's activity with
+    every status line: tasks with files, each waiting, starting its worker,
+    estimating its files, priced by Claude's count, or done with the seconds
+    it took. Tasks may report from their own threads."""
+
+    def __init__(self, log, tasks):
+        self.log = log
+        self.stopped = log.stopped
+        self.lock = threading.Lock()
+        self.copying = True
+        self.began = {}
+        self.tasks = {
+            task["phase"]: {
+                "phase": task["phase"],
+                "state": "waiting",
+                "current": 0,
+                "total": len(task["files"]),
+                "took": None,
+            }
+            for task in tasks
+            if task["files"]
+        }
+
+    def __call__(self, message, phase=None, **changes):
+        with self.lock:
+            if phase:
+                task = self.tasks[phase]
+                if changes.get("state") == "starting":
+                    self.began[phase] = time.monotonic()
+                elif changes.get("state") == "done":
+                    changes["took"] = round(time.monotonic() - self.began[phase], 1)
+                task.update(changes)
+            self.log(
+                message,
+                {
+                    "copying": self.copying,
+                    "tasks": [dict(task) for task in self.tasks.values()],
+                },
+            )
+
+    def copied(self):
+        with self.lock:
+            self.copying = False
+
+
 def run(plan, log):
     from desktop.backend.workflow_actions import validate_plan
 
     validate_plan(plan)
     folder = Path(plan["folder"])
     options = plan["options"]
+    report = Activity(log, options["tasks"])
     rows = []
     with tempfile.TemporaryDirectory(prefix="full-estimate-", dir=folder) as temporary:
         root = Path(temporary)
-        log("Copying the game's current text")
+        report("Copying the game's current text")
         inventory = stage(root / "source", folder, plan["project"], options["files"])
+        report.copied()
         for task in options["tasks"]:
             if not task["files"]:
                 rows.append(row(task, {}))
                 continue
             estimate = estimate_task(
-                root / task["phase"], folder, plan, inventory, task, log
+                root / task["phase"], folder, plan, inventory, task, report
             )
+            report(f"{LABELS[task['phase']]} · estimated", task["phase"], state="done")
             rows.append(row(task, estimate))
     return {
         "fingerprint": options["fingerprint"],
@@ -89,7 +139,8 @@ def estimate_task(directory, folder, plan, inventory, task, log):
 
     workspace = folder.parent.parent
     label = LABELS[task["phase"]]
-    log(f"{label} · preparing")
+    phase = task["phase"]
+    log(f"{label} · preparing", phase, state="starting")
     directory.mkdir()
     native = run_plan(
         workspace,
@@ -113,18 +164,20 @@ def estimate_task(directory, folder, plan, inventory, task, log):
         directory / "attempt.json",
         {"files": task["files"], "resume": False, "batch_resume_state": None},
     )
-    estimate = launch(directory, worker_environment(workspace, native), label, log)
+    estimate = launch(
+        directory, worker_environment(workspace, native), label, phase, log
+    )
     if (
         plan["options"]["claudeCount"]
         and estimate.get("provider") == "anthropic"
         and estimate.get("approximate_input")
     ):
-        log(f"{label} · counting Claude tokens")
+        log(f"{label} · counting Claude tokens", phase, state="counting")
         estimate = count(directory, workspace, native, estimate, log.stopped)
     return estimate
 
 
-def launch(directory, env, label, log):
+def launch(directory, env, label, phase, log):
     """Runs the engine's estimate worker and returns its estimate."""
     with (directory / "log/startup.txt").open("a", encoding="utf-8") as errors:
         process = subprocess.Popen(
@@ -155,7 +208,13 @@ def launch(directory, env, label, log):
                     # A progress line per file would rewrite the operation
                     # record hundreds of times a minute.
                     if time.monotonic() - shown >= 0.5 or args[0] == args[1]:
-                        log(f"{label} · {args[0]:,} of {args[1]:,} files")
+                        log(
+                            f"{label} · {args[0]:,} of {args[1]:,} files",
+                            phase,
+                            state="estimating",
+                            current=args[0],
+                            total=args[1],
+                        )
                         shown = time.monotonic()
                 elif kind == "estimate_ready" and args:
                     estimate = args[0]

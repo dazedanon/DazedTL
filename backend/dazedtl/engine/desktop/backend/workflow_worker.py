@@ -23,10 +23,12 @@ def main():
     def emit(event, **values):
         PROTOCOL.write(json.dumps({"event": event, **values}, ensure_ascii=False) + "\n")
         PROTOCOL.flush()
-    def log(message):
+    def log(message, activity=None):
+        """Reports a status line, and optionally where the action stands as
+        structured `activity` of its own shape, which the next line replaces."""
         if canceled.is_set():
             raise InterruptedError("Stopped at a safe boundary. Completed writes were retained; review the destination before retrying.")
-        emit("log", message=str(message))
+        emit("log", message=str(message), activity=activity)
     log.stopped = canceled.is_set
     sys.stdout = sys.stderr
     try:

@@ -183,13 +183,21 @@ def full_estimate(value):
             attempt["status"], "failed"
         )
     )
+    progress = (attempt or {}).get("activity")
     return {
         "status": status,
         "message": attempt["message"] if attempt else "",
+        "started": attempt["created"] if attempt else None,
+        # Earlier versions saved no activity; a finished attempt has none.
+        "progress": progress
+        if status == "working" and isinstance(progress, dict)
+        else None,
+        "stopping": bool((attempt or {}).get("stopping")) and status == "working",
         "result": pick(value["result"], ("model", "batchSupported", "tasks"))
         if value["result"]
         else None,
         "finished": value["finished"],
+        "took": value["took"],
         "current": value["current"],
     }
 

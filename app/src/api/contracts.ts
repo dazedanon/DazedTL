@@ -952,13 +952,33 @@ export type FullEstimateResult = {
   tasks: FullEstimateTask[];
 };
 
+/** Where one task of a working whole-game estimate stands. */
+export type FullEstimateTaskProgress = {
+  phase: "database" | "dialogue" | "advanced";
+  state: "waiting" | "starting" | "estimating" | "counting" | "done";
+  current: number;
+  total: number;
+  took: number | null;
+};
+
+/** Where a working whole-game estimate stands: copying the game's text
+before any task, then each task with files to estimate, in order. */
+export type FullEstimateProgress = {
+  copying: boolean;
+  tasks: FullEstimateTaskProgress[];
+};
+
 /** Context's whole-game cost estimate: the newest attempt's state and the
 newest saved result, current while every task's inputs are unchanged. */
 export type FullEstimate = {
   status: "none" | "working" | "complete" | "failed" | "stopped";
   message: string;
+  started: string | null;
+  progress: FullEstimateProgress | null;
+  stopping: boolean;
   result: FullEstimateResult | null;
   finished: string | null;
+  took: number | null;
   current: boolean;
 };
 

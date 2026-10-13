@@ -658,14 +658,43 @@ class FullEstimateResult(TypedDict):
     tasks: list[FullEstimateTask]
 
 
+class FullEstimateTaskProgress(TypedDict):
+    """Where one task of a working whole-game estimate stands."""
+
+    phase: Literal["database", "dialogue", "advanced"]
+    # Waiting for its turn, starting its worker, estimating its files, priced
+    # by Claude's own count, or done.
+    state: Literal["waiting", "starting", "estimating", "counting", "done"]
+    # Its files estimated so far and its file count.
+    current: int
+    total: int
+    # Seconds it took, once done.
+    took: float | None
+
+
+class FullEstimateProgress(TypedDict):
+    """Where a working whole-game estimate stands: copying the game's text
+    before any task, then each task with files to estimate, in order."""
+
+    copying: bool
+    tasks: list[FullEstimateTaskProgress]
+
+
 class FullEstimate(TypedDict):
     """Context's whole-game cost estimate: the newest attempt's state and the
     newest saved result, current while every task's inputs are unchanged."""
 
     status: Literal["none", "working", "complete", "failed", "stopped"]
     message: str
+    # When the newest attempt started, where it stands while working, and
+    # whether Stop was clicked.
+    started: str | None
+    progress: FullEstimateProgress | None
+    stopping: bool
     result: FullEstimateResult | None
     finished: str | None
+    # Seconds the saved estimate took, as a guide to the next one.
+    took: float | None
     current: bool
 
 

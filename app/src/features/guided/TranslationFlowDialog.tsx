@@ -4,8 +4,16 @@ import { Button } from "../../ui/Button";
 import { Message } from "../../ui/Feedback";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
+import { StepProgress } from "../../ui/StepProgress";
+import {
+  formatClock,
+  formatDuration,
+  formatRemaining,
+} from "../../ui/workTime";
+import { useRemaining, useSecond, useStepClock } from "../../state/useWorkTime";
 import { TranslationReviewContent } from "./TranslationReview";
 import { flowLoading, type useTranslationFlow } from "./useTranslationFlow";
+import { estimateActivity } from "./estimateActivity";
 import { NameTranslationFeedback } from "./NameTranslationFeedback";
 import { api } from "../../api/client";
 import { ExpandableText } from "../../ui/ExpandableText";
@@ -24,39 +32,21 @@ export function TranslationFlowDialog({
   inspect: (run?: string) => void;
 }) {
   const value = flow.state;
+  const loading = !!value && flowLoading(value);
+  const activity = value && loading ? estimateActivity(value) : undefined;
+  const now = useSecond(loading);
+  const clock = useStepClock(String(value?.started), activity?.current, now);
+  // While stopping, the steps stay where the work stopped.
+  const step = activity?.current ?? clock.last;
+  const count = activity?.count;
+  const remaining = useRemaining(count?.key ?? "", count, now);
   if (!value) return null;
-  const loading = flowLoading(value);
   const translatingNames =
     value.stage === "batch" &&
     value.namesApproved &&
     (!value.job?.nameTranslation ||
       value.job.nameTranslation.state === "running");
-  const progress =
-    value.stage === "estimating" && value.job?.id === value.estimateId
-      ? value.job?.progress
-      : undefined;
-  const checked =
-    progress &&
-    Number.isSafeInteger(progress.current) &&
-    Number.isSafeInteger(progress.total) &&
-    progress.total > 0 &&
-    progress.current > 0 &&
-    progress.current <= progress.total
-      ? progress
-      : undefined;
   const mode = value.mode === "batch" ? "Batch" : "Live";
-  const message =
-    value.stage === "canceling"
-      ? "Stopping preparation…"
-      : translatingNames
-        ? "Translating names and labels…"
-        : value.stage === "batch"
-          ? `Preparing the ${mode} cost review…`
-          : value.stage === "estimating"
-            ? checked && checked.current === checked.total
-              ? "Finishing cost estimate…"
-              : "Estimating translation cost…"
-            : "Checking selected text and saved results…";
   const nameFeedback = value.stage !== "estimating" &&
     !translatingNames &&
     value.job?.nameTranslation && (
@@ -114,7 +104,7 @@ export function TranslationFlowDialog({
                 : undefined
             }
           >
-            {loading ? (
+            {loading && activity ? (
               <div className="translation-flow-progress">
                 <div className="translation-flow-activity" role="status">
                   <LoaderCircle
@@ -122,26 +112,48 @@ export function TranslationFlowDialog({
                     className="job-status-spinner"
                     aria-hidden="true"
                   />
-                  <strong>{message}</strong>
-                  <small>
-                    {translatingNames
-                      ? "Live · names and labels only"
-                      : checked
-                        ? `${checked.current} of ${checked.total} ${checked.total === 1 ? "file" : "files"} checked · ${mode}`
-                        : `${value.files.length} selected ${value.files.length === 1 ? "file" : "files"} · ${mode}`}
+                  <strong>{activity.title}</strong>
+                  {/* Its line is kept while empty, so nothing moves when a
+                      count appears. */}
+                  <small className="translation-flow-count">
+                    {count
+                      ? `${count.current.toLocaleString()} of ${count.total.toLocaleString()} files` +
+                        (remaining === undefined
+                          ? ""
+                          : ` · ${formatRemaining(remaining)}`)
+                      : translatingNames
+                        ? "Live · names and labels only"
+                        : "\u00a0"}
                   </small>
                 </div>
-                {checked?.file && (
-                  <div className="translation-flow-file">
-                    <small>Last checked</small>
-                    <ExpandableText
-                      text={checked.file}
-                      label="Last checked file"
-                      appearance="inline"
-                      limit={100}
-                    />
-                  </div>
-                )}
+                <StepProgress
+                  label="Estimate steps"
+                  current={activity.steps.findIndex(({ id }) => id === step)}
+                  steps={activity.steps.map(({ id, label }) => ({
+                    id,
+                    label,
+                    // A finished step says how long it took, on a line every
+                    // step keeps; the current one fills as far as its files
+                    // have got.
+                    detail:
+                      id !== step && clock.spent(id) >= 500
+                        ? formatDuration(clock.spent(id) / 1000)
+                        : "\u00a0",
+                    fraction: id === step ? activity.fraction : undefined,
+                  }))}
+                />
+                <div
+                  className="translation-flow-file"
+                  data-empty={count?.file ? undefined : ""}
+                >
+                  <small>Last checked</small>
+                  <ExpandableText
+                    text={count?.file || "\u00a0"}
+                    label="Last checked file"
+                    appearance="inline"
+                    limit={100}
+                  />
+                </div>
                 {nameFeedback}
               </div>
             ) : value.stage === "empty" ? (
@@ -167,7 +179,17 @@ export function TranslationFlowDialog({
             )}
             {value.stage === "error" && nameFeedback}
           </DialogBody>
-          <ActionBar feedback={null}>
+          <ActionBar
+            feedback={
+              loading && (
+                <small className="translation-flow-elapsed">
+                  {mode} · {value.files.length.toLocaleString()}{" "}
+                  {value.files.length === 1 ? "file" : "files"} ·{" "}
+                  {formatClock((now - value.started) / 1000)} elapsed
+                </small>
+              )
+            }
+          >
             <Button
               disabled={value.stage === "canceling" || (!loading && flow.busy)}
               onClick={flow.cancel}

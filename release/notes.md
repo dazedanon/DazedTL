@@ -3,6 +3,8 @@
 ### Changed
 
 - **Translate:** cost estimates for a connection without Batch, such as an OpenRouter model without a Batch endpoint or a custom endpoint, are about ten times faster, and much more on Windows, where each file took several seconds.
+- **Translate:** while an estimate is prepared, its window lists the steps to the cost review (**Check files**, **Estimate cost**, then for Batch **Build requests**), how long each finished step took, how many files the current step has done and about how long it has left, and the time since you clicked **Translate**. Building the Batch requests, the longest part on a large game, used to show only "Preparing the Batch cost review…".
+- **Context:** **Cost estimate** shows each task's progress and about how long is left while it works, and how long the last estimate took.
 - **Translate:** names and labels translated with Live before a Batch now join the game glossary in **Context** > **Guidance** even when you decline the Batch, so you can see and edit them there. Completed runs already added them.
 - **Translate:** cost estimates and Batch preparation take less time on large games, about a third less on Linux and up to a fifth less on Windows.
 

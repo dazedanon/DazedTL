@@ -411,6 +411,25 @@
 }
 .translation-flow-progress {
   gap: var(--space-4);
+  width: min(100%, var(--measure));
+}
+/* The steps line up under their bars rather than centring like the status. */
+.translation-flow-progress > .step-progress {
+  justify-self: stretch;
+  margin-block: var(--space-2);
+  text-align: start;
+}
+.translation-flow-count {
+  font-variant-numeric: tabular-nums;
+}
+/* Kept in place while no file has been checked, so the steps never move. */
+.translation-flow-file[data-empty] {
+  visibility: hidden;
+}
+/* Time spent so far, beside Cancel, in figures that keep their width. */
+.translation-flow-elapsed {
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
 }
 .translation-flow-file {
   display: grid;

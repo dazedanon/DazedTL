@@ -1,6 +1,17 @@
-import type { FullEstimate, FullEstimateTask } from "../../api/contracts";
+import type {
+  FullEstimate,
+  FullEstimateTask,
+  FullEstimateTaskProgress,
+} from "../../api/contracts";
+import { useRemaining, useSecond } from "../../state/useWorkTime";
 import { StatusPanel } from "../../ui/StatusPanel";
+import { StepProgress } from "../../ui/StepProgress";
 import type { DisplayState } from "../../ui/displayStatus";
+import {
+  formatClock,
+  formatDuration,
+  formatRemaining,
+} from "../../ui/workTime";
 import { approximateClaudeInput } from "./TranslationReview";
 
 const taskTitles: Record<FullEstimateTask["phase"], string> = {
@@ -32,6 +43,29 @@ export function estimateTotal(
 const help =
   "Estimates every task that uses your API key, over all its files: Database files, Maps & events and Other event text. Names & glossary, Plugin files, Images and Text QA use your assistant's plan instead. Estimating is free and translates nothing; for Claude models it uses Anthropic's free token count.";
 
+/** What a working task does now: its files and the time they still need. */
+function TaskActivity({
+  task,
+  started,
+  now,
+}: {
+  task: FullEstimateTaskProgress;
+  started: string | null;
+  now: number;
+}) {
+  const counted =
+    task.state === "estimating" && task.current > 0 && task.total > 0
+      ? task
+      : undefined;
+  const remaining = useRemaining(`${started}:${task.phase}`, counted, now);
+  if (task.state === "counting") return "Counting Claude tokens";
+  if (!counted) return "Starting";
+  return (
+    `${counted.current.toLocaleString()} of ${counted.total.toLocaleString()} files` +
+    (remaining === undefined ? "" : ` · ${formatRemaining(remaining)}`)
+  );
+}
+
 /**
  * Context's estimate of what translating the game's text costs, task by task,
  * in the translation mode chosen now: one estimate prices both.
@@ -45,6 +79,8 @@ export function CostEstimate({
 }) {
   const result = value.result;
   const working = value.status === "working";
+  const now = useSecond(working);
+  const progress = working ? value.progress : null;
   const state: DisplayState = working
     ? "working"
     : !result
@@ -79,9 +115,22 @@ export function CostEstimate({
       state={state}
       progress={
         working
-          ? value.message
+          ? value.stopping
+            ? "Stopping…"
+            : value.started
+              ? `${formatClock((now - Date.parse(value.started)) / 1000)} elapsed`
+              : undefined
           : result
-            ? `${result.model} · ${batch ? "Batch" : "Live"}`
+            ? [
+                result.model,
+                batch ? "Batch" : "Live",
+                // How long the next estimate may take.
+                value.took !== null &&
+                  value.took >= 1 &&
+                  `took ${formatDuration(value.took)}`,
+              ]
+                .filter(Boolean)
+                .join(" · ")
             : undefined
       }
       help={help}
@@ -93,6 +142,45 @@ export function CostEstimate({
             : undefined
       }
     >
+      {!!progress?.tasks.length && (
+        <div className="status-panel-body">
+          <StepProgress
+            label="Estimate tasks"
+            steps={progress.tasks.map((task, index) => {
+              // Copying the game's text comes before every task, so it
+              // shows on the first one.
+              const copying = progress.copying && index === 0;
+              const active =
+                copying || !["waiting", "done"].includes(task.state);
+              return {
+                id: task.phase,
+                label: taskTitles[task.phase],
+                state:
+                  task.state === "done" ? "done" : active ? "current" : "next",
+                // Every task keeps its detail line, so nothing moves.
+                detail: copying ? (
+                  "Copying the game's text"
+                ) : task.state === "done" &&
+                  task.took !== null &&
+                  task.took >= 0.5 ? (
+                  formatDuration(task.took)
+                ) : active ? (
+                  <TaskActivity task={task} started={value.started} now={now} />
+                ) : (
+                  "\u00a0"
+                ),
+                fraction: !active
+                  ? undefined
+                  : task.state === "counting"
+                    ? 1
+                    : task.state === "estimating"
+                      ? task.current / task.total
+                      : 0,
+              };
+            })}
+          />
+        </div>
+      )}
       {result && (
         <div className="status-panel-body cost-estimate">
           <div className="translation-cost-total">

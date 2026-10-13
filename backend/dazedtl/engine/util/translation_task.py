@@ -1379,7 +1379,11 @@ class TranslationTaskCore:
                     if "wolfdawn" in module_name_lower:
                         prepared = self._prepare_wolf_speakers(matching_files)
                     else:
-                        prepared = self._prepare_mvmz_speakers(matching_files)
+                        # Its file count shows how far the scan has got
+                        # before the requests are collected.
+                        prepared = self._prepare_mvmz_speakers(
+                            matching_files, emit_progress=True
+                        )
                     if not prepared:
                         self.finished_signal.emit(False, "Speaker translation canceled")
                         return
