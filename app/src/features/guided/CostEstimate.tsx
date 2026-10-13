@@ -136,7 +136,7 @@ export function CostEstimate({
       help={help}
       description={
         state === "outdated"
-          ? "The guidance, source choices, game files or model changed since this estimate."
+          ? "The guidance, source choices, game files, model or DazedTL itself changed since this estimate."
           : !result && !working
             ? "Estimate every Translate task that uses your API key, over all its files."
             : undefined

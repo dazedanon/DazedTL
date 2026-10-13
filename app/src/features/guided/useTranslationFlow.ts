@@ -26,6 +26,8 @@ export type TranslationFlowState = {
     | "error"
     | "canceling";
   estimateId?: string;
+  /** The estimate is the last one, reopened because nothing changed. */
+  reused?: boolean;
   runId?: string;
   job?: Job;
   preview?: Preview;
@@ -106,7 +108,11 @@ export function useTranslationFlow(options: Options) {
     }
   }
   async function abandon(session: Session) {
-    const id = session.state.runId || session.state.estimateId;
+    // A finished estimate stays, so the next Translate reopens it while
+    // nothing changes; only unfinished work and Batch preparation go.
+    const id =
+      session.state.runId ||
+      (!session.advanced ? session.state.estimateId : undefined);
     if (id) await api.guided.discardPreparation(options.projectId, id);
     markFinished(session, true);
   }
@@ -168,7 +174,12 @@ export function useTranslationFlow(options: Options) {
       // never followed into another preparation or paid submission.
       session.state.estimateId = estimate.id;
       if (!canceled(session))
-        change(session, { stage: "estimating", job: estimate });
+        change(session, {
+          stage: "estimating",
+          job: estimate,
+          // A new estimate is still working when it is returned.
+          reused: estimate.status === "complete",
+        });
     });
   }
   // Follows the observed estimate or preparation for the current session.

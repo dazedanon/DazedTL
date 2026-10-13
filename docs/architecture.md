@@ -55,8 +55,9 @@ Existing phased jobs retain their original engine-owned records and recovery pat
 Guided main text shares configuration while retaining independent database and event selections.
 Each phase binds its estimate to source, scope, provider and pricing, guidance, and layout.
 New estimate and Batch preparation workspaces are temporary until approval; they do not enter saved history or contribute translated outputs.
-Each Translate click discards that phase’s unapproved preparation and creates a fresh estimate.
-Decline discards new unapproved work after its worker exits, and restart removes abandoned temporary work.
+Each Translate click discards that phase’s unapproved preparation and creates a fresh estimate, unless the phase's latest finished estimate still binds to exactly the current inputs: Translate then reopens it ([unchanged_estimate](../backend/dazedtl/translation/guided_actions.py)) and its dialog marks Estimate cost as reused, so declining or closing a review costs no second estimate.
+An estimate stays reusable through its Batch preparation and ends with approved work started from it or a Claude count it still needs.
+Decline discards a Batch preparation after its worker exits and keeps the finished estimate; restart removes all temporary work, estimates included, so a newer release estimates afresh.
 Approved work is retained before signaling the worker, including separately approved speaker translation.
 Existing historical runs remain intact.
 Paid review requires that matching estimate and rechecks it before the one-use submission.
@@ -89,7 +90,7 @@ A Batch preparation counts the requests it submits itself, so the estimate leadi
 A speaker approval's run counts the name requests it would send the same way.
 A cost review whose estimate kept the approximate Claude count says so.
 The [Batch pricing adapter](../backend/dazedtl/compatibility/batch_pricing.py) calculates new GPT-6.1 Sol cached quotes from native token counts and frozen input/output rates using its [documented cache rates](https://developers.openai.com/api/docs/models/gpt-6.1-sol); saved historical estimates remain unchanged.
-Inspection leaves Review cost available, while Translate always prepares again.
+Inspection leaves Review cost available, while Translate always prepares the Batch or Live review again.
 Approval rechecks the temporary preparation’s current inputs before the native one-use approval controls submission.
 Once approved, the frozen request remains authoritative for recovery and is never silently rebuilt.
 The fresh Batch speaker check validates unresolved nameplates against frozen files and the current glossary before collection; it retains its separate approval if translation is needed.
@@ -144,7 +145,8 @@ The [worker](../backend/dazedtl/compatibility/full_estimate.py) builds each task
 A Claude estimate is then counted again as a Translate estimate is (see [Estimates and approval](#estimates-and-approval)); a failed count keeps the approximate figures, which the task says.
 The tasks run side by side, each with its own workers and count and with its inputs linked to the operation's one staged copy; the first task that fails stops the others.
 The newest finished operation holds the saved estimate.
-It reads current while every task's estimate inputs match: files, sources, guidance, options, layout, connection and prices.
+It reads current while every task's estimate inputs match: files, sources, guidance, options, layout, connection and prices, and the DazedTL release that made it, since another may estimate differently.
+Estimating again while it reads current would only repeat it, so the action waits for a change, except to retry a failed Claude count.
 They are computed with the Live configuration, since one estimate prices both Batch and Live; switching between them only changes which total leads.
 Stop ends the worker and keeps the previous estimate.
 While it works, the worker reports each task's state and file count as the operation's structured activity, never parsed from its status line, so tasks can also run side by side; the panel shows them as steps with the same remaining time as the Translate dialog, and a saved estimate says how long it took, as a guide to the next.

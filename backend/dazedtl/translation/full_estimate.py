@@ -7,8 +7,11 @@ replaces it; it reads current while the inputs every task's own estimate
 binds to are unchanged.
 """
 
+import json
 from copy import deepcopy
 from datetime import datetime
+from functools import cache
+from pathlib import Path
 
 from .files import digest
 
@@ -19,6 +22,17 @@ PHASES = ("database", "dialogue", "advanced")
 # between them keeps it current; the least demanding mode's configuration
 # stands for both.
 MODE = "translate"
+
+
+@cache
+def app_version():
+    """The running DazedTL release. A newer one may estimate differently, so
+    an estimate made by another release is never current."""
+    try:
+        package = Path(__file__).resolve().parents[3] / "app/package.json"
+        return json.loads(package.read_bytes())["version"]
+    except OSError, ValueError, KeyError, TypeError:
+        return None
 
 
 def took(job):
@@ -73,7 +87,12 @@ class FullEstimate:
 
     @staticmethod
     def fingerprint(tasks):
-        return digest([[task["phase"], task["fingerprint"]] for task in tasks])
+        return digest(
+            {
+                "app": app_version(),
+                "tasks": [[task["phase"], task["fingerprint"]] for task in tasks],
+            }
+        )
 
     def start(self, project_id):
         self.guided.idle(isolated_workers=True)
@@ -101,6 +120,18 @@ class FullEstimate:
         self.guided.settings.prepare_engine(mode="estimate")
         policy = deepcopy(self.guided.backend.manual.request_policy)
         tasks = self.scope(project_id, native, event_text)
+        saved = self.saved(native)
+        if (
+            saved
+            and saved["result"].get("fingerprint") == self.fingerprint(tasks)
+            # A count that failed may succeed now.
+            and not any(
+                task.get("approximateInput") for task in saved["result"]["tasks"]
+            )
+        ):
+            raise ValueError(
+                "Nothing changed since the last estimate, so it is still current."
+            )
         folder = self.guided.backend.workflows.folder(native["id"])
         sources = inputs.sources(names, inputs.record()["inputs"])
         defaults = self.guided.settings.translation_defaults()
@@ -137,8 +168,9 @@ class FullEstimate:
             }
         )
 
-    def status(self, project_id, native, event_text):
-        jobs = sorted(
+    def jobs(self, native):
+        """The project's estimates, newest first."""
+        return sorted(
             (
                 job
                 for job in self.guided.backend.operations.jobs.values()
@@ -147,14 +179,21 @@ class FullEstimate:
             key=lambda job: job["created"],
             reverse=True,
         )
-        saved = next(
+
+    def saved(self, native):
+        """The newest finished estimate, which the panel shows."""
+        return next(
             (
                 job
-                for job in jobs
+                for job in self.jobs(native)
                 if job["status"] == "complete" and isinstance(job.get("result"), dict)
             ),
             None,
         )
+
+    def status(self, project_id, native, event_text):
+        jobs = self.jobs(native)
+        saved = self.saved(native)
         result = saved["result"] if saved else None
         current = False
         if result:

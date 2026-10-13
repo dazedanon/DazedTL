@@ -258,7 +258,10 @@ export function TranslationReviewContent({
                 : "Starting submits paid API requests."}
           </li>
           {(job?.temporary || preview) && (
-            <li>Decline discards this preparation.</li>
+            <li>
+              Decline sends nothing, and Translate reuses this estimate until
+              files or settings change.
+            </li>
           )}
           <li>
             Results may replace working translations; earlier approved runs stay

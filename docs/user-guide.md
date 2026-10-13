@@ -75,7 +75,8 @@ Click **Estimate cost**: it estimates Database files, Maps & events and Other ev
 Estimating is free and translates nothing; for Claude models it uses Anthropic's free token count.
 On a large game this can take several minutes: each task shows how far it has got and about how long is left, and a finished estimate says how long it took.
 The other tasks use your assistant's plan, not your API key.
-If you change the guidance, the source choices, the game's files or the model, the estimate reads **Outdated**; click **Estimate again**.
+If you change the guidance, the source choices, the game's files or the model, or update DazedTL, the estimate reads **Outdated**; click **Estimate again**.
+Until then **Estimate again** stays off, since it would give the same result.
 
 ### 3. Translate
 
@@ -88,6 +89,7 @@ Translate has five tasks.
 2. Choose **Batch** (often half the price, but can take hours) or **Live** (results arrive as you watch), and the model.
 3. Click **Translate**, check the estimate and approve it.
    Until the estimate is ready, its window shows each step, how far it has got and about how long is left.
+   If you decline or close it, clicking **Translate** again reuses it while the files and settings are unchanged.
    With **Batch**, names and labels the glossary lacks are translated first with Live, after their own review; they join the glossary even if you then decline the Batch.
 4. Click **Apply** to write the translations into the game.
 

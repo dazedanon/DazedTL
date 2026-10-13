@@ -136,9 +136,11 @@ export function TranslationFlowDialog({
                     // step keeps; the current one fills as far as its files
                     // have got.
                     detail:
-                      id !== step && clock.spent(id) >= 500
-                        ? formatDuration(clock.spent(id) / 1000)
-                        : "\u00a0",
+                      id === "estimate" && value.reused
+                        ? "Reused"
+                        : id !== step && clock.spent(id) >= 500
+                          ? formatDuration(clock.spent(id) / 1000)
+                          : "\u00a0",
                     fraction: id === step ? activity.fraction : undefined,
                   }))}
                 />

@@ -377,12 +377,15 @@ export function estimateView(w: GuidedWorkspace): TaskView {
   const estimate = state.fullEstimate;
   const working = estimate.status === "working";
   const current = !!estimate.result && estimate.current;
-  // The estimate reads saved guidance and a configured model.
+  // The estimate reads saved guidance and a configured model. Estimating
+  // again only helps once something changed, or to retry Claude's count.
   const blocked = !state.provider.model
     ? "Choose a connection and model in Settings first."
     : Object.keys(context.drafts).length
       ? "Save or discard your Guidance edits first."
-      : "";
+      : current && !estimate.result?.tasks.some((task) => task.approximateInput)
+        ? "Nothing changed since this estimate."
+        : "";
   const control = feedback("full-estimate", "Estimating…");
   const run = (
     <ActionControl

@@ -525,6 +525,58 @@ class GuidedTests(unittest.TestCase):
         )
         self.assertEqual(self.started, [])
 
+    def test_translate_reopens_an_unchanged_estimate_until_its_work_is_approved(self):
+        # Each Translate click estimated the whole selection again, minutes on
+        # a large game, though declining its review changed nothing. Reopening
+        # must end with the inputs, a Claude count it still owes, or paid work
+        # approved from it.
+        manual = self.backend.manual
+        manual.allow_providers = True
+        manual.discard_preparation = manual.jobs.pop
+        estimate = self.seed_estimate()
+        manual.jobs[estimate]["dazedtl_preapproval"] = True
+
+        def translate(mode="estimate"):
+            review = self.guided.preview(self.identity, "start", options={"mode": mode})
+            return self.guided.execute(self.identity, review["token"])["id"]
+
+        self.assertEqual(translate(), estimate)
+        # A Batch preparation keeps its estimate until it is approved, and
+        # the next Translate replaces the preparation.
+        self.assertEqual(translate("batch"), "paid-run")
+        manual.jobs["paid-run"] = {"id": "paid-run", "dazedtl_preapproval": True}
+        self.assertEqual(translate(), estimate)
+        self.assertNotIn("paid-run", manual.jobs)
+        self.assertEqual(len(self.started), 1)
+        inputs = self.guided.runs.inputs(
+            self.identity, self.native, "database", "batch"
+        )
+
+        def unchanged():
+            return self.guided.actions.unchanged_estimate(
+                self.identity, self.native, "database", inputs
+            )
+
+        manual.jobs[estimate]["estimate"].update(
+            provider="anthropic", approximate_input=True
+        )
+        self.assertIsNone(unchanged())
+        configuration = self.backend.saved_run_configuration
+        self.backend.saved_run_configuration = lambda identity: {
+            **configuration(identity),
+            "dazedtl_claude_count": False,
+        }
+        self.assertEqual(unchanged(), estimate)
+        manual.jobs["paid-run"] = {"id": "paid-run", "dazedtl_approved": True}
+        self.guided.runs.remember(
+            self.identity, manual.jobs["paid-run"], inputs, {"jobId": estimate}
+        )
+        self.assertIsNone(unchanged())
+        manual.jobs.pop("paid-run")
+        self.native["widths"]["width"] = 51
+        self.assertNotEqual(translate(), estimate)
+        self.assertNotIn(estimate, manual.jobs)
+
     def test_whole_game_estimate_stays_current_across_selection_and_mode(self):
         # Context's Cost estimate prices every file of each Translate task at
         # both Batch and Live prices. It must read current as soon as it
@@ -570,6 +622,18 @@ class GuidedTests(unittest.TestCase):
         self.assertTrue(current())
         self.native.update(selected=[], mode="translate")
         self.assertTrue(current())
+        # Estimating again would only repeat it, unless Claude's count failed.
+        with self.assertRaisesRegex(ValueError, "Nothing changed"):
+            self.guided.full_estimate.start(self.identity)
+        self.backend.operations.jobs["estimate"]["result"]["tasks"] = [
+            {"approximateInput": True}
+        ]
+        self.guided.full_estimate.start(self.identity)
+        # Another release may estimate differently.
+        with patch(
+            "dazedtl.translation.full_estimate.app_version", return_value="0.0.1"
+        ):
+            self.assertFalse(current())
         self.native["engine_options"]["CODE356"] = True
         self.assertFalse(current())
 

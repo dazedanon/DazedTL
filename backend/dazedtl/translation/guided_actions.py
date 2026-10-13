@@ -1039,6 +1039,54 @@ class GuidedActions:
             return None
         return {"inputs": value["inputs"], "collected": value["collected"]}
 
+    def unchanged_estimate(self, project_id, native, phase, run_inputs):
+        """The phase's latest estimate when it finished with exactly these
+        inputs, which Translate reopens instead of estimating again. Paid work
+        started from it ends that, and so does a Claude count it still needs."""
+        from dazedtl.compatibility.preparations import temporary
+
+        manual = self.guided.backend.manual
+        records = self.guided.runs.records(project_id)
+        owned = set(self.guided.owned_runs(native))
+        identity = next(
+            (
+                identity
+                for identity, record in reversed(list(records.items()))
+                if identity in owned
+                and manual.jobs.get(identity, {}).get("mode") == "estimate"
+                and record["phase"] == phase
+            ),
+            None,
+        )
+        if identity is None:
+            return None
+        job, record = manual.jobs[identity], records[identity]
+        if (
+            job["status"] != "complete"
+            or not job.get("estimate")
+            or not temporary(job)
+            or record["fingerprint"] != run_inputs["fingerprint"]
+            or identity in self.guided.inputs(native).record().get("retired_runs", [])
+            or any(
+                (row.get("estimate") or {}).get("jobId") == identity
+                and not temporary(manual.jobs.get(other, {}))
+                for other, row in records.items()
+            )
+        ):
+            return None
+        estimate = job["estimate"]
+        if (
+            estimate.get("provider") == "anthropic"
+            and estimate.get("approximate_input")
+            and manual.allow_providers
+            and self.guided.backend.saved_run_configuration(identity).get(
+                "dazedtl_claude_count"
+            )
+            is not False
+        ):
+            return None
+        return identity
+
     def _start(
         self,
         project_id,
@@ -1057,14 +1105,24 @@ class GuidedActions:
         if mode == "estimate":
             from dazedtl.compatibility.preparations import temporary
 
+            assert run_inputs is not None  # An estimate binds to its inputs.
+            unchanged = self.unchanged_estimate(project_id, native, phase, run_inputs)
             records = self.guided.runs.records(project_id)
             for identity in self.guided.owned_runs(native):
                 job = self.guided.backend.manual.jobs.get(identity)
                 record = records.get(identity, {})
-                if job and temporary(job) and record.get("phase") == phase:
+                if identity == unchanged or record.get("phase") != phase:
+                    continue
+                if job and temporary(job):
                     self.guided.discard_preparation(project_id, identity)
-                elif job and job.get("approval") and record.get("phase") == phase:
+                elif job and job.get("approval"):
                     self.guided.answer(project_id, job["approval"]["token"], False)
+            if unchanged:
+                return {
+                    **self.guided.run_view(unchanged),
+                    "logicalPhase": phase,
+                    "preparationMode": preparation_mode,
+                }
         if preparation_mode:
             assert run_inputs is not None  # Preparation follows a confirmed estimate.
             for identity, record in reversed(
@@ -1144,9 +1202,15 @@ class GuidedActions:
                 self.guided.runs.remember(
                     project_id, job, run_inputs, estimate, preparation_mode
                 )
-            if estimate and self.guided.backend.manual.jobs.get(
-                estimate["jobId"], {}
-            ).get("dazedtl_preapproval"):
+            # A Batch preparation waits for its own approval, so until then its
+            # estimate stays for the next Translate (see unchanged_estimate).
+            if (
+                estimate
+                and mode != "batch"
+                and self.guided.backend.manual.jobs.get(estimate["jobId"], {}).get(
+                    "dazedtl_preapproval"
+                )
+            ):
                 self.guided.discard_preparation(project_id, estimate["jobId"])
             return {**job, "logicalPhase": phase, "preparationMode": preparation_mode}
         finally:

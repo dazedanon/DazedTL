@@ -796,6 +796,8 @@ class Guided:
         return self.backend.manual.jobs[identity]
 
     def answer(self, project_id, token, approved):
+        from dazedtl.compatibility.preparations import temporary
+
         _, native = self.record(project_id)
         if type(approved) is not bool:
             raise ValueError("Choose whether to approve this submission.")
@@ -831,7 +833,22 @@ class Guided:
                 # gap between approval and its first provider manifest write.
                 job["dazedtl_submission_intent"] = True
                 self.backend.manual.save(job)
-        return self.backend.manual.answer(job["id"], token, approved)
+        result = self.backend.manual.answer(job["id"], token, approved)
+        estimate = (
+            (self.runs.records(project_id).get(job["id"]) or {}).get("estimate") or {}
+        ).get("jobId")
+        if (
+            approved
+            and estimate
+            and temporary(self.backend.manual.jobs.get(estimate, {}))
+        ):
+            # The approved work replaces its estimate, which no Translate may
+            # reopen now (see unchanged_estimate); removing it only tidies up.
+            try:
+                self.discard_preparation(project_id, estimate)
+            except OSError, ValueError:
+                pass
+        return result
 
     def stop(self, project_id, run_id=None):
         _, native = self.record(project_id)
