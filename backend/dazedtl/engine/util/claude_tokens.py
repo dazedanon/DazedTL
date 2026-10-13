@@ -20,7 +20,9 @@ import httpx
 # Smaller request sets are counted whole; a larger one's sample spans every
 # file in queue order.
 SAMPLES = 24
-WORKERS = 8
+# Two round trips for a sample and its prefixes, which an estimate waits on;
+# token counts have their own rate limit, far above this.
+WORKERS = 16
 # The request fields the endpoint counts; max_tokens and sampling settings are
 # not input.
 FIELDS = ("model", "system", "messages", "output_config", "thinking", "tools", "tool_choice")

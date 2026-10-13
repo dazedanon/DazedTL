@@ -14,7 +14,7 @@ import sys
 import time
 from pathlib import Path
 
-# Above the longest a count can retry (eight requests at a time, each waiting
+# Above the longest a count can retry (sixteen requests at a time, each waiting
 # up to 30 seconds three times), so only a hung process ends here.
 TIMEOUT = 600
 
