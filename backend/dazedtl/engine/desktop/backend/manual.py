@@ -14,7 +14,7 @@ from pathlib import Path, PurePosixPath
 
 from util.game_settings import WRAP_WIDTH_KEYS
 from util.paths import PROMPT_PATH, GLOSSARY_BASE_PATH, TRANSLATION_CONTEXTS_PATH, SFX_REFERENCE_PATH, runtime_data_file
-from util.translation_task import TRANSLATION_MODULE_SPECS, translation_module
+from util.translation_task import TRANSLATION_MODULE_SPECS, format_estimate_total, translation_module
 from .project import atomic_json, digest
 from .settings import SettingsStore
 from util import extensions
@@ -24,6 +24,13 @@ from util import extensions
 def launch_worker(arguments, **kwargs):
     """Starts a run's worker process; a host may launch its own worker instead."""
     return subprocess.Popen(arguments, **kwargs)
+
+
+@extensions.point
+def finish_estimate(directory, plan, estimate, stopped):
+    """A finished local estimate's figures. Its worker counted tokens offline;
+    a host may count its kept requests again before the run completes."""
+    return estimate
 
 
 def timestamp():
@@ -433,6 +440,12 @@ class ManualJobs:
                         continue
                     outcome = self._event(job, event) or outcome
                 process.wait()
+            # A host's own count lands with the completion, so nothing reviews
+            # the figures the worker counted offline.
+            if plan["mode"] == "estimate" and outcome and outcome["status"] == "complete" and job["estimate"]:
+                estimate = finish_estimate(directory, plan, job["estimate"], self.stopping.is_set)
+                if estimate != job["estimate"]:
+                    outcome.update(estimate=estimate, message=format_estimate_total(estimate))
             with self.lock:
                 # The run ends once its worker has exited and its outputs are
                 # recorded; until then its files can still change, so nothing

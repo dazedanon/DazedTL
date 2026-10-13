@@ -516,6 +516,7 @@ class CompatibilityContracts(unittest.TestCase):
 from pathlib import Path
 from tests.engine import point
 launch_worker = point(lambda *_args, **_kwargs: None)
+finish_estimate = point(lambda _directory, _plan, estimate, _stopped: estimate)
 class ManualJobs:
     def __init__(self, workspace, lock, **kwargs):
         self.root = Path(workspace)/'manual'
@@ -849,6 +850,7 @@ from tests.engine import point
 @point
 def launch_worker(arguments, **kwargs):
     return subprocess.Popen(arguments, **kwargs)
+finish_estimate = point(lambda _directory, _plan, estimate, _stopped: estimate)
 class ManualJobs:
     def __init__(self, workspace, lock, **kwargs):
         self.workspace = workspace

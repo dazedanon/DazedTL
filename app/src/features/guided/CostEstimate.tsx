@@ -1,6 +1,7 @@
 import type { FullEstimate, FullEstimateTask } from "../../api/contracts";
 import { StatusPanel } from "../../ui/StatusPanel";
 import type { DisplayState } from "../../ui/displayStatus";
+import { approximateClaudeInput } from "./TranslationReview";
 
 const taskTitles: Record<FullEstimateTask["phase"], string> = {
   database: "Database files",
@@ -67,8 +68,7 @@ export function CostEstimate({
   const notes = [
     caching &&
       `With the provider's lower rate for repeated instructions; without it, about ${cost(uncached)}.`,
-    tasks.some((task) => task.approximateInput) &&
-      "Claude's own token count was unavailable, so the input is approximate and likely low.",
+    tasks.some((task) => task.approximateInput) && approximateClaudeInput,
     tasks.some((task) => task.unestimatedThinking) &&
       "This model's thinking tokens are billed as output and are not included.",
     "Not included: speaker names the glossary lacks, Comparisons and retries of refused requests.",

@@ -81,6 +81,10 @@ Each pending Batch or speaker approval opens once in a focused cost review with 
 Cost comparisons use plain labels for totals without prompt caching and with estimated prompt caching, explain reuse of repeated instructions, and include cache creation without promising savings.
 Estimates count tokens with the GPT-4 encoder, except that Claude estimates in both methods use [Claude's own count](../backend/dazedtl/engine/util/claude_tokens.py), because Anthropic bills by a tokenizer that turns the same text into more tokens.
 They send each cached instruction prefix and an evenly spread sample of 24 whole requests to Anthropic's free token-count endpoint and scale the approximate count of the rest by the sample; if any count fails, the whole estimate keeps the approximate count.
+A Translate estimate's worker has no credential or network, so a finished Claude estimate is counted again before its run completes: [estimate_pricing.py](../backend/dazedtl/compatibility/estimate_pricing.py) prices its kept requests in a separate process that opens the network only for that endpoint, with the run's own credential.
+The count runs on the run's worker thread, so snapshots never wait on it, and stopping or discarding the estimate ends it.
+A Batch preparation counts the requests it submits itself, so the estimate leading into it, and every estimate in a launch with providers disabled, keeps the approximate count.
+A cost review whose estimate kept the approximate Claude count says so.
 The [Batch pricing adapter](../backend/dazedtl/compatibility/batch_pricing.py) calculates new GPT-6.1 Sol cached quotes from native token counts and frozen input/output rates using its [documented cache rates](https://developers.openai.com/api/docs/models/gpt-6.1-sol); saved historical estimates remain unchanged.
 Inspection leaves Review cost available, while Translate always prepares again.
 Approval rechecks the temporary preparation’s current inputs before the native one-use approval controls submission.
@@ -125,7 +129,7 @@ Context's Cost estimate prices every Translate task that sends game text through
 It covers each task's whole file group, independent of the selection, so translating a small first scene leaves its scope unchanged.
 [full_estimate.py](../backend/dazedtl/translation/full_estimate.py) starts it as a tool operation, never as a run, so it creates no preparation, approval or history run, and no paid work can follow from it.
 The [worker](../backend/dazedtl/compatibility/full_estimate.py) builds each task's frozen plan with the engine helpers and request policy a Translate estimate uses and runs the same offline estimate worker, starting each file from its saved translation, working copy or game file as a run would, so its figures match each task's own estimate.
-[estimate_pricing.py](../backend/dazedtl/compatibility/estimate_pricing.py) then prices a Claude estimate again with Claude's own token count, as a Batch review does; it opens the network only for Anthropic's free count endpoint, and a failed count keeps the approximate figures, which the task says.
+A Claude estimate is then counted again as a Translate estimate is (see [Estimates and approval](#estimates-and-approval)); a failed count keeps the approximate figures, which the task says.
 The newest finished operation holds the saved estimate.
 It reads current while every task's estimate inputs match: files, sources, guidance, options, layout, connection and prices.
 They are computed with the Live configuration, since one estimate prices both Batch and Live; switching between them only changes which total leads.

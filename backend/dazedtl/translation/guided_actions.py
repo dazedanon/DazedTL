@@ -1091,6 +1091,11 @@ class GuidedActions:
                 "estimate",
                 "batch",
             }
+            # A Batch preparation follows its estimate and counts the requests it
+            # submits with Claude's own count; a Live review shows the estimate's.
+            self.guided.backend.manual.claude_count = not (
+                mode == "estimate" and run_inputs and run_inputs["mode"] == "batch"
+            )
             job = self.guided.backend.guided_phase(native["id"], phase, files)
             if run_inputs:
                 self.guided.runs.remember(
@@ -1107,6 +1112,7 @@ class GuidedActions:
             self.guided.backend.manual.source_versions = None
             self.guided.backend.manual.reused_names = None
             self.guided.backend.manual.reserved_sources = None
+            self.guided.backend.manual.claude_count = True
             if mode == "estimate":
                 current = self.guided.backend.workflows.projects[native["id"]]
                 self.guided.backend.workflows.update(

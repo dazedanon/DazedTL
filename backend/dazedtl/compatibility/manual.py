@@ -134,6 +134,16 @@ def manual_jobs(source, workspace, lock, allow_providers):
 
     native.launch_worker.layer("dazedtl-worker", launch)
 
+    def finish_estimate(native_finish, directory, plan, estimate, stopped):
+        estimate = native_finish(directory, plan, estimate, stopped)
+        if not allow_providers or plan.get("dazedtl_claude_count") is False:
+            return estimate
+        from .estimate_pricing import count
+
+        return count(directory, workspace, plan, estimate, stopped)
+
+    native.finish_estimate.layer("dazedtl-claude-count", finish_estimate)
+
     class ManualJobs(native.ManualJobs):
         request_policy = None
         continuation = None
@@ -142,6 +152,9 @@ def manual_jobs(source, workspace, lock, allow_providers):
         reused_names = None
         workflow_selection = None
         temporary_preparation = False
+        # False when a Batch preparation follows the estimate and counts the
+        # requests it submits itself.
+        claude_count = True
         controllers: dict[str, Any] | None = None
 
         def __init__(self, *args, **kwargs):
@@ -432,6 +445,7 @@ def manual_jobs(source, workspace, lock, allow_providers):
                     item.source_versions = self.source_versions
                     item.reused_names = self.reused_names
                     item.temporary_preparation = self.temporary_preparation
+                    item.claude_count = self.claude_count
                     result = item.start(source, engine, files, *args, **kwargs)
                     self.controllers[result["id"]] = self.controllers.pop("preparing")
                     self.active = result["id"]
@@ -459,6 +473,8 @@ def manual_jobs(source, workspace, lock, allow_providers):
                 plan["dazedtl_continuation"] = deepcopy(self.continuation)
             if self.reserved_sources:
                 plan["dazedtl_reserved_sources"] = deepcopy(self.reserved_sources)
+            if not self.claude_count:
+                plan["dazedtl_claude_count"] = False
             if self.request_policy is not None:
                 if self.request_policy["model"] != plan["settings"]["model"]:
                     raise ValueError(

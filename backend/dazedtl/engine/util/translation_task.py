@@ -61,7 +61,7 @@ def _result_token_usage(result):
         return None
     return int(match.group("input")), int(match.group("output"))
 
-def _format_estimate_total(comparison) -> str:
+def format_estimate_total(comparison) -> str:
     comparison = comparison or {}
     token_text = (
         f"[Input: {int(comparison.get('input_tokens', 0) or 0)}]"
@@ -1057,7 +1057,7 @@ class TranslationTaskCore:
                     estimate_output_tokens,
                 )
                 self.estimate_summary = comparison
-                return _format_estimate_total(comparison)
+                return format_estimate_total(comparison)
             if estimate_only:
                 return total_cost if total_cost != "Fail" else "Success"
             return total_cost
@@ -1525,7 +1525,7 @@ class TranslationTaskCore:
                             )
                             self.estimate_summary = estimate
                             self.estimate_ready_signal.emit(estimate)
-                            total_cost = _format_estimate_total(estimate)
+                            total_cost = format_estimate_total(estimate)
                             estimate_kept = True
                     finally:
                         # A finished estimate keeps its isolated queue so its

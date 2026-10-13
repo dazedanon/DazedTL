@@ -2280,8 +2280,11 @@ class GuidedTests(unittest.TestCase):
             "log": [],
         }
 
+        counted = []
+
         def start(*_args):
             self.assertTrue(self.backend.manual.temporary_preparation)
+            counted.append(self.backend.manual.claude_count)
             self.backend.manual.jobs[new["id"]] = new
             return new
 
@@ -2298,6 +2301,16 @@ class GuidedTests(unittest.TestCase):
             self.guided.runs.records(self.identity)["new-estimate"]["fingerprint"],
             fresh["fingerprint"],
         )
+        # A Live review shows its estimate's Claude count; a Batch preparation
+        # counts the requests it submits, so its estimate leaves the count out.
+        live = self.guided.runs.inputs(
+            self.identity, self.native, "database", "translate"
+        )
+        self.guided.actions._start(
+            self.identity, "estimate", "database", ["Items.json"], live
+        )
+        self.assertEqual(counted, [False, True])
+        self.assertTrue(self.backend.manual.claude_count)
 
     def test_batch_observations_cannot_revive_terminal_receipts_or_replace_worker_activity(
         self,

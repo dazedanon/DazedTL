@@ -17,13 +17,14 @@ from pathlib import Path
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest, project_path
 
+from .estimate_pricing import count
+
 LABELS = {
     "database": "Database files",
     "dialogue": "Maps & events",
     "advanced": "Other event text",
 }
 WORKER = Path(__file__).with_name("manual_worker.py")
-PRICING = Path(__file__).with_name("estimate_pricing.py")
 ENGINE = "RPG Maker MV/MZ"
 
 
@@ -112,9 +113,9 @@ def estimate_task(directory, folder, plan, inventory, task, log):
         {"files": task["files"], "resume": False, "batch_resume_state": None},
     )
     estimate = launch(directory, worker_environment(workspace, native), label, log)
-    if estimate.get("provider") == "anthropic" and native["key_name"]:
+    if estimate.get("provider") == "anthropic" and estimate.get("approximate_input"):
         log(f"{label} · counting Claude tokens")
-        estimate = claude_count(directory, workspace, native) or estimate
+        estimate = count(directory, workspace, native, estimate, log.stopped)
     return estimate
 
 
@@ -179,43 +180,6 @@ def end(process):
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait()
-
-
-def claude_count(directory, workspace, native):
-    """The task's estimate priced with Claude's own token count, or None when
-    the count can't run, which keeps the approximate estimate."""
-    from desktop.backend.manual import worker_environment
-    from desktop.backend.settings import SettingsStore
-
-    if (
-        os.getenv("DAZEDTL_TEST_OFFLINE") == "1"
-        or not (directory / "log/estimate_requests.json").is_file()
-    ):
-        return None
-    try:
-        secret = SettingsStore(workspace).runtime(
-            native["settings"], native["key_name"]
-        )["key"]
-        if not secret:
-            return None
-        result = subprocess.run(
-            [sys.executable, "-u", str(PRICING), str(directory)],
-            cwd=directory,
-            env={
-                **worker_environment(workspace, native),
-                "PYTHONDONTWRITEBYTECODE": "1",
-            },
-            input=secret + "\n",
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            timeout=600,
-            check=False,
-        )
-        estimate = json.loads(result.stdout.strip().splitlines()[-1])
-    except OSError, ValueError, KeyError, IndexError, subprocess.SubprocessError:
-        return None
-    return estimate if isinstance(estimate, dict) else None
 
 
 def row(task, estimate):

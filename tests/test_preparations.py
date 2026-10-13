@@ -21,6 +21,7 @@ class PreparationTests(unittest.TestCase):
 from pathlib import Path
 from tests.engine import point
 launch_worker = point(lambda *_args, **_kwargs: None)
+finish_estimate = point(lambda _directory, _plan, estimate, _stopped: estimate)
 class ManualJobs:
     busy = False
     def __init__(self, workspace, lock, **kwargs):

@@ -16,6 +16,10 @@ const count = (value: unknown) =>
   numeric(value) ? value.toLocaleString() : "-";
 const pathKey = (path: string) => path;
 
+/** Said wherever an estimate kept the approximate count of Claude input. */
+export const approximateClaudeInput =
+  "Claude's own token count was unavailable, so the input is approximate and likely low.";
+
 export function TranslationCost({
   value,
   mode,
@@ -55,7 +59,10 @@ export function TranslationCost({
             ? `$${low.toFixed(4)}${high > low ? `–$${high.toFixed(4)}` : ""}`
             : "Price unavailable"}
         </strong>
-        <small>Final cost depends on actual usage.</small>
+        <small>
+          {value.approximate_input === true && `${approximateClaudeInput} `}
+          Final cost depends on actual usage.
+        </small>
       </div>
       <dl className="translation-cost-tokens">
         {numeric(value.requests ?? value.request_count) && (
