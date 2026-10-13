@@ -157,19 +157,28 @@ def run_handler(project_root, module_name, filename, estimate_only):
                                 flush=True,
                             )
                     except Exception as exc:
-                        if multi_file:
-                            print(
-                                "FILE_ERROR:"
-                                + json.dumps(
-                                    {
-                                        "filename": current_filename,
-                                        "error": str(exc),
-                                    },
-                                    ensure_ascii=False,
-                                ),
-                                flush=True,
-                            )
-                        raise
+                        if not multi_file:
+                            raise
+                        print(
+                            "FILE_ERROR:"
+                            + json.dumps(
+                                {
+                                    "filename": current_filename,
+                                    "error": str(exc),
+                                },
+                                ensure_ascii=False,
+                            ),
+                            flush=True,
+                        )
+                        from util.translation import BatchResultUnavailableError
+
+                        # A missing Batch result fails only its own file, as
+                        # it did with a worker per file, so the files after
+                        # it still save their fetched results.
+                        if batch_phase != "consume" or not isinstance(
+                            exc, BatchResultUnavailableError
+                        ):
+                            raise
             finally:
                 if rpgmakermvmz is not None:
                     rpgmakermvmz.resetBatchMapNames()

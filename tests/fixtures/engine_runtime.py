@@ -1202,6 +1202,40 @@ try:
         assert estimate_task.estimate_summary["input_tokens"] == 20, (
             estimate_task.estimate_summary
         )
+        # That worker saves a Batch's files one after another; a file missing
+        # a result must not keep the files after it from saving theirs.
+        from contextlib import redirect_stdout
+        from io import StringIO
+
+        from util import subprocess_runner, translation_task
+
+        def consume(name, _estimate):
+            if name == "Map001.json":
+                raise translation.BatchResultUnavailableError("Missing.")
+            return "Saved"
+
+        reported = StringIO()
+        with (
+            patch.dict(os.environ, {"BATCH_PHASE": "consume"}),
+            patch.object(
+                translation_task, "translation_module", lambda _: (0, 0, consume)
+            ),
+            redirect_stdout(reported),
+        ):
+            subprocess_runner.run_handler(
+                temporary, "Fixture", ["Map001.json", "Map002.json"], False
+            )
+        reports = [
+            (kind, json.loads(value)["filename"])
+            for kind, _, value in (
+                line.partition(":") for line in reported.getvalue().splitlines()
+            )
+            if kind in {"FILE_ERROR", "FILE_RESULT"}
+        ]
+        assert reports == [
+            ("FILE_ERROR", "Map001.json"),
+            ("FILE_RESULT", "Map002.json"),
+        ], reported.getvalue()
 
         names_root = temporary / "names"
         names_root.mkdir()

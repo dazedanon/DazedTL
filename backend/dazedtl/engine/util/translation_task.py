@@ -1628,8 +1628,8 @@ class TranslationTaskCore:
                             if expected and present < expected:
                                 self.emit_log(
                                     f"[BATCH] WARNING: only {present}/{expected} results present. "
-                                    "The consume pass will stop on a missing key; it will not "
-                                    "make a full-price live request."
+                                    "A file missing a result is not saved; no full-price live "
+                                    "request is made for it."
                                 )
                         except Exception:
                             pass
