@@ -6,6 +6,7 @@ import { Message } from "../../../../ui/Feedback";
 import { RunFailure } from "../../RunFailure";
 import { TranslateWorkspace } from "../../TranslateWorkspace";
 import { nothingToTranslate } from "../../eventTextSelection";
+import { historyWhen } from "../../historyView";
 import {
   activeRun,
   completeForSelection,
@@ -96,12 +97,23 @@ export function phaseView(w: GuidedWorkspace): TaskView {
     current && !current.temporary && current.status === "failed"
       ? current
       : undefined;
+  // A newer run's outcome is not this Batch's, so name its Run history row.
+  const earlier =
+    unconfirmed &&
+    state.runs.some(
+      (run) =>
+        run.logicalPhase === phase &&
+        run.mode !== "estimate" &&
+        !run.temporary &&
+        (run.created || "") > (unconfirmed.created || ""),
+    );
+  const when = earlier ? historyWhen(unconfirmed.created) : "";
   // Provider progress changes an unconfirmed Batch's message, not its doubt.
   const failure = unconfirmed
     ? {
         run: unconfirmed.id,
         reason: "unconfirmed " + unconfirmed.process?.uncertain,
-        message: `The last Batch could not be confirmed as sent, so it may still be at the provider. ${unconfirmed.message ? unconfirmed.message + " " : ""}Check Run history before translating these files again.`,
+        message: `${earlier ? `An earlier Batch${when ? " from " + when : ""}` : "The last Batch"} could not be confirmed as sent, so it may still be at the provider. ${unconfirmed.message ? unconfirmed.message + " " : ""}Check Run history before translating these files again.`,
       }
     : failed && {
         run: failed.id,

@@ -182,17 +182,41 @@ export function historyDay(created?: string): string {
     ? "undated"
     : `${value.getFullYear()}-${value.getMonth()}-${value.getDate()}`;
 }
-export function historyDate(created?: string): string {
-  const date = new Date(created || "");
-  if (Number.isNaN(date.getTime())) return "Date not recorded";
+/** "Today" or "Yesterday" for a recent day, otherwise undefined. */
+function recentDay(date: Date) {
   const now = new Date(),
     yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
-  const prefix =
-    historyDay(created) === historyDay(now.toISOString())
-      ? "Today"
-      : historyDay(created) === historyDay(yesterday.toISOString())
-        ? "Yesterday"
-        : date.toLocaleDateString([], { weekday: "short" });
-  return `${prefix} · ${date.toLocaleDateString([], { month: "short", day: "numeric", ...(date.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}) })}`;
+  const day = historyDay(date.toISOString());
+  return day === historyDay(now.toISOString())
+    ? "Today"
+    : day === historyDay(yesterday.toISOString())
+      ? "Yesterday"
+      : undefined;
+}
+const shortDate = (date: Date) =>
+  date.toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+    ...(date.getFullYear() !== new Date().getFullYear()
+      ? { year: "numeric" }
+      : {}),
+  });
+export function historyDate(created?: string): string {
+  const date = new Date(created || "");
+  if (Number.isNaN(date.getTime())) return "Date not recorded";
+  return `${recentDay(date) || date.toLocaleDateString([], { weekday: "short" })} · ${shortDate(date)}`;
+}
+/** A run's start time as its Run history row shows it. */
+export const historyTime = (created: string) =>
+  new Date(created).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+/** When a run started, in words that find its Run history row. */
+export function historyWhen(created?: string): string {
+  const date = new Date(created || "");
+  if (!created || Number.isNaN(date.getTime())) return "";
+  const day = recentDay(date);
+  return `${day ? day.toLowerCase() : "on " + shortDate(date)} at ${historyTime(created)}`;
 }

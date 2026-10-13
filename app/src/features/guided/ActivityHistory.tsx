@@ -13,6 +13,7 @@ import {
   historyMode,
   historyOutcome,
   historyPhase,
+  historyTime,
   type HistoryOutcome,
 } from "./historyView";
 import {
@@ -350,10 +351,7 @@ export function ActivityHistory({
                                 dateTime={job.created}
                                 title={new Date(job.created).toLocaleString()}
                               >
-                                {new Date(job.created).toLocaleTimeString([], {
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
+                                {historyTime(job.created)}
                               </time>
                             )}
                             {job.model && <span>{job.model}</span>}
