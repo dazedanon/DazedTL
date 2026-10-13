@@ -11,6 +11,7 @@ import type { TaskView } from "./view";
 import { StatusHeading } from "../../../../ui/StatusMark";
 import { sinceLabel } from "../../../assistant/assistantTasks";
 import { GameUpdatePanel } from "../../../project/GameUpdatePanel";
+import { savedTranslations } from "../../translationView";
 
 export function packageView(w: GuidedWorkspace): TaskView {
   const {
@@ -208,7 +209,7 @@ export function packageView(w: GuidedWorkspace): TaskView {
       </Button>
     </span>
   ) : (
-    !state.readiness.applied.length &&
+    !savedTranslations(state).applied.length &&
     !state.readiness.unapplied.length && (
       <span>
         No translated text applied yet: the ZIP keeps the original text.

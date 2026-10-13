@@ -12,6 +12,7 @@ import {
   completeForSelection,
   estimateEmpty,
   phaseRun,
+  savedTranslations,
   translationStopLabel,
   unconfirmedSubmission,
   unsettledBatches,
@@ -75,10 +76,12 @@ export function phaseView(w: GuidedWorkspace): TaskView {
     activeRun(localEstimate) ||
     translationFlow.active ||
     !!pendingBatches.length;
-  // A file a Live run is still translating has only partial output to apply.
+  // A file a Live run is still translating has only partial output to apply,
+  // and one no run translated has nothing to apply.
+  const translatedOutputs = savedTranslations(state).outputs;
   const applyFiles = selectedNames.filter(
     (name) =>
-      state.readiness.outputs.includes(name) &&
+      translatedOutputs.includes(name) &&
       !(
         activeRun(current) &&
         current?.mode !== "batch" &&

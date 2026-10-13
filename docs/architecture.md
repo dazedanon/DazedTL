@@ -354,10 +354,12 @@ Its shared virtual list and selection logic retain Ctrl/Cmd toggles, Shift range
 A separate Inspect icon does not change scope; the open file is marked independently of selection.
 File status follows that file's request receipts and verified output independently of checkbox selection or the current attempt.
 The file list uses the shared display states.
-Untouched files show Not started, including files whose requests all failed without returning lines, with that reason in the detail; verified passes with no new requests show Ready to apply.
+Untouched files show Not started, including files whose requests all failed without returning lines, with that reason in the detail.
+A rerun reads the earlier run's output and reuses its results, so a verified pass with no new requests over a file an earlier run translated shows Ready to apply, or Applied once that output is in the game.
+A file no current run has changed or sent requests for, per [translatedFiles](../app/src/features/guided/translationView.ts), still holds the game's own text: a pass that sends nothing for it found nothing to translate, so it shows Done during the run and after, with that reason in the detail.
 Preparation, queueing, provider work, cancellation, collection and saving show Working; a pending cost approval shows Needs review without a spinner.
 Needs review also covers partial, rejected or unsaved results and never establishes completion.
-Ready to apply requires verified full output or explicit evidence that no requests were needed.
+Ready to apply requires verified full output or explicit evidence that no requests were needed for a file an earlier run translated.
 Applied means the game matches the saved output, or the latest Apply receipt holds it or an output a later run built from it, through [applied_versions](../backend/dazedtl/translation/guided.py).
 Hand fixes, Line widths and QA fixes in the game therefore leave it Applied, as does a later phase's Apply; another Apply or a restore replaces the receipt, and Reload from game retires the file's runs.
 Recorded output that is missing or changed shows Blocked, and a file changed in the game since its working copy was made shows Outdated.
@@ -379,6 +381,7 @@ Missing receipts for a changed file stay unknown.
 Line amounts follow the same receipts through [fileLines](../app/src/features/guided/translationView.ts): the lines a file's latest run saved, out of the lines that run prepared, counting each source request once at its latest attempt; a later "nothing to translate" check closes the file at what is done.
 A Live run prepares requests as it works, so its files show only the lines saved so far until it ends, and Apply leaves them out until then.
 Estimates carry no per-file lines, so a file without a run shows no amount; the Project page totals the known amounts with files applied and the recorded cost.
+Saved-output counts there, on Apply and in the Check and Release notes about applied text leave out files no run translated, since their saved copy is the game's own text.
 Incoming observations preserve the reader's selected file, request, tab and scroll position.
 Selected request receipts update automatically; older records without file provenance identify their scope limitation.
 History, on the Project page, has separate translation, estimate and other-activity tabs.

@@ -15,6 +15,7 @@ import {
   fileMetricRun,
   fileStatus,
   settledWithoutRequests,
+  translatedFiles,
 } from "./translationView";
 import type { RequestInspectionTarget } from "./ProcessPanel";
 import { retainOtherScope } from "./selection";
@@ -73,6 +74,7 @@ export function TranslateWorkspace({
   const scoped = rows.filter((row) => selected.has(row.name));
   const owner = (name: string) =>
     fileRun(state.runs, phase, name, state.sourceStatus.retired);
+  const translated = translatedFiles(state.runs, state.sourceStatus.retired);
   const openFile = (name: string) => {
     const job = filePreviewRun(
       name,
@@ -188,6 +190,7 @@ export function TranslateWorkspace({
                     row.name,
                     fileOwner,
                     settledWithoutRequests(state, phase, row.name, fileOwner),
+                    !translated.has(row.name),
                   );
                 const metricRun = fileMetricRun(
                     state.runs,
@@ -208,7 +211,9 @@ export function TranslateWorkspace({
                             ? "Lines saved of the lines the latest run prepared"
                             : lines.done
                               ? "Lines saved before the latest run ended; it did not reach the rest of the file"
-                              : "Line counts appear once a run prepares this file"
+                              : lines.total === 0
+                                ? "Nothing to translate in this file"
+                                : "Line counts appear once a run prepares this file"
                       }
                     >
                       {lines.running || (!lines.total && lines.done)

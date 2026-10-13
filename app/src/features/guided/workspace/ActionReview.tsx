@@ -11,6 +11,7 @@ import { PublicationContent, publicationActions } from "../PublicationContent";
 import { ReleaseReview } from "../Release";
 import { TranslationCost } from "../TranslationReview";
 import { customNames, selection } from "../eventTextSelection";
+import { savedTranslations } from "../translationView";
 import { actionKey, fileCount, pathKey, phaseLabels } from "./model";
 import type { GuidedWorkspace } from "./useGuidedWorkspace";
 
@@ -40,6 +41,7 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
   const paid =
     preview?.action === "start" && preview.options.mode !== "estimate";
   const publishing = publicationActions.includes(preview.action);
+  const translatedOutputs = savedTranslations(state).outputs;
   const reviewEstimateCurrent =
     !paid ||
     preview?.options.mode === "speakers" ||
@@ -103,7 +105,7 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
             <p>Phase: {phaseLabels[preview.options.phase as Phase]}</p>
             {paid &&
               preview.paths.some((name) =>
-                state.readiness.outputs.includes(name),
+                translatedOutputs.includes(name),
               ) && (
                 <p>
                   Existing working outputs for this scope will be replaced as

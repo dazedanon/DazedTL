@@ -200,6 +200,68 @@ export function fileRun(
   );
   return matches.find(activeWorker) || matches[0];
 }
+const translatedCache = new WeakMap<
+  Job[],
+  { retired: readonly string[]; names: Set<string> }
+>();
+const noneRetired: readonly string[] = [];
+/**
+ * Files a current run changed or sent requests for, in any phase. A rerun
+ * reads the earlier run's output and reuses the results of earlier requests,
+ * so only a file outside this set still holds the game's own text, and a run
+ * that sent nothing for it found nothing to translate.
+ */
+export function translatedFiles(
+  runs: Job[],
+  retired: readonly string[] = noneRetired,
+) {
+  const cached = translatedCache.get(runs);
+  if (cached?.retired === retired) return cached.names;
+  const names = new Set<string>();
+  for (const run of runs) {
+    if (run.mode === "estimate" || run.temporary || retired.includes(run.id))
+      continue;
+    const add = (name: string) => {
+      if (!run.retiredFiles?.includes(name)) names.add(name);
+    };
+    // Without request receipts any of its files may hold its results.
+    if (!run.process?.files) (run.files || []).forEach(add);
+    for (const [name, lines] of Object.entries(run.process?.files || {}))
+      if (lines.requests) add(name);
+    for (const name of Object.keys(run.outputs || {}))
+      if (!run.changedOutputs || run.changedOutputs.includes(name)) add(name);
+  }
+  translatedCache.set(runs, { retired, names });
+  return names;
+}
+/** Saved working outputs holding translation, and those in the game. */
+export function savedTranslations(
+  state: Pick<GuidedState, "runs" | "sourceStatus" | "readiness">,
+) {
+  const translated = translatedFiles(state.runs, state.sourceStatus.retired);
+  return {
+    outputs: state.readiness.outputs.filter((name) => translated.has(name)),
+    applied: state.readiness.applied.filter((name) => translated.has(name)),
+  };
+}
+/**
+ * A run found nothing to translate in a file no run translated when its
+ * Batch prepared no request for it, or when it saved the file whole as it
+ * was. A recorded output that is missing stays the run's problem.
+ */
+function nothingFound(name: string, run: Job, untranslated: boolean) {
+  if (!untranslated) return false;
+  const saved =
+    run.availableOutputs?.includes(name) ??
+    (run.outputsAvailable && !!run.outputs?.[name]);
+  if (run.outputs?.[name] && !saved) return false;
+  return (
+    (run.mode === "batch" && !!run.process?.noRequestFiles?.includes(name)) ||
+    (!!saved &&
+      !run.partialOutputs?.includes(name) &&
+      !run.process?.validationIssues?.some((issue) => issue.file === name))
+  );
+}
 /** An estimate without requests settles a file until newer work includes it. */
 export function settledWithoutRequests(
   state: Pick<GuidedState, "sourceStatus">,
@@ -215,7 +277,8 @@ export function settledWithoutRequests(
 /**
  * A file's translated and total lines from the engine's own receipts: the
  * lines its latest run saved, out of the lines that run prepared. A saved
- * "nothing to translate" check closes the file at what is done. Estimates
+ * "nothing to translate" check closes the file at what is done, and a run
+ * that found nothing to translate gives it a total of none. Estimates
  * carry no per-file lines, so without a run the amounts stay unknown. A Live
  * run prepares requests as it goes, so while it works only the saved lines
  * are known; `running` marks that partial count. A run that carried a
@@ -245,6 +308,15 @@ export function fileLines(
   const done = lines?.done ?? 0;
   if (settledWithoutRequests(state, phase, name, latest))
     return { done, total: done };
+  if (
+    latest &&
+    nothingFound(
+      name,
+      latest,
+      !translatedFiles(state.runs, state.sourceStatus.retired).has(name),
+    )
+  )
+    return { done: 0, total: 0 };
   if (run && run.mode !== "batch" && activeWorker(run))
     return { done, total: null, running: true };
   // Live prepares requests as it goes, so a file a run did not finish never
@@ -299,35 +371,36 @@ export function translationTaskComplete(
     .filter((file) => file.group === phase)
     .map((file) => file.name),
 ) {
-  return (
-    names.length > 0 &&
-    names.every((name) => {
-      if (state.sourceStatus.changed.includes(name)) return false;
-      const run = fileRun(state.runs, phase, name, state.sourceStatus.retired);
-      if (settledWithoutRequests(state, phase, name, run)) return true;
-      if (
-        !run ||
-        run.temporary ||
-        activeWorker(run) ||
-        run.partialOutputs?.includes(name)
-      )
-        return false;
-      // Completion remains conservative even when a retained file can be shown
-      // normally while an interrupted Batch still has unfinished run work.
-      if (
-        run.mode === "batch" &&
-        ["stopped", "interrupted"].includes(run.workerStatus ?? run.status) &&
-        (run.phase?.startsWith("poll") || run.process?.resultsCollected)
-      )
-        return false;
-      return (
-        ["ready", "applied"].includes(fileStatus(name, run).state) ||
-        (run.mode === "batch" &&
-          !run.outputs?.[name] &&
-          !!run.process?.noRequestFiles?.includes(name))
-      );
-    })
-  );
+  if (!names.length) return false;
+  const translated = translatedFiles(state.runs, state.sourceStatus.retired);
+  return names.every((name) => {
+    if (state.sourceStatus.changed.includes(name)) return false;
+    const run = fileRun(state.runs, phase, name, state.sourceStatus.retired);
+    if (settledWithoutRequests(state, phase, name, run)) return true;
+    if (
+      !run ||
+      run.temporary ||
+      activeWorker(run) ||
+      run.partialOutputs?.includes(name)
+    )
+      return false;
+    // Completion remains conservative even when a retained file can be shown
+    // normally while an interrupted Batch still has unfinished run work.
+    if (
+      run.mode === "batch" &&
+      ["stopped", "interrupted"].includes(run.workerStatus ?? run.status) &&
+      (run.phase?.startsWith("poll") || run.process?.resultsCollected)
+    )
+      return false;
+    return (
+      ["ready", "applied", "done"].includes(
+        fileStatus(name, run, false, !translated.has(name)).state,
+      ) ||
+      (run.mode === "batch" &&
+        !run.outputs?.[name] &&
+        !!run.process?.noRequestFiles?.includes(name))
+    );
+  });
 }
 /** Status follows current work; metrics follow the last run that changed this file. */
 export function fileMetricRun(
@@ -383,15 +456,26 @@ const fileState = (state: DisplayState, detail = "") => ({
   detail,
   pending: state === "working",
 });
-/** File receipts and verified output own the row; run diagnostics stay in Inspect. */
-export function fileStatus(name: string, run?: Job, settled = false) {
+/**
+ * File receipts and verified output own the row; run diagnostics stay in
+ * Inspect. `untranslated` says no run translated the file (translatedFiles),
+ * so a run that sent nothing for it leaves nothing to apply.
+ */
+export function fileStatus(
+  name: string,
+  run?: Job,
+  settled = false,
+  untranslated = false,
+) {
   const idle = fileState("not_started");
   // Saved output that is not in the game yet.
   const complete = fileState("ready");
   const progress = fileState("working");
-  if (settled) return complete;
+  const nothing = fileState("done", "Nothing to translate in this file.");
+  if (settled) return untranslated ? nothing : complete;
   if (!run || !run.files?.includes(name) || run.retiredFiles?.includes(name))
     return idle;
+  if (nothingFound(name, run, untranslated)) return nothing;
   const saved =
     run.availableOutputs?.includes(name) ??
     (run.outputsAvailable && !!run.outputs?.[name]);

@@ -22,7 +22,9 @@ import {
   fileLines,
   fileStatus,
   phaseRun,
+  savedTranslations,
   settledWithoutRequests,
+  translatedFiles,
   translationTaskComplete,
   unsettledBatches,
   needsSubmissionReview,
@@ -534,6 +536,8 @@ test("main-text tasks combine verified files across runs independently of select
     ).label,
     "Ready to apply",
   );
+  // Unless no run translated it: then the check found nothing to translate.
+  assert.equal(fileStatus("Armors.json", undefined, true, true).label, "Done");
   const armors = { ...empty, id: "armors", process: { errors: [] } };
   for (const [created, status, complete] of [
     ["2026-10-05T11:00:00+00:00", "failed", true],
@@ -1309,6 +1313,81 @@ test("file metrics survive unchanged passes and advance only with changed output
   );
 });
 
+test("a pass without requests reads Done only for files no run translated", () => {
+  const maps: Job = {
+    id: "maps",
+    logicalPhase: "dialogue",
+    mode: "batch",
+    status: "complete",
+    message: "",
+    log: [],
+    files: ["Map001.json", "Troops.json"],
+    outputs: { "Map001.json": "en", "Troops.json": "same" },
+    changedOutputs: ["Map001.json"],
+    availableOutputs: ["Map001.json", "Troops.json"],
+    appliedOutputs: ["Troops.json"],
+    process: {
+      errors: [],
+      files: { "Map001.json": requested(["validated"]) },
+      noRequestFiles: ["Troops.json"],
+    },
+  };
+  // A rerun reads the earlier translated output, so it sends nothing for
+  // either file and saves both as they were.
+  const rerun = {
+    ...maps,
+    id: "rerun",
+    changedOutputs: [],
+    process: {
+      errors: [],
+      files: {},
+      noRequestFiles: ["Map001.json", "Troops.json"],
+    },
+  };
+  const runs = [rerun, maps];
+  const translated = translatedFiles(runs);
+  assert.deepEqual([...translated], ["Map001.json"]);
+  const status = (name: string) =>
+    fileStatus(name, rerun, false, !translated.has(name)).label;
+  assert.equal(status("Map001.json"), "Ready to apply");
+  assert.equal(status("Troops.json"), "Done");
+  const state = {
+    files: [
+      { name: "Map001.json", group: "dialogue" },
+      { name: "Troops.json", group: "dialogue" },
+    ],
+    runs,
+    sourceStatus: { changed: [], ready: [] },
+    readiness: {
+      outputs: ["Map001.json", "Troops.json"],
+      applied: ["Troops.json"],
+    },
+  } as unknown as GuidedState;
+  assert.equal(translationTaskComplete(state, "dialogue"), true);
+  // Saved translation counts leave out the game's own copy.
+  assert.deepEqual(savedTranslations(state), {
+    outputs: ["Map001.json"],
+    applied: [],
+  });
+  // Requests count before any output is saved, since a rerun may reuse their
+  // results; unknown output changes or receipts count as translation.
+  const unsaved = { ...maps, outputs: {}, availableOutputs: [] };
+  assert.deepEqual([...translatedFiles([unsaved])], ["Map001.json"]);
+  for (const unknown of [
+    { ...maps, changedOutputs: undefined },
+    { ...maps, process: { errors: [] } },
+  ])
+    assert.equal(translatedFiles([unknown]).size, 2);
+  // Estimates, preparations and retired runs translated nothing.
+  for (const run of [
+    { ...maps, mode: "estimate" },
+    { ...maps, temporary: true },
+    { ...maps, retiredFiles: ["Map001.json"] },
+  ])
+    assert.equal(translatedFiles([run]).size, 0);
+  assert.equal(translatedFiles([maps], [maps.id]).size, 0);
+});
+
 test("file status follows active and automatically monitored Batch work before retained outputs", () => {
   const checkpoint = {
     id: "batch",
@@ -1377,6 +1456,40 @@ test("file status follows active and automatically monitored Batch work before r
   assert.notEqual(
     fileStatus("Armors.json", { ...withSkipped, mode: "translate" }).label,
     "Ready to apply",
+  );
+  // A file no run translated has nothing to apply, during the run and after
+  // it saved the file as it was; the game's own copy is not an Apply.
+  for (const run of [
+    withSkipped,
+    { ...withSkipped, temporary: true, status: "waiting" },
+    {
+      ...withSkipped,
+      status: "complete",
+      outputs: { "Armors.json": "same" },
+      availableOutputs: ["Armors.json"],
+      appliedOutputs: ["Armors.json"],
+    },
+  ])
+    assert.deepEqual(fileStatus("Armors.json", run, false, true), {
+      state: "done",
+      label: "Done",
+      detail: "Nothing to translate in this file.",
+      pending: false,
+    });
+  const live = {
+    ...withSkipped,
+    mode: "translate",
+    status: "complete",
+    outputs: { "Armors.json": "same" },
+    availableOutputs: ["Armors.json"],
+    appliedOutputs: ["Armors.json"],
+  };
+  assert.equal(fileStatus("Armors.json", live, false, true).label, "Done");
+  assert.equal(fileStatus("Armors.json", live).label, "Applied");
+  assert.equal(
+    fileStatus("Armors.json", { ...live, availableOutputs: [] }, false, true)
+      .label,
+    "Blocked",
   );
   const received = {
     ...checkpoint,
@@ -2013,6 +2126,15 @@ test("file line amounts follow the latest run's saved and prepared lines", () =>
     done: 40,
     total: 50,
   });
+  // A file no run translated that a Batch prepared nothing for has none.
+  const empty = {
+    ...run,
+    mode: "batch",
+    status: "running",
+    process: { errors: [], files: {}, noRequestFiles: ["Items.json"] },
+  };
+  assert.deepEqual(lines(state([empty])), { done: 0, total: 0 });
+  assert.notEqual(lines(state([empty, whole])).total, 0);
 });
 
 test("text locations name the editor's event, page and command, counting from one", () => {

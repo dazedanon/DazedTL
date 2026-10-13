@@ -20,6 +20,7 @@ import {
   type QaStepName,
 } from "../../qaSteps";
 import { qaPhase, qaUnsaved } from "../../qaView";
+import { savedTranslations } from "../../translationView";
 import { PlaytestWork } from "../../Playtest";
 import {
   playtestFailure,
@@ -204,7 +205,7 @@ export function fittingView(w: GuidedWorkspace): TaskView {
       scanCurrent && eligible === 0 ? "primary" : "quiet",
     ),
     // Fitting reads the game's current text, so it needs applied output.
-    actionContext: !state.readiness.applied.length && (
+    actionContext: !savedTranslations(state).applied.length && (
       <span>Apply translations first; the check reads the game’s text.</span>
     ),
     heading: {
