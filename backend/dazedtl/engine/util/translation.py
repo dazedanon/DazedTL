@@ -2355,14 +2355,16 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
     if est_provider == "anthropic":
         # Anthropic bills by Claude's tokenizer, which differs from the
         # approximate encoder above; count with it when the endpoint answers.
-        try:
-            counted = claude_tokens.count(
-                _get_anthropic_client().with_options(timeout=30),
-                request_params,
-                request_dynamic,
-            )
-        except Exception:
-            pass
+        # A local run blocks the network, where the client would only retry.
+        if os.getenv("DAZEDTL_TEST_OFFLINE") != "1":
+            try:
+                counted = claude_tokens.count(
+                    _get_anthropic_client().with_options(timeout=30),
+                    request_params,
+                    request_dynamic,
+                )
+            except Exception:
+                pass
         if counted is None:
             print(
                 f"{log_prefix} Claude's token count was unavailable; "
