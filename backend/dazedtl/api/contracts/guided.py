@@ -798,10 +798,11 @@ class PublicationChange(TypedDict):
     after: str
     size: int
     later_edits: bool
-    diff: str
-    truncated: bool
-    before_text: str
-    after_text: str
+    # A restore's review compares the text; other publications list files.
+    diff: NotRequired[str]
+    truncated: NotRequired[bool]
+    before_text: NotRequired[str]
+    after_text: NotRequired[str]
 
 
 class PreviewRun(TypedDict):

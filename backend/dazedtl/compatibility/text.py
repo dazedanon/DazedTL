@@ -469,6 +469,37 @@ def run_qa(plan, log):
     return result
 
 
+# Only a restore's review shows its files' text changes: Apply lists the files
+# it overwrites, fitting lists its own changes and QA applies without a review.
+COMPARED = {"runtime_restore"}
+
+
+def comparison(raw, candidate):
+    """A file's current and replacement text for its review, with the start
+    of their unified diff."""
+    lines = difflib.unified_diff(
+        raw.decode("utf-8-sig").splitlines(),
+        candidate.decode("utf-8-sig").splitlines(),
+        fromfile="Current runtime",
+        tofile="Reviewed replacement",
+        lineterm="",
+        n=2,
+    )
+    diff, length, truncated = [], 0, False
+    for line in lines:
+        length += len(line) + 1
+        if length > 16000:
+            truncated = True
+            break
+        diff.append(line)
+    return {
+        "diff": "\n".join(diff),
+        "truncated": truncated,
+        "before_text": raw.decode("utf-8-sig")[:16000],
+        "after_text": candidate.decode("utf-8-sig")[:16000],
+    }
+
+
 def prepare_publication(plan):
     from desktop.backend.workflow_actions import validate_plan
 
@@ -632,39 +663,22 @@ def prepare_publication(plan):
     rows = []
     for row in frozen["files"]:
         name = Path(row["path"]).name
-        raw = project_path(root, row["path"]).read_bytes()
-        candidate = (
-            folder / "text-publications" / frozen["id"] / f"{row['index']}.after"
-        ).read_bytes()
-        lines = difflib.unified_diff(
-            raw.decode("utf-8-sig").splitlines(),
-            candidate.decode("utf-8-sig").splitlines(),
-            fromfile="Current runtime",
-            tofile="Reviewed replacement",
-            lineterm="",
-            n=2,
-        )
-        diff, length, truncated = [], 0, False
-        for line in lines:
-            length += len(line) + 1
-            if length > 16000:
-                truncated = True
-                break
-            diff.append(line)
         # The frozen row's index and mode stay internal to publication.
-        rows.append(
-            {
-                **{key: row[key] for key in ("path", "before", "after", "size")},
-                "destination": str(root / row["path"]),
-                "later_edits": action == "export_selected"
-                and name in previous
-                and digest(raw) != previous[name],
-                "diff": "\n".join(diff),
-                "truncated": truncated,
-                "before_text": raw.decode("utf-8-sig")[:16000],
-                "after_text": candidate.decode("utf-8-sig")[:16000],
-            }
-        )
+        change = {
+            **{key: row[key] for key in ("path", "before", "after", "size")},
+            "destination": str(root / row["path"]),
+            "later_edits": action == "export_selected"
+            and name in previous
+            and row["before"] != previous[name],
+        }
+        if action in COMPARED:
+            change.update(
+                comparison(
+                    project_path(root, row["path"]).read_bytes(),
+                    candidates[row["path"]],
+                )
+            )
+        rows.append(change)
     return {
         "publication": rows,
         "paths": [row["path"] for row in rows],

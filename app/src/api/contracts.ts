@@ -1095,10 +1095,10 @@ export type PublicationChange = {
   after: string;
   size: number;
   later_edits: boolean;
-  diff: string;
-  truncated: boolean;
-  before_text: string;
-  after_text: string;
+  diff?: string;
+  truncated?: boolean;
+  before_text?: string;
+  after_text?: string;
 };
 
 export type PreviewRun = {
