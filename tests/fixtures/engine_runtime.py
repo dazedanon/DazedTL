@@ -436,6 +436,30 @@ try:
                 "CommonPopup add text:Resonance\u00a0+3 count:60",
                 "text_indicator : World map",
             ], result
+            # Batch collection queues a lone label or plugin argument with the
+            # file text. It sent each one Live before the Batch cost review.
+            payloads = []
+
+            def queued(text, *_args):
+                payloads.append(deepcopy(text))
+                return [deepcopy(text), [0, 0]]
+
+            with (
+                patch.dict(os.environ, {"BATCH_PHASE": "collect"}),
+                patch.multiple(
+                    parser, CODE356=True, translateAI=extensions.point(queued)
+                ),
+            ):
+                parse(
+                    [
+                        command(356, ["Tachie showName 村長"]),
+                        command(356, ["OriginMenuStatus SetParam param1 攻撃力"]),
+                    ]
+                )
+                parser.translateNoteOmitSpace({"note": "<LB:村>"}, r"<LB:(.*?)\s?>.*")
+            assert all(isinstance(text, list) for text in payloads) and {
+                text[0] for text in payloads
+            } == {"村長", "攻撃力", "村"}, payloads
             # Batch runs carry these lists through their saved runtime profile.
             from util.runtime_profile import apply_batch_runtime_profile
 
@@ -1467,6 +1491,28 @@ try:
             )
         assert output == ["Potion", "毒", "Heal"], output
         assert tokens == [20, 8], tokens
+        # Collection runs before the Batch cost review; text it cannot queue
+        # stops it instead of becoming a Live request.
+        with (
+            patch.dict(
+                os.environ,
+                {"BATCH_PHASE": "collect", "API_PROVIDER": "openai", "api": ""},
+            ),
+            patch.object(
+                translation.openai,
+                "chat",
+                SimpleNamespace(completions=SimpleNamespace(create=completion)),
+            ),
+        ):
+            try:
+                translation.translateAI(
+                    "村", [], config, filename="Map001.json", mismatchList=[]
+                )
+            except translation.BatchResultUnavailableError:
+                pass
+            else:
+                raise AssertionError("Batch collection sent a Live request.")
+        assert len(sent) == 4, sent
         assert sent == [
             {"Line1": "薬"},
             {"Line1": "薬"},

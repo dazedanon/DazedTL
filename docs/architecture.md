@@ -94,6 +94,7 @@ The fresh Batch speaker check validates unresolved nameplates against frozen fil
 Nameplates may contain character names or other display labels, so the review does not assume a character identity.
 This small preparation uses Live pricing to avoid waiting for a separate name Batch, and the review distinguishes it from the selected Batch mode for file text.
 The file-text Batch receives its own cost review after names are resolved.
+Collection itself never sends a Live request: a label or plugin argument translated on its own, such as a map event's `<LB:>` note, travels in the file-text Batch as a one-item request, and text collection cannot queue stops it before anything is sent.
 The [name-result adapter](../backend/dazedtl/compatibility/speaker_results.py) retains the native save outcome and a verified glossary snapshot independently of the later Batch decision.
 It verifies each name against that glossary: one that does not read back is shown as not saved and asked for again by the next run, and never discards the others.
 The shared observer exposes pending, saved and unavailable outcomes; Batch review and the request inspector’s Technical tab show the result with bounded, read-only translation inspection.

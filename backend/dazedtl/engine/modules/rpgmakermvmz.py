@@ -2110,6 +2110,26 @@ def _normalize_sg_desc(text: str) -> str:
             result_lines.append(" ".join(body_buf))
         normalized_blocks.append("\n".join(result_lines))
     return "\n\n".join(normalized_blocks)
+
+
+def _translate_string(text, history):
+    """Translates one string on its own, like a label or a plugin argument.
+
+    Batch phases send it as a one-item list, as map names do, so collection
+    queues it with the file text for the Batch cost review instead of making
+    a Live request first, and consume reads its Batch result back.
+    """
+    if (os.getenv("BATCH_PHASE") or "").strip().lower() in {
+        "collect", "estimate", "consume"
+    }:
+        response = translateAI([text], history)
+        translated = response[0]
+        if isinstance(translated, list):
+            translated = translated[0] if translated else text
+        return [translated, response[1]]
+    return translateAI(text, history)
+
+
 # For notes that can't have spaces.
 def translateNoteOmitSpace(event, regex):
     # Regex that only matches text inside LB.
@@ -2124,11 +2144,7 @@ def translateNoteOmitSpace(event, regex):
         jaString = re.sub(r"\n", " ", oldJAString)
 
         # Translate
-        response = translateAI(
-            jaString,
-            ctx("names.location_short"),
-            False,
-        )
+        response = _translate_string(jaString, ctx("names.location_short"))
         # Defend against unexpected response shapes
         try:
             translatedText = response[0]
@@ -4499,7 +4515,7 @@ def _searchCodes(page, pbar, jobList, filename):
                     # Remove any textwrap & TL
                     jaString = re.sub(r"\n", " ", jaString)
                     sourceQuestion = jaString
-                    response = translateAI(jaString, "")
+                    response = _translate_string(jaString, "")
                     translatedText = response[0]
                     totalTokens[0] += response[1][0]
                     totalTokens[1] += response[1][1]
@@ -5314,11 +5330,7 @@ def _searchCodes(page, pbar, jobList, filename):
                     matchList = re.findall(r"Tachie showName (.+)", jaString)
                     if len(matchList) > 0:
                         # Translate
-                        response = translateAI(
-                            matchList[0],
-                            ctx("names.npc"),
-                            False,
-                        )
+                        response = _translate_string(matchList[0], ctx("names.npc"))
                         translatedText = response[0]
                         totalTokens[0] += response[1][0]
                         totalTokens[1] += response[1][1]
@@ -5417,7 +5429,7 @@ def _searchCodes(page, pbar, jobList, filename):
                     if len(matchList) > 0:
                         # Translate
                         text = matchList[0]
-                        response = translateAI(text, ctx("events.generic"))
+                        response = _translate_string(text, ctx("events.generic"))
                         translatedText = response[0]
                         totalTokens[0] += response[1][0]
                         totalTokens[1] += response[1][1]
@@ -5463,7 +5475,7 @@ def _searchCodes(page, pbar, jobList, filename):
                     if len(matchList) > 0:
                         # Translate
                         text = matchList[0]
-                        response = translateAI(text, ctx("events.generic"))
+                        response = _translate_string(text, ctx("events.generic"))
                         translatedText = response[0]
                         totalTokens[0] += response[1][0]
                         totalTokens[1] += response[1][1]
@@ -5488,7 +5500,7 @@ def _searchCodes(page, pbar, jobList, filename):
                         # Remove any textwrap & TL
                         jaString = re.sub(r"\n", " ", jaString)
                         sourceQuestion = jaString
-                        response = translateAI(jaString, "")
+                        response = _translate_string(jaString, "")
                         translatedText = response[0]
                         totalTokens[0] += response[1][0]
                         totalTokens[1] += response[1][1]

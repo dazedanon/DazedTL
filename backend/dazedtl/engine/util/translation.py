@@ -1991,7 +1991,8 @@ def take_batch_result(
 
 
 class BatchResultUnavailableError(RuntimeError):
-    """A consume pass could not safely match a fetched provider result."""
+    """A Batch phase stopped before a Live request nobody approved: consume
+    found no fetched result, or collection met text it could not queue."""
 
 
 @extensions.point
@@ -5989,6 +5990,13 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                     raise BatchResultUnavailableError(
                         "[BATCH] Consume attempted to use the live API. The run "
                         "was stopped before any full-price fallback request."
+                    )
+                if batch_phase == "collect":
+                    # Collection runs before the Batch cost review, so a Live
+                    # request here would be paid work nobody approved.
+                    raise BatchResultUnavailableError(
+                        "[BATCH] Collection attempted a Live request for text it "
+                        "could not queue. Preparation stopped before sending it."
                     )
                 try:
                     response = translateText(
