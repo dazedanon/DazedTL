@@ -134,13 +134,20 @@ def manual_jobs(source, workspace, lock, allow_providers):
 
     native.launch_worker.layer("dazedtl-worker", launch)
 
-    def finish_estimate(native_finish, directory, plan, estimate, stopped):
-        estimate = native_finish(directory, plan, estimate, stopped)
-        if not allow_providers or plan.get("dazedtl_claude_count") is False:
-            return estimate
-        from .estimate_pricing import count
+    # Claude count processes started beside their estimates, by run folder.
+    warm_counts = {}
+    warm_lock = threading.Lock()
 
-        return count(directory, workspace, plan, estimate, stopped)
+    def finish_estimate(native_finish, directory, plan, estimate, stopped):
+        from .estimate_pricing import count, stop
+
+        estimate = native_finish(directory, plan, estimate, stopped)
+        with warm_lock:
+            process = warm_counts.pop(str(directory), None)
+        if not allow_providers or plan.get("dazedtl_claude_count") is False:
+            stop(process)
+            return estimate
+        return count(directory, workspace, plan, estimate, stopped, process=process)
 
     native.finish_estimate.layer("dazedtl-claude-count", finish_estimate)
 
@@ -409,9 +416,26 @@ def manual_jobs(source, workspace, lock, allow_providers):
             return super()._launch(job, resume)
 
         def _run(self, identity, resume):
+            from .estimate_pricing import start, stop
+
+            folder = str(self.folder(identity))
+            job = self.jobs.get(identity) or {}
+            if job.get("mode") == "estimate" and allow_providers:
+                # Its startup, seconds on Windows, overlaps the estimate.
+                try:
+                    plan = json.loads((Path(folder) / "plan.json").read_bytes())
+                    if plan.get("dazedtl_claude_count") is not False:
+                        process = start(folder, workspace, plan)
+                        if process is not None:
+                            with warm_lock:
+                                warm_counts[folder] = process
+                except OSError, ValueError:
+                    pass
             try:
                 return super()._run(identity, resume)
             finally:
+                with warm_lock:
+                    stop(warm_counts.pop(folder, None))
                 with self.lock:
                     job = self.jobs.get(identity)
                     if (

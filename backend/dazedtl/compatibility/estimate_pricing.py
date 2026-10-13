@@ -19,11 +19,49 @@ from pathlib import Path
 TIMEOUT = 600
 
 
-def count(directory, workspace, plan, estimate, stopped=lambda: False):
-    """``estimate`` priced with Claude's own count. A count that can't run or
-    fails keeps it approximate, which it says; stopping ends the count with
-    InterruptedError."""
+def start(directory, workspace, plan):
+    """A count process for this run's Claude estimate, started while the
+    estimate still runs so its startup overlaps it; None when no count can
+    run. ``count`` uses it, and ``stop`` ends one it did not use."""
     from desktop.backend.manual import worker_environment
+    from util.batch_providers import detect_batch_provider
+
+    settings = plan.get("settings") or {}
+    if (
+        not plan.get("key_name")
+        or os.getenv("DAZEDTL_TEST_OFFLINE") == "1"
+        or detect_batch_provider(
+            settings.get("model", ""),
+            api_url=settings.get("api", ""),
+            api_provider=settings.get("API_PROVIDER", "openai"),
+        )
+        != "anthropic"
+    ):
+        return None
+    with (Path(directory) / "log/startup.txt").open("a", encoding="utf-8") as errors:
+        return subprocess.Popen(
+            [sys.executable, "-u", str(Path(__file__).resolve()), str(directory)],
+            cwd=directory,
+            env={**worker_environment(workspace, plan), "PYTHONDONTWRITEBYTECODE": "1"},
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=errors,
+            text=True,
+            encoding="utf-8",
+        )
+
+
+def stop(process):
+    """Ends a started count process that will not be used."""
+    if process is not None and process.poll() is None:
+        process.kill()
+        process.wait()
+
+
+def count(directory, workspace, plan, estimate, stopped=lambda: False, process=None):
+    """``estimate`` priced with Claude's own count, by ``process`` when one
+    was started for it. A count that can't run or fails keeps it approximate,
+    which it says; stopping ends the count with InterruptedError."""
     from desktop.backend.settings import SettingsStore
 
     directory = Path(directory)
@@ -34,26 +72,21 @@ def count(directory, workspace, plan, estimate, stopped=lambda: False):
         or os.getenv("DAZEDTL_TEST_OFFLINE") == "1"
         or not (directory / "log/estimate_requests.json").is_file()
     ):
+        stop(process)
         return estimate
     try:
         runtime = SettingsStore(workspace).runtime(plan["settings"], plan["key_name"])
     except OSError, ValueError, KeyError:
+        stop(process)
         return estimate
     # A credential edited to another endpoint since the estimate is not
     # Anthropic's to receive.
     if not runtime["key"] or runtime.get("api") != plan["settings"].get("api"):
+        stop(process)
         return estimate
-    with (directory / "log/startup.txt").open("a", encoding="utf-8") as errors:
-        process = subprocess.Popen(
-            [sys.executable, "-u", str(Path(__file__).resolve()), str(directory)],
-            cwd=directory,
-            env={**worker_environment(workspace, plan), "PYTHONDONTWRITEBYTECODE": "1"},
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=errors,
-            text=True,
-            encoding="utf-8",
-        )
+    process = process or start(directory, workspace, plan)
+    if process is None:
+        return estimate
     with process:
         try:
             assert process.stdin is not None and process.stdout is not None
@@ -86,7 +119,6 @@ if __name__ == "__main__":
     protocol = sys.stdout
     # The engine prints its estimate as it prices; only the result goes out.
     sys.stdout = sys.stderr
-    secret = sys.stdin.readline().strip()
     from dazedtl.compatibility.runtime import activate
 
     activate()
@@ -103,8 +135,15 @@ if __name__ == "__main__":
     prepare(sys.argv[1])
     socket.create_connection, socket.socket.connect, socket.socket.connect_ex = network
     os.environ.pop("DAZEDTL_TEST_OFFLINE", None)
-    os.environ["key"] = secret
+    # Everything loads while the estimate may still run; the key arrives
+    # once its requests are ready to count.
+    import anthropic  # noqa: F401
     from util.translation import estimateTranslationCosts
+
+    secret = sys.stdin.readline().strip()
+    if not secret:
+        raise SystemExit(0)
+    os.environ["key"] = secret
 
     estimate = estimateTranslationCosts()
     protocol.write(json.dumps(estimate) + "\n")
