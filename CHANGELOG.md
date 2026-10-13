@@ -3,6 +3,12 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.14.2] - 2026-10-13
+
+### Fixed
+
+- **App:** a game with a long translation history stays responsive. Every screen update checked each saved run's files again, rereading all of them once the history passed about 20,000 files, so clicks, page switches and estimates waited seconds on Windows. The checks now reuse what they read before.
+
 ## [2.14.1] - 2026-10-13
 
 ### Changed
@@ -544,6 +550,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.14.2]: https://github.com/dazedanon/DazedTL/compare/v2.14.1...v2.14.2
 [2.14.1]: https://github.com/dazedanon/DazedTL/compare/v2.14.0...v2.14.1
 [2.14.0]: https://github.com/dazedanon/DazedTL/compare/v2.13.2...v2.14.0
 [2.13.2]: https://github.com/dazedanon/DazedTL/compare/v2.13.1...v2.13.2
