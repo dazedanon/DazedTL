@@ -1,4 +1,5 @@
-import type { Preview } from "../../api/contracts";
+import { useState } from "react";
+import type { Preview, PublicationChange } from "../../api/contracts";
 import { Notice } from "../../ui/Notice";
 import { PathText } from "../../ui/PathText";
 import { TextDiff } from "../../ui/TextDiff";
@@ -104,27 +105,7 @@ export function PublicationContent({ preview }: { preview: Preview }) {
           {/* Fitting lists each change below; the file diff repeats it. */}
           {!preview.rewrap &&
             preview.publication.map((row) => (
-              <details className="text-publication" key={row.path}>
-                {/* The text comparison is what the user reviews; the frozen
-                    plan keeps the hashes it checks. */}
-                <summary>{row.path}</summary>
-                <strong>
-                  Changes
-                  {row.truncated ? " (first 16,000 characters)" : ""}
-                </strong>
-                {row.diff ? (
-                  <TextDiff diff={row.diff} label={`Changes to ${row.path}`} />
-                ) : (
-                  <p>The game file already matches.</p>
-                )}
-                <details>
-                  <summary>Full file text</summary>
-                  <strong>Current (first 16,000 characters)</strong>
-                  <pre>{row.before_text}</pre>
-                  <strong>After (first 16,000 characters)</strong>
-                  <pre>{row.after_text}</pre>
-                </details>
-              </details>
+              <PublicationFile key={row.path} row={row} />
             ))}
         </>
       )}
@@ -155,5 +136,43 @@ export function PublicationContent({ preview }: { preview: Preview }) {
         </>
       )}
     </>
+  );
+}
+
+/**
+ * One file's text comparison, rendered once opened: a large batch's closed
+ * rows held hundreds of thousands of diff lines.
+ */
+function PublicationFile({ row }: { row: PublicationChange }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <details
+      className="text-publication"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      {/* The text comparison is what the user reviews; the frozen plan
+          keeps the hashes it checks. */}
+      <summary>{row.path}</summary>
+      {open && (
+        <>
+          <strong>
+            Changes
+            {row.truncated ? " (first 16,000 characters)" : ""}
+          </strong>
+          {row.diff ? (
+            <TextDiff diff={row.diff} label={`Changes to ${row.path}`} />
+          ) : (
+            <p>The game file already matches.</p>
+          )}
+          <details>
+            <summary>Full file text</summary>
+            <strong>Current (first 16,000 characters)</strong>
+            <pre>{row.before_text}</pre>
+            <strong>After (first 16,000 characters)</strong>
+            <pre>{row.after_text}</pre>
+          </details>
+        </>
+      )}
+    </details>
   );
 }
