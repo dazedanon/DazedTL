@@ -528,7 +528,7 @@ def handleMVMZ(filename, estimate):
     if translatedData[2] is not None:
         raise translatedData[2]
 
-    if not estimate and not SPEAKER_PARSE_MODE:
+    if not estimate and not SPEAKER_PARSE_MODE and not _batch_collecting():
         if not saveProgress(translatedData[0], filename, force=True):
             return "Fail"
 
@@ -693,6 +693,13 @@ def getResultString(translatedData, translationTime, filename):
             return filename + ": " + totalTokenstring + timeString + Fore.RED + " \u2717 " + errorString + Fore.RESET
 
 
+def _batch_collecting() -> bool:
+    """Batch collection only queues requests and leaves its text untranslated;
+    consume reads the inputs again and writes every file, so collection's own
+    saves were scratch the app never shows."""
+    return (os.getenv("BATCH_PHASE") or "").strip().lower() == "collect"
+
+
 @extensions.point
 def saveProgress(data, filename, *, force=False):
     """Atomically write current data to translated/filename to avoid progress loss.
@@ -700,7 +707,7 @@ def saveProgress(data, filename, *, force=False):
     """
     try:
         # Also skip progress saves during speaker-parse mode
-        if ESTIMATE or SPEAKER_PARSE_MODE:
+        if ESTIMATE or SPEAKER_PARSE_MODE or _batch_collecting():
             return False
 
         now = time.monotonic()
