@@ -30,6 +30,7 @@ import {
   type SelectorKey,
   type SourcePickerDraft,
   nothingToTranslate,
+  selection,
   sourceErrors,
 } from "../eventTextSelection";
 import { guidanceNames, saveGuidanceSet } from "../guidanceReview";
@@ -440,9 +441,7 @@ export function useGuidedWorkspace({
     action.run(
       async () => {
         await flushDrafts();
-        const selected = Array.isArray(values.engine_options[key])
-          ? [...values.engine_options[key]]
-          : [];
+        const selected = selection(values.engine_options, key);
         await api.guided.eventTextPicker(project.id, {
           key,
           selected,

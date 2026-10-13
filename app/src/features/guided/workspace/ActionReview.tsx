@@ -5,10 +5,12 @@ import { Message } from "../../../ui/Feedback";
 import { DialogBody, DialogHeader } from "../../../ui/Dialog";
 import { Modal } from "../../../ui/Modal";
 import { PathText } from "../../../ui/PathText";
+import { displayText } from "../../../ui/displayText";
 import { VirtualList } from "../../../ui/VirtualList";
 import { PublicationContent, publicationActions } from "../PublicationContent";
 import { ReleaseReview } from "../Release";
 import { TranslationCost } from "../TranslationReview";
+import { customNames, selection } from "../eventTextSelection";
 import { actionKey, fileCount, pathKey, phaseLabels } from "./model";
 import type { GuidedWorkspace } from "./useGuidedWorkspace";
 
@@ -227,24 +229,33 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
             <p>Selected sources: {enabledCodes.join(", ")}</p>
             {values.engine_options.CODE122 === true && (
               <p>
-                Variable IDs: {String(values.engine_options.CODE122_VAR_RANGES)}
+                Variable IDs:{" "}
+                {displayText(values.engine_options.CODE122_VAR_RANGES)}
               </p>
             )}
             {values.engine_options.CODE357 === true && (
               <p>
                 Plugin handlers:{" "}
-                {(
-                  (values.engine_options.ENABLED_PLUGINS_357 as string[]) || []
-                ).join(", ") || "None"}
+                {[
+                  ...selection(values.engine_options, "ENABLED_PLUGINS_357"),
+                  ...customNames(values.engine_options, "CODE357").map(
+                    (name) => name + " (this game's own)",
+                  ),
+                ].join(", ") || "None"}
               </p>
             )}
             {values.engine_options.CODE355655 === true && (
               <p>
                 Script patterns:{" "}
-                {(
-                  (values.engine_options.ENABLED_PATTERNS_355655 as string[]) ||
-                  []
-                ).join(", ") || "None"}
+                {[
+                  ...selection(
+                    values.engine_options,
+                    "ENABLED_PATTERNS_355655",
+                  ),
+                  ...customNames(values.engine_options, "CODE355655").map(
+                    (name) => name + " (this game's own)",
+                  ),
+                ].join(", ") || "None"}
               </p>
             )}
           </>

@@ -1,10 +1,48 @@
-import type { EngineValue, EventTextState } from "../../api/contracts.ts";
+import type {
+  CustomHandler,
+  CustomPattern,
+  EngineValue,
+  EventTextState,
+} from "../../api/contracts.ts";
 
 export const selectorKeys = {
   CODE357: "ENABLED_PLUGINS_357",
   CODE355655: "ENABLED_PATTERNS_355655",
 } as const;
 export type SelectorKey = (typeof selectorKeys)[keyof typeof selectorKeys];
+/** The options holding a source's own patterns or handlers for this game. */
+export const customKeys: Record<string, string> = {
+  CODE357: "CUSTOM_357",
+  CODE355655: "CUSTOM_355655",
+  CODE356: "CUSTOM_356",
+  CODE108: "CUSTOM_108",
+};
+
+/** A selector's registered identifiers. */
+export const selection = (
+  values: Record<string, EngineValue>,
+  key: SelectorKey,
+) => {
+  const value = values[key];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+};
+
+/** The game's own entries its findings saved for a source, by name. */
+export function customNames(values: Record<string, EngineValue>, code: string) {
+  const value = customKeys[code] ? values[customKeys[code]] : undefined;
+  return Array.isArray(value)
+    ? value
+        .filter(
+          (item): item is CustomPattern | CustomHandler =>
+            typeof item === "object",
+        )
+        .map((item) =>
+          "plugin" in item ? `${item.plugin} ${item.command}` : item.name,
+        )
+    : [];
+}
 export type PickerFilter = "all" | "selected" | "recommended";
 export interface SourceChoice {
   id: string;
@@ -84,6 +122,7 @@ export function sourceErrors(
       else if (
         values[row.key] &&
         !value.length &&
+        !customNames(values, row.key).length &&
         !state.builtinHits[row.key]?.length
       )
         errors.push(

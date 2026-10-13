@@ -26,6 +26,10 @@ from dazedtl.translation.guided import Guided, retained_position
 from dazedtl.translation.guided_inputs import GuidedInputs
 from dazedtl.translation.operations import lifecycle_path
 
+from tests.engine import engine_module
+
+custom_patterns = engine_module("util/custom_patterns.py")
+
 
 class RetainedPositionTests(unittest.TestCase):
     def test_positions_from_earlier_stage_layouts_open_the_task_holding_their_work(
@@ -281,9 +285,15 @@ class GuidedTests(unittest.TestCase):
                         or any(item not in choices[code] for item in value)
                     ):
                         raise ValueError("Unknown registry identifier")
-            return deepcopy(values)
+            return {
+                key: custom_patterns.normalize(key, value)
+                if key in event_text.CUSTOM.values()
+                else deepcopy(value)
+                for key, value in values.items()
+            }
 
         self.backend.guided_event_text_options = validate_event_options
+        self.backend.guided_event_text_custom = custom_patterns.problems
         self.backend.operations = SimpleNamespace(
             jobs={}, start=Mock(), running=lambda: False
         )
@@ -3162,6 +3172,7 @@ class GuidedTests(unittest.TestCase):
                 "exclusions": [],
                 "evidence": [ref],
                 **({"spacing": {}, "keep": []} if key in event_text.WORDED else {}),
+                **({"custom": []} if key in event_text.CUSTOM else {}),
             }
             for key in event_text.CODES
         }
@@ -3286,6 +3297,18 @@ class GuidedTests(unittest.TestCase):
                 lambda r: r["sources"]["CODE356"].update(spacing={"D_TEXT": "nbsp"}),
                 "invalid",
             ),
+            (lambda r: r["sources"]["CODE122"].update(custom=[]), "invalid"),
+            # A pattern without a capture has no text to translate, and a
+            # nested repeat can hang the engine on a line it almost matches.
+            *(
+                (
+                    lambda r, regex=regex: r["sources"]["CODE355655"].update(
+                        custom=[{"name": "notice", "regex": regex}]
+                    ),
+                    "invalid",
+                )
+                for regex in (r"Notice\.show", r"Notice\.show\('((?:\w+)*)'\)")
+            ),
         ):
             value = deepcopy(report)
             mutate(value)
@@ -3346,6 +3369,58 @@ class GuidedTests(unittest.TestCase):
             (options["NBSP_356"], options["SPACES_356"], options["KEEP_356"]),
             (["D_TEXT "], [], [placeholder]),
         )
+
+    def test_event_findings_apply_the_games_own_patterns_only_where_they_capture_japanese(
+        self,
+    ):
+        # Text no installed handler captured needed an engine change. The
+        # assistant's own patterns stand in for one only when each captures
+        # Japanese in the selected events, inside its quotes, one per command.
+        quest = {"title": "クエスト", "data": '{"reward":"宝"}'}
+        _, report = self.event_report(
+            [
+                {"code": 355, "parameters": ["Notice.show('宝箱だ');"]},
+                {"code": 357, "parameters": ["QuestLog", "add", "", quest]},
+            ]
+        )
+        notice = {"name": "notice", "regex": r"Notice\.show\('(.*)'\)"}
+        handler = {"plugin": "QuestLog", "command": "add", "args": ["title"]}
+        report["sources"]["CODE355655"].update(decision="enable", coverage="safe")
+        report["sources"]["CODE357"]["custom"] = [handler]
+        for code, custom, problem in (
+            (
+                "CODE355655",
+                [{**notice, "regex": r"Notice\.show\('(se_\w+)'\)"}],
+                "no Japanese",
+            ),
+            ("CODE355655", [notice, {**notice, "name": "again"}], "both capture"),
+            ("CODE355655", [{**notice, "regex": r"Notice\.show\((.*)\)"}], "quotes"),
+            # A struct argument is JSON text the plugin parses.
+            ("CODE357", [{**handler, "args": ["data"]}], "structured data"),
+        ):
+            sources = deepcopy(report["sources"])
+            sources["CODE355655"]["custom"] = [notice]
+            sources[code]["custom"] = custom
+            write_json(self.source / event_text.REPORT, {**report, "sources": sources})
+            with (
+                self.subTest(problem=problem),
+                self.assertRaisesRegex(ValueError, problem),
+            ):
+                self.guided.event_text_request(self.identity, apply=True)
+        self.assertEqual(self.native["engine_options"], {})
+        report["sources"]["CODE355655"]["custom"] = [notice]
+        write_json(self.source / event_text.REPORT, report)
+        applied = self.guided.event_text_request(self.identity, apply=True)
+        # The source needs no registered entry when its own pattern covers it.
+        self.assertEqual(applied["findings"]["enabled"], ["CODE357", "CODE355655"])
+        options = self.native["engine_options"]
+        self.assertEqual(
+            (options["CUSTOM_355655"], options["CUSTOM_357"]), ([notice], [handler])
+        )
+        row = next(
+            row for row in applied["findings"]["rows"] if row["key"] == "CODE355655"
+        )
+        self.assertTrue(any(notice["regex"] in note for note in row["observations"]))
 
     def test_empty_registry_selection_needs_effective_builtin_coverage_and_picker_is_project_owned(
         self,

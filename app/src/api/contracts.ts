@@ -14,7 +14,24 @@ export type Phase =
 
 export type RunMode = "estimate" | "translate" | "batch";
 
-export type EngineValue = string | number | boolean | string[];
+/** A game's own pattern for event text nothing installed captures; its
+regex's last capturing group is translated. */
+export type CustomPattern = {
+  name: string;
+  regex: string;
+  script?: string;
+  spacing?: "space" | "nbsp" | "underscore";
+};
+
+/** A game's own handler for an MZ plugin command's plain-text arguments. */
+export type CustomHandler = {
+  plugin: string;
+  command: string;
+  args: string[];
+};
+
+export type EngineValue =
+  string | number | boolean | string[] | CustomPattern[] | CustomHandler[];
 
 export type Evidence = {
   file: string;

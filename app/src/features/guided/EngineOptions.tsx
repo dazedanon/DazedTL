@@ -1,5 +1,6 @@
 import type { EngineValue, GuidedState } from "../../api/contracts";
 import { CheckField, FieldRow } from "../../ui/FieldRow";
+import { displayText } from "../../ui/displayText";
 
 export function EngineOptions({
   state,
@@ -110,7 +111,7 @@ export function EngineOptions({
                       !!dependencies[field.key] &&
                       values[dependencies[field.key]] !== true
                     }
-                    value={String(values[field.key] ?? "")}
+                    value={displayText(values[field.key])}
                     min={field.min}
                     max={field.max}
                     onChange={(event) =>

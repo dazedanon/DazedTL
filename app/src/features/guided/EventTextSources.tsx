@@ -4,9 +4,12 @@ import { ActionControl } from "../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { Button } from "../../ui/Button";
 import { FieldRow } from "../../ui/FieldRow";
+import { displayText } from "../../ui/displayText";
 import { Message } from "../../ui/Feedback";
 import {
+  customNames,
   nothingToTranslate,
+  selection,
   sourceErrors,
   type SelectorKey,
 } from "./eventTextSelection";
@@ -138,7 +141,7 @@ export function EventTextSources({
                   <input
                     {...props}
                     type="text"
-                    value={String(values.CODE122_VAR_RANGES || "")}
+                    value={displayText(values.CODE122_VAR_RANGES)}
                     disabled={disabled || !values.CODE122}
                     onChange={(event) =>
                       change("CODE122_VAR_RANGES", event.target.value)
@@ -159,13 +162,17 @@ export function EventTextSources({
                           : "Script text filters"}
                       </strong>
                       <small>
-                        {Array.isArray(values[row.selector])
-                          ? (values[row.selector] as string[]).length
-                          : 0}{" "}
-                        of {row.choices.length} registered entries selected
+                        {selection(values, row.selector).length} of{" "}
+                        {row.choices.length} registered entries selected
                         {!values[row.key] && " (source off)"}.{" "}
                         {state.builtinHits[row.key]?.length || 0} built-in
                         handlers detected in this scope.
+                        {(() => {
+                          const own = customNames(values, row.key).length;
+                          return own
+                            ? ` ${own} ${row.key === "CODE357" ? "handler" : "pattern"}${own === 1 ? "" : "s"} written for this game.`
+                            : "";
+                        })()}
                       </small>
                     </>
                   }

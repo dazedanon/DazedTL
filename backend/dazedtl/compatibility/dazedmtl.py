@@ -106,6 +106,11 @@ class ExistingBackend:
 
         return validate_options(values, self.source)
 
+    def guided_event_text_custom(self, options, documents):
+        from .event_text import custom_problems
+
+        return custom_problems(options, documents)
+
     def import_settings(self):
         """Read and retain the previous app-local settings before making a cache."""
         files = {}

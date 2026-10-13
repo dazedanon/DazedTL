@@ -18,7 +18,29 @@ type Phase = Literal["database", "dialogue", "variables", "advanced", "speakers"
 type RunMode = Literal["estimate", "translate", "batch"]
 
 
-type EngineValue = str | float | bool | list[str]
+class CustomPattern(TypedDict):
+    """A game's own pattern for event text nothing installed captures; its
+    regex's last capturing group is translated."""
+
+    name: str
+    regex: str
+    # Exact text in the first line of the scripts a 355/655 pattern reads.
+    script: NotRequired[str]
+    # How a 356 or 108 pattern's translation joins its words.
+    spacing: NotRequired[Literal["space", "nbsp", "underscore"]]
+
+
+class CustomHandler(TypedDict):
+    """A game's own handler for an MZ plugin command's plain-text arguments."""
+
+    plugin: str
+    command: str
+    args: list[str]
+
+
+type EngineValue = (
+    str | float | bool | list[str] | list[CustomPattern] | list[CustomHandler]
+)
 
 
 class Evidence(TypedDict):

@@ -65,6 +65,7 @@ Edit what it wrote in **Guidance**.
 **Event text sources**: copy the investigation to your assistant.
 It finds which variables, plugin commands and scripts hold text players see and turns those on.
 It also decides how English words stay together in plugin commands and which internal values, such as placeholders, stay untranslated.
+When the game shows text DazedTL has no pattern for, your assistant writes one for this game, so you don't need to add it to DazedTL.
 Change any choice under **Source choices**; **Other event text** in Translate translates them later.
 
 **Line widths** fills in from your assistant's measurements, which it checks in the running game, and you can change them.
