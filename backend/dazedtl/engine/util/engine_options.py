@@ -8,6 +8,7 @@ from pathlib import Path
 from stat import S_ISREG
 
 from util.config_integration import ConfigIntegration
+from util.custom_patterns import KEYS as CUSTOM_LISTS, LABELS as CUSTOM_LABELS, normalize as normalize_custom
 from util.id_ranges import normalize_id_ranges
 from util.paths import PROJECT_ROOT
 
@@ -52,6 +53,7 @@ LABELS = {
     "SPACES_356": "Plugin command handlers keeping spaces", "NBSP_356": "Plugin command handlers joining words with no-break spaces",
     "KEEP_356": "Plugin commands left untranslated", "SPACES_108": "Comment markers keeping spaces",
     "NBSP_108": "Comment markers joining words with no-break spaces", "KEEP_108": "Comments left untranslated",
+    **CUSTOM_LABELS,
     "CSV_DELIMITER": "Delimiter", "SOURCE_COLUMN": "Source column", "TARGET_COLUMN": "Target column",
     "SPEAKER_COLUMN": "Speaker column (0 disables)", "PARSE_NAME_TAGS": "Parse :name[] tags", "PARSE_M_MARKERS": "Parse \\M markers",
     "SCENARIOFLAG": "Scenario database", "OPTIONSFLAG": "Options database", "NPCFLAG": "NPC database", "DBNAMEFLAG": "Database names",
@@ -100,13 +102,13 @@ def _engine_options(modules):
             integration = ConfigIntegration()
             values = integration.read_current_config(path)
             values.update({key: sorted(value) for key, value in integration.read_plugin_config(path).items()})
-            values.update({key: literals[key] for key in WORD_LISTS if isinstance(literals.get(key), list)})
+            values.update({key: literals[key] for key in (*WORD_LISTS, *CUSTOM_LISTS) if isinstance(literals.get(key), list)})
         else:
             values = {key: literals[key] for key in ENGINE_OPTION_KEYS[engine] if key in literals}
         fields = []
         for key, value in values.items():
             kind = ("boolean" if isinstance(value, bool) else "integer" if isinstance(value, int) else "strings" if key in WORD_LISTS
-                    else "choices" if isinstance(value, list) else "string")
+                    else "custom" if key in CUSTOM_LISTS else "choices" if isinstance(value, list) else "string")
             field = {"key": key, "label": LABELS.get(key, key.replace("_", " ").capitalize()), "type": kind, "default": value}
             if key in {"SOURCE_COLUMN", "TARGET_COLUMN", "SPEAKER_COLUMN"}:
                 field.update(min=-1 if key == "SPEAKER_COLUMN" else 0, max=99, display_offset=1)
@@ -136,6 +138,10 @@ def validate_engine_options(overrides, code_root=PROJECT_ROOT):
         for key, value in values.items():
             field = fields[key]
             kind = field["type"]
+            if kind == "custom":
+                # Each entry's own problem reaches the investigation that wrote it.
+                result[engine][key] = normalize_custom(key, value)
+                continue
             valid = (kind == "boolean" and isinstance(value, bool)
                      or kind == "integer" and type(value) is int and field["min"] <= value <= field["max"]
                      or kind in {"string", "select"} and isinstance(value, str) and len(value) <= 16000

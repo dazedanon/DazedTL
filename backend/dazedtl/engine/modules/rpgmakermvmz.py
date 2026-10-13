@@ -35,7 +35,7 @@ from util.translation import (
 )
 from util.vocab import split_glossary_row
 from util.speakers import NAMES_FILE, SPEAKER_BRACKET_INNER, strip_speaker_prefix
-from util import extensions, rpgmaker_qa_lint
+from util import custom_patterns, extensions, rpgmaker_qa_lint
 from util.skills import ctx, load_system_prompt
 from util.paths import (
     GLOSSARY_OVERRIDE_ENV,
@@ -307,6 +307,13 @@ KEEP_356: list = []
 SPACES_108: list = []
 NBSP_108: list = []
 KEEP_108: list = []
+# One game's own patterns for text no built-in handler or registered entry
+# captures, from its Other event text findings; see util/custom_patterns.py.
+# They take a command before the built-in handlers of their code.
+CUSTOM_355655: list = []
+CUSTOM_356: list = []
+CUSTOM_108: list = []
+CUSTOM_357: list = []
 
 # ─── Plugin Manager ──────────────────────────────────────────────────────────
 # All known code-357 headerMapping entries. Enable entries via ENABLED_PLUGINS_357.
@@ -1151,6 +1158,14 @@ def _code108_match(text: str):
     return None
 
 
+def _code108_custom(text: str):
+    """A custom pattern's (entry, start, end) capture in a comment the
+    code-108 pass translates, or None."""
+    if text in KEEP_108:
+        return None
+    return custom_patterns.capture(CUSTOM_108, text, "", _has_japanese_text)
+
+
 def _join_words(text: str, handler: str, spaces, nbsp) -> str:
     """Keeps a translated plugin argument's words together the way its
     handler's plugin reads them; see SPACES_356."""
@@ -1171,7 +1186,7 @@ def _code108_progress_units(codeList) -> int:
         current = _param_current(command, 0)
         if IGNORETLTEXT and not _has_japanese_text(current):
             continue
-        if _code108_match(current) is not None:
+        if _code108_custom(current) or _code108_match(current) is not None:
             count += 1
     return count
 
@@ -3637,6 +3652,8 @@ def _searchCodes(page, pbar, jobList, filename):
     translatedText = ""
     sourceQuestion = ""
     romashaCommentContext = False
+    # The first (355) line of the script the current 655 line continues.
+    scriptHeader = ""
     speaker = ""
     speakerID = None
     syncIndex = 0
@@ -4393,6 +4410,26 @@ def _searchCodes(page, pbar, jobList, filename):
                                 continue
                             translatePlugins(argVar, font)
                             translated_plugin_args.add(argVar)
+                # This game's own handlers name exact plugin commands and their
+                # plain-text arguments; only Japanese text is translated.
+                params = codeList[i]["parameters"]
+                for entry in CUSTOM_357:
+                    if (
+                        params[:2] != [entry["plugin"], entry["command"]]
+                        or len(params) < 4
+                        or not isinstance(params[3], dict)
+                    ):
+                        continue
+                    for argVar in entry["args"]:
+                        value = params[3].get(argVar)
+                        if (
+                            argVar not in translated_plugin_args
+                            and isinstance(value, str)
+                            and _has_japanese_text(value)
+                            and not custom_patterns.structured(value)
+                        ):
+                            translatePlugins(argVar, None)
+                            translated_plugin_args.add(argVar)
 
                 # KN_StillManager: translate parameters[2] (the display label, e.g. "ギャラリーを開く")
                 # Only OPEN_GALLERY has a player-visible label in parameters[2].
@@ -4764,7 +4801,30 @@ def _searchCodes(page, pbar, jobList, filename):
             ## Event Code: 355 or 655 Scripts [Optional]
             if "code" in codeList[i] and (codeList[i]["code"] == 355 or codeList[i]["code"] == 655) and CODE355655 is True:
                 jaString = codeList[i]["parameters"][0]
-                
+                if codeList[i]["code"] == 355:
+                    scriptHeader = jaString if isinstance(jaString, str) else ""
+
+                custom = custom_patterns.capture(
+                    CUSTOM_355655, jaString, scriptHeader, _has_japanese_text
+                )
+                if custom:
+                    entry, start, end = custom
+                    if setData:
+                        list355655.append(jaString[start:end])
+                    elif list355655:
+                        translatedText = list355655.pop(0)
+                        quote = custom_patterns.quote(jaString, start, end)
+                        translatedText = (
+                            _escape_quoted_script_text(translatedText, quote)
+                            if quote
+                            else translatedText.replace("\n", " ")
+                        )
+                        codeList[i]["parameters"][0] = (
+                            jaString[:start] + translatedText + jaString[end:]
+                        )
+                    i += 1
+                    continue
+
                 # Patterns — use module-level registry filtered by ENABLED_PATTERNS_355655
                 patterns = {
                     k: v for k, v in PATTERNS_355655.items()
@@ -5273,6 +5333,21 @@ def _searchCodes(page, pbar, jobList, filename):
                     i += 1
                     continue
 
+                custom = _code108_custom(jaString)
+                if custom:
+                    entry, start, end = custom
+                    if setData:
+                        list108.append(jaString[start:end])
+                    elif list108:
+                        translatedText = custom_patterns.join_words(
+                            list108.pop(0).replace("\n", " "), entry["spacing"]
+                        )
+                        codeList[i]["parameters"][0] = (
+                            jaString[:start] + translatedText + jaString[end:]
+                        )
+                    i += 1
+                    continue
+
                 found = _code108_match(jaString)
                 if found is None:
                     i += 1
@@ -5329,6 +5404,23 @@ def _searchCodes(page, pbar, jobList, filename):
                 if (
                     IGNORETLTEXT and not _has_japanese_text(jaString)
                 ) or jaString in KEEP_356:
+                    i += 1
+                    continue
+
+                custom = custom_patterns.capture(
+                    CUSTOM_356, jaString, "", _has_japanese_text
+                )
+                if custom:
+                    entry, start, end = custom
+                    if setData:
+                        list356.append(jaString[start:end])
+                    elif list356:
+                        translatedText = custom_patterns.join_words(
+                            list356.pop(0).replace("\n", " "), entry["spacing"]
+                        )
+                        codeList[i]["parameters"][0] = (
+                            jaString[:start] + translatedText + jaString[end:]
+                        )
                     i += 1
                     continue
 

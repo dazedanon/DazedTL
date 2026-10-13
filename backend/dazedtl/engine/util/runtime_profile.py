@@ -6,6 +6,7 @@ import copy
 from pathlib import Path
 from typing import Any
 
+from util.custom_patterns import KEYS as CUSTOM_LISTS, normalize as normalize_custom
 from util.engine_options import WORD_LISTS
 from util.id_ranges import normalize_id_ranges
 
@@ -76,6 +77,9 @@ def normalize_batch_runtime_profile(profile: Any) -> dict[str, Any] | None:
             ):
                 raise ValueError(f"Batch runtime setting {key} has an invalid value")
             config[key] = sorted(set(value))
+            continue
+        if key in CUSTOM_LISTS:
+            config[key] = normalize_custom(key, value)
             continue
         if not isinstance(value, (bool, int)):
             raise ValueError(f"Batch runtime setting {key} has an invalid value")

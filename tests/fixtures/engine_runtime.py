@@ -490,6 +490,69 @@ try:
                 "CommonPopup add text:Resonance\u00a0+3 count:60",
                 "text_indicator : World map",
             ], result
+            # Text no built-in handler captures stayed Japanese. A game's own
+            # patterns translate only their last group, only when it holds
+            # Japanese, read a script's lines only when its first line names
+            # it, and keep a script's string valid around an apostrophe.
+            english.update({"宝箱だ": "It's a chest", "扉": "Door", "看板": "Old sign"})
+            english["クエスト"] = "Quest log"
+            with patch.multiple(
+                parser,
+                CODE355655=True,
+                CODE356=True,
+                CODE108=True,
+                CODE357=True,
+                ENABLED_PATTERNS_355655=set(),
+                ENABLED_PLUGINS_357=set(),
+                CUSTOM_355655=[
+                    {"name": "notice", "regex": r"Notice\.show\('(.*)'\)"},
+                    {"name": "lines", "regex": r'^\s*"(.*)",$', "script": "var doors"},
+                ],
+                CUSTOM_356=[
+                    {"name": "sign", "regex": r"^SignText \d+ (.+)$", "spacing": "nbsp"}
+                ],
+                CUSTOM_108=[
+                    {"name": "label", "regex": r"<Label:(.+)>", "spacing": "space"}
+                ],
+                CUSTOM_357=[
+                    {"plugin": "QuestLog", "command": "add", "args": ["title"]}
+                ],
+                translateAI=extensions.point(
+                    lambda text, *_: [[english[value] for value in text], [0, 0]]
+                ),
+            ):
+                result = parse(
+                    [
+                        command(355, ["Notice.show('宝箱だ');"]),
+                        command(355, ["Notice.show('se_chest');"]),
+                        command(355, ["var doors = ["]),
+                        command(655, ['  "扉",']),
+                        command(355, ["var names = ["]),
+                        command(655, ['  "看板",']),
+                        command(356, ["SignText 3 看板"]),
+                        command(108, ["<Label:地図>"]),
+                        command(
+                            357,
+                            [
+                                "QuestLog",
+                                "add",
+                                "追加",
+                                {"title": "クエスト", "id": "q1"},
+                            ],
+                        ),
+                    ]
+                )
+            assert [row["parameters"] for row in result[:9]] == [
+                ["Notice.show('It\\'s a chest');"],
+                ["Notice.show('se_chest');"],
+                ["var doors = ["],
+                ['  "Door",'],
+                ["var names = ["],
+                ['  "看板",'],
+                ["SignText 3 Old\u00a0sign"],
+                ["<Label:World map>"],
+                ["QuestLog", "add", "追加", {"title": "Quest log", "id": "q1"}],
+            ], result
             # Batch collection queues a lone label or plugin argument with the
             # file text. It sent each one Live before the Batch cost review.
             payloads = []
@@ -517,10 +580,12 @@ try:
             # Batch runs carry these lists through their saved runtime profile.
             from util.runtime_profile import apply_batch_runtime_profile
 
+            sign = {"name": "sign", "regex": r"SignText (.+)", "spacing": "nbsp"}
             with patch.multiple(
                 parser,
                 CODE356=False,
                 NBSP_356=[],
+                CUSTOM_356=[],
                 ENABLED_PLUGINS_357=set(),
                 ENABLED_PATTERNS_355655=set(),
             ):
@@ -529,10 +594,15 @@ try:
                     {
                         "engine": "rpgmakermvmz",
                         "version": 1,
-                        "config": {"CODE356": True, "NBSP_356": ["CommonPopup"]},
+                        "config": {
+                            "CODE356": True,
+                            "NBSP_356": ["CommonPopup"],
+                            "CUSTOM_356": [sign],
+                        },
                     },
                 )
                 assert parser.NBSP_356 == ["CommonPopup"], parser.NBSP_356
+                assert parser.CUSTOM_356 == [sign], parser.CUSTOM_356
             # A parser exception fails its file. It used to be masked by an
             # unbound result, or saved and reported as a completed translation.
             data, tokens, error = parser.parseSystem(
