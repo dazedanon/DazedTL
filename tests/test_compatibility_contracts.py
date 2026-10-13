@@ -606,6 +606,9 @@ class ManualJobs:
             self.assertEqual(file_metrics(metric_run), {})
             metric_run["phase"] = "consume"
             controller._event(metric_run, event)
+            # Retrying the save reads Items.json back without usage.
+            replay = "Items.json: [Input: 0] [Output: 0] [Cost: $0.0000] [0.0s] ✓"
+            controller._event(metric_run, {"event": "log", "args": [replay]})
             metric_run["phase"] = "done"
             self.assertEqual(
                 file_metrics(metric_run),

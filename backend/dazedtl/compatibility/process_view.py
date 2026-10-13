@@ -428,22 +428,30 @@ def source_values(params):
     return None
 
 
-def file_metric(line, files):
-    """Interpret the same per-file receipt used by Qt, never a total/estimate."""
+def file_receipt(line, files):
+    """Interpret the same per-file receipt used by Qt, never a total/estimate,
+    as ``(file, figures, used)``; ``used`` says whether the attempt spent any
+    tokens on the file, or None."""
     line = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", str(line))
     match = re.match(
         r"^\s*(.+?):\s.*?\[Input:\s*(\d+)\].*?\[Output:\s*(\d+)\].*?\[Cost:\s*\$([\d,.]+)\].*?\[([\d.]+)s\]",
         line,
     )
     if not match or match[1].strip() not in files:
-        return {}
+        return None
     try:
         cost, seconds = float(match[4].replace(",", "")), float(match[5])
         if not all(math.isfinite(value) and value >= 0 for value in (cost, seconds)):
-            return {}
-        return {match[1].strip(): {"cost": cost, "seconds": seconds}}
+            return None
+        figures = {"cost": cost, "seconds": seconds}
+        return match[1].strip(), figures, int(match[2]) + int(match[3]) > 0
     except ValueError:
-        return {}
+        return None
+
+
+def file_metric(line, files):
+    receipt = file_receipt(line, files)
+    return {receipt[0]: receipt[1]} if receipt else {}
 
 
 def file_metrics(job):

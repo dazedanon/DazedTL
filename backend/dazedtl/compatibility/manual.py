@@ -414,11 +414,16 @@ def manual_jobs(source, workspace, lock, allow_providers):
                         and job.get("phase") == "consume"
                     )
                 ):
-                    from .process_view import file_metric
+                    from .process_view import file_receipt
 
-                    receipt = file_metric(args[0], job.get("files", []))
+                    receipt = file_receipt(args[0], job.get("files", []))
                     if receipt:
-                        job.setdefault("file_metrics", {}).update(receipt)
+                        name, figures, used = receipt
+                        metrics = job.setdefault("file_metrics", {})
+                        # A retry reads the files an earlier attempt saved
+                        # back without usage; keep what that attempt cost.
+                        if used or name not in metrics:
+                            metrics[name] = figures
                 if (
                     event.get("event") == "finished"
                     and len(args) >= 2
