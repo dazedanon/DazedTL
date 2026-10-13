@@ -10,6 +10,8 @@
 
 ### Fixed
 
+- **Context:** **Names & glossary** reads **Waiting** until its assistant saves its last result, instead of **Done** a few minutes into the copied task while the assistant was still working.
+- **Context:** **Line widths** no longer waits forever when the assistant could not measure the game's windows or saved a report DazedTL can't use: it finishes with the measured widths **Skipped**, or reads **Blocked** with the reason so the assistant can fix the report.
 - **Setup:** the first start tries a download again when the connection drops, instead of stopping with "fetch failed". If a download still fails, it says which one and to check the internet connection.
 - **Translate:** after **Retry saving results**, files saved by an earlier attempt keep their cost and time instead of reading $0.0000 and 0.0s, so the run's total cost is right again.
 - **Translate:** a Database Batch no longer fails to save with "No fetched result matches this request" for **States.json** and the files after it. **Retry saving results** now saves a Batch that already failed this way from its existing results, without sending anything again.
