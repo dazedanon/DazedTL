@@ -1,6 +1,7 @@
 """Frozen, reviewed text publication with durable backups and guarded recovery."""
 
 import json
+import shutil
 import time
 import uuid
 from pathlib import Path
@@ -8,6 +9,9 @@ from pathlib import Path
 from dazedtl.storage import write_bytes, write_json
 
 from .files import digest, project_path, read_json
+
+# How long a frozen review can still be published.
+REVIEW_SECONDS = 1200
 
 
 def records(folder):
@@ -65,6 +69,7 @@ def freeze(
     and `findings` which of them."""
     if not candidates:
         raise ValueError("Select at least one file or correction to apply.")
+    _discard_unused(folder)
     identity = uuid.uuid4().hex
     base = project_path(folder, "text-publications/" + identity, exists=False)
     prior = Path(folder) / "applied-outputs.json"
@@ -112,6 +117,36 @@ def freeze(
     return {"id": identity, "sha256": digest(record), "files": rows}
 
 
+def _discard_unused(folder):
+    """Removes reviews too old to publish and the copies finished batches
+    froze of what they would write; each copy is as large as its files,
+    gigabytes on a large game. Backups stay for restore."""
+    base = project_path(folder, "text-publications", exists=False)
+    for path in base.glob("*/receipt.json"):
+        if path.is_symlink() or path.parent.is_symlink():
+            continue
+        try:
+            row = read_json(path)
+        except OSError, ValueError:
+            continue
+        if row.get("state") != "reviewed":
+            # Batches number their files from 0; one still holding its
+            # copies, such as one an earlier version finished, holds this.
+            if (path.parent / "0.after").exists():
+                _discard_candidates(path.parent)
+        elif time.time() - row.get("created", 0) > REVIEW_SECONDS:
+            shutil.rmtree(path.parent, ignore_errors=True)
+
+
+def _discard_candidates(base):
+    """Removes a finished batch's frozen copies of what it wrote."""
+    for path in base.glob("*.after"):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def load(folder, plan):
     identity = plan["id"]
     if (
@@ -128,7 +163,7 @@ def load(folder, plan):
     if (
         digest(row) != plan["sha256"]
         or row["state"] != "reviewed"
-        or time.time() - row["created"] > 1200
+        or time.time() - row["created"] > REVIEW_SECONDS
     ):
         raise ValueError("This publication review expired or was already used.")
     return base, row
@@ -204,6 +239,7 @@ def publish(folder, root, plan, log=lambda _: None):
         write_json(Path(folder) / "applied-outputs.json", record["next_outputs"])
         record["state"] = "complete"
         write_json(base / "receipt.json", record)
+        _discard_candidates(base)
     except BaseException as failure:
         errors = []
         for target, row, before, after in reversed(attempted):
@@ -229,6 +265,7 @@ def publish(folder, root, plan, log=lambda _: None):
             state="recovery_needed" if errors else "rolled_back", recovery_errors=errors
         )
         write_json(base / "receipt.json", record)
+        _discard_candidates(base)
         raise ValueError(
             "Publication failed. "
             + (

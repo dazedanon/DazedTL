@@ -202,6 +202,30 @@ class PublicationTests(unittest.TestCase):
             {name: (self.root / name).read_bytes() for name in self.before}, self.before
         )
 
+    def test_finished_and_expired_reviews_keep_only_backups(self):
+        # Each review froze a copy of every file it would write, kept after
+        # publishing or expiring: gigabytes on a large game.
+        abandoned = p.freeze(self.folder, self.root, self.after, "export_selected")
+        published = p.freeze(self.folder, self.root, self.after, "export_selected")
+        p.publish(self.folder, self.root, published)
+        base = self.folder / "text-publications"
+        self.assertEqual(
+            sorted(path.name for path in (base / published["id"]).iterdir()),
+            ["0.before", "1.before", "receipt.json"],
+        )
+        path = base / abandoned["id"] / "receipt.json"
+        record = read_json(path)
+        record["created"] -= p.REVIEW_SECONDS + 1
+        write_json(path, record)
+        # Batches that earlier versions finished kept their copies too.
+        write_bytes(base / published["id"] / "0.after", self.after["data/A.json"])
+        fresh = p.freeze(self.folder, self.root, self.before, "export_selected")
+        self.assertEqual(
+            sorted(path.name for path in base.iterdir()),
+            sorted([published["id"], fresh["id"]]),
+        )
+        self.assertFalse((base / published["id"] / "0.after").exists())
+
     def test_frozen_candidates_and_source_bindings_cannot_change_after_review(self):
         plan = p.freeze(self.folder, self.root, self.after, "export_selected")
         write_bytes(
