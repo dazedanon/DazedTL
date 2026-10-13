@@ -25,7 +25,9 @@ class ModelDefaults:
     def describe(self, model):
         model = text(model, "model ID", required=True)
         previous = self.cache.get(model)
-        if previous and time.monotonic() - previous[0] < 600:
+        # Each lookup starts a process, seconds on Windows, before an estimate
+        # can begin; catalog prices change far less often than this.
+        if previous and time.monotonic() - previous[0] < 3600:
             return deepcopy(previous[1])
         if self.workspace.is_symlink():
             raise ValueError(
