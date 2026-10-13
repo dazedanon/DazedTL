@@ -207,7 +207,6 @@ def install(*, coordinator=False):
             "estimate",
             "batch",
             "translate",
-            "offline",
         }:
             evidence = Evidence(root, plan["mode"], plan)
             evidence.install(translation, sys.modules.get("modules.rpgmakermvmz"))

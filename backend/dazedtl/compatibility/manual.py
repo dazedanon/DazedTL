@@ -357,7 +357,7 @@ def manual_jobs(source, workspace, lock, allow_providers):
                     event.get("event") == "log"
                     and args
                     and (
-                        job.get("mode") in {"translate", "offline"}
+                        job.get("mode") == "translate"
                         or job.get("mode") == "batch"
                         and job.get("phase") == "consume"
                     )

@@ -1572,6 +1572,16 @@ try:
         runs.folder(run["id"]).mkdir(parents=True)
         outcome = runs._event(run, {"event": "finished", "args": [True, "Done"]})
         assert run["status"] == "running" and outcome["status"] == "complete"
+        # A saved run of the retired synthetic "offline" mode stays in history
+        # but never resumes, where it would run on the user's credential.
+        runs.jobs["offline"] = {"id": "offline", "mode": "offline", "status": "stopped"}
+        try:
+            runs.resume("offline")
+        except ValueError as error:
+            assert "no longer supported" in str(error), error
+        else:
+            raise AssertionError("A saved offline test run resumed.")
+        assert runs.worker is None
         # A run worker keeps the user's folders, where Claude's SDK looks for
         # settings whenever a client is created (failing on Windows without
         # them), and none of the app's provider keys.
@@ -1581,7 +1591,7 @@ try:
         folders = {"HOME": str(temporary), "APPDATA": str(temporary)}
         with patch.dict(os.environ, {**folders, "ANTHROPIC_API_KEY": "app-key"}):
             environment = worker_environment(
-                temporary, {"mode": "offline", "settings": {}}
+                temporary, {"mode": "estimate", "settings": {}}
             )
         assert (
             folders.items() <= environment.items()

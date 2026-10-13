@@ -504,7 +504,7 @@ class Evidence:
                             result[0] if isinstance(result[0], list) else [result[0]]
                         )
                         if len(output) == len(values) and (
-                            self.mode in {"translate", "offline"}
+                            self.mode == "translate"
                             or translation.get_batch_phase() == "consume"
                         ):
                             connection.executemany(

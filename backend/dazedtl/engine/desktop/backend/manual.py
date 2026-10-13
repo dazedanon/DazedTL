@@ -89,6 +89,11 @@ def compatible(engine, recorded):
     )
 
 
+# The modes a run starts or resumes in. Saved runs may still record the retired
+# synthetic "offline" mode; they stay readable but never run again.
+MODES = ("estimate", "translate", "batch", "speakers")
+
+
 def run_plan(workspace, inventory, files, mode, context_source="", *, workflow=None, configuration=None):
     """The frozen plan of a run over files from an inspected input folder.
 
@@ -117,8 +122,6 @@ def run_plan(workspace, inventory, files, mode, context_source="", *, workflow=N
         from util.batch_providers import detect_batch_provider
         if not detect_batch_provider(values['model'], api_url=values['api'], api_provider=values['API_PROVIDER']):
             raise ValueError('This endpoint does not support provider Batch jobs. Choose a supported provider before starting.')
-    if mode == "offline":
-        values.update(API_PROVIDER="openai", api="https://api.openai.com/v1", model="gpt-6-luna")
     runtime_profile = None
     if engine == "RPG Maker MV/MZ":
         overrides = described["engines"]["rpgmakermvmz"]
@@ -243,7 +246,7 @@ def system_environment(*names):
 def worker_environment(workspace, plan):
     """A run worker's environment: local runs get no credential and no network."""
     env = system_environment()
-    if plan["mode"] in {"estimate", "offline"}:
+    if plan["mode"] == "estimate":
         env.update({key: str(value).lower() if isinstance(value, bool) else str(value) for key, value in plan["settings"].items()})
         env.update(key="local-run-no-credential", API_KEY_OPTIONAL="true", DAZEDTL_TEST_OFFLINE="1")
     else:
@@ -333,10 +336,10 @@ class ManualJobs:
         with self.lock:
             if self.running():
                 raise ValueError("A manual run is already active.")
-            if mode not in {"estimate", "offline", "translate", "batch", "speakers"}:
+            if mode not in MODES:
                 raise ValueError("Choose a supported translation mode.")
             if mode in {"translate", "batch", "speakers"} and not self.allow_providers:
-                raise ValueError("Provider execution is disabled for this launch. Local estimates and offline tests are available.")
+                raise ValueError("Provider execution is disabled for this launch. Local estimates are available.")
             if mode == "speakers" and engine != "RPG Maker MV/MZ":
                 raise ValueError("Explicit speaker collection is available for RPG Maker MV/MZ. WolfDawn checks speakers automatically.")
             inventory = self.inspect(source, engine, managed=managed or workflow is not None)
@@ -483,7 +486,7 @@ class ManualJobs:
                 job["message"] = str(args[0])
             elif kind == "progress":
                 job["progress"] = {"current": args[0], "total": args[1], "file": args[2]}
-                if job["mode"] in {"translate", "offline"} or job["phase"] == "consume":
+                if job["mode"] == "translate" or job["phase"] == "consume":
                     if args[2] not in job["errors"] and (self.folder(job["id"]) / "translated" / args[2]).is_file():
                         job["completed"] = sorted(set(job["completed"]) | {args[2]})
             elif kind == "item_progress":
@@ -545,6 +548,8 @@ class ManualJobs:
             job = self.jobs[identity]
             if job["status"] not in {"failed", "stopped", "interrupted", "canceled"}:
                 raise ValueError("This run does not need recovery.")
+            if job["mode"] not in MODES:
+                raise ValueError("This saved run's mode is no longer supported. Start a new run.")
             if job["mode"] in {"translate", "batch", "speakers"} and not self.allow_providers:
                 raise ValueError("Provider execution is disabled in this session.")
             if job.get('batch_root'):

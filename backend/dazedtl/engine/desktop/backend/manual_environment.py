@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from types import SimpleNamespace
 from util import extensions
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -28,7 +27,7 @@ def prepare(root):
     # Batch history resolves stored credential names through the same vault.
     # A run keeps its selected name even if the UI chooses another credential.
     api_keys.API_KEYS_PATH = root.parents[2] / "settings/api_keys.json"
-    if plan["mode"] not in {"estimate", "offline"}:
+    if plan["mode"] != "estimate":
         load_vault = api_keys.load_vault
         def pinned_vault(path=None):
             value = load_vault(path)
@@ -36,10 +35,10 @@ def prepare(root):
                 value["active"] = plan["key_name"]
             return value
         api_keys.load_vault = pinned_vault
-    if plan["mode"] in {"estimate", "offline"}:
+    else:
         api_keys.API_KEYS_PATH = root / "unused-local-vault.json"
-        # Local estimation and synthetic tests cannot turn into paid requests,
-        # including a provider-specific fallback or a tokenizer download.
+        # Local estimation cannot turn into paid requests, including a
+        # provider-specific fallback or a tokenizer download.
         os.environ["DAZEDTL_TEST_OFFLINE"] = "1"
     if os.getenv('DAZEDTL_TEST_OFFLINE') == '1':
         import socket
@@ -64,13 +63,6 @@ def prepare(root):
         batch_history.BATCH_HISTORY_FILE = linked / 'log/batch_history.json'
         for name in ('BATCH_QUEUE_FILE', 'BATCH_STATE_FILE', 'BATCH_RESULTS_FILE'):
             setattr(batch_history, name, getattr(translation, name))
-    if plan["mode"] == "offline":
-        from .rpgmaker import offline_completion
-        def complete(**params):
-            result = offline_completion(params)
-            return SimpleNamespace(choices=[SimpleNamespace(index=0, finish_reason="stop", message=SimpleNamespace(content=result["text"]))],
-                                   usage=SimpleNamespace(prompt_tokens=0, completion_tokens=0))
-        translation.openai.chat = SimpleNamespace(completions=SimpleNamespace(create=complete))
     from importlib import import_module
     from util.engine_options import apply_engine_options
     from util.translation_task import TRANSLATION_MODULE_SPECS

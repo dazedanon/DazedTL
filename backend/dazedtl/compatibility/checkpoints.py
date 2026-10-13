@@ -72,7 +72,7 @@ LAYER = "checkpoints"
 
 
 def install(module, root, plan):
-    if module is None or plan.get("mode") not in {"translate", "offline", "batch"}:
+    if module is None or plan.get("mode") not in {"translate", "batch"}:
         return
     root = Path(root).resolve()
     names = {row["name"] for row in plan["files"]}
@@ -104,7 +104,7 @@ def install(module, root, plan):
         # Batch consume must keep its exact frozen request grouping. It already
         # reuses provider receipts; only Live reads partially translated inputs.
         if (
-            plan.get("mode") in {"translate", "offline"}
+            plan.get("mode") == "translate"
             and mode in {"r", "rt"}
             and isinstance(file, (str, Path))
         ):

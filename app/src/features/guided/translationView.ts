@@ -151,7 +151,8 @@ export const unconfirmedSubmission = (run: Job) =>
   needsSubmissionReview(run) && !!run.process?.uncertain && !activeWorker(run);
 export const canResumeRun = (run: Job) =>
   !run.temporary &&
-  !["estimate", "batch"].includes(run.mode || "") &&
+  // Saved offline test runs stay in history but no longer run.
+  !["estimate", "batch", "offline"].includes(run.mode || "") &&
   ["failed", "stopped", "interrupted"].includes(run.status) &&
   !run.process?.retryBlocked;
 export function completeForSelection(run: Job, selected: readonly string[]) {

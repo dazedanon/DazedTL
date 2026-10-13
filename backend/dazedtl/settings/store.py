@@ -1025,6 +1025,8 @@ class Settings:
                 ),
                 None,
             )
+            # A saved offline test run used no connection; resuming it ends in
+            # the run's own refusal, not a connection error.
             if resume["mode"] not in {"estimate", "offline"}:
                 if not self._configured(connection):
                     raise ValueError(

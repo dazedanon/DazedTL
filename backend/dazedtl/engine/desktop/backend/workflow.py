@@ -149,7 +149,7 @@ class Workflows:
                     raise ValueError("Line widths must be whole numbers from 20 to 300, and message rows from 1 to 20.")
                 # A draft from before message rows keeps the saved rows.
                 value = normalize_wrap_widths(value, defaults=project["widths"])
-            if key == "mode" and value not in {"translate", "batch", "estimate", "offline"}:
+            if key == "mode" and value not in {"translate", "batch", "estimate"}:
                 raise ValueError("Choose a translation mode.")
             if key == "phase1_comments" and type(value) is not bool:
                 raise ValueError("Comment translation must be enabled or disabled.")
