@@ -234,6 +234,7 @@ def install_worker(root, plan):
 
             # Pass the worker connection factory explicitly; no global SDK or
             # connection mutation while other file threads may be active.
+            waited = False
             while not task.should_stop:
                 outcome = advance_guided(
                     root, plan, None, commit=active, connection=connection
@@ -260,12 +261,16 @@ def install_worker(root, plan):
                         if batch["id"]
                     ],
                 )
+                waited = True
                 for _ in range(300):
                     if task.should_stop:
                         return "Stopped"
                     time.sleep(0.1)
             if task.should_stop:
                 return "Stopped"
+            if waited:
+                # The wait reported provider phases; writing files is consume again.
+                task._emit_batch_phase("consume")
         return native(task, matching_files, estimate_only, batch_phase=batch_phase)
 
     TranslationTask._run_files.layer(LAYER, files)

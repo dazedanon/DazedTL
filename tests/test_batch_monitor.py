@@ -306,6 +306,61 @@ class BatchMonitorTests(unittest.TestCase):
                     BatchMonitor(monitor.guided).tick()
                     provider.submit.assert_called_once()
 
+    def test_worker_returns_to_consume_after_a_clarification_wait(self):
+        # The wait reports provider phases; left in place, the whole save pass
+        # read "At provider" and every received file looked unfinished.
+        from dazedtl.compatibility import batch_refusals
+        from dazedtl.translation.refusals import POLICY
+
+        from tests.engine import point
+
+        calls = []
+        native = point(
+            lambda task, files, estimate_only, batch_phase=None: calls.append(
+                ("native", batch_phase)
+            )
+        )
+        engine = ModuleType("util")
+        engine.translation = SimpleNamespace(
+            require_batch_result=point(lambda *args: None), _batch_results={}
+        )
+        tasks = ModuleType("util.translation_task")
+        tasks.TranslationTask = type("Task", (), {"_run_files": native})
+        history = ModuleType("util.batch_history")
+        history.client_for_batch = Mock()
+        task = SimpleNamespace(
+            should_stop=False,
+            _emit_batch_phase=lambda phase, *_: calls.append(("phase", phase)),
+        )
+        waiting = {"ready": False, "batches": [{"id": "retry", "items": [{}]}]}
+        outcomes = iter([waiting, {"ready": True, "batches": []}])
+        with (
+            patch.dict(
+                sys.modules,
+                {
+                    "util": engine,
+                    "util.translation_task": tasks,
+                    "util.batch_history": history,
+                },
+            ),
+            patch("dazedtl.compatibility.provider_responses.install"),
+            patch.object(
+                batch_refusals,
+                "advance_guided",
+                side_effect=lambda *_, **__: next(outcomes),
+            ),
+            patch.object(batch_refusals.time, "sleep"),
+        ):
+            batch_refusals.install_worker(
+                Path("run"),
+                {"mode": "batch", "dazedtl_request_policy": {"refusalRetry": POLICY}},
+            )
+            native(task, ["Map001.json"], False, batch_phase="consume")
+        self.assertEqual(
+            calls,
+            [("phase", "poll_status"), ("phase", "consume"), ("native", "consume")],
+        )
+
     def test_old_pauses_monitor_then_consume_once_without_resubmitting(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)
