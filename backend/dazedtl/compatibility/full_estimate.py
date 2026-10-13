@@ -107,7 +107,8 @@ def estimate_task(directory, folder, plan, inventory, task, log):
             raise ValueError("The selected model changed. Estimate again.")
         native["dazedtl_request_policy"] = policy
     write_json(directory / "plan.json", native)
-    prepare_inputs(directory, native, log.stopped)
+    # The staged copy is this operation's own, so every task shares its files.
+    prepare_inputs(directory, native, log.stopped, link=True)
     write_json(
         directory / "attempt.json",
         {"files": task["files"], "resume": False, "batch_resume_state": None},

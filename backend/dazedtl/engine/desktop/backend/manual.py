@@ -217,8 +217,11 @@ def seed_variables(directory, plan, workflow_folder):
         plan["context_hashes"]["seed/var_translation_map.json"] = digest(raw)
 
 
-def prepare_inputs(directory, plan, stopped=lambda: False):
-    """Copies a planned run's inputs into its folder once, and checks them on every later start."""
+def prepare_inputs(directory, plan, stopped=lambda: False, *, link=False):
+    """Copies a planned run's inputs into its folder once, and checks them on every later start.
+
+    ``link`` shares the source files instead, for a source nothing writes to
+    while the run lasts, such as a private staged copy."""
     for folder in ("inputs", "files", "translated", "log"):
         path = directory / folder
         if path.is_symlink():
@@ -243,7 +246,12 @@ def prepare_inputs(directory, plan, stopped=lambda: False):
             frozen, working = directory / "inputs" / name, directory / "files" / name
             for target in (frozen, working):
                 target.parent.mkdir(parents=True, exist_ok=True)
-            frozen.write_bytes(raw)
+            try:
+                if not link:
+                    raise OSError
+                os.link(original, frozen)
+            except OSError:
+                frozen.write_bytes(raw)
             # Runs only read their inputs, so the engine's copy can be the same
             # file; every run copies the whole input folder, and a second copy
             # took seconds on Windows for a large game.
