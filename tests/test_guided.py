@@ -2510,6 +2510,7 @@ class GuidedTests(unittest.TestCase):
         write_json(root / "log/batch_history.json", {"batches": [batch]})
         self.guided.batch_monitor.views[job["id"]] = {
             "state": "monitoring",
+            "phase": "poll_status",
             "message": "",
             "batches": [
                 {
@@ -2520,7 +2521,14 @@ class GuidedTests(unittest.TestCase):
             ],
         }
         with self.guided.observations.read():
-            self.assertEqual(self.guided.run_view(job["id"])["status"], "running")
+            observed = self.guided.run_view(job["id"])
+        self.assertEqual(observed["status"], "running")
+        # The monitor's phase is the run's; its public view keeps the contract.
+        from dazedtl.api.contracts.runs import BatchMonitoring
+
+        self.assertLessEqual(
+            set(observed["process"]["monitoring"]), set(BatchMonitoring.__annotations__)
+        )
         # A newer saved receipt must survive an older monitor observation,
         # including its counts and the run's inactive state on every refresh.
         batch.update(

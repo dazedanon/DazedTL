@@ -189,8 +189,11 @@ class RunInspection:
             ):
                 monitoring = None
             if monitoring:
+                # The monitor's phase becomes the run's own phase below.
                 job["process"]["monitoring"] = {
-                    key: value for key, value in monitoring.items() if key != "batches"
+                    key: value
+                    for key, value in monitoring.items()
+                    if key not in {"batches", "phase"}
                 }
         from dazedtl.compatibility.process_view import phase_feedback
 
