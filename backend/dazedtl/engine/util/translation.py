@@ -328,22 +328,27 @@ def _estimate_static_token_count(static_system, model):
         except Exception:
             cache = {}
 
-        try:
-            client = anthropic.Anthropic(api_key=openai.api_key)
-            backtick = chr(96) * 3
-            system_block = [{
-                "type": "text",
-                "text": backtick + "\n" + static_system + "\n" + backtick,
-                "cache_control": {"type": "ephemeral", "ttl": "5m"},
-            }]
-            response = client.beta.messages.count_tokens(
-                betas=["token-counting-2024-11-01"],
-                model=model,
-                system=system_block,
-                messages=[{"role": "user", "content": "x"}],
-            )
-            token_count = int(response.input_tokens)
-        except Exception:
+        token_count = None
+        # A local run blocks the network, where the client would only retry.
+        if os.getenv("DAZEDTL_TEST_OFFLINE") != "1":
+            try:
+                client = anthropic.Anthropic(api_key=openai.api_key)
+                backtick = chr(96) * 3
+                system_block = [{
+                    "type": "text",
+                    "text": backtick + "\n" + static_system + "\n" + backtick,
+                    "cache_control": {"type": "ephemeral", "ttl": "5m"},
+                }]
+                response = client.beta.messages.count_tokens(
+                    betas=["token-counting-2024-11-01"],
+                    model=model,
+                    system=system_block,
+                    messages=[{"role": "user", "content": "x"}],
+                )
+                token_count = int(response.input_tokens)
+            except Exception:
+                pass
+        if token_count is None:
             enc = tiktoken.encoding_for_model("gpt-4")
             token_count = len(enc.encode(static_system))
 
