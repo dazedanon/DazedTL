@@ -1252,12 +1252,12 @@ try:
         # Each worker records its own files: appends from several processes
         # to one file are not atomic on Windows and can garble its lines, and
         # Windows can give a new worker an ended one's process ID.
-        def launches():
+        def worker_files():
             return sorted(
                 path.read_text().split() for path in live_root.glob("launches-*.txt")
             )
 
-        workers = launches()
+        workers = worker_files()
         assert workers == [
             ["Map001.json", "Map002.json"],
             ["Map003.json", "Map004.json"],
@@ -1274,7 +1274,7 @@ try:
         many = [f"Map1{number:02d}.json" for number in range(12)]
         with patch.dict(os.environ, {"fileThreads": "3"}):
             assert live_task._run_files(many, False) not in {"Fail", "Stopped"}
-        handed = [name for names in launches() for name in names]
+        handed = [name for names in worker_files() for name in names]
         assert sorted(handed) == many, handed
         # That worker saves a Batch's files one after another; a file missing
         # a result must not keep the files after it from saving theirs.
