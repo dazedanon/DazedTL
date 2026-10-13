@@ -2126,10 +2126,17 @@ test("file line amounts follow the latest run's saved and prepared lines", () =>
     done: 40,
     total: 50,
   });
+  // A Batch writes the file while it saves its results; received lines it
+  // has not written, or failed to, are not saved.
+  const batch = { ...run, mode: "batch", status: "failed", outputs: {} };
+  assert.deepEqual(lines(state([batch])), { done: 0, total: 50 });
+  assert.deepEqual(
+    lines(state([{ ...batch, outputs: { "Items.json": "hash" } }])),
+    { done: 40, total: 50 },
+  );
   // A file no run translated that a Batch prepared nothing for has none.
   const empty = {
-    ...run,
-    mode: "batch",
+    ...batch,
     status: "running",
     process: { errors: [], files: {}, noRequestFiles: ["Items.json"] },
   };
