@@ -1,5 +1,9 @@
 <!-- The next release's notes; see docs/development.md#release-notes. -->
 
+### Changed
+
+- **Translate:** names and labels translated with Live before a Batch now join the game glossary in **Context** > **Guidance** even when you decline the Batch, so you can see and edit them there. Completed runs already added them.
+
 ### Fixed
 
 - **Translate:** Claude Batch and Live translation on Windows no longer fail with "Could not determine home directory.", and Claude cost estimates there use Claude's own token count instead of an approximate one.
