@@ -237,6 +237,29 @@ class PublicationTests(unittest.TestCase):
         write_json(self.folder / "source-inputs.json", {"changed": True})
         with self.assertRaisesRegex(ValueError, "source bindings changed"):
             p.publish(self.folder, self.root, plan)
+        # Apply publishes a saved output itself, checked by hash: copying it
+        # took a large game's review seconds per hundred files on Windows.
+        output = self.folder / "translated/A.json"
+        write_bytes(output, self.after["data/A.json"])
+        candidate = {"data/A.json": self.after["data/A.json"]}
+        plan = p.freeze(
+            self.folder,
+            self.root,
+            candidate,
+            "export_selected",
+            overwrite=True,
+            sources={"data/A.json": output},
+        )
+        frozen = self.folder / "text-publications" / plan["id"]
+        self.assertFalse((frozen / "0.after").exists())
+        write_bytes(output, b"changed after review")
+        with self.assertRaisesRegex(ValueError, "frozen candidate changed"):
+            p.publish(self.folder, self.root, plan)
+        write_bytes(output, self.after["data/A.json"])
+        p.publish(self.folder, self.root, plan)
+        self.assertEqual(
+            (self.root / "data/A.json").read_bytes(), self.after["data/A.json"]
+        )
 
     def test_a_restore_review_diffs_a_large_file_by_its_actual_edits(self):
         # difflib matched whole files: on commands whose codes repeat, like

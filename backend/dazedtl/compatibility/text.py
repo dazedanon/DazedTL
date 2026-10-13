@@ -627,12 +627,13 @@ def prepare_publication(plan):
     )
     action, options = plan["action"], plan["options"]
     prefix = data.relative_to(root)
-    candidates, outputs, restored = {}, {}, None
+    candidates, outputs, restored, sources = {}, {}, None, {}
     if action == "export_selected":
         saved = plan.get("run_output")
         output_folder = Path(saved["folder"]) if saved else folder
         for name in options["files"]:
-            output = project_path(output_folder, "translated/" + name).read_bytes()
+            path = project_path(output_folder, "translated/" + name)
+            output = path.read_bytes()
             if saved and digest(output) != saved["outputs"].get(name):
                 raise ValueError("Saved Batch output changed. Review this Batch again.")
             # Parse the same bytes that will be frozen for publication.
@@ -642,6 +643,8 @@ def prepare_publication(plan):
                 )
             decode_json(output)
             candidates[(prefix / name).as_posix()] = output
+            # Apply publishes the saved output itself, checked by hash.
+            sources[(prefix / name).as_posix()] = path
             outputs[name] = digest(output)
     elif action == "runtime_restore":
         candidates, restored = publication.restore_candidates(
@@ -763,6 +766,7 @@ def prepare_publication(plan):
         outputs=outputs,
         restore=restored,
         overwrite=action == "export_selected",
+        sources=sources,
         task=options["task"] if action in {"qa_apply", "qa_undo"} else None,
         findings=options.get("findings", []) + options.get("proposals", [])
         if action in {"qa_apply", "qa_undo"}

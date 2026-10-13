@@ -63,10 +63,13 @@ def freeze(
     overwrite=False,
     task=None,
     findings=None,
+    sources=None,
 ):
     """Freeze both sides before the user reviews an exact destination batch.
     `task` names the QA task whose corrections the batch applies or undoes,
-    and `findings` which of them."""
+    and `findings` which of them. `sources` names saved files that hold
+    candidates, such as a run's outputs, which publishing reads again and
+    checks by hash instead of copies."""
     if not candidates:
         raise ValueError("Select at least one file or correction to apply.")
     _discard_unused(folder)
@@ -84,7 +87,9 @@ def freeze(
         # A full overwrite backs up the bytes it replaces when it publishes.
         if not overwrite:
             write_bytes(base / f"{index}.before", before)
-        write_bytes(base / f"{index}.after", raw)
+        source = (sources or {}).get(name)
+        if source is None:
+            write_bytes(base / f"{index}.after", raw)
         rows.append(
             {
                 "path": name,
@@ -93,6 +98,7 @@ def freeze(
                 "index": index,
                 "size": len(raw),
                 "mode": target.stat().st_mode & 0o777,
+                **({"source": str(source)} if source is not None else {}),
             }
         )
     record = {
@@ -195,7 +201,11 @@ def publish(folder, root, plan, log=lambda _: None):
     payloads = []
     for row in record["files"]:
         target = project_path(root, row["path"])
-        after = project_path(base, f"{row['index']}.after").read_bytes()
+        after = (
+            Path(row["source"])
+            if "source" in row
+            else project_path(base, f"{row['index']}.after")
+        ).read_bytes()
         before = (
             None
             if overwrite

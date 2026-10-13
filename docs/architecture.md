@@ -412,7 +412,8 @@ Its review names the files edited in the game since their last Apply, whose edit
 Its one-use confirmation retains the reviewed file list for execution guards.
 A failed confirmation keeps its error visible and offers Refresh preview; it cannot resend the consumed token or automatically execute the replacement review.
 Apply captures the actual overwritten bytes for rollback at execution, backing up every file before its first write so its receipt is saved once.
-A finished batch keeps only those backups, and the next review discards reviews older than their 20 minutes with the copies they froze.
+An Apply binds the saved outputs it publishes by hash instead of copying them for its review; other batches freeze copies of what they write.
+A finished batch keeps only its backups, and the next review discards reviews older than their 20 minutes with the copies they froze.
 An Apply review lists the files it overwrites without comparing their text, which took minutes on a large game; a restore's review shows the start of each file's [diff](../backend/dazedtl/compatibility/text.py), matched window by window after each change.
 Fitting, QA and restore keep their existing exact-before checks; no background synchronization is performed.
 Reviewed Apply accepts saved partial output regardless of earlier Batch status, unresolved requests, provider work or collection.
