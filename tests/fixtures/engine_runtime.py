@@ -1221,11 +1221,12 @@ try:
         live_root.mkdir()
         runner = live_root / "runner.py"
         runner.write_text(
-            "import json, os, sys\n"
+            "import json, sys, uuid\n"
+            "launches = f'launches-{uuid.uuid4().hex}.txt'\n"
             "for line in sys.stdin:\n"
             "    name = line.strip()\n"
-            "    with open('launches.txt', 'a') as f:\n"
-            "        f.write(f'{os.getpid()} {name}\\n')\n"
+            "    with open(launches, 'a') as f:\n"
+            "        f.write(name + '\\n')\n"
             "    if name == 'Map002.json':\n"
             "        print('FILE_ERROR:' + json.dumps({'filename': name, 'error': 'Broken.'}), flush=True)\n"
             "        sys.exit(1)\n"
@@ -1247,11 +1248,17 @@ try:
         maps = [f"Map00{number}.json" for number in range(1, 6)]
         with patch.dict(os.environ, {"fileThreads": "1"}):
             assert live_task._run_files(maps, False) == "Fail"
-        workers = {}
-        for row in (live_root / "launches.txt").read_text().splitlines():
-            worker, handed = row.split()
-            workers.setdefault(worker, []).append(handed)
-        assert list(workers.values()) == [
+
+        # Each worker records its own files: appends from several processes
+        # to one file are not atomic on Windows and can garble its lines, and
+        # Windows can give a new worker an ended one's process ID.
+        def launches():
+            return sorted(
+                path.read_text().split() for path in live_root.glob("launches-*.txt")
+            )
+
+        workers = launches()
+        assert workers == [
             ["Map001.json", "Map002.json"],
             ["Map003.json", "Map004.json"],
             ["Map005.json"],
@@ -1262,14 +1269,12 @@ try:
         assert [name for name, _ in mismatched] == ["Map003.json"], mismatched
         assert live_task._run_mismatch_count == 2, live_task._run_mismatch_count
         # Concurrent files share the queue: each file goes to one worker once.
-        (live_root / "launches.txt").unlink()
+        for path in live_root.glob("launches-*.txt"):
+            path.unlink()
         many = [f"Map1{number:02d}.json" for number in range(12)]
         with patch.dict(os.environ, {"fileThreads": "3"}):
             assert live_task._run_files(many, False) not in {"Fail", "Stopped"}
-        handed = [
-            row.split()[1]
-            for row in (live_root / "launches.txt").read_text().splitlines()
-        ]
+        handed = [name for names in launches() for name in names]
         assert sorted(handed) == many, handed
         # That worker saves a Batch's files one after another; a file missing
         # a result must not keep the files after it from saving theirs.
