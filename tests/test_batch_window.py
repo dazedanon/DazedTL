@@ -282,6 +282,7 @@ class BatchWindowTests(unittest.TestCase):
                 window.approve,
                 window.recover,
                 window.record,
+                nullcontext,
             )
             self.assertIsNone(task_type._run_batch_poll_fetch(task))
             self.assertEqual(window.providers.submit_batch.call_count, 3)

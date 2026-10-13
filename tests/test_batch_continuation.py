@@ -145,6 +145,7 @@ class BatchContinuationTests(unittest.TestCase):
             ]
             util.translation, util.batch_providers = translation, providers
             translation._batch_submit_lock = nullcontext
+            translation.submitTranslationBatches = point(lambda steps: steps())
             create = Mock(side_effect=[{"id": "first"}, {"id": "second"}])
             providers.submit_batch = point(create)
             providers.get_client = Mock(
@@ -213,11 +214,13 @@ class BatchContinuationTests(unittest.TestCase):
                     continuation.install_worker(root, plan)
                 self.assertEqual(create.call_count, 2)
 
-    def test_refused_creates_release_their_requests_while_ambiguous_failures_stay_uncertain(
+    def test_only_creates_that_never_reached_the_provider_release_their_requests(
         self,
     ):
         # A provider refusal (such as OpenRouter's HTTP 402) created no Batch,
-        # so its requests may be sent again; a server error may have created one.
+        # and neither did a submission that failed before journaling a create,
+        # such as an SDK client that could not be built. A server error, or a
+        # run without either record, may have created one.
         from dazedtl.compatibility.request_scope import requests as request_states
 
         def failure(status):
@@ -227,7 +230,7 @@ class BatchContinuationTests(unittest.TestCase):
 
         with TemporaryDirectory() as directory:
             root = Path(directory)
-            job, plan, requests, _state = self.fixture(root)
+            job, plan, requests, state = self.fixture(root)
             util, translation, providers, task, history = [
                 ModuleType(name)
                 for name in (
@@ -240,10 +243,16 @@ class BatchContinuationTests(unittest.TestCase):
             ]
             util.translation, util.batch_providers = translation, providers
             translation._batch_submit_lock = nullcontext
+            translation.submitTranslationBatches = point(lambda steps: steps())
             create = Mock(side_effect=[failure(402), failure(500)])
             providers.submit_batch = point(create)
+            client = SimpleNamespace(with_options=lambda **_: object())
             providers.get_client = Mock(
-                return_value=SimpleNamespace(with_options=lambda **_: object())
+                side_effect=[
+                    RuntimeError("Could not determine home directory."),
+                    client,
+                    client,
+                ]
             )
             task.TranslationTask = type(
                 "Task", (), {"_wait_batch_submit": point(Mock(return_value=False))}
@@ -258,22 +267,55 @@ class BatchContinuationTests(unittest.TestCase):
                 "params": requests["one"]["params"],
             }
 
-            def first():
-                return next(request_states(root, job))["state"]
+            def states():
+                return [row["state"] for row in request_states(root, job)]
+
+            def submission(*steps):
+                translation.submitTranslationBatches(lambda: [step() for step in steps])
+
+            def send():
+                providers.submit_batch("openai", [request])
 
             with patch.dict(sys.modules, modules):
+                self.assertEqual(states(), ["uncertain", "uncertain"])
                 continuation.install_worker(root, plan)
+                # The engine's own client, then the journaled create's.
+                engine_client = Mock(side_effect=RuntimeError("home directory"))
+                for steps in ((engine_client, send), (send,)):
+                    with self.assertRaisesRegex(RuntimeError, "home directory"):
+                        submission(*steps)
+                    self.assertEqual(states(), ["queued", "queued"])
                 with self.assertRaisesRegex(RuntimeError, "402"):
-                    providers.submit_batch("openai", [request])
-                self.assertEqual(first(), "queued")
+                    submission(send)
+                self.assertEqual(states(), ["queued", "queued"])
                 continuation.validate_submission_records(root)
                 continuation.install_worker(root, plan)
                 with self.assertRaisesRegex(RuntimeError, "500"):
-                    providers.submit_batch("openai", [request])
+                    submission(send)
                 self.assertEqual(create.call_count, 2)
-                self.assertEqual(first(), "uncertain")
+                self.assertEqual(states(), ["uncertain", "uncertain"])
+                # A later attempt stopped by that doubt keeps it.
+                with self.assertRaisesRegex(ValueError, "uncertain"):
+                    submission(send)
+                self.assertEqual(states(), ["uncertain", "uncertain"])
                 with self.assertRaisesRegex(ValueError, "uncertain"):
                     continuation.install_worker(root, plan)
+                # Beside a submitted chunk, a later unconfirmed create is too.
+                paid = {
+                    "id": "paid",
+                    "custom_ids": {"req-000000": "one"},
+                    "api_status": "in_progress",
+                }
+                write_json(
+                    root / "log/batch_state.json",
+                    {**state, "status": "partially_submitted", "batches": [paid]},
+                )
+                write_json(root / "log/batch_history.json", {"batches": [paid]})
+                write_json(
+                    root / "log" / continuation.JOURNAL,
+                    {"intent": {"custom_ids": {"req-000001": "two"}, "receipt": None}},
+                )
+                self.assertEqual(states(), ["submitted", "uncertain"])
 
     def test_openrouter_stops_later_creates_after_control_pipe_closes_but_recovers_returned_id(
         self,
@@ -302,6 +344,7 @@ class BatchContinuationTests(unittest.TestCase):
             ]
             util.translation, util.batch_providers = translation, providers
             translation._batch_submit_lock = nullcontext
+            translation.submitTranslationBatches = point(lambda steps: steps())
             create = Mock(return_value={"id": "paid"})
             providers.submit_batch = point(create)
             providers.get_client = lambda _: SimpleNamespace(

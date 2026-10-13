@@ -1,7 +1,7 @@
 """Continue an approved, unchanged queue through the original Batch runner."""
 
 import json
-from contextlib import closing
+from contextlib import closing, contextmanager
 from copy import deepcopy
 from pathlib import Path
 
@@ -20,6 +20,23 @@ def refused_create(intent):
     timeouts, conflicts, server errors and lost responses stay uncertain."""
     return (
         bool(intent) and not intent.get("receipt") and intent.get("refused") in REFUSED
+    )
+
+
+def unresolved(intent):
+    """A journaled create with neither a provider receipt nor a refusal."""
+    return bool(intent) and not intent.get("receipt") and not refused_create(intent)
+
+
+def unsent(journal, job):
+    """The worker's record that this approval's latest submission attempt
+    failed before journaling a create; each earlier create has its own record."""
+    marker = journal.get("unsent")
+    return (
+        isinstance(marker, dict)
+        and bool(job.get(APPROVAL))
+        and marker.get("approval") == job[APPROVAL]
+        and not unresolved(journal.get("intent"))
     )
 
 
@@ -179,6 +196,8 @@ def install_worker(root, plan):
 
     root = Path(root)
     active_task = None
+    # Journaled creates in this worker; an attempt that adds none never sent.
+    creates = 0
 
     def approved():
         job = read_json(project_path(root, "job.json"))
@@ -248,6 +267,7 @@ def install_worker(root, plan):
             )
 
     def submit(native, provider, requests, **kwargs):
+        nonlocal creates
         input_tokens = kwargs.pop("_dazedtl_input_tokens", None)
         # Clarifications already have their own durable submission journal.
         if not requests or not all(
@@ -287,6 +307,9 @@ def install_worker(root, plan):
             raise BatchContinuationError(
                 "This Batch request already has a provider receipt."
             )
+        # A client that cannot be built fails before the journal, never sent.
+        client = kwargs.get("client") or providers.get_client(provider)
+        kwargs["client"] = client.with_options(max_retries=0)
         path = project_path(root, "log/" + JOURNAL, exists=False)
         state = saved(root, "batch_state.json")
         intent = {
@@ -298,9 +321,8 @@ def install_worker(root, plan):
             "model": state["model"],
             "estimated_input_tokens": input_tokens,
         }
+        creates += 1
         write_json(path, {"intent": intent})
-        client = kwargs.get("client") or providers.get_client(provider)
-        kwargs["client"] = client.with_options(max_retries=0)
         try:
             result = native(provider, requests, **kwargs)
         except Exception as error:
@@ -327,6 +349,36 @@ def install_worker(root, plan):
         return result
 
     providers.submit_batch.layer(LAYER, submit)
+
+    @contextmanager
+    def attempt():
+        """Record a submission attempt that failed before journaling a create.
+
+        Request rows read unsent only with this record; an older run without
+        one, or a worker killed first, stays uncertain.
+        """
+        before = creates
+        try:
+            yield
+        except Exception:
+            if creates == before:
+                try:
+                    job = read_json(project_path(root, "job.json"))
+                    journal = saved(root, JOURNAL)
+                    if job.get(APPROVAL) and not unresolved(journal.get("intent")):
+                        write_json(
+                            project_path(root, "log/" + JOURNAL, exists=False),
+                            {**journal, "unsent": {"approval": job[APPROVAL]}},
+                        )
+                except OSError, ValueError:
+                    pass  # Without the record the requests stay uncertain.
+            raise
+
+    def submission(native, *args, **kwargs):
+        with attempt():
+            return native(*args, **kwargs)
+
+    translation.submitTranslationBatches.layer(LAYER, submission)
 
     def wait(native, task, estimate):
         if read_json(project_path(root, "job.json")).get(APPROVAL):
@@ -363,4 +415,5 @@ def install_worker(root, plan):
         approved,
         recover_receipt,
         record_submit,
+        attempt,
     )

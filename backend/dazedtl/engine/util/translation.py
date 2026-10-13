@@ -2564,6 +2564,7 @@ def _openai_batch_token_limit():
     return limit
 
 
+@extensions.point
 def submitTranslationBatches(file_set=None, cost_estimate=None):
     """Submit queued requests to the configured provider's Batch API.
 

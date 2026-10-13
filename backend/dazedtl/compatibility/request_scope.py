@@ -151,15 +151,24 @@ def requests(root, job, queued=None, records=None):
         for manifest in state.get("batches", []):
             for key in manifest.get("custom_ids", {}).values():
                 outcomes.setdefault(key, "uncertain")
-        from .batch_continuation import JOURNAL, refused_create
+        from .batch_continuation import JOURNAL, refused_create, unsent
 
+        journal = saved(root, JOURNAL)
+        intent = journal.get("intent")
+        # The latest journaled create may be at the provider until its receipt
+        # reaches the saved manifests, even beside earlier submitted chunks.
+        if intent and not refused_create(intent):
+            for key in (intent.get("custom_ids") or {}).values():
+                outcomes.setdefault(key, "uncertain")
         unknown_submission = (
             state.get("status") in {"submission_uncertain", "submitting", "corrupt"}
             or job.get("dazedtl_submission_intent")
             and state.get("status")
             not in {"partially_submitted", "submitted", "fetched"}
-            # A create the provider refused left nothing to duplicate.
-            and not refused_create(saved(root, JOURNAL).get("intent"))
+            # A create the provider refused, or an attempt that failed before
+            # any create, left nothing to duplicate.
+            and not refused_create(intent)
+            and not unsent(journal, job)
         )
         complete = consumed_files(root)
         from .batch_validation import outcomes as validation_outcomes

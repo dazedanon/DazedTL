@@ -10,6 +10,7 @@ from pathlib import Path
 from dazedtl.translation.files import ObservedFiles, digest
 
 from . import process_view
+from .batch_continuation import APPROVAL
 
 
 def stamp(path):
@@ -169,6 +170,7 @@ class RunObservations:
             job.get("mode"),
             job.get("status"),
             bool(job.get("dazedtl_submission_intent")),
+            digest(job.get(APPROVAL)),
         )
         cached = self.views.get(root)
         if cached and cached[0] == signature:

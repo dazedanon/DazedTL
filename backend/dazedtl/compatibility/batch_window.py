@@ -378,7 +378,7 @@ class BatchWindow:
 
 
 def install_worker(
-    root, plan, translation, providers, task_type, approve, recover, record
+    root, plan, translation, providers, task_type, approve, recover, record, attempt
 ):
     if urlsplit(plan.get("settings", {}).get("api", "")).hostname != "api.openai.com":
         return
@@ -403,7 +403,9 @@ def install_worker(
                     + translation.formatTranslationBatchFailures(failures)
                 )
                 return False
-            if window.fill(task):
+            with attempt():
+                sent = window.fill(task)
+            if sent:
                 continue
             state = saved(root, "batch_state.json")
             submitted = {
