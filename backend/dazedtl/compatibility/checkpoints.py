@@ -3,11 +3,16 @@
 import io
 import os
 import threading
-from functools import lru_cache
 from pathlib import Path
 
 from dazedtl.storage import write_json
-from dazedtl.translation.files import decode_json, digest, project_path, read_json
+from dazedtl.translation.files import (
+    Digests,
+    decode_json,
+    digest,
+    project_path,
+    read_json,
+)
 
 INDEX = "log/dazedtl-checkpoints.json"
 
@@ -35,15 +40,22 @@ def can_collect_outputs(job):
     )
 
 
-# Every snapshot checks each run's outputs several times in the same order; a
-# cache smaller than a large game's outputs missed on every one and parsed
-# them all again, seconds per snapshot.
-@lru_cache(maxsize=20_000)
+# Every snapshot checks every saved run's outputs; a bounded cache smaller
+# than a long history's outputs missed on every one and parsed them all again,
+# seconds per snapshot.
+_DIGESTS = Digests()
+
+
 def _json_digest(path, signature):
+    cached = _DIGESTS.get(path, signature)
+    if cached is not None:
+        return cached
     raw = Path(path).read_bytes()
     if not isinstance(decode_json(raw), (dict, list)):
         raise ValueError("A progress checkpoint must contain game JSON.")
-    return digest(raw)
+    value = digest(raw)
+    _DIGESTS.put(path, signature, value)
+    return value
 
 
 def _index(root):

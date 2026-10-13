@@ -648,6 +648,101 @@ class GuidedTests(unittest.TestCase):
         self.native["engine_options"]["CODE356"] = True
         self.assertFalse(current())
 
+    def test_warm_polls_neither_reread_nor_resolve_a_long_historys_outputs(self):
+        # Every poll checks every saved run's outputs. A 2.14.0 user's polls
+        # took 30 s on Windows once a history outgrew the digest caches, which
+        # then parsed every output again, and each output's path was resolved
+        # on every poll; every click and page switch waited behind them.
+        import io
+        import time
+
+        from dazedtl.compatibility import checkpoints
+
+        names = [f"Map{index:03}.json" for index in range(30)]
+        still = time.time_ns() - 3600 * 10**9
+        for name in names:
+            write_json(self.source / name, {"text": "原文"})
+            os.utime(self.source / name, ns=(still, still))
+        self.native["data"] = str(self.source)
+        outputs = []
+        for run in range(3):
+            identity = f"history-{run}"
+            root = self.backend.manual.folder(identity)
+            plan = {
+                "mode": "translate",
+                "workflow": {"id": "native", "phase": "maps"},
+                "files": [{"name": name, "sha256": "0" * 64} for name in names],
+            }
+            write_json(root / "plan.json", plan)
+            receipts = {}
+            for name in names:
+                write_json(root / "translated" / name, {"text": f"Run {run}"})
+                os.utime(root / "translated" / name, ns=(still, still))
+                receipts[name] = digest((root / "translated" / name).read_bytes())
+                outputs.append(os.fspath(root / "translated" / name))
+            write_json(
+                root / checkpoints.INDEX,
+                {
+                    "version": 1,
+                    "plan_hash": digest((root / "plan.json").read_bytes()),
+                    "files": receipts,
+                },
+            )
+            self.backend.manual.jobs[identity] = {
+                "id": identity,
+                "mode": "translate",
+                "status": "complete",
+                "phase": "done",
+                "files": names,
+                "completed": names,
+                "created": f"2026-01-0{run + 1}",
+                "plan_hash": digest((root / "plan.json").read_bytes()),
+            }
+            self.native.setdefault("collected", []).append(identity)
+        self.backend.saved_run_configuration = lambda identity: read_json(
+            self.backend.manual.folder(identity) / "plan.json"
+        )
+
+        def poll():
+            with self.guided.observations.read():
+                self.guided.runs.snapshot(
+                    self.identity, self.native, {"changed": [], "retired": []}
+                )
+                return [
+                    self.guided.run_view(f"history-{run}", compact=True)
+                    for run in range(3)
+                ]
+
+        opened, resolved = [], []
+        native_open, native_resolve = io.open, Path.resolve
+
+        def counted_open(file, *args, **kwargs):
+            if isinstance(file, (str, os.PathLike)) and os.fspath(file) in outputs:
+                opened.append(file)
+            return native_open(file, *args, **kwargs)
+
+        def counted_resolve(path, *args, **kwargs):
+            resolved.append(path)
+            return native_resolve(path, *args, **kwargs)
+
+        # A history far longer than the caches, scaled down.
+        with (
+            patch.object(self.guided.observations.digests, "limit", 10),
+            patch.object(checkpoints._DIGESTS, "limit", 10),
+        ):
+            poll()
+            with (
+                patch("builtins.open", counted_open),
+                patch("io.open", counted_open),
+                patch.object(Path, "resolve", counted_resolve),
+            ):
+                views = poll()
+        self.assertEqual(
+            [sorted(view["availableOutputs"]) for view in views], [names] * 3
+        )
+        self.assertEqual(opened, [])
+        self.assertLess(len(resolved), len(outputs))
+
     def test_snapshots_match_estimates_on_cached_prices_without_a_lookup(self):
         # A price lookup runs a worker that a slow catalog download held past
         # its 12 s limit; snapshots waited on it once per phase, so every poll

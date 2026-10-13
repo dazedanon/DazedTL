@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
 
-from dazedtl.translation.files import ObservedFiles, digest
+from dazedtl.translation.files import Digests, ObservedFiles, digest
 
 from . import process_view
 from .batch_continuation import APPROVAL
@@ -60,7 +60,7 @@ class RunObservations:
         # Request views are shared read-only; callers must not modify them.
         self.views = OrderedDict()
         self.request_rows = 0
-        self.digests = {}
+        self.digests = Digests()
 
     @property
     def session(self):

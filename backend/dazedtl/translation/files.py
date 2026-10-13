@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import stat
+import threading
 import time
 from pathlib import Path
 
@@ -18,6 +19,46 @@ SETTLED_NS = 2_000_000_000
 def settled(*modified_ns):
     """Whether every one of these modification times is safely in the past."""
     return time.time_ns() - max(modified_ns) > SETTLED_NS
+
+
+class Digests:
+    """File digests by path, reused while a file's stat signature holds.
+
+    Every poll checks every saved run's outputs, so the files one poll needs
+    grow with the run history. Dropping all entries, or the oldest, once a
+    long history outgrew a fixed bound reread every output on every poll; only
+    entries no read has used for a while are dropped.
+    """
+
+    IDLE_SECONDS = 120
+
+    def __init__(self, limit=20_000):
+        self.limit = limit
+        self.entries = {}
+        # How many entries the last prune kept: pruning again waits until the
+        # cache doubles, so a large working set is not scanned on every insert.
+        self.kept = 0
+        self.lock = threading.Lock()
+
+    def get(self, key, signature):
+        with self.lock:
+            entry = self.entries.get(key)
+            if entry is None or entry[0] != signature:
+                return None
+            entry[2] = time.monotonic()
+            return entry[1]
+
+    def put(self, key, signature, value):
+        now = time.monotonic()
+        with self.lock:
+            self.entries[key] = [signature, value, now]
+            if len(self.entries) > max(self.limit, 2 * self.kept):
+                self.entries = {
+                    name: entry
+                    for name, entry in self.entries.items()
+                    if now - entry[2] < self.IDLE_SECONDS
+                }
+                self.kept = len(self.entries)
 
 
 def digest(value):
@@ -106,9 +147,9 @@ class ObservedFiles:
     """
 
     def __init__(self, digests):
-        # Shared by every observation; bounded below. Paths are kept as
-        # strings: a poll looks up thousands, and pathlib's own equality and
-        # hashing would cost more than the listing saves.
+        # A Digests shared by every observation. Paths are kept as strings: a
+        # poll looks up thousands, and pathlib's own equality and hashing
+        # would cost more than the listing saves.
         self.digests = digests
         self.roots, self.folders, self.listings = {}, {}, {}
 
@@ -159,24 +200,44 @@ class ObservedFiles:
                 return folder / name
         return project_path(root, relative)
 
+    def digests_in(self, root, names):
+        """digest(project_path(root, name)) for each name, settled from one
+        listing of root: a poll compares every saved run's outputs, and
+        looking each one up on its own took seconds on Windows."""
+        folder = self.folder(root, "")
+        entries = (self.listing(folder) if folder is not None else None) or {}
+        result = {}
+        for name in names:
+            entry = entries.get(name) if "/" not in name and "\\" not in name else None
+            if (
+                folder is not None
+                and entry is not None
+                and entry.is_file(follow_symlinks=False)
+                and name.casefold() not in {".", "..", ".git"}
+            ):
+                result[name] = self._digest(os.path.join(folder, name), entry)
+            else:
+                result[name] = self.digest(self.project_path(root, name))
+        return result
+
     def digest(self, path):
         """A file's content digest, read again only after its listed stat
         signature changes."""
         key = os.fspath(path)
-        entry = self.entry(key)
+        return self._digest(key, self.entry(key))
+
+    def _digest(self, key, entry):
         info = entry.stat(follow_symlinks=False) if entry else os.lstat(key)
         if stat.S_ISLNK(info.st_mode):
             raise ValueError("Observed artifacts cannot be symbolic links.")
         signature = (info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
-        cached = self.digests.get(key)
-        if cached and cached[0] == signature:
-            return cached[1]
+        cached = self.digests.get(key, signature)
+        if cached is not None:
+            return cached
         with open(key, "rb") as stream:
             value = digest(stream.read())
         if settled(info.st_mtime_ns):
-            if len(self.digests) > 20_000:
-                self.digests.clear()
-            self.digests[key] = (signature, value)
+            self.digests.put(key, signature, value)
         return value
 
 

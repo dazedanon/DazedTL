@@ -8,7 +8,7 @@ from dazedtl.storage import write_json
 
 from . import context_setup, preparation, reference_folders, speaker_setup
 from .event_text import EventText
-from .files import digest, project_path, read_json, settled
+from .files import Digests, digest, project_path, read_json, settled
 from .full_estimate import FullEstimate
 from .guided_actions import GuidedActions
 from .guided_context import GuidedContext
@@ -75,7 +75,7 @@ class Guided:
         self.translation = translation
         self.confirmations = {}
         self.batch_confirmations = {}
-        self.observed_files = {}
+        self.observed_files = Digests()
         self.layout_failures = {}
         from dazedtl.compatibility.observations import RunObservations
 
@@ -147,15 +147,21 @@ class Guided:
             raise ValueError("Observed artifacts cannot be symbolic links.")
         stat = path.stat()
         signature = (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
-        cached = self.observed_files.get(path)
-        if cached and cached[0] == signature:
-            return cached[1]
+        cached = self.observed_files.get(path, signature)
+        if cached is not None:
+            return cached
         value = digest(path.read_bytes())
         if settled(stat.st_mtime_ns):
-            if len(self.observed_files) > 20_000:
-                self.observed_files.clear()
-            self.observed_files[path] = (signature, value)
+            self.observed_files.put(path, signature, value)
         return value
+
+    def observed_digests(self, root, names):
+        """observed_digest(observed_path(root, name)) for each name, from one
+        listing of root during a poll."""
+        files = self.observations.files()
+        if files is not None:
+            return files.digests_in(root, names)
+        return {name: self.observed_digest(project_path(root, name)) for name in names}
 
     def observed_path(self, root, relative):
         """project_path, answered from one listing per folder during a poll."""

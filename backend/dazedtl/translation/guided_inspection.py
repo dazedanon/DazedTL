@@ -74,11 +74,13 @@ class RunInspection:
                     for name, expected in job.get("outputs", {}).items()
                     if name in input_hashes and expected != input_hashes[name]
                 ]
+            # A poll answers from one listing of the folder: resolving every
+            # output of every saved run took seconds per poll on Windows.
+            saved = self.guided.observed_digests(folder, job.get("outputs", {}))
             job["availableOutputs"] = [
                 name
                 for name, expected in job.get("outputs", {}).items()
-                if project_path(folder, name).is_file()
-                and self.guided.observed_digest(project_path(folder, name)) == expected
+                if saved[name] == expected
             ]
             job["outputsAvailable"] = bool(job.get("outputs")) and len(
                 job["availableOutputs"]
@@ -119,12 +121,19 @@ class RunInspection:
                     != plan.get("dazedtl_source_versions", {}).get(name, "")
                 ]
                 applied = self.guided.applied_versions(native)
+                outputs = job.get("outputs", {})
+                current = self.guided.observed_digests(
+                    native["data"],
+                    [
+                        name
+                        for name, expected in outputs.items()
+                        if expected not in applied.get(name, ())
+                    ],
+                )
                 job["appliedOutputs"] = [
                     name
-                    for name, expected in job.get("outputs", {}).items()
-                    if expected in applied.get(name, ())
-                    or self.guided.observed_digest(project_path(native["data"], name))
-                    == expected
+                    for name, expected in outputs.items()
+                    if expected in applied.get(name, ()) or current[name] == expected
                 ]
         except OSError, ValueError, KeyError:
             job["outputsAvailable"] = False
