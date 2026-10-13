@@ -85,6 +85,19 @@ def format_estimate_total(comparison) -> str:
         return f"TOTAL estimate: {token_text}[Batch: {batch}][Live: {live}]"
     return f"TOTAL estimate: {token_text}[Live: {live}][Batch: unavailable]"
 
+def _load_batch_sdk():
+    """Loads the Anthropic SDK of a Claude Batch preparation, which counts
+    Claude's tokens right after collection; it loads while the workers run
+    instead, which takes seconds on Windows."""
+    try:
+        from util.translation import getBatchProvider
+
+        if getBatchProvider() == "anthropic":
+            import anthropic  # noqa: F401
+    except Exception:
+        pass
+
+
 def _should_prepare_speakers_automatically(
     module_name,
     *,
@@ -1283,6 +1296,8 @@ class TranslationTaskCore:
                 from util.translation import isBatchSupported
 
                 use_batch_estimate = isBatchSupported()
+            elif self.batch_mode:
+                threading.Thread(target=_load_batch_sdk, daemon=True).start()
 
             if self.batch_mode and self.parse_speakers:
                 self.emit_log("❌ Batch Translate does not support Parse Speakers mode.")
