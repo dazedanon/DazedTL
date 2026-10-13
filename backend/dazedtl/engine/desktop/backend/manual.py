@@ -242,7 +242,8 @@ def seed_variables(directory, plan, workflow_folder):
             raise ValueError("The phase variable cache must be a regular file below 10 MB.")
         raw = cache.read_bytes()
         json.loads(raw)
-        (directory / "seed").mkdir()
+        # A Batch preparation may already hold its estimate's requests here.
+        (directory / "seed").mkdir(exist_ok=True)
         (directory / "seed/var_translation_map.json").write_bytes(raw)
         plan["context_hashes"]["seed/var_translation_map.json"] = digest(raw)
 

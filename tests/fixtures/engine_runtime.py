@@ -54,6 +54,7 @@ try:
             adoptable_requests,
             compatible,
             reusable_speaker_scan,
+            seed_variables,
             signature,
             speaker_scan_inputs,
         )
@@ -106,6 +107,16 @@ try:
         )
         batch_plan["settings"] = {"model": "other"}
         assert adoptable_requests(adopt, batch_plan) is None
+        # A phase's translated variables are frozen beside those requests; the
+        # shared folder made every such Batch preparation fail.
+        workflow = temporary / "workflow"
+        (workflow / "log").mkdir(parents=True)
+        (workflow / "log/var_translation_map.json").write_text(
+            '{"薬": "Potion"}', encoding="utf-8"
+        )
+        seed_variables(adopt, batch_plan, workflow)
+        assert "seed/var_translation_map.json" in batch_plan["context_hashes"]
+        assert (adopt / "seed/estimate_plan.json").is_file()
 
         # A real saved run recorded this pre-version byte hash; it must still pass
         # the native resume guard, alongside plans that record the version.
