@@ -34,15 +34,32 @@ def identities(filename, phase, values, locations=None):
     ]
 
 
+_SCALARS = {int, float, bool, type(None)}
+
+
 def source_locations(value, path=""):
+    """Each string's paths in document order."""
     result = {}
+    if isinstance(value, str):
+        result[value] = [path]
+    else:
+        _index_strings(value, path, result)
+    return result
+
+
+def _index_strings(value, path, result):
     if isinstance(value, list):
+        # A map's tile data holds tens of thousands of numbers.
+        if set(map(type, value)) <= _SCALARS:
+            return
         children = enumerate(value)
-    elif isinstance(value, dict):
+    elif not isinstance(value, dict):
+        return
+    elif "_original" in value:
         # Database originals map field names; event originals may instead be
         # a dialogue string or choice list. Those are not field overlays: keep
         # indexing the current parameters that the native parser will inspect.
-        original = value.get("_original")
+        original = value["_original"]
         fields = original if isinstance(original, dict) else {}
         children = (
             (key, fields.get(key, item))
@@ -50,13 +67,12 @@ def source_locations(value, path=""):
             if key != "_original"
         )
     else:
-        if isinstance(value, str):
-            result[value] = [path]
-        return result
+        children = value.items()
     for key, item in children:
-        for text, locations in source_locations(item, path + "/" + str(key)).items():
-            result.setdefault(text, []).extend(locations)
-    return result
+        if isinstance(item, str):
+            result.setdefault(item, []).append(path + "/" + str(key))
+        elif isinstance(item, (list, dict)):
+            _index_strings(item, path + "/" + str(key), result)
 
 
 def columns(connection):
