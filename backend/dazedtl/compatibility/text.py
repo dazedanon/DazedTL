@@ -474,30 +474,146 @@ def run_qa(plan, log):
 COMPARED = {"runtime_restore"}
 
 
+# The characters of each file's diff and text a review shows, and the equal
+# lines around each change.
+SHOWN = 16000
+CONTEXT = 2
+# The lines difflib matches at a time, growing up to the largest window while
+# no equal line starts in a window's first three quarters.
+WINDOW = 200
+LARGEST_WINDOW = 16000
+
+
 def comparison(raw, candidate):
     """A file's current and replacement text for its review, with the start
     of their unified diff."""
-    lines = difflib.unified_diff(
-        raw.decode("utf-8-sig").splitlines(),
-        candidate.decode("utf-8-sig").splitlines(),
-        fromfile="Current runtime",
-        tofile="Reviewed replacement",
-        lineterm="",
-        n=2,
-    )
-    diff, length, truncated = [], 0, False
-    for line in lines:
-        length += len(line) + 1
-        if length > 16000:
-            truncated = True
-            break
-        diff.append(line)
+    before = raw.decode("utf-8-sig")
+    after = candidate.decode("utf-8-sig")
+    diff, truncated = _diff_start(before.splitlines(), after.splitlines())
     return {
-        "diff": "\n".join(diff),
+        "diff": diff,
         "truncated": truncated,
-        "before_text": raw.decode("utf-8-sig")[:16000],
-        "after_text": candidate.decode("utf-8-sig")[:16000],
+        "before_text": before[:SHOWN],
+        "after_text": after[:SHOWN],
     }
+
+
+def _opcodes(before, after):
+    """difflib opcodes that turn before into after, until their changed lines
+    fill the review.
+
+    difflib's match of two whole files grows with the square of their changed
+    lines, so a large game's common events took minutes. Equal lines are
+    skipped one by one instead, and difflib matches only a window after each
+    difference, kept up to an equal line well inside it, where the window's
+    end cannot have shifted the match.
+    """
+    codes, shown, i, j = [], 0, 0, 0
+
+    def add(tag, i1, i2, j1, j2):
+        nonlocal shown
+        if tag == "equal" and codes and codes[-1][0] == "equal":
+            i1, j1 = codes.pop()[1::2]
+        elif tag != "equal":
+            shown += sum(len(line) + 2 for line in before[i1:i2])
+            shown += sum(len(line) + 2 for line in after[j1:j2])
+        codes.append((tag, i1, i2, j1, j2))
+
+    while True:
+        start = i
+        while i < len(before) and j < len(after) and before[i] == after[j]:
+            i, j = i + 1, j + 1
+        if i > start:
+            add("equal", start, i, start + j - i, j)
+        if (i, j) == (len(before), len(after)) or shown > SHOWN:
+            return codes
+        window = WINDOW
+        while True:
+            # Junk heuristics make repeated lines such as map tiles unmatched.
+            found = difflib.SequenceMatcher(
+                None, before[i : i + window], after[j : j + window], autojunk=False
+            ).get_opcodes()
+            if i + window >= len(before) and j + window >= len(after):
+                kept = found
+                break
+            inside = window * 3 // 4
+            last = next(
+                (
+                    index
+                    for index in range(len(found) - 1, -1, -1)
+                    if found[index][0] == "equal"
+                    and max(found[index][1], found[index][3]) < inside
+                ),
+                None,
+            )
+            if last is not None:
+                tag, i1, i2, j1, j2 = found[last]
+                length = min(i2 - i1, inside - max(i1, j1))
+                kept = [*found[:last], (tag, i1, i1 + length, j1, j1 + length)]
+                break
+            if window == LARGEST_WINDOW:
+                # However it matched, it turns the window's lines into each other.
+                kept = found
+                break
+            window = min(window * 4, LARGEST_WINDOW)
+        for tag, i1, i2, j1, j2 in kept:
+            add(tag, i + i1, i + i2, j + j1, j + j2)
+        i, j = codes[-1][2], codes[-1][4]
+
+
+def _hunks(codes):
+    """The opcodes grouped into unified diff hunks, as difflib groups them."""
+    if not codes:
+        return
+    codes = list(codes)
+    if codes[0][0] == "equal":
+        tag, i1, i2, j1, j2 = codes[0]
+        codes[0] = tag, max(i1, i2 - CONTEXT), i2, max(j1, j2 - CONTEXT), j2
+    if codes[-1][0] == "equal":
+        tag, i1, i2, j1, j2 = codes[-1]
+        codes[-1] = tag, i1, min(i2, i1 + CONTEXT), j1, min(j2, j1 + CONTEXT)
+    group = []
+    for tag, i1, i2, j1, j2 in codes:
+        if tag == "equal" and i2 - i1 > 2 * CONTEXT:
+            group.append((tag, i1, i1 + CONTEXT, j1, j1 + CONTEXT))
+            yield group
+            group = []
+            i1, j1 = i2 - CONTEXT, j2 - CONTEXT
+        group.append((tag, i1, i2, j1, j2))
+    if group and not (len(group) == 1 and group[0][0] == "equal"):
+        yield group
+
+
+def _span(start, stop):
+    """A hunk's line range, as difflib writes it."""
+    length = stop - start
+    if length == 1:
+        return str(start + 1)
+    return f"{start + 1 if length else start},{length}"
+
+
+def _diff_start(before, after):
+    """The first SHOWN characters of the lines' unified diff, and whether
+    more was cut."""
+    lines, length = [], 0
+    for group in _hunks(_opcodes(before, after)):
+        if not lines:
+            lines = ["--- Current runtime", "+++ Reviewed replacement"]
+            length = sum(len(line) + 1 for line in lines)
+        first, last = group[0], group[-1]
+        hunk = [f"@@ -{_span(first[1], last[2])} +{_span(first[3], last[4])} @@"]
+        for tag, i1, i2, j1, j2 in group:
+            if tag == "equal":
+                hunk += [" " + line for line in before[i1:i2]]
+                continue
+            hunk += ["-" + line for line in before[i1:i2]]
+            hunk += ["+" + line for line in after[j1:j2]]
+        for line in hunk:
+            length += len(line) + 1
+            if length > SHOWN:
+                return "\n".join(lines), True
+            lines.append(line)
+    return "\n".join(lines), False
 
 
 def prepare_publication(plan):

@@ -214,6 +214,59 @@ class PublicationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "source bindings changed"):
             p.publish(self.folder, self.root, plan)
 
+    def test_a_restore_review_diffs_a_large_file_by_its_actual_edits(self):
+        # difflib matched whole files: on commands whose codes repeat, like
+        # these 40,000 lines, it took over a minute, and a large game's restore
+        # review took many. The review shows only the start of each diff.
+        from dazedtl.compatibility.text import comparison
+
+        lines = []
+        for index in range(8000):
+            lines += [
+                "{",
+                f'"code": {index % 150},',
+                f'"indent": {index % 7},',
+                f'"text": "台詞{index}"',
+                "},",
+            ]
+        before = "\n".join(lines).encode()
+        translated = comparison(before, before.replace("台詞".encode(), b"Line "))
+        self.assertTrue(translated["truncated"])
+        self.assertLessEqual(len(translated["diff"]), 16000)
+        changed = [
+            line for line in translated["diff"].split("\n")[2:] if line[0] in "+-"
+        ]
+        self.assertEqual(
+            changed[:4],
+            [
+                '-"text": "台詞0"',
+                '+"text": "Line 0"',
+                '-"text": "台詞1"',
+                '+"text": "Line 1"',
+            ],
+        )
+        # An insertion and a deletion that keep the line count, as in a game
+        # update or a QA correction, show as just those lines.
+        after = list(lines)
+        del after[30003]
+        after[20003] = "replaced"
+        after.insert(10003, "inserted")
+        edited = comparison(before, "\n".join(after).encode())
+        self.assertFalse(edited["truncated"])
+        diff = edited["diff"].split("\n")
+        self.assertEqual(
+            [line for line in diff[2:] if line[0] in "+-"],
+            ["+inserted", "-" + lines[20003], "+replaced", "-" + lines[30003]],
+        )
+        self.assertEqual(
+            [line for line in diff if line.startswith("@@")],
+            [
+                "@@ -10002,4 +10002,5 @@",
+                "@@ -20002,5 +20003,5 @@",
+                "@@ -30002,5 +30003,4 @@",
+            ],
+        )
+
     def test_a_chosen_proposal_applies_undoes_and_applies_again_like_a_finding(
         self,
     ):
