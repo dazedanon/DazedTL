@@ -2,6 +2,7 @@
 
 ### Changed
 
+- **Translate:** cost estimates for a connection without Batch, such as an OpenRouter model without a Batch endpoint or a custom endpoint, are about ten times faster, and much more on Windows, where each file took several seconds.
 - **Translate:** names and labels translated with Live before a Batch now join the game glossary in **Context** > **Guidance** even when you decline the Batch, so you can see and edit them there. Completed runs already added them.
 - **Translate:** cost estimates and Batch preparation take less time on large games, about a third less on Linux and up to a fifth less on Windows.
 
