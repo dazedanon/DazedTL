@@ -1443,6 +1443,36 @@ try:
         from dazedtl.compatibility.run_evidence import Evidence
         from dazedtl.settings.preferences import GENERATION_PARAMETERS
 
+        # Requests skip glossary entries none of whose texts they contain; an
+        # entry matched any other way must still reach the request.
+        glossary = """# Game Characters
+ネーナ エヴァンス (Nena Evans)
+ニーナ / ミーナ・ルウ (Nina)
+ユウ (Yuu)
+# Items
+▼ポーション (▼Potion)
+# Terms
+攻撃、アタック (Attack)
+魔法 (Magic)
+剣 (Sword)"""
+        expected = {
+            "[ネーナ]: こんにちは": ["ネーナ エヴァンス (Nena Evans)"],
+            "ミーナ・ルウが来た": ["ニーナ / ミーナ・ルウ (Nina)"],
+            "ユウイベント": ["ユウ (Yuu)"],
+            "ポーションを飲む": ["ポーション (Potion)"],
+            "アタック！": ["攻撃、アタック (Attack)"],
+            "Magic power": ["魔法 (Magic)"],
+            "盾": [],
+        }
+        pairs = translation.parseVocabWithCategories(glossary)
+        for text, lines in expected.items():
+            matched = translation.buildMatchedVocabText(pairs, text)
+            found = [
+                line
+                for line in glossary.splitlines() + ["ポーション (Potion)"]
+                if f"\n{line}\n" in matched + "\n" and not line.startswith("#")
+            ]
+            assert found == lines, (text, matched)
         # MV/MZ counts U+3007 as Japanese, so English keeping the source's 〇
         # censor mask was retried and then left untranslated. A mask the
         # author did not write still fails.

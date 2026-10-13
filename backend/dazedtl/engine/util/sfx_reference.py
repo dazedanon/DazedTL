@@ -160,6 +160,15 @@ class SfxReference:
                 )
         for candidates in self._by_initial.values():
             candidates.sort(key=lambda item: (-len(item[0]), item[1], item[0]))
+        # The same priority, found by lookup: each initial's variant lengths,
+        # longest first, and each variant's entries in reference order. Only
+        # the variant of a given length at a position can match there.
+        self._lengths: dict[str, tuple[int, ...]] = {}
+        self._by_variant: dict[str, list[tuple[int, dict]]] = {}
+        for initial, candidates in self._by_initial.items():
+            self._lengths[initial] = tuple(sorted({len(item[0]) for item in candidates}, reverse=True))
+            for variant, order, entry in candidates:
+                self._by_variant.setdefault(variant, []).append((order, entry))
 
     @property
     def identity(self) -> dict:
@@ -175,18 +184,21 @@ class SfxReference:
             occupied: list[tuple[int, int]] = []
             position = 0
             while position < len(text):
-                candidates = self._by_initial.get(text[position], ())
                 accepted = None
-                for variant, _order, entry in candidates:
-                    end = position + len(variant)
-                    if not text.startswith(variant, position):
+                for length in self._lengths.get(text[position], ()):
+                    end = position + length
+                    if end > len(text):
                         continue
-                    if not _has_safe_boundaries(text, position, end, variant):
-                        continue
-                    if any(position < used_end and end > used_start for used_start, used_end in occupied):
-                        continue
-                    accepted = (variant, end, entry)
-                    break
+                    variant = text[position:end]
+                    for _order, entry in self._by_variant.get(variant, ()):
+                        if not _has_safe_boundaries(text, position, end, variant):
+                            continue
+                        if any(position < used_end and end > used_start for used_start, used_end in occupied):
+                            continue
+                        accepted = (variant, end, entry)
+                        break
+                    if accepted is not None:
+                        break
                 if accepted is None:
                     position += 1
                     continue

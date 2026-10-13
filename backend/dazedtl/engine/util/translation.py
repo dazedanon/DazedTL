@@ -14,6 +14,7 @@ import tiktoken
 import urllib.request
 from urllib.parse import urlparse
 from importlib import import_module
+from types import SimpleNamespace
 import hashlib
 import threading
 import uuid
@@ -3814,6 +3815,13 @@ def batchList(inputList, batchSize):
 
 def parseVocabWithCategories(vocabText):
     """Parse vocabulary text and extract terms with their categories."""
+    return list(_parsed_vocab(vocabText))
+
+
+@lru_cache(maxsize=8)
+def _parsed_vocab(vocabText):
+    """parseVocabWithCategories' rows, parsed once per glossary text; every
+    request of a run parsed the same glossary again."""
     pairs = []
     seen = set()
     currentCategory = None
@@ -3861,7 +3869,7 @@ def parseVocabWithCategories(vocabText):
                 pairs.append((term, line, currentCategory))
                 seen.add(term)
     
-    return pairs
+    return tuple(pairs)
 
 
 _VOCAB_SOURCE_ALIAS_SPLIT_RE = re.compile(r"\s*[\/／]\s*")
@@ -4086,6 +4094,19 @@ def _japanese_term_in_text(term, text):
     """
     if term not in text:
         return False
+    pattern = _japanese_term_pattern(term)
+    if pattern is None:
+        return True  # mixed-script term: plain substring match already confirmed above
+    return bool(pattern.search(text))
+
+
+@lru_cache(maxsize=16384)
+def _japanese_term_pattern(term):
+    """A single-script term's standalone-word matcher, or None for a mixed one.
+
+    Glossaries hold more terms than ``re``'s own cache, so building them inline
+    recompiled each one for every request.
+    """
     KATAKANA = r'ァ-ヴーｦ-ﾟ'
     HIRAGANA = r'ぁ-ゔ'
     KANJI = r'一-龠'
@@ -4096,8 +4117,8 @@ def _japanese_term_in_text(term, text):
     elif re.search(rf'[{KANJI}]', term) and not re.search(rf'[{KATAKANA}{HIRAGANA}]', term):
         pattern = rf'(?<![{KANJI}]){re.escape(term)}(?![{KANJI}])'
     else:
-        return True  # mixed-script term: plain substring match already confirmed above
-    return bool(re.search(pattern, text))
+        return None
+    return re.compile(pattern)
 
 
 def _vocab_term_in_text(term, text):
@@ -4111,20 +4132,27 @@ def _vocab_term_in_text(term, text):
     if not term:
         return False
 
-    variants = [str(term).strip()]
-    if isinstance(term, str):
-        variants.extend(part.strip() for part in re.split(r"[,、]", term) if part.strip())
-
-    for variant in variants:
-        if not variant:
-            continue
-        if re.search(r'[一-龠ぁ-ゔァ-ヴーｦ-ﾟ｡-ﾟ]', variant):
+    for variant, japanese in _vocab_term_variants(term):
+        if japanese:
             if _japanese_term_in_text(variant, text):
                 return True
         elif variant in text:
             return True
 
     return False
+
+
+@lru_cache(maxsize=16384)
+def _vocab_term_variants(term):
+    """A term's nonempty match variants, each with whether it is Japanese."""
+    variants = [str(term).strip()]
+    if isinstance(term, str):
+        variants.extend(part.strip() for part in re.split(r"[,、]", term) if part.strip())
+    return tuple(
+        (variant, bool(re.search(r'[一-龠ぁ-ゔァ-ヴーｦ-ﾟ｡-ﾟ]', variant)))
+        for variant in variants
+        if variant
+    )
 
 
 def _render_decorative_vocab_alias(line: str, source_alias: str,
@@ -4194,9 +4222,16 @@ def _speaker_alias_in_text(alias, text):
     return bool(_speaker_alias_pattern(alias).search(text))
 
 
-def buildMatchedVocabText(vocabPairs, subbedText, history=None):
-    """Build formatted vocabulary text for terms found in the current batch."""
-    matchedCategories = {}
+@lru_cache(maxsize=8)
+def _vocab_index(vocabPairs):
+    """What buildMatchedVocabText derives from the glossary alone.
+
+    Every request of a run rebuilt it and tested each entry with several
+    regular expressions, about half of an estimate or Batch collection for a
+    game with a large glossary. ``needles`` holds, per entry, every text one
+    of its matches needs to find in the request, so entries with none of them
+    present are skipped without changing which entries match.
+    """
 
     # Explicit prose entries are authoritative over aliases inferred from
     # decorated database labels.  This lets a project override or enrich the
@@ -4248,12 +4283,68 @@ def buildMatchedVocabText(vocabPairs, subbedText, history=None):
                     for alias in split_vocab_source_aliases(component):
                         character_component_sources.setdefault(alias, set()).add(source)
 
+    needles = []
+    for term, _line, category in vocabPairs:
+        texts = []
+        if isinstance(term, tuple):
+            japanese_term, english_term = term
+            category_name = str(category or "").lstrip("#").strip().casefold()
+            category_primary = re.split(
+                r"\s*[·・|/]\s*", category_name, maxsplit=1
+            )[0]
+            source_aliases = split_vocab_source_aliases(japanese_term)
+            texts.extend([japanese_term, english_term, *source_aliases])
+            if category_primary == "game characters":
+                components = [
+                    item for item in re.split(r"[\s\u3000]+", japanese_term.strip())
+                    if len(item) >= 2 and item not in {"/", "／"}
+                ]
+                if len(source_aliases) > 1:
+                    components = list(source_aliases)
+                for component in components:
+                    texts.append(component)
+                    texts.extend(character_source_aliases.get(component, ()))
+            # Removing an occurrence of the full term can join a decorated
+            # alias only where the term itself is present, which is a needle.
+            decorative_alias = decorative_glossary_alias(japanese_term, english_term)
+            if decorative_alias is not None:
+                texts.extend(decorative_alias)
+        else:
+            texts.append(term)
+        found = set()
+        for text in texts:
+            text = str(text)
+            if text.strip():
+                found.add(text)
+            found.update(variant for variant, _japanese in _vocab_term_variants(text))
+        needles.append(tuple(found))
+    return SimpleNamespace(
+        literal_pair_sources=literal_pair_sources,
+        character_authority=character_authority,
+        character_component_sources=character_component_sources,
+        character_source_aliases=character_source_aliases,
+        needles=tuple(needles),
+    )
+
+
+def buildMatchedVocabText(vocabPairs, subbedText, history=None):
+    """Build formatted vocabulary text for terms found in the current batch."""
+    matchedCategories = {}
+    vocabPairs = tuple(vocabPairs)
+    index = _vocab_index(vocabPairs)
+    literal_pair_sources = index.literal_pair_sources
+    character_authority = index.character_authority
+    character_component_sources = index.character_component_sources
+    character_source_aliases = index.character_source_aliases
+
     # Only match against the current request text. History is deliberately not
     # searched so stale terms are not resent in unrelated batches.
     textToSearch = _text_for_vocab_search(subbedText)
 
     # Use word boundaries for Japanese if appropriate, or allow substring as before.
-    for term, line, category in vocabPairs:
+    for (term, line, category), needles in zip(vocabPairs, index.needles):
+        if not any(needle in textToSearch for needle in needles):
+            continue
         # Check if term is a tuple (Japanese, English) or a single term
         term_found = False
         exact_match = False
