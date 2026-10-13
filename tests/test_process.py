@@ -1191,6 +1191,15 @@ class ProcessTests(unittest.TestCase):
             self.assertEqual(
                 process_view.no_request_files(root, job, items), ["Armors.json"]
             )
+            # The Live names pass before a Batch prepares no file's requests.
+            evidence.local.filename, evidence.local.sources = "speakers", ["name"]
+            evidence.prepared({"messages": []}, "validated")
+            self.assertEqual(
+                process_view.no_request_files(
+                    root, job, [*items, {"file": None, "names": True}]
+                ),
+                ["Armors.json"],
+            )
             self.assertEqual(
                 process_view.no_request_files(root, {**job, "phase": "collect"}, items),
                 [],
@@ -1221,6 +1230,96 @@ class ProcessTests(unittest.TestCase):
             evidence.local.filename = None
             evidence.prepared({"messages": []})
             self.assertEqual(process_view.no_request_files(root, job, items), [])
+
+    def test_batch_names_pass_is_its_own_group_before_the_queue(self):
+        # The Live names pass before a Batch was filed under the last scanned
+        # map: it read as Batch work without a receipt, counted as that map's
+        # lines, and vanished once the queue held the Batch's requests.
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            evidence = Evidence(root, "batch")
+            # A validation retry at the names is one request, never rejected.
+            for filename, state, text in (
+                ("speakers", "rejected", "兵士"),
+                ("speakers", "validated", "兵士"),
+                ("Map001.json", "prepared", "村"),
+            ):
+                evidence.local.filename, evidence.local.sources = filename, [text]
+                evidence.prepared(
+                    {
+                        "messages": [
+                            {"role": "user", "content": json.dumps({"Line1": text})}
+                        ]
+                    },
+                    state,
+                )
+            with evidence.connect() as connection:
+                connection.execute(
+                    "UPDATE requests SET error=? WHERE id=1",
+                    (json.dumps({"code": "replaced_response", "message": "Replaced"}),),
+                )
+                connection.execute("UPDATE requests SET retry_of=1 WHERE id=2")
+            job = {"mode": "batch", "status": "canceled"}
+
+            def groups():
+                view = process_view.request_view(root, job)
+                self.assertEqual(process_view.summary(root, job, view)["rejected"], 0)
+                return [
+                    (group["label"], [row["indices"] for row in group["rows"]])
+                    for group in view["groups"]
+                ], {name: entry["lines"] for name, entry in view["files"].items()}
+
+            self.assertEqual(
+                groups(),
+                (
+                    [("Names and labels · Live", [[0, 1]]), ("Not submitted", [[2]])],
+                    {"Map001.json": 1},
+                ),
+            )
+            # The queue grows while collecting; the names keep their numbers.
+            entry = {
+                "payload": '{"Line1":"村"}',
+                "params": {"messages": []},
+                "dazedtl_file": "Map001.json",
+            }
+            batch = {
+                "id": "batch",
+                "custom_ids": {"custom": "two"},
+                "api_status": "in_progress",
+            }
+            write_json(root / "log/batch_requests.json", {"one": entry, "two": entry})
+            write_json(root / "log/batch_history.json", {"batches": [batch]})
+            write_json(
+                root / "log/batch_state.json",
+                {"status": "submitted", "batches": [batch]},
+            )
+            job["status"] = "running"
+            self.assertEqual(
+                groups(),
+                (
+                    [
+                        ("Names and labels · Live", [[0, 1]]),
+                        ("Batch 1", [[3]]),
+                        ("Not submitted", [[2]]),
+                    ],
+                    {"Map001.json": 2},
+                ),
+            )
+            provider = SimpleNamespace(_openai_batch_body=lambda _p, params: params)
+            with patch.dict("sys.modules", {"util.batch_providers": provider}):
+                self.assertEqual(
+                    [
+                        process_view.payload(root, index, job)["source"]
+                        for index in range(4)
+                    ],
+                    [{"Line1": "兵士"}] * 2 + [{"Line1": "村"}] * 2,
+                )
+                self.assertEqual(
+                    len(process_view.payload(root, 0, job)["responseAttempts"]), 2
+                )
+                self.assertEqual(process_view.payload(root, 3, job)["index"], 3)
+                with self.assertRaises(ValueError):
+                    process_view.payload(root, 4, job)
 
     def test_checkpoint_resume_reads_partial_json_without_mutating_frozen_inputs(self):
         from dazedtl.compatibility import checkpoints

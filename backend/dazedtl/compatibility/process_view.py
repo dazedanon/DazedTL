@@ -11,6 +11,10 @@ from typing import Any
 
 from dazedtl.translation.files import digest, project_path, read_json
 
+# The engine's names pass translates the speakers of every file in one list and
+# records its requests under this name (engine util/speakers.NAMES_FILE).
+NAMES_FILE = "speakers"
+
 
 @lru_cache(maxsize=8)
 def _read_cached(path, signature):
@@ -125,7 +129,9 @@ def consumed_files(root, *, allow_mismatches=False):
         return frozenset()
 
 
-def ledger_records(root):
+def ledger_records(root, filename=None):
+    """The ledger's requests in order; `filename` reads only that file's,
+    numbered among themselves."""
     path = Path(root) / "log/dazedtl-process.sqlite3"
     if not path.is_file():
         return None
@@ -136,10 +142,11 @@ def ledger_records(root):
         batch.get("status") == "consumed" for batch in history
     )
     stamp = ledger_stamp(root)
-    rows = _ledger_records(str(root), stamp, consumed)
+    rows = _ledger_records(str(root), stamp, consumed, filename)
     if rows is None:
         return None
-    if not consumed:
+    # Recovered rejections number the whole ledger.
+    if not consumed and filename is None:
         from .live_validation import reconcile
 
         rows = reconcile(root, rows, stamp)
@@ -154,7 +161,7 @@ def ledger_records(root):
 
 
 @lru_cache(maxsize=8)
-def _ledger_records(root, signature, consumed):
+def _ledger_records(root, signature, consumed, filename=None):
     connection = ledger(root)
     if connection is None:
         return None
@@ -175,10 +182,15 @@ def _ledger_records(root, signature, consumed):
             "clarification_of",
             "retry_of",
         )
+        if filename is not None and "filename" not in names:
+            return []
         rows = connection.execute(
             "SELECT "
             + ",".join(name if name in names else "NULL" for name in fields)
-            + " FROM requests ORDER BY id"
+            + " FROM requests"
+            + ("" if filename is None else " WHERE filename=?")
+            + " ORDER BY id",
+            () if filename is None else (filename,),
         ).fetchall()
         validated = {}
         if (
@@ -457,7 +469,7 @@ def _prepared_files(root, signature):
             "SELECT DISTINCT filename, sources IS NOT NULL FROM requests"
         ).fetchall()
     return (
-        frozenset(name for name, _ in rows)
+        frozenset(name for name, _ in rows) - {NAMES_FILE}
         if all(name and recorded for name, recorded in rows)
         else None
     )
@@ -540,7 +552,7 @@ def no_request_files(root, job, items):
         (plan.get("dazedtl_request_policy") or {}).get("generationParameters")
         != GENERATION_PARAMETERS
         or files != set(plan.get("selected", []))
-        or any(item.get("file") not in files for item in items)
+        or any(item.get("file") not in files for item in items if not item.get("names"))
     ):
         return []
     prepared = _prepared_files(str(root), ledger_stamp(root))
@@ -633,9 +645,9 @@ def providers(root, requests, batches):
 
 
 def request_groups(rows, receipts, mode):
-    """The inspector's request groups: each provider Batch with its
-    clarifications, then requests never submitted and requests without a
-    Batch receipt. Live runs have one group."""
+    """The inspector's request groups: the Live names pass, each provider
+    Batch with its clarifications, then requests never submitted and requests
+    without a Batch receipt. Live runs have one group."""
     if mode != "batch":
         return [
             {
@@ -653,6 +665,18 @@ def request_groups(rows, receipts, mode):
         for row in receipts
     }
     groups, assigned = [], set()
+    # The names were translated before the Batch was prepared.
+    names = [row for row in rows if row.get("names")]
+    if names:
+        groups.append(
+            {
+                "id": "names",
+                "label": "Names and labels · Live",
+                "batches": [],
+                "rows": attempts(names),
+            }
+        )
+        assigned.update(row["index"] for row in names)
     for number, owner in enumerate(
         {id(owner): owner for owner in owners.values()}.values(), 1
     ):
@@ -749,6 +773,13 @@ def attention(requests):
     )
 
 
+def queued_names(root, requests):
+    """A Batch queue holds only the Batch's own requests, so the Live names
+    pass before it is read from the ledger. Its requests number first, which
+    keeps their numbers while collection adds to the queue."""
+    return (ledger_records(root, NAMES_FILE) or []) if requests else []
+
+
 def request_view(root, job):
     """A run's saved requests for display, read once for its observed
     summary and the inspector's request pages."""
@@ -756,27 +787,40 @@ def request_view(root, job):
     # fragments, and the summary reuses both.
     requests = queue(root)
     records = ledger_records(root) if not requests else None
+    names = queued_names(root, requests)
     from .request_scope import requests as source_requests
 
     rows = []
-    for item in source_requests(root, job, requests, records):
-        row = {
-            "index": item["index"],
-            "state": item["state"],
-            "file": item["file"],
-            "sourceItems": len(item["source"]),
-        }
-        if item.get("providerFinished"):
-            row["providerFinished"] = True
-        if records and item["index"] < len(records):
-            for key in ("clarificationOf", "retryOf"):
-                if key in records[item["index"]]:
-                    row[key] = records[item["index"]][key]
-        if (item.get("error") or {}).get("code") == "replaced_response":
-            row["replaced"] = True
-        rows.append(row)
+
+    def add(items, ledger, offset=0):
+        for item in items:
+            row = {
+                "index": item["index"] + offset,
+                "state": item["state"],
+                "file": item["file"],
+                "sourceItems": len(item["source"]),
+            }
+            # Names count toward no file's lines or skipped-file evidence.
+            if item["file"] == NAMES_FILE:
+                row.update(file=None, names=True)
+            if item.get("providerFinished"):
+                row["providerFinished"] = True
+            if ledger and item["index"] < len(ledger):
+                for key in ("clarificationOf", "retryOf"):
+                    if key in ledger[item["index"]]:
+                        row[key] = ledger[item["index"]][key] + offset
+            if (item.get("error") or {}).get("code") == "replaced_response":
+                row["replaced"] = True
+            rows.append(row)
+
+    if names:
+        add(source_requests(root, job, {}, names), names)
+    add(source_requests(root, job, requests, records), records, len(names))
     batches = saved(evidence_root(root), "batch_history.json").get("batches", [])
-    receipts = providers(root, requests, batches)
+    receipts = [
+        {**receipt, "indices": {index + len(names) for index in receipt["indices"]}}
+        for receipt in providers(root, requests, batches)
+    ]
     latest = attempts(rows)
     groups = request_groups(rows, receipts, job.get("mode"))
     return {
@@ -925,16 +969,9 @@ def summary(root, job, view=None):
                 }
     items = view["rows"]
     # A request's latest attempt decides whether it was rejected.
-    latest = set(
-        {
-            attempt_root(records, number): number
-            for number in range(len(records or []))
-        }.values()
-    )
+    latest = {request["indices"][-1] for request in attempts(items)}
     rejected_items = [
-        row
-        for row in items
-        if row["state"] == "rejected" and (not records or row["index"] in latest)
+        row for row in items if row["state"] == "rejected" and row["index"] in latest
     ]
     rejected = len(rejected_items)
     unresolved = [row for row in rejected_items if not row.get("replaced")]
@@ -1317,16 +1354,20 @@ def payload(root, index, job=None):
     if type(index) is not int or index < 0:
         raise ValueError("Choose a valid request index.")
     requests = queue(root)
+    names = queued_names(root, requests)
+    if index < len(names):
+        return ledger_payload(names, index)
     if requests:
         keys = list(requests)
-        if index >= len(keys):
+        position = index - len(names)
+        if position >= len(keys):
             raise ValueError("This request is no longer available.")
-        key = keys[index]
+        key = keys[position]
         entry = requests[key]
         from .request_scope import requests as source_requests
 
         row = next(
-            item for item in source_requests(root, job) if item["index"] == index
+            item for item in source_requests(root, job) if item["index"] == position
         )
         history = saved(evidence_root(root), "batch_history.json").get("batches", [])
         custom_id = next(
@@ -1366,9 +1407,9 @@ def payload(root, index, job=None):
             unused = {
                 **unused,
                 "appliedRequests": [
-                    index
-                    for index in unused["appliedRequests"]
-                    if states.get(index) in {"validated", "saved"}
+                    number + len(names)
+                    for number in unused["appliedRequests"]
+                    if states.get(number) in {"validated", "saved"}
                 ],
             }
         value["unused"] = unused
@@ -1456,6 +1497,11 @@ def payload(root, index, job=None):
     rows = ledger_records(root)
     if rows is None:
         raise ValueError("Exact payloads were not recorded for this older Live run.")
+    return ledger_payload(rows, index)
+
+
+def ledger_payload(rows, index):
+    """A saved Live request with every attempt at its lines."""
     if index >= len(rows):
         raise ValueError("This request is no longer available.")
     value = live_payload(rows[index], index, len(rows))

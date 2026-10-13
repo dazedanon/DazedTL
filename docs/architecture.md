@@ -263,6 +263,7 @@ Live failures retain bounded, credential-redacted SDK response bodies (including
 Provider status and collection belong to the existing worker and Batch monitor.
 The selected request updates automatically from shared observer receipt changes, with a spinner while that request is at the provider; a failed detail read offers a local retry.
 The Batch inspector keeps a selectable batch sidebar beside its request reader, with separate unsent or unlinked requests.
+The Live names pass before a Batch is its own first group; its requests belong to no file, so they never count toward a file's lines, skipped-file evidence or continuation reuse.
 Clarifications join their original batch through the recorded parent ID; they do not increase the original request count or duplicate its source rows.
 Request selection stays within the selected group's recorded request indices, and each affected request retains Original and Clarification attempt tabs.
 A pending or failed clarification remains visible in the group's status.
