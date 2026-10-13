@@ -63,8 +63,8 @@ def count(client, requests, approximate):
     """Claude's count of each cached prefix and its scale for the rest.
 
     ``approximate`` holds each request's approximate token count after its
-    prefix. Any failed count returns None, so an estimate never mixes Claude's
-    count with the approximate one.
+    prefix. Any failed count raises its error, so an estimate never mixes
+    Claude's count with the approximate one.
     """
     if not requests:
         return None
@@ -89,10 +89,14 @@ def count(client, requests, approximate):
     with ThreadPoolExecutor(min(WORKERS, len(jobs))) as pool:
         futures = [pool.submit(counted, params) for params in jobs]
         wait(futures, return_when=FIRST_EXCEPTION)
-        if any(future.done() and future.exception() for future in futures):
+        failure = next(
+            (future.exception() for future in futures if future.done() and future.exception()),
+            None,
+        )
+        if failure is not None:
             # An unreachable endpoint fails every count; don't wait on the rest.
             pool.shutdown(cancel_futures=True)
-            return None
+            raise failure
         counts = [future.result() for future in futures]
     exact = {"": 0, **dict(zip(prefixes, counts))}
     measured = sum(
@@ -111,7 +115,10 @@ def input_tokens(client, requests, count_text):
         + 8
         for params in requests
     ]
-    counted = count(client, requests, approximate)
+    try:
+        counted = count(client, requests, approximate)
+    except Exception:
+        return None
     if counted is None:
         return None
     return sum(counted.prefixes[split(params)[0]] for params in requests) + round(

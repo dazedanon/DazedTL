@@ -2356,6 +2356,7 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
         # Anthropic bills by Claude's tokenizer, which differs from the
         # approximate encoder above; count with it when the endpoint answers.
         # A local run blocks the network, where the client would only retry.
+        unavailable = "a local run has no network"
         if os.getenv("DAZEDTL_TEST_OFFLINE") != "1":
             try:
                 counted = claude_tokens.count(
@@ -2363,11 +2364,11 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
                     request_params,
                     request_dynamic,
                 )
-            except Exception:
-                pass
+            except Exception as error:
+                unavailable = f"{type(error).__name__}: {error}"
         if counted is None:
             print(
-                f"{log_prefix} Claude's token count was unavailable; "
+                f"{log_prefix} Claude's token count was unavailable ({unavailable}); "
                 "input tokens are approximate.",
                 flush=True,
             )
