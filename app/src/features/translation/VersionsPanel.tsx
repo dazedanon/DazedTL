@@ -52,7 +52,7 @@ export function VersionsPanel({
   actionTarget?: HTMLElement | null;
 }) {
   const application = useApplication();
-  const action = useAction({ after: application.settle });
+  const action = useAction({ observer: application });
   const [choosing, setChoosing] = useState(false);
   const [release, setRelease] = useState(emptyRelease);
   const [advanced, setAdvanced] = useState(false);

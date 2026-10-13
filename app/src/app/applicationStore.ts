@@ -78,9 +78,16 @@ export class ApplicationStore {
       snapshot: this.navigation.observe(this.observed),
     });
   };
-  /** Only mutations need a fresh observation before an action reports success. */
-  settle = () =>
-    this.publishedEpoch === this.epoch && !this.mutations
+  /** Where an action starts, for its `settle`. */
+  mark = () => this.epoch;
+  /**
+   * Only mutations need a fresh observation before an action reports success.
+   * With `since`, an earlier `mark()`, only those begun after it count, so an
+   * action never waits for another's, such as the focus recheck.
+   */
+  settle = (since?: number) =>
+    since === this.epoch ||
+    (this.publishedEpoch === this.epoch && !this.mutations)
       ? Promise.resolve()
       : this.refresh();
   start() {

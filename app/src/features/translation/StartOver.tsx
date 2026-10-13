@@ -65,7 +65,7 @@ function StartOverDialog({
   close: () => void;
 }) {
   const application = useApplication();
-  const action = useAction({ after: application.settle });
+  const action = useAction({ observer: application });
   const now = useMinute();
   const [keepContext, setKeepContext] = useState(true);
   const [jobId, setJobId] = useState("");

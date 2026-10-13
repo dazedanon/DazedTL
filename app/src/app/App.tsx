@@ -40,7 +40,7 @@ const workspaces: readonly Screen[] = ["guided", "manual", "translation"];
 export default function App() {
   const application = useApplication();
   const state = application.snapshot?.application;
-  const action = useAction({ after: application.settle });
+  const action = useAction({ observer: application });
   // Settings stays mounted after its first visit so its session survives.
   const [settingsOpened, setSettingsOpened] = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(false);

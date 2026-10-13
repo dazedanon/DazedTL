@@ -67,7 +67,7 @@ export function BackupsPanel({
   actionTarget?: HTMLElement | null;
 }) {
   const application = useApplication();
-  const action = useAction({ after: application.settle });
+  const action = useAction({ observer: application });
   const [recovering, setRecovering] = useState(false);
   const [catalog, setCatalog] = useState<BackupCatalog | null>(null);
   const [kind, setKind] = useState<Snapshot["kind"]>("source");

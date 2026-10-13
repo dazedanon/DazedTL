@@ -99,7 +99,7 @@ function Workspace({
   initialView?: View;
 }) {
   const application = useApplication();
-  const action = useAction({ after: application.settle });
+  const action = useAction({ observer: application });
   const draft = useProjectOptions(state, action.report);
   const [view, setView] = useState<View>(initialView);
   const [editorAssets, setEditorAssets] = useState<string[] | null>(null);

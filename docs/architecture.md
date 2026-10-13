@@ -914,7 +914,8 @@ Switching an already-loaded view with clean drafts must not require a Python req
 Retain usable page data across revisits where its ownership and invalidation rules permit; scope any missing-data load and its pending feedback to the feature that needs it.
 [App](../app/src/app/App.tsx) and the [Guided workspace hook](../app/src/features/guided/workspace/useGuidedWorkspace.tsx) provide working examples.
 Automatic refreshes yield to the next operation in a chained action, so saving a draft and then navigating does not insert a discarded project read between them.
-Use `application.settle` for `useAction` completion that needs updated observed state: it waits only when an API mutation invalidated that state.
+Give `useAction` the application as its `observer` when its completion needs updated observed state: it waits only for an observation of API mutations the action began.
+An earlier mutation, such as the window-focus recheck or a waiting image task's report check, observes its own result without holding up the next action.
 Reserve `application.refresh` for an intentional re-read, such as an explicit reload control.
 Views that show their own replies before the next observation, such as Plugin files and Image Manager, use [`useObserved`](../app/src/state/useObserved.ts): a newer snapshot replaces a reply during render but waits while unsaved edits or actions build on the current revision.
 They start from the observed state when the snapshot already has it, so revisiting them reads only what is missing.

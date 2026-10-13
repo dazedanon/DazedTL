@@ -125,6 +125,35 @@ test("chained writes do not start an intermediate snapshot before the next opera
   assert.equal(calls, 5); // The in-flight read already supplied the refresh.
 });
 
+test("an action waits only for observations of its own writes", async (t) => {
+  // Switching pages right after the window regained focus kept every button
+  // disabled until the focus recheck and a whole project read finished.
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let calls = 0;
+  const { store, mutate } = setup(async () => {
+    calls++;
+    return snapshot();
+  });
+  t.after(() => store.stop());
+  store.start();
+  await store.refresh();
+  mutate("begin");
+  const since = store.mark();
+  let settled = false;
+  void store.settle(since).then(() => (settled = true));
+  await turn();
+  assert.ok(settled);
+  assert.equal(calls, 1);
+  // Its own write waits for one read after every write ends.
+  mutate("begin");
+  const settling = store.settle(since);
+  mutate("end");
+  mutate("end");
+  t.mock.timers.tick(0);
+  await settling;
+  assert.equal(calls, 2);
+});
+
 const projectSnapshot = (id: string): WorkspaceSnapshot => ({
   ...snapshot(),
   application: { ...snapshot().application, project: { id } as Project },

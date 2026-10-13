@@ -8,7 +8,7 @@ import type {
   PluginPreview,
   Preview,
 } from "../../../api/contracts";
-import { useAction } from "../../../state/useAction";
+import { type Observer, useAction } from "../../../state/useAction";
 import { type PendingPart, reviewSignature } from "../pending";
 
 /** The part an open review applies, and why its last Apply failed. */
@@ -29,7 +29,7 @@ export type GuidedRequest = {
  */
 export function usePendingChanges({
   projectId,
-  settle,
+  observer,
   guided,
   preparePreview,
   execute,
@@ -37,7 +37,7 @@ export function usePendingChanges({
   whenFinished,
 }: {
   projectId: string;
-  settle: () => Promise<unknown>;
+  observer: Observer;
   /** The Guided preview a rewrap or QA part makes. */
   guided: (part: PendingPart) => GuidedRequest;
   preparePreview: (
@@ -48,7 +48,7 @@ export function usePendingChanges({
   lastExecuted: () => { token: string; job: Job } | null;
   whenFinished: (id: string) => Promise<{ status: string; message: string }>;
 }) {
-  const action = useAction({ after: settle });
+  const action = useAction({ observer });
   const [review, setReview] = useState<PartReview | null>(null);
   // The control that opened the review, the one that reports beside itself.
   const [origin, setOrigin] = useState("");

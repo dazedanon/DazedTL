@@ -39,7 +39,7 @@ export function AssistantTaskList({
   open: (task: AssistantTaskView) => void;
 }) {
   const application = useApplication();
-  const action = useAction({ after: application.settle });
+  const action = useAction({ observer: application });
   const now = useMinute();
   if (!tasks.length) return null;
   return (

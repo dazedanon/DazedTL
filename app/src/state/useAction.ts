@@ -8,18 +8,30 @@ import {
 import { messageOf } from "../api/errors";
 
 type Result<T> = { ok: true; value: T } | { ok: false };
-/** Local action feedback and a synchronous guard against duplicate submissions. */
+/** The observed state an action's writes change, such as the application. */
+export interface Observer {
+  mark: () => number;
+  /** Waits for an observation of any write begun after `mark()` gave `since`. */
+  settle: (since: number) => Promise<unknown>;
+}
+/**
+ * Local action feedback and a synchronous guard against duplicate submissions.
+ * An action finishes once its `observer` shows what it wrote, then runs `after`.
+ */
 export function useAction({
+  observer,
   after,
-}: { after?: () => void | Promise<unknown> } = {}) {
+}: { observer?: Observer; after?: () => void | Promise<unknown> } = {}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [key, setKey] = useState("");
   const pending = useRef(false);
   const mounted = useRef(true);
+  const observerRef = useRef(observer);
   const afterRef = useRef(after);
   useLayoutEffect(() => {
+    observerRef.current = observer;
     afterRef.current = after;
   });
   useEffect(() => {
@@ -57,8 +69,10 @@ export function useAction({
       setBusy(true);
       setError("");
       setNotice("");
+      const since = observerRef.current?.mark();
       try {
         const value = await task();
+        if (since !== undefined) await observerRef.current?.settle(since);
         await afterRef.current?.();
         if (mounted.current) setNotice(message);
         return { ok: true, value };

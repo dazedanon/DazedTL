@@ -27,7 +27,7 @@ export function ModelMenu({
   manage?: () => void;
 }) {
   const application = useApplication();
-  const action = useAction({ after: application.settle });
+  const action = useAction({ observer: application });
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loadError, setLoadError] = useState("");
   const [query, setQuery] = useState("");

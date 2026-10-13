@@ -26,7 +26,7 @@ export function ContextPanel({
   copy: (variant: "primary" | "default") => ReactNode;
 }) {
   const application = useApplication();
-  const action = useAction({ after: application.settle });
+  const action = useAction({ observer: application });
   const draft = useDocumentDraft(
     "translation-context:" + state.projectId,
     state.drafts.documents,

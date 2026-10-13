@@ -45,7 +45,7 @@ export function RunInspector({
   disabled: boolean;
 }) {
   const application = useApplication();
-  const action = useAction({ after: application.settle });
+  const action = useAction({ observer: application });
   const [cancellation, setCancellation] = useState<BatchCancellation | null>(
     null,
   );

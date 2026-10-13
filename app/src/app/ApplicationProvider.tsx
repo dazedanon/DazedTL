@@ -75,6 +75,7 @@ export function useApplication() {
   return {
     ...value,
     refresh: store.refresh,
+    mark: store.mark,
     settle: store.settle,
     navigate: store.navigate,
     navigateGuided: store.navigateGuided,

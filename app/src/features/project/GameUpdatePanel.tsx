@@ -94,7 +94,7 @@ export function GameUpdatePanel({
   onCheckpoint?: () => void;
 }) {
   const application = useApplication();
-  const action = useAction({ after: application.settle });
+  const action = useAction({ observer: application });
   const [typed, setTyped] = useState<string | null>(null);
   const repo = typed ?? (status.repo || status.suggested);
   const busy = disabled || action.busy;

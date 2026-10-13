@@ -212,7 +212,7 @@ export function PluginWorkspace({
   disabled?: boolean;
 }) {
   const application = useApplication();
-  const action = useAction({ after: application.settle });
+  const action = useAction({ observer: application });
   const [copiedRequest, setCopiedRequest] = useState("");
   const [preview, setPreview] = useState<PluginPreview | null>(null);
   const [recovery, setRecovery] = useState(false);

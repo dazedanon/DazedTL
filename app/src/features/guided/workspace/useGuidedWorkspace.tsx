@@ -86,8 +86,8 @@ export function useGuidedWorkspace({
   intentHandled,
 }: GuidedProps & { state: GuidedState; translation: TranslationState }) {
   const application = useApplication();
-  const action = useAction({ after: application.settle });
-  const speakerAction = useAction({ after: application.settle });
+  const action = useAction({ observer: application });
+  const speakerAction = useAction({ observer: application });
   const draft = useGuidedWorkflow(state, action.report);
   const context = useContextDraft(project.id, state.drafts, action.report);
   const form = useDraft("guided-form:" + project.id, {
@@ -1230,7 +1230,7 @@ export function useGuidedWorkspace({
   // fails, stops or whose review is declined ends the sequence; the next
   // click resumes from the first step that is not done. The sequence has its
   // own action, so navigation and Stop stay available while it runs.
-  const setupAction = useAction({ after: application.settle });
+  const setupAction = useAction({ observer: application });
   const gitConfigured = !!translation.git?.configured;
   const setupStep: SetupStep | null = !preserved
     ? "backup_source"
@@ -1321,7 +1321,7 @@ export function useGuidedWorkspace({
   };
   const pending = usePendingChanges({
     projectId: project.id,
-    settle: application.settle,
+    observer: application,
     guided: () => ({ name: "rewrap_apply", options: layoutOptions }),
     preparePreview,
     execute,
