@@ -40,6 +40,8 @@ export class ApplicationStore {
   private epoch = 0;
   private readingEpoch = -1;
   private mutations = 0;
+  /** Reads that failed in a row; any successful read resets it. */
+  private failures = 0;
   private idleWaiters = new Set<() => void>();
   private started = false;
   private unwatch: (() => void) | undefined;
@@ -156,16 +158,21 @@ export class ApplicationStore {
     this.inFlight = this.read().finally(() => {
       this.inFlight = null;
       clearTimeout(this.timer);
+      const application = this.value.snapshot?.application;
       if (
         this.started &&
         !this.value.stopped &&
-        !this.value.error &&
-        (this.value.snapshot?.application.running ||
-          this.value.snapshot?.application.observing)
+        (application?.running || application?.observing)
       )
         this.timer = setTimeout(
           () => void this.refresh(),
-          this.value.snapshot?.application.running ? 500 : 2000,
+          // A failed read is tried again, so one transient backend error cannot
+          // freeze progress; a backend that keeps failing is read less often.
+          this.failures
+            ? Math.min(2000 * 2 ** (this.failures - 1), 30000)
+            : application.running
+              ? 500
+              : 2000,
         );
     });
     return this.inFlight;
@@ -183,6 +190,7 @@ export class ApplicationStore {
         if (ticket === this.epoch && !this.mutations && this.started) {
           this.observed = snapshot;
           this.publishedEpoch = ticket;
+          this.failures = 0;
           this.publish({
             snapshot: this.navigation.observe(snapshot),
             error: "",
@@ -190,7 +198,8 @@ export class ApplicationStore {
           });
         }
       } catch (error) {
-        if (ticket === this.epoch && this.started)
+        if (ticket === this.epoch && this.started) {
+          this.failures++;
           this.publish({
             ...this.value,
             error: messageOf(error),
@@ -198,6 +207,7 @@ export class ApplicationStore {
               error instanceof ApiError &&
               ["unavailable", "protocol"].includes(error.code),
           });
+        }
       }
       if (ticket !== this.epoch) this.requested = true;
     } while (this.started && !this.value.stopped && this.requested);

@@ -882,6 +882,7 @@ Views that show their own replies before the next observation, such as Plugin fi
 They start from the observed state when the snapshot already has it, so revisiting them reads only what is missing.
 Do not attach an unconditional whole-project refresh to every button.
 An open project stays observable while no app worker is active so external assistant reports become visible.
+Observation ends only when the backend stops or is incompatible; any other failed read is tried again after a growing delay, so a transient backend error cannot freeze progress, and the next successful read clears its error.
 Returning to the window rechecks outside edits through `workspace_recheck`, which reinspects the images being worked on (working copies, the selection and applied images) against their cached file signatures; as a mutation it is followed by a fresh observation, so every feature sees the result without its own refresh.
 It also imports a report saved for a copied image task, including a finished task's report the assistant saves again for the user's redo requests, and the Image Manager runs the same import every few seconds while a task waits, so results arrive while DazedTL keeps the focus; a rejected report is remembered by its hash, so it is reported once and retried only after the file changes.
 Guided reports are read by the observer, and plugin reports are validated by the project helper's continue command the assistant runs.

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { ApiError } from "../app/src/api/errors.ts";
 import {
   ApplicationStore,
   type ApplicationSource,
@@ -311,6 +312,44 @@ test("a late successful read cannot hide a backend disconnection", async (t) => 
   assert.equal(store.getSnapshot().stopped, true);
   assert.equal(store.getSnapshot().error, "Backend stopped");
   assert.equal(store.getSnapshot().snapshot, null);
+});
+
+test("failed reads during a run retry with backoff until the backend stops", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const running = snapshot();
+  running.application.running = true;
+  const replies = [
+    running,
+    new ApiError("internal", "The operation could not finish."),
+    new ApiError("storage", "The file operation could not finish."),
+    running,
+    new ApiError("unavailable", "Backend stopped"),
+  ];
+  let calls = 0;
+  const { store } = setup(async () => {
+    const reply = replies[calls++];
+    if (reply instanceof Error) throw reply;
+    return reply;
+  });
+  t.after(() => store.stop());
+  // Only the observer's own timers read here; an explicit refresh would read.
+  const wait = async (ms: number) => {
+    t.mock.timers.tick(ms);
+    await turn();
+    return calls;
+  };
+  store.start();
+  await turn();
+  assert.equal(await wait(500), 2);
+  assert.equal(store.getSnapshot().error, "The operation could not finish.");
+  assert.equal(store.getSnapshot().snapshot, running);
+  assert.equal(await wait(2000), 3);
+  assert.equal(await wait(3999), 3);
+  assert.equal(await wait(1), 4);
+  assert.equal(store.getSnapshot().error, "");
+  assert.equal(await wait(500), 5);
+  assert.equal(store.getSnapshot().stopped, true);
+  assert.equal(await wait(60000), 5);
 });
 
 test("a stopped observer cannot publish an outstanding snapshot", async () => {
