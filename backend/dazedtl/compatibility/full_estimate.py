@@ -282,6 +282,7 @@ def row(task, estimate):
         return float(value) if isinstance(value, (int, float)) else 0.0
 
     cached = bool(estimate.get("uses_prompt_cache"))
+    batch = number("batch_cached_cost" if cached else "batch_nocache_cost")
     return {
         "phase": task["phase"],
         "files": len(task["files"]),
@@ -290,8 +291,8 @@ def row(task, estimate):
         "inputTokens": int(number("input_tokens")),
         "outputTokens": int(number("output_tokens")),
         "liveCost": number("live_cost"),
-        "batchCost": number("batch_cached_cost" if cached else "batch_nocache_cost"),
-        "batchNocacheCost": number("batch_nocache_cost"),
+        "batchCost": batch,
+        "batchMaxCost": max(batch, number("batch_max_cost")),
         "promptCache": cached,
         "approximateInput": bool(estimate.get("approximate_input")),
         "unestimatedThinking": bool(estimate.get("unestimated_thinking_tokens")),

@@ -379,6 +379,21 @@ class TranslationEngine:
             client, [item["params"] for item in requests], self.token_count
         )
 
+    def claude_cache(self, requests, configuration, counted=None):
+        """What these requests' cached instructions cost (claude_tokens.cache),
+        with Claude's count of each prefix or, without one, the approximate."""
+        from util import claude_tokens
+
+        params = [item["params"] for item in requests]
+        prefixes = dict(counted.prefixes) if counted else {}
+        for value in params:
+            key = claude_tokens.split(value)[0]
+            if key and key not in prefixes:
+                prefixes[key] = self.token_count(claude_tokens.cached_text(value))
+        return claude_tokens.cache(
+            params, prefixes, "anthropic", configuration["model"]
+        )
+
     def batch_supported(self, configuration):
         if configuration.get("provider") == "openrouter":
             from dazedtl.settings.openrouter import validate_policy

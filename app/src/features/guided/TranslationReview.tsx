@@ -28,28 +28,27 @@ export function TranslationCost({
   mode: string;
 }) {
   const batch = mode === "batch";
+  // A cached Batch costs least when every repeated instruction is reused and
+  // most when none is; estimates saved before the maximum priced no reuse.
+  const most = value.batch_max_cost ?? value.batch_nocache_cost;
   const costs = (
     batch
-      ? [value.batch_nocache_cost, value.batch_cached_cost, value.batch_cost]
+      ? [value.batch_cached_cost, value.batch_cost, most]
       : [value.live_cost ?? value.estimated_cost]
   ).filter(numeric);
   const low = Math.min(...costs),
     high = Math.max(...costs);
-  const writes =
-    numeric(value.cache_write_tokens) && value.cache_write_tokens > 0;
-  const reads = numeric(value.cache_read_tokens) && value.cache_read_tokens > 0;
   const caching =
-    writes ||
-    reads ||
-    (numeric(value.batch_cached_cost) &&
-      value.batch_cached_cost !== value.batch_nocache_cost);
-  const prices =
-    batch && caching
-      ? ([
-          ["Without prompt caching", value.batch_nocache_cost],
-          ["With prompt caching (estimated)", value.batch_cached_cost],
-        ] as const)
-      : [];
+    batch &&
+    numeric(value.batch_cached_cost) &&
+    numeric(most) &&
+    most > value.batch_cached_cost;
+  const prices = caching
+    ? ([
+        ["If repeated instructions are reused", value.batch_cached_cost],
+        ["If none is reused", most],
+      ] as const)
+    : [];
   return (
     <section className="translation-cost-review" aria-label="Estimated cost">
       <div className="translation-cost-total">
@@ -92,11 +91,10 @@ export function TranslationCost({
             ))}
         </dl>
       )}
-      {batch && caching && (
+      {caching && (
         <small className="translation-cache-note">
-          The provider can reuse repeated instructions at a lower rate. This
-          estimate includes creating the cache; actual savings vary.
-          {writes && !reads && " No reuse is assumed for this batch."}
+          The provider charges less for instructions it reuses, but a Batch
+          sends its requests together, so it may reuse few of them.
         </small>
       )}
     </section>

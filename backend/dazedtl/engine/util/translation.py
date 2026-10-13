@@ -2424,14 +2424,16 @@ def estimateCostComparison(
 def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
     """Print a cost estimate for the queued batch requests and return it.
 
-    For Claude, cached-prefix accounting mirrors what Anthropic bills: each distinct cached
-    prefix is written once (1.25x input at the 5m TTL, 2x at 1h) and read by every
-    other request that shares it; everything is then halved by the batch
-    discount. Cache hits inside a batch are best-effort, so the no-cache batch
-    figure is the worst-case bound. OpenAI automatic cache reads and separately
-    billed GPT-5.6+ cache writes are estimated from 1,024+ token prefixes.
-    Gemini estimates exclude unpredictable thinking output and do not assume
-    an implicit cache hit.
+    Cache hits inside a batch are best-effort, so a cached estimate is a range:
+    ``batch_cached_cost`` when every request that can reuse a cached prefix
+    does, ``batch_max_cost`` when none does. For Claude, each cache key (see
+    claude_tokens.split) is then written once (1.25x input at the 5m TTL, 2x
+    at 1h) and read by every other request that shares it at the model's read
+    rate, or written by every request; everything is then halved by the batch
+    discount. OpenAI automatic cache reads and separately billed GPT-5.6+
+    cache writes are estimated from 1,024+ token prefixes. Gemini estimates
+    exclude unpredictable thinking output and do not assume an implicit cache
+    hit.
     """
     queue_file = Path(queue_file or BATCH_QUEUE_FILE)
     # Pending entries belong to the current process phase. Do not redirect a
@@ -2446,9 +2448,7 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
         return None
 
     enc = tiktoken.encoding_for_model("gpt-4")
-    prefix_count = {}   # cached prefix text -> how many requests reuse it
-    prefix_tokens = {}  # cached prefix text -> token count
-    prefix_ttl = {}  # cached prefix text -> the cache lifetime it asks for
+    prefix_tokens = {}  # cache key -> token count of its cached prefix
     dynamic_tokens = 0
     request_params = []
     request_dynamic = []  # each request's approximate tokens after its prefix
@@ -2464,11 +2464,8 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
             providers.add(entry["provider"])
         # Split system blocks at the cache breakpoint ("" = nothing cached).
         prefix, dyn = claude_tokens.split(params)
-        if prefix:
-            prefix_count[prefix] = prefix_count.get(prefix, 0) + 1
-            if prefix not in prefix_tokens:
-                prefix_tokens[prefix] = len(enc.encode(prefix))
-                prefix_ttl[prefix] = claude_tokens.cache_ttl(params)
+        if prefix and prefix not in prefix_tokens:
+            prefix_tokens[prefix] = len(enc.encode(claude_tokens.cached_text(params)))
         msg_text = "\n".join(str(m.get("content", "")) for m in params.get("messages", []))
         message_tokens = enc.encode(msg_text)
         prompt_token_sequences.append(message_tokens)
@@ -2493,9 +2490,10 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
                 flush=True,
             )
 
-    cache_write_tok = sum(prefix_tokens.values())
-    cache_read_tok = sum(prefix_tokens[p] * (prefix_count[p] - 1) for p in prefix_count)
-    raw_input_tok = sum(prefix_tokens[p] * prefix_count[p] for p in prefix_count) + dynamic_tokens
+    cache = claude_tokens.cache(request_params, prefix_tokens, est_provider, est_model)
+    cache_write_tok, cache_read_tok = cache.writes, cache.reads
+    cache_max_write_tok = cache.cached
+    raw_input_tok = cache.cached + dynamic_tokens
 
     pricing = getPricingConfig(est_model)
     in_rate = pricing["inputAPICost"] / 1_000_000
@@ -2513,20 +2511,16 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
         # entries already represent Batch API work.
         batch_nocache = comparison["live_cost"] * 0.50
     live_cost = comparison["live_cost"]
+    batch_max = batch_nocache
     cache_kind = None
     if est_provider == "anthropic" and cache_write_tok > 0:
-        # Claude's explicit cache writes each prefix once at its lifetime's
-        # write rate, then reads it at the model's read rate. Batch pricing
-        # halves both charges.
-        write_cost = sum(
-            tokens * cache_write_multiplier(est_provider, est_model, prefix_ttl[prefix])
-            for prefix, tokens in prefix_tokens.items()
-        )
-        batch_cached = (write_cost * in_rate
-                        + cache_read_tok * in_rate
-                        * cache_read_multiplier(est_provider, est_model)
-                        + dynamic_tokens * in_rate
+        # Claude's explicit cache: from each cache key written once and read
+        # by every later request that shares it, to every request writing
+        # its own. Batch pricing halves every charge.
+        batch_cached = ((cache.reused + dynamic_tokens) * in_rate
                         + output_tokens * out_rate) * 0.50
+        batch_max = ((cache.unreused + dynamic_tokens) * in_rate
+                     + output_tokens * out_rate) * 0.50
         cache_kind = "explicit"
     elif est_provider == "openai":
         # OpenAI prompt caching is automatic. Cached inputs for the supported
@@ -2548,6 +2542,15 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
                     cacheable_tokens - cache_read_tok,
                 ),
             )
+            # Without a hit, every cacheable prompt is written instead.
+            cache_max_write_tok = min(raw_input_tok, cacheable_tokens)
+            batch_max = (
+                (raw_input_tok - cache_max_write_tok) * in_rate
+                + cache_max_write_tok
+                * in_rate
+                * cache_write_multiplier(est_provider, est_model)
+                + output_tokens * out_rate
+            ) * 0.50
         else:
             cache_write_tok = 0
         uncached_input_tok = raw_input_tok - cache_read_tok - cache_write_tok
@@ -2570,7 +2573,6 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
     uses_prompt_cache = cache_kind is not None
     unestimated_thinking = comparison["unestimated_thinking_tokens"]
 
-    n_reread = sum(prefix_count.values()) - len(prefix_count)
     request_state = "queued" if log_prefix == "[BATCH]" else "estimated"
     print(
         f"{log_prefix} {len(queue)} requests {request_state} for {est_model}",
@@ -2578,8 +2580,9 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
     )
     if cache_kind == "explicit":
         print(
-            f"{log_prefix} cached prefix: {cache_write_tok:,} tokens "
-            f"(written once, re-read by {n_reread:,} requests)",
+            f"{log_prefix} cached prefixes: {len(prefix_tokens):,} "
+            f"({cache_write_tok:,} tokens), in {cache_max_write_tok:,} tokens "
+            "of the requests",
             flush=True,
         )
     elif cache_kind == "automatic":
@@ -2595,11 +2598,11 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
         flush=True,
     )
     if cache_kind == "explicit":
-        print(f"{log_prefix} estimated cost: ${batch_cached:.4f} (batch + prompt cache)", flush=True)
-        print(f"{log_prefix}                 ${batch_nocache:.4f} (batch, no cache hits)", flush=True)
+        print(f"{log_prefix} estimated cost: ${batch_cached:.4f} (batch, every cached prefix reused)", flush=True)
+        print(f"{log_prefix}                 ${batch_max:.4f} (batch, no cached prefix reused)", flush=True)
     elif cache_kind == "automatic":
         print(f"{log_prefix} estimated cost: ${batch_cached:.4f} (batch + automatic cache)", flush=True)
-        print(f"{log_prefix}                 ${batch_nocache:.4f} (batch, no cache hits)", flush=True)
+        print(f"{log_prefix}                 ${batch_max:.4f} (batch, no cache hits)", flush=True)
     else:
         print(f"{log_prefix} estimated cost: ${batch_nocache:.4f} (batch)", flush=True)
     print(f"{log_prefix}                 ${live_cost:.4f} (live API)", flush=True)
@@ -2615,11 +2618,15 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
         "provider": est_provider,
         "cache_write_tokens": cache_write_tok,
         "cache_read_tokens": cache_read_tok,
+        # Written instead when no cached prefix is reused.
+        "cache_max_write_tokens": cache_max_write_tok,
         "dynamic_tokens": dynamic_tokens,
         "input_tokens": raw_input_tok,
         "output_tokens": output_tokens,
         "batch_cached_cost": batch_cached,
         "batch_nocache_cost": batch_nocache,
+        # The most a Batch costs: no cached prefix reused, so every one written.
+        "batch_max_cost": batch_max,
         "live_cost": live_cost,
         "uses_prompt_cache": uses_prompt_cache,
         "cache_kind": cache_kind,

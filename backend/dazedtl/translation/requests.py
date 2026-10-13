@@ -449,9 +449,12 @@ def sent_tokens(params, count_tokens):
     return count_tokens("\n".join(part for part in sent if part)) + 8
 
 
-def quote(requests, configuration, count_tokens, inputs=None):
+def quote(requests, configuration, count_tokens, inputs=None, cache=None):
     """Prices the requests; ``inputs`` is the provider's own input count when
-    it has one, otherwise their approximate count."""
+    it has one, otherwise their approximate count. ``cache`` holds the cost of
+    Claude's cached instructions (util/claude_tokens.Cache): a Batch may reuse
+    them or write each again, so its price is the most it can cost, with the
+    price when every one is reused beside it."""
     rates = configuration["rates"]
     if any(
         type(rates.get(key)) not in (int, float)
@@ -479,6 +482,19 @@ def quote(requests, configuration, count_tokens, inputs=None):
     live = (inputs * rates["input"] + outputs * rates["output"]) / 1_000_000
     factor = rates["batch_factor"]
     batch = live * factor if factor is not None else None
+    reused = None
+    if cache is not None and cache.writes and factor is not None:
+        # Approximate input leaves out the reply schema the cache key holds.
+        uncached = max(0, inputs - cache.cached)
+
+        def priced(cached):
+            return (
+                ((uncached + cached) * rates["input"] + outputs * rates["output"])
+                / 1_000_000
+                * factor
+            )
+
+        batch, reused = priced(cache.unreused), priced(cache.reused)
     if configuration.get("openrouterBatch"):
         from dazedtl.settings.openrouter import validate_policy
 
@@ -493,11 +509,18 @@ def quote(requests, configuration, count_tokens, inputs=None):
         "output_tokens": outputs,
         "live_cost": live,
         "batch_cost": batch,
+        **({"batch_cost_reused": reused} if reused is not None else {}),
         "cost": batch
         if configuration["mode"] == "batch" and batch is not None
         else live,
         "model": configuration["model"],
         "provider": configuration["provider"],
         "rates": rates,
-        "basis": "Complete compiled requests; 2.5× source-token output allowance, no assumed cache savings. Provider reasoning, retries, and images are additional.",
+        "basis": "Complete compiled requests; 2.5× source-token output allowance"
+        + (
+            "; the higher Batch price has every request write its cached instructions again, the lower reuses them"
+            if reused is not None
+            else ", no assumed cache savings"
+        )
+        + ". Provider reasoning, retries, and images are additional.",
     }

@@ -35,10 +35,18 @@ export function cost(value: number) {
 /** The whole game's total in one mode, from each task's estimate. */
 export function estimateTotal(
   tasks: FullEstimateTask[],
-  key: "batchCost" | "batchNocacheCost" | "liveCost",
+  key: "batchCost" | "liveCost",
 ) {
   return tasks.reduce((sum, task) => sum + task[key], 0);
 }
+
+/** The most a task's Batch costs, with no cached instruction reused. */
+const batchMost = (task: FullEstimateTask) =>
+  task.batchMaxCost ?? task.batchCost;
+
+/** A cost that may be a range, from full reuse of cached instructions to none. */
+const costRange = (low: number, high: number) =>
+  high > low ? `${cost(low)}–${cost(high)}` : cost(low);
 
 const help =
   "Estimates every task that uses your API key, over all its files: Database files, Maps & events and Other event text. Names & glossary, Plugin files, Images and Text QA use your assistant's plan instead. Estimating is free and translates nothing; for Claude models it uses Anthropic's free token count.";
@@ -92,18 +100,20 @@ export function CostEstimate({
         : "outdated";
   const batch = mode === "batch" && !!result?.batchSupported;
   const tasks = result?.tasks ?? [];
-  const total = estimateTotal(tasks, batch ? "batchCost" : "liveCost");
+  const batchLow = estimateTotal(tasks, "batchCost");
+  const batchHigh = tasks.reduce((sum, task) => sum + batchMost(task), 0);
+  const total = batch
+    ? costRange(batchLow, batchHigh)
+    : cost(estimateTotal(tasks, "liveCost"));
   const other = batch
     ? `Live would be about ${cost(estimateTotal(tasks, "liveCost"))}.`
     : result?.batchSupported
-      ? `Batch would be about ${cost(estimateTotal(tasks, "batchCost"))}.`
+      ? `Batch would be about ${costRange(batchLow, batchHigh)}.`
       : "";
-  const uncached = estimateTotal(tasks, "batchNocacheCost");
-  const caching =
-    batch && tasks.some((task) => task.promptCache) && uncached > total;
   const notes = [
-    caching &&
-      `With the provider's lower rate for repeated instructions; without it, about ${cost(uncached)}.`,
+    batch &&
+      batchHigh > batchLow &&
+      "The provider charges less for instructions it reuses, but a Batch sends its requests together, so it may reuse few of them. The higher figure reuses none.",
     tasks.some((task) => task.approximateInput) && approximateClaudeInput,
     tasks.some((task) => task.unestimatedThinking) &&
       "This model's thinking tokens are billed as output and are not included.",
@@ -185,7 +195,7 @@ export function CostEstimate({
         <div className="status-panel-body cost-estimate">
           <div className="translation-cost-total">
             <span>Estimated {batch ? "Batch" : "Live"} cost</span>
-            <strong>{cost(total)}</strong>
+            <strong>{total}</strong>
             <small>
               {other && `${other} `}Final cost depends on actual usage.
             </small>
@@ -212,7 +222,11 @@ export function CostEstimate({
                   ) : (
                     <>
                       <td>{task.inputTokens.toLocaleString()}</td>
-                      <td>{cost(batch ? task.batchCost : task.liveCost)}</td>
+                      <td>
+                        {batch
+                          ? costRange(task.batchCost, batchMost(task))
+                          : cost(task.liveCost)}
+                      </td>
                     </>
                   )}
                 </tr>

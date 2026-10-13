@@ -91,6 +91,7 @@ Translate has five tasks.
    Translate the database first, and try a small early scene before the rest.
 2. Choose **Batch** (often half the price, but can take hours) or **Live** (results arrive as you watch), and the model.
 3. Click **Translate**, check the estimate and approve it.
+   A Batch estimate is often a range: the provider charges less for instructions it reuses, but a Batch sends its requests together, so it may reuse few of them and cost up to the higher figure.
    Until the estimate is ready, its window shows each step, how far it has got and about how long is left.
    If you decline or close it, clicking **Translate** again reuses it while the files and settings are unchanged.
    With **Batch**, names and labels the glossary lacks are translated first with Live, after their own review; they join the glossary even if you then decline the Batch.

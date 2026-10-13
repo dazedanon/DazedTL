@@ -34,6 +34,7 @@ import {
   estimateOutdated,
   finishingRun,
   latestApiRun,
+  priceRange,
 } from "./apiRun";
 import { assistantRunState, phaseStates } from "./assistantPhases";
 import { DeclinedLines } from "./DeclinedLines";
@@ -476,6 +477,10 @@ function ApiRun({
                 input_tokens: quote.input_tokens,
                 output_tokens: quote.output_tokens,
                 [mode === "batch" ? "batch_cost" : "live_cost"]: quote.cost,
+                ...(mode === "batch" && {
+                  batch_cached_cost: quote.batch_cost_reused,
+                  batch_max_cost: quote.cost,
+                }),
               }}
               mode={mode}
             />
@@ -526,7 +531,18 @@ function ApiRun({
                 <strong>{run.accepted_units.toLocaleString()}</strong> of{" "}
                 {run.units.toLocaleString()} lines saved
               </span>
-              {run.quote && <span>Estimate {money(run.quote.cost)}</span>}
+              {run.quote && (
+                <span>
+                  Estimate{" "}
+                  {priceRange(
+                    money,
+                    run.quote.cost,
+                    run.mode === "batch"
+                      ? run.quote.batch_cost_reused
+                      : undefined,
+                  )}
+                </span>
+              )}
               {charged != null && <span>Charged {money(charged)}</span>}
             </p>
             {/* An approval can be saved and the run still refuse to start;

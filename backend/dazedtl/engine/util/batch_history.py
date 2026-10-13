@@ -206,11 +206,13 @@ def key_name_for_batch(batch_id: str) -> str:
 _ESTIMATE_SPLIT_FIELDS = frozenset({
     "cache_write_tokens",
     "cache_read_tokens",
+    "cache_max_write_tokens",
     "dynamic_tokens",
     "input_tokens",
     "output_tokens",
     "batch_cached_cost",
     "batch_nocache_cost",
+    "batch_max_cost",
     "live_cost",
 })
 

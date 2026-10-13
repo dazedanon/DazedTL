@@ -38,7 +38,10 @@ class TranslationQuote(TypedDict):
     output_tokens: int
     cost: float
     live_cost: float
+    # For Claude, the most a Batch costs, with every cached instruction
+    # written again; batch_cost_reused when each one is reused.
     batch_cost: float | None
+    batch_cost_reused: NotRequired[float]
     model: str
     provider: str
     basis: str

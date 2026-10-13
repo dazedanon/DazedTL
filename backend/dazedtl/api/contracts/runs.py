@@ -43,6 +43,8 @@ class RunEstimate(TypedDict):
     dynamic_tokens: NotRequired[int]
     cache_write_tokens: NotRequired[int]
     cache_read_tokens: NotRequired[int]
+    # Written instead when no cached prefix is reused.
+    cache_max_write_tokens: NotRequired[int]
     cache_kind: NotRequired[str | None]
     uses_prompt_cache: NotRequired[bool]
     live_cost: NotRequired[float]
@@ -51,6 +53,8 @@ class RunEstimate(TypedDict):
     batch_cost: NotRequired[float | None]
     batch_cached_cost: NotRequired[float]
     batch_nocache_cost: NotRequired[float]
+    # The most a Batch costs: no cached prefix reused, so every one written.
+    batch_max_cost: NotRequired[float]
     unestimated_thinking_tokens: NotRequired[bool]
     # Claude's own token count could not run, so its input is approximate.
     approximate_input: NotRequired[bool]

@@ -75,7 +75,7 @@ def format_estimate_total(comparison) -> str:
             comparison.get("batch_cached_cost")
         ) + thinking
         worst = _format_estimated_cost(
-            comparison.get("batch_nocache_cost")
+            comparison.get("batch_max_cost", comparison.get("batch_nocache_cost"))
         ) + thinking
         return (
             f"TOTAL estimate: {token_text}[Batch + cache: {cached}]"
@@ -291,7 +291,6 @@ class TranslationTaskCore:
             isClaudeNative,
         )
         from util import claude_tokens
-        from util.provider_costs import cache_read_multiplier
 
         names = [str(name).strip() for name in speakers if str(name).strip()]
         batch_size = max(1, int(getattr(config, "batchSize", 1) or 1))
@@ -307,9 +306,8 @@ class TranslationTaskCore:
         # English it also shows for those names isn't known yet.
         source, instructions = _request_context_parts(history)
         requests = []
-        sizes = []
-        cached_tokens = []  # each request's cached prompt
-        regular_tokens = []  # each request's input after it
+        prefixes = {}  # cache key -> its cached prompt's tokens
+        regular_tokens = []  # each request's input after its cached prompt
         output_tokens = 0
         for offset in range(0, len(names), batch_size):
             name_batch = names[offset:offset + batch_size]
@@ -326,16 +324,20 @@ class TranslationTaskCore:
                 static_system + vocab_text, user, instructions + source
             )
             static_tokens = countTokens(static_system, "", "")[0] if native_claude else 0
-            sizes.append(len(name_batch))
-            cached_tokens.append(static_tokens)
             regular_tokens.append(max(0, request_input - static_tokens))
             output_tokens += max(0, request_output)
             if native_claude:
-                requests.append(buildClaudeRequest(
+                params = buildClaudeRequest(
                     static_system, user, source, "json", model_name, len(name_batch),
                     vocab_text=vocab_text, context_kind=CONTEXT_SOURCE,
                     request_instructions=instructions,
-                ))
+                )
+                requests.append(params)
+                key = claude_tokens.split(params)[0]
+                if key and key not in prefixes:
+                    prefixes[key] = countTokens(
+                        claude_tokens.cached_text(params), "", ""
+                    )[0]
             source = name_batch[-max_history:]
 
         regular_input = sum(regular_tokens)
@@ -343,26 +345,20 @@ class TranslationTaskCore:
         if requests:
             counted = countClaudeTokens(requests, regular_tokens, "📊 Speaker estimate:")
         if counted is not None:
-            cached_tokens = [
-                counted.prefixes[claude_tokens.split(params)[0]] for params in requests
-            ]
+            prefixes = {key: counted.prefixes[key] for key in prefixes}
             regular_input = round(regular_input * counted.scale)
-
-        estimated_cost = regular_input * input_rate + output_tokens * output_rate
-        # Match the translator's conservative cold-cache estimate: the first
-        # request for each output-schema size writes the cached prompt;
-        # repeated sizes receive the cache-read discount.
-        for index, (size, tokens) in enumerate(zip(sizes, cached_tokens)):
-            estimated_cost += tokens * input_rate * (
-                cache_read_multiplier("anthropic", model_name)
-                if size in sizes[:index]
-                else 2.0
-            )
+        # These Live requests go one after another, each after the previous
+        # answer, so the first request for each reply schema writes the cached
+        # prompt and every later one reads it.
+        cache = claude_tokens.cache(requests, prefixes, "anthropic", model_name)
+        estimated_cost = (
+            (regular_input + cache.reused) * input_rate + output_tokens * output_rate
+        )
 
         return {
             "model": model_name,
-            "request_count": len(sizes),
-            "input_tokens": sum(cached_tokens) + regular_input,
+            "request_count": len(regular_tokens),
+            "input_tokens": cache.cached + regular_input,
             "output_tokens": output_tokens,
             "estimated_cost": estimated_cost,
             "cold_cache": native_claude,

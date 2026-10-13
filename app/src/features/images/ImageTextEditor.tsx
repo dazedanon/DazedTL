@@ -1486,8 +1486,10 @@ function Costs({
   /** A review for one mode shows only the price that mode pays. */
   mode?: "live" | "batch";
 }) {
-  // Cache variants only matter when they differ from each other.
-  const sameBatch = value.batch_cached_cost === value.batch_nocache_cost;
+  // Cache variants only matter when they differ from each other; estimates
+  // saved before the maximum priced no reuse without caching.
+  const most = value.batch_max_cost ?? value.batch_nocache_cost;
+  const sameBatch = value.batch_cached_cost === most;
   const priced = (key: string) =>
     !mode ||
     !key.includes("cost") ||
@@ -1501,7 +1503,8 @@ function Costs({
         ["output_tokens", "Estimated output tokens"],
         ["live_cost", "Live estimate"],
         ["batch_cost", "Batch estimate"],
-        ["batch_cached_cost", "Batch with cache"],
+        ["batch_cached_cost", "Batch reusing cached instructions"],
+        ["batch_max_cost", "Batch reusing none"],
         ["batch_nocache_cost", "Batch without cache"],
       ]
         .filter(
@@ -1509,8 +1512,16 @@ function Costs({
             typeof value[key] === "number" &&
             priced(key) &&
             !(
+              key === "batch_nocache_cost" &&
+              typeof value.batch_max_cost === "number"
+            ) &&
+            !(
               sameBatch &&
-              ["batch_cached_cost", "batch_nocache_cost"].includes(key)
+              [
+                "batch_cached_cost",
+                "batch_max_cost",
+                "batch_nocache_cost",
+              ].includes(key)
             ),
         )
         .map(([key, label]) => (

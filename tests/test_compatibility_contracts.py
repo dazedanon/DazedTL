@@ -344,7 +344,10 @@ class CompatibilityContracts(unittest.TestCase):
                 raise RuntimeError("rate limited")
             system = "".join(block["text"] for block in fields["system"])
             message = "".join(item["content"] for item in fields["messages"])
-            return SimpleNamespace(input_tokens=2 * len(system) + 3 * len(message))
+            schema = json.dumps(fields.get("output_config", {}))
+            return SimpleNamespace(
+                input_tokens=2 * len(system) + 3 * len(message) + len(schema)
+            )
 
         client = SimpleNamespace(messages=SimpleNamespace(count_tokens=count_tokens))
         requests = [
@@ -358,19 +361,51 @@ class CompatibilityContracts(unittest.TestCase):
                 "messages": [
                     {"role": "user", "content": "J" * (40 + index * 37 % 360)}
                 ],
+                # Anthropic caches the reply schema with the instructions.
+                "output_config": {"format": {"lines": 1 + index % 2}},
             }
             for index in range(100)
         ]
         exact = sum(count_tokens(**params).input_tokens for params in requests)
         calls.clear()
         estimate = claude_tokens.input_tokens(client, requests, len)
-        self.assertAlmostEqual(estimate / exact, 1, delta=0.01)
-        # The prefix once, then whole requests from the first to the last.
-        self.assertEqual(len(calls), 1 + claude_tokens.SAMPLES)
-        self.assertNotIn("max_tokens", calls[1])
-        counted = [params["messages"] for params in calls[1:]]
+        self.assertAlmostEqual(estimate.total / exact, 1, delta=0.01)
+        # Each schema's prefix once, then whole requests from first to last.
+        self.assertEqual(len(calls), 2 + claude_tokens.SAMPLES)
+        self.assertFalse(any("max_tokens" in params for params in calls))
+        counted = [params["messages"] for params in calls]
         self.assertIn(requests[0]["messages"], counted)
         self.assertIn(requests[-1]["messages"], counted)
+        # A Batch's requests may each write their prefix instead of reading
+        # it, and a run once cost twice the estimate that assumed reads.
+        prefix = 1000 + len(json.dumps({"format": {"lines": 1}})) + 3
+        self.assertEqual(sorted(estimate.prefixes.values())[1:], [prefix, prefix])
+        cache = claude_tokens.cache(
+            requests, estimate.prefixes, "anthropic", "claude-opus-5-5"
+        )
+        self.assertEqual((cache.cached, cache.writes), (100 * prefix, 2 * prefix))
+        self.assertAlmostEqual(cache.reused, prefix * (2 * 1.25 + 98 * 0.05))
+        self.assertAlmostEqual(cache.unreused, prefix * 100 * 1.25)
+        # Assistant-led approves the most such a Batch costs.
+        from dazedtl.translation.requests import quote
+
+        cfg = {
+            "mode": "batch",
+            "model": "claude-opus-5-5",
+            "provider": "anthropic",
+            "rates": {"input": 4, "output": 20, "batch_factor": 0.5},
+        }
+        items = [{"params": params, "sources": {"1": "J"}} for params in requests]
+        quoted = quote(items, cfg, len, estimate.total, cache)
+        uncached, outputs = estimate.total - cache.cached, quoted["output_tokens"]
+        self.assertAlmostEqual(
+            quoted["cost"],
+            ((uncached + cache.unreused) * 4 + outputs * 20) / 2_000_000,
+        )
+        self.assertAlmostEqual(
+            quoted["batch_cost_reused"],
+            ((uncached + cache.reused) * 4 + outputs * 20) / 2_000_000,
+        )
         requests[-1]["messages"][0]["content"] = "fail"
         self.assertIsNone(claude_tokens.input_tokens(client, requests, len))
 

@@ -16,6 +16,19 @@ export const latestApiRun = (jobs: TranslationJob[]) =>
 export const awaitingQuote = (run: TranslationJob | undefined) =>
   run?.status === "ready" && !run.approved ? run.quote : null;
 
+/**
+ * A price that may be a range, such as a Claude Batch that may reuse its
+ * cached instructions or none of them.
+ */
+export const priceRange = (
+  money: (value: number) => string,
+  high: number,
+  low?: number,
+) =>
+  low !== undefined && low < high
+    ? `${money(low)}–${money(high)}`
+    : money(high);
+
 /** An estimate priced with settings or a mode that have changed since. */
 export const estimateOutdated = (run: TranslationJob | undefined) =>
   !!awaitingQuote(run) && !!run?.settings_changed;

@@ -648,7 +648,9 @@ class FullEstimateTask(TypedDict):
     liveCost: float
     # With prompt caching where the provider offers it.
     batchCost: float
-    batchNocacheCost: float
+    # The most a Batch costs, with no cached instruction reused; estimates
+    # saved before it was added hold batchNocacheCost instead.
+    batchMaxCost: NotRequired[float]
     promptCache: bool
     # Claude's own token count could not run, so its input is approximate.
     approximateInput: bool

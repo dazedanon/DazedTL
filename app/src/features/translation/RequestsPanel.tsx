@@ -13,6 +13,7 @@ import { Button } from "../../ui/Button";
 import { FieldRow } from "../../ui/FieldRow";
 import { Section } from "../../ui/Section";
 import { Message } from "../../ui/Feedback";
+import { priceRange } from "./apiRun";
 import { RequestLines } from "./RequestLines";
 
 const money = (value: number) => "$" + value.toFixed(4);
@@ -85,7 +86,14 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
             {job.quote && (
               <div className="translation-quote">
                 <strong>
-                  {money(job.quote.cost)} estimated · {job.quote.model}
+                  {priceRange(
+                    money,
+                    job.quote.cost,
+                    job.mode === "batch"
+                      ? job.quote.batch_cost_reused
+                      : undefined,
+                  )}{" "}
+                  estimated · {job.quote.model}
                 </strong>
                 <p>
                   {job.quote.requests} remaining requests ·{" "}
@@ -96,7 +104,12 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
                 <p className="muted">
                   Live: {money(job.quote.live_cost)}
                   {job.quote.batch_cost !== null &&
-                    " · Batch: " + money(job.quote.batch_cost)}{" "}
+                    " · Batch: " +
+                      priceRange(
+                        money,
+                        job.quote.batch_cost,
+                        job.quote.batch_cost_reused,
+                      )}{" "}
                   · Rates: {job.quote.rates.source}
                 </p>
                 <small>{job.quote.basis}</small>

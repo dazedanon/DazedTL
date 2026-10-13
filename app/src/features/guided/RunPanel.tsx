@@ -12,15 +12,23 @@ export function Estimate({ value }: { value: Record<string, unknown> }) {
     ["output_tokens", "Estimated output tokens"],
     ["live_cost", "Live estimate"],
     ["batch_cost", "Batch estimate"],
-    ["batch_cached_cost", "Batch with cache"],
+    ["batch_cached_cost", "Batch reusing cached instructions"],
+    ["batch_max_cost", "Batch reusing none"],
     ["batch_nocache_cost", "Batch without cache"],
   ];
+  // Estimates saved before the maximum priced no reuse without caching.
+  const hidden = new Set(
+    typeof value.batch_max_cost === "number"
+      ? ["batch_nocache_cost"]
+      : ["batch_max_cost"],
+  );
   return (
     <dl className="estimate">
       {fields
         .filter(
           ([key]) =>
             typeof value[key] === "number" &&
+            !hidden.has(key) &&
             !(key === "request_count" && typeof value.requests === "number") &&
             !(
               key === "batch_cost" &&

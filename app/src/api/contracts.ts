@@ -94,6 +94,7 @@ export type RunEstimate = {
   dynamic_tokens?: number;
   cache_write_tokens?: number;
   cache_read_tokens?: number;
+  cache_max_write_tokens?: number;
   cache_kind?: string | null;
   uses_prompt_cache?: boolean;
   live_cost?: number;
@@ -102,6 +103,7 @@ export type RunEstimate = {
   batch_cost?: number | null;
   batch_cached_cost?: number;
   batch_nocache_cost?: number;
+  batch_max_cost?: number;
   unestimated_thinking_tokens?: boolean;
   approximate_input?: boolean;
   elapsed_seconds?: number;
@@ -959,7 +961,7 @@ export type FullEstimateTask = {
   outputTokens: number;
   liveCost: number;
   batchCost: number;
-  batchNocacheCost: number;
+  batchMaxCost?: number;
   promptCache: boolean;
   approximateInput: boolean;
   unestimatedThinking: boolean;
@@ -1211,6 +1213,7 @@ export type TranslationQuote = {
   cost: number;
   live_cost: number;
   batch_cost: number | null;
+  batch_cost_reused?: number;
   model: string;
   provider: string;
   basis: string;

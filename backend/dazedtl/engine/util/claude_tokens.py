@@ -1,4 +1,5 @@
-"""Claude's own count of an estimate's input tokens.
+"""Claude's own count of an estimate's input tokens, and what its cached
+instructions cost.
 
 Estimates count text with the GPT-4 encoder for every provider, but Claude's
 tokenizer turns the same text into more tokens and Anthropic bills by its own
@@ -8,6 +9,7 @@ sample of whole requests, then scales the approximate count of everything
 after the prefix by what the sample measured.
 """
 
+import json
 import os
 import random
 import time
@@ -16,6 +18,8 @@ from types import SimpleNamespace
 from typing import NamedTuple
 
 import httpx
+
+from util.provider_costs import cache_read_multiplier, cache_write_multiplier
 
 # Smaller request sets are counted whole; a larger one's sample spans every
 # file in queue order.
@@ -72,7 +76,7 @@ class CountClient:
 
 
 class Count(NamedTuple):
-    prefixes: dict  # cached prefix text -> Claude tokens
+    prefixes: dict  # cache key (see split) -> Claude tokens
     scale: float  # Claude tokens per approximate token after the prefix
     sampled: int
 
@@ -104,13 +108,83 @@ def cache_ttl(params):
     return "1h" if str(control.get("ttl", "")).lower() == "1h" else "5m"
 
 
+def _prefix_fields(params):
+    """What Anthropic caches up to a request's cache breakpoint: its tools and
+    output format, which it renders before the instructions, and the system
+    blocks."""
+    fields = {"system": _prefix_blocks(params)}
+    if params.get("tools"):
+        fields["tools"] = params["tools"]
+    output_format = (params.get("output_config") or {}).get("format")
+    if output_format:
+        fields["output_config"] = {"format": output_format}
+    return fields
+
+
 def split(params):
-    """A request's cached system prefix and the system text after it."""
+    """A request's cache key and the system text after its cached prefix.
+
+    Requests share a cache entry only when their tools, output format and
+    cached system blocks all match, so a translation request's entry differs
+    for every line count its reply schema names. The key is "" when the
+    request caches nothing.
+    """
     blocks = params.get("system") or []
     if isinstance(blocks, str):
         return "", blocks
     cut = len(_prefix_blocks(params))
-    return _text(blocks[:cut]), _text(blocks[cut:])
+    if not cut:
+        return "", _text(blocks)
+    key = json.dumps(_prefix_fields(params), ensure_ascii=False, sort_keys=True)
+    return key, _text(blocks[cut:])
+
+
+def cached_text(params):
+    """The text of a request's cached prefix, for an approximate count."""
+    fields = _prefix_fields(params)
+    return _text(fields["system"]) + "".join(
+        json.dumps(fields[name], ensure_ascii=False)
+        for name in ("tools", "output_config")
+        if name in fields
+    )
+
+
+class Cache(NamedTuple):
+    """Requests' cached prefixes, in tokens and as regular input tokens."""
+
+    cached: int  # every request's cached prefix
+    writes: int  # written once per cache key, when every later request reuses it
+    reads: int  # then read by those later requests
+    reused: float  # the cached prefixes priced as input when reused that way
+    unreused: float  # priced as input when no request reuses one
+
+
+def cache(requests, prefixes, provider, model):
+    """What the requests' cached prefixes cost, from every request that shares
+    a cache key reusing it to none doing so.
+
+    A Batch runs its requests independently and largely at once, and an
+    entry is readable only once the request writing it has started to
+    answer, so any request may write its prefix again instead of reading it.
+    ``prefixes`` holds each cache key's tokens.
+    """
+    groups = {}
+    for params in requests:
+        key = split(params)[0]
+        if key:
+            groups.setdefault(key, [0, cache_ttl(params)])[0] += 1
+    read = cache_read_multiplier(provider, model)
+    cached = writes = reads = 0
+    reused = unreused = 0.0
+    for key, (count, ttl) in groups.items():
+        tokens = prefixes[key]
+        write = cache_write_multiplier(provider, model, ttl)
+        cached += tokens * count
+        writes += tokens
+        reads += tokens * (count - 1)
+        reused += tokens * (write + (count - 1) * read)
+        unreused += tokens * count * write
+    return Cache(cached, writes, reads, reused, unreused)
 
 
 def spread(total, limit=SAMPLES):
@@ -137,7 +211,7 @@ def count(client, requests, approximate):
     jobs = [
         {
             "model": first[prefix]["model"],
-            "system": _prefix_blocks(first[prefix]),
+            **_prefix_fields(first[prefix]),
             "messages": [{"role": "user", "content": "x"}],
         }
         for prefix in prefixes
@@ -168,8 +242,14 @@ def count(client, requests, approximate):
     return Count(exact, measured / base if base else 1.0, len(sample))
 
 
+class Inputs(NamedTuple):
+    total: int  # the requests' input tokens
+    prefixes: dict  # cache key (see split) -> Claude tokens
+
+
 def input_tokens(client, requests, count_text):
-    """Claude's estimated input for whole requests, or None when it can't count them."""
+    """Claude's estimated input for whole requests and its count of each
+    cached prefix, or None when it can't count them."""
     approximate = [
         count_text(split(params)[1])
         + count_text("\n".join(_text(message["content"]) for message in params.get("messages", [])))
@@ -182,6 +262,7 @@ def input_tokens(client, requests, count_text):
         return None
     if counted is None:
         return None
-    return sum(counted.prefixes[split(params)[0]] for params in requests) + round(
+    total = sum(counted.prefixes[split(params)[0]] for params in requests) + round(
         counted.scale * sum(approximate)
     )
+    return Inputs(total, counted.prefixes)

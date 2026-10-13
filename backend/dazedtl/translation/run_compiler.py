@@ -160,6 +160,14 @@ def claude_inputs(engine, workspace, cfg, requests):
     return engine.claude_input_tokens(requests, cfg, secret)
 
 
+def claude_cache(engine, cfg, requests, counted):
+    """What Claude's cached instructions cost, for its quote's range; None
+    for other providers."""
+    if cfg["protocol"] != "anthropic" or not requests:
+        return None
+    return engine.claude_cache(requests, cfg, counted)
+
+
 def prepare(engine, workspace, job, plan, progress):
     """Runs an organize or compile operation; its result names the new run."""
     if plan["action"] == "organize":
@@ -281,11 +289,13 @@ def compile_run(engine, workspace, job, plan, input_path, progress, read=None):
     estimate = None
     if cfg["mode"] != "agent":
         progress(f"Estimating the cost of {len(pending):,} requests")
+        counted = claude_inputs(engine, workspace, cfg, pending)
         estimate = quote(
             pending,
             cfg,
             engine.token_count,
-            claude_inputs(engine, workspace, cfg, pending),
+            counted.total if counted else None,
+            claude_cache(engine, cfg, pending, counted),
         )
     progress("Saving the run")
     value = {
