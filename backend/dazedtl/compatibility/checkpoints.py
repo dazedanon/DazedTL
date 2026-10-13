@@ -1,6 +1,7 @@
 """Verified incremental JSON outputs and native-reader resume, without game writes."""
 
 import io
+import os
 import threading
 from functools import lru_cache
 from pathlib import Path
@@ -34,7 +35,10 @@ def can_collect_outputs(job):
     )
 
 
-@lru_cache(maxsize=1024)
+# Every snapshot checks each run's outputs several times in the same order; a
+# cache smaller than a large game's outputs missed on every one and parsed
+# them all again, seconds per snapshot.
+@lru_cache(maxsize=20_000)
 def _json_digest(path, signature):
     raw = Path(path).read_bytes()
     if not isinstance(decode_json(raw), (dict, list)):
@@ -61,12 +65,26 @@ def outputs(root, plan):
     if record is None:
         return {}
     allowed = {row["name"] for row in plan["files"]}
+    # Snapshots check every run's outputs several times; one listing settles
+    # each regular file, where resolving every path took most of a snapshot.
+    # Anything the listing cannot settle gets project_path's answer or error.
+    folder = project_path(root, "translated", exists=False)
+    try:
+        with os.scandir(folder) as entries:
+            listed = {entry.name: entry for entry in entries}
+    except OSError:
+        listed = {}
     result = {}
     for name, expected in record.get("files", {}).items():
         if name not in allowed:
             raise ValueError("A progress checkpoint is outside this run’s file scope.")
-        output = project_path(root, "translated/" + name)
-        stat = output.stat()
+        entry = listed.get(name)
+        if entry is not None and entry.is_file(follow_symlinks=False):
+            output = folder / name
+            stat = entry.stat(follow_symlinks=False)
+        else:
+            output = project_path(root, "translated/" + name)
+            stat = output.stat()
         actual = _json_digest(
             str(output), (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
         )
