@@ -1,5 +1,6 @@
 """Bounded display caches; execution and inspection keep their fresh readers."""
 
+import os
 import stat
 import threading
 from collections import OrderedDict
@@ -38,16 +39,39 @@ def process_stamp(root):
     """
     rows = [(str(root), stamp(root))]
     for name in ("plan.json", "job.json", "log", "files", "translated"):
-        pending = [root / name]
-        while pending:
-            path = pending.pop()
-            signature = stamp(path)
-            rows.append((str(path), signature))
-            if len(rows) > 4096:
-                raise ValueError("Run observation exceeds the display cache limit.")
-            if signature and stat.S_ISDIR(signature[0]):
-                pending.extend(sorted(path.iterdir(), reverse=True))
+        path = root / name
+        signature = stamp(path)
+        rows.append((str(path), signature))
+        if signature and stat.S_ISDIR(signature[0]):
+            _stamp_folder(os.fspath(path), rows)
     return tuple(rows)
+
+
+def _stamp_folder(folder, rows):
+    # Every poll stamps every saved run's files; a listing carries their
+    # stats, where a separate lstat for each file took seconds on Windows.
+    with os.scandir(folder) as entries:
+        listed = sorted(entries, key=lambda entry: entry.name)
+    for entry in listed:
+        value = entry.stat(follow_symlinks=False)
+        if stat.S_ISLNK(value.st_mode):
+            raise ValueError("Observed run artifacts cannot be symbolic links.")
+        rows.append(
+            (
+                entry.path,
+                (
+                    value.st_mode,
+                    value.st_ino,
+                    value.st_size,
+                    value.st_mtime_ns,
+                    value.st_ctime_ns,
+                ),
+            )
+        )
+        if len(rows) > 4096:
+            raise ValueError("Run observation exceeds the display cache limit.")
+        if stat.S_ISDIR(value.st_mode):
+            _stamp_folder(entry.path, rows)
 
 
 class RunObservations:
