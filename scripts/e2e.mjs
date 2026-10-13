@@ -108,6 +108,16 @@ function copyCheckout() {
   return files.length;
 }
 
+// A DTextPicture placeholder for the map's name, a HUD label, a CommonPopup
+// popup and a MOG_EventIndicators label, for Other event text.
+const placeholder = "D_TEXT [マップ表示名] 24";
+const eventCommands = [
+  [356, placeholder],
+  [356, "D_TEXT 現在の時刻 24"],
+  [356, "CommonPopup add text:共鳴度+3 count:60"],
+  [108, "text_indicator : 世界地図の端"],
+];
+
 /** Copies the MZ fixture game into a folder named like a Japanese release. */
 function makeGame() {
   fs.cpSync(path.join(root, "tests/fixtures/mz-game"), game, {
@@ -118,6 +128,19 @@ function makeGame() {
     path.join(game, "img/pictures/sign.png"),
     path.join(game, "img/pictures/看板.png"),
   );
+  const file = path.join(game, "data/Map001.json");
+  const map = JSON.parse(fs.readFileSync(file, "utf8"));
+  const list = map.events[1].pages[0].list;
+  list.splice(
+    list.findIndex((command) => command.code === 0),
+    0,
+    ...eventCommands.map(([code, text]) => ({
+      code,
+      indent: 0,
+      parameters: [text],
+    })),
+  );
+  fs.writeFileSync(file, JSON.stringify(map));
 }
 
 // ----------------------------------------------------------------- provider
@@ -638,6 +661,21 @@ const readJson = (file) =>
   JSON.parse(fs.readFileSync(path.join(game, file), "utf8"));
 const translated = (value) =>
   typeof value === "string" && value.startsWith("Tested ");
+/** The fixture chief's plugin command and comment texts, in order. */
+const eventTexts = () =>
+  readJson("data/Map001.json")
+    .events[1].pages[0].list.filter((command) =>
+      [356, 108].includes(command.code),
+    )
+    .map((command) => command.parameters[0]);
+
+/** Runs a project helper command the way an assistant's shell does. */
+const helper = (command) =>
+  windows
+    ? execFileSync("powershell", ["-NoProfile", "-Command", command], {
+        encoding: "utf8",
+      })
+    : execFileSync("sh", ["-c", command], { encoding: "utf8" });
 
 /** Failures the app recorded for Copy diagnostics; a clean run records none. */
 function diagnostics() {
@@ -824,6 +862,90 @@ try {
         .every((command) => translated(command.parameters[0])),
     ),
   );
+
+  await step("The assistant investigates event text sources", async () => {
+    await page.click("2Context");
+    await page.click(/^Event text sources/);
+    // Copying the task records the same handoff, without the clipboard.
+    const { text } = await page.call("guided_skill", {
+      project_id: (await page.call("workspace_snapshot")).application.project
+        .id,
+      name: "advanced",
+    });
+    const command = /Read this request first: `([^`]+)`/.exec(text)[1];
+    const { request } = JSON.parse(helper(command));
+    const map = Object.keys(request.dependencies).find((name) =>
+      name.endsWith("Map001.json"),
+    );
+    const evidence = [
+      { file: map, sha256: request.dependencies[map], location: "event 1" },
+    ];
+    // The assistant read how each plugin parses its text: DTextPicture joins
+    // the words back, CommonPopupCore keeps one argument per space and MOG
+    // splits its comment on " : ". The placeholder is an internal value.
+    const findings = {
+      CODE356: {
+        spacing: { "D_TEXT ": "space", CommonPopup: "nbsp" },
+        keep: [placeholder],
+      },
+      CODE108: { spacing: { text_indicator: "space" }, keep: [] },
+    };
+    const sources = Object.fromEntries(
+      request.controls.map(({ key }) => [
+        key,
+        {
+          decision: findings[key] ? "enable" : "skip",
+          confidence: "high",
+          coverage: findings[key] ? "safe" : "none",
+          reason: findings[key] ? "Players see this text." : "No text here.",
+          targets: key === "CODE122" ? "" : [],
+          observations: [],
+          exclusions: [],
+          evidence,
+          ...(key in findings ? findings[key] : {}),
+        },
+      ]),
+    );
+    fs.writeFileSync(
+      path.join(game, ".dazedtl/guided/event-text-findings.json"),
+      JSON.stringify({
+        version: request.version,
+        request_id: request.request_id,
+        project_id: request.project_id,
+        engine: request.engine,
+        fingerprint: request.fingerprint,
+        sources,
+      }),
+    );
+    const { findings: applied } = JSON.parse(helper(`${command} --apply`));
+    if (applied.enabled.join() !== "CODE356,CODE108")
+      throw new Error(`The findings enabled ${applied.enabled.join()}.`);
+    await page.click(/^Source choices/);
+    await page.click(/^MV plugin commands/);
+    await page.evaluate(
+      `document.querySelector(".translation-source-detail details").open = true`,
+    );
+    await page.waitText(`Left untranslated: ${placeholder}`);
+    await page.shot("event-text-sources");
+  });
+
+  await step("Translate and apply other event text", async () => {
+    // A started stage also reads "In progress" to screen readers.
+    await page.click(/^3Translate/);
+    await translateTask(page, "Other event text", () => {
+      const [kept, label, popup, comment] = eventTexts();
+      const nbsp = String.fromCharCode(0xa0);
+      // Only the popup's plugin needs its words held together.
+      return (
+        kept === placeholder &&
+        /^D_TEXT Tested \S+ 24$/.test(label) &&
+        new RegExp(
+          `^CommonPopup add text:Tested${nbsp}\\S+${nbsp}\\+3 count:60$`,
+        ).test(popup) &&
+        /^text_indicator : Tested \S+$/.test(comment)
+      );
+    });
+  });
 
   await step(
     "The playtest checks the game and says why it can't play it",
