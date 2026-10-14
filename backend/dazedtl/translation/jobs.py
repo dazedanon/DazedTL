@@ -216,6 +216,25 @@ class RunStore:
         self.save(job)
         return job
 
+    def replan(self, job, plan, quote):
+        """Saves a waiting run's plan frozen again with other settings, and
+        their quote, under a new approval token. Nothing has been sent, so no
+        receipt, checkpoint or result names the plan it replaces."""
+        if job["status"] != "ready" or self.authorized(job):
+            raise ValueError("Only a run waiting for approval can be priced again.")
+        saved = plan_file.encode(plan)
+        write_bytes(self.folder(job["id"]) / "plan.json", saved)
+        job.update(
+            plan_sha256=digest(saved),
+            configuration_sha256=digest(plan["configuration"]),
+            configuration=plan["configuration"],
+            mode=plan["configuration"]["mode"],
+            quote=quote,
+            approval_token=uuid.uuid4().hex,
+        )
+        self.save(job)
+        return job
+
     def authorize(self, job):
         if job["quote"] is None:
             raise ValueError("API authorization requires a concrete quote.")

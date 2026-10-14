@@ -241,6 +241,8 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(operation["kind"], "operation")
         job, plan = self.service.jobs.store.load(operation["id"], self.identity)
         result = execute(self.engine, self.profile, job, plan, lambda: False)
+        job.update(status="complete", result=result)
+        self.service.jobs.store.save(job)
         run = self.service.run(self.identity, result["run"])
         return (
             {"run": run, "summary": result["summary"]} if "summary" in result else run
@@ -630,7 +632,8 @@ class WorkflowTests(unittest.TestCase):
             else None
         )
         reports = len(self.engine.reports)
-        # New rates make the shown cost stale; restoring them makes it current.
+        # Settings that shape the requests make the shown cost stale;
+        # restoring them makes it current. New rates alone price it again.
         rates = self.settings_data["connections"][0]["model_options"]["fixture-model"]
 
         def outdated():
@@ -639,11 +642,11 @@ class WorkflowTests(unittest.TestCase):
                 "settings_changed"
             ]
 
-        rates["inputRate"] = 3
+        rates["entriesPerRequest"] = 10
         self.assertTrue(outdated())
         with self.assertRaisesRegex(ValueError, "changed after this estimate"):
             self.service.start(self.identity, run["id"], run["approval_token"])
-        rates["inputRate"] = 1
+        rates["entriesPerRequest"] = 50
         self.assertFalse(outdated())
         # Catalog prices not looked up since a restart are unknown, which reads
         # as unchanged instead of failing every snapshot.
@@ -670,6 +673,59 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(
                 (self.game / (WORK + "/progress.json")).read_bytes(), before
             )
+
+    def test_a_model_switch_prices_a_waiting_estimate_again(self):
+        selected = self.project.read()
+        self.service.save(
+            self.identity, selected["revision"], {**selected["options"], "mode": "live"}
+        )
+        run = self.prepared(self.service.compile(self.identity, self.plan_path))
+        connection = self.settings_data["connections"][0]
+        options = connection["model_options"]
+        options["half-price"] = {**options["fixture-model"], "inputRate": 0.5}
+        options["half-price"]["outputRate"] = 1
+        options["gpt-5.6-terra"] = options["half-price"]
+
+        def view():
+            jobs = self.service.state(self.identity)["jobs"]
+            return next(job for job in jobs if job["id"] == run["id"])
+
+        # Its requests carry the same text, so the switch only prices them.
+        connection["model"] = "half-price"
+        repriced = view()
+        self.assertFalse(repriced["settings_changed"])
+        self.assertEqual(repriced["quote"]["model"], "half-price")
+        self.assertEqual(
+            repriced["quote"]["input_tokens"], run["quote"]["input_tokens"]
+        )
+        self.assertAlmostEqual(repriced["quote"]["cost"], run["quote"]["cost"] / 2)
+        # GPT-5.6 sends its instructions in separately cached blocks, so its
+        # token counts differ.
+        connection["model"] = "gpt-5.6-terra"
+        self.assertTrue(view()["settings_changed"])
+        # Approval binds to the price shown: the quote's own token no longer
+        # approves it, and the shown price's token freezes the run with it.
+        connection["model"] = "half-price"
+        with self.assertRaisesRegex(ValueError, "changed after this estimate"):
+            self.service.start(self.identity, run["id"], run["approval_token"])
+        token = view()["approval_token"]
+        connection["model"] = "fixture-model"
+        with self.assertRaisesRegex(ValueError, "price changed"):
+            self.service.start(self.identity, run["id"], token)
+        connection["model"] = "half-price"
+        with self.assertRaisesRegex(ValueError, "Provider execution is disabled"):
+            self.service.start(self.identity, run["id"], token)
+        job, plan = self.service.jobs.store.load(run["id"])
+        self.assertTrue(self.service.jobs.store.authorized(job))
+        self.assertEqual(job["quote"], repriced["quote"])
+        self.assertEqual(
+            {row["params"]["model"] for row in plan["requests"]}, {"half-price"}
+        )
+        # Redoing an estimate GPT-5.6 can't price repeats its preparation.
+        run = self.prepared(self.service.compile(self.identity, self.plan_path))
+        connection["model"] = "gpt-5.6-terra"
+        again = self.prepared(self.service.reestimate(self.identity, run["id"]))
+        self.assertEqual(again["quote"]["model"], "gpt-5.6-terra")
 
     def test_reports_count_images_from_the_image_manager(self):
         # The assistant's reports must carry the Image Manager's records, or

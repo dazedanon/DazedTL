@@ -16,7 +16,7 @@ from dazedtl.settings.execution import (
 )
 from dazedtl.storage import write_bytes, write_json
 
-from . import backups, delivery, organize, progress_report, run_compiler
+from . import backups, delivery, organize, progress_report, repricing, run_compiler
 from .compilation import verify_compilation
 from .files import digest, evidence, project_path, read_json, verify_evidence
 from .game_update import GameUpdate
@@ -29,7 +29,7 @@ from .operations import (
     require_baseline,
 )
 from .project import ADDED, WORK, ProjectWorkspace, options, scope
-from .requests import LINE_KEYS
+from .requests import COUNTS, LINE_KEYS, price, sent_text
 from .results import Results
 
 
@@ -559,9 +559,11 @@ Additional project instructions:
         return {"handoff": handoff, "path": str(handoff_path)}
 
     def job_views(self, jobs, mode):
-        """Saved runs as pages show them; an estimate waiting for approval
-        notes when the settings it priced have changed since. An estimate
-        for declined requests keeps its own mode, whatever the project's."""
+        """Saved runs as pages show them. An estimate waiting for approval
+        takes the current settings' prices when they change only its price
+        (see repricing), with an approval token for that price; otherwise it
+        notes that the settings it priced have changed. An estimate for
+        declined requests keeps its own mode, whatever the project's."""
         current = {}
         views = []
         newest = max(
@@ -589,14 +591,107 @@ Additional project instructions:
                     try:
                         current[priced] = self.api_configuration(
                             priced, cached_only=True, unpriced=True
-                        )[0]
+                        )
                     except ValueError:
-                        current[priced] = None
+                        current[priced] = None, None
+                settings, provider = current[priced]
                 view["settings_changed"] = changed_since(
-                    current[priced], frozen, job.get("configuration")
+                    settings, frozen, job.get("configuration")
                 )
+                if view["settings_changed"] and self.repriceable(
+                    job.get("configuration"), settings, provider
+                ):
+                    view.update(
+                        mode=settings["mode"],
+                        quote=price(
+                            {key: job["quote"][key] for key in COUNTS}, settings
+                        ),
+                        approval_token=repricing.approval_token(
+                            job["approval_token"], settings
+                        ),
+                        settings_changed=False,
+                    )
             views.append(view)
         return views
+
+    @staticmethod
+    def repriceable(before, after, provider):
+        """Whether a run frozen with ``before`` keeps its requests under
+        ``after``, which then only prices it again; a Batch also needs a
+        route that runs one."""
+        return bool(
+            before
+            and after
+            and repricing.priced(after)
+            and (after["mode"] != "batch" or provider)
+            and repricing.same_requests(before, after)
+        )
+
+    def reprice(self, job, plan, configuration, provider):
+        """Freezes a waiting run again with settings that only price it
+        differently: each request's parameters for them, carrying the same
+        text, and its counts' quote at their rates."""
+        requests = []
+        for row in plan["requests"]:
+            params = self.engine.payload(row, configuration)
+            if sent_text(params) != sent_text(row["params"]):
+                raise ValueError(
+                    "Requests for the new settings differ from this estimate's. Estimate again."
+                )
+            # The Batch runner counts the new parameters' tokens itself.
+            row = {key: item for key, item in row.items() if key != "input_tokens"}
+            requests.append({**row, "params": params})
+        limits = self.engine.batch_limits(configuration) if provider else None
+        plan = {
+            **plan,
+            "configuration": configuration,
+            "requests": requests,
+            "batch_limits": limits,
+        }
+        quote = price({key: job["quote"][key] for key in COUNTS}, configuration)
+        return self.jobs.store.replan(job, plan, quote), plan
+
+    def reestimate(self, project_id, run_id):
+        """Estimates a run waiting for approval again with the current
+        settings, without the assistant. Looking up their prices is all a
+        switch that keeps its requests needs (see job_views); any other
+        change repeats the preparation that made the run."""
+        job, plan = self.jobs.store.load(run_id, project_id)
+        if (
+            plan["kind"] != "translation"
+            or plan.get("finishes")
+            or job["status"] != "ready"
+            or job["quote"] is None
+            or self.jobs.store.authorized(job)
+            or job["created"] < self.jobs.store.newest_estimate(project_id)
+        ):
+            raise ValueError("Only an estimate waiting for approval can be redone.")
+        _record, project = self.project(project_id)
+        mode = project.read()["options"]["mode"]
+        if mode == "agent":
+            raise ValueError(
+                "Choose API Batch or Live API in Options to estimate this run again."
+            )
+        current, provider = self.api_configuration(mode)
+        if digest(current) == job["configuration_sha256"] or self.repriceable(
+            plan["configuration"], current, provider
+        ):
+            return self.jobs.store.view(job)
+        preparation = next(
+            (
+                row
+                for row in self.jobs.store.list(project_id)
+                if row["kind"] == "operation"
+                and (row.get("result") or {}).get("run") == run_id
+            ),
+            None,
+        )
+        if preparation is None:
+            raise ValueError(
+                "DazedTL has no record of how this estimate was prepared. Ask your assistant for a new one."
+            )
+        _job, steps = self.jobs.store.load(preparation["id"], project_id)
+        return self._prepare(project_id, steps["action"], steps["arguments"])
 
     def stored_original(self, root):
         """The original backup a game folder already holds, for a project
@@ -898,7 +993,7 @@ Additional project instructions:
                     + " --wait <minutes>."
                 )
             self.clean_drafts(project_id)
-            if not approval_token or approval_token != job["approval_token"]:
+            if not approval_token:
                 raise ValueError(
                     "Review and approve this exact quote before submitting."
                 )
@@ -909,18 +1004,29 @@ Additional project instructions:
                     "This estimate was canceled or replaced by a newer one, so it can no longer be approved."
                 )
             # The quote priced the settings the run froze; approving it after
-            # they change would approve a cost the user no longer sees.
+            # they change would approve a cost the user no longer sees. A
+            # quote priced again with the current settings (job_views) has
+            # its own token, and its approval freezes the run with them.
             _record, project = self.project(project_id)
-            current, _provider = self.api_configuration(
+            current, provider = self.api_configuration(
                 priced_mode(
                     plan.get("finishes"),
                     plan["configuration"]["mode"],
                     project.read()["options"]["mode"],
                 )
             )
-            if digest(current) != digest(plan["configuration"]):
+            if approval_token == job["approval_token"]:
+                if digest(current) != digest(plan["configuration"]):
+                    raise ValueError(
+                        "API settings or the translation mode changed after this estimate. Compile and review a new plan."
+                    )
+            elif approval_token == repricing.approval_token(
+                job["approval_token"], current
+            ) and self.repriceable(plan["configuration"], current, provider):
+                job, plan = self.reprice(job, plan, current, provider)
+            else:
                 raise ValueError(
-                    "API settings or the translation mode changed after this estimate. Compile and review a new plan."
+                    "This estimate's price changed since it was shown. Review it again before approving."
                 )
             self.validate_current(project_id, plan)
             self.jobs.store.authorize(job)

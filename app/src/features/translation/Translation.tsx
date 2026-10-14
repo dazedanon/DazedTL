@@ -324,9 +324,10 @@ function Workspace({
               />
             </PageBody>
             <ActionBar feedback={<Feedback dirty={draft.dirty} />}>
-              {/* An estimate the user can approve holds the one primary. */}
+              {/* An estimate the user can approve or estimate again holds
+                  the one primary; declined lines estimate in their panel. */}
               {copyControl(
-                awaitingQuote(run) && !estimateOutdated(run)
+                awaitingQuote(run) && !(estimateOutdated(run) && run?.finishes)
                   ? "default"
                   : "primary",
               )}

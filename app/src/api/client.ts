@@ -145,6 +145,8 @@ export const api = {
       }),
     finish: (project_id: string, run_id: string) =>
       request("translation_finish", { project_id, run_id }),
+    reestimate: (project_id: string, run_id: string) =>
+      request("translation_reestimate", { project_id, run_id }),
     translatorPrompt: (project_id: string, run_id: string) =>
       request("translation_translator_prompt", { project_id, run_id }),
     review: (

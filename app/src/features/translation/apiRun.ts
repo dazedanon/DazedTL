@@ -49,6 +49,20 @@ export const estimateOutdated = (run: TranslationJob | undefined) =>
   !!awaitingQuote(run) && !!run?.settings_changed;
 
 /**
+ * The preparation estimating an outdated run again with the current
+ * settings, started after it, while it works or once it failed; a finished
+ * one has made a newer run.
+ */
+export const redoneEstimate = (jobs: TranslationJob[], run: TranslationJob) =>
+  jobs.find(
+    (job) =>
+      job.kind === "operation" &&
+      ["organize", "compile"].includes(job.action ?? "") &&
+      !job.finishes &&
+      Date.parse(job.created) > Date.parse(run.created),
+  );
+
+/**
  * Whether the user approved the run in the app after the assistant last used
  * DazedTL, so the assistant may still be waiting for an answer.
  */

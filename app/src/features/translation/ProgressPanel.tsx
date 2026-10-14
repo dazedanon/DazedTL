@@ -35,6 +35,7 @@ import {
   finishingRun,
   latestApiRun,
   priceRange,
+  redoneEstimate,
 } from "./apiRun";
 import { assistantRunState, phaseStates } from "./assistantPhases";
 import { DeclinedLines } from "./DeclinedLines";
@@ -86,6 +87,11 @@ export function ProgressPanel({
   const run = latestApiRun(attempt);
   const declined = declinedRun(attempt);
   const untold = approvalUntold(run, state.assistantSeenAt);
+  // An outdated estimate is redone here, and its panel shows that work.
+  const redo =
+    run && estimateOutdated(run) && !run.finishes
+      ? redoneEstimate(attempt, run)
+      : undefined;
   // The API run's reminders already say to paste the prompt.
   const quiet =
     status === "waiting" &&
@@ -98,6 +104,7 @@ export function ProgressPanel({
       job.kind === "operation" &&
       job.action !== "start_over" &&
       !job.finishes &&
+      job.id !== redo?.id &&
       ["running", "waiting"].includes(job.status),
   );
   const total = text && (text.total ?? text.discovered);
@@ -212,7 +219,9 @@ export function ProgressPanel({
       {(options.mode !== "agent" || run) && (
         <ApiRun
           run={run}
+          redo={redo}
           state={state}
+          options={options}
           action={action}
           untold={untold}
           resume={resume}
@@ -386,13 +395,18 @@ const runStates: Record<string, DisplayState> = {
 /** The latest API run the app holds for the assistant, with its spending. */
 function ApiRun({
   run,
+  redo,
   state,
+  options,
   action,
   untold,
   resume,
 }: {
   run: TranslationJob | undefined;
+  /** The preparation estimating an outdated run again, if one started. */
+  redo: TranslationJob | undefined;
   state: TranslationState;
+  options: TranslationOptions;
   action: ReturnType<typeof useAction>;
   untold: boolean;
   resume: ReactNode;
@@ -442,11 +456,13 @@ function ApiRun({
       }
       progress={modeLabels[mode]}
       description={
-        outdated
+        outdated && run.finishes
           ? "API settings or the translation mode changed after this estimate, so it can no longer be approved."
-          : quote
-            ? "Nothing is sent until you approve this estimate."
-            : run.message
+          : outdated
+            ? "API settings or the translation mode changed after this estimate in a way that needs a new one."
+            : quote
+              ? "Nothing is sent until you approve this estimate."
+              : run.message
       }
     >
       <div className="status-panel-body">
@@ -457,16 +473,32 @@ function ApiRun({
             </span>
           </Notice>
         ) : outdated ? (
-          <>
-            <Notice tone="warning">
-              <span>
-                <strong>Needs you:</strong> ask your assistant for a new
-                estimate. If its session has ended, paste the prompt into a new
-                one.
-              </span>
-            </Notice>
-            {resume}
-          </>
+          <ActionControl
+            variant="primary"
+            label="Estimate again"
+            disabled={action.busy || state.active || options.mode === "agent"}
+            disabledReason={
+              options.mode === "agent"
+                ? "Choose API Batch or Live API in Options first."
+                : state.active && !redo
+                  ? "Wait for the current work to finish."
+                  : ""
+            }
+            pending={action.busy && action.key === "reestimate"}
+            pendingText="Estimating…"
+            error={action.key === "reestimate" ? action.error : ""}
+            job={redo}
+            onClick={() =>
+              void action.run(
+                async () => {
+                  await flushDrafts();
+                  await api.translation.reestimate(state.projectId, run.id);
+                },
+                "",
+                "reestimate",
+              )
+            }
+          />
         ) : quote ? (
           <>
             <TranslationCost

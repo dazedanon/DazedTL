@@ -716,6 +716,8 @@ METHODS: dict[str, Method] = {
     "translation_accept": Method(TranslationAcceptRequest, TranslationJob),
     "translation_decline": Method(TranslationDeclineRequest, TranslationJob),
     "translation_finish": Method(RunRequest, TranslationJob),
+    # A waiting estimate priced again or prepared again with current settings.
+    "translation_reestimate": Method(RunRequest, TranslationJob),
     "translation_translator_prompt": Method(RunRequest, PreparedHandoff, refresh=False),
     "translation_review": Method(TranslationReviewRequest, Saved),
     "translation_progress": Method(InputPathRequest, TranslationProgress),

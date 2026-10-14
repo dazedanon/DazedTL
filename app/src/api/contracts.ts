@@ -3034,6 +3034,7 @@ export type RpcContract = {
     response: TranslationJob;
   };
   translation_finish: { request: RunRequest; response: TranslationJob };
+  translation_reestimate: { request: RunRequest; response: TranslationJob };
   translation_translator_prompt: {
     request: RunRequest;
     response: PreparedHandoff;

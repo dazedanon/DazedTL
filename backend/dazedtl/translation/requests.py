@@ -432,10 +432,10 @@ def logical_request(batch, context):
     return value
 
 
-def sent_tokens(params, count_tokens):
-    """A request's input tokens counted as Guided's estimate counts them: the
-    system blocks and messages as the model reads them, without the request
-    body's JSON escaping and keys or its response schema."""
+def sent_text(params):
+    """The text a request's input tokens count: the system blocks and
+    messages as the model reads them, without the request body's JSON
+    escaping and keys or its response schema."""
 
     def text(content):
         if isinstance(content, str):
@@ -446,7 +446,12 @@ def sent_tokens(params, count_tokens):
 
     sent = [text(params.get("system") or [])]
     sent += [text(message["content"]) for message in params.get("messages", [])]
-    return count_tokens("\n".join(part for part in sent if part)) + 8
+    return "\n".join(part for part in sent if part)
+
+
+def sent_tokens(params, count_tokens):
+    """A request's input tokens counted as Guided's estimate counts them."""
+    return count_tokens(sent_text(params)) + 8
 
 
 def quote(requests, configuration, count_tokens, inputs=None, cache=None):
@@ -455,14 +460,6 @@ def quote(requests, configuration, count_tokens, inputs=None, cache=None):
     Claude's cached instructions (util/claude_tokens.Cache): a Batch may reuse
     them or write each again, so its price is the most it can cost, with the
     price when every one is reused beside it."""
-    rates = configuration["rates"]
-    if any(
-        type(rates.get(key)) not in (int, float)
-        or not math.isfinite(rates[key])
-        or rates[key] < 0
-        for key in ("input", "output")
-    ):
-        raise ValueError("Choose valid model pricing before estimating API work.")
     if inputs is None:
         inputs = sum(sent_tokens(item["params"], count_tokens) for item in requests)
     outputs = sum(
@@ -479,6 +476,33 @@ def quote(requests, configuration, count_tokens, inputs=None, cache=None):
         )
         for item in requests
     )
+    return price(
+        {
+            "requests": len(requests),
+            "units": sum(len(item["sources"]) for item in requests),
+            "input_tokens": inputs,
+            "output_tokens": outputs,
+        },
+        configuration,
+        cache,
+    )
+
+
+# What a quote counted, which pricing it again under other settings keeps.
+COUNTS = ("requests", "units", "input_tokens", "output_tokens")
+
+
+def price(counts, configuration, cache=None):
+    """A quote of counted requests at these settings' rates."""
+    rates = configuration["rates"]
+    if any(
+        type(rates.get(key)) not in (int, float)
+        or not math.isfinite(rates[key])
+        or rates[key] < 0
+        for key in ("input", "output")
+    ):
+        raise ValueError("Choose valid model pricing before estimating API work.")
+    inputs, outputs = counts["input_tokens"], counts["output_tokens"]
     live = (inputs * rates["input"] + outputs * rates["output"]) / 1_000_000
     factor = rates["batch_factor"]
     batch = live * factor if factor is not None else None
@@ -503,10 +527,7 @@ def quote(requests, configuration, count_tokens, inputs=None, cache=None):
         )
         batch = (inputs * policy["input"] + outputs * policy["output"]) / 1_000_000
     return {
-        "requests": len(requests),
-        "units": sum(len(item["sources"]) for item in requests),
-        "input_tokens": inputs,
-        "output_tokens": outputs,
+        **{key: counts[key] for key in COUNTS},
         "live_cost": live,
         "batch_cost": batch,
         **({"batch_cost_reused": reused} if reused is not None else {}),
