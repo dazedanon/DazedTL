@@ -11,6 +11,38 @@ from .refusals import line_refusal
 from .requests import result_value
 
 ACCEPTED = WORK + "/work/accepted"
+# Each request's export rows before its result joins them, by fingerprint,
+# which fixes everything they hold. A refresh after every accepted receipt
+# rebuilds the rows of the whole run, and hashing their tens of thousands of
+# IDs again took most of its time.
+_ROWS = {}
+ROWS_KEPT = 20_000
+
+
+def _rows(request):
+    rows = _ROWS.get(request["fingerprint"])
+    if rows is None:
+        context = request["context"]
+        rows = []
+        for identity, source in request["sources"].items():
+            row = {
+                "id": digest([request["id"], identity]),
+                "batch": request["id"],
+                "source_id": identity,
+                "source": source,
+            }
+            if "line_kinds" in context:
+                row.update(
+                    kind=context["line_kinds"][identity],
+                    speaker=context["speakers"][identity],
+                )
+            if identity in context.get("qa_notes", {}):
+                row["qa_note"] = context["qa_notes"][identity]
+            rows.append((identity, row, digest(source.encode("utf-8"))))
+        if len(_ROWS) >= ROWS_KEPT:
+            _ROWS.clear()
+        _ROWS[request["fingerprint"]] = rows
+    return rows
 
 
 def translated(request, translations):
@@ -136,27 +168,20 @@ class Results:
 
     def export(self, plan):
         units = []
+        saved = self.saved()
         for request in plan["requests"]:
-            value = self.get(request)
-            for identity, source in request["sources"].items():
-                row = {
-                    "id": digest([request["id"], identity]),
-                    "batch": request["id"],
-                    "source_id": identity,
-                    "source": source,
-                }
-                context = request["context"]
-                if "line_kinds" in context:
-                    row.update(
-                        kind=context["line_kinds"][identity],
-                        speaker=context["speakers"][identity],
-                    )
-                if identity in context.get("qa_notes", {}):
-                    row["qa_note"] = context["qa_notes"][identity]
+            key = request["fingerprint"]
+            value = (
+                (self.get(request, saved[key]) if saved[key] else self.get(request))
+                if key in saved
+                else None
+            )
+            for identity, base, source_sha256 in _rows(request):
+                row = dict(base)
                 if value:
                     row.update(
                         translation=value["translations"][identity],
-                        translated_from_sha256=digest(source.encode("utf-8")),
+                        translated_from_sha256=source_sha256,
                         request_sha256=request["fingerprint"],
                     )
                     if identity in value.get("reviewed", {}):
