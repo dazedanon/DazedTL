@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any
 
 from dazedtl.settings.execution import (
-    LOOKED_UP,
     configuration,
     connection_summary,
     entries_per_request,
@@ -51,13 +50,7 @@ def changed_since(current, frozen_sha256, frozen):
     rates = current.get("rates")
     if not rates or (rates["input"] is not None and rates["output"] is not None):
         return digest(current) != frozen_sha256
-    if frozen is None:
-        return False
-
-    def known(value):
-        return {key: item for key, item in value.items() if key not in LOOKED_UP}
-
-    return digest(known(current)) != digest(known(frozen))
+    return frozen is not None and not repricing.unknown_prices(frozen, current)
 
 
 # Set while the project helper, run by the user's assistant, makes a request.

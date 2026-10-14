@@ -9,6 +9,7 @@ each model's own tokenizer, so a Claude estimate is always estimated again.
 """
 
 from dazedtl.compatibility.request_text import request_text
+from dazedtl.settings.execution import LOOKED_UP
 
 from .files import digest
 
@@ -43,6 +44,18 @@ def priced(configuration):
     """Whether these settings know their model's prices."""
     rates = configuration.get("rates") or {}
     return rates.get("input") is not None and rates.get("output") is not None
+
+
+def known(configuration):
+    """The settings without what a model's price lookup fills in."""
+    return {key: item for key, item in configuration.items() if key not in LOOKED_UP}
+
+
+def unknown_prices(before, after):
+    """Whether ``after`` differs from ``before`` only by prices DazedTL hasn't
+    looked up since it started, which a snapshot reads as unchanged rather
+    than outdate every estimate on each restart."""
+    return not priced(after) and known(before) == known(after)
 
 
 def same_requests(before, after):

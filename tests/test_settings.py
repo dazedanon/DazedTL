@@ -1327,6 +1327,29 @@ class SettingsTests(unittest.TestCase):
         self.assertIsNone(model_output_limit(values, "model-small-other"))
         self.assertIsNone(model_output_limit(values, "model-bad"))
 
+    def test_a_models_looked_up_prices_outlast_a_restart_for_snapshots(self):
+        # Snapshots compare estimates with cached prices only. Kept in memory,
+        # they were gone after every restart, so estimates priced for another
+        # model read Outdated until something looked them up again.
+        from dazedtl.compatibility.model_defaults import ModelDefaults
+
+        found = {"model": "fixture-model", "inputRate": 1.0, "outputRate": 2.0}
+        with (
+            TemporaryDirectory() as temporary,
+            patch(
+                "dazedtl.compatibility.model_defaults.subprocess.run",
+                return_value=SimpleNamespace(stdout=json.dumps(found)),
+            ),
+        ):
+            folder = Path(temporary) / "model-cache"
+            self.assertEqual(ModelDefaults(folder, False).cached("fixture-model"), {})
+            self.assertEqual(
+                ModelDefaults(folder, False).describe("fixture-model"), found
+            )
+            self.assertEqual(
+                ModelDefaults(folder, False).cached("fixture-model"), found
+            )
+
     def test_a_slow_price_catalog_download_ends_at_its_deadline(self):
         # The download's own limits let a slow link run past the 12 seconds
         # its caller waits, so prices never loaded and the catalog was never

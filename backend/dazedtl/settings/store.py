@@ -453,12 +453,12 @@ class Settings:
         """The target language, which needs no connection or model prices."""
         return self._read()["values"]["language"]
 
-    def guided_configuration(self, mode, *, cached_only=False):
+    def guided_configuration(self, mode, *, cached_only=False, unpriced=False):
         from .execution import configuration
 
         state = self._read()
         return {
-            **configuration(self, mode, cached_only=cached_only),
+            **configuration(self, mode, cached_only=cached_only, unpriced=unpriced),
             "engine_settings": self._values(state),
             "stateGrouping": "compatible-states-v1",
             "choiceCollection": preferences.CHOICE_COLLECTION,

@@ -315,15 +315,18 @@ class GuidedTests(unittest.TestCase):
         self.priced = []
         self.uncached = False
 
-        def guided_configuration(mode, cached_only=False):
+        def guided_configuration(mode, cached_only=False, unpriced=False):
             self.priced.append(cached_only)
-            if cached_only and self.uncached:
-                raise ValueError("Model pricing is unknown.")
-            return {
+            configuration = {
                 **deepcopy(self.configuration),
                 "mode": mode,
                 "revision": self.settings_revision,
             }
+            if cached_only and self.uncached:
+                if not unpriced:
+                    raise ValueError("Model pricing is unknown.")
+                configuration["rates"] = {"input": None, "output": None}
+            return configuration
 
         self.settings = SimpleNamespace(
             prepare_engine=lambda **_kwargs: None,
@@ -794,13 +797,19 @@ class GuidedTests(unittest.TestCase):
         )
         self.assertEqual(set(self.priced), {True})
         self.assertTrue(snapshot["estimates"]["database"]["current"])
-        # Without cached prices, a snapshot cannot match the estimate, while
-        # preparing a review still looks them up.
+        # Prices not looked up since DazedTL started, as after a restart,
+        # leave an estimate of the same settings current; another model's
+        # unknown prices can't price it, while preparing a review looks them up.
         self.uncached = True
-        snapshot = self.guided.runs.snapshot(
-            self.identity, self.native, {"changed": [], "retired": []}
-        )
-        self.assertFalse(snapshot["estimates"]["database"]["current"])
+
+        def current():
+            return self.guided.runs.snapshot(
+                self.identity, self.native, {"changed": [], "retired": []}
+            )["estimates"]["database"]["current"]
+
+        self.assertTrue(current())
+        self.configuration.update(model="changed-model")
+        self.assertFalse(current())
         self.priced.clear()
         self.guided.preview(self.identity, "start", options={"mode": "batch"})
         self.assertEqual(set(self.priced), {False})

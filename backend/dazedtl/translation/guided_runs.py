@@ -160,10 +160,11 @@ class GuidedRuns:
         versions = {
             name: record.get("file_versions", {}).get(name, "") for name in names
         }
+        # A snapshot reads cached prices only, which may not be known yet.
         configuration = self.guided.observations.once(
             ("configuration", mode, cached_only),
             lambda: self.guided.settings.guided_configuration(
-                mode, cached_only=cached_only
+                mode, cached_only=cached_only, unpriced=cached_only
             ),
         )
         reused_names = self.name_reuse(native, configuration.get("language"))
@@ -621,7 +622,13 @@ class GuidedRuns:
                     and bool(job.get("estimate"))
                     and identity
                     not in self.guided.inputs(native).record().get("retired_runs", [])
-                    and record["fingerprint"] == inputs["fingerprint"]
+                    and (
+                        record["fingerprint"] == inputs["fingerprint"]
+                        or record.get("shape") == inputs["shape"]
+                        and repricing.unknown_prices(
+                            record["configuration"], inputs["configuration"]
+                        )
+                    )
                 )
                 view = (run_view or self.guided.run_view)(identity, compact=True)
                 # A model switch that keeps its requests prices it again.

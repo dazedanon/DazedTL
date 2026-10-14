@@ -9,6 +9,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from dazedtl.settings.preferences import text
+from dazedtl.storage import write_json
 
 
 class ModelDefaults:
@@ -16,11 +17,32 @@ class ModelDefaults:
         self.workspace = workspace
         self.online = online
         self.cache = {}
+        # Each model's last lookup, kept across launches (see cached).
+        self.saved = None
 
     def cached(self, model):
-        """Known model metadata without a resolver or network read."""
+        """Known model metadata without a resolver or network read: this
+        launch's lookup, else the last one saved. Snapshots compare estimates
+        with these, so a restart doesn't outdate every estimate; approving or
+        preparing a run looks the prices up again."""
         value = self.cache.get(model)
-        return deepcopy(value[1]) if value else {}
+        if value:
+            return deepcopy(value[1])
+        return deepcopy(self.last().get(model, {}))
+
+    def last(self):
+        if self.saved is None:
+            path = self.workspace / "defaults.json"
+            try:
+                value = json.loads(path.read_bytes()) if not path.is_symlink() else {}
+            except OSError, ValueError:
+                value = {}
+            self.saved = {
+                model: row
+                for model, row in (value.items() if isinstance(value, dict) else ())
+                if isinstance(row, dict) and row.get("model") == model
+            }
+        return self.saved
 
     def describe(self, model):
         model = text(model, "model ID", required=True)
@@ -87,4 +109,10 @@ class ModelDefaults:
                 "This model's prices could not be looked up. Try again, or enter custom rates in Settings."
             ) from None
         self.cache[model] = (time.monotonic(), value)
+        if self.last().get(model) != value:
+            self.saved = {**self.last(), model: value}
+            try:
+                write_json(self.workspace / "defaults.json", self.saved)
+            except OSError:
+                pass  # Only snapshots after a restart miss it.
         return deepcopy(value)

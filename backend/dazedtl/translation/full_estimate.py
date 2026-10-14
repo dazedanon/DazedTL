@@ -166,17 +166,17 @@ class FullEstimate:
         policy = deepcopy(self.guided.backend.manual.request_policy)
         tasks = self.scope(project_id, native, event_text)
         saved = self.saved(native)
-        if (
-            saved
-            and saved["result"].get("fingerprint") == self.fingerprint(tasks)
-            # A count that failed may succeed now.
-            and not any(
-                task.get("approximateInput") for task in saved["result"]["tasks"]
-            )
+        # A count that failed may succeed now.
+        if saved and not any(
+            task.get("approximateInput") for task in saved["result"]["tasks"]
         ):
-            raise ValueError(
-                "Nothing changed since the last estimate, so it is still current."
-            )
+            if saved["result"].get("fingerprint") == self.fingerprint(tasks):
+                raise ValueError(
+                    "Nothing changed since the last estimate, so it is still current."
+                )
+            # The prices just looked up were all it lacked.
+            if self.repriced(saved["result"], tasks):
+                return saved
         folder = self.guided.backend.workflows.folder(native["id"])
         sources = inputs.sources(names, inputs.record()["inputs"])
         defaults = self.guided.settings.translation_defaults()
@@ -252,7 +252,13 @@ class FullEstimate:
                     guard=self.guided.runs.poll_guard(native),
                     cached_only=True,
                 )
-                current = self.fingerprint(tasks) == result.get("fingerprint")
+                current = (
+                    self.fingerprint(tasks) == result.get("fingerprint")
+                    or result.get("shape") == self.fingerprint(tasks, "shape")
+                    and repricing.unknown_prices(
+                        result["configuration"], self.configuration(tasks)
+                    )
+                )
                 # A model switch that keeps every task's requests prices
                 # them again.
                 repriced = None if current else self.repriced(result, tasks)
