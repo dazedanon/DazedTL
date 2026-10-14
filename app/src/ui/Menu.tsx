@@ -9,8 +9,13 @@ import {
   type ReactNode,
 } from "react";
 import { Button } from "./Button";
+import { useRefocus } from "./useRefocus";
 
-const MenuClose = createContext<() => void>(() => {});
+const MenuContext = createContext<{
+  close: () => void;
+  /** Arms the list to refocus if this item's row leaves it. */
+  refocus: (item: HTMLElement | null) => void;
+}>({ close: () => {}, refocus: () => {} });
 
 /** Centers the current item, such as the chosen model, in a long open list. */
 const revealCurrent = (popup: HTMLElement | null) => {
@@ -50,6 +55,7 @@ export function Menu({
       "[role=menuitem]:not(:disabled)",
     ) || []),
   ];
+  const refocus = useRefocus(items);
   const position = () => {
     const popup = list.current,
       target = anchor.current;
@@ -98,7 +104,9 @@ export function Menu({
     all[next].focus();
   };
   return (
-    <MenuClose.Provider value={() => list.current?.hidePopover()}>
+    <MenuContext.Provider
+      value={{ close: () => list.current?.hidePopover(), refocus }}
+    >
       <Button {...button} ref={anchor} popoverTarget={id} aria-haspopup="menu">
         {trigger}
       </Button>
@@ -116,6 +124,7 @@ export function Menu({
             String(event.newState === "open"),
           );
           if (event.newState !== "open") {
+            refocus(null);
             // Return focus to the trigger unless a choice moved it elsewhere.
             if (
               document.activeElement === document.body ||
@@ -138,21 +147,25 @@ export function Menu({
       >
         {children}
       </div>
-    </MenuClose.Provider>
+    </MenuContext.Provider>
   );
 }
 
 export function MenuItem({
   onSelect,
   current = false,
+  keepOpen = false,
   children,
   ...button
 }: Omit<ComponentProps<"button">, "onClick" | "role"> & {
   onSelect: () => void;
   /** Marks the item that matches the present state, such as the open project. */
   current?: boolean;
+  /** Leaves the list open, such as for an item that removes its own row;
+      focus then moves to the item taking its place. */
+  keepOpen?: boolean;
 }) {
-  const close = useContext(MenuClose);
+  const { close, refocus } = useContext(MenuContext);
   const node = useRef<HTMLButtonElement>(null);
   // Items that load after the list opens, such as models, reveal themselves.
   useLayoutEffect(() => {
@@ -166,8 +179,9 @@ export function MenuItem({
       role="menuitem"
       aria-current={current || undefined}
       className={`menu-item ${button.className || ""}`}
-      onClick={() => {
-        close();
+      onClick={(event) => {
+        if (keepOpen) refocus(event.currentTarget);
+        else close();
         onSelect();
       }}
     >
@@ -192,7 +206,7 @@ export function MenuSearch({
   placeholder?: string;
   onSubmit?: () => void;
 }) {
-  const close = useContext(MenuClose);
+  const { close } = useContext(MenuContext);
   const input = useRef<HTMLInputElement>(null);
   useLayoutEffect(() => {
     if (input.current?.closest(":popover-open")) input.current.focus();

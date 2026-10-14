@@ -465,6 +465,10 @@ class Application:
         self.sync_game_update()
         return self.state()
 
+    def remove_project(self, project_id):
+        self.projects.remove(project_id)
+        return self.state()
+
     def project_method(self, project_id, method):
         """Choose a game's method; Guided steps link the game's Guided workspace."""
         if method == "guided":
@@ -625,7 +629,13 @@ def routes(app):
         "workspace_recheck": (app.recheck, lambda value, _params: value),
         **{
             name: (getattr(app, name), lambda value, _params: views.application(value))
-            for name in ("open_project", "select_project", "navigate", "project_method")
+            for name in (
+                "open_project",
+                "select_project",
+                "remove_project",
+                "navigate",
+                "project_method",
+            )
         },
         **{
             name: (getattr(app, name), lambda value, _params: views.settings(value))

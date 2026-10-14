@@ -73,8 +73,10 @@ def validate(value):
             raise invalid
         if project["id"] in identities or project["method"] not in METHODS:
             raise invalid
-        if not isinstance(project.get("last_opened", ""), str) or not isinstance(
-            project.get("backend_id", ""), str
+        if (
+            not isinstance(project.get("last_opened", ""), str)
+            or not isinstance(project.get("backend_id", ""), str)
+            or not isinstance(project.get("hidden", False), bool)
         ):
             raise invalid
         identities.add(project["id"])
@@ -146,11 +148,25 @@ class Projects:
         return self._select(data, self._get(data, project_id))
 
     def _select(self, data, project):
+        project.pop("hidden", None)
         project["last_opened"] = datetime.now(UTC).isoformat()
         data["current_id"] = project["id"]
         data["screen"] = "project"
         self._commit(data)
         return project
+
+    def remove(self, project_id):
+        """Take a game off the recent list, closing it if it is open.
+
+        Its record stays, hidden, so its runs keep their owner and its Batches
+        are still collected; opening the game again brings it back.
+        """
+        data = deepcopy(self.data)
+        self._get(data, project_id)["hidden"] = True
+        if data["current_id"] == project_id:
+            data["current_id"] = ""
+            data["screen"] = "project"
+        self._commit(data)
 
     def choose_method(self, project_id, method):
         """Record the method chosen for a game; the other method's work stays."""
@@ -174,7 +190,7 @@ class Projects:
             "project": self.current,
             "screen": self.data["screen"],
             "recent": sorted(
-                self.data["projects"],
+                (p for p in self.data["projects"] if not p.get("hidden")),
                 key=lambda p: p.get("last_opened", ""),
                 reverse=True,
             )[:8],

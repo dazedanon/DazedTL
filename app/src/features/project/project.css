@@ -130,26 +130,33 @@
 .project-recents {
   margin-top: var(--space-6);
 }
-.project-recent-list > button {
+.project-recent {
   display: flex;
   align-items: center;
-  width: 100%;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+.project-recent:last-child {
+  border-bottom: 0;
+}
+.project-recent > button:first-child {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
   gap: var(--space-3);
   justify-content: flex-start;
   text-align: left;
   background: transparent;
   border: 0;
-  border-bottom: 1px solid var(--color-border);
   border-radius: 0;
   padding: var(--space-3) 0;
 }
-.project-recent-list > button:last-child {
-  border-bottom: 0;
-}
-.project-recent-list > button:hover:not(:disabled) {
+/* The whole row lights up, so its Remove button reads as part of it. */
+.project-recent:hover:not(:has(:disabled)) {
   background: var(--color-surface);
 }
-.project-recent-list > button > span {
+.project-recent > button:first-child > span {
   flex: 1;
   min-width: 0;
 }
@@ -170,6 +177,9 @@
 .project-recent-list svg {
   color: var(--color-muted);
   flex-shrink: 0;
+}
+.project-recent-remove:is(:hover, :focus-visible):not(:disabled) svg {
+  color: var(--color-text);
 }
 .method-note {
   color: var(--color-muted);

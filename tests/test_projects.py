@@ -85,12 +85,34 @@ class ProjectTests(unittest.TestCase):
         )
         self.assertEqual(Projects(self.root).data["screen"], "project")
 
+    def test_removed_game_leaves_the_list_and_keeps_its_work(self):
+        first = self.projects.open(self.game("first"), "len")
+        second = self.projects.open(self.game("second"), "len")
+
+        def recent():
+            return [project["id"] for project in self.projects.state()["recent"]]
+
+        self.projects.remove(second["id"])
+        self.assertIsNone(self.projects.current)
+        self.assertEqual(self.projects.data["screen"], "project")
+        self.assertEqual(recent(), [first["id"]])
+        self.projects.remove(first["id"])
+        self.assertEqual(recent(), [])
+        # Saved runs and Batches still find their owner after a restart.
+        restored = Projects(self.root)
+        self.assertEqual(restored.get(second["id"])["source"], second["source"])
+        # Opening the game again brings back the same project.
+        self.assertEqual(restored.open(self.game("second"))["id"], second["id"])
+        self.projects = restored
+        self.assertEqual(recent(), [second["id"]])
+
     def test_invalid_navigation_cannot_switch_or_modify_projects(self):
         self.projects.open(self.game("first"), "len")
         before = deepcopy(self.projects.data)
         saved = self.projects.path.read_bytes()
         for action in (
             lambda: self.projects.select("missing"),
+            lambda: self.projects.remove("missing"),
             lambda: self.projects.navigate("missing"),
         ):
             with self.subTest(action=action):
@@ -105,6 +127,7 @@ class ProjectTests(unittest.TestCase):
         third = self.game("third")
         for action in (
             lambda: self.projects.select(first["id"]),
+            lambda: self.projects.remove(first["id"]),
             lambda: self.projects.open(third, "guided"),
             lambda: self.projects.navigate("settings"),
         ):

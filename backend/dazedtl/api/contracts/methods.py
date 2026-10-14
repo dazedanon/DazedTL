@@ -612,6 +612,8 @@ METHODS: dict[str, Method] = {
     "assistant_task_dismiss": Method(AssistantTaskRequest, AssistantTaskDismissed),
     "open_project": Method(OpenProjectRequest, AppState),
     "select_project": Method(ProjectRequest, AppState),
+    # Takes a game off the recent list; its saved work stays.
+    "remove_project": Method(ProjectRequest, AppState),
     "navigate": Method(NavigateRequest, AppState),
     "project_method": Method(ProjectMethodRequest, AppState),
     # Settings

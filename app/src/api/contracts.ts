@@ -2859,6 +2859,7 @@ export type RpcContract = {
   };
   open_project: { request: OpenProjectRequest; response: AppState };
   select_project: { request: ProjectRequest; response: AppState };
+  remove_project: { request: ProjectRequest; response: AppState };
   navigate: { request: NavigateRequest; response: AppState };
   project_method: { request: ProjectMethodRequest; response: AppState };
   settings_get: { request: NoParams; response: Settings };

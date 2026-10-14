@@ -261,3 +261,20 @@ main > p {
   white-space: nowrap;
   font-size: var(--font-small);
 }
+/* Each game's row ends with its own Remove button. */
+.project-menu-row {
+  display: flex;
+  align-items: center;
+}
+.project-menu-row > .project-menu-item {
+  flex: 1;
+}
+.menu-item.project-menu-remove {
+  width: auto;
+  flex-shrink: 0;
+  color: var(--color-muted);
+}
+.menu-item.project-menu-remove:hover,
+.menu-item.project-menu-remove:focus-visible {
+  color: var(--color-text);
+}

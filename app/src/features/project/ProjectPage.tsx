@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ArrowRight, Check, Folder, FolderOpen } from "lucide-react";
+import { useRef, useState } from "react";
+import { ArrowRight, Check, Folder, FolderOpen, X } from "lucide-react";
 import type { AppState, Job, Project } from "../../api/contracts";
 import { useApplication } from "../../app/ApplicationProvider";
 import { ActionBar } from "../../ui/ActionBar";
@@ -15,6 +15,7 @@ import { Section } from "../../ui/Section";
 import { StatusIcon } from "../../ui/StatusIcon";
 import { TabPanel, Tabs } from "../../ui/Tabs";
 import { displayLabels, displayMarks } from "../../ui/displayStatus";
+import { useRefocus } from "../../ui/useRefocus";
 import { engineLabel, sentence } from "../../ui/displayText";
 import { AssistantTaskList } from "../assistant/AssistantTaskList";
 import { useAssistantTasks } from "../assistant/useAssistantTasks";
@@ -30,6 +31,9 @@ import type { SettingsSection } from "../settings/Settings";
 import { guidedEngines, methodLabels } from "./MethodDialog";
 
 export type ProjectTab = "status" | "history" | "versions" | "backups";
+/** What removing a game from the recent list does, wherever it is offered. */
+export const removeHint =
+  "Remove from list. Opening the game again brings it back with its work.";
 type Amounts = ReturnType<typeof projectAmounts>;
 
 /**
@@ -41,6 +45,8 @@ export default function ProjectPage({
   busy,
   open,
   select,
+  recent,
+  remove,
   report,
   progress,
   amounts,
@@ -57,6 +63,9 @@ export default function ProjectPage({
   busy: boolean;
   open: () => void;
   select: (id: string) => void;
+  /** The recent list, without games being removed. */
+  recent: Project[];
+  remove: (id: string) => void;
   report: (error: unknown) => void;
   progress: GuidedProgress | null;
   amounts: Amounts | null;
@@ -74,7 +83,15 @@ export default function ProjectPage({
 }) {
   const project = state.project;
   if (!project)
-    return <NoProject state={state} busy={busy} open={open} select={select} />;
+    return (
+      <NoProject
+        recent={recent}
+        busy={busy}
+        open={open}
+        select={select}
+        remove={remove}
+      />
+    );
   const available = !!project.available;
   return (
     <PageLayout variant="editor" className="project-page" aria-label="Project">
@@ -655,17 +672,24 @@ function ProjectBackups() {
 
 /** With no game open, the page offers to open one or a recent project. */
 function NoProject({
-  state,
+  recent: all,
   busy,
   open,
   select,
+  remove,
 }: {
-  state: AppState;
+  recent: Project[];
   busy: boolean;
   open: () => void;
   select: (id: string) => void;
+  remove: (id: string) => void;
 }) {
-  const recent = state.recent.slice(0, 5);
+  const recent = all.slice(0, 5);
+  const list = useRef<HTMLDivElement>(null);
+  const refocus = useRefocus(() => [
+    ...(list.current?.querySelectorAll<HTMLElement>("button:not(:disabled)") ||
+      []),
+  ]);
   return (
     <PageLayout className="project-page" aria-label="Project">
       <PageHeader title="Project" />
@@ -691,22 +715,33 @@ function NoProject({
       </ActionList>
       {!!recent.length && (
         <Section title="Recent projects" className="project-recents">
-          <div className="project-recent-list">
+          <div ref={list} className="project-recent-list">
             {recent.map((item) => (
-              <Button
-                key={item.id}
-                disabled={busy}
-                onClick={() => select(item.id)}
-              >
-                <Folder size={17} aria-hidden="true" />
-                <span>
-                  <strong>{item.name}</strong>
-                  <small>
-                    <PathText path={item.source} />
-                  </small>
-                </span>
-                <ArrowRight size={15} aria-hidden="true" />
-              </Button>
+              <div key={item.id} className="project-recent">
+                <Button disabled={busy} onClick={() => select(item.id)}>
+                  <Folder size={17} aria-hidden="true" />
+                  <span>
+                    <strong>{item.name}</strong>
+                    <small>
+                      <PathText path={item.source} />
+                    </small>
+                  </span>
+                  <ArrowRight size={15} aria-hidden="true" />
+                </Button>
+                <Button
+                  variant="quiet"
+                  className="project-recent-remove"
+                  aria-label={`Remove ${item.name} from the list`}
+                  title={removeHint}
+                  disabled={busy}
+                  onClick={(event) => {
+                    refocus(event.currentTarget);
+                    remove(item.id);
+                  }}
+                >
+                  <X size={15} aria-hidden="true" />
+                </Button>
+              </div>
             ))}
           </div>
         </Section>

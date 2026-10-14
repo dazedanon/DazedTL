@@ -622,6 +622,7 @@ Windows 720px tall or shorter compact the top bar and footers; fill editors and 
 One choice among a few, such as Batch or Live and the file-group filters, uses [SegmentedControl](../app/src/ui/SegmentedControl.tsx), so it reads as one choice rather than separate actions.
 Editable suggestion fields use the shared [ComboBox](../app/src/ui/ComboBox.tsx): its top-layer list scrolls within the available window height and opens above the field when space below is limited.
 Action lists that open from a button, such as the project switcher, the [model menu](../app/src/features/settings/ModelMenu.tsx) and Image Manager's Select and More, use the shared [Menu](../app/src/ui/Menu.tsx) in the same top-layer style, with arrow-key movement and light dismiss.
+An item that removes its own row, such as the switcher's Remove button for a game that is not open, keeps the list open, and focus moves to the item that takes its place.
 The model menu reads the connection's models only when opened and saves against a fresh settings revision; it refuses while Settings holds unsaved edits, and a clean Settings page reloads after it saves.
 The same menu sits on the Settings connection panel, so the model is chosen beside the connection it belongs to; Translation defaults keeps the language and per-model options.
 The list opens with a [MenuSearch](../app/src/ui/Menu.tsx) field focused, and Down moves into its matches; the field also takes a model ID the list lacks, offered as Use and taken by Enter when nothing matches.
@@ -976,6 +977,7 @@ Renderer diagnostics contain fixed error types and source locations resolved thr
 Project-format changes increment `SCHEMA_VERSION` and register consecutive upgrades in [projects/store.py](../backend/dazedtl/projects/store.py).
 The storage helper validates the result, retains the original bytes in a backup, and replaces the file atomically; unsupported or invalid formats are left untouched.
 Project opening and selection publish their in-memory ownership only after backend persistence succeeds; presentation-only navigation does not change that ownership.
+Removing a game from the recent list hides its registry record instead of deleting it, so its runs, Batches and assistant reports keep their owner, and opening or selecting the game again shows it with its work; older versions ignore the flag and list the game, so it needs no new format version.
 Engine-owned settings and run formats remain the adapter's responsibility.
 Diagnostics record only fixed metadata and relative code locations, excluding exception messages, payloads, and raw stderr.
 They keep only failures the interface reports generically (internal and storage errors, abnormal backend exits, renderer failures), so explained refusals, clean shutdowns and relayed backend errors cannot push them out of the bounded report.

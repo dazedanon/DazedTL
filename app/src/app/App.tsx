@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ListChecks,
   Check,
+  X,
 } from "lucide-react";
 import { api } from "../api/client";
 import { flushDrafts } from "../state/leaveGuards";
@@ -20,7 +21,10 @@ import { PageHeader, PageLayout } from "../ui/PageLayout";
 import GuidedWorkflow from "../features/guided/GuidedWorkflow";
 import { guidedProgress, projectAmounts } from "../features/guided/progress";
 import type { GuidedIntent } from "../features/guided/workspace/model";
-import ProjectPage, { type ProjectTab } from "../features/project/ProjectPage";
+import ProjectPage, {
+  removeHint,
+  type ProjectTab,
+} from "../features/project/ProjectPage";
 import { MethodDialog } from "../features/project/MethodDialog";
 import { assistantTasksHeading } from "../features/assistant/AssistantTaskList";
 import { useAssistantTasks } from "../features/assistant/useAssistantTasks";
@@ -94,6 +98,35 @@ export default function App() {
       await application.settle();
       application.navigate("project");
     });
+  // Other games leave the list at once, so several can go in a row; one
+  // whose removal fails comes back, and the error shows.
+  const [removing, setRemoving] = useState<ReadonlySet<string>>(new Set());
+  const recent = state?.recent.filter((item) => !removing.has(item.id)) ?? [];
+  const remove = (id: string) => {
+    if (id === project?.id) {
+      void action.run(async () => {
+        await flushDrafts();
+        await api.remove(id);
+        await application.settle();
+        application.navigate("project");
+      });
+      return;
+    }
+    if (removing.has(id)) return;
+    setRemoving((ids) => new Set(ids).add(id));
+    const since = application.mark();
+    void api
+      .remove(id)
+      .then(() => application.settle(since))
+      .catch(action.report)
+      .finally(() =>
+        setRemoving((ids) => {
+          const next = new Set(ids);
+          next.delete(id);
+          return next;
+        }),
+      );
+  };
   const navigate = (screen: Screen) =>
     action.run(async () => {
       await flushDrafts();
@@ -221,26 +254,36 @@ export default function App() {
               </>
             }
           >
-            {state.recent.map((item) => (
-              <MenuItem
-                key={item.id}
-                className="project-menu-item"
-                current={item.id === project.id}
-                onSelect={() => {
-                  if (item.id !== project.id) void select(item.id);
-                }}
-              >
-                <FolderOpen size={16} aria-hidden="true" />
-                <span>
-                  <strong>{item.name}</strong>
-                  <small>
-                    <PathText path={item.source} />
-                  </small>
-                </span>
-                {item.id === project.id && (
-                  <Check size={15} aria-label="Open now" />
-                )}
-              </MenuItem>
+            {recent.map((item) => (
+              <div key={item.id} className="project-menu-row">
+                <MenuItem
+                  className="project-menu-item"
+                  current={item.id === project.id}
+                  onSelect={() => {
+                    if (item.id !== project.id) void select(item.id);
+                  }}
+                >
+                  <FolderOpen size={16} aria-hidden="true" />
+                  <span>
+                    <strong>{item.name}</strong>
+                    <small>
+                      <PathText path={item.source} />
+                    </small>
+                  </span>
+                  {item.id === project.id && (
+                    <Check size={15} aria-label="Open now" />
+                  )}
+                </MenuItem>
+                <MenuItem
+                  className="project-menu-remove"
+                  aria-label={`Remove ${item.name} from the list`}
+                  title={removeHint}
+                  keepOpen={item.id !== project.id}
+                  onSelect={() => remove(item.id)}
+                >
+                  <X size={15} aria-hidden="true" />
+                </MenuItem>
+              </div>
             ))}
             <MenuSeparator />
             <MenuItem onSelect={() => void open()}>Open a game…</MenuItem>
@@ -401,6 +444,8 @@ export default function App() {
                 busy={action.busy}
                 open={open}
                 select={select}
+                recent={recent}
+                remove={remove}
                 report={action.report}
                 progress={progress}
                 amounts={amounts}
