@@ -12,6 +12,7 @@ from dazedtl.settings.preferences import (
     CHOICE_COLLECTION,
     GENERATION_PARAMETERS,
     PAGE_PACKING,
+    REUSE_STRETCHES,
     SAME_LINE_SPEAKERS,
     SPEAKER_CONTEXT,
     batch_input_tokens,
@@ -152,6 +153,7 @@ def install(*, coordinator=False):
             or policy.get("speakerContext") not in (None, SPEAKER_CONTEXT)
             or policy.get("sameLineSpeakers") not in (None, SAME_LINE_SPEAKERS)
             or policy.get("pagePacking") not in (None, PAGE_PACKING)
+            or policy.get("reuseStretches") not in (None, REUSE_STRETCHES)
             or policy.get("battleMessageUsers")
             not in (None, *BATTLE_MESSAGE_USERS_LEVELS)
             or policy.get("openrouterStructuredOutputs")
@@ -208,7 +210,12 @@ def install(*, coordinator=False):
             "batch",
             "translate",
         }:
-            evidence = Evidence(root, plan["mode"], plan)
+            evidence = Evidence(
+                root,
+                plan["mode"],
+                plan,
+                share_stretches=policy.get("reuseStretches") == REUSE_STRETCHES,
+            )
             evidence.install(translation, sys.modules.get("modules.rpgmakermvmz"))
             record = evidence.record
         configure_builders(

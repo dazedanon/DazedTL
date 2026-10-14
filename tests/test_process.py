@@ -1045,7 +1045,7 @@ class ProcessTests(unittest.TestCase):
             mixed = translator()
             calls = []
 
-            def mixed_ai(text, history, filename):
+            def mixed_ai(text, history, config, filename):
                 calls.append(text)
                 mixed._thread_local.last_translation_had_mismatch = text == [values[0]]
                 return [text if text == [values[0]] else ["Translated"], [3, 4]]
@@ -1055,8 +1055,10 @@ class ProcessTests(unittest.TestCase):
                 mixed._thread_local, "last_translation_had_mismatch", False
             )
             Evidence(retry_root, "translate", mixed_plan).install(mixed)
+            # Runs frozen before shared stretches keep one request per span.
+            config = SimpleNamespace(batchSize=50)
             self.assertEqual(
-                mixed.translateAI(values, [], "Items.json"),
+                mixed.translateAI(values, [], config, "Items.json"),
                 [[values[0], "Reused", "Translated"], [6, 8]],
             )
             self.assertEqual(calls, [[values[0]], [values[2]]])
@@ -1066,6 +1068,34 @@ class ProcessTests(unittest.TestCase):
                     "response"
                 ],
                 "Translated",
+            )
+            # Spans that fit one request share it, each labelled with the
+            # lines before it, and their results return to their places.
+            shared_root = Path(temporary) / "shared"
+            write_json(shared_root / "files/Items.json", values)
+            shared = translator()
+            sent = []
+
+            def shared_ai(text, history, config, filename):
+                sent.append((text, history))
+                return [[value + "!" for value in text], [5, 6]]
+
+            shared.translateAI = point(shared_ai)
+            shared._request_context_parts = lambda history, *_: (history, [])
+            Evidence(
+                shared_root, "translate", mixed_plan, share_stretches=True
+            ).install(shared)
+            self.assertEqual(
+                shared.translateAI(values, ["前"], config, "Items.json"),
+                [[values[0] + "!", "Reused", values[2] + "!"], [5, 6]],
+            )
+            ((text, history),) = sent
+            self.assertEqual(text, [values[0], values[2]])
+            self.assertEqual(history["source_items"], [])
+            self.assertTrue(
+                history["instructions"][-1].endswith(
+                    "\n- line 1\n  前\n- line 2\n  失敗\n  既存 → Reused"
+                )
             )
             # The native comment handler may consume aligned mixed results;
             # malformed lengths and name-preflight failures keep their guard.

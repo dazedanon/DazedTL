@@ -316,8 +316,9 @@ Every selected file is still parsed; untranslated or changed text within a previ
 Reuse is per text identity, never a file-complete skip.
 New provenance associates validated identities with their files so changing one source does not reuse its old values.
 Verified completed files from partial runs are collected only when their frozen inputs still match the working copy; newer edits are retained.
-When a call mixes reused translations with remaining source spans, a mismatch in one span preserves that span's native fallback and continues the others.
-The adapter retains successful translations, all attempted usage and the final mismatch flag without changing native chunking, context, validation or retry rules.
+When a call mixes reused translations with remaining source spans, runs frozen with the reuse-stretches policy (`REUSE_STRETCHES` in [preferences.py](../backend/dazedtl/settings/preferences.py)) send the spans together in requests up to the request size, each labelled with the lines before it and their earlier translations, so scattered leftovers do not each pay for a full prompt; older runs, and a call with one span, send each span with its preceding source.
+A mismatch in one request preserves its lines' native fallback and continues the others.
+The adapter retains successful translations, all attempted usage and the final mismatch flag without changing native validation or retry rules.
 The MV/MZ comment handler also retains aligned partial results instead of discarding every comment after one rejected chunk.
 Its length/type guard and the separate name-preflight checks remain intact; native mismatch records still identify the file for review.
 Source identity currently treats repeated identical strings within one file and phase as aliases.

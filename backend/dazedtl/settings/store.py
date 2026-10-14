@@ -465,6 +465,7 @@ class Settings:
             "speakerContext": preferences.SPEAKER_CONTEXT,
             "sameLineSpeakers": preferences.SAME_LINE_SPEAKERS,
             "pagePacking": preferences.PAGE_PACKING,
+            "reuseStretches": preferences.REUSE_STRETCHES,
             "battleMessageUsers": preferences.BATTLE_MESSAGE_USERS,
         }
 
@@ -1096,6 +1097,7 @@ class Settings:
                 "speakerContext": preferences.SPEAKER_CONTEXT,
                 "sameLineSpeakers": preferences.SAME_LINE_SPEAKERS,
                 "pagePacking": preferences.PAGE_PACKING,
+                "reuseStretches": preferences.REUSE_STRETCHES,
                 "battleMessageUsers": preferences.BATTLE_MESSAGE_USERS,
                 "entriesPerRequest": entries,
                 "inputRate": input_rate,

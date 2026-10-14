@@ -50,6 +50,66 @@ def keep_aligned_partial_results(module):
     module.translateAI.layer("partial-results", translate)
 
 
+# Earlier lines quoted before each stretch of a shared request.
+STRETCH_CONTEXT = 2
+STRETCHES = (
+    "These lines are separate stretches of one scene; the lines between them "
+    "were translated earlier. Each stretch below lists the lines just before "
+    "it, with their earlier English after →; continue the scene from them. "
+    "Keep every line in the same format as its source line, including any "
+    "name at its start. The stretches:"
+)
+
+
+def stretches(saved):
+    """(start, end) of each run of lines without a reusable translation."""
+    spans, start = [], None
+    for index, value in enumerate([*saved, ""]):
+        if value is None and start is None:
+            start = index
+        elif value is not None and start is not None:
+            spans.append((start, index))
+            start = None
+    return spans
+
+
+def shared_requests(spans, size):
+    """Consecutive stretches grouped to fit one request each; a longer
+    stretch keeps a group of its own."""
+    groups, lines = [], 0
+    for start, end in spans:
+        if groups and lines + end - start <= size:
+            groups[-1].append((start, end))
+            lines += end - start
+        else:
+            groups.append([(start, end)])
+            lines = end - start
+    return groups
+
+
+def stretch_notes(group, values, saved, source):
+    """Each stretch's lines in the shared request and the lines before it:
+    earlier translations with their source, or the call's own preceding
+    source before its first line, one per line as the source context shows
+    them."""
+
+    def line(text):
+        return " ".join(str(text).split())
+
+    notes, position = [], 0
+    for start, end in group:
+        before = [
+            line(values[index])
+            + (f" → {line(saved[index])}" if saved[index] is not None else "")
+            for index in range(max(0, start - STRETCH_CONTEXT), start)
+        ] or [line(item) for item in source[-STRETCH_CONTEXT:] if isinstance(item, str)]
+        first, last = position + 1, position + end - start
+        span = f"line {first}" if first == last else f"lines {first}-{last}"
+        notes.append(f"- {span}" + "".join(f"\n  {item}" for item in before))
+        position += end - start
+    return STRETCHES + "\n" + "\n".join(notes)
+
+
 def source_text(value, config):
     """Source-language text, which the shared translator sends; it cleans the rest."""
     pattern = getattr(config, "langRegex", None)
@@ -61,9 +121,12 @@ def source_text(value, config):
 
 
 class Evidence:
-    def __init__(self, root, mode, plan=None):
+    def __init__(self, root, mode, plan=None, *, share_stretches=False):
         self.path = Path(root) / "log/dazedtl-process.sqlite3"
         self.mode = mode
+        # Runs frozen before the reuse-stretches policy keep a request per
+        # stretch, so their Batch requests rebuild identically.
+        self.share_stretches = share_stretches
         self.local = threading.local()
         self.plan = plan or {}
         self.reused = dict(self.plan.get("dazedtl_continuation", {}))
@@ -399,6 +462,57 @@ class Evidence:
             with self.session():
                 return checked(native, *args, **kwargs)
 
+        def remaining(native, bound, saved):
+            """Translates a call's lines that have no reusable translation.
+
+            Under the reuse-stretches policy, stretches between reused lines
+            share requests up to the request size, each labelled with the lines
+            before it; otherwise, and for a call with one stretch, each
+            stretch is sent with its preceding source. Each request's mismatch keeps its own
+            lines' native fallback, and every attempt's usage counts.
+            """
+            values = bound.arguments["text"]
+            config = bound.arguments.get("config")
+            size = getattr(config, "batchSize", None)
+            output, tokens, mismatched = list(saved), [0, 0], False
+            for group in shared_requests(
+                stretches(saved),
+                size if self.share_stretches and type(size) is int and size > 0 else 1,
+            ):
+                part = call_signature.bind(*bound.args, **bound.kwargs)
+                lines = [index for start, end in group for index in range(start, end)]
+                part.arguments["text"] = [values[index] for index in lines]
+                history = part.arguments.get("history")
+                start = group[0][0]
+                if len(group) > 1:
+                    source, instructions = translation._request_context_parts(
+                        history,
+                        part.arguments.get("context_kind"),
+                        part.arguments.get("request_instructions"),
+                    )
+                    part.arguments["history"] = {
+                        "instructions": [
+                            *instructions,
+                            stretch_notes(group, values, saved, source),
+                        ],
+                        "source_items": [],
+                    }
+                    if "request_instructions" in part.arguments:
+                        part.arguments["request_instructions"] = None
+                elif start and isinstance(history, list):
+                    limit = getattr(config, "maxHistory", 10)
+                    part.arguments["history"] = (history + values[:start])[-limit:]
+                translated, used = validated(native, *part.args, **part.kwargs)
+                mismatched |= translation.last_translation_had_mismatch()
+                if len(translated) != len(lines):
+                    mismatched = True
+                    translated = [values[index] for index in lines]
+                for index, value in zip(lines, translated):
+                    output[index] = value
+                tokens = [a + b for a, b in zip(tokens, used)]
+            translation._thread_local.last_translation_had_mismatch = mismatched
+            return [output, tokens]
+
         def checked(native, *args, **kwargs):
             bound = call_signature.bind(*args, **kwargs)
             text = bound.arguments.get("text")
@@ -452,41 +566,14 @@ class Evidence:
                 # Every reused row was checked above.
                 output = [cast(dict, row)["response"] for row in reused]
                 return [output if isinstance(text, list) else output[0], [0, 0]]
-            if isinstance(text, list) and any(
-                row is not None and row.get("source") == value
+            saved = [
+                row["response"]
+                if row is not None and row.get("source") == value
+                else None
                 for row, value in zip(reused, values)
-            ):
-                output, tokens = [], [0, 0]
-                mismatched = False
-                cursor = 0
-                while cursor < len(values):
-                    row = reused[cursor]
-                    if row is not None and row.get("source") == values[cursor]:
-                        output.append(row["response"])
-                        cursor += 1
-                        continue
-                    end = cursor + 1
-                    while end < len(values) and reused[end] is None:
-                        end += 1
-                    segment = call_signature.bind(*args, **kwargs)
-                    segment.arguments["text"] = values[cursor:end]
-                    history = segment.arguments.get("history")
-                    if cursor and isinstance(history, list):
-                        limit = getattr(
-                            segment.arguments.get("config"), "maxHistory", 10
-                        )
-                        segment.arguments["history"] = (history + values[:cursor])[
-                            -limit:
-                        ]
-                    translated, used = validated(
-                        native, *segment.args, **segment.kwargs
-                    )
-                    mismatched |= translation.last_translation_had_mismatch()
-                    output.extend(translated)
-                    tokens = [a + b for a, b in zip(tokens, used)]
-                    cursor = end
-                translation._thread_local.last_translation_had_mismatch = mismatched
-                return [output, tokens]
+            ]
+            if isinstance(text, list) and any(value is not None for value in saved):
+                return remaining(native, call_signature.bind(*args, **kwargs), saved)
             previous = getattr(self.local, "call", None)
             self.local.call = []
             self.local.request_cursors = {}
