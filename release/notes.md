@@ -3,6 +3,8 @@
 ### Added
 
 - **Project:** the **×** beside a game in the project menu, or under **Recent projects**, removes it from the list, closing it if it is open. Its work stays, and opening the game again brings it back.
+- **Translate:** choosing another model shows an estimate at that model's prices at once, without estimating again, when it sends the same requests, as most models of a connection do apart from Claude's. **Cost estimate** stays current, and the Batch and Live review windows have their own model menu; a Batch then prepares its requests for the new model before **Submit Batch**.
+- **Assistant-led:** the API estimate waiting on **Progress** takes the new prices as soon as you choose another model or switch between **API Batch** and **Live API**, when its requests stay the same, and approving it sends them with your new choice. An estimate that needs new requests shows **Estimate again**, which prepares one without your assistant.
 
 ### Changed
 
@@ -10,6 +12,8 @@
 
 ### Fixed
 
+- **Assistant-led:** after you switch models with **Change** on **Progress**, the waiting estimate no longer keeps the previous model's price under the new model's name, ready to approve. It could show gpt-5.6-sol's $38.72 for gpt-5.6-terra until **Approve and submit Batch** refused it.
+- **Cost estimate:** an unchanged estimate no longer reads **Outdated** after DazedTL restarts, where **Estimate again** then said "Nothing changed since the last estimate, so it is still current."
 - **Translate:** the TOTAL at the end of a run's log now adds up every file in the run, including files translated before a resume, and the names translated before a Batch. It repeated the last file's own cost, so a run that cost $2.22 could read $0.0237, or $0.0000 when the last files needed no requests.
 - **Translate:** an open **Inspect run** window now shows the Run log of a run that resumes or finishes while it is open, including its TOTAL. It kept the log from when it opened, so a resumed run could still end with "Translation failed!" until the window was closed and opened again.
 - **Translate:** **Inspect run** no longer says "1 submission could not be confirmed" while a running run is still waiting on that request; it appears only once the run has stopped.
