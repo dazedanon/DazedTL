@@ -209,8 +209,14 @@ export const imageClassificationLabels: Record<string, string> = {
 /** What the shared word for an image's state leaves out: what blocks it, who
  * reviewed it, or what discovery found. */
 export function imageReason(asset: ImageAsset, listed = false) {
+  const display = imageDisplay(asset, listed);
+  // The backend notes what each image's next step needs; it explains a
+  // blocked or unreviewed image, and before then the copied translation task
+  // takes those steps itself, so what discovery found says more.
   const reason =
-    asset.blockedReason ||
+    (display === "blocked" || asset.state === "needs_review"
+      ? asset.blockedReason
+      : "") ||
     asset.sourceIssue ||
     (asset.aiReviewed
       ? asset.userReviewed
@@ -221,7 +227,7 @@ export function imageReason(asset: ImageAsset, listed = false) {
         : asset.editable && asset.state === "editable"
           ? "Editable copy made"
           : imageClassificationLabels[asset.classification] || "");
-  return reason === displayLabels[imageDisplay(asset, listed)] ? "" : reason;
+  return reason === displayLabels[display] ? "" : reason;
 }
 /** An image's state in the shared words, then its reason. */
 export function imageStatus(asset: ImageAsset, listed = false) {
