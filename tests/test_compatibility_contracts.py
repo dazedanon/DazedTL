@@ -1647,6 +1647,33 @@ saved.write_text(json.dumps(old))
 results.append(read_progress(project)["phases"]["images"])
 del report["images"]
 results.append(update_progress(LenProject(root, include_images=False), report)["phases"]["images"])
+# A text export may list parts, so saving one request rewrites one part; it
+# counts as the same units in one file.
+text = LenProject(root, include_images=False)
+rows = [{"id": "b", "source": "いいえ"}, *units["text"]]
+def save(name, value):
+    (work / name).write_text(json.dumps(value))
+save("one.json", {"complete": True, "units": rows})
+save("p1.json", {"units": rows[:1]})
+save("p2.json", {"units": rows[1:]})
+paths = [".dazedtl/len-method/work/p1.json", ".dazedtl/len-method/work/p2.json"]
+save("parts.json", {"complete": True, "parts": paths})
+def metric(name):
+    return update_progress(text, {"text": ".dazedtl/len-method/work/" + name})["metrics"]["text"]
+results.append(metric("parts.json") == metric("one.json"))
+# An edited part counts again.
+save("p1.json", {"units": [{**rows[0], "translation": "No",
+                            "translated_from_sha256": hashlib.sha256("いいえ".encode()).hexdigest()}]})
+results.append(metric("parts.json")["translated"])
+# A unit in two parts, and image parts, are refused.
+save("p1.json", {"units": rows[1:]})
+save("image-parts.json", {"complete": True, "parts": paths})
+for refused in ({"text": ".dazedtl/len-method/work/parts.json"},
+                {"images": ".dazedtl/len-method/work/image-parts.json"}):
+    try:
+        update_progress(project if "images" in refused else text, refused)
+    except ValueError as error:
+        results.append(str(error))
 print(json.dumps(results))
 """
         with TemporaryDirectory() as folder:
@@ -1666,6 +1693,10 @@ print(json.dumps(results))
                 ),
                 "active",
                 "out_of_scope",
+                True,
+                2,
+                "Unit a appears in more than one part.",
+                "Only a text export can list parts, in place of its units list.",
             ],
         )
 

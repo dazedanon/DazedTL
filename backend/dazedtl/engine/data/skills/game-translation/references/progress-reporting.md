@@ -66,6 +66,10 @@ Each text/image export uses this envelope:
 }
 ```
 
+A text export may instead list `parts`, game-relative paths of files that each hold
+`{"units": [...]}`, in place of its own `units`; an id may appear in only one part.
+The app writes its own export this way, so saving one request rewrites one part.
+
 Set `complete` true only when the export contains the entire independently audited
 corpus for that metric and scope. Otherwise the panel shows completed units over the discovered denominator with a provisional percentage, explicitly marking full coverage unaudited.
 Before any export exists, the denominator and percentage remain unknown. Include every in-scope occurrence, including

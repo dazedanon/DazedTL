@@ -32,6 +32,7 @@ from dazedtl.translation.operations import (
 )
 from dazedtl.translation.project import DEFAULTS, WORK, ProjectWorkspace, scope
 from dazedtl.translation.requests import plan_input
+from dazedtl.translation.results import EXPORT, Results
 from dazedtl.translation.run_compiler import CENSUS_UNCOVERED, SCOPE_RULES
 from dazedtl.translation.service import IMAGE_UNITS, Translation
 
@@ -287,9 +288,8 @@ class WorkflowTests(unittest.TestCase):
         check_response("translation_request", preview)
         reviewed = preview["result"]
         self.assertIn("line", reviewed["reviewed"])
-        exported = read_json(self.game / (WORK + "/work/translation-units.json"))[
-            "units"
-        ][0]
+        index = read_json(self.game / (WORK + "/work/translation-units.json"))
+        exported = read_json(self.game / index["parts"][0])["units"][0]
         self.assertEqual(
             (exported["kind"], exported["speaker"], exported["qa_note"]),
             ("dialogue", None, note),
@@ -319,6 +319,71 @@ class WorkflowTests(unittest.TestCase):
         corrected = self.service.request(self.identity, reused["id"], 0)
         self.assertNotIn("reviewed", corrected["result"])
         self.assertEqual(corrected["request"]["context"]["qa_notes"]["line"], note)
+
+    def test_saving_a_request_rebuilds_only_its_part_of_the_progress_export(self):
+        # The export held every line of the run, so each accepted receipt
+        # reread every saved result and rewrote every line.
+        units = WORK + "/work/source-units.json"
+        write_json(
+            self.game / units,
+            {
+                "version": 1,
+                "units": [
+                    {"id": "a/1", "scene": "a", "source": "はい。"},
+                    {"id": "b/1", "scene": "b", "source": "いいえ。"},
+                ],
+            },
+        )
+        selected = self.project.read()
+        self.service.save(
+            self.identity,
+            selected["revision"],
+            {**selected["options"], "mode": "agent"},
+        )
+        with patch("dazedtl.translation.results.PART_REQUESTS", 1):
+            run = self.prepared(self.service.organize(self.identity, units))["run"]
+            _job, plan = self.service.jobs.store.load(run["id"])
+            first, second = plan["requests"]
+            receipt = WORK + "/work/receipt.json"
+            for request, text in ((first, "Yes."), (second, "No.")):
+                write_json(
+                    self.game / receipt,
+                    {
+                        "request_sha256": request["fingerprint"],
+                        "translations": {request["id"]: text},
+                    },
+                )
+                read = []
+                get = Results.get
+
+                def spy(results, request, *args):
+                    read.append(request["id"])
+                    return get(results, request, *args)
+
+                with patch.object(Results, "get", spy):
+                    self.service.accept(
+                        self.identity, run["id"], request["id"], receipt
+                    )
+                self.assertNotIn(
+                    first["id"] if request is second else second["id"], read
+                )
+            index = read_json(self.game / EXPORT)
+            self.assertEqual(
+                [
+                    read_json(self.game / part)["units"][0]["translation"]
+                    for part in index["parts"]
+                ],
+                ["Yes.", "No."],
+            )
+            # An export from before parts, with the same translations, is
+            # replaced without reopening injection and QA.
+            results = Results(self.game)
+            legacy = results.units(plan["requests"], results.listing())
+            write_json(
+                self.game / EXPORT, {"complete": plan["complete"], "units": legacy}
+            )
+            self.assertEqual(results.export(plan), (EXPORT, False))
+            self.assertEqual(read_json(self.game / EXPORT), index)
 
     def test_organized_lines_are_translated_declined_finished_and_read_back_by_id(self):
         units = WORK + "/work/source-units.json"

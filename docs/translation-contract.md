@@ -174,6 +174,7 @@ results --run ID writes the run's accepted translations by line ID to .dazedtl/l
 It counts translations any run accepted for the same requests, and refuses once the extracted lines it was organized from have changed.
 The engine's injector reads that file and keeps its own source-location mappings.
 The app's progress export is a derived view, not a replacement for an engine's extraction or injection data.
+It lists parts that each hold the lines of 32 requests, and after a saved result the app rebuilds only the parts whose requests or results changed, so the progress counts never wait on every line of a big run.
 
 ## Declined requests
 

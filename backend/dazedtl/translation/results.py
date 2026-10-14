@@ -11,6 +11,15 @@ from .refusals import line_refusal
 from .requests import result_value
 
 ACCEPTED = WORK + "/work/accepted"
+# The progress export: an index of parts, each the units of PART_REQUESTS
+# requests, so saving one request's result rewrites one part instead of every
+# line of the run.
+EXPORT = WORK + "/work/translation-units.json"
+EXPORT_PARTS = WORK + "/work/translation-units"
+PART_REQUESTS = 32
+# Each part this process wrote or checked, by path: the requests and result
+# file signatures it was built from, and its own file's signature then.
+_PARTS = {}
 # Each request's export rows before its result joins them, by fingerprint,
 # which fixes everything they hold. A refresh after every accepted receipt
 # rebuilds the rows of the whole run, and hashing their tens of thousands of
@@ -45,6 +54,22 @@ def _rows(request):
     return rows
 
 
+def _signature(path):
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        return None
+    return stat.st_mtime_ns, stat.st_size
+
+
+def _content(units):
+    """Units without their review hashes: a review alone reopens nothing."""
+    return [
+        {key: item for key, item in row.items() if key != "reviewed_sha256"}
+        for row in units
+    ]
+
+
 def translated(request, translations):
     """The result's translations, refusing any line that holds a refusal note
     in place of game text, whoever wrote it."""
@@ -71,23 +96,33 @@ class Results:
             raise ValueError("Invalid request identity.")
         return ACCEPTED + "/" + fingerprint + ".json"
 
-    def saved(self):
-        """The accepted result files by fingerprint, for get(), from one
-        listing of their checked folder instead of project_path per request,
-        whose path resolution costs most on Windows. A name that is not a
-        regular file maps to None, which get() checks as usual. Names are
-        casefolded, as Windows looks them up."""
+    def listing(self):
+        """The accepted result files by fingerprint, each with its stat
+        signature, from one listing of their checked folder instead of
+        project_path per request, whose path resolution costs most on Windows.
+        A name that is not a regular file maps to (None, None), which get()
+        checks as usual. Names are casefolded, as Windows looks them up."""
         folder = project_path(self.source, ACCEPTED, exists=False)
+        result = {}
         try:
             with os.scandir(folder) as entries:
-                return {
-                    entry.name.casefold().removesuffix(".json"): Path(entry.path)
-                    if entry.is_file(follow_symlinks=False)
-                    else None
-                    for entry in entries
-                }
+                for entry in entries:
+                    name = entry.name.casefold().removesuffix(".json")
+                    if entry.is_file(follow_symlinks=False):
+                        stat = entry.stat(follow_symlinks=False)
+                        result[name] = (
+                            Path(entry.path),
+                            (stat.st_mtime_ns, stat.st_size),
+                        )
+                    else:
+                        result[name] = (None, None)
         except FileNotFoundError, NotADirectoryError:
             return {}
+        return result
+
+    def saved(self):
+        """The accepted result files by fingerprint, for get()."""
+        return {name: path for name, (path, _signature) in self.listing().items()}
 
     def get(self, request, path=None):
         """The request's accepted result, or None; path is its file when
@@ -166,16 +201,15 @@ class Results:
         write_project_json(self.source, self.relative(request), value)
         return value
 
-    def export(self, plan):
+    def units(self, requests, listing):
+        """The export rows of requests, each with its saved result."""
         units = []
-        saved = self.saved()
-        for request in plan["requests"]:
+        for request in requests:
             key = request["fingerprint"]
-            value = (
-                (self.get(request, saved[key]) if saved[key] else self.get(request))
-                if key in saved
-                else None
-            )
+            value = None
+            if key in listing:
+                path = listing[key][0]
+                value = self.get(request, path) if path else self.get(request)
             for identity, base, source_sha256 in _rows(request):
                 row = dict(base)
                 if value:
@@ -187,29 +221,75 @@ class Results:
                     if identity in value.get("reviewed", {}):
                         row["reviewed_sha256"] = value["reviewed"][identity]
                 units.append(row)
-        relative = WORK + "/work/translation-units.json"
-        value = {"complete": plan["complete"], "units": units}
-        path = project_path(self.source, relative, exists=False)
-        previous = read_json(path) if path.exists() else None
+        return units
 
-        def content(document):
-            return (
-                None
-                if document is None
-                else {
-                    **document,
-                    "units": [
-                        {
-                            key: item
-                            for key, item in row.items()
-                            if key != "reviewed_sha256"
-                        }
-                        for row in document["units"]
-                    ],
-                }
+    def export(self, plan):
+        """Writes the plan's progress export and replies with its path and
+        whether any translation in it changed. Only parts whose requests or
+        saved results changed since this process last wrote them are built."""
+        listing = self.listing()
+        folder = project_path(self.source, EXPORT_PARTS, exists=False)
+        folder.mkdir(parents=True, exist_ok=True)
+        requests = plan["requests"]
+        parts, changed = [], False
+        index_path = project_path(self.source, EXPORT, exists=False)
+        previous_index = read_json(index_path) if index_path.exists() else None
+        # An export from before parts held every unit itself; it alone shows
+        # what changed while the parts are first written.
+        legacy = (
+            previous_index
+            if isinstance(previous_index, dict)
+            and isinstance(previous_index.get("units"), list)
+            else None
+        )
+        for start in range(0, len(requests), PART_REQUESTS):
+            group = requests[start : start + PART_REQUESTS]
+            name = f"part-{start // PART_REQUESTS + 1:04d}.json"
+            relative = EXPORT_PARTS + "/" + name
+            parts.append(relative)
+            path = folder / name
+            inputs = tuple(
+                (row["fingerprint"], listing.get(row["fingerprint"], (None, None))[1])
+                for row in group
             )
-
-        changed = content(previous) != content(value)
-        if previous != value:
-            write_project_json(self.source, relative, value)
-        return relative, changed
+            if _PARTS.get(str(path)) == (inputs, _signature(path)):
+                continue
+            document = {"units": self.units(group, listing)}
+            previous = read_json(path) if path.exists() else None
+            if previous != document:
+                changed = (
+                    changed
+                    or previous is None
+                    or (_content(previous["units"]) != _content(document["units"]))
+                )
+                write_project_json(self.source, relative, document)
+            _PARTS[str(path)] = (inputs, _signature(path))
+        index = {"complete": plan["complete"], "parts": parts}
+        if legacy is not None:
+            units = [
+                row
+                for part in parts
+                for row in read_json(folder / part.rsplit("/", 1)[1])["units"]
+            ]
+            changed = legacy.get("complete") != index["complete"] or _content(
+                legacy["units"]
+            ) != _content(units)
+        elif previous_index != index:
+            changed = True
+        if previous_index != index:
+            write_project_json(self.source, EXPORT, index)
+        names = {part.rsplit("/", 1)[1] for part in parts}
+        with os.scandir(folder) as entries:
+            for entry in entries:
+                if (
+                    entry.name.startswith("part-")
+                    and entry.name not in names
+                    and entry.is_file(follow_symlinks=False)
+                ):
+                    try:
+                        os.unlink(entry.path)
+                    except OSError:
+                        # A reader holds it on Windows; the next export tries again.
+                        continue
+                    _PARTS.pop(entry.path, None)
+        return EXPORT, changed
