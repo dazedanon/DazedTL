@@ -828,7 +828,7 @@ function Manager({
                 }`
               : counts.recommended || counts.uncertain
                 ? "Nothing is ticked to translate. Tick images to translate them."
-                : "Your assistant found no image text players read.";
+                : "Your assistant found no image text to translate.";
   const reportIssues = [
     ...(state.discovery.errors || []),
     ...(state.editing.errors || []),

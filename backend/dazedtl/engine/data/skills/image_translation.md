@@ -101,6 +101,8 @@ Recursively enumerate the PNGs in the editable image folder. Identify:
 - Stress cases within each family: the longest target strings, smallest native components,
   irregular or sloped faces, low-alpha text, and variants with different anchors or controls.
 - Images without player-visible text, which must remain untouched.
+- Sound effects lettered into scene art, such as moans, impacts and hearts in event CGs. They are
+  flavor: leave them untouched in an image that has other text to translate.
 
 Build a family inventory before rendering.
 Record which labels and art states are valid in each variant explicitly instead of inferring presence from loose pixel counts or filename numbering.

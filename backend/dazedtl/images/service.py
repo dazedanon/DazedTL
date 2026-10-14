@@ -34,6 +34,7 @@ CLASSIFICATIONS = {
     "uncertain",
     "no_text",
     "already_english",
+    "sound_effects",
     "not_examined",
     "excluded",
 }
@@ -1612,14 +1613,17 @@ class ImageService:
                     if own
                     else "the app ticks your recommendations for the user to review before a separate translation task. "
                 )
-                + "Use metadata, byte-identical duplicate groups, numbered contact sheets and enlarged crops/originals where needed. "
+                + "Sound effects lettered into scene art, such as moans, slurps, impacts and hearts in event CGs, are flavor and stay untranslated: "
+                "classify an image whose only Japanese is such lettering as sound_effects, also when its marks may be sound effects or decoration, "
+                "and recommend an image that also has other text for that text. "
+                "Use metadata, byte-identical duplicate groups, numbered contact sheets and enlarged crops/originals where needed. "
                 "Process bounded batches, cache results by source hash, resume unchanged work and record coverage honestly. "
                 "Use Len's image census methodology as a reference, not its whole-game authorization. "
                 "Local installed OCR is optional; do not install/download tools, invoke hosted OCR or paid services without separate authorization. "
                 "A detector miss does not certify no text. Record uncertain/not_examined for unreadable, locked, failed or insufficiently examined assets. "
-                "Allowed classifications: recommended, uncertain, no_text, already_english, not_examined, excluded. "
+                "Allowed classifications: recommended, uncertain, no_text, already_english, sound_effects, not_examined, excluded. "
                 "Positive examination methods are exactly visual, ocr, local_ocr, visual+ocr or visual+local_ocr. "
-                "no_text and already_english require actual visual/OCR examination and evidence; detector-only findings cannot certify them. "
+                "no_text, already_english and sound_effects require actual visual/OCR examination and evidence; detector-only findings cannot certify them. "
                 "Related variants are suggestions, not reviewed equivalents. Only byte-identical source images may reuse evidence, identified explicitly. "
                 "Never mark an unexamined image examined. Retain partial findings and write reports atomically; do not claim complete until every requested asset is accounted for."
             )
@@ -1789,13 +1793,15 @@ class ImageService:
                 real_examination = method in EXAMINATION_METHODS and bool(
                     evidence.strip()
                 )
-                if classification in {"no_text", "already_english"} and (
-                    not result["examined"] or not real_examination
-                ):
+                if classification in {
+                    "no_text",
+                    "already_english",
+                    "sound_effects",
+                } and (not result["examined"] or not real_examination):
                     classification = "not_examined"
                     errors.append(
                         identity
-                        + ": a detector miss cannot certify text-free/English-only content."
+                        + ": a detector miss cannot certify text-free, English-only or sound-effect-only content."
                     )
                 examined = bool(result["examined"] and real_examination)
                 variants = result.get("variants", [])

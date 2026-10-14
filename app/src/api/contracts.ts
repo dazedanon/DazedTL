@@ -1765,6 +1765,7 @@ export type ImageClassification =
   | "uncertain"
   | "no_text"
   | "already_english"
+  | "sound_effects"
   | "not_examined"
   | "excluded";
 

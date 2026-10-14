@@ -111,7 +111,7 @@ Copy the task again to continue, or to have it recheck after you spot untranslat
 
 **Images** has four steps, and the filled button is always the next one:
 
-1. **Investigate**: copy the task; your assistant recommends the images with text players read.
+1. **Investigate**: copy the task; your assistant recommends the images with text players read, leaving out sound effects drawn into scenes.
 2. **Choose**: recommended images arrive ticked; untick any, or tick others under **Unsure** or **All images**.
 3. **Translate**: copy the translation task; your assistant edits copies of the ticked images.
 4. **Apply**: check the results, ask your assistant to redo any, then click **Apply to game**.

@@ -203,6 +203,7 @@ export const imageClassificationLabels: Record<string, string> = {
   uncertain: "Uncertain",
   no_text: "No text found",
   already_english: "Already English",
+  sound_effects: "Sound effects only",
   not_examined: "Not examined",
   excluded: "Excluded",
 };

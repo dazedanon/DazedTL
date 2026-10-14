@@ -515,6 +515,7 @@ A click only previews, so looking never changes the list; the tick box, Ctrl/Cmd
 The [viewer](../app/src/features/images/ImageViewer.tsx) fills a full-height column beside the task, toolbar and grid, because the preview is limited by height more than width; it reads the last clicked image at full size, unscaled when it fits the backend's largest preview, while its tile's thumbnail stands in; the saved view remembers which image it shows, as it does Compare's.
 Discovery reports bind project, inventory revision, exact scope and source hashes, with per-image examination evidence.
 Unexamined, failed, unreadable and changed sources remain unresolved; detector misses alone cannot certify no text.
+Sound effects lettered into scene art are flavor, often hundreds per game: an image with nothing else is found Sound effects only and stays out of the list like a text-free one, and the image skill leaves them as they are in an image translated for its other text.
 Manual choices survive recommendations and filtering, and only byte-identical sources can reuse discovery evidence.
 An investigation report ticks each image it newly recommends once and opens the grid on the list, so an image the user took out stays out when the same request saves again; a report whose every image has a result completes the request even without its flag.
 The translation task covers the list's images not yet in the game and makes their editable copies first, leaving out images that cannot be edited.

@@ -92,6 +92,10 @@ calibrate on the new source, not universal defaults.
    alpha, palette/profile and frame metadata. Classify text-free, already-English,
    translated, pending and excluded assets separately. A white-looking preview
    does not distinguish opaque white from transparency: inspect alpha first.
+   Sound effects lettered into scene art (moans, impacts, hearts in event CGs)
+   are flavor, often hundreds of them: classify an image whose only Japanese is
+   such lettering as its own group and leave it untranslated unless the user
+   asks for it; in an image with other text, translate that text alone.
 2. **Read the source as a whole screen.** Use the available image viewer, then
    native crops and enlarged views for small text, insets and shadows. Preserve
    filename/cell mappings on contact sheets. Transcribe before editing; check

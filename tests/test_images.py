@@ -313,7 +313,8 @@ class ImageTests(unittest.TestCase):
             }
             for identity, classification in (
                 ("img/A.png", "recommended"),
-                ("img/B.png", "no_text"),
+                # Scene sound effects are a finding of their own, never ticked.
+                ("img/B.png", "sound_effects"),
             )
         ]
         # A report that answers every image completes without its flag.

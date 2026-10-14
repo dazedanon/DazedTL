@@ -12,7 +12,13 @@ type ImageEntryMode = Literal["discovery", "manual", "findings", "review"]
 
 
 type ImageClassification = Literal[
-    "recommended", "uncertain", "no_text", "already_english", "not_examined", "excluded"
+    "recommended",
+    "uncertain",
+    "no_text",
+    "already_english",
+    "sound_effects",
+    "not_examined",
+    "excluded",
 ]
 
 
