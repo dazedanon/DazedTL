@@ -578,6 +578,15 @@ class TranslationTests(unittest.TestCase):
             "batch", [request("one"), request("two"), request("three")]
         )
         provider = BatchProvider()
+
+        # Approval leaves comparing the compiled requests to the worker, so a
+        # plan whose guidance changed since its estimate must send nothing.
+        def stale():
+            raise ValueError("Shared guidance changed.")
+
+        with self.assertRaisesRegex(ValueError, "guidance changed"):
+            Runner(self.store, job["id"], provider, stale).step()
+        self.assertEqual(provider.calls, 0)
         Runner(self.store, job["id"], provider, lambda: None).step()
         self.assertEqual(self.store.load(job["id"])[0]["status"], "waiting")
         Runner(self.store, job["id"], provider, lambda: None).step()

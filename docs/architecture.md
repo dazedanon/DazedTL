@@ -1120,6 +1120,7 @@ Both API transports consume the same logical request builder.
 Request IDs, speaker/scene context and protected tokens survive adapter conversion.
 Organize derives version-two plans from engine-neutral source units that Len's extractor saves, so parsing and injection stay in Len's per-engine tools and the assistant never rewrites the game's text.
 Organize and compile start such an operation: the app checks drafts, ownership and the settings the run freezes, and the [run compiler](../backend/dazedtl/translation/run_compiler.py) groups the units, compiles, prices and saves the run in its worker, since thousands of requests take tens of seconds; the helper waits and replies with the run.
+Approving an estimate checks its sources, scope and baseline in the app, and the run's worker compiles every request again and compares them before it sends anything, so a big plan never holds the app's other requests while that runs.
 A census the tool takes from the prepared source backup decides scope; organize --complete requires its coverage, so the assistant's extractor can't narrow it.
 An Assistant only run can mark requests declined; an API run compiled from the same plan finishes them, and the declined run reads them as accepted once their results exist.
 Version-two source plans require per-line text types and explicit nullable speakers.

@@ -402,7 +402,11 @@ class WorkflowTests(unittest.TestCase):
             self.service.job_views([record], "agent")[0]["settings_changed"]
         )
         # Approval gets past the settings check; this test app sends nothing.
-        with self.assertRaisesRegex(ValueError, "Provider execution is disabled"):
+        # It leaves compiling every request again to the run's worker.
+        with (
+            patch.object(self.engine, "compile", side_effect=AssertionError),
+            self.assertRaisesRegex(ValueError, "Provider execution is disabled"),
+        ):
             self.service.start(
                 self.identity, finishing["id"], finishing["approval_token"]
             )

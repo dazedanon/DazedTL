@@ -862,7 +862,10 @@ Additional project instructions:
                 f"The text export counts {translated:,} lines, fewer than the {inventory['units']:,} organize --complete accepted. Export every unit before packaging."
             )
 
-    def validate_current(self, project_id, plan):
+    def validate_current(self, project_id, plan, *, compiled=True):
+        """Refuses a plan its project, sources or baseline no longer match.
+        With compiled, it also compiles every request again to compare them,
+        which takes seconds on a big plan."""
         _record, project = self.project(project_id)
         if (
             str(project.root) != plan["source"]
@@ -879,7 +882,8 @@ Additional project instructions:
             plan["options"],
             lifecycle(self.workspace, project_id),
         )
-        verify_compilation(self.engine, plan)
+        if compiled:
+            verify_compilation(self.engine, plan)
 
     def run(self, project_id, run_id):
         self.jobs.reconcile()
@@ -1021,7 +1025,10 @@ Additional project instructions:
                 raise ValueError(
                     "This estimate's price changed since it was shown. Review it again before approving."
                 )
-            self.validate_current(project_id, plan)
+            # The run's worker compiles the requests again and compares them
+            # before it sends anything. Doing it here as well held every other
+            # request to the app for as long: 32 s on a user's big plan.
+            self.validate_current(project_id, plan, compiled=False)
             self.jobs.store.authorize(job)
         return self.jobs.start(run_id, project_id)
 
