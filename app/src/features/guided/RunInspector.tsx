@@ -18,6 +18,7 @@ import { RunLog } from "./RunTechnical";
 import { batchOutcome, canRetrySaving, canReapplyRun } from "./batchView";
 import type { RequestBatch } from "./requestView";
 import { observedRun } from "./translationView";
+import { useOnChange } from "../../state/useOnChange";
 import { useRead } from "../../state/useRead";
 
 export function RunInspector({
@@ -50,11 +51,18 @@ export function RunInspector({
     null,
   );
   const jobId = summary?.id;
-  // The key is null without a job, so the read only runs with one.
-  const inspection = useRead(jobId ? `${projectId}:${jobId}` : null, () =>
-    api.guided.inspect(projectId, jobId!),
+  // The key is null without a job, so the read only runs with one. Observed
+  // runs carry no log, so each status change reads the full run once more,
+  // and the previous read stays visible until the new one arrives.
+  const inspection = useRead(
+    jobId ? JSON.stringify([projectId, jobId, summary?.status]) : null,
+    () => api.guided.inspect(projectId, jobId!),
   );
-  const detail = inspection.value ?? null;
+  const [loaded, setLoaded] = useState<Job | null>(null);
+  useOnChange(inspection.value, (value) => {
+    if (value) setLoaded(value);
+  });
+  const detail = loaded?.id === jobId ? loaded : null;
   const reading = inspection.pending;
   const readError =
     inspection.error === undefined

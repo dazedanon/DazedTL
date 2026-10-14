@@ -935,6 +935,7 @@ Guided reports are read by the observer, and plugin reports are validated by the
 Saved run indexes keep these observations small; full request bodies are checked at execution/inspection boundaries.
 Request rows stay out of observations: a run's [process summary](../backend/dazedtl/compatibility/process_view.py) carries each file's request counts, states and the Batches holding its submitted requests, the inspector's request groups, and the first requests needing attention.
 Its request revision changes whenever a displayed request does, so an open inspector reads its page again.
+The run log also stays out, so an open inspector reads the full run once more when the run's status changes, keeping the previous log visible until it arrives.
 New observation work must use bounded summaries or cached derivations with explicit invalidation.
 A poll checks every saved run, so a cache it reads on every poll must keep that whole working set: one bounded below a long run history rereads every file on every poll.
 File digests use [`Digests`](../backend/dazedtl/translation/files.py), which drops only entries no read has used for a while, and run views answer from each folder's listing instead of resolving every output.
