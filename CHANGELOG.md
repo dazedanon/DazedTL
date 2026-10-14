@@ -3,6 +3,20 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.15.0] - 2026-10-13
+
+### Added
+
+- **Settings:** Kimi (platform.kimi.ai) is a new provider. Kimi K2.6 and K2.7 Code can translate in a Batch at 40% off the Live price; Kimi K3 translates Live.
+
+### Fixed
+
+- **Translate:** a line that comes back as a refusal note, such as "[Not translated: …]", "[Omitted]" or "Translation declined.", now counts as a refusal. The request is asked again once with the context clarification; if the model still declines, its lines keep their original text and the file reads **Needs review**. These notes used to be saved as the translation.
+- **Translate:** after stopping a Live run that translated several files at once (**Concurrent files** above 1 in settings carried over from an earlier version), every finished file counts as saved. Some used to read as not saved and were translated again.
+- **Plugin files:** games whose plugin list repeats a plugin, such as an empty divider plugin listed many times, no longer stop **Copy plugin task** with "Duplicate configured plugins need investigation before exact scope can be formed."
+- **Translate:** Batch cost estimates for large games finish sooner. Pricing the requests no longer takes several seconds twice per estimate, and each file no longer rebuilds the translation instructions from the game's guidance: a 972-file Maps & events Batch estimate on Windows took about 87 s instead of 99 s.
+- **App:** when DazedTL cannot open its workspace at start, the page says why, such as the workspace already being open in another DazedTL, instead of "A newer version of DazedTL may fix this." under a second, sometimes vaguer message.
+
 ## [2.14.2] - 2026-10-13
 
 ### Fixed
@@ -550,6 +564,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.15.0]: https://github.com/dazedanon/DazedTL/compare/v2.14.2...v2.15.0
 [2.14.2]: https://github.com/dazedanon/DazedTL/compare/v2.14.1...v2.14.2
 [2.14.1]: https://github.com/dazedanon/DazedTL/compare/v2.14.0...v2.14.1
 [2.14.0]: https://github.com/dazedanon/DazedTL/compare/v2.13.2...v2.14.0
