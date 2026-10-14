@@ -9,6 +9,7 @@
 ### Changed
 
 - **Assistant-led:** only the approve button on **Progress** sends an API estimate. Your assistant can no longer start a run itself, even after you agree in its conversation; it waits for your approval instead. Each new estimate replaces the one waiting, so switching models while your assistant works no longer leaves several **API Batch** estimates to approve or cancel, and **History** shows an estimate only while it can be approved, with **Discard estimate** in place of **Cancel provider batch**, since nothing was sent.
+- **Images:** the investigation no longer recommends images whose only text is a sound effect drawn into a scene, such as moans or hearts in event CGs, or marks them **Uncertain** when their marks might be sound effects. They read **Skipped · Sound effects only** under **All images**, where you can still tick one to translate it, and the translation task leaves sound effects as they are in images it translates for other text.
 
 ### Fixed
 
@@ -23,3 +24,4 @@
 - **Project:** an Assistant-led run's **Inspect run** button in **History** (formerly **Inspect requests and results**) opens a window over the page with the run's requests and, on a **Batches** tab, its provider Batches, which the run itself now counts in one line instead of listing every ID. The requests opened below every run, out of sight once the page was scrolled, so the button seemed to do nothing. A run that cannot start, pause, cancel or discard its estimate now says why beside its buttons instead of at the top of the page.
 - **Translate:** a Batch of **Maps & events** now counts each map's name toward that map's lines. All names were counted under the first map, so it could read **Needs review**, such as "8 / 9", for another map's refused name, while the maps named lacked their name line and a map with only a name showed no line count.
 - **Translate:** **Inspect run**'s Run log no longer shows lines such as "MISMATCH_EVENT:Map001.json"; the "validation mismatch" lines after each file still say which files kept original text.
+- **Images:** an image's tooltip and **Compare** show what the investigation found, such as **No text found**, again instead of "Make this image editable before starting image work.", a step the translation task now takes itself.
