@@ -1,45 +1,41 @@
 import { useState } from "react";
 import { api } from "../../api/client";
-import type {
-  RequestPreview,
-  TranslationJob,
-  TranslationState,
-} from "../../api/contracts";
+import type { TranslationState } from "../../api/contracts";
 import { useApplication } from "../../app/ApplicationProvider";
 import { useAction } from "../../state/useAction";
 import { flushDrafts } from "../../state/leaveGuards";
+import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
 import { Button } from "../../ui/Button";
+import { DialogBody, DialogHeader } from "../../ui/Dialog";
+import { Feedback } from "../../ui/Feedback";
 import { FieldRow } from "../../ui/FieldRow";
+import { Modal } from "../../ui/Modal";
 import { Section } from "../../ui/Section";
-import { Message } from "../../ui/Feedback";
 import { listedRun, priceRange } from "./apiRun";
-import { RequestLines } from "./RequestLines";
+import { RequestInspector } from "./RequestInspector";
 
 const money = (value: number) => "$" + value.toFixed(4);
 export function RequestsPanel({ state }: { state: TranslationState }) {
   const application = useApplication();
   const action = useAction({ observer: application });
   const [path, setPath] = useState(".dazedtl/len-method/work/requests.json");
-  const [preview, setPreview] = useState<RequestPreview | null>(null);
-  const [reviewedRetry, setReviewedRetry] = useState(false);
-  const [receipt, setReceipt] = useState("");
+  const [inspecting, setInspecting] = useState({ run: "", index: 0 });
   const [attach, setAttach] = useState({ run: "", index: 0, id: "" });
+  const closeAttach = () => setAttach({ run: "", index: 0, id: "" });
   // The operation compiling the plan; its run joins the list once saved.
   const [compiling, setCompiling] = useState("");
   const jobs = state.jobs.filter(
     (job) => job.kind === "translation" && listedRun(job),
   );
-  const inspect = (job: TranslationJob, index = 0) =>
-    action.run(async () => {
-      setPreview(await api.translation.request(state.projectId, job.id, index));
-    });
+  const inspected = jobs.find((job) => job.id === inspecting.run);
+  // A run's actions report once, after its last button.
+  const runActions = ["start", "stop", "discard", "cancel"];
+  const runKey = (name: string, run: string) => `${name}:${run}`;
+  const runAction = (name: string, run: string, task: () => Promise<unknown>) =>
+    void action.run(task, "", runKey(name, run));
   return (
     <>
-      <Message
-        message={action.key === "compile" ? "" : action.error}
-        onDismiss={action.clear}
-      />
       <Section
         title="Translation runs"
         hint="Only saved, validated results count as translated"
@@ -127,7 +123,9 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
             )}
             <div className="actions">
               {!!job.requests && (
-                <Button disabled={action.busy} onClick={() => inspect(job)}>
+                <Button
+                  onClick={() => setInspecting({ run: job.id, index: 0 })}
+                >
                   Inspect requests and results
                 </Button>
               )}
@@ -140,8 +138,11 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
                     disabled={
                       action.busy || state.active || !state.providerEnabled
                     }
+                    pending={
+                      action.busy && action.key === runKey("start", job.id)
+                    }
                     onClick={() =>
-                      action.run(async () => {
+                      runAction("start", job.id, async () => {
                         await flushDrafts();
                         await api.translation.start(
                           state.projectId,
@@ -159,8 +160,9 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
               {["running", "waiting"].includes(job.status) && (
                 <Button
                   disabled={action.busy || job.stop_requested}
+                  pending={action.busy && action.key === runKey("stop", job.id)}
                   onClick={() =>
-                    action.run(() =>
+                    runAction("stop", job.id, () =>
                       api.translation.stop(state.projectId, job.id),
                     )
                   }
@@ -173,8 +175,11 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
               {job.quote && !job.approved && job.status === "ready" && (
                 <Button
                   disabled={action.busy}
+                  pending={
+                    action.busy && action.key === runKey("discard", job.id)
+                  }
                   onClick={() =>
-                    action.run(() =>
+                    runAction("discard", job.id, () =>
                       api.translation.stop(state.projectId, job.id, true),
                     )
                   }
@@ -188,8 +193,11 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
                 job.status !== "complete" && (
                   <Button
                     disabled={action.busy || job.cancel_requested}
+                    pending={
+                      action.busy && action.key === runKey("cancel", job.id)
+                    }
                     onClick={() =>
-                      action.run(() =>
+                      runAction("cancel", job.id, () =>
                         api.translation.stop(state.projectId, job.id, true),
                       )
                     }
@@ -199,6 +207,8 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
                       : "Cancel provider batch"}
                   </Button>
                 )}
+              {runActions.some((name) => action.key === runKey(name, job.id)) &&
+                action.error && <Feedback error={action.error} />}
             </div>
             {!!job.batches.length && (
               <ul className="translation-batch-list">
@@ -251,8 +261,9 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
                     <li key={request.id}>
                       {request.id} · {request.notes} notes{" "}
                       <Button
-                        disabled={action.busy}
-                        onClick={() => inspect(job, request.index)}
+                        onClick={() =>
+                          setInspecting({ run: job.id, index: request.index })
+                        }
                       >
                         Inspect source notes
                       </Button>
@@ -265,204 +276,74 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
         ))}
       </Section>
       {attach.run && (
-        <Section title="Reconcile an uncertain submission">
-          <p>
-            Use the job ID from the provider for this exact submission.
-            Collection will check its request IDs. This does not submit another
-            batch.
-          </p>
-          <label>
-            Provider job ID
-            <input
-              value={attach.id}
-              onChange={(event) =>
-                setAttach({ ...attach, id: event.target.value })
-              }
-            />
-          </label>
-          <Button
-            disabled={!attach.id.trim() || action.busy || state.active}
-            onClick={() =>
-              action.run(async () => {
-                await api.translation.attach(
-                  state.projectId,
-                  attach.run,
-                  attach.index,
-                  attach.id,
-                );
-                setAttach({ run: "", index: 0, id: "" });
-              })
+        <Modal
+          label="Attach a provider job"
+          size="sm"
+          dismissible={!action.busy}
+          onDismiss={closeAttach}
+        >
+          <DialogHeader title="Attach the matching provider job?" />
+          <DialogBody>
+            <p>
+              Use the job ID from the provider for this exact submission.
+              Collection will check its request IDs. This does not submit
+              another batch.
+            </p>
+            <FieldRow id="attach-provider-job" label="Provider job ID" wide>
+              {(props) => (
+                <input
+                  {...props}
+                  value={attach.id}
+                  onChange={(event) =>
+                    setAttach({ ...attach, id: event.target.value })
+                  }
+                />
+              )}
+            </FieldRow>
+          </DialogBody>
+          <ActionBar
+            feedback={
+              action.key === "attach" &&
+              action.error && <Feedback error={action.error} />
             }
           >
-            Attach job
-          </Button>
-        </Section>
-      )}
-      {preview && (
-        <Section
-          title={"Request " + (preview.index + 1) + " of " + preview.total}
-          hint={preview.request.id}
-        >
-          <div className="actions">
-            <Button
-              disabled={preview.index === 0 || action.busy}
-              onClick={() =>
-                action.run(async () =>
-                  setPreview(
-                    await api.translation.request(
-                      state.projectId,
-                      preview.run_id,
-                      preview.index - 1,
-                    ),
-                  ),
-                )
-              }
-            >
-              Previous
+            <Button disabled={action.busy} onClick={closeAttach}>
+              Cancel
             </Button>
             <Button
-              disabled={preview.index + 1 >= preview.total || action.busy}
+              variant="primary"
+              disabled={!attach.id.trim() || state.active}
+              pending={action.busy && action.key === "attach"}
               onClick={() =>
-                action.run(async () =>
-                  setPreview(
-                    await api.translation.request(
+                void action.run(
+                  async () => {
+                    await api.translation.attach(
                       state.projectId,
-                      preview.run_id,
-                      preview.index + 1,
-                    ),
-                  ),
-                )
-              }
-            >
-              Next
-            </Button>
-            <Button
-              onClick={() =>
-                action.run(() =>
-                  window.dazedtl.copyText(JSON.stringify(preview, null, 2)),
-                )
-              }
-            >
-              Copy request
-            </Button>
-          </div>
-          <RequestLines preview={preview} />
-          <details>
-            <summary>Exact compiled context and provider payload</summary>
-            <pre className="translation-json">
-              {JSON.stringify(preview.request, null, 2)}
-            </pre>
-          </details>
-          {preview.result && (
-            <Button
-              disabled={state.active || action.busy}
-              onClick={() =>
-                action.run(async () => {
-                  await api.translation.review(
-                    state.projectId,
-                    preview.run_id,
-                    preview.request.id,
-                    preview.request.fingerprint,
-                  );
-                  setPreview(
-                    await api.translation.request(
-                      state.projectId,
-                      preview.run_id,
-                      preview.index,
-                    ),
-                  );
-                })
-              }
-            >
-              {preview.result.reviewed
-                ? "Source-checked review recorded"
-                : Object.keys(preview.request.context.qa_notes || {}).length
-                  ? "Mark request and flagged lines source-checked"
-                  : "Mark this request source-checked"}
-            </Button>
-          )}
-          {jobs
-            .find((job) => job.id === preview.run_id && job.mode === "live")
-            ?.issues.some(
-              (issue) =>
-                issue.id === preview.request.id && issue.state === "uncertain",
-            ) && (
-            <div className="translation-quote">
-              <p>
-                This request may already have been billed. Check the provider
-                before allowing another attempt.
-              </p>
-              <label className="translation-check">
-                <input
-                  type="checkbox"
-                  checked={reviewedRetry}
-                  onChange={(event) => setReviewedRetry(event.target.checked)}
-                />
-                I reviewed the outcome and want to prepare a new quote for this
-                request.
-              </label>
-              <Button
-                disabled={!reviewedRetry || state.active || action.busy}
-                onClick={() =>
-                  action.run(async () => {
-                    await api.translation.resolve(
-                      state.projectId,
-                      preview.run_id,
-                      preview.request.id,
-                      preview.request.fingerprint,
+                      attach.run,
+                      attach.index,
+                      attach.id,
                     );
-                    setReviewedRetry(false);
-                  })
-                }
-              >
-                Record review; allow a new quote
-              </Button>
-            </div>
-          )}
-          <details>
-            <summary>
-              {preview.result
-                ? "Import a reviewed correction"
-                : "Import a saved result receipt"}
-            </summary>
-            {preview.result && (
-              <p className="footnote">
-                Include this result hash as replaces_sha256 in the receipt:{" "}
-                {preview.result.result_sha256}. The previous result is retained
-                and affected QA becomes pending.
-              </p>
-            )}
-            <label>
-              Receipt file, relative to the game
-              <input
-                value={receipt}
-                onChange={(event) => setReceipt(event.target.value)}
-              />
-            </label>
-            <Button
-              disabled={!receipt || state.active || action.busy}
-              onClick={() =>
-                action.run(async () => {
-                  await api.translation.accept(
-                    state.projectId,
-                    preview.run_id,
-                    preview.request.id,
-                    receipt,
-                  );
-                  setPreview(
-                    await api.translation.request(
-                      state.projectId,
-                      preview.run_id,
-                      preview.index,
-                    ),
-                  );
-                })
+                    closeAttach();
+                  },
+                  "",
+                  "attach",
+                )
               }
             >
-              Validate and save result
+              Attach job
             </Button>
-          </details>
-        </Section>
+          </ActionBar>
+        </Modal>
+      )}
+      {inspected && (
+        <RequestInspector
+          key={`${inspected.id}:${inspecting.index}`}
+          projectId={state.projectId}
+          job={inspected}
+          initialIndex={inspecting.index}
+          active={state.active}
+          onClose={() => setInspecting({ run: "", index: 0 })}
+        />
       )}
       <Section title="Request plan">
         <p className="muted">

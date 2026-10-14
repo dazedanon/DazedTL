@@ -169,6 +169,13 @@
   padding-left: var(--space-4);
   overflow-wrap: anywhere;
 }
+/* The request inspector keeps one size while it pages through requests. */
+.lens-request-inspector {
+  height: min(760px, calc(100dvh - var(--space-8)));
+}
+.lens-request-body > .translation-table-wrap:first-child {
+  margin-top: 0;
+}
 
 .version-panel,
 .backup-panel {

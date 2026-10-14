@@ -601,6 +601,7 @@ A one-task stage shows no done count, and an optional task not yet done says Opt
 Plugin files and Images say Needs review instead, on the Project page and their tabs, while work another project saved waits for the user's choice.
 Plugin files completes from the same snapshot once every plugin's player text is translated with nothing waiting to apply and every unreadable file is kept unchanged, Images once the translated images in its list are applied, or an investigation leaves nothing ticked, and Build release ZIP while a saved ZIP still matches the game; optional tasks never block the next required task.
 Translate's Run history opens that stage's runs and estimates in a sheet over the task, with Inspect stacked on top, so closing returns to the task; Project › History lists every run.
+An Assistant-led run's Inspect opens its requests in a sheet over History, one at a time, and attaching a provider job opens a dialog, so both show wherever the run sits on the page; a failure of a run's own buttons shows after the last of them.
 Setup's backup link opens the Project page's Backups tab, and the Translation entry returns to the same task.
 Reviews that belong to the Guided workspace (re-applying or resuming a run, the update checkpoint) open there when the Project page asks for them.
 Screens use four kinds of surface, each with one job.
