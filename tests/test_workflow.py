@@ -121,7 +121,11 @@ class Engine:
         return 0.5 if provider else None
 
     def batch_limits(self, _configuration):
-        return [50, 100000]
+        # OpenAI's own endpoint also caps the input tokens a Batch queues.
+        return [50, 100000, 1000000]
+
+    def input_tokens(self, parameters):
+        return len(json.dumps(parameters))
 
     def token_count(self, text):
         return len(text)

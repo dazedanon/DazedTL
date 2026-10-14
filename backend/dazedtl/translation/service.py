@@ -809,12 +809,26 @@ Additional project instructions:
             or not 0 <= index < len(plan["requests"])
         ):
             raise ValueError("Choose a request in this run.")
-        result = Results(plan["source"]).get(plan["requests"][index])
+        request = plan["requests"][index]
+        result = Results(plan["source"]).get(request)
         return {
             "run_id": run_id,
             "index": index,
             "total": len(plan["requests"]),
-            "request": plan["requests"][index],
+            # An OpenAI Batch run also keeps each request's input tokens for
+            # the provider's queue limit; a reader needs what was sent.
+            "request": {
+                key: request[key]
+                for key in (
+                    "id",
+                    "sources",
+                    "fingerprint",
+                    "constraints",
+                    "context",
+                    "params",
+                )
+                if key in request
+            },
             # The saved record also holds its hashes and provenance; a reader
             # needs the translations and the hash a correction replaces.
             "result": result
