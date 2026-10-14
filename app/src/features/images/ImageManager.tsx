@@ -43,10 +43,12 @@ import { Modal } from "../../ui/Modal";
 import { Message } from "../../ui/Feedback";
 import { ForeignWork } from "../../ui/ForeignWork";
 import {
+  draftChanges,
   gridStep,
   imageDraft,
   imageStatus,
   rebaseImageDraft,
+  sameImages,
   virtualRows,
 } from "./imageSelection";
 import { focusItem, selectItem, type Modifiers } from "../../ui/selection";
@@ -357,10 +359,11 @@ function Manager({
     report: action.report,
     // Saved choices leave the grid as it is; useImageGrid recounts the
     // selected images its filters hide.
-    persist: async (changes) => {
-      images.set(
-        await imagesApi.update(projectId, images.latest().revision, changes),
-      );
+    persist: async (value) => {
+      const saved = images.latest();
+      const changes = draftChanges(imageDraft(saved), value);
+      if (Object.keys(changes).length)
+        images.set(await imagesApi.update(projectId, saved.revision, changes));
     },
   });
   const images = useObserved(
@@ -747,7 +750,11 @@ function Manager({
   const counts = state.counts;
   const hidden = grid.hidden ?? 0;
   const folderSearch = !!value.view.folder && !!value.view.query.trim();
-  const selectedBlocked = draft.dirty ? 0 : counts.selectedBlocked || 0;
+  // The footer's counts come from the saved list, so only an unsaved tick
+  // holds its actions; a scroll, filter or preview saves without a word.
+  const listSaving =
+    draft.dirty && !sameImages(value.selection, state.selection);
+  const selectedBlocked = listSaving ? 0 : counts.selectedBlocked || 0;
   const jobRunning =
     !!state.job &&
     ["pending", "running", "stopping"].includes(state.job.status);
@@ -985,8 +992,8 @@ function Manager({
       feedback={
         <div className="image-footer-context">
           {host.back}
-          {draft.dirty && <span>Saving choices…</span>}
-          {!draft.dirty && !!selectedBlocked && (
+          {listSaving && <span>Saving choices…</span>}
+          {!!selectedBlocked && (
             <Button
               variant="link"
               onClick={() =>
@@ -1019,7 +1026,7 @@ function Manager({
               ? "primary"
               : "default"
           }
-          disabled={busy || draft.dirty || !flow.toTranslate}
+          disabled={busy || listSaving || !flow.toTranslate}
           disabledReason={
             flow.toTranslate ? "" : "Tick the images to translate first."
           }
@@ -1031,13 +1038,13 @@ function Manager({
           applyControl({
             ready: flow.ready,
             primary: flow.step === "apply",
-            blocked: busy || draft.dirty,
+            blocked: busy || listSaving,
           })
         ) : (
           <ActionControl
             label={`Apply to game${flow.ready ? ` (${flow.ready.toLocaleString()})` : ""}`}
             variant={flow.step === "apply" ? "primary" : "default"}
-            disabled={busy || draft.dirty || !flow.ready}
+            disabled={busy || listSaving || !flow.ready}
             disabledReason={
               flow.ready ? "" : "No image in your list is translated yet."
             }

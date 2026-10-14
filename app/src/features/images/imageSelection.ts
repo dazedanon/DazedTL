@@ -64,6 +64,29 @@ export function rebaseImageDraft(
   };
 }
 
+/**
+ * The parts of a draft that differ from the saved choices. A scroll, a filter
+ * or a preview changes only the view, so its save leaves the list to
+ * translate alone instead of checking and rewriting every ticked image.
+ */
+export function draftChanges(
+  saved: ImageDraft,
+  draft: ImageDraft,
+): Partial<ImageDraft> {
+  return Object.fromEntries(
+    Object.entries(draft).filter(
+      ([key, item]) =>
+        JSON.stringify(item) !== JSON.stringify(saved[key as keyof ImageDraft]),
+    ),
+  );
+}
+
+/** Whether two lists to translate hold the same images, in any order. */
+export function sameImages(a: readonly string[], b: readonly string[]) {
+  const ids = new Set(a);
+  return ids.size === new Set(b).size && b.every((id) => ids.has(id));
+}
+
 /** The most images one list read returns. */
 const READ_LIMIT = 500;
 /**

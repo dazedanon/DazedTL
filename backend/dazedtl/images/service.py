@@ -577,7 +577,8 @@ class ImageService:
                 }
                 self._profile(project_id, value)
             self._save(project_id, value)
-            self._index(project_id).selected(value["selection"])
+            if "selection" in changes:
+                self._index(project_id).selected(value["selection"])
             return self.state(project_id)
 
     def _ids(self, project_id, identities, *, allow_empty=False):

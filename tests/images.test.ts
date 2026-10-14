@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  draftChanges,
   folderTree,
   gridStep,
   idsBetween,
   rebaseImageDraft,
+  sameImages,
   virtualRows,
 } from "../app/src/features/images/imageSelection.ts";
 import { ThumbnailQueue } from "../app/src/features/images/thumbnails.ts";
@@ -152,23 +154,24 @@ test("Images leads with the step its saved work reaches", () => {
   assert.equal(at({ examined: 2, uncertain: 1 }, "complete"), "done");
 });
 
+const draft = (selection: string[], scroll = 0): ImageDraft => ({
+  selection,
+  view: {
+    query: "",
+    status: "all",
+    folder: "",
+    showSelected: false,
+    tileSize: 112,
+    scroll,
+  },
+  discoveryScope: "all",
+  folders: [],
+});
+
 test("edits made while a report is picked up keep its new ticks", () => {
   // Protect the assistant's recommendations: a scroll or tick made while the
   // report check is on its way must not save the older selection over them,
   // and the user's own tick and untick still apply.
-  const draft = (selection: string[], scroll = 0): ImageDraft => ({
-    selection,
-    view: {
-      query: "",
-      status: "all",
-      folder: "",
-      showSelected: false,
-      tileSize: 112,
-      scroll,
-    },
-    discoveryScope: "all",
-    folders: [],
-  });
   const before = draft(["a.png", "b.png"]);
   const saved = draft(["a.png", "b.png", "sign.png"]);
   saved.view.showSelected = true;
@@ -183,6 +186,17 @@ test("edits made while a report is picked up keep its new ticks", () => {
     rebaseImageDraft(before, draft(["b.png", "c.png"]), saved).selection,
     ["b.png", "sign.png", "c.png"],
   );
+});
+
+test("a scroll saves the view alone and leaves the list unchanged", () => {
+  // Protect against a scroll or preview sending the list to translate again,
+  // which checked every ticked image on each save and counted as an unsaved
+  // list, holding Copy translation task and Apply to game while it ran.
+  const saved = draft(["a.png", "b.png"]);
+  const scrolled = draft(saved.selection, 300);
+  assert.deepEqual(draftChanges(saved, scrolled), { view: scrolled.view });
+  assert.ok(sameImages(["b.png", "a.png"], saved.selection));
+  assert.ok(!sameImages(["a.png"], saved.selection));
 });
 
 test("the folder list counts what choosing a folder shows", () => {
