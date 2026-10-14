@@ -622,6 +622,21 @@ class WorkflowTests(unittest.TestCase):
             self.assertRaises(ValueError),
         ):
             self.service.validate_current(self.identity, frozen)
+        # An import compiles only its own request, which matches the whole
+        # plan's compile until its guidance changes.
+        self.service.validate_current(self.identity, frozen, index=0)
+        compile = self.engine.compile
+
+        def guidance_changed(*args):
+            rows, compiler = compile(*args)
+            rows[0]["context"]["system"] = "Changed guidance"
+            return rows, compiler
+
+        with (
+            patch.object(self.engine, "compile", guidance_changed),
+            self.assertRaisesRegex(ValueError, "Shared guidance"),
+        ):
+            self.service.validate_current(self.identity, frozen, index=0)
 
     def test_changed_inputs_cannot_approve_or_bless_old_results(self):
         selected = self.project.read()

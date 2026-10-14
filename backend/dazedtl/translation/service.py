@@ -862,10 +862,10 @@ Additional project instructions:
                 f"The text export counts {translated:,} lines, fewer than the {inventory['units']:,} organize --complete accepted. Export every unit before packaging."
             )
 
-    def validate_current(self, project_id, plan, *, compiled=True):
+    def validate_current(self, project_id, plan, *, compiled=True, index=None):
         """Refuses a plan its project, sources or baseline no longer match.
-        With compiled, it also compiles every request again to compare them,
-        which takes seconds on a big plan."""
+        With compiled, it also compiles its requests again to compare them,
+        which takes seconds on a big plan, or only the one at index."""
         _record, project = self.project(project_id)
         if (
             str(project.root) != plan["source"]
@@ -883,7 +883,7 @@ Additional project instructions:
             lifecycle(self.workspace, project_id),
         )
         if compiled:
-            verify_compilation(self.engine, plan)
+            verify_compilation(self.engine, plan, index)
 
     def run(self, project_id, run_id):
         self.jobs.reconcile()
@@ -1075,10 +1075,15 @@ Additional project instructions:
         if plan["kind"] != "translation":
             raise ValueError("Result receipts belong to translation runs.")
         job = self.jobs.store.settled(job)
-        self.validate_current(project_id, plan)
-        request = next((row for row in plan["requests"] if row["id"] == batch_id), None)
-        if not request:
+        index = next(
+            (n for n, row in enumerate(plan["requests"]) if row["id"] == batch_id),
+            None,
+        )
+        if index is None:
             raise ValueError("Unknown request ID.")
+        # An assistant imports one receipt per request, so each checks only its own.
+        self.validate_current(project_id, plan, index=index)
+        request = plan["requests"][index]
         if job["states"][batch_id]["state"] in {"sending", "queued", "uncertain"}:
             raise ValueError(
                 "Reconcile in-flight work before importing a replacement result."
@@ -1217,17 +1222,18 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
     def review(self, project_id, run_id, batch_id, request_sha256):
         self.idle(project_id)
         _job, plan = self.jobs.store.load(run_id, project_id)
-        self.validate_current(project_id, plan)
-        request = next(
+        index = next(
             (
-                row
-                for row in plan["requests"]
+                n
+                for n, row in enumerate(plan["requests"])
                 if row["id"] == batch_id and row["fingerprint"] == request_sha256
             ),
             None,
         )
-        if not request:
+        if index is None:
             raise ValueError("Review must refer to the exact saved request.")
+        self.validate_current(project_id, plan, index=index)
+        request = plan["requests"][index]
         results = Results(plan["source"])
         value = results.get(request)
         if not value:
