@@ -285,8 +285,9 @@ export function settledWithoutRequests(
  * are known; `running` marks that partial count. A Batch writes a file only
  * while it saves its results, so until then, or when saving it failed, the
  * received lines are not saved. A run that carried a finished file over
- * without sending it, such as a rerun after a stop, keeps the lines of the
- * run that translated it.
+ * without sending it, such as a rerun after a stop, found every line of the
+ * run that translated it translated, since it sends any line still in the
+ * game's own words.
  */
 export function fileLines(
   state: Pick<GuidedState, "runs" | "sourceStatus">,
@@ -309,7 +310,11 @@ export function fileLines(
     translated && requests(translated)?.requests ? translated : latest;
   const lines = requests(run);
   const done =
-    run?.mode === "batch" && !run.outputs?.[name] ? 0 : (lines?.done ?? 0);
+    run !== latest && lines
+      ? lines.lines
+      : run?.mode === "batch" && !run.outputs?.[name]
+        ? 0
+        : (lines?.done ?? 0);
   if (settledWithoutRequests(state, phase, name, latest))
     return { done, total: done };
   if (

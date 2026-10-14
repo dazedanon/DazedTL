@@ -2133,8 +2133,9 @@ test("file line amounts follow the latest run's saved and prepared lines", () =>
     done: 40,
     total: null,
   });
-  // A file the stopped run saved whole has its total, and a rerun that
-  // carried it over unsent keeps the lines of the run that translated it.
+  // A file the stopped run saved whole has its total. A rerun that carried
+  // it over unsent sends any line still untranslated, so it found every line
+  // of the run that translated it done.
   const whole = {
     ...run,
     status: "stopped",
@@ -2151,9 +2152,9 @@ test("file line amounts follow the latest run's saved and prepared lines", () =>
     changedOutputs: [],
     process: { errors: [], files: {} },
   };
-  assert.deepEqual(lines(state([rerun, whole])), { done: 40, total: 50 });
+  assert.deepEqual(lines(state([rerun, whole])), { done: 50, total: 50 });
   assert.deepEqual(lines(state([{ ...rerun, status: "running" }, whole])), {
-    done: 40,
+    done: 50,
     total: 50,
   });
   // A Batch writes the file while it saves its results; received lines it
