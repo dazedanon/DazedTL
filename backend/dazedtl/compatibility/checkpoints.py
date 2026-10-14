@@ -58,9 +58,17 @@ def _json_digest(path, signature):
     return value
 
 
-def _index(root):
+def _paths(root):
+    """The receipts index and the lock its writers share, in the run's log
+    folder. The folder is checked instead of the files: on Windows, checking
+    a file while another worker creates or replaces it can fail."""
+    folder = project_path(root, Path(INDEX).parent.as_posix(), exists=False)
+    return folder / Path(INDEX).name, folder / Path(LOCK).name
+
+
+def _index(root, path=None):
     """The run's checkpoint receipts, or None before its first checkpoint."""
-    path = project_path(root, INDEX, exists=False)
+    path = path or _paths(root)[0]
     if not path.exists():
         return None
     record = read_json(path)
@@ -115,6 +123,9 @@ def install(module, root, plan):
     root = Path(root).resolve()
     names = {row["name"] for row in plan["files"]}
     plan_hash = digest((root / "plan.json").read_bytes())
+    # Concurrent files save from separate worker processes, so receipts are
+    # read and written under a lock they share.
+    index, lock = _paths(root)
 
     def save(native, data, filename, *args, **kwargs):
         saved = native(data, filename, *args, **kwargs)
@@ -123,10 +134,7 @@ def install(module, root, plan):
             raw = path.read_bytes()
             if not isinstance(decode_json(raw), (dict, list)):
                 raise ValueError("The engine checkpoint is not game JSON.")
-            # Concurrent files save from separate worker processes, so a lock
-            # private to one worker let another's receipt overwrite its own.
-            with exclusive(project_path(root, LOCK, exists=False)):
-                index = project_path(root, INDEX, exists=False)
+            with exclusive(lock):
                 record = (
                     read_json(index)
                     if index.exists()
@@ -151,7 +159,9 @@ def install(module, root, plan):
             if path.parent == root / "files" and path.name in names:
                 # Only the reopened file's receipt matters: checking every
                 # saved output made each file's start slower as a run went on.
-                expected = ((_index(root) or {}).get("files") or {}).get(path.name)
+                with exclusive(lock):
+                    record = _index(root, index) or {}
+                expected = (record.get("files") or {}).get(path.name)
                 output = root / "translated" / path.name
                 if expected and output.is_file():
                     raw = project_path(root, "translated/" + path.name).read_bytes()
