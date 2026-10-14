@@ -211,7 +211,11 @@ class Settings:
             )
         frozen = plan.get("settings", {})
         endpoint = batch.get("endpoint") or frozen.get("api")
-        protocol = "openai" if batch["provider"] == "openrouter" else batch["provider"]
+        protocol = (
+            "openai"
+            if batch["provider"] in {"openrouter", "kimi"}
+            else batch["provider"]
+        )
         if (
             not endpoint
             or providers.route(protocol, endpoint)
@@ -485,6 +489,13 @@ class Settings:
                 if self.adapter.allow_providers
                 else "estimate",
             )
+        elif (
+            active
+            and active["provider"] == "kimi"
+            and values["model"]
+            and not result["batch_supported"]
+        ):
+            result["batch_reason"] = "Kimi's Batch runs only K2.6 and K2.7 Code."
         elif (
             values.get("api", "").rstrip("/")
             == providers.PROVIDERS["openrouter"]["endpoint"]
@@ -851,7 +862,8 @@ class Settings:
             raise ValueError(
                 "Enter an OpenAI-compatible server URL. Use the Anthropic provider for its native API."
             )
-        if protocol != "openai" or provider == "openrouter":
+        # Only OpenAI's API, or a server standing in for it, has organizations.
+        if protocol != "openai" or provider not in {"openai", "custom"}:
             organization = ""
         if any(ord(char) < 32 for char in secret + organization):
             raise ValueError(

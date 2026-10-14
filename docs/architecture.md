@@ -987,6 +987,7 @@ The public preference schema contains language, model, per-model request/pricing
 The adapter materializes legacy settings only before engine actions and checks the original provider route before resuming saved runs.
 Connection checks are model-list requests, with bounded reads, no redirects, and no generated text; Settings runs one after saving new or changed credentials, and again on request.
 Provider presets declare their transport protocol independently of their identity.
+Kimi keeps OpenAI's Live and Batch formats under its own identity, so its Batches carry Kimi's eligible models and price factor from the [engine's Batch adapters](../backend/dazedtl/engine/util/batch_providers.py) and [cost rules](../backend/dazedtl/engine/util/provider_costs.py).
 OpenRouter keeps the OpenAI-compatible Live request format and has a distinct [Batch transport](../backend/dazedtl/compatibility/openrouter_batch.py), layered onto the engine's Batch provider points.
 Both Guided workers and compiled plans use that adapter, preserving request semantics.
 The authenticated `/models/user` check retains a bounded, private [catalog](../backend/dazedtl/settings/openrouter.py); saving a model, host or active connection automatically resolves missing matching Batch endpoint capabilities and prices outside the application lock, then retains them within the same settings mutation.

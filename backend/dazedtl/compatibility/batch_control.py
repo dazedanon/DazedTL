@@ -13,7 +13,7 @@ from .process_view import batch_results, evidence_root, queue, saved
 from .translation import TranslationProvider
 
 TERMINAL = {"completed", "ended", "failed", "expired", "cancelled", "canceled"}
-PROVIDERS = {"openai", "anthropic", "gemini", "openrouter"}
+PROVIDERS = {"openai", "anthropic", "gemini", "kimi", "openrouter"}
 
 
 def can_cancel(provider):

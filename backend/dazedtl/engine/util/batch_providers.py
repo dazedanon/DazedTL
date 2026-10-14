@@ -1,9 +1,9 @@
 """Provider adapters for asynchronous translation batches.
 
 The translation pipeline consumes one small, provider-neutral shape.  Native
-Anthropic uses Message Batches; OpenAI and Gemini use OpenAI-compatible JSONL
-Chat Completions batches.  Gemini intentionally uses the Google Files API for
-upload/download because those two operations are not exposed by Google's
+Anthropic uses Message Batches; OpenAI, Gemini and Kimi use OpenAI-compatible
+JSONL Chat Completions batches.  Gemini intentionally uses the Google Files API
+for upload/download because those two operations are not exposed by Google's
 OpenAI compatibility layer.
 """
 
@@ -14,6 +14,7 @@ import os
 import tempfile
 from pathlib import Path
 from typing import Any, Iterable, Mapping
+from urllib.parse import urlparse
 
 from util import extensions
 
@@ -21,6 +22,22 @@ from util import extensions
 PROVIDER_ANTHROPIC = "anthropic"
 PROVIDER_OPENAI = "openai"
 PROVIDER_GEMINI = "gemini"
+PROVIDER_KIMI = "kimi"
+
+# Kimi's international platform (platform.kimi.ai) serves its
+# OpenAI-compatible API from Moonshot AI's host.
+# https://platform.kimi.ai/docs/api/overview
+KIMI_API_URL = "https://api.moonshot.ai/v1"
+# Kimi K3 has no Batch API.
+# https://platform.kimi.ai/docs/guide/use-batch-api
+KIMI_BATCH_MODELS = frozenset({"kimi-k2.6", "kimi-k2.7-code"})
+
+
+def is_kimi_api(api_url: str | None = None) -> bool:
+    """Return whether an endpoint is Kimi's own API."""
+    url = os.getenv("api", "") if api_url is None else str(api_url or "")
+    return (urlparse(url.strip()).hostname or "").lower() == "api.moonshot.ai"
+
 
 TERMINAL_OPENAI_STATUSES = frozenset({
     "completed", "failed", "expired", "cancelled",
@@ -58,6 +75,8 @@ def detect_batch_provider(model: str = "", api_url: str | None = None,
         return PROVIDER_ANTHROPIC
     if provider == "gemini" or "generativelanguage.googleapis.com" in url:
         return PROVIDER_GEMINI
+    if provider == "openai" and is_kimi_api(url):
+        return PROVIDER_KIMI if model_l in KIMI_BATCH_MODELS else None
     if provider == "openai" and (not url or "api.openai.com" in url):
         return PROVIDER_OPENAI
     return None
@@ -69,6 +88,7 @@ def batch_provider_label(provider: str | None) -> str:
         PROVIDER_ANTHROPIC: "Anthropic",
         PROVIDER_OPENAI: "OpenAI",
         PROVIDER_GEMINI: "Google Gemini",
+        PROVIDER_KIMI: "Kimi",
     }.get(provider, str(provider or "Provider"))
 
 
@@ -81,6 +101,10 @@ def batch_limits(provider: str) -> tuple[int, int]:
         # Gemini JSONL input files may be 2 GB. Stay below that and keep the
         # existing request cap as a conservative client-side split point.
         return 100_000, 1900 * 1024 * 1024
+    if provider == PROVIDER_KIMI:
+        # Kimi accepts input files up to 100 MB and publishes no request cap,
+        # so split like OpenAI below the file limit.
+        return 50_000, 95_000_000
     return 100_000, 200 * 1024 * 1024
 
 
@@ -127,11 +151,15 @@ def get_client(provider: str, *, api_key: str | None = None,
         return anthropic.Anthropic(**kwargs)
     import openai
 
-    if provider == PROVIDER_GEMINI:
+    if provider in (PROVIDER_GEMINI, PROVIDER_KIMI):
         kwargs = dict(
             api_key=key,
             base_url=(api_url or "").strip()
-            or "https://generativelanguage.googleapis.com/v1beta/openai/",
+            or (
+                KIMI_API_URL
+                if provider == PROVIDER_KIMI
+                else "https://generativelanguage.googleapis.com/v1beta/openai/"
+            ),
         )
         if max_retries is not None:
             kwargs["max_retries"] = max_retries
@@ -422,6 +450,8 @@ def _openai_result(
         prompt_details.get("cached_tokens")
         or prompt_details.get("cachedTokens")
         or usage.get("cachedContentTokenCount")
+        # Kimi also reports its cache reads beside the prompt total.
+        or usage.get("cached_tokens")
         or 0
     )
     cache_write = int(

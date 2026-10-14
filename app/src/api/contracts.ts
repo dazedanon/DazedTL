@@ -1681,7 +1681,13 @@ export type Settings = {
 };
 
 export type Provider =
-  "openai" | "openrouter" | "anthropic" | "gemini" | "mistral" | "custom";
+  | "openai"
+  | "openrouter"
+  | "anthropic"
+  | "gemini"
+  | "mistral"
+  | "kimi"
+  | "custom";
 
 export type ProviderProtocol = "openai" | "anthropic" | "gemini" | "mistral";
 

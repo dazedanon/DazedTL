@@ -34,6 +34,11 @@ PROVIDERS = {
         "protocol": "mistral",
         "endpoint": "https://api.mistral.ai/v1",
     },
+    "kimi": {
+        "label": "Kimi",
+        "protocol": "openai",
+        "endpoint": "https://api.moonshot.ai/v1",
+    },
     "custom": {"label": "Custom / local", "protocol": "openai", "endpoint": ""},
 }
 PROTOCOLS = {"openai", "anthropic", "gemini", "mistral"}

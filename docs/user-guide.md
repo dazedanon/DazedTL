@@ -164,7 +164,7 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
 ## Assistant-led
 
 1. In **Options**, choose who translates:
-   - **API Batch** is recommended: your API key translates in one provider job, at half the Live price where the provider offers it.
+   - **API Batch** is recommended: your API key translates in one provider job, usually at half the Live price where the provider offers it.
    - **Live API** sends one request at a time at the full price; new games start on it when your connection can't run Batch.
    - **Assistant only** needs no API key, but your assistant translates every line itself, which uses far more of its plan.
 
@@ -285,6 +285,12 @@ OpenRouter Batches can take up to 24 hours and can't be cancelled once sent.
 **Stop queued work** holds back what hasn't been sent, and **Continue queued work** resumes it.
 Results missing from a finished Batch wait for **Retry collection** and are never sent again automatically.
 Results DazedTL has downloaded stay available after OpenRouter deletes its copy.
+
+### Kimi
+
+Create a key on [Kimi's platform](https://platform.kimi.ai/), then choose **Kimi** as the provider.
+Batch works with Kimi K2.6 and K2.7 Code, at 40% off the Live price; Kimi K3 translates Live only.
+These models think before they answer, which is billed as output and isn't in the estimate.
 
 ## Notifications
 

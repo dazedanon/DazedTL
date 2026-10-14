@@ -1113,6 +1113,14 @@ try:
                 "max_tokens",
             ),
             ("mistral", "https://api.mistral.ai/v1", "mistral-medium", "max_tokens"),
+            # Kimi deprecates max_tokens; its Batch requests name the provider.
+            (
+                "openai",
+                "https://api.moonshot.ai/v1",
+                "kimi-k3",
+                "max_completion_tokens",
+            ),
+            ("kimi", "", "kimi-k2.6", "max_completion_tokens"),
             ("openai", "https://fixture.invalid/v1", "local-model", "max_tokens"),
         ):
             params = translation.buildOpenAIRequest(
@@ -1129,6 +1137,16 @@ try:
             assert params[field] == 32768 and "薬" in json.dumps(
                 params, ensure_ascii=False
             ), params
+        # Kimi Batches run only K2.6 and K2.7 Code, at 60% of the Live price.
+        kimi = {"api_url": "https://api.moonshot.ai/v1", "api_provider": "openai"}
+        assert [
+            detect_batch_provider(model, **kimi)
+            for model in ("kimi-k2.6", "kimi-k2.7-code", "kimi-k3")
+        ] == ["kimi", "kimi", None]
+        quote = translation.estimateCostComparison(
+            1_000_000, 0, "kimi-k2.6", batch_provider="kimi"
+        )
+        assert abs(quote["batch_cost"] - quote["live_cost"] * 0.6) < 1e-9, quote
         # The real SDK refuses a non-streaming request this large before sending
         # it, which stopped native Anthropic Live runs and Batch collection
         # (names translate live). Guided Live must still see a streamed refusal.

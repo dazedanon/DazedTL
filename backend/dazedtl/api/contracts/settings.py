@@ -74,7 +74,7 @@ class Settings(TypedDict):
 
 
 type Provider = Literal[
-    "openai", "openrouter", "anthropic", "gemini", "mistral", "custom"
+    "openai", "openrouter", "anthropic", "gemini", "mistral", "kimi", "custom"
 ]
 
 

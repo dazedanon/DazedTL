@@ -416,6 +416,16 @@ class TranslationEngine:
             api_provider=configuration["protocol"],
         )
 
+    @staticmethod
+    def batch_factor(provider):
+        """A Batch's price as a multiple of Live, or None when the provider
+        has its own Batch rates."""
+        if not provider or provider == "openrouter":
+            return None
+        from util.provider_costs import batch_price_factor
+
+        return batch_price_factor(provider)
+
     def batch_limits(self, configuration):
         if configuration.get("provider") == "openrouter":
             from dazedtl.settings.openrouter import validate_policy
@@ -1060,9 +1070,13 @@ class TranslationProvider:
             )
             self.google = None
             return
+        # A saved Batch names its provider as the protocol.
+        identity = configuration.get("provider", configuration["protocol"])
         self.provider = (
             configuration["protocol"]
             if configuration["protocol"] in {"anthropic", "gemini"}
+            else "kimi"
+            if identity == "kimi"
             else "openai"
         )
         self.client = get_client(

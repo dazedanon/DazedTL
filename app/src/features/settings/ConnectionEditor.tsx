@@ -323,7 +323,7 @@ export default function ConnectionEditor({
                 )}
               </FieldRow>
               {value.protocol === "openai" &&
-                value.provider !== "openrouter" && (
+                (value.provider === "openai" || custom) && (
                   <FieldRow
                     id="connection-organization"
                     label="Organization ID"

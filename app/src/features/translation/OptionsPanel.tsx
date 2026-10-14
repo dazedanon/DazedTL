@@ -50,7 +50,7 @@ export function OptionsPanel({
       title: modeLabels.batch,
       badge: recommended === "batch" ? "Recommended" : undefined,
       description:
-        "Your API key translates in one provider job, at half the Live price where the provider offers it. The job finishes on the provider's schedule, sometimes within minutes and at most within a day.",
+        "Your API key translates in one provider job, usually at half the Live price where the provider offers it. The job finishes on the provider's schedule, sometimes within minutes and at most within a day.",
     },
     {
       value: "live",

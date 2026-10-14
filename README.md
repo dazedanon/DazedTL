@@ -7,7 +7,7 @@ You don't need to know how to program: DazedTL walks you through each step, and 
 
 - An AI coding assistant, such as Claude Code or Codex.
   DazedTL gives you tasks to paste into it.
-- An API key from OpenAI, Anthropic, Google Gemini, Mistral or OpenRouter, or a local model, for translating the game text.
+- An API key from OpenAI, Anthropic, Google Gemini, Mistral, Kimi or OpenRouter, or a local model, for translating the game text.
 
 ## Two ways to translate
 

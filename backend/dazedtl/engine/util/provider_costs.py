@@ -51,16 +51,33 @@ def cache_read_multiplier(provider: str, model: str) -> float:
     """Return cache-read price as a multiple of regular input pricing.
 
     Anthropic reads cost 0.05 times regular input on Claude Opus 5.5 and
-    Sonnet 5.5 and 0.025 times on Claude Fable 5.1 and Mythos 5.1; every other
-    route here prices them at 0.1 times.
+    Sonnet 5.5 and 0.025 times on Claude Fable 5.1 and Mythos 5.1. Kimi
+    reads cost $0.16 of K2.6's $0.95 and $0.19 of K2.7 Code's $0.95
+    (https://platform.kimi.ai/docs/pricing/chat). Every other route here,
+    Kimi K3 included, prices them at 0.1 times.
     """
-    if str(provider or "").strip().lower() == "anthropic":
-        name = str(model or "").lower()
+    normalized_provider = str(provider or "").strip().lower()
+    name = str(model or "").lower()
+    if normalized_provider == "anthropic":
         if re.search(r"claude-(?:fable|mythos)-5-1(?:\D|$)", name):
             return 0.025
         if re.search(r"claude-(?:opus|sonnet)-5-5(?:\D|$)", name):
             return 0.05
+    if normalized_provider == "kimi":
+        if "kimi-k2.7-code" in name:
+            return 0.20
+        if "kimi-k2.6" in name:
+            return 0.16 / 0.95
     return 0.10
+
+
+def batch_price_factor(provider: str | None) -> float:
+    """Return a Batch's price as a multiple of the same Live usage.
+
+    Kimi's Batch API saves 40% (https://platform.kimi.ai/docs/guide/use-batch-api);
+    every other Batch provider here halves the price.
+    """
+    return 0.60 if str(provider or "").strip().lower() == "kimi" else 0.50
 
 
 def has_billed_cache_writes(provider: str, model: str) -> bool:

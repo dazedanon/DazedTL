@@ -2121,6 +2121,15 @@ class ProcessTests(unittest.TestCase):
                 current.update(baseline)
                 connection = current["connections"][0]
             package.batch_providers.get_client.assert_called_once()
+            # A Kimi Batch names Kimi, while its connection speaks OpenAI's protocol.
+            connection.update(
+                provider="kimi", endpoint="https://api.moonshot.ai/v1", organization=""
+            )
+            plan["settings"].update(api=connection["endpoint"], organization="")
+            self.assertEqual(
+                resolve({**history["batches"][0], "provider": "kimi"})["endpoint"],
+                connection["endpoint"],
+            )
 
     def test_batch_phase_feedback_uses_receipts_instead_of_stale_scan_progress(self):
         job = {

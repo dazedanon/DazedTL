@@ -697,9 +697,7 @@ Additional project instructions:
             # Earlier runs froze no policy and keep sending unit IDs.
             cfg["lineKeys"] = LINE_KEYS
             batch_provider = self.engine.batch_supported(cfg)
-            cfg["rates"]["batch_factor"] = (
-                0.5 if batch_provider and batch_provider != "openrouter" else None
-            )
+            cfg["rates"]["batch_factor"] = self.engine.batch_factor(batch_provider)
         return cfg, batch_provider
 
     def organize(self, project_id, input_path, complete=False):

@@ -116,6 +116,9 @@ class Engine:
     def batch_supported(self, _configuration):
         return "openai"
 
+    def batch_factor(self, provider):
+        return 0.5 if provider else None
+
     def batch_limits(self, _configuration):
         return [50, 100000]
 

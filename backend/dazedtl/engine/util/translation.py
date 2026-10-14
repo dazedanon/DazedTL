@@ -31,12 +31,14 @@ from util.paths import (
     unlink_with_retry,
 )
 from util.provider_costs import (
+    batch_price_factor,
     batch_write_weight,
     cache_read_multiplier,
     cache_write_multiplier,
     has_billed_cache_writes,
 )
 from util import claude_tokens, request_debug
+from util.batch_providers import KIMI_API_URL, is_kimi_api
 from util import extensions
 from util.sfx_reference import build_sfx_reference_text
 from util.vocab import decorative_glossary_alias, split_glossary_row
@@ -292,7 +294,9 @@ _NO_SAMPLING_RE = re.compile(r"opus-4-(?:[7-9]\b|[1-9]\d)|fable", re.I)
 # and up, Fable and Mythos. Opus 5.5 and Fable cannot turn it off. Thinking
 # bills as output that an estimate cannot predict.
 _DEFAULT_THINKING_RE = re.compile(
-    r"claude-(?:(?:opus|sonnet)-(?:[5-9]|[1-9]\d)\b|fable|mythos)", re.I
+    r"claude-(?:(?:opus|sonnet)-(?:[5-9]|[1-9]\d)\b|fable|mythos)"
+    # Kimi K3 always thinks; K2.6 and K2.7 Code think unless told not to.
+    r"|kimi-k(?:3|2\.[67])", re.I
 )
 
 # Tracks which distinct batch sizes have already been cache-written during this estimate run.
@@ -2426,7 +2430,7 @@ def estimateCostComparison(
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
         "live_cost": live_cost,
-        "batch_cost": live_cost * 0.50 if provider else None,
+        "batch_cost": live_cost * batch_price_factor(provider) if provider else None,
         "batch_supported": provider is not None,
         "basis": "no_cache",
         "unestimated_thinking_tokens": (
@@ -2539,7 +2543,7 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
     if batch_nocache is None:
         # Legacy/test queues may omit provider metadata even though their
         # entries already represent Batch API work.
-        batch_nocache = comparison["live_cost"] * 0.50
+        batch_nocache = comparison["live_cost"] * batch_price_factor(est_provider)
     live_cost = comparison["live_cost"]
     batch_max = batch_nocache
     cache_kind = None
@@ -2792,6 +2796,7 @@ def _submit_translation_batches_unlocked(file_set=None, cost_estimate=None):
         "anthropic": "https://api.anthropic.com",
         "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
         "openai": "https://api.openai.com/v1",
+        "kimi": KIMI_API_URL,
     }.get(provider, "")
     existing_key_names = {
         str(info.get("key_name") or key_name_for_batch(info.get("id", "")))
@@ -3681,6 +3686,11 @@ def _load_litellm_pricing() -> dict | None:
                 return None
 
 
+# The catalog lists some first-party APIs' bare model IDs only under the
+# provider's namespace, beside resellers that may charge differently.
+_FIRST_PARTY_CATALOG = (("kimi-", "moonshot"), ("moonshot-", "moonshot"))
+
+
 def _lookup_model_price(model: str):
     """Look up (input_per_1M, output_per_1M) from the LiteLLM pricing DB.
 
@@ -3704,7 +3714,16 @@ def _lookup_model_price(model: str):
         model_lower = model_lower.removeprefix("models/")
     model_part = model_lower.rsplit("/", 1)[-1]
     requested_provider = (
-        model_lower.split("/", 1)[0] if "/" in model_lower else ""
+        model_lower.split("/", 1)[0]
+        if "/" in model_lower
+        else next(
+            (
+                namespace
+                for prefix, namespace in _FIRST_PARTY_CATALOG
+                if model_part.startswith(prefix)
+            ),
+            "",
+        )
     )
 
     def _extract(entry):
@@ -3884,6 +3903,13 @@ def getPricingConfig(model):
         cfg = {"inputAPICost": 0.30,  "outputAPICost": 2.50,  "batchSize": 30, "frequencyPenalty": 0.0}
     elif "gemini-2.5-pro" in model:
         cfg = {"inputAPICost": 1.25,  "outputAPICost": 10.00, "batchSize": 30, "frequencyPenalty": 0.0}
+    # Kimi API list rates; https://platform.kimi.ai/docs/pricing/chat
+    elif "kimi-k3" in model:
+        cfg = {"inputAPICost": 3.00,  "outputAPICost": 15.00, "batchSize": 30, "frequencyPenalty": 0.0}
+    elif "kimi-k2.7-code-highspeed" in model:
+        cfg = {"inputAPICost": 1.90,  "outputAPICost": 8.00,  "batchSize": 30, "frequencyPenalty": 0.0}
+    elif "kimi-k2.7-code" in model or "kimi-k2.6" in model:
+        cfg = {"inputAPICost": 0.95,  "outputAPICost": 4.00,  "batchSize": 30, "frequencyPenalty": 0.0}
     else:
         cfg = {
             "inputAPICost":    float(os.getenv("input_cost", 3.00)),
@@ -4982,9 +5008,17 @@ def buildOpenAIRequest(system, user, history, penalty, formatType, model,
                 ).hexdigest()[:32]
             )
         params["extra_body"] = cache_fields
+    # Kimi documents max_completion_tokens and deprecates max_tokens. Batch
+    # requests name Kimi's Batch provider instead of the OpenAI protocol.
+    # https://platform.kimi.ai/docs/api/chat
+    completion_field = (
+        _is_official_openai_api(provider, api_url)
+        or provider == "kimi"
+        or (provider == "openai" and is_kimi_api(api_url))
+    )
     if is_deepseek:
         completion_ceiling = COMPAT_TRANSLATION_OUTPUT_TOKENS
-    elif _is_official_openai_api(provider, api_url) or provider == "gemini":
+    elif completion_field or provider == "gemini":
         completion_ceiling = MAX_TRANSLATION_OUTPUT_TOKENS
     elif is_mistral:
         completion_ceiling = MISTRAL_TRANSLATION_OUTPUT_TOKENS
@@ -4994,7 +5028,7 @@ def buildOpenAIRequest(system, user, history, penalty, formatType, model,
         user,
         completion_ceiling,
     )
-    if _is_official_openai_api(provider, api_url):
+    if completion_field:
         params["max_completion_tokens"] = completion_limit
     else:
         params["max_tokens"] = completion_limit
@@ -5606,10 +5640,11 @@ def calculateCost(inputTokens, outputTokens, model):
             cost = (cr * br * cache_read_multiplier("anthropic", model)
                     + cw * br * live_write_multiplier
                     + reg * br + out * orr
-                    # Batch API tokens: same rates, then the 50% batch discount.
+                    # Batch API tokens: same rates, then the Batch discount.
                     + (bcr * br * cache_read_multiplier(batch_provider, model)
                        + batch_write_weight(batch_provider, model, bcw, bcw1h) * br
-                       + breg * br + bout * orr) * 0.50)
+                       + breg * br + bout * orr)
+                    * batch_price_factor(batch_provider))
             _thread_local.file_cache_read  = 0
             _thread_local.file_cache_write = 0
             _thread_local.file_regular     = 0
@@ -6719,7 +6754,7 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
             _delta_cw  * _br * _live_write_multiplier +
             _delta_reg * _br +
             _delta_out * _or +
-            # Batch API tokens: same rates, then the 50% batch discount.
+            # Batch API tokens: same rates, then the Batch discount.
             (_delta_bcr  * _br * cache_read_multiplier(
                 batch_provider or "anthropic", config.model
             ) +
@@ -6728,7 +6763,7 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                  _delta_bcw, _delta_bcw1h,
              ) * _br +
              _delta_breg * _br +
-             _delta_bout * _or) * 0.50
+             _delta_bout * _or) * batch_price_factor(batch_provider)
         )
         global _global_accurate_cost
         with _global_accurate_cost_lock:
