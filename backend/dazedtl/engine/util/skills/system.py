@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from pathlib import Path
 
 from util.paths import (
+    GAME_GLOSSARY_RELATIVE,
     GAME_QUIRKS_RELATIVE,
     GAME_SKILL_RELATIVE,
     GAME_SKILL_RESERVED_NAMES,
     GAME_SKILLS_RELATIVE,
     GameProjectPathError,
+    LEGACY_GAME_GLOSSARY_RELATIVE,
     LEGACY_GAME_SKILL_RELATIVE,
     LEGACY_GAME_SKILLS_RELATIVE,
     LEGACY_QUIRKS_FILENAME,
@@ -282,6 +285,50 @@ def list_custom_skill_paths(game_root: str | Path | None) -> list[Path]:
     return out
 
 
+# A worker rebuilt the prompt for every file it translated, and each build
+# validated, migrated and re-read the game's guidance again: about 10 ms a file
+# on Windows. A game's prompt is reused while every file the build reads or
+# migrates keeps the stats it had, once those stats are older than a clock
+# tick.
+_PROMPTS: dict[tuple[str, str], tuple[tuple, str]] = {}
+_SETTLED_NS = 2_000_000_000
+
+
+def _prompt_inputs(prompt_path: Path, root: str) -> tuple | None:
+    """The stats load_system_prompt depends on, or None while one is recent."""
+    game = Path(root)
+    stamps = []
+
+    def stamp(path) -> tuple | None:
+        try:
+            info = os.lstat(path)
+        except OSError:
+            return None
+        stamps.append(info.st_mtime_ns)
+        return (info.st_mode, info.st_size, info.st_mtime_ns)
+
+    try:
+        with os.scandir(game / GAME_SKILLS_RELATIVE) as entries:
+            skills = tuple(sorted((entry.name, stamp(entry.path)) for entry in entries))
+    except OSError:
+        skills = None
+    signature = (
+        stamp(prompt_path),
+        stamp(game / ".gitignore"),
+        stamp(game / GAME_SKILLS_RELATIVE),
+        skills,
+        stamp(game / LEGACY_GAME_SKILLS_RELATIVE),
+        stamp(game / LEGACY_QUIRKS_FILENAME),
+        stamp(game / LEGACY_GAME_GLOSSARY_RELATIVE),
+        # Its text is not in the prompt and changes during a run; only its
+        # absence makes the build create it.
+        (game / GAME_GLOSSARY_RELATIVE).exists(),
+    )
+    if stamps and time.time_ns() - max(stamps) <= _SETTLED_NS:
+        return None
+    return signature
+
+
 def load_system_prompt(game_root: str | Path | None = None) -> str:
     """Load ``data/skills/system.md`` plus optional per-game overlays.
 
@@ -294,16 +341,29 @@ def load_system_prompt(game_root: str | Path | None = None) -> str:
       1. Explicit *game_root* argument
       2. ``DAZED_GAME_ROOT`` environment variable
     """
-    base = ""
     prompt_path = runtime_data_file(PROMPT_PATH)
-    if prompt_path.is_file():
-        base = prompt_path.read_text(encoding="utf-8")
-
     root = game_root or os.getenv("DAZED_GAME_ROOT") or ""
     root = str(root).strip()
+    key = (str(prompt_path), root)
+    inputs = _prompt_inputs(prompt_path, root) if root else None
+    cached = _PROMPTS.get(key)
+    if inputs is not None and cached and cached[0] == inputs:
+        return cached[1]
+    base = ""
+    if prompt_path.is_file():
+        base = prompt_path.read_text(encoding="utf-8")
     if not root:
         return base
+    prompt = _game_system_prompt(base, root)
+    # The build's own migrations change what it reads, so the next call
+    # compares against the stats it left behind.
+    after = _prompt_inputs(prompt_path, root)
+    if after is not None:
+        _PROMPTS[key] = (after, prompt)
+    return prompt
 
+
+def _game_system_prompt(base: str, root: str) -> str:
     # Prepare once at this shared boundary so Evaluation, direct module use,
     # and GUI translation all see the same complete portable context.
     prepare_game_translation_context(root)

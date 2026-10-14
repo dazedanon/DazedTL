@@ -151,6 +151,28 @@ try:
         ]
         assert estimates._estimate_openai_cache_reads(sequences) == reference(sequences)
 
+        # Workers build the prompt for every file: an unchanged game reuses
+        # it, and a changed skill file is read again.
+        from util.skills import system as prompts
+
+        guidance = temporary / "prompt-game"
+        (guidance / ".dazedtl/skills").mkdir(parents=True)
+        quirks = guidance / ".dazedtl/skills/quirks.md"
+        quirks.write_text("Keep honorifics.", encoding="utf-8")
+        # The first build adds the game's files; only settled ones are reused.
+        load_system_prompt(guidance)
+        for path in [*guidance.rglob("*"), guidance]:
+            os.utime(path, ns=(10**18, 10**18))
+        built = []
+        with patch.object(prompts, "prepare_game_translation_context", built.append):
+            first = load_system_prompt(guidance)
+            assert "Keep honorifics." in first
+            assert load_system_prompt(guidance) == first and len(built) == 1, built
+            quirks.write_text("Drop honorifics.", encoding="utf-8")
+            os.utime(quirks, ns=(10**18 + 10**10, 10**18 + 10**10))
+            assert "Drop honorifics." in load_system_prompt(guidance)
+            assert len(built) == 2, built
+
         # A real saved run recorded this pre-version byte hash; it must still pass
         # the native resume guard, alongside plans that record the version.
         engine = "RPG Maker MV/MZ"
