@@ -290,7 +290,7 @@ Provider status and collection belong to the existing worker and Batch monitor.
 The selected request updates automatically from shared observer receipt changes, with a spinner while that request is at the provider; a failed detail read offers a local retry.
 The Batch inspector keeps a selectable batch sidebar beside its request reader, with separate unsent or unlinked requests.
 The Live names pass before a Batch is its own first group; its requests belong to no file, so they never count toward a file's lines, skipped-file evidence or continuation reuse.
-A Batch translates every selected map's display name in requests made while it parses the first map; the translator records each line's maps, so a line counts toward the maps it names, a name two maps share counts for both, and a rejected name marks only those maps.
+A Batch translates every selected map's display name in requests made while it parses the first map; each line records its maps, so a line counts toward the maps it names, a name two maps share counts for both, and a rejected name marks only those maps.
 Those requests, their identities and continuation provenance stay the first map's, so consume, clarifications and reuse match them as before.
 Clarifications join their original batch through the recorded parent ID; they do not increase the original request count or duplicate its source rows.
 Request selection stays within the selected group's recorded request indices, and each affected request retains Original and Clarification attempt tabs.
@@ -314,6 +314,7 @@ Menu locations are cached by source/output file stamps, without rewriting histor
 ### Result reuse
 
 New workers record durable submission intent separately from preparation, source identities independent of model/prompt/chunk size, and native-validated response values.
+Each request records the identities of exactly the lines it sends, which the translator names while building it: a chunk leaves out lines without source text, so requests do not follow a call's lines one for one.
 Continuation reuses these values locally across expanded or narrowed selections when the relevant source bindings and file versions match.
 If compatible runs contain different validated wording for one identity, the newest run by creation time supplies the reusable value; historical alternatives stay unchanged and do not block preparation.
 Existing working translations still go through the native skip-translated behavior.

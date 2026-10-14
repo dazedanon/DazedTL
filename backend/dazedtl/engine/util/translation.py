@@ -5775,13 +5775,16 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
     ``glossary_names`` are names the instructions mention, such as who uses a
     skill; their glossary entries join each chunk's matched glossary.
     ``line_files`` lists, for each line of a call gathering lines of several
-    files (map display names), the files that line belongs to. While a chunk's
-    request is built, ``_thread_local.request_line_files`` holds the files of
-    the lines it sends, for run records; a rejected chunk adds those files to
-    ``mismatchList`` instead of ``filename``.
+    files (map display names), the files that line belongs to; a rejected
+    chunk adds its lines' files to ``mismatchList`` instead of ``filename``.
+
+    While a chunk's request is built, ``_thread_local.request_lines`` holds
+    the positions in ``text`` of the lines it sends, for run records: a chunk
+    leaves out lines without source text, so its requests do not follow the
+    call's lines one for one.
     """
     _thread_local.last_translation_had_mismatch = False
-    _thread_local.request_line_files = None
+    _thread_local.request_lines = None
     if not text:
         return [text, [0, 0]]
 
@@ -5843,15 +5846,14 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
     
     if isinstance(text, list):
         formatType = "json"
-        tList = batchList(text, config.batchSize)
-        file_chunks = (
-            batchList(list(line_files), config.batchSize)
-            if line_files is not None and len(line_files) == len(text)
-            else None
-        )
+        chunk_size = config.batchSize
+        tList = batchList(text, chunk_size)
+        if line_files is not None and len(line_files) != len(text):
+            line_files = None
     else:
         formatType = "json"
-        file_chunks = None
+        chunk_size = 1
+        line_files = None
         tList = [text]
 
     # Every mode sends preceding source lines as context. Keep a stable copy so
@@ -6009,13 +6011,13 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                 new_replacements[new_idx] = all_replacements.get(old_idx, {})
             all_replacements = new_replacements
 
-        # The files of the lines this chunk sends, skipped lines left out.
-        request_files = (
-            [names for j, names in enumerate(file_chunks[index]) if j not in skip_indices]
-            if file_chunks is not None
-            else None
-        )
-        _thread_local.request_line_files = request_files
+        # The lines of ``text`` this chunk sends, skipped lines left out.
+        request_lines = [
+            index * chunk_size + j
+            for j in range(len(tItem) if isinstance(tItem, list) else 1)
+            if j not in skip_indices
+        ]
+        _thread_local.request_lines = request_lines
 
         # Build filtered tItem for validation (excludes skipped items)
         if isinstance(tItem, list) and skip_indices:
@@ -6741,8 +6743,8 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                 pass  # Don't fail if logging fails
 
             rejected_files = (
-                [name for names in request_files for name in names]
-                if request_files is not None
+                [name for line in request_lines for name in line_files[line]]
+                if line_files is not None
                 else [filename]
             )
             for name in rejected_files:
@@ -6751,7 +6753,7 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
 
             tList[index] = tItem
 
-    _thread_local.request_line_files = None
+    _thread_local.request_lines = None
 
     # Combine if multilist
     if tList and isinstance(tList[0], list):

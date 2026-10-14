@@ -258,13 +258,19 @@ class Evidence:
         # never acquire an uncertain/submitted state.
         values = source_values(params) or {}
         keys = getattr(self.local, "all_sources", [])
+        files = getattr(self.local, "all_line_files", None)
         cursor = getattr(self.local, "cursor", 0)
-        self.local.sources = keys[cursor : cursor + len(values)] or keys
+        # The translator names the call's lines each request sends: a chunk
+        # leaves out lines without source text. A request built outside its
+        # chunks takes the call's next lines.
+        lines = getattr(self.translation_local, "request_lines", None)
+        if lines is not None and all(0 <= line < len(keys) for line in lines):
+            self.local.sources = [keys[line] for line in lines]
+            self.local.line_files = [files[line] for line in lines] if files else None
+        else:
+            self.local.sources = keys[cursor : cursor + len(values)] or keys
+            self.local.line_files = None
         self.local.cursor = cursor + len(values)
-        # The translator names the files of each line a request sends when
-        # its call gathers several files' lines, such as map display names.
-        files = getattr(self.translation_local, "request_line_files", None)
-        self.local.line_files = files if files and len(files) == len(values) else None
         self.prepared(
             params,
             "submitted" if self.mode == "translate" else "prepared",
@@ -539,6 +545,7 @@ class Evidence:
             line_files = bound.arguments.get("line_files")
             if line_files is None or len(line_files) != len(values):
                 line_files = None
+            self.local.all_line_files = line_files
             if self.mode == "estimate":
                 config = bound.arguments.get("config")
                 if line_files is None:
@@ -550,6 +557,10 @@ class Evidence:
                             for name in names:
                                 self.found_text(name)
             if not all(isinstance(value, str) for value in values):
+                # Lines that are not text have no identities; the previous
+                # call's must not stand in for them.
+                self.local.all_sources, self.local.sources = [], []
+                self.local.filename, self.local.cursor = filename, 0
                 return native(*args, **kwargs)
             if filename not in self.locations:
                 path = self.root / "files" / str(filename)

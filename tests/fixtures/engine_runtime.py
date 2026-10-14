@@ -1500,6 +1500,7 @@ try:
         )
         from dazedtl.compatibility.process_view import payload
         from dazedtl.compatibility.request_parameters import batch_routing
+        from dazedtl.compatibility.request_scope import identities
         from dazedtl.compatibility.run_evidence import Evidence
         from dazedtl.settings.openrouter import STRUCTURED_OUTPUTS, TRANSPORT
         from util import batch_history, batch_providers, extensions
@@ -1654,15 +1655,17 @@ try:
                 mismatchLogPath=str(router_root / "log/mismatches.txt"),
             )
             translation.set_batch_phase("collect")
-            # A call gathering several files' lines, as the grouped map display
-            # names do, records each request's own lines' files, also when a
-            # line without Japanese stays out of its request.
+            # Each request records its own lines' identities, and their files
+            # when a call gathers several files' lines as the grouped map
+            # display names do, also after a line without Japanese stayed out
+            # of an earlier request.
             with (
                 patch.object(translation, "_batch_queue_pending", {}),
                 patch.object(translation, "flush_batch_queue", lambda: None),
             ):
+                names = ["村", "Town", "神殿", "塔"]
                 translation.translateAI(
-                    ["村", "Town", "神殿", "塔"],
+                    names,
                     [],
                     config,
                     filename="Map001.json",
@@ -1674,9 +1677,13 @@ try:
                     ],
                 )
                 queued_names = translation._batch_queue_pending.values()
-                assert [entry["dazedtl_line_files"] for entry in queued_names] == [
-                    [["Map001.json"]],
-                    [["Map003.json", "Map004.json"], ["Map005.json"]],
+                keys = identities("Map001.json", None, names)
+                assert [
+                    (entry["dazedtl_sources"], entry["dazedtl_line_files"])
+                    for entry in queued_names
+                ] == [
+                    ([keys[0]], [["Map001.json"]]),
+                    (keys[2:], [["Map003.json", "Map004.json"], ["Map005.json"]]),
                 ], queued_names
             translation.translateAI(["薬"], [], config, filename="Items.json")
             translation.translateAI(["回復", "毒"], [], config, filename="Items.json")

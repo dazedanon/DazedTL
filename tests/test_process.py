@@ -1390,7 +1390,7 @@ class ProcessTests(unittest.TestCase):
                 evidence = Evidence(root, mode, plan)
 
                 def native_ai(text, history, config, filename, line_files=None):
-                    # The translator names the files of the lines it sends.
+                    # The translator names the lines each request sends.
                     for start in range(0, len(text), 2):
                         lines = text[start : start + 2]
                         content = json.dumps(
@@ -1398,9 +1398,9 @@ class ProcessTests(unittest.TestCase):
                             ensure_ascii=False,
                         )
                         params = {"messages": [{"role": "user", "content": content}]}
-                        translation._thread_local.request_line_files = line_files[
-                            start : start + 2
-                        ]
+                        translation._thread_local.request_lines = list(
+                            range(start, start + len(lines))
+                        )
                         evidence.record(params)
                         translation.queue_batch_request(content)
                     return [text, [0, 0]]
