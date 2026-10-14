@@ -394,6 +394,7 @@ export function useGuidedWorkspace({
     state,
     dirty: draft.dirty || !!Object.keys(context.drafts).length,
     busy: operationBusy,
+    running,
     save,
     settle: application.settle,
   });

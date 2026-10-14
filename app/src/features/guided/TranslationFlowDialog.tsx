@@ -11,7 +11,8 @@ import {
   formatRemaining,
 } from "../../ui/workTime";
 import { useRemaining, useSecond, useStepClock } from "../../state/useWorkTime";
-import { TranslationReviewContent } from "./TranslationReview";
+import { estimateCost, TranslationReviewContent } from "./TranslationReview";
+import { ModelMenu } from "../settings/ModelMenu";
 import { flowLoading, type useTranslationFlow } from "./useTranslationFlow";
 import { estimateActivity } from "./estimateActivity";
 import { NameTranslationFeedback } from "./NameTranslationFeedback";
@@ -21,12 +22,15 @@ import { ExpandableText } from "../../ui/ExpandableText";
 export function TranslationFlowDialog({
   projectId,
   flow,
+  provider,
   approvalCurrent,
   executionEnabled,
   inspect,
 }: {
   projectId: string;
   flow: ReturnType<typeof useTranslationFlow>;
+  /** The connection and model a review may switch. */
+  provider: { connection: string; model: string };
   approvalCurrent: boolean;
   executionEnabled: boolean;
   inspect: (run?: string) => void;
@@ -79,6 +83,18 @@ export function TranslationFlowDialog({
           executionEnabled={executionEnabled}
           error=""
           answer={flow.answer}
+          // Another model prices the estimate again; names already
+          // translated with this one keep their Batch.
+          model={
+            !value.namesApproved && (
+              <ModelMenu
+                model={provider.model}
+                connection={provider.connection}
+                disabled={flow.busy}
+                switchTo={flow.switchModel}
+              />
+            )
+          }
         />
       ) : (
         <>
@@ -136,11 +152,20 @@ export function TranslationFlowDialog({
                     // step keeps; the current one fills as far as its files
                     // have got.
                     detail:
-                      id === "estimate" && value.reused
-                        ? "Reused"
-                        : id !== step && clock.spent(id) >= 500
-                          ? formatDuration(clock.spent(id) / 1000)
-                          : "\u00a0",
+                      [
+                        id === "estimate" && value.reused
+                          ? "Reused"
+                          : id !== step && clock.spent(id) >= 500
+                            ? formatDuration(clock.spent(id) / 1000)
+                            : "",
+                        // A Batch's estimate is priced before its requests
+                        // are prepared.
+                        id === "estimate" &&
+                          value.estimate &&
+                          estimateCost(value.estimate, value.mode),
+                      ]
+                        .filter(Boolean)
+                        .join(" · ") || "\u00a0",
                     fraction: id === step ? activity.fraction : undefined,
                   }))}
                 />

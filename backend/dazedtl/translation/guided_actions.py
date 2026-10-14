@@ -1041,8 +1041,10 @@ class GuidedActions:
 
     def unchanged_estimate(self, project_id, native, phase, run_inputs):
         """The phase's latest estimate when it finished with exactly these
-        inputs, which Translate reopens instead of estimating again. Paid work
-        started from it ends that, and so does a Claude count it still needs."""
+        inputs, or with inputs a model switch only prices differently
+        (GuidedRuns.repriced), which Translate reopens instead of estimating
+        again. Paid work started from it ends that, and so does a Claude count
+        it still needs."""
         from dazedtl.compatibility.preparations import temporary
 
         manual = self.guided.backend.manual
@@ -1066,6 +1068,7 @@ class GuidedActions:
             or not job.get("estimate")
             or not temporary(job)
             or record["fingerprint"] != run_inputs["fingerprint"]
+            and not self.guided.runs.repriced(project_id, native, identity, run_inputs)
             or identity in self.guided.inputs(native).record().get("retired_runs", [])
             or any(
                 (row.get("estimate") or {}).get("jobId") == identity

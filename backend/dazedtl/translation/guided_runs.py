@@ -6,6 +6,7 @@ from contextlib import closing
 
 from dazedtl.storage import write_json
 
+from . import repricing
 from .files import digest, read_json
 
 PHASES = ("database", "dialogue", "advanced", "variables")
@@ -201,6 +202,12 @@ class GuidedRuns:
             }
         return {
             "fingerprint": digest(value),
+            # What the estimate's requests depend on, which a switch that only
+            # prices them (repricing) leaves alone.
+            "shape": digest(
+                {**value, "configuration": repricing.unpriced(configuration)}
+            ),
+            "configuration": configuration,
             "source": sources,
             "files": names,
             "phase": phase,
@@ -209,6 +216,25 @@ class GuidedRuns:
             "file_versions": versions,
             "reused_names": reused_names,
         }
+
+    def repriced(self, project_id, native, identity, inputs):
+        """A finished estimate's figures at the prices of ``inputs`` when
+        they only price its requests differently, else None."""
+        from dazedtl.compatibility.estimate_prices import reprice
+
+        record = self.records(project_id).get(identity, {})
+        estimate = self.guided.backend.manual.jobs.get(identity, {}).get("estimate")
+        if (
+            not estimate
+            or record.get("shape") != inputs["shape"]
+            or identity in self.guided.inputs(native).record().get("retired_runs", [])
+            or not repricing.priced(inputs["configuration"])
+            or not repricing.same_requests(
+                record["configuration"], inputs["configuration"]
+            )
+        ):
+            return None
+        return reprice(estimate, inputs["configuration"])
 
     def publish_names(self, project_id, native):
         """Adds paid names the game glossary lacks once no run can collect it.
@@ -597,10 +623,16 @@ class GuidedRuns:
                     not in self.guided.inputs(native).record().get("retired_runs", [])
                     and record["fingerprint"] == inputs["fingerprint"]
                 )
-                return {
-                    "job": (run_view or self.guided.run_view)(identity, compact=True),
-                    "current": current,
-                }, inputs
+                view = (run_view or self.guided.run_view)(identity, compact=True)
+                # A model switch that keeps its requests prices it again.
+                repriced = (
+                    None
+                    if current or job["status"] != "complete"
+                    else self.repriced(project_id, native, identity, inputs)
+                )
+                if repriced:
+                    view, current = {**view, "estimate": repriced}, True
+                return {"job": view, "current": current}, inputs
         return {"job": None, "current": False}, inputs
 
     def poll_guard(self, native):

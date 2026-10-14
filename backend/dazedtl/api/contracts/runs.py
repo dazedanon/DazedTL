@@ -45,6 +45,8 @@ class RunEstimate(TypedDict):
     cache_read_tokens: NotRequired[int]
     # Written instead when no cached prefix is reused.
     cache_max_write_tokens: NotRequired[int]
+    # In OpenAI prompts long enough to cache, for pricing them again.
+    cacheable_tokens: NotRequired[int]
     cache_kind: NotRequired[str | None]
     uses_prompt_cache: NotRequired[bool]
     live_cost: NotRequired[float]

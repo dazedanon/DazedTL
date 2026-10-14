@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { Job, Preview } from "../../api/contracts";
 import { ActionBar } from "../../ui/ActionBar";
 import { Button } from "../../ui/Button";
@@ -20,6 +20,25 @@ const pathKey = (path: string) => path;
 export const approximateClaudeInput =
   "Claude's own token count was unavailable, so the input is approximate and likely low.";
 
+/**
+ * An estimate's cost in one mode, a range where reusing cached instructions
+ * lowers it; undefined without a price.
+ */
+export function estimateCost(value: Record<string, unknown>, mode: string) {
+  // A cached Batch costs least when every repeated instruction is reused and
+  // most when none is; estimates saved before the maximum priced no reuse.
+  const most = value.batch_max_cost ?? value.batch_nocache_cost;
+  const costs = (
+    mode === "batch"
+      ? [value.batch_cached_cost, value.batch_cost, most]
+      : [value.live_cost ?? value.estimated_cost]
+  ).filter(numeric);
+  if (!costs.length) return undefined;
+  const low = Math.min(...costs),
+    high = Math.max(...costs);
+  return `$${low.toFixed(4)}${high > low ? `–$${high.toFixed(4)}` : ""}`;
+}
+
 export function TranslationCost({
   value,
   mode,
@@ -28,16 +47,7 @@ export function TranslationCost({
   mode: string;
 }) {
   const batch = mode === "batch";
-  // A cached Batch costs least when every repeated instruction is reused and
-  // most when none is; estimates saved before the maximum priced no reuse.
   const most = value.batch_max_cost ?? value.batch_nocache_cost;
-  const costs = (
-    batch
-      ? [value.batch_cached_cost, value.batch_cost, most]
-      : [value.live_cost ?? value.estimated_cost]
-  ).filter(numeric);
-  const low = Math.min(...costs),
-    high = Math.max(...costs);
   const caching =
     batch &&
     numeric(value.batch_cached_cost) &&
@@ -53,11 +63,7 @@ export function TranslationCost({
     <section className="translation-cost-review" aria-label="Estimated cost">
       <div className="translation-cost-total">
         <span>Estimated {batch ? "Batch" : "Live"} cost</span>
-        <strong>
-          {costs.length
-            ? `$${low.toFixed(4)}${high > low ? `–$${high.toFixed(4)}` : ""}`
-            : "Price unavailable"}
-        </strong>
+        <strong>{estimateCost(value, mode) ?? "Price unavailable"}</strong>
         <small>
           {value.approximate_input === true && `${approximateClaudeInput} `}
           Final cost depends on actual usage.
@@ -115,6 +121,8 @@ type ReviewProps = {
   /** Leaves a pending approval for later; absent when closing would discard it. */
   later?: () => void;
   answer: (approved: boolean) => void;
+  /** Chooses another model in place of the reviewed one's name. */
+  model?: ReactNode;
 };
 export function TranslationReview(props: ReviewProps & { job: Job }) {
   if (!props.job.approval) return null;
@@ -146,6 +154,7 @@ export function TranslationReviewContent({
   error,
   later,
   answer,
+  model,
 }: ReviewProps) {
   const [inspecting, setInspecting] = useState(false);
   const detail: Record<string, unknown> | undefined =
@@ -177,7 +186,7 @@ export function TranslationReviewContent({
       <DialogHeader title={title} />
       <DialogBody className="translation-review-body">
         <p className="translation-review-model">
-          {job?.model || preview?.run?.model || "Saved model"}{" "}
+          {model || job?.model || preview?.run?.model || "Saved model"}{" "}
           <span>
             ·{" "}
             {batch

@@ -95,7 +95,7 @@ def run(plan, log):
 
         def estimate(task):
             if not task["files"]:
-                return row(task, {})
+                return row(task, {}), None
             try:
                 value = estimate_task(
                     root / task["phase"], folder, plan, inventory, task, report
@@ -104,7 +104,7 @@ def run(plan, log):
                 failed.set()
                 raise
             report(f"{LABELS[task['phase']]} · estimated", task["phase"], state="done")
-            return row(task, value)
+            return row(task, value), measured(value)
 
         with ThreadPoolExecutor(max_workers=len(options["tasks"]) or 1) as pool:
             futures = [pool.submit(estimate, task) for task in options["tasks"]]
@@ -118,9 +118,15 @@ def run(plan, log):
             rows = [future.result() for future in futures]
     return {
         "fingerprint": options["fingerprint"],
+        "shape": options["shape"],
+        "configuration": options["configuration"],
         "model": options["model"],
         "batchSupported": options["batchSupported"],
-        "tasks": rows,
+        "tasks": [line for line, _counts in rows],
+        # What pricing the tasks again needs (FullEstimate.repriced).
+        "measured": {
+            line["phase"]: counts for line, counts in rows if counts is not None
+        },
     }
 
 
@@ -274,26 +280,50 @@ def end(process):
         process.wait()
 
 
+def number(estimate, key):
+    value = estimate.get(key)
+    return float(value) if isinstance(value, (int, float)) else 0.0
+
+
 def row(task, estimate):
     """One task's line in the saved result."""
-
-    def number(key):
-        value = estimate.get(key)
-        return float(value) if isinstance(value, (int, float)) else 0.0
-
-    cached = bool(estimate.get("uses_prompt_cache"))
-    batch = number("batch_cached_cost" if cached else "batch_nocache_cost")
     return {
         "phase": task["phase"],
         "files": len(task["files"]),
         "noSources": bool(task.get("noSources")),
-        "requests": int(number("requests")),
-        "inputTokens": int(number("input_tokens")),
-        "outputTokens": int(number("output_tokens")),
-        "liveCost": number("live_cost"),
-        "batchCost": batch,
-        "batchMaxCost": max(batch, number("batch_max_cost")),
-        "promptCache": cached,
+        "requests": int(number(estimate, "requests")),
+        "inputTokens": int(number(estimate, "input_tokens")),
+        "outputTokens": int(number(estimate, "output_tokens")),
+        "promptCache": bool(estimate.get("uses_prompt_cache")),
         "approximateInput": bool(estimate.get("approximate_input")),
+        **prices(estimate),
+    }
+
+
+def prices(estimate):
+    """A task line's prices, from its estimate."""
+    cached = bool(estimate.get("uses_prompt_cache"))
+    batch = number(estimate, "batch_cached_cost" if cached else "batch_nocache_cost")
+    return {
+        "liveCost": number(estimate, "live_cost"),
+        "batchCost": batch,
+        "batchMaxCost": max(batch, number(estimate, "batch_max_cost")),
         "unestimatedThinking": bool(estimate.get("unestimated_thinking_tokens")),
     }
+
+
+# The counts an estimate keeps beside a task's line, which its prices come from.
+MEASURED = (
+    "provider",
+    "requests",
+    "input_tokens",
+    "output_tokens",
+    "uses_prompt_cache",
+    "cache_read_tokens",
+    "cacheable_tokens",
+    "dynamic_tokens",
+)
+
+
+def measured(estimate):
+    return {key: estimate[key] for key in MEASURED if key in estimate}

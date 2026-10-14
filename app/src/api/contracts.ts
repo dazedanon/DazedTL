@@ -95,6 +95,7 @@ export type RunEstimate = {
   cache_write_tokens?: number;
   cache_read_tokens?: number;
   cache_max_write_tokens?: number;
+  cacheable_tokens?: number;
   cache_kind?: string | null;
   uses_prompt_cache?: boolean;
   live_cost?: number;

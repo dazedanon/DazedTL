@@ -9,6 +9,27 @@ import { Feedback } from "../../ui/Feedback";
 import { Menu, MenuItem, MenuSearch, MenuSeparator } from "../../ui/Menu";
 import { settingsSaved } from "./settingsChanges";
 
+/** Saves another model as the active connection's. */
+export async function saveModel(next: string) {
+  const current = await api.settings();
+  if (current.draft)
+    throw new Error(
+      "Save or discard your Settings changes before switching models.",
+    );
+  // Pages compare a saved estimate with prices DazedTL has already looked
+  // up, so look them up before the switch shows there. A model without a
+  // price still switches; its estimate then reads outdated.
+  if (current.activeConnectionId)
+    await api
+      .modelDefaults(current.activeConnectionId, next)
+      .catch(() => undefined);
+  await api.saveSettings({
+    ...current,
+    values: { ...current.values, model: next },
+  });
+  settingsSaved();
+}
+
 /**
  * Changes the active connection's model in place, so changing models mid-task
  * does not mean leaving the task. The list comes from the connection's last
@@ -19,12 +40,15 @@ export function ModelMenu({
   connection,
   disabled = false,
   manage,
+  switchTo,
 }: {
   model: string;
   connection: string;
   disabled?: boolean;
   /** Opens Settings; absent when the menu already sits there. */
   manage?: () => void;
+  /** Switches in place of saveModel, for work the switch must wrap. */
+  switchTo?: (model: string) => Promise<void>;
 }) {
   const application = useApplication();
   const action = useAction({ observer: application });
@@ -49,29 +73,7 @@ export function ModelMenu({
   // Pending Settings edits stay theirs; the menu never overwrites them.
   const pending = !!settings?.draft;
   const choose = (next: string) =>
-    void action.run(
-      async () => {
-        const current = await api.settings();
-        if (current.draft)
-          throw new Error(
-            "Save or discard your Settings changes before switching models.",
-          );
-        // Pages compare a saved estimate with prices DazedTL has already
-        // looked up, so look them up before the switch shows there. A model
-        // without a price still switches; its estimate then reads outdated.
-        if (current.activeConnectionId)
-          await api
-            .modelDefaults(current.activeConnectionId, next)
-            .catch(() => undefined);
-        await api.saveSettings({
-          ...current,
-          values: { ...current.values, model: next },
-        });
-        settingsSaved();
-      },
-      "",
-      "model",
-    );
+    void action.run(() => (switchTo ?? saveModel)(next), "", "model");
   return (
     <>
       <Menu

@@ -305,6 +305,8 @@ class GuidedTests(unittest.TestCase):
         self.settings_revision = 1
         self.configuration = {
             "model": "fixture-model",
+            "provider": "custom",
+            "protocol": "openai",
             "endpoint": "https://provider.invalid/v1",
             "rates": {"input": 1, "output": 2},
             "language": "English",
@@ -487,9 +489,7 @@ class GuidedTests(unittest.TestCase):
             lambda: self.native["widths"].update(width=51),
             lambda: self.native["engine_options"].update(NAMES=True),
             lambda: self.native.update(phase1_comments=True),
-            lambda: self.configuration.update(model="changed-model"),
             lambda: self.configuration.update(endpoint="https://changed.invalid/v1"),
-            lambda: self.configuration["rates"].update(input=3),
             lambda: self.configuration.update(language="French"),
             lambda: self.configuration.update(
                 generationParameters="provider-defaults-v1"
@@ -509,6 +509,18 @@ class GuidedTests(unittest.TestCase):
             self.native.update(deepcopy(originals[0]))
             self.configuration.clear()
             self.configuration.update(deepcopy(originals[1]))
+        # Another model of the connection keeps the requests, which its
+        # rates then price; reviewing it shows that price.
+        self.configuration.update(model="changed-model")
+        self.configuration["rates"].update(input=0.5)
+        quote, _ = reopened.runs.quote(self.identity, self.native, "database", "batch")
+        self.assertTrue(quote["current"])
+        self.assertEqual(quote["job"]["estimate"]["model"], "changed-model")
+        self.assertAlmostEqual(quote["job"]["estimate"]["live_cost"], 0.008)
+        preview = reopened.preview(self.identity, "start", options={"mode": "batch"})
+        self.assertEqual(preview["estimate"]["value"], quote["job"]["estimate"])
+        self.configuration.clear()
+        self.configuration.update(deepcopy(originals[1]))
         self.assertFalse(
             reopened.runs.quote(self.identity, self.native, "database", "translate")[0][
                 "current"
@@ -552,6 +564,10 @@ class GuidedTests(unittest.TestCase):
             return self.guided.execute(self.identity, review["token"])["id"]
 
         self.assertEqual(translate(), estimate)
+        # So does another model that only prices the same requests.
+        self.configuration.update(model="changed-model")
+        self.assertEqual(translate(), estimate)
+        self.configuration.update(model="fixture-model")
         # A Batch preparation keeps its estimate until it is approved, and
         # the next Translate replaces the preparation.
         self.assertEqual(translate("batch"), "paid-run")
@@ -620,19 +636,43 @@ class GuidedTests(unittest.TestCase):
             "created": "2026-01-01",
             "updated": "2026-01-01",
             "status": "complete",
-            "result": {"fingerprint": options["fingerprint"], "tasks": []},
+            "result": {
+                "fingerprint": options["fingerprint"],
+                "shape": options["shape"],
+                "configuration": options["configuration"],
+                "tasks": [{"phase": "dialogue", "inputTokens": 4000, "liveCost": 0.01}],
+                "measured": {
+                    "dialogue": {
+                        "provider": "custom",
+                        "input_tokens": 4000,
+                        "output_tokens": 3000,
+                    }
+                },
+            },
         }
 
-        def current():
+        def status():
             with self.guided.observations.read():
                 found = self.guided.event_text.status(self.identity, self.native)
                 return self.guided.full_estimate.status(
                     self.identity, self.native, found
-                )["current"]
+                )
+
+        def current():
+            return status()["current"]
 
         self.assertTrue(current())
         self.native.update(selected=[], mode="translate")
         self.assertTrue(current())
+        # Another model of the connection prices the same requests.
+        self.configuration.update(model="changed-model")
+        self.configuration["rates"].update(input=0.5)
+        repriced = status()
+        self.assertTrue(repriced["current"])
+        self.assertEqual(repriced["result"]["model"], "changed-model")
+        self.assertAlmostEqual(repriced["result"]["tasks"][0]["liveCost"], 0.008)
+        self.configuration.update(model="fixture-model")
+        self.configuration["rates"].update(input=1)
         # Estimating again would only repeat it, unless Claude's count failed.
         with self.assertRaisesRegex(ValueError, "Nothing changed"):
             self.guided.full_estimate.start(self.identity)
@@ -2092,7 +2132,14 @@ class GuidedTests(unittest.TestCase):
             "model": "fixture-model",
             "log": [],
             "files": self.guided.runs.files(self.native, phase),
-            "estimate": {"requests": 1, "live_cost": 0.01, "batch_cost": 0.005},
+            "estimate": {
+                "requests": 1,
+                "provider": "custom",
+                "input_tokens": 4000,
+                "output_tokens": 3000,
+                "live_cost": 0.01,
+                "batch_cost": 0.005,
+            },
             "outputs": {},
         }
         self.backend.manual.jobs[identity] = job

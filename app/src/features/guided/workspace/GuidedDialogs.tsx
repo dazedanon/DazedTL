@@ -210,6 +210,7 @@ export function GuidedDialogs({ w }: { w: GuidedWorkspace }) {
       <TranslationFlowDialog
         projectId={project.id}
         flow={translationFlow}
+        provider={state.provider}
         executionEnabled={state.provider.enabled}
         approvalCurrent={
           !translationFlow.state?.job?.approval ||

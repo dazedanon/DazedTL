@@ -4,7 +4,9 @@ import json
 import subprocess
 import sys
 import unittest
+from contextlib import redirect_stdout
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import ModuleType, SimpleNamespace
@@ -37,6 +39,87 @@ from tests.engine import ENGINE, engine_module, point
 
 
 class CompatibilityContracts(unittest.TestCase):
+    def test_an_estimate_priced_for_another_model_matches_that_models_estimate(self):
+        # A switch that keeps the requests' text prices an estimate's counts
+        # again instead of estimating again, so the figures must be those the
+        # engine's own estimate for that model gives, pricing layers included.
+        from dazedtl.compatibility import batch_pricing
+        from dazedtl.compatibility.estimate_prices import reprice
+        from util import translation
+
+        class Characters:
+            """A hermetic stand-in for tiktoken's encoding."""
+
+            def encode(self, text, **_kwargs):
+                return [ord(character) for character in str(text)]
+
+            def encode_batch(self, texts, **_kwargs):
+                return [self.encode(text) for text in texts]
+
+        rates = {
+            "gpt-5.6-sol": (4, 20),
+            "gpt-5.6-terra": (2, 12),
+            "gpt-4.1": (2, 8),
+            "gpt-6.1-sol": (5, 30),
+        }
+
+        def request(model, index):
+            params = translation.buildOpenAIRequest(
+                "System " * 300,
+                f"Line {index} " * 200,
+                "History",
+                0,
+                "json",
+                model,
+                numLines=2,
+                vocab_text="Vocabulary",
+                api_provider="openai",
+                request_instructions="Instructions",
+                api_url="https://api.openai.com/v1",
+            )
+            return {"params": params, "payload": "台詞" * 40, "provider": "openai"}
+
+        with (
+            TemporaryDirectory() as temporary,
+            patch.object(
+                translation,
+                "tiktoken",
+                SimpleNamespace(encoding_for_model=lambda _model: Characters()),
+            ),
+            patch.object(
+                translation,
+                "getPricingConfig",
+                lambda model: dict(
+                    zip(("inputAPICost", "outputAPICost"), rates[model], strict=True)
+                ),
+            ),
+            patch.object(
+                translation, "BATCH_LOCK_FILE", Path(temporary) / "batch.lock"
+            ),
+            redirect_stdout(StringIO()),
+        ):
+            batch_pricing.configure(translation, True)
+            self.addCleanup(batch_pricing.configure, translation, False)
+            # Separately billed cache writes on both sides, from none, to none.
+            for before, after in (
+                ("gpt-5.6-sol", "gpt-5.6-terra"),
+                ("gpt-4.1", "gpt-6.1-sol"),
+                ("gpt-6.1-sol", "gpt-4.1"),
+            ):
+                queue = Path(temporary) / (before + ".json")
+                write_json(
+                    queue, {str(index): request(before, index) for index in range(3)}
+                )
+                expected = translation.estimateBatchCost(after, queue_file=queue)
+                repriced = reprice(
+                    translation.estimateBatchCost(before, queue_file=queue),
+                    {
+                        "model": after,
+                        "rates": dict(zip(("input", "output"), rates[after])),
+                    },
+                )
+                self.assertEqual({key: repriced[key] for key in expected}, expected)
+
     def test_engine_extension_layers_reach_aliases_and_reconfigure_in_place(self):
         # Host wrappers used to reassign module attributes: aliases bound at
         # import missed them, and repeated configuration stacked duplicates.

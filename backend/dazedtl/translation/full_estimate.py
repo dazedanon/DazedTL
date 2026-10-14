@@ -13,6 +13,7 @@ from datetime import datetime
 from functools import cache
 from pathlib import Path
 
+from . import repricing
 from .files import digest
 
 ACTION = "full_estimate"
@@ -81,18 +82,62 @@ class FullEstimate:
                 names=names,
             )
             tasks.append(
-                {"phase": phase, "files": names, "fingerprint": inputs["fingerprint"]}
+                {
+                    "phase": phase,
+                    "files": names,
+                    "fingerprint": inputs["fingerprint"],
+                    "shape": inputs["shape"],
+                    "configuration": inputs["configuration"],
+                }
             )
         return tasks
 
     @staticmethod
-    def fingerprint(tasks):
+    def fingerprint(tasks, key="fingerprint"):
+        """What every task's estimate binds to; with ``shape``, what a switch
+        that only prices their requests leaves alone."""
         return digest(
             {
                 "app": app_version(),
-                "tasks": [[task["phase"], task["fingerprint"]] for task in tasks],
+                "tasks": [[task["phase"], task.get(key)] for task in tasks],
             }
         )
+
+    @staticmethod
+    def configuration(tasks):
+        """The settings the tasks are priced with, the same for every task."""
+        return next(task["configuration"] for task in tasks if task["fingerprint"])
+
+    def repriced(self, result, tasks):
+        """A saved estimate at the prices of ``tasks``' settings when they only
+        price its requests differently, else None."""
+        from dazedtl.compatibility.estimate_prices import reprice
+        from dazedtl.compatibility.full_estimate import prices
+
+        configuration = self.configuration(tasks)
+        if (
+            result.get("shape") != self.fingerprint(tasks, "shape")
+            or not repricing.priced(configuration)
+            or not repricing.same_requests(result["configuration"], configuration)
+        ):
+            return None
+        rows = []
+        for task in result["tasks"]:
+            counts = result["measured"].get(task["phase"])
+            if counts is None:
+                rows.append(task)
+                continue
+            estimate = reprice(counts, configuration)
+            if estimate is None:
+                return None
+            rows.append({**task, **prices(estimate)})
+        defaults = self.guided.settings.translation_defaults()
+        return {
+            **result,
+            "model": configuration["model"],
+            "batchSupported": defaults["batch_supported"],
+            "tasks": rows,
+        }
 
     def start(self, project_id):
         self.guided.idle(isolated_workers=True)
@@ -145,6 +190,8 @@ class FullEstimate:
                 "guard": self.guided.backend.guided_guard(native, folder),
                 "options": {
                     "fingerprint": self.fingerprint(tasks),
+                    "shape": self.fingerprint(tasks, "shape"),
+                    "configuration": self.configuration(tasks),
                     "model": defaults["model"],
                     "batchSupported": defaults["batch_supported"],
                     "policy": policy,
@@ -206,6 +253,11 @@ class FullEstimate:
                     cached_only=True,
                 )
                 current = self.fingerprint(tasks) == result.get("fingerprint")
+                # A model switch that keeps every task's requests prices
+                # them again.
+                repriced = None if current else self.repriced(result, tasks)
+                if repriced:
+                    result, current = repriced, True
             except OSError, ValueError, KeyError:
                 current = False
         return {

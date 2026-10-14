@@ -9,6 +9,7 @@ import { api } from "../../api/client";
 import { messageOf } from "../../api/errors";
 import type { GuidedState, Job, Phase, Preview } from "../../api/contracts";
 import { useAction } from "../../state/useAction";
+import { saveModel } from "../settings/ModelMenu";
 import { estimateFollowup, preparationFollowup } from "./translationView";
 
 export type TranslationFlowState = {
@@ -28,6 +29,8 @@ export type TranslationFlowState = {
   estimateId?: string;
   /** The estimate is the last one, reopened because nothing changed. */
   reused?: boolean;
+  /** The finished estimate's figures, shown while a Batch is prepared. */
+  estimate?: Record<string, unknown>;
   runId?: string;
   job?: Job;
   preview?: Preview;
@@ -53,6 +56,8 @@ type Options = {
   state: GuidedState;
   dirty: boolean;
   busy: boolean;
+  /** A worker or job still runs, which settings wait for. */
+  running: boolean;
   save: () => Promise<void>;
   settle: () => Promise<unknown> | void;
 };
@@ -225,7 +230,11 @@ export function useTranslationFlow(options: Options) {
           false,
         );
       } else {
-        change(session, { stage: "batch", job: undefined });
+        change(session, {
+          stage: "batch",
+          job: undefined,
+          estimate: result.job?.estimate ?? undefined,
+        });
         void perform(session, async () => {
           const preview = await api.preview(
             options.projectId,
@@ -330,6 +339,36 @@ export function useTranslationFlow(options: Options) {
   function dismiss() {
     if (current.current) finish(current.current);
   }
+  /**
+   * Switches the reviewed model and prepares the same files again: the
+   * reviewed preparation goes first, as Cancel removes it, since settings
+   * can't change while it waits; an estimate whose requests still hold is
+   * then priced again at once.
+   */
+  async function switchModel(model: string) {
+    const session = current.current;
+    if (!session || session.state.namesApproved || action.busy) return;
+    const files = session.state.files;
+    session.canceled = true;
+    change(session, { stage: "canceling" });
+    const released = await perform(session, async () => {});
+    if (!released.ok) return;
+    // The files are prepared again whichever model the save leaves.
+    try {
+      // Settings wait for the reviewed preparation's worker to end, which
+      // the snapshots after its discard show.
+      await latest.current.settle();
+      const until = Date.now() + 30_000;
+      while (latest.current.running) {
+        if (Date.now() > until)
+          throw new Error("The reviewed preparation is still stopping.");
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      await saveModel(model);
+    } finally {
+      start(files);
+    }
+  }
   return {
     state,
     /** The last finished decision's result, shown beside Translate. */
@@ -342,6 +381,7 @@ export function useTranslationFlow(options: Options) {
     cancel,
     answer,
     dismiss,
+    switchModel,
     retry: () => {
       const files = current.current?.state.files;
       dismiss();
