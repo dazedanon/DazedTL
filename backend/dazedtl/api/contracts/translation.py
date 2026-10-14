@@ -51,6 +51,8 @@ class TranslationQuote(TypedDict):
 class TranslationBatch(TypedDict):
     id: str
     state: str
+    # The run's requests this Batch holds.
+    requests: int
     api_status: NotRequired[str]
     counts: NotRequired[dict[str, int]]
     # The error class of a provider cancellation that failed.

@@ -169,12 +169,24 @@
   padding-left: var(--space-4);
   overflow-wrap: anywhere;
 }
-/* The request inspector keeps one size while it pages through requests. */
-.lens-request-inspector {
+/* The run inspector keeps one size while it pages and switches tabs; its
+   reader scrolls below the toolbar. */
+.lens-run-inspector {
   height: min(760px, calc(100dvh - var(--space-8)));
 }
-.lens-request-body > .translation-table-wrap:first-child {
-  margin-top: 0;
+.lens-run-body {
+  overflow: hidden;
+}
+.lens-run-body > :not(.request-reader) {
+  flex-shrink: 0;
+}
+.lens-request-id {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--font-small);
+}
+.lens-request-id + .translation-table-wrap {
+  margin-top: var(--space-2);
 }
 
 .version-panel,

@@ -62,7 +62,7 @@ export function PreparedRequestPreview({
         }
       />
       <DialogBody className="payload-inspector prepared-request-body">
-        <div className="prepared-request-toolbar">
+        <div className="request-toolbar">
           <Tabs
             id={tabId}
             label="Preview content"
@@ -70,7 +70,7 @@ export function PreparedRequestPreview({
             value={tab}
             onChange={setTab}
           />
-          <div className="prepared-request-navigation">
+          <div className="request-navigation">
             <span>
               {total
                 ? `Request ${(index + 1).toLocaleString()} of ${total.toLocaleString()}`

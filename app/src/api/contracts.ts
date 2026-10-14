@@ -1228,6 +1228,7 @@ export type TranslationQuote = {
 export type TranslationBatch = {
   id: string;
   state: string;
+  requests: number;
   api_status?: string;
   counts?: Record<string, number>;
   cancel_error?: string;

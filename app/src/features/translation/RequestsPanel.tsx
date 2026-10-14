@@ -4,25 +4,33 @@ import type { TranslationState } from "../../api/contracts";
 import { useApplication } from "../../app/ApplicationProvider";
 import { useAction } from "../../state/useAction";
 import { flushDrafts } from "../../state/leaveGuards";
-import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
 import { Button } from "../../ui/Button";
-import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Feedback } from "../../ui/Feedback";
 import { FieldRow } from "../../ui/FieldRow";
-import { Modal } from "../../ui/Modal";
+import { Notice } from "../../ui/Notice";
 import { Section } from "../../ui/Section";
-import { listedRun, priceRange } from "./apiRun";
-import { RequestInspector } from "./RequestInspector";
+import {
+  batchSummary,
+  listedRun,
+  priceRange,
+  runMode,
+  unconfirmedBatch,
+} from "./apiRun";
+import { LenRunInspector, type RunView } from "./LenRunInspector";
 
 const money = (value: number) => "$" + value.toFixed(4);
 export function RequestsPanel({ state }: { state: TranslationState }) {
   const application = useApplication();
   const action = useAction({ observer: application });
   const [path, setPath] = useState(".dazedtl/len-method/work/requests.json");
-  const [inspecting, setInspecting] = useState({ run: "", index: 0 });
-  const [attach, setAttach] = useState({ run: "", index: 0, id: "" });
-  const closeAttach = () => setAttach({ run: "", index: 0, id: "" });
+  const [inspecting, setInspecting] = useState<{
+    run: string;
+    index: number;
+    view: RunView;
+  }>({ run: "", index: 0, view: "requests" });
+  const inspect = (run: string, index = 0, view: RunView = "requests") =>
+    setInspecting({ run, index, view });
   // The operation compiling the plan; its run joins the list once saved.
   const [compiling, setCompiling] = useState("");
   const jobs = state.jobs.filter(
@@ -50,12 +58,7 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
           <article className="translation-run" key={job.id}>
             <div className="section-heading">
               <strong>
-                {job.mode === "agent"
-                  ? "Agent"
-                  : job.mode === "batch"
-                    ? "API Batch"
-                    : "Live API"}{" "}
-                · {job.status.replaceAll("_", " ")}
+                {runMode(job)} · {job.status.replaceAll("_", " ")}
               </strong>
               <small>{new Date(job.updated).toLocaleString()}</small>
             </div>
@@ -123,11 +126,7 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
             )}
             <div className="actions">
               {!!job.requests && (
-                <Button
-                  onClick={() => setInspecting({ run: job.id, index: 0 })}
-                >
-                  Inspect requests and results
-                </Button>
+                <Button onClick={() => inspect(job.id)}>Inspect run</Button>
               )}
               {job.mode !== "agent" &&
                 (job.approved
@@ -210,29 +209,22 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
               {runActions.some((name) => action.key === runKey(name, job.id)) &&
                 action.error && <Feedback error={action.error} />}
             </div>
-            {!!job.batches.length && (
-              <ul className="translation-batch-list">
-                {job.batches.map((batch, index) => (
-                  <li key={index}>
-                    {batch.id ||
-                      (batch.state === "submitting"
-                        ? "Unconfirmed submission"
-                        : "Not sent")}{" "}
-                    · {batch.api_status || batch.state}
-                    {(batch.state === "submitting" ||
-                      batch.state === "unmatched") && (
-                      <Button
-                        onClick={() =>
-                          setAttach({ run: job.id, index, id: "" })
-                        }
-                      >
-                        Attach matching provider job
-                      </Button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
+            {!!job.batches.length &&
+              (job.batches.some(unconfirmedBatch) ? (
+                <Notice tone="warning">
+                  Batches: {batchSummary(job.batches)}.{" "}
+                  <Button
+                    variant="link"
+                    onClick={() => inspect(job.id, 0, "batches")}
+                  >
+                    {job.batches.filter(unconfirmedBatch).length === 1
+                      ? "Attach its provider job"
+                      : "Attach their provider jobs"}
+                  </Button>
+                </Notice>
+              ) : (
+                <p className="muted">Batches: {batchSummary(job.batches)}</p>
+              ))}
             {!!job.issues.length && (
               <details>
                 <summary>
@@ -260,11 +252,7 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
                   {job.qa_requests.map((request) => (
                     <li key={request.id}>
                       {request.id} · {request.notes} notes{" "}
-                      <Button
-                        onClick={() =>
-                          setInspecting({ run: job.id, index: request.index })
-                        }
-                      >
+                      <Button onClick={() => inspect(job.id, request.index)}>
                         Inspect source notes
                       </Button>
                     </li>
@@ -275,74 +263,15 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
           </article>
         ))}
       </Section>
-      {attach.run && (
-        <Modal
-          label="Attach a provider job"
-          size="sm"
-          dismissible={!action.busy}
-          onDismiss={closeAttach}
-        >
-          <DialogHeader title="Attach the matching provider job?" />
-          <DialogBody>
-            <p>
-              Use the job ID from the provider for this exact submission.
-              Collection will check its request IDs. This does not submit
-              another batch.
-            </p>
-            <FieldRow id="attach-provider-job" label="Provider job ID" wide>
-              {(props) => (
-                <input
-                  {...props}
-                  value={attach.id}
-                  onChange={(event) =>
-                    setAttach({ ...attach, id: event.target.value })
-                  }
-                />
-              )}
-            </FieldRow>
-          </DialogBody>
-          <ActionBar
-            feedback={
-              action.key === "attach" &&
-              action.error && <Feedback error={action.error} />
-            }
-          >
-            <Button disabled={action.busy} onClick={closeAttach}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              disabled={!attach.id.trim() || state.active}
-              pending={action.busy && action.key === "attach"}
-              onClick={() =>
-                void action.run(
-                  async () => {
-                    await api.translation.attach(
-                      state.projectId,
-                      attach.run,
-                      attach.index,
-                      attach.id,
-                    );
-                    closeAttach();
-                  },
-                  "",
-                  "attach",
-                )
-              }
-            >
-              Attach job
-            </Button>
-          </ActionBar>
-        </Modal>
-      )}
       {inspected && (
-        <RequestInspector
-          key={`${inspected.id}:${inspecting.index}`}
+        <LenRunInspector
+          key={`${inspected.id}:${inspecting.index}:${inspecting.view}`}
           projectId={state.projectId}
           job={inspected}
           initialIndex={inspecting.index}
+          initialView={inspecting.view}
           active={state.active}
-          onClose={() => setInspecting({ run: "", index: 0 })}
+          onClose={() => inspect("")}
         />
       )}
       <Section title="Request plan">

@@ -354,7 +354,7 @@
 .prepared-request-body > :not(.request-reader) {
   flex-shrink: 0;
 }
-.prepared-request-toolbar {
+.request-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -362,30 +362,32 @@
   gap: var(--space-2) var(--space-5);
   border-bottom: 1px solid var(--color-border);
 }
-.prepared-request-toolbar .ui-tabs {
+.request-toolbar .ui-tabs {
   border: 0;
   gap: var(--space-4);
 }
-.prepared-request-navigation {
+.request-navigation {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
   font-size: var(--font-small);
 }
-.prepared-request-navigation > span {
+.request-navigation > span {
   color: var(--color-muted);
   font-variant-numeric: tabular-nums;
 }
-.prepared-request-navigation .actions {
+/* The dialog rule that spaces footer actions does not apply here. */
+.request-navigation .actions {
   gap: var(--space-1);
+  margin-top: 0;
 }
 @container request-reader (max-width:620px) {
-  .prepared-request-toolbar .ui-tabs {
+  .request-toolbar .ui-tabs {
     order: 1;
     width: 100%;
   }
-  .prepared-request-navigation {
+  .request-navigation {
     width: 100%;
     justify-content: space-between;
   }

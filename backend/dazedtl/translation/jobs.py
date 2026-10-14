@@ -411,6 +411,7 @@ class RunStore:
                     for key in ("id", "state", "api_status", "counts", "cancel_error")
                     if key in chunk
                 }
+                | {"requests": len(chunk.get("items", []))}
                 for chunk in job["batches"]
             ],
             "qa_requests": job.get("qa_requests", []),

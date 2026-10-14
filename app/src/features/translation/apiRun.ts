@@ -1,4 +1,9 @@
-import type { TranslationJob, TranslationState } from "../../api/contracts";
+import type {
+  TranslationBatch,
+  TranslationJob,
+  TranslationState,
+} from "../../api/contracts";
+import { batchStatus } from "../guided/batchView.ts";
 
 /** The current attempt's jobs; Run history keeps those from before the last start over. */
 export function attemptJobs(state: TranslationState) {
@@ -90,3 +95,46 @@ export const declinedEstimate = (
   declined: TranslationJob,
 ) =>
   jobs.find((job) => job.kind === "operation" && job.finishes === declined.id);
+
+/** How a run sends its requests, as History names it. */
+export const runMode = (job: TranslationJob) =>
+  job.mode === "agent"
+    ? "Agent"
+    : job.mode === "batch"
+      ? "API Batch"
+      : "Live API";
+
+// The run's own Batch states that say more than the provider's status.
+const batchStates: Record<string, string> = {
+  pending: "Not sent",
+  submitting: "Not confirmed",
+  unmatched: "Not matched",
+  rejected: "Rejected",
+};
+
+/** Where one of a run's Batches stands. */
+export const batchLabel = (batch: TranslationBatch) =>
+  batchStates[batch.state] ??
+  (batch.api_status
+    ? batchStatus(batch.api_status)
+    : batch.state === "complete"
+      ? "Completed"
+      : batch.state === "canceled"
+        ? "Canceled"
+        : "Submitted");
+
+/** A submission that may have reached the provider; its job can be attached. */
+export const unconfirmedBatch = (batch: TranslationBatch) =>
+  batch.state === "submitting" || batch.state === "unmatched";
+
+/** A run's Batches counted by where they stand: "11 completed · 6 not sent". */
+export function batchSummary(batches: TranslationBatch[]) {
+  const counts = new Map<string, number>();
+  for (const batch of batches) {
+    const label = batchLabel(batch);
+    counts.set(label, (counts.get(label) || 0) + 1);
+  }
+  return [...counts]
+    .map(([label, count]) => `${count.toLocaleString()} ${label.toLowerCase()}`)
+    .join(" · ");
+}
