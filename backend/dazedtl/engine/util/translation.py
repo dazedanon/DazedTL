@@ -5562,6 +5562,9 @@ _BATCH_COLLECT_FILE_COUNTERS = (
     "queued_requests",
     "cached_items",
     "cached_requests",
+    # Lines saved translations answered before they reached translateAI,
+    # counted by the host's run records.
+    "reused_items",
 )
 
 

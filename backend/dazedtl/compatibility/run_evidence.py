@@ -641,6 +641,11 @@ class Evidence:
                 )
                 for lookup, value in zip(lookups, values)
             ]
+            if translation.get_batch_phase() in {"collect", "estimate"}:
+                # A scan summary counts the lines saved translations answer.
+                record_stats = getattr(translation, "_record_batch_collect_stats", None)
+                if record_stats is not None:
+                    record_stats(reused_items=sum(row is not None for row in reused))
             if values and all(row is not None for row in reused):
                 translation._thread_local.last_translation_had_mismatch = False
                 # Every reused row was checked above.

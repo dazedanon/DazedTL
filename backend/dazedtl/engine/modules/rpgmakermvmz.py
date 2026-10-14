@@ -507,7 +507,10 @@ def handleMVMZ(filename, estimate):
         if preparing_batch_map_names:
             map_name_stats = batch_collect_file_stats()
             map_file_count = len(_BATCH_MAP_NAME_FILES or ())
-            unique_name_count = int(map_name_stats.get("source_items", 0) or 0)
+            # Names saved translations answered never reach the translator.
+            unique_name_count = int(map_name_stats.get("source_items", 0) or 0) + int(
+                map_name_stats.get("reused_items", 0) or 0
+            )
             tqdm.write(
                 ("[ESTIMATE]" if batch_phase == "estimate" else "[BATCH]")
                 + " Map names: "
@@ -641,6 +644,7 @@ def _batchCollectScanText(stats, *, empty_text="no eligible untranslated text"):
     queued_items = int(stats.get("queued_items", 0) or 0)
     queued_requests = int(stats.get("queued_requests", 0) or 0)
     cached_items = int(stats.get("cached_items", 0) or 0)
+    reused_items = int(stats.get("reused_items", 0) or 0)
     source_items = int(stats.get("source_items", 0) or 0)
     skipped_items = max(0, source_items - queued_items - cached_items)
 
@@ -652,6 +656,10 @@ def _batchCollectScanText(stats, *, empty_text="no eligible untranslated text"):
         )
     if cached_items:
         details.append(f"{_countLabel(cached_items, 'item')} reused from cache")
+    if reused_items:
+        details.append(
+            f"{_countLabel(reused_items, 'item')} reused from saved translations"
+        )
     if skipped_items:
         details.append(f"{_countLabel(skipped_items, 'candidate')} skipped")
     if not details:
