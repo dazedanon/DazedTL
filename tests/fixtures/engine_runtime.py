@@ -1317,10 +1317,11 @@ try:
         live_task = TranslationTask(
             live_root, ("RPG Maker MV/MZ", (".json",), None), runner_script=runner
         )
-        errors, mismatched, done = [], [], []
+        errors, mismatched, done, logged = [], [], [], []
         live_task.file_error_signal.connect(lambda *args: errors.append(args))
         live_task.file_mismatch_signal.connect(lambda *args: mismatched.append(args))
         live_task.progress_signal.connect(lambda *args: done.append(args[2]))
+        live_task.log_signal.connect(logged.append)
         maps = [f"Map00{number}.json" for number in range(1, 6)]
         with patch.dict(os.environ, {"fileThreads": "1"}):
             assert live_task._run_files(maps, False) == "Fail"
@@ -1344,6 +1345,8 @@ try:
         assert errors[0][1] == "Broken.", errors
         assert [name for name, _ in mismatched] == ["Map003.json"], mismatched
         assert live_task._run_mismatch_count == 2, live_task._run_mismatch_count
+        # The Run log shows what they mean, never the worker's own markers.
+        assert not [line for line in logged if "MISMATCH_EVENT" in str(line)], logged
         # Concurrent files share the queue: each file goes to one worker once.
         for path in live_root.glob("launches-*.txt"):
             path.unlink()

@@ -583,10 +583,11 @@ class TranslationTaskCore:
 
         Also mirrors into TRANSLATION_RUN_LOG so the LogViewer file-tail shows
         batch/status lines (those never go through translateAI's Input/Output writer).
+        Mismatch markers are counted from worker output, never shown.
         """
-        self.log_signal.emit(message)
         if isinstance(message, str) and message.startswith("MISMATCH_EVENT:"):
             return
+        self.log_signal.emit(message)
         try:
             run_log = os.getenv("TRANSLATION_RUN_LOG")
             if not run_log or not message:
