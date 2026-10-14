@@ -19,6 +19,9 @@ class Backend {
     );
     fs.mkdirSync(this.workspace, { recursive: true });
     this.pending = new Map();
+    // Why requests fail once the backend has ended, which may be before the
+    // window listens for its stop.
+    this.unavailable = "The translation service is unavailable.";
     this.serial = 0;
     this.stopping = false;
     this.forced = false;
@@ -136,9 +139,9 @@ class Backend {
       diagnostics.failure("backend.spawn-failed", error, {
         operation: "startup",
       });
-      this.fail(
-        "Python could not start. Run node scripts/setup.mjs to prepare the runtime.",
-      );
+      this.unavailable =
+        "Python could not start. Run node scripts/setup.mjs to prepare the runtime.";
+      this.fail(this.unavailable);
     });
     this.process.on("exit", (exitCode, signal) => {
       // Requests are answered in turn, so the oldest unanswered one is
@@ -159,6 +162,7 @@ class Backend {
       const message =
         startupMessages[startupCode] ||
         "The translation service stopped. Restart to recover saved work.";
+      this.unavailable = message;
       this.fail(message);
       if (!this.stopping) onStopped(message);
     });
@@ -176,9 +180,7 @@ class Backend {
         this.process.signalCode !== null
       )
         return reject(
-          Object.assign(new Error("The translation service is unavailable."), {
-            code: "unavailable",
-          }),
+          Object.assign(new Error(this.unavailable), { code: "unavailable" }),
         );
       const id = ++this.serial;
       this.pending.set(id, { resolve, reject, method, started: Date.now() });

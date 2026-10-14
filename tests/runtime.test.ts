@@ -10,7 +10,7 @@ import { EventEmitter } from "node:events";
 import os from "node:os";
 import { rendererRecovery } from "../app/electron/renderer-recovery.cjs";
 import { Diagnostics } from "../app/electron/diagnostics.cjs";
-import { stopTree } from "../app/electron/backend.cjs";
+import { Backend, stopTree } from "../app/electron/backend.cjs";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { createInterface } from "node:readline";
@@ -237,6 +237,35 @@ test("a forced backend stop also ends workers in sessions of their own and the c
   });
   await stopTree(backend.pid);
   assert.deepEqual(pids.filter(alive), []);
+});
+
+test("a backend that ended before the window listened still says why to the window's first request", async (t) => {
+  // Stands in for a backend that fails on import, as a broken install would.
+  const install = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-backend-"));
+  const server = path.join(install, "backend/dazedtl/api/server.py");
+  fs.mkdirSync(path.dirname(server), { recursive: true });
+  fs.writeFileSync(server, "raise ImportError('broken install')\n");
+  const python = process.env.DAZEDTL_PYTHON;
+  process.env.DAZEDTL_PYTHON = path.join(
+    root,
+    ".venv",
+    process.platform === "win32" ? "Scripts/python.exe" : "bin/python",
+  );
+  t.after(() => {
+    if (python === undefined) delete process.env.DAZEDTL_PYTHON;
+    else process.env.DAZEDTL_PYTHON = python;
+    fs.rmSync(install, { recursive: true, force: true });
+  });
+  const backend = new Backend(install, install, () => {}, {
+    directory: install,
+    record: () => {},
+    failure: () => {},
+  });
+  await once(backend.process, "exit");
+  await assert.rejects(backend.request("workspace_snapshot"), {
+    code: "unavailable",
+    message: "The translation service stopped. Restart to recover saved work.",
+  });
 });
 
 test("desktop bounds fit scaled work areas without enlarging the default window on 4K displays", () => {

@@ -332,8 +332,9 @@ export default function App() {
           </div>
         </aside>
         <main>
+          {/* Before a workspace opens, its page says why instead. */}
           <Message
-            message={error}
+            message={state ? error : ""}
             onDismiss={
               application.stopped
                 ? undefined
@@ -362,12 +363,13 @@ export default function App() {
           >
             {!state ? (
               error ? (
-                // An update is the way out of a workspace this version cannot
-                // open, so the updates stay reachable without it.
+                // The reason says what to do; when it is a workspace this
+                // version cannot open, an update is the way out, so the
+                // updates stay reachable without it.
                 <PageLayout variant="editor" aria-label="Workspace unavailable">
                   <PageHeader
                     title="Workspace unavailable"
-                    description="Your workspace could not be opened. A newer version of DazedTL may fix this."
+                    description={error}
                   />
                   <Updates running={false} />
                 </PageLayout>
