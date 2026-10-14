@@ -278,12 +278,11 @@ def compile_run(engine, workspace, job, plan, input_path, progress, read=None):
     store.overlapping(project_id, {row["fingerprint"] for row in requests})
     limits = None
     if cfg["mode"] != "agent":
+        # A Batch runner counts each request's tokens when it packs them.
         limits = engine.batch_limits(cfg) if frozen["batch"] else None
         for index, request in enumerate(requests, 1):
             progress(f"Building provider requests: {index:,} of {len(requests):,}")
             request["params"] = engine.payload(request, cfg)
-            if limits and len(limits) > 2 and limits[2]:
-                request["input_tokens"] = engine.input_tokens(request["params"])
     results = Results(root)
     pending = [row for row in requests if not results.get(row)]
     estimate = None

@@ -322,14 +322,19 @@ class TranslationTests(unittest.TestCase):
 
     def test_cancellation_retains_completed_rows_and_does_not_submit_later_chunks(self):
         job, plan = self.run_record("batch", [request("one"), request("two")])
-        # One request per provider job makes the remaining-work safeguard observable.
-        plan["batch_limits"] = [1, 100000]
+        # One request per provider job makes the remaining-work safeguard
+        # observable: the runner counts each request's tokens, and two
+        # exceed the allowance.
+        plan["batch_limits"] = [50, 100000, 10]
         write_json(self.store.folder(job["id"]) / "plan.json", plan)
         job["plan_sha256"] = digest(plan)
         self.store.save(job)
 
         class Provider(BatchProvider):
             canceled = False
+
+            def input_tokens(self, _params):
+                return 6
 
             def cancel(self, _identity):
                 self.canceled = True
@@ -799,6 +804,8 @@ class TranslationTests(unittest.TestCase):
         # Each clarification fills a provider job's token allowance, so the
         # second waits for the first; the last request waits in a later chunk.
         plan["batch_limits"] = [3, 100000, 10]
+        for row in plan["requests"]:
+            row["input_tokens"] = 3
         write_json(self.store.folder(job["id"]) / "plan.json", plan)
         job["plan_sha256"] = digest(plan)
         self.store.save(job)

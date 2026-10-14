@@ -262,7 +262,15 @@ class Runner:
                     len(json.dumps(row["params"], ensure_ascii=False).encode("utf-8"))
                     + 1024
                 )
-                request_tokens = row.get("input_tokens", 0)
+                # A plan frozen without counts (see compile_run) is counted
+                # here, before anything is sent, so packing stays exact.
+                request_tokens = (
+                    row["input_tokens"]
+                    if "input_tokens" in row
+                    else self.provider.input_tokens(row["params"])
+                    if token_limit
+                    else 0
+                )
                 if length > limit[1] or token_limit and request_tokens > token_limit:
                     raise ValueError(
                         "A request exceeds the provider's Batch file limit. Split the scene with source context."
