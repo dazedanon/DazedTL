@@ -1527,6 +1527,75 @@ class ProcessTests(unittest.TestCase):
                 {name for group in files for name in group},
             )
 
+    def test_grouped_map_names_reuse_each_maps_own_translation(self):
+        # A Batch identified its grouped map display names in the first map,
+        # so names a Live run had translated went out again, as did every name
+        # once a selection started at another map.
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            maps = {"Map001.json": "村", "Map002.json": "神殿", "Map003.json": "塔"}
+            for name, title in maps.items():
+                write_json(root / "files" / name, {"displayName": title})
+
+            def identity(name, title):
+                document = json.loads((root / "files" / name).read_text())
+                locations = request_scope.source_locations(document)
+                return request_scope.identities(name, None, [title], locations)[0]
+
+            # A Live run saved Map002's name under Map002; an older Batch saved
+            # Map003's under the first map of its selection.
+            plan = {
+                "dazedtl_continuation": {
+                    identity("Map002.json", "神殿"): {
+                        "source": "神殿",
+                        "response": "Temple",
+                    },
+                    identity("Map001.json", "塔"): {
+                        "source": "塔",
+                        "response": "Tower",
+                    },
+                }
+            }
+            sent = []
+
+            def native_ai(text, history, config, filename, line_files=None):
+                sent.append(list(text))
+                return [[value + "!" for value in text], [0, 0]]
+
+            def run(identities):
+                translation = SimpleNamespace(
+                    queue_batch_request=point(lambda *_: "unused"),
+                    BATCH_LOCK=threading.RLock(),
+                    _batch_queue_pending={},
+                    _write_request_debug_log=point(lambda *_: None),
+                    translateText=point(lambda *_: None),
+                    translateAI=point(native_ai),
+                    _thread_local=threading.local(),
+                    last_translation_had_mismatch=lambda: False,
+                    get_batch_phase=lambda: None,
+                )
+                Evidence(
+                    root, "translate", plan, map_name_identities=identities
+                ).install(translation)
+                sent.clear()
+                return translation.translateAI(
+                    list(maps.values()),
+                    "地名",
+                    SimpleNamespace(batchSize=50),
+                    "Map001.json",
+                    line_files=[[name] for name in maps],
+                )[0]
+
+            self.assertEqual(run(True), ["村!", "Temple", "Tower"])
+            self.assertEqual(sent, [["村"]])
+            # A name is saved under the map it names, for a run of any selection.
+            saved = Evidence(root, "translate").reused
+            self.assertEqual(saved[identity("Map001.json", "村")]["response"], "村!")
+            # Runs frozen before the policy keep the first map's identities, so
+            # a Batch's consume rebuilds the requests it collected.
+            self.assertEqual(run(False), ["村!", "神殿!", "Tower"])
+            self.assertEqual(sent, [["神殿"]])
+
     def test_checkpoint_resume_reads_partial_json_without_mutating_frozen_inputs(self):
         from dazedtl.compatibility import checkpoints
         from dazedtl.storage import write_bytes

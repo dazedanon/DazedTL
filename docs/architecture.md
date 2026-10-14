@@ -295,7 +295,9 @@ The selected request updates automatically from shared observer receipt changes,
 The Batch inspector keeps a selectable batch sidebar beside its request reader, with separate unsent or unlinked requests.
 The Live names pass before a Batch is its own first group; its requests belong to no file, so they never count toward a file's lines, skipped-file evidence or continuation reuse.
 A Batch translates every selected map's display name in requests made while it parses the first map; each line records its maps, so a line counts toward the maps it names, a name two maps share counts for both, and a rejected name marks only those maps.
-Those requests, their identities and continuation provenance stay the first map's, so consume, clarifications and reuse match them as before.
+Those requests and their Batch receipts stay the first map's, so consume and clarifications match them as before.
+Runs frozen with the map-name-identities policy (`MAP_NAME_IDENTITIES` in [preferences.py](../backend/dazedtl/settings/preferences.py)) identify each line in every map it names, as a Live run identifies that map's name, and save its translation under each of those maps, so Live and Batch reuse each other's names whichever map a selection starts at.
+They also reuse a name an older run saved under the first map; older runs keep the first map's identities, so their Batch consume rebuilds the requests it collected.
 Clarifications join their original batch through the recorded parent ID; they do not increase the original request count or duplicate its source rows.
 Request selection stays within the selected group's recorded request indices, and each affected request retains Original and Clarification attempt tabs.
 A pending or failed clarification remains visible in the group's status.

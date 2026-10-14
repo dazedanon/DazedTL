@@ -18,6 +18,9 @@ PAGE_PACKING = "event-pages-v1"
 # Stretches left between translations an earlier run saved share a request,
 # each labelled with the lines before it.
 REUSE_STRETCHES = "shared-stretches-v1"
+# A Batch's grouped map display names are identified by the maps they name, as
+# a Live run identifies each map's name, so either run reuses the other's.
+MAP_NAME_IDENTITIES = "map-name-identities-v1"
 BATTLE_MESSAGE_USERS = "battle-message-users-v2"
 # Each battle-message-users policy a saved run may hold, by the parser level it
 # enables: v2 also treats a party of one actor as that actor.

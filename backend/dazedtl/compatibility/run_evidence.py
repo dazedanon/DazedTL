@@ -121,12 +121,25 @@ def source_text(value, config):
 
 
 class Evidence:
-    def __init__(self, root, mode, plan=None, *, share_stretches=False):
+    def __init__(
+        self,
+        root,
+        mode,
+        plan=None,
+        *,
+        share_stretches=False,
+        map_name_identities=False,
+    ):
         self.path = Path(root) / "log/dazedtl-process.sqlite3"
         self.mode = mode
         # Runs frozen before the reuse-stretches policy keep a request per
         # stretch, so their Batch requests rebuild identically.
         self.share_stretches = share_stretches
+        # Runs frozen with the map-name-identities policy identify each line
+        # of a call gathering several files' lines, the grouped map display
+        # names, in its own files; older runs identify it in the calling file,
+        # so their Batch reuses, and so requests, rebuild identically.
+        self.map_name_identities = map_name_identities
         self.local = threading.local()
         # The translator's own thread state, once installed.
         self.translation_local = None
@@ -214,6 +227,20 @@ class Evidence:
         finally:
             if shared is None:
                 connection.close()
+
+    def file_locations(self, filename):
+        """Each string's paths in a file of the run, read once."""
+        if filename not in self.locations:
+            path = self.root / "files" / str(filename)
+            try:
+                self.locations[filename] = (
+                    source_locations(json.loads(path.read_text(encoding="utf-8-sig")))
+                    if path.is_file()
+                    else {}
+                )
+            except OSError, ValueError:
+                self.locations[filename] = {}
+        return self.locations[filename]
 
     def found_text(self, filename):
         with self.translatable_lock:
@@ -562,54 +589,64 @@ class Evidence:
                 self.local.all_sources, self.local.sources = [], []
                 self.local.filename, self.local.cursor = filename, 0
                 return native(*args, **kwargs)
-            if filename not in self.locations:
-                path = self.root / "files" / str(filename)
-                try:
-                    self.locations[filename] = (
-                        source_locations(
-                            json.loads(path.read_text(encoding="utf-8-sig"))
-                        )
-                        if path.is_file()
-                        else {}
-                    )
-                except OSError, ValueError:
-                    self.locations[filename] = {}
-            locations = self.locations[filename]
-            keys = identities(
-                filename,
-                (self.plan.get("workflow") or {}).get("phase"),
-                values,
-                locations,
-            )
-            # A duplicated source string has ambiguous field provenance. Retain
-            # separate response context instead of silently substituting one
-            # field's translation into a different context.
+            phase = (self.plan.get("workflow") or {}).get("phase")
             history = bound.arguments.get("history")
-            reuse_keys = [
-                key if len(locations.get(value, [])) <= 1 else digest([key, history])
-                for key, value in zip(keys, values)
-            ]
+
+            def identified(name, lines):
+                """The lines' identities in file `name` and their reuse keys. A
+                duplicated source string has ambiguous field provenance. Retain
+                separate response context instead of silently substituting one
+                field's translation into a different context."""
+                locations = self.file_locations(name)
+                keys = identities(name, phase, lines, locations)
+                return keys, [
+                    key
+                    if len(locations.get(value, [])) <= 1
+                    else digest([key, history])
+                    for key, value in zip(keys, lines)
+                ]
+
+            keys, reuse_keys = identified(filename, values)
+            # Each line's reuse keys with the files they belong to.
+            owners = [[(key, filename)] for key in reuse_keys]
+            lookups = owners
+            if self.map_name_identities and line_files is not None:
+                # Each grouped line is identified in every file it belongs to,
+                # as a call of that file alone identifies it; a name an older
+                # run saved under the calling file stays reusable.
+                keys, owners = [], []
+                for value, names in zip(values, line_files):
+                    line_keys, line_owners = [], []
+                    for name in names or [filename]:
+                        (key,), (reuse,) = identified(name, [value])
+                        line_keys.append(key)
+                        line_owners.append((reuse, name))
+                    keys.append(line_keys[0])
+                    owners.append(line_owners)
+                lookups = [[*owner, *older] for owner, older in zip(owners, lookups)]
             (
                 self.local.all_sources,
                 self.local.sources,
                 self.local.filename,
                 self.local.cursor,
             ) = keys, keys, filename, 0
-            reused = [self.reused.get(key) for key in reuse_keys]
-            if values and all(
-                row is not None and row.get("source") == value
-                for row, value in zip(reused, values)
-            ):
+            reused = [
+                next(
+                    (
+                        row
+                        for row in (self.reused.get(key) for key, _ in lookup)
+                        if row is not None and row.get("source") == value
+                    ),
+                    None,
+                )
+                for lookup, value in zip(lookups, values)
+            ]
+            if values and all(row is not None for row in reused):
                 translation._thread_local.last_translation_had_mismatch = False
                 # Every reused row was checked above.
                 output = [cast(dict, row)["response"] for row in reused]
                 return [output if isinstance(text, list) else output[0], [0, 0]]
-            saved = [
-                row["response"]
-                if row is not None and row.get("source") == value
-                else None
-                for row, value in zip(reused, values)
-            ]
+            saved = [row["response"] if row is not None else None for row in reused]
             if isinstance(text, list) and any(value is not None for value in saved):
                 return remaining(native, call_signature.bind(*args, **kwargs), saved)
             previous = getattr(self.local, "call", None)
@@ -640,14 +677,19 @@ class Evidence:
                                         source,
                                         json.dumps(response, ensure_ascii=False),
                                     )
-                                    for key, source, response in zip(
-                                        reuse_keys, values, output
+                                    for owner, source, response in zip(
+                                        owners, values, output
                                     )
+                                    for key, _ in owner
                                 ],
                             )
                             connection.executemany(
                                 "INSERT OR REPLACE INTO validated_provenance VALUES (?,?)",
-                                [(key, filename) for key in reuse_keys],
+                                [
+                                    (key, name)
+                                    for owner in owners
+                                    for key, name in owner
+                                ],
                             )
                             if not validates_cache:
                                 connection.executemany(

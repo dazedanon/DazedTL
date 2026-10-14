@@ -11,6 +11,7 @@ from dazedtl.settings.preferences import (
     BATTLE_MESSAGE_USERS_LEVELS,
     CHOICE_COLLECTION,
     GENERATION_PARAMETERS,
+    MAP_NAME_IDENTITIES,
     PAGE_PACKING,
     REUSE_STRETCHES,
     SAME_LINE_SPEAKERS,
@@ -154,6 +155,7 @@ def install(*, coordinator=False):
             or policy.get("sameLineSpeakers") not in (None, SAME_LINE_SPEAKERS)
             or policy.get("pagePacking") not in (None, PAGE_PACKING)
             or policy.get("reuseStretches") not in (None, REUSE_STRETCHES)
+            or policy.get("mapNameIdentities") not in (None, MAP_NAME_IDENTITIES)
             or policy.get("battleMessageUsers")
             not in (None, *BATTLE_MESSAGE_USERS_LEVELS)
             or policy.get("openrouterStructuredOutputs")
@@ -215,6 +217,8 @@ def install(*, coordinator=False):
                 plan["mode"],
                 plan,
                 share_stretches=policy.get("reuseStretches") == REUSE_STRETCHES,
+                map_name_identities=policy.get("mapNameIdentities")
+                == MAP_NAME_IDENTITIES,
             )
             evidence.install(translation, sys.modules.get("modules.rpgmakermvmz"))
             record = evidence.record
