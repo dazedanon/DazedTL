@@ -605,6 +605,8 @@ export type SourceStatus = {
   retired?: string[];
   /** Estimate start time per phase and file found without text to translate. */
   noRequests?: Partial<Record<Phase, Record<string, string>>>;
+  /** Lines per working copy that hold a refusal note an earlier run saved; the next run sends them again. */
+  refusalNotes?: Record<string, number>;
 };
 
 export type PublicationStatus = {

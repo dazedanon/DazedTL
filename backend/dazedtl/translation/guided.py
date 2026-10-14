@@ -646,6 +646,9 @@ class Guided:
         )
         source_status["retired"] = inputs.record().get("retired_runs", [])
         source_status["noRequests"] = inputs.no_requests()
+        source_status["refusalNotes"] = inputs.refusal_notes(
+            [row["name"] for row in native["files"]]
+        )
         prepared = list(dict.fromkeys([*native["imported"], *source_status["ready"]]))
         if prepared != native["imported"]:
             native["imported"] = prepared

@@ -266,6 +266,9 @@ Live workers retain each response body and its refusal/finish metadata before va
 Native cache acceptance settles only its matching request; rejected attempts remain inspectable without being offered as translated text.
 A refusal cannot enter game dialogue, including in older runs without a clarification policy.
 Historical refusal prose is flagged and excluded from validated-result reuse without rewriting saved output or inventing missing response bodies.
+Older runs saved refusal notes as translations, and a run sends only lines still in the game's own words, so a Guided phase puts each such line's source back in its selected working copies before it lists them ([saved_refusals](../backend/dazedtl/translation/saved_refusals.py)).
+The source is the line's `_original`, through QA's inventory mapping, or outside event commands the original game file's value at the same place, which covers names the engine keeps no `_original` for; a note without a known source stays.
+The run records its inputs as restored, so its estimate stays current, and the Translate row reads Needs review with the number of such lines until a run replaces them.
 Batch workers retain [native validation receipts](../backend/dazedtl/compatibility/batch_validation.py) in the existing process ledger, bound to the consumed request key, source, file and response hash.
 Native cache acceptance records a pass; a normally returned validation call marks its remaining responses failed, while exceptions leave them unresolved.
 These receipts do not depend on refusal wording, text logs or whole-file completion.
@@ -391,7 +394,7 @@ Each attempt starts from the run's saved receipts, and a worker reused for sever
 The file list retains cost and time from the latest run that changed the file, comparing its recorded output hash with its frozen input hash; estimates, pending work and unchanged passes do not replace those metrics.
 Missing receipts for a changed file stay unknown.
 Line amounts follow the same receipts through [fileLines](../app/src/features/guided/translationView.ts): the lines a file's latest run saved, out of the lines that run prepared, counting each source request once at its latest attempt; a later "nothing to translate" check closes the file at what is done.
-A latest run that finished a file with nothing to send found every line of the run that last translated it done, since it sends any line still in the game's own words.
+A latest run that finished a file with nothing to send found every line of the run that last translated it done, since it sends any line still in the game's own words, except lines holding a saved refusal note; those notes also keep a "nothing to translate" check from closing the file.
 A Batch writes a file only while it saves its results, so its received lines count as saved once the file is written, and not at all when saving that file failed.
 A Live run prepares requests as it works, so its files show only the lines saved so far until it ends, and Apply leaves them out until then.
 Estimates carry no per-file lines, so a file without a run shows no amount; the Project page totals the known amounts with files applied and the recorded cost.

@@ -287,7 +287,9 @@ export function settledWithoutRequests(
  * received lines are not saved. A run that carried a finished file over
  * without sending it, such as a rerun after a stop, found every line of the
  * run that translated it translated, since it sends any line still in the
- * game's own words.
+ * game's own words. Lines whose saved text is a refusal note an earlier run
+ * kept (refusalNotes) stay untranslated until a run sends them again, even
+ * when a check found nothing to send.
  */
 export function fileLines(
   state: Pick<GuidedState, "runs" | "sourceStatus">,
@@ -309,13 +311,15 @@ export function fileLines(
   const run =
     translated && requests(translated)?.requests ? translated : latest;
   const lines = requests(run);
+  const notes = state.sourceStatus.refusalNotes?.[name] ?? 0;
   const done =
     run !== latest && lines
-      ? lines.lines
+      ? Math.max(0, lines.lines - notes)
       : run?.mode === "batch" && !run.outputs?.[name]
         ? 0
         : (lines?.done ?? 0);
-  if (settledWithoutRequests(state, phase, name, latest))
+  // A check that found nothing to send read refusal notes as translations.
+  if (!notes && settledWithoutRequests(state, phase, name, latest))
     return { done, total: done };
   if (
     latest &&
@@ -383,7 +387,11 @@ export function translationTaskComplete(
   if (!names.length) return false;
   const translated = translatedFiles(state.runs, state.sourceStatus.retired);
   return names.every((name) => {
-    if (state.sourceStatus.changed.includes(name)) return false;
+    if (
+      state.sourceStatus.changed.includes(name) ||
+      state.sourceStatus.refusalNotes?.[name]
+    )
+      return false;
     const run = fileRun(state.runs, phase, name, state.sourceStatus.retired);
     if (settledWithoutRequests(state, phase, name, run)) return true;
     if (
@@ -468,13 +476,32 @@ const fileState = (state: DisplayState, detail = "") => ({
 /**
  * File receipts and verified output own the row; run diagnostics stay in
  * Inspect. `untranslated` says no run translated the file (translatedFiles),
- * so a run that sent nothing for it leaves nothing to apply.
+ * so a run that sent nothing for it leaves nothing to apply. `notes` counts
+ * lines whose saved text is a refusal note an earlier run kept, which leave a
+ * finished file needing review until a run sends them again.
  */
 export function fileStatus(
   name: string,
   run?: Job,
   settled = false,
   untranslated = false,
+  notes = 0,
+) {
+  const status = runFileStatus(name, run, settled, untranslated);
+  if (!notes || !["ready", "applied", "done"].includes(status.state))
+    return status;
+  return fileState(
+    "needs_review",
+    notes === 1
+      ? "1 line holds a refusal note an earlier run saved instead of a translation. Translate sends it again."
+      : `${notes.toLocaleString()} lines hold a refusal note an earlier run saved instead of a translation. Translate sends them again.`,
+  );
+}
+function runFileStatus(
+  name: string,
+  run: Job | undefined,
+  settled: boolean,
+  untranslated: boolean,
 ) {
   const idle = fileState("not_started");
   // Saved output that is not in the game yet.

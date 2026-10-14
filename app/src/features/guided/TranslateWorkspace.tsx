@@ -191,6 +191,7 @@ export function TranslateWorkspace({
                     fileOwner,
                     settledWithoutRequests(state, phase, row.name, fileOwner),
                     !translated.has(row.name),
+                    state.sourceStatus.refusalNotes?.[row.name],
                   );
                 const metricRun = fileMetricRun(
                     state.runs,

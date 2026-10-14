@@ -1,5 +1,6 @@
 """Manage phased working copies without replacing saved work on selection changes."""
 
+import json
 import os
 import uuid
 from pathlib import Path
@@ -8,6 +9,10 @@ from typing import Any
 from dazedtl.storage import write_bytes, write_json
 
 from .files import decode_json, digest, project_path, read_json
+from .saved_refusals import find, restore
+
+# Saved refusal notes per working copy, by its path, digest and original.
+NOTE_COUNTS: dict[tuple, int] = {}
 
 
 def original_bindings(record):
@@ -220,6 +225,69 @@ class GuidedInputs:
             ):
                 identity = saved["identity"]
         return {"relative": relative, "identity": identity}
+
+    def original_document(self, name):
+        """The game file as the original version has it, when Git keeps one."""
+        blob = self.record()["inputs"].get(name, {}).get("identity", {}).get("original")
+        if not blob:
+            return None
+        try:
+            return decode_json(self.original_bytes(self.source, blob))
+        except OSError, ValueError:
+            return None
+
+    def refusal_notes(self, names):
+        """Lines per working copy whose saved text is a refusal note with a
+        known source, which the next run sends again (restore_refusals)."""
+        record = self.record()["inputs"]
+        result = {}
+        for name in names:
+            group = next(
+                (group for group in ("translated", "files") if self.saved(group, name)),
+                None,
+            )
+            if group is None:
+                continue
+            path = self.path(group, name)
+            observed = self.observed
+            key = (
+                str(path),
+                observed.digest(path) if observed else digest(path.read_bytes()),
+                record.get(name, {}).get("identity", {}).get("original"),
+            )
+            if key not in NOTE_COUNTS:
+                try:
+                    document = decode_json(path.read_bytes())
+                except OSError, ValueError:
+                    continue
+                if len(NOTE_COUNTS) >= 4096:
+                    NOTE_COUNTS.clear()
+                NOTE_COUNTS[key] = len(
+                    find(document, lambda name=name: self.original_document(name))
+                )
+            if NOTE_COUNTS[key]:
+                result[name] = NOTE_COUNTS[key]
+        return result
+
+    def restore_refusals(self, names):
+        """Gives the lines of these working copies that hold a refusal note an
+        earlier run saved their source back, so the run translates them again.
+        The run's saved outputs stay as they are."""
+        restored = {}
+        for name in names:
+            path = self.path("files", name)
+            try:
+                document = decode_json(path.read_bytes())
+            except OSError, ValueError:
+                continue  # The engine reports a working copy it cannot read.
+            count = restore(document, lambda name=name: self.original_document(name))
+            if count:
+                # As the engine writes game files.
+                write_bytes(
+                    path, json.dumps(document, ensure_ascii=False, indent=4).encode()
+                )
+                restored[name] = count
+        return restored
 
     def status(self, names, fingerprint=None) -> dict[str, Any]:
         previous = self.record()["inputs"]

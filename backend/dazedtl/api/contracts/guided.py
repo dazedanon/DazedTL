@@ -278,6 +278,12 @@ class SourceStatus(TypedDict):
             "Estimate start time per phase and file found without text to translate.",
         ]
     ]
+    refusalNotes: NotRequired[
+        Annotated[
+            dict[str, int],
+            "Lines per working copy that hold a refusal note an earlier run saved; the next run sends them again.",
+        ]
+    ]
 
 
 class PublicationStatus(TypedDict):

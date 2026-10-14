@@ -1197,8 +1197,23 @@ class GuidedActions:
                 if mode == "batch" and estimate
                 else None
             )
+            # Lines an earlier run saved a refusal note for go out again.
+            restored = {}
+            self.guided.backend.manual.prepare_inputs = lambda: restored.update(
+                self.guided.inputs(native).restore_refusals(files)
+            )
             job = self.guided.backend.guided_phase(native["id"], phase, files)
             if run_inputs:
+                if restored:
+                    # The run binds to its working copies as restored, which
+                    # the next Translate and the estimate's review read.
+                    run_inputs = self.guided.runs.inputs(
+                        project_id,
+                        native,
+                        phase,
+                        run_inputs["mode"],
+                        names=run_inputs["files"],
+                    )
                 self.guided.runs.remember(
                     project_id, job, run_inputs, estimate, preparation_mode
                 )
@@ -1223,6 +1238,7 @@ class GuidedActions:
             self.guided.backend.manual.speaker_scan = False
             self.guided.backend.manual.scanned_speakers = None
             self.guided.backend.manual.adopt_from = None
+            self.guided.backend.manual.prepare_inputs = None
             if mode == "estimate":
                 current = self.guided.backend.workflows.projects[native["id"]]
                 self.guided.backend.workflows.update(

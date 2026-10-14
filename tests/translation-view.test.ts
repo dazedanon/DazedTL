@@ -1373,6 +1373,25 @@ test("a pass without requests reads Done only for files no run translated", () =
     },
   } as unknown as GuidedState;
   assert.equal(translationTaskComplete(state, "dialogue"), true);
+  // A refusal note an earlier run saved as a line's translation leaves the
+  // file to translate again, however finished its run reads.
+  assert.equal(
+    fileStatus("Map001.json", rerun, false, false, 2).label,
+    "Needs review",
+  );
+  assert.equal(
+    translationTaskComplete(
+      {
+        ...state,
+        sourceStatus: {
+          ...state.sourceStatus,
+          refusalNotes: { "Map001.json": 2 },
+        },
+      },
+      "dialogue",
+    ),
+    false,
+  );
   // Saved translation counts leave out the game's own copy.
   assert.deepEqual(savedTranslations(state), {
     outputs: ["Map001.json"],
@@ -2090,10 +2109,10 @@ test("file line amounts follow the latest run's saved and prepared lines", () =>
       },
     },
   } as Job;
-  const state = (runs: Job[], noRequests = {}) =>
+  const state = (runs: Job[], noRequests = {}, refusalNotes = {}) =>
     ({
       runs,
-      sourceStatus: { changed: [], ready: [], noRequests },
+      sourceStatus: { changed: [], ready: [], noRequests, refusalNotes },
     }) as unknown as GuidedState;
   const lines = (value: GuidedState) =>
     fileLines(value, "database", "Items.json");
@@ -2135,7 +2154,7 @@ test("file line amounts follow the latest run's saved and prepared lines", () =>
   });
   // A file the stopped run saved whole has its total. A rerun that carried
   // it over unsent sends any line still untranslated, so it found every line
-  // of the run that translated it done.
+  // of the run that translated it done, except saved refusal notes.
   const whole = {
     ...run,
     status: "stopped",
@@ -2157,6 +2176,21 @@ test("file line amounts follow the latest run's saved and prepared lines", () =>
     done: 50,
     total: 50,
   });
+  assert.deepEqual(lines(state([rerun, whole], {}, { "Items.json": 3 })), {
+    done: 47,
+    total: 50,
+  });
+  // Nor does a later check that read those notes as translations close it.
+  assert.deepEqual(
+    lines(
+      state(
+        [run],
+        { database: { "Items.json": "2026-10-05T12:00:00+00:00" } },
+        { "Items.json": 3 },
+      ),
+    ),
+    { done: 40, total: 50 },
+  );
   // A Batch writes the file while it saves its results; received lines it
   // has not written, or failed to, are not saved.
   const batch = { ...run, mode: "batch", status: "failed", outputs: {} };

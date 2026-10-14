@@ -336,6 +336,10 @@ class Workflows:
                     regular(folder, path)
                     regular(folder, folder / "files" / path.name)
                     shutil.copyfile(path, folder / "files" / path.name)
+        # The app may ready the synced working copies before the run lists them.
+        prepare = getattr(self.manual, "prepare_inputs", None)
+        if prepare is not None:
+            prepare()
         if project["engine"] == "WOLF":
             return self._wolf_phase(project, phase)
         inventory = self.manual.inspect(folder / "files", "RPG Maker MV/MZ", managed=True)

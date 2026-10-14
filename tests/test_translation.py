@@ -511,6 +511,63 @@ class TranslationTests(unittest.TestCase):
             text = json.dumps(lines)
             self.assertEqual(refused({"text": text}, sources), expected, text)
 
+    def test_saved_refusal_notes_get_their_source_back(self):
+        from dazedtl.translation.saved_refusals import find, restore
+
+        def command(code, parameters, original=None):
+            value = {"code": code, "indent": 0, "parameters": parameters}
+            return value if original is None else {**value, "_original": original}
+
+        def game(name, commands):
+            page = {"list": [*commands, command(0, [])]}
+            return {"events": [None, {"id": 1, "name": name, "pages": [page]}]}
+
+        saved = game(
+            "[Not_translated]",
+            [
+                command(101, ["", 0, 0, 2, "[Not translated]"], "小町"),
+                command(
+                    401, ["Yes...\n[Not translated: sexual content]"], "はい…\n続き"
+                ),
+                # A scrolling message's later lines are ones the engine added.
+                command(405, ["(Line left untranslated)"], "一行目\n二行目"),
+                command(405, ["second line"]),
+                command(102, [["Go", "[Omitted]"], -1, 0, 1, 0], ["行く", "えっち"]),
+                # The source explains this note, so it is a translation.
+                command(102, [["(Omitted)"], -1, 0, 1, 0], ["（中略）"]),
+                command(122, [1, 1, 0, 4, '"[Not translated]"'], "名前"),
+                # Nothing records this line's source.
+                command(401, ["[Not translated]"]),
+            ],
+        )
+        original = game("ちん嗅ぎ", [])
+        self.assertEqual(restore(saved, lambda: original), 6)
+        self.assertEqual(
+            saved,
+            game(
+                "ちん嗅ぎ",
+                [
+                    command(101, ["", 0, 0, 2, "小町"], "小町"),
+                    command(401, ["はい…\n続き"], "はい…\n続き"),
+                    command(405, ["一行目\n二行目"], "一行目\n二行目"),
+                    command(102, [["Go", "えっち"], -1, 0, 1, 0], ["行く", "えっち"]),
+                    command(102, [["(Omitted)"], -1, 0, 1, 0], ["（中略）"]),
+                    command(122, [1, 1, 0, 4, '"名前"'], "名前"),
+                    command(401, ["[Not translated]"]),
+                ],
+            ),
+        )
+        self.assertEqual(find(saved, lambda: original), [])
+
+        def unread():
+            raise AssertionError("the original file was read")
+
+        # Database fields keep their source in `_original`, and a file whose
+        # other values hold no note never reads the original game file.
+        items = [None, {"id": 1, "name": "[Omitted]", "_original": {"name": "薬"}}]
+        self.assertEqual(restore(items, unread), 1)
+        self.assertEqual(items[1]["name"], "薬")
+
     def test_batch_wait_resume_and_unordered_collection_keep_one_submission(self):
         job, plan = self.run_record(
             "batch", [request("one"), request("two"), request("three")]

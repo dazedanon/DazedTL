@@ -207,6 +207,9 @@ def manual_jobs(source, workspace, lock, allow_providers):
         scanned_speakers = None
         # That estimate's run folder, whose requests the preparation may reuse.
         adopt_from = None
+        # Readies the selected working copies after a phase syncs saved
+        # outputs into them and before it lists them for the run.
+        prepare_inputs = None
         controllers: dict[str, Any] | None = None
 
         def __init__(self, *args, **kwargs):
