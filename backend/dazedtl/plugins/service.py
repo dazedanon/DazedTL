@@ -423,9 +423,12 @@ class PluginService:
                 "enabled": True,
             }
         }
-        names = set()
-        statuses = {}
-        for index, entry in enumerate(parsed["plugins"]):
+        # The game loads the first enabled entry of a plugin and skips later
+        # ones, such as an empty divider plugin listed many times. MZ compares
+        # file names, so Author/Plugin and Other/Plugin are one plugin there.
+        mz = (root / (prefix + "js/rmmz_core.js")).is_file()
+        loaded, statuses = set(), {}
+        for entry in parsed["plugins"]:
             if (
                 not isinstance(entry, dict)
                 or type(entry.get("status")) is not bool
@@ -435,23 +438,21 @@ class PluginService:
                     "Every plugin entry needs a static name, status and parameter object."
                 )
             name = safe_name(entry.get("name"))
-            if name in names:
-                raise ValueError(
-                    "Duplicate configured plugins need investigation before exact scope can be formed."
-                )
-            names.add(name)
-            statuses[name] = entry["status"]
+            key = name.rsplit("/", 1)[-1] if mz else name
+            entry["loads"] = entry["status"] and key not in loaded
+            if entry["loads"]:
+                loaded.add(key)
+            statuses[name] = statuses.get(name, False) or entry["loads"]
+        for name, enabled in statuses.items():
             path = prefix + "js/plugins/" + name + ".js"
             # A listed plugin whose file is gone has no text to translate.
-            if not (root / path).exists():
-                continue
-            rows[path] = {
-                "path": path,
-                "kind": "source",
-                "plugin": name,
-                "enabled": entry["status"],
-                "pluginIndex": index,
-            }
+            if (root / path).exists():
+                rows[path] = {
+                    "path": path,
+                    "kind": "source",
+                    "plugin": name,
+                    "enabled": enabled,
+                }
         for path in sorted((root / (prefix + "js/plugins")).glob("*.js")):
             relative = path.relative_to(root).as_posix()
             owner = (
@@ -645,7 +646,7 @@ class PluginService:
                         entry = config["plugins"][logical[0]]
                         item.update(
                             plugin=entry["name"],
-                            enabled=entry["status"],
+                            enabled=entry["loads"],
                             parameterPath=logical[2:],
                         )
                     else:

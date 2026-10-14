@@ -258,6 +258,46 @@ class PluginTests(unittest.TestCase):
             "www/data/Map001.json", [row["path"] for row in request["files"]]
         )
 
+    def test_repeated_plugin_entries_follow_the_games_loader(self):
+        # Games list empty divider plugins many times. The game loads a
+        # plugin's first enabled entry and skips later ones.
+        divider = {"name": "----", "status": True, "description": "", "parameters": {}}
+        entries = [
+            divider,
+            {"name": "PluginB", "status": False, "description": "", "parameters": {}},
+            {"name": "PluginA", "status": True, "parameters": {"Label": "開始"}},
+            {"name": "PluginA", "status": True, "parameters": {"Label": "二度目"}},
+            divider,
+            {"name": "PluginB", "status": True, "description": "", "parameters": {}},
+        ]
+        self.write(
+            "www/js/plugins.js",
+            "var $plugins = " + json.dumps(entries, ensure_ascii=False) + ";\r\n",
+        )
+        self.write("www/js/plugins/----.js", "")
+        self.service.action(self.identity, "plugin_task")
+        files = self.service.load(self.identity)["files"]
+        self.assertTrue(files["www/js/plugins/PluginB.js"]["enabled"])
+        self.assertEqual(
+            {
+                item["value"]: item["latent"]
+                for item in files["www/js/plugins.js"]["occurrences"]
+            },
+            {"開始": False, "二度目": True},
+        )
+        self.assertEqual(self.status("www/js/plugins/----.js"), "none")
+        # MZ compares file names, so a second folder's copy never loads.
+        self.write("www/js/rmmz_core.js", "")
+        self.write("www/js/plugins/Other/PluginB.js", "drawText('別');\r\n")
+        entries.append({**entries[-1], "name": "Other/PluginB"})
+        self.write(
+            "www/js/plugins.js",
+            "var $plugins = " + json.dumps(entries, ensure_ascii=False) + ";\r\n",
+        )
+        _prefix, rows, _config = self.service.inventory(self.identity)
+        self.assertTrue(rows["www/js/plugins/PluginB.js"]["enabled"])
+        self.assertFalse(rows["www/js/plugins/Other/PluginB.js"]["enabled"])
+
     def test_undecided_text_stays_with_the_assistant_until_settled(self):
         request, report, _ = self.investigation(advance=False)
         answers = {row["path"]: row for row in report["files"]}
