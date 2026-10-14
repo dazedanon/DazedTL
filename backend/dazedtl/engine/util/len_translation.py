@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 from util.paths import (
     DATA_DIR, GLOSSARY_BASE_SEPARATOR, SKILLS_DIR, game_glossary_path, runtime_data_file,
-    prepare_game_translation_context, read_game_glossary,
+    runtime_data_files_pinned, prepare_game_translation_context, read_game_glossary,
 )
 from util.skills import load_generic_project_setup, load_project_setup, load_system_prompt
 from util.reference_games import load_registry, reference_context
@@ -256,15 +256,19 @@ def request_contexts(project: LenProject, batches: list[dict]) -> list[dict]:
         if not isinstance(values, list) or not values or not all(isinstance(v, str) and v for v in values):
             raise ValueError("Each batch needs a nonempty source list or source object.")
         sources.extend(values)
-    shared = shared_context(project)
-    references = reference_context(project.game_root, sources)
-    result = []
-    for batch in batches:
-        values = batch["sources"]
-        pack = _reference_subset(references, values)
-        request = request_context(project, **{key: value for key, value in batch.items() if key != "id"},
-                                  _shared=shared, _reference_pack=pack)
-        result.append({"id": batch["id"], "sources": batch["sources"], "context": request})
+    # Every request reads the same runtime files; finding each once spares a
+    # big compile thousands of path lookups, which Windows makes slow. The
+    # check below looks again.
+    with runtime_data_files_pinned():
+        shared = shared_context(project)
+        references = reference_context(project.game_root, sources)
+        result = []
+        for batch in batches:
+            values = batch["sources"]
+            pack = _reference_subset(references, values)
+            request = request_context(project, **{key: value for key, value in batch.items() if key != "id"},
+                                      _shared=shared, _reference_pack=pack)
+            result.append({"id": batch["id"], "sources": batch["sources"], "context": request})
     if shared_context(project)["content_sha256"] != shared["content_sha256"] or reference_context(project.game_root, sources) != references:
         raise ValueError("Guidance or references changed during compilation; retry the entire operation.")
     return result

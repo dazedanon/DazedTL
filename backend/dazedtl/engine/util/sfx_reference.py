@@ -222,7 +222,9 @@ def _load_cached(path_text: str) -> SfxReference:
 
 
 def load_sfx_reference(path: str | Path | None = None) -> SfxReference:
-    resolved = Path(path or runtime_data_file(SFX_REFERENCE_PATH)).resolve()
+    # The runtime file is already absolute and checked; every request's
+    # context loads it, and resolving costs a file open on Windows.
+    resolved = Path(path).resolve() if path else runtime_data_file(SFX_REFERENCE_PATH)
     return _load_cached(str(resolved))
 
 

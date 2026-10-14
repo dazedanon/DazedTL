@@ -10,6 +10,7 @@ import tempfile
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
+from functools import lru_cache
 from pathlib import Path
 
 # Product identity (QSettings / desktop / window titles).
@@ -36,6 +37,7 @@ ICON_PATH = PROJECT_ROOT / "assets" / "icon.png"
 TRANSLATION_CONTEXTS_PATH = DATA_DIR / "translation_contexts.json"
 SFX_REFERENCE_PATH = DATA_DIR / "sfx_reference" / "j_ono.json"
 _RUNTIME_DATA_PROFILE = ContextVar("dazedtl_runtime_data_profile", default=None)
+_RUNTIME_DATA_FILES = ContextVar("dazedtl_runtime_data_files", default=None)
 
 
 @contextmanager
@@ -46,6 +48,24 @@ def runtime_data_profile(profile):
         yield
     finally:
         _RUNTIME_DATA_PROFILE.reset(token)
+
+
+@contextmanager
+def runtime_data_files_pinned():
+    """Locate each runtime file once while the block runs, such as a compile
+    that reads the same files for every request."""
+    token = _RUNTIME_DATA_FILES.set({})
+    try:
+        yield
+    finally:
+        _RUNTIME_DATA_FILES.reset(token)
+
+
+@lru_cache(maxsize=8)
+def _profile_root(selected: str) -> Path:
+    # Windows resolves a path by opening it, which takes milliseconds, and a
+    # compile asks for runtime files once per request.
+    return Path(selected).resolve()
 
 
 def runtime_data_file(default: Path, profile=None) -> Path:
@@ -62,7 +82,11 @@ def runtime_data_file(default: Path, profile=None) -> Path:
         relative = default.relative_to(DATA_DIR)
     except ValueError:
         return default
-    root = Path(selected).resolve()
+    pinned = _RUNTIME_DATA_FILES.get()
+    key = (str(selected), relative)
+    if pinned is not None and key in pinned:
+        return pinned[key]
+    root = _profile_root(str(selected))
     candidate = root / "shared-data" / relative
     for part in (candidate, *candidate.parents):
         if part == root:
@@ -71,7 +95,10 @@ def runtime_data_file(default: Path, profile=None) -> Path:
             raise ValueError("Shared instructions cannot use symbolic links.")
     if candidate.exists() and not candidate.is_file():
         raise ValueError("Shared instructions must be regular files.")
-    return candidate if candidate.is_file() else default
+    found = candidate if candidate.is_file() else default
+    if pinned is not None:
+        pinned[key] = found
+    return found
 # Per-game API overlays. Root-level skills/ from older versions are migrated.
 GAME_SKILLS_RELATIVE = GAME_METADATA_RELATIVE / "skills"
 LEGACY_GAME_SKILLS_RELATIVE = Path("skills")
