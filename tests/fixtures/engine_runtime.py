@@ -118,6 +118,39 @@ try:
         assert "seed/var_translation_map.json" in batch_plan["context_hashes"]
         assert (adopt / "seed/estimate_plan.json").is_file()
 
+        # OpenAI Batch quotes count cache reads from prefix fingerprints taken
+        # every 128 tokens past 1,024; hashing many tokens at once must find
+        # exactly the hits that hashing them one by one did.
+        import hashlib
+
+        from util import translation as estimates
+
+        def reference(sequences):
+            seen, total = set(), 0
+            for tokens in sequences:
+                hasher, prints, hit = hashlib.blake2b(digest_size=16), [], 0
+                for index, token in enumerate(tokens, 1):
+                    hasher.update(token.to_bytes(4, "little"))
+                    if index >= 1024 and index % 128 == 0:
+                        prints.append((index, hasher.digest()))
+                        hit = index if prints[-1] in seen else hit
+                total += hit
+                seen.update(prints)
+            return total
+
+        common = list(range(70_000, 71_300))
+        sequences = [common + [5] * extra for extra in (0, 1, 127, 128, 700)] + [
+            common[:1023],
+            common[:1024],
+            common[:1151],
+            common[:1152],
+            common[:1280],
+            # Differs only in the last token before the 1,152 fingerprint.
+            common[:1151] + [9] + common[1152:],
+            [9] * 2000,
+        ]
+        assert estimates._estimate_openai_cache_reads(sequences) == reference(sequences)
+
         # A real saved run recorded this pre-version byte hash; it must still pass
         # the native resume guard, alongside plans that record the version.
         engine = "RPG Maker MV/MZ"

@@ -2353,20 +2353,36 @@ def _estimate_openai_cache_reads(prompt_token_sequences):
     upper bound shown to the user.
     """
     import hashlib
+    import sys
+    from array import array
 
     seen = set()
     cached_tokens = 0
     for tokens in prompt_token_sequences:
+        # Each token's four little-endian bytes, hashed 128 tokens at a time:
+        # the same digests as feeding them one by one, which took seconds for
+        # a large queue.
+        raw = array("I", tokens)
+        if raw.itemsize != 4:
+            raw = array("L", tokens)
+        if sys.byteorder == "big":
+            raw.byteswap()
+        data = memoryview(raw).cast("B")
         hasher = hashlib.blake2b(digest_size=16)
         fingerprints = []
         request_cached_tokens = 0
-        for index, token in enumerate(tokens, 1):
-            hasher.update(int(token).to_bytes(4, "little", signed=False))
-            if index >= 1024 and index % 128 == 0:
+        index = 1024
+        if len(tokens) >= index:
+            hasher.update(data[: index * 4])
+            while True:
                 fingerprint = (index, hasher.digest())
                 fingerprints.append(fingerprint)
                 if fingerprint in seen:
                     request_cached_tokens = index
+                if index + 128 > len(tokens):
+                    break
+                hasher.update(data[index * 4 : (index + 128) * 4])
+                index += 128
         cached_tokens += request_cached_tokens
         seen.update(fingerprints)
     return cached_tokens
@@ -2456,25 +2472,39 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
     output_tokens = 0
     models = set()
     providers = set()
-    for entry in queue.values():
-        params = entry.get("params", {})
-        if params.get("model"):
-            models.add(params["model"])
-        if entry.get("provider"):
-            providers.add(entry["provider"])
+    entries = list(queue.values())
+    # Requests are encoded a few hundred at a time on encode_batch's threads:
+    # the same tokens as one encode() per text, several times faster for a
+    # large queue, without holding every request's tokens at once.
+    for start in range(0, len(entries), 512):
+        chunk = entries[start : start + 512]
+        chunk_params = [entry.get("params", {}) for entry in chunk]
         # Split system blocks at the cache breakpoint ("" = nothing cached).
-        prefix, dyn = claude_tokens.split(params)
-        if prefix and prefix not in prefix_tokens:
-            prefix_tokens[prefix] = len(enc.encode(claude_tokens.cached_text(params)))
-        msg_text = "\n".join(str(m.get("content", "")) for m in params.get("messages", []))
-        message_tokens = enc.encode(msg_text)
-        prompt_token_sequences.append(message_tokens)
-        request_params.append(params)
-        request_dynamic.append(len(enc.encode(dyn)) + len(message_tokens) + 8)
-        dynamic_tokens += request_dynamic[-1]
-        # Output heuristic mirrors countTokens(): payload tokens x 2.5 covers
-        # the echoed JSON scaffold plus EN expansion.
-        output_tokens += round(len(enc.encode(str(entry.get("payload", "")))) * 2.5)
+        splits = [claude_tokens.split(params) for params in chunk_params]
+        messages = enc.encode_batch(
+            [
+                "\n".join(str(m.get("content", "")) for m in params.get("messages", []))
+                for params in chunk_params
+            ]
+        )
+        dynamic = enc.encode_batch([dyn for _prefix, dyn in splits])
+        payloads = enc.encode_batch([str(entry.get("payload", "")) for entry in chunk])
+        for entry, params, (prefix, _dyn), message_tokens, dyn_tokens, payload_tokens in zip(
+            chunk, chunk_params, splits, messages, dynamic, payloads
+        ):
+            if params.get("model"):
+                models.add(params["model"])
+            if entry.get("provider"):
+                providers.add(entry["provider"])
+            if prefix and prefix not in prefix_tokens:
+                prefix_tokens[prefix] = len(enc.encode(claude_tokens.cached_text(params)))
+            prompt_token_sequences.append(message_tokens)
+            request_params.append(params)
+            request_dynamic.append(len(dyn_tokens) + len(message_tokens) + 8)
+            dynamic_tokens += request_dynamic[-1]
+            # Output heuristic mirrors countTokens(): payload tokens x 2.5
+            # covers the echoed JSON scaffold plus EN expansion.
+            output_tokens += round(len(payload_tokens) * 2.5)
 
     est_model = model or next(iter(models), None) or os.getenv("model", "")
     est_provider = next(iter(providers), getBatchProvider(est_model))
