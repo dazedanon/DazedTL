@@ -128,6 +128,7 @@ def run_handler(project_root, module_name, filename, estimate_only):
             try:
                 if "RPG Maker MV/MZ" in module_name:
                     from modules import rpgmakermvmz
+                    from util.translation import reset_accurate_cost
 
                     if multi_file and batch_phase in {
                         "collect", "estimate", "consume"
@@ -138,9 +139,11 @@ def run_handler(project_root, module_name, filename, estimate_only):
                     try:
                         if rpgmakermvmz is not None:
                             # Separate subprocesses used to provide fresh totals for
-                            # every file. Preserve that behavior in a reused worker.
+                            # every file. Preserve that behavior in a reused worker;
+                            # the run's total adds up these per-file totals.
                             rpgmakermvmz.TOKENS[:] = [0, 0]
                             rpgmakermvmz.TIMETOTAL = 0
+                            reset_accurate_cost()
                         handler_result = handler(current_filename, estimate_only)
                         if multi_file:
                             mismatch_count = 0

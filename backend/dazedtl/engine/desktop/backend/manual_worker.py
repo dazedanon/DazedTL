@@ -51,7 +51,8 @@ def main():
                                preserve_batch_queue=bool(plan.get('batch_link')),
                                speaker_scan=speaker_scan_inputs(plan) if plan["mode"] == "estimate" and plan.get("scan_speakers") else None,
                                scanned_speakers=reusable_speaker_scan(plan),
-                               adopted_requests=adoptable_requests(root, plan))
+                               adopted_requests=adoptable_requests(root, plan),
+                               receipts=attempt.get("receipts"))
         last_progress = [0.0]
         for name in ("log", "progress", "file_error", "file_mismatch", "status", "batch_phase", "estimate_ready", "speaker_confirmation"):
             getattr(task, name + "_signal").connect(lambda *args, event=name: emit(event, *args))

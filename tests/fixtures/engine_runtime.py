@@ -1308,7 +1308,10 @@ try:
             "    if name == 'Map003.json':\n"
             "        print('MISMATCH_EVENT:' + name, flush=True)\n"
             "        print('MISMATCH_EVENT:' + name, flush=True)\n"
-            "    print('FILE_RESULT:' + json.dumps({'filename': name, 'result': '[Input: 1]', 'mismatch_count': 1}), flush=True)\n",
+            "    figures = f'[Input: {int(name[3:6])}][Output: 1][Cost: $0.0100][0.5s]'\n"
+            "    if name == 'Map100.json':\n"
+            "        figures = '[Input: 0][Output: 0][Cost: $0.0000][0.0s]'\n"
+            "    print('FILE_RESULT:' + json.dumps({'filename': name, 'result': f'TOTAL: {figures} ✓', 'mismatch_count': 1}), flush=True)\n",
             encoding="utf-8",
         )
         live_task = TranslationTask(
@@ -1345,21 +1348,38 @@ try:
         for path in live_root.glob("launches-*.txt"):
             path.unlink()
         many = [f"Map1{number:02d}.json" for number in range(12)]
+        # The run's TOTAL adds up each file's own total from every worker,
+        # starting from the receipts of the run's earlier attempts; a file read
+        # back without usage keeps what the earlier attempt cost.
+        resumed = TranslationTask(
+            live_root,
+            ("RPG Maker MV/MZ", (".json",), None),
+            runner_script=runner,
+            receipts={
+                "Map099.json": {"cost": 0.25, "seconds": 1.0},
+                "Map100.json": {"input": 50, "output": 5, "cost": 0.5, "seconds": 2},
+                "Map101.json": {"input": 7, "output": 7, "cost": 7.0, "seconds": 7},
+            },
+        )
         with patch.dict(os.environ, {"fileThreads": "3"}):
-            assert live_task._run_files(many, False) not in {"Fail", "Stopped"}
+            total = resumed._run_files(many, False)
+        assert total == "TOTAL: [Input: 1216][Output: 16][Cost: $0.8600][8.5s] ✓", total
         handed = [name for names in worker_files() for name in names]
         assert sorted(handed) == many, handed
         # That worker saves a Batch's files one after another; a file missing
-        # a result must not keep the files after it from saving theirs.
+        # a result must not keep the files after it from saving theirs. Each
+        # file reports only its own exact cost, which the run's TOTAL adds up.
         from contextlib import redirect_stdout
         from io import StringIO
 
         from util import subprocess_runner, translation_task
 
         def consume(name, _estimate):
+            with translation._global_accurate_cost_lock:
+                translation._global_accurate_cost += 0.25
             if name == "Map001.json":
                 raise translation.BatchResultUnavailableError("Missing.")
-            return "Saved"
+            return str(translation._global_accurate_cost)
 
         reported = StringIO()
         with (
@@ -1370,18 +1390,18 @@ try:
             redirect_stdout(reported),
         ):
             subprocess_runner.run_handler(
-                temporary, "Fixture", ["Map001.json", "Map002.json"], False
+                temporary, "RPG Maker MV/MZ", ["Map001.json", "Map002.json"], False
             )
         reports = [
-            (kind, json.loads(value)["filename"])
+            (kind, json.loads(value)["filename"], json.loads(value).get("result"))
             for kind, _, value in (
                 line.partition(":") for line in reported.getvalue().splitlines()
             )
             if kind in {"FILE_ERROR", "FILE_RESULT"}
         ]
         assert reports == [
-            ("FILE_ERROR", "Map001.json"),
-            ("FILE_RESULT", "Map002.json"),
+            ("FILE_ERROR", "Map001.json", None),
+            ("FILE_RESULT", "Map002.json", "0.25"),
         ], reported.getvalue()
 
         names_root = temporary / "names"

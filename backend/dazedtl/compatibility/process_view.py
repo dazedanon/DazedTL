@@ -429,7 +429,7 @@ def source_values(params):
 def file_receipt(line, files):
     """Interpret the same per-file receipt used by Qt, never a total/estimate,
     as ``(file, figures, used)``; ``used`` says whether the attempt spent any
-    tokens on the file, or None."""
+    tokens on the file, or None. Figures are its tokens, cost and seconds."""
     line = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", str(line))
     match = re.match(
         r"^\s*(.+?):\s.*?\[Input:\s*(\d+)\].*?\[Output:\s*(\d+)\].*?\[Cost:\s*\$([\d,.]+)\].*?\[([\d.]+)s\]",
@@ -441,8 +441,13 @@ def file_receipt(line, files):
         cost, seconds = float(match[4].replace(",", "")), float(match[5])
         if not all(math.isfinite(value) and value >= 0 for value in (cost, seconds)):
             return None
-        figures = {"cost": cost, "seconds": seconds}
-        return match[1].strip(), figures, int(match[2]) + int(match[3]) > 0
+        figures = {
+            "input": int(match[2]),
+            "output": int(match[3]),
+            "cost": cost,
+            "seconds": seconds,
+        }
+        return match[1].strip(), figures, figures["input"] + figures["output"] > 0
     except ValueError:
         return None
 
@@ -452,7 +457,9 @@ def file_metric(line, files):
     return {receipt[0]: receipt[1]} if receipt else {}
 
 
-def file_metrics(job):
+def file_receipts(job):
+    """Each file's receipt figures, which also start a resumed attempt's
+    total. Receipts recorded before tokens were have only cost and seconds."""
     # New receipts survive the native 40-line log cap. Old Live runs can still
     # show the receipts retained in their log; missing figures stay unknown.
     result = {}
@@ -460,6 +467,14 @@ def file_metrics(job):
         for line in job.get("log", []):
             result.update(file_metric(line, job.get("files", [])))
     return {**result, **job.get("file_metrics", {})}
+
+
+def file_metrics(job):
+    """The cost and processing time shown for each file."""
+    return {
+        name: {"cost": figures["cost"], "seconds": figures["seconds"]}
+        for name, figures in file_receipts(job).items()
+    }
 
 
 @lru_cache(maxsize=32)

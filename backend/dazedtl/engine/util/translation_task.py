@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import os
 import queue
 import re
@@ -61,6 +62,53 @@ def _result_token_usage(result):
     if not match:
         return None
     return int(match.group("input")), int(match.group("output"))
+
+def _result_figures(result):
+    """One file's receipt from the TOTAL its worker reported for it, as
+    ``{"input", "output", "cost", "seconds"}``, or None."""
+    if isinstance(result, tuple) and len(result) >= 3:
+        result = result[2]
+    text = _strip_ansi(str(result or ""))
+    match = re.search(
+        r"\[Input:\s*(\d+)\].*?\[Output:\s*(\d+)\]"
+        r".*?\[Cost:\s*\$([\d,.]+)\].*?\[([\d.]+)s\]",
+        text,
+    )
+    if not match:
+        return None
+    return {
+        "input": int(match[1]),
+        "output": int(match[2]),
+        "cost": float(match[3].replace(",", "")),
+        "seconds": float(match[4]),
+    }
+
+def _receipt(figures):
+    """A saved receipt's figures, or None when they are not usable. Receipts
+    saved before tokens were recorded count none."""
+    try:
+        receipt = {
+            key: float(figures.get(key, 0) or 0)
+            for key in ("input", "output", "cost", "seconds")
+        }
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if not all(math.isfinite(value) and value >= 0 for value in receipt.values()):
+        return None
+    receipt["input"], receipt["output"] = int(receipt["input"]), int(receipt["output"])
+    return receipt
+
+def format_run_total(receipts) -> str:
+    """The run's TOTAL: every file's receipt added up, in the receipts' own
+    format."""
+    receipts = list(receipts)
+    cost = sum(receipt["cost"] for receipt in receipts)
+    seconds = sum(receipt["seconds"] for receipt in receipts)
+    return (
+        f"TOTAL: [Input: {sum(receipt['input'] for receipt in receipts)}]"
+        f"[Output: {sum(receipt['output'] for receipt in receipts)}]"
+        f"[Cost: ${cost:,.4f}][{round(seconds, 1)}s] ✓"
+    )
 
 def format_estimate_total(comparison) -> str:
     comparison = comparison or {}
@@ -191,8 +239,16 @@ class TranslationTaskCore:
                  parse_speakers=False, batch_mode=False, batch_resume_state=None,
                  batch_workflow_return=None, *, code_root=None, runner_script=None,
                  runtime_profile=None, resume_cached=False, preserve_batch_queue=False,
-                 speaker_scan=None, scanned_speakers=None, adopted_requests=None):
+                 speaker_scan=None, scanned_speakers=None, adopted_requests=None,
+                 receipts=None):
         self.project_root = Path(project_root)
+        # Each translated file's figures by name, starting from the receipts
+        # of the run's earlier attempts; the run's TOTAL adds them up.
+        self.receipts = {}
+        for name, figures in (receipts or {}).items():
+            receipt = _receipt(figures)
+            if receipt is not None:
+                self.receipts[name] = receipt
         # The estimate's request queue, built from the same frozen inputs; a
         # fresh Batch preparation whose names step changed nothing submits it
         # instead of collecting the same requests again.
@@ -1278,7 +1334,7 @@ class TranslationTaskCore:
 
     @extensions.point
     def _run_files(self, matching_files, estimate_only, batch_phase=None):
-        """Process matching files; return last cost string or 'Fail'."""
+        """Process matching files; return the run's TOTAL or 'Fail'."""
         threads = int(os.getenv("fileThreads", "1"))
         total_cost = "Fail"
         had_failure = False
@@ -1298,6 +1354,9 @@ class TranslationTaskCore:
         total_files = len(matching_files)
         estimate_input_tokens = 0
         estimate_output_tokens = 0
+        # Translating and saving Batch results bill the files; estimates and
+        # Batch collection only count or queue their requests.
+        records_receipts = not estimate_only and batch_phase in (None, "consume")
         self._run_had_mismatch = False
         self._run_mismatch_count = 0
 
@@ -1323,6 +1382,14 @@ class TranslationTaskCore:
                 if usage is not None:
                     estimate_input_tokens += usage[0]
                     estimate_output_tokens += usage[1]
+            figures = _result_figures(result) if records_receipts else None
+            # A retry reads the files an earlier attempt saved back without
+            # usage; keep what that attempt cost.
+            if figures is not None and (
+                figures["input"] + figures["output"] > 0
+                or filename not in self.receipts
+            ):
+                self.receipts[filename] = figures
             try:
                 if (
                     isinstance(result, tuple)
@@ -1365,6 +1432,16 @@ class TranslationTaskCore:
             self.emit_progress(completed_count, total_files, filename)
             return stopped
 
+        def _total():
+            # Every file's receipt, the earlier attempts' included, rather
+            # than the total the last file's worker reported for that file.
+            if not records_receipts or not self.receipts or total_cost in (
+                "Fail",
+                "Stopped",
+            ):
+                return total_cost
+            return format_run_total(self.receipts.values())
+
         def _completed_result():
             if had_failure:
                 return "Fail"
@@ -1379,7 +1456,7 @@ class TranslationTaskCore:
                 return format_estimate_total(comparison)
             if estimate_only:
                 return total_cost if total_cost != "Fail" else "Success"
-            return total_cost
+            return _total()
 
         for filename in unsupported_files:
             self._report_unsupported_mvmz_file(filename)
@@ -1421,7 +1498,7 @@ class TranslationTaskCore:
                         _handle_file_result(filename, worker_result)
             if not batch_phase:
                 return _completed_result()
-            return "Fail" if had_failure else total_cost
+            return "Fail" if had_failure else _total()
 
         # Pass 2 is always sequential: each file may harvest names into
         # glossary.txt, and later files need those entries on disk. Paid batch
@@ -1436,7 +1513,7 @@ class TranslationTaskCore:
                 )
                 if _handle_file_result(filename, result):
                     break
-            return "Fail" if had_failure else total_cost
+            return "Fail" if had_failure else _total()
 
         # Live RPG Maker translation reuses its workers too: a worker per file
         # imported the engine and read every map for actor names again, about

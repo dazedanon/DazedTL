@@ -456,6 +456,11 @@ def manual_jobs(source, workspace, lock, allow_providers):
                     }
                 return super()._event(job, event)
 
+        def receipts(self, job):
+            from .process_view import file_receipts
+
+            return file_receipts(job)
+
         def _launch(self, job, resume):
             if job.get("phase") == "canceled":
                 job["phase"] = "preparing"

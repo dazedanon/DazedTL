@@ -649,6 +649,19 @@ class ManualJobs:
                 file_metrics(metric_run),
                 {"Items.json": {"cost": 0.0042, "seconds": 12.5}},
             )
+            # A resumed attempt's TOTAL starts from the same receipts, with
+            # their tokens.
+            self.assertEqual(
+                controller.receipts(metric_run),
+                {
+                    "Items.json": {
+                        "input": 120,
+                        "output": 20,
+                        "cost": 0.0042,
+                        "seconds": 12.5,
+                    }
+                },
+            )
             restored = json.loads(json.dumps(metric_run))
             self.assertEqual(file_metrics(restored), file_metrics(metric_run))
             legacy = {

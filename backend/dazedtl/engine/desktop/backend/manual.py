@@ -369,6 +369,12 @@ class ManualJobs:
         job["updated"] = timestamp()
         atomic_json(self.folder(job["id"]) / "job.json", job)
 
+    def receipts(self, job):
+        """Each file's figures from the run's earlier attempts, which a resumed
+        attempt's TOTAL adds its own files to. A host that records them
+        returns them here."""
+        return {}
+
     def state(self):
         with self.lock:
             return json.loads(json.dumps({"engines": [{"name": spec[0], "extensions": spec[1]} for spec in TRANSLATION_MODULE_SPECS],
@@ -490,7 +496,8 @@ class ManualJobs:
                     raise ValueError("The batch changed after recovery was prepared. Prepare it again in Batch history.")
                 job.pop("batch_recovery", None)
             files = plan["selected"] if plan["mode"] in {"batch", "estimate", "speakers"} else [name for name in plan["selected"] if name not in job["completed"]]
-            atomic_json(directory / "attempt.json", {"files": files, "resume": resume, "batch_resume_state": batch_state})
+            atomic_json(directory / "attempt.json", {"files": files, "resume": resume, "batch_resume_state": batch_state,
+                                                     "receipts": self.receipts(job)})
             if not files:
                 with self.lock:
                     job.update(status="complete", message="All selected files were already completed.")

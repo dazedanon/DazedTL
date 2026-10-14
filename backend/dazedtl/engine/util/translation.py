@@ -5592,6 +5592,14 @@ def begin_file_cost_tracking(model=None):
     )
 
 
+def reset_accurate_cost():
+    """Start the cross-file accurate total afresh, as a new worker process
+    would, so a worker reused for several files reports each file's total."""
+    global _global_accurate_cost
+    with _global_accurate_cost_lock:
+        _global_accurate_cost = 0.0
+
+
 @extensions.point
 def calculateCost(inputTokens, outputTokens, model):
     """
