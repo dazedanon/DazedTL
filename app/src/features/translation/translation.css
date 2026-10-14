@@ -92,6 +92,11 @@
 .translation-run:first-child {
   padding-top: 0;
 }
+/* The next section's divider closes the list. */
+.translation-run:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
 .translation-quote {
   padding: var(--space-4) var(--space-4);
   margin: var(--space-4) 0;
