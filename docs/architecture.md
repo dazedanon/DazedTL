@@ -164,6 +164,8 @@ The compatibility adapter omits the native engine's implicit temperature, freque
 The policy participates in estimate identity and applies to both Live and Batch request construction.
 Saved runs without this policy retain their original parameters and recovery behavior.
 New API runs also freeze a [single clarification retry](../backend/dazedtl/translation/refusals.py) for provider refusals.
+A refusal is the provider's refusal signal, a refusal message in place of the reply, or a note in place of a line or inside one, such as "[Not translated: …]", "[Omitted]" or "Translation declined."; one such line refuses the whole request.
+Notes that real lines can also hold, such as "(Omitted)" for 中略 or a character who cannot translate an inscription, count only when that line's own source does not explain them.
 The clarification identifies the existing fictional source and the owner's adult-character statement without changing source facts or asking the provider to disregard its rules.
 Live retains both attempts and their usage; Batch submits only refused rows through the same Batch provider and retains successful originals.
 The [retry journal](../backend/dazedtl/translation/batch_refusals.py) records intent before submission and saves returned job IDs before polling, including across restarts.

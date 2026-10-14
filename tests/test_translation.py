@@ -148,6 +148,10 @@ class TranslationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             results.accept(first, {"line": "Different. ⟦P0⟧"}, {})
         self.assertEqual(results.get(first)["translations"]["line"], "Yes. ⟦P0⟧")
+        # An assistant's refusal note never becomes a saved translation.
+        with self.assertRaises(ValueError):
+            results.accept(second, {"line": "[Not translated] ⟦P0⟧"}, {})
+        self.assertIsNone(results.get(second))
 
     def test_api_requests_key_lines_by_position_and_save_replies_by_unit_id(self):
         # Unit IDs can be long paths, and a request repeated each in every
@@ -415,12 +419,13 @@ class TranslationTests(unittest.TestCase):
                         )
 
     def test_refusal_clarification_is_bounded_and_retains_both_paid_attempts(self):
-        # A refusal in valid JSON used to pass output validation. A repeated
-        # refusal or lost retry response must not become dialogue or another bill.
+        # A refusal in valid JSON used to pass output validation, and so did a
+        # note in place of a line. A repeated refusal or lost retry response
+        # must not become dialogue or another bill.
         from dazedtl.translation.refusals import CLARIFICATION, POLICY, refused
 
         refusal = {
-            "text": '{"line":"I cannot translate explicit sexual content."}',
+            "text": '{"line":"Translation declined. ⟦P0⟧"}',
             "prompt_tokens": 7,
             "completion_tokens": 3,
         }
@@ -485,7 +490,7 @@ class TranslationTests(unittest.TestCase):
         )
         self.assertFalse(
             refused(
-                {"text": refusal["text"]},
+                {"text": '{"line":"I cannot translate explicit sexual content."}'},
                 ["I cannot translate explicit sexual content."],
             )
         )
@@ -495,6 +500,16 @@ class TranslationTests(unittest.TestCase):
             "I'm sorry, but I cannot assist with this request.",
         ):
             self.assertTrue(refused({"text": text}), text)
+        # A note in or in place of one line is a refusal of the whole reply,
+        # unless that line's own source explains it.
+        sources = {"Line1": "はい。", "Line2": "（中略）"}
+        for lines, expected in (
+            ({"Line1": "Yes.", "Line2": "[Not\ntranslated: sexual content]"}, True),
+            ({"Line1": "Yes. \\C[27][omitted]\\C[0]", "Line2": "(Omitted)"}, True),
+            ({"Line1": "I can't help it...", "Line2": "(Omitted)"}, False),
+        ):
+            text = json.dumps(lines)
+            self.assertEqual(refused({"text": text}, sources), expected, text)
 
     def test_batch_wait_resume_and_unordered_collection_keep_one_submission(self):
         job, plan = self.run_record(

@@ -17,7 +17,7 @@ from .refusals import (
     clarified,
     refused,
 )
-from .requests import from_provider
+from .requests import from_provider, provider_sources
 from .results import Results
 
 # A Batch collection accepts thousands of responses in one pass, and each save
@@ -62,12 +62,16 @@ class Runner:
         )
         return self.folder / "responses" / (digest(identity) + suffix + ".json")
 
+    def sources(self, identity):
+        """The request's source lines under the keys its provider saw."""
+        return provider_sources(self.requests[identity], self.plan["configuration"])
+
     def accept(self, identity, response):
         request = self.requests[identity]
         write_json(self.response_path(identity), response)
         self.record_usage(identity, response)
         try:
-            if refused(response, request["sources"].values()):
+            if refused(response, self.sources(identity)):
                 raise ValueError(REFUSAL_MESSAGE)
             self.results.accept(
                 request,
@@ -199,7 +203,7 @@ class Runner:
                 return
             self.accept(identity, response)
             if (
-                refused(response, request["sources"].values())
+                refused(response, self.sources(identity))
                 and self.plan["configuration"].get("refusalRetry") == REFUSAL_POLICY
                 and identity not in self.job.get("refusal_retries", {})
             ):
@@ -406,6 +410,10 @@ class Runner:
                     input_tokens=getattr(self.provider, "input_tokens", lambda _: 0),
                     commit=retry_commit,
                     cancel=cancel,
+                    sources={
+                        item["request"]: self.sources(item["request"])
+                        for item in chunk["items"]
+                    },
                 )
                 # The journal keeps the clarified payloads and responses, and
                 # this record is saved on every poll, so it keeps an outline.
@@ -431,7 +439,7 @@ class Runner:
                     for identity, response in responses.items():
                         state = self.job["states"][identity]["state"]
                         if state == "queued" and not refused(
-                            response, self.requests[identity]["sources"].values()
+                            response, self.sources(identity)
                         ):
                             self.accept(identity, response)
                     self.record_batch_usage()

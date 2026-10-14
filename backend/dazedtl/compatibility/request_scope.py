@@ -231,7 +231,7 @@ def requests(root, job, queued=None, records=None):
                 outcome = "saved"
             if key in clarification_pending:
                 outcome, receipt = clarification_pending[key], {}
-            elif key in results and refused(results[key]):
+            elif key in results and refused(results[key], json.loads(entry["payload"])):
                 outcome, receipt = (
                     "rejected",
                     {"error": {"code": "provider_refusal", "message": MESSAGE}},

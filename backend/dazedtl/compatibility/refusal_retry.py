@@ -169,7 +169,7 @@ class RefusalRetry:
                 evidence.local.call.append(saved[1])
             return restored(json.loads(saved[0]), replay=True)
         response = native(*args, **kwargs)
-        if not refused(response, (source or {}).values()):
+        if not refused(response, source or {}):
             return response
         self.reject(response)
         first = receipt(response)
@@ -203,7 +203,7 @@ class RefusalRetry:
         )
         response = send_once(self.translation, evidence, params)
         value = receipt(response)
-        if refused(response, (source or {}).values()):
+        if refused(response, source or {}):
             self.reject(response)
             # Force native validation failure even for a refusal in valid JSON.
             value.update(content=None, refusal=MESSAGE)

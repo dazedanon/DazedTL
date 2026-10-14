@@ -246,9 +246,7 @@ def _ledger_records(root, signature, consumed, filename=None):
             response = {"text": json.dumps(response, ensure_ascii=False)}
         elif isinstance(response, dict) and "content" in response:
             response = {**response, "text": response["content"]}
-        entry["provider_refusal"] = response is not None and refused(
-            response, source.values()
-        )
+        entry["provider_refusal"] = response is not None and refused(response, source)
         if entry["state"] != "rejected" and entry["provider_refusal"]:
             entry.update(
                 state="rejected",
@@ -1450,6 +1448,7 @@ def payload(root, index, job=None, prepared=False):
             # provider receipts, including older runs, without changing acceptance.
             if key in record["original_responses"]:
                 original = record["original_responses"][key]
+                declined = refused(original, json.loads(entry["payload"]))
                 original_id = next(
                     (
                         custom
@@ -1467,8 +1466,8 @@ def payload(root, index, job=None, prepared=False):
                     original_id,
                     entry["params"],
                     original,
-                    "rejected" if refused(original) else "received",
-                    {"message": MESSAGE} if refused(original) else None,
+                    "rejected" if declined else "received",
+                    {"message": MESSAGE} if declined else None,
                 )
                 responses.append(
                     {

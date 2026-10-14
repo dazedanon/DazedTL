@@ -1,5 +1,6 @@
 """Bridge guided Batch collection to the bounded clarification journal."""
 
+import json
 import time
 from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
@@ -71,7 +72,7 @@ def advance_guided(
     allow_submit=True,
 ):
     from . import batch_control
-    from .process_view import batch_results, queue, saved
+    from .process_view import batch_results, queue, saved, source_values
 
     if (plan.get("dazedtl_request_policy") or {}).get("refusalRetry") != POLICY:
         return {"ready": True, "batches": []}
@@ -91,12 +92,16 @@ def advance_guided(
     if completed:
         results = {**results, **completed["original"]}
     queued = queue(root)
+
+    def sources(key):
+        return (source_values(queued[key]["params"]) or {}) if key in queued else {}
+
     history = saved(root, "batch_history.json").get("batches", [])
     output, pending = deepcopy(results), []
     for batch in history:
         mapping = batch.get("custom_ids") or {}
         part = {key: results[key] for key in mapping.values() if key in results}
-        if not any(refused(value) for value in part.values()):
+        if not any(refused(value, sources(key)) for key, value in part.items()):
             continue
         # A canceled/failed provider job is not authorization for more work.
         if batch.get("api_status") not in {"completed", "ended"}:
@@ -153,6 +158,7 @@ def advance_guided(
                     count=provider.input_tokens,
                     limit=limit,
                 ),
+                sources={key: sources(key) for key in mapping.values()},
             )
         pending.extend(result["batches"])
         if not result["ready"]:
@@ -160,8 +166,8 @@ def advance_guided(
         output.update(result["responses"])
     if pending:
         # Refusal prose must not pass the native JSON/string validators.
-        for value in output.values():
-            if refused(value):
+        for key, value in output.items():
+            if refused(value, sources(key)):
                 value.update(text="", refusal=True)
         with commit():
             write_json(
@@ -192,9 +198,13 @@ def install_worker(root, plan):
 
     from .batch_control import TranslationProvider
 
-    def result(native, *args, **kwargs):
-        value = native(*args, **kwargs)
-        return {**value, "text": ""} if refused(value) else value
+    def result(native, payload, *args, **kwargs):
+        value = native(payload, *args, **kwargs)
+        try:
+            sources = json.loads(payload)
+        except TypeError, ValueError:
+            sources = {}
+        return {**value, "text": ""} if refused(value, sources) else value
 
     translation.require_batch_result.layer(LAYER, result)
 

@@ -7,9 +7,24 @@ from dazedtl.storage import write_json
 
 from .files import digest, project_path, read_json, write_project_json
 from .project import WORK
+from .refusals import line_refusal
 from .requests import result_value
 
 ACCEPTED = WORK + "/work/accepted"
+
+
+def translated(request, translations):
+    """The result's translations, refusing any line that holds a refusal note
+    in place of game text, whoever wrote it."""
+    output = result_value(request, translations)
+    for identity, text in output.items():
+        source = request["sources"][identity]
+        if text != source and line_refusal(text, source):
+            raise ValueError(
+                f"{identity} holds a refusal note instead of its translation. "
+                "Translate it, or decline the request so another model can finish it."
+            )
+    return output
 
 
 class Results:
@@ -63,7 +78,7 @@ class Results:
         return value
 
     def accept(self, request, translations, provenance):
-        output = result_value(request, translations)
+        output = translated(request, translations)
         path = project_path(self.source, self.relative(request), exists=False)
         old = self.get(request, path)
         if old:
@@ -89,7 +104,7 @@ class Results:
             raise ValueError(
                 "The accepted translation changed. Review its current result hash before applying a correction."
             )
-        output = result_value(request, translations)
+        output = translated(request, translations)
         if output == previous["translations"]:
             return previous
         history = (

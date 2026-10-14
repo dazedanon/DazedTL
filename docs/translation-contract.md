@@ -180,6 +180,7 @@ The app's progress export is a derived view, not a replacement for an engine's e
 In Assistant only, decline --run ID --batch ID --reason TEXT sets aside a request the assistant won't translate, so it carries on with the rest.
 The reason is one line of at most 300 characters and never repeats game text.
 Decline rather than soften, shorten or leave out lines; a declined request can still be accepted later.
+accept refuses a translation that holds a refusal note instead of a line.
 Once nothing else in the run is pending, Progress offers the user two ways to finish them: an API estimate compiled from the same plan, which the user approves, or a prompt that has another assistant translate only those requests with request and accept.
 Either way the translations land in the same accepted store, so the declined requests then read as accepted, and run --wait on the Assistant only run returns as they are saved.
 
@@ -193,6 +194,7 @@ A quote is an estimate, not a guaranteed bill or an unlimited retry allowance.
 It counts input tokens as Guided's estimate does, from the text each request sends, and output as 2.5 times the source payload the model echoes.
 New runs include one context-clarification retry for a confirmed provider refusal, with any additional usage billed in the originally selected mode.
 Only refused requests are retried; a second refusal stays unresolved.
+A note left in place of a line, such as "[Not translated]" or "Translation declined.", is a refusal, never game text.
 Batch clarification jobs retain their own provider IDs and never switch to Live.
 Preserve valid authorization on resume when the exact frozen plan and quote still match.
 

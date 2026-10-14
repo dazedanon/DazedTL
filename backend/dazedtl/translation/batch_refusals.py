@@ -96,6 +96,7 @@ def advance(
     allow_submit=True,
     cancel=False,
     reserve=lambda _items: nullcontext(True),
+    sources=None,
 ):
     """Clarifies the original Batch's refused requests in Batches of their own.
 
@@ -105,6 +106,8 @@ def advance(
     clarification is unfinished, merged with the clarified ones once all end.
     `cancel` submits nothing more and asks the provider to cancel each
     submitted clarification once; their completed rows are still collected.
+    `sources` maps each request key to its source lines, which excuse a note
+    that its own source explains; without them, every such note is a refusal.
     """
     path = journal(root, batch_id)
     if path.exists():
@@ -113,7 +116,7 @@ def advance(
         rejected = {
             key: value
             for key, value in responses.items()
-            if key in requests and refused(value)
+            if key in requests and refused(value, (sources or {}).get(key, {}))
         }
         if not rejected:
             return {
