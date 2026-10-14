@@ -26,3 +26,4 @@
 - **Translate:** **Inspect run**'s Run log no longer shows lines such as "MISMATCH_EVENT:Map001.json"; the "validation mismatch" lines after each file still say which files kept original text.
 - **Images:** an image's tooltip and **Compare** show what the investigation found, such as **No text found**, again instead of "Make this image editable before starting image work.", a step the translation task now takes itself.
 - **Translate:** a Batch of **Maps & events** no longer sends a map's name again when an earlier run already translated it but did not finish that map, such as a Live run that failed partway; the name was sent and charged a second time.
+- **Assistant-led:** approving an API estimate no longer freezes the app while every request is checked again; the run checks them itself before it sends anything. On a large game this could hold the whole app for over 30 seconds on Windows, and organizing and estimating also look up fewer files.
