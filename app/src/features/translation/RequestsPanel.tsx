@@ -225,7 +225,10 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
             )}
             {!!job.issues.length && (
               <details>
-                <summary>{job.issues.length} request errors</summary>
+                <summary>
+                  {job.issues.length} request{" "}
+                  {job.issues.length === 1 ? "error" : "errors"}
+                </summary>
                 <ul>
                   {job.issues.map((issue) => (
                     <li key={issue.id}>
@@ -238,7 +241,10 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
             {!!job.qa_requests?.length && (
               <details>
                 <summary>
-                  {job.qa_requests.length} requests have source review notes
+                  {job.qa_requests.length === 1
+                    ? "1 request has"
+                    : `${job.qa_requests.length} requests have`}{" "}
+                  source review notes
                 </summary>
                 <ul className="translation-batch-list">
                   {job.qa_requests.map((request) => (
