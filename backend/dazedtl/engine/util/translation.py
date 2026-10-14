@@ -2423,7 +2423,6 @@ def estimateCostComparison(
             api_url=api_url,
             api_provider=api_provider,
         )
-    normalized_model = str(est_model or "").lower().removeprefix("models/")
     return {
         "model": est_model,
         "provider": provider,
@@ -2433,11 +2432,48 @@ def estimateCostComparison(
         "batch_cost": live_cost * batch_price_factor(provider) if provider else None,
         "batch_supported": provider is not None,
         "basis": "no_cache",
-        "unestimated_thinking_tokens": (
-            provider == "gemini" and normalized_model.startswith("gemini-3")
-        )
-        or bool(_DEFAULT_THINKING_RE.search(normalized_model)),
+        "unestimated_thinking_tokens": unestimatedThinking(provider, est_model),
     }
+
+
+def unestimatedThinking(provider, model):
+    """Whether the model thinks by default, billed as output an estimate
+    cannot predict."""
+    normalized_model = str(model or "").lower().removeprefix("models/")
+    return (
+        provider == "gemini" and normalized_model.startswith("gemini-3")
+    ) or bool(_DEFAULT_THINKING_RE.search(normalized_model))
+
+
+def openai_cache_prices(inputs, outputs, reads, cacheable, model, in_rate, out_rate):
+    """An OpenAI Batch's prices with its automatic prompt cache, from token
+    counts and per-token rates. ``reads`` are the input tokens expected to hit
+    the cache and ``cacheable`` those in prompts long enough to cache.
+
+    Cached inputs for the supported GPT models are currently 10% of standard
+    input price; Batch then applies its own 50% discount. Returns the tokens
+    written, then (for models that bill writes) the most that can be written,
+    the price with the expected hits, and the price with none, which is None
+    with the most written for models that don't bill writes.
+    """
+    multiplier = cache_write_multiplier("openai", model)
+    writes, max_writes, most = 0, None, None
+    if has_billed_cache_writes("openai", model):
+        writes = max(0, min(inputs - reads, cacheable - reads))
+        # Without a hit, every cacheable prompt is written instead.
+        max_writes = min(inputs, cacheable)
+        most = (
+            (inputs - max_writes) * in_rate
+            + max_writes * in_rate * multiplier
+            + outputs * out_rate
+        ) * 0.50
+    cached = (
+        (inputs - reads - writes) * in_rate
+        + writes * in_rate * multiplier
+        + reads * in_rate * 0.10
+        + outputs * out_rate
+    ) * 0.50
+    return writes, max_writes, cached, most
 
 
 @extensions.point
@@ -2557,45 +2593,25 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
                      + output_tokens * out_rate) * 0.50
         cache_kind = "explicit"
     elif est_provider == "openai":
-        # OpenAI prompt caching is automatic. Cached inputs for the supported
-        # GPT models are currently 10% of standard input price; Batch then
-        # applies its own 50% discount.
         cache_read_tok = min(
             raw_input_tok,
             _estimate_openai_cache_reads(prompt_token_sequences),
         )
-        if has_billed_cache_writes(est_provider, est_model):
-            cacheable_tokens = sum(
-                len(tokens) for tokens in prompt_token_sequences
-                if len(tokens) >= 1024
-            )
-            cache_write_tok = max(
-                0,
-                min(
-                    raw_input_tok - cache_read_tok,
-                    cacheable_tokens - cache_read_tok,
-                ),
-            )
-            # Without a hit, every cacheable prompt is written instead.
-            cache_max_write_tok = min(raw_input_tok, cacheable_tokens)
-            batch_max = (
-                (raw_input_tok - cache_max_write_tok) * in_rate
-                + cache_max_write_tok
-                * in_rate
-                * cache_write_multiplier(est_provider, est_model)
-                + output_tokens * out_rate
-            ) * 0.50
-        else:
-            cache_write_tok = 0
-        uncached_input_tok = raw_input_tok - cache_read_tok - cache_write_tok
-        batch_cached = (
-            uncached_input_tok * in_rate
-            + cache_write_tok
-            * in_rate
-            * cache_write_multiplier(est_provider, est_model)
-            + cache_read_tok * in_rate * 0.10
-            + output_tokens * out_rate
-        ) * 0.50
+        cacheable_tokens = sum(
+            len(tokens) for tokens in prompt_token_sequences
+            if len(tokens) >= 1024
+        )
+        cache_write_tok, max_writes, batch_cached, most = openai_cache_prices(
+            raw_input_tok,
+            output_tokens,
+            cache_read_tok,
+            cacheable_tokens,
+            est_model,
+            in_rate,
+            out_rate,
+        )
+        if max_writes is not None:
+            cache_max_write_tok, batch_max = max_writes, most
         if cache_read_tok:
             cache_kind = "automatic"
     else:
@@ -2654,6 +2670,8 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
         "cache_read_tokens": cache_read_tok,
         # Written instead when no cached prefix is reused.
         "cache_max_write_tokens": cache_max_write_tok,
+        # In OpenAI prompts long enough to cache, for pricing them again.
+        **({"cacheable_tokens": cacheable_tokens} if est_provider == "openai" else {}),
         "dynamic_tokens": dynamic_tokens,
         "input_tokens": raw_input_tok,
         "output_tokens": output_tokens,
