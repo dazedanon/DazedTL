@@ -352,7 +352,12 @@ function RequestProcess({
       </tbody>
     </table>
   );
-  const selectedFile = selected ? selected.file : unlinkedFile;
+  // A request holding several files' lines, such as map display names, stays
+  // on the file it was opened from.
+  const selectedFile =
+    selected && !(unlinkedFile && selected.files?.[unlinkedFile])
+      ? selected.file
+      : unlinkedFile;
   // The run's frozen event text sources, or the comparison review it used.
   const sourcesLabel =
     job.logicalPhase === "variables"

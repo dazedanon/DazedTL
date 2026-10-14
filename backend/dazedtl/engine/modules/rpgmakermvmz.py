@@ -89,6 +89,9 @@ _speakerVocabCharacterPairs = []
 # completed but none of the selected maps had a string display name.
 _BATCH_MAP_NAME_FILES: tuple[str, ...] | None = None
 _BATCH_MAP_NAME_TRANSLATIONS: dict[str, str] | None = None
+# The maps whose grouped name translation was rejected; each counts its own
+# mismatch when it applies its name.
+_BATCH_MAP_NAME_REJECTED: frozenset[str] = frozenset()
 
 # Actor variable substitution (\n[X] -> name before AI, name -> \n[X] after)
 _ACTOR_MAP_CACHE: dict | None = None
@@ -1797,7 +1800,8 @@ def _is_map_data_filename(filename: str) -> bool:
 
 def configureBatchMapNames(filenames) -> None:
     """Stage selected map files for one grouped collect/estimate/consume request."""
-    global _BATCH_MAP_NAME_FILES, _BATCH_MAP_NAME_TRANSLATIONS
+    global _BATCH_MAP_NAME_FILES, _BATCH_MAP_NAME_TRANSLATIONS, _BATCH_MAP_NAME_REJECTED
+    _BATCH_MAP_NAME_REJECTED = frozenset()
     phase = (os.getenv("BATCH_PHASE") or "").strip().lower()
     if phase not in {"collect", "estimate", "consume"}:
         _BATCH_MAP_NAME_FILES = None
@@ -1813,9 +1817,10 @@ def configureBatchMapNames(filenames) -> None:
 
 def resetBatchMapNames() -> None:
     """Drop map-name grouping state after a persistent batch phase."""
-    global _BATCH_MAP_NAME_FILES, _BATCH_MAP_NAME_TRANSLATIONS
+    global _BATCH_MAP_NAME_FILES, _BATCH_MAP_NAME_TRANSLATIONS, _BATCH_MAP_NAME_REJECTED
     _BATCH_MAP_NAME_FILES = None
     _BATCH_MAP_NAME_TRANSLATIONS = None
+    _BATCH_MAP_NAME_REJECTED = frozenset()
 
 
 def prepareBatchMapNames() -> list[int]:
@@ -1824,15 +1829,16 @@ def prepareBatchMapNames() -> list[int]:
     The first map handled by a persistent collect/consume worker performs this
     preparation after its per-file cost window starts.  Collection therefore
     queues list payloads instead of making full-price single-string calls, and
-    consume can attribute the grouped provider usage to that first map.
+    consume can attribute the grouped provider usage to that first map.  Each
+    name's lines and rejections still belong to the maps it names.
     """
-    global PBAR, _BATCH_MAP_NAME_TRANSLATIONS
+    global PBAR, _BATCH_MAP_NAME_TRANSLATIONS, _BATCH_MAP_NAME_REJECTED
     if _BATCH_MAP_NAME_FILES is None or _BATCH_MAP_NAME_TRANSLATIONS is not None:
         return [0, 0]
 
     filename_sources: list[tuple[str, str]] = []
-    unique_sources: list[str] = []
-    seen_sources: set[str] = set()
+    # Each unique name, in first-seen order, with the maps that use it.
+    source_files: dict[str, list[str]] = {}
     for filename in _BATCH_MAP_NAME_FILES:
         path = Path("files") / filename
         with path.open("r", encoding="utf-8-sig") as source_file:
@@ -1841,23 +1847,28 @@ def prepareBatchMapNames() -> list[int]:
         if not isinstance(display_name, str):
             continue
         filename_sources.append((filename, display_name))
-        if display_name not in seen_sources:
-            seen_sources.add(display_name)
-            unique_sources.append(display_name)
+        source_files.setdefault(display_name, []).append(filename)
+    unique_sources = list(source_files)
 
     translated_by_source = {source: source for source in unique_sources}
     tokens = [0, 0]
     if unique_sources:
         previous_pbar = PBAR
         PBAR = None
+        mismatched = list(MISMATCH)
         try:
             response = translateAI(
                 unique_sources,
                 ctx("names.location"),
                 True,
+                line_files=[source_files[source] for source in unique_sources],
             )
         finally:
             PBAR = previous_pbar
+        # A rejected chunk names the maps of its lines. Each map counts that
+        # mismatch when it applies its name, not the map asking for them all.
+        _BATCH_MAP_NAME_REJECTED = frozenset(MISMATCH[len(mismatched):])
+        MISMATCH[:] = mismatched
 
         translated = response[0]
         if not isinstance(translated, list):
@@ -1998,6 +2009,8 @@ def parseMap(data, filename):
             prepared_name = _preparedBatchMapName(filename)
             if prepared_name is not None:
                 data["displayName"] = prepared_name
+                if filename in _BATCH_MAP_NAME_REJECTED and filename not in MISMATCH:
+                    MISMATCH.append(filename)
                 pbar.update(1)
             else:
                 batch_phase = (os.getenv("BATCH_PHASE") or "").strip().lower()
@@ -7136,13 +7149,14 @@ def resetActorMapCache():
 
 
 @extensions.point
-def translateAI(text, history, history_ctx=None, *, glossary_names=(), filename=None):
+def translateAI(text, history, history_ctx=None, *, glossary_names=(), filename=None, line_files=None):
     """
     Legacy wrapper function for the new shared translation utility.
     This maintains compatibility with existing code while using the new shared implementation.
     ``glossary_names`` adds the glossary entries of names the request mentions
     only in its instructions. ``filename`` records the request under another
-    file than the one being parsed.
+    file than the one being parsed; ``line_files`` gives each line's files
+    when one request gathers lines of several files.
     """
     global PBAR, MISMATCH, FILENAME
     
@@ -7217,6 +7231,7 @@ def translateAI(text, history, history_ctx=None, *, glossary_names=(), filename=
         lock=LOCK,
         mismatchList=MISMATCH,
         glossary_names=glossary_names,
+        line_files=line_files,
     )
     THREAD_CTX.last_translation_had_mismatch = last_translation_had_mismatch()
 

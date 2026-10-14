@@ -155,13 +155,16 @@ class ValidationIssue(TypedDict):
 
 
 class ProcessRequest(TypedDict):
-    """A source request at its latest attempt; `indices` lists every attempt."""
+    """A source request at its latest attempt; `indices` lists every attempt.
+    A request holding lines of several files, such as map display names,
+    lists each file's lines in `files`; `file` is the first of them."""
 
     index: int
     indices: list[int]
     state: str
     file: str | None
     sourceItems: int
+    files: NotRequired[dict[str, int]]
     providerFinished: NotRequired[bool]
 
 

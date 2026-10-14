@@ -245,6 +245,7 @@ def requests(root, job, queued=None, records=None):
                 "source": json.loads(entry["payload"]),
                 "keys": entry.get("dazedtl_sources"),
                 "file": entry.get("dazedtl_file"),
+                "lineFiles": entry.get("dazedtl_line_files"),
                 "response": results.get(key),
                 "error": receipt.get("error"),
                 "unused": receipt.get("unused"),

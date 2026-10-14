@@ -1376,6 +1376,157 @@ class ProcessTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     process_view.payload(root, 4, job)
 
+    def test_batch_map_names_count_under_the_maps_they_name(self):
+        # A Batch requests every map's display name while it parses the first
+        # map. Those lines counted as that map's, so a refused name of another
+        # map made it need review, and each named map lacked its name line.
+        from dazedtl.compatibility.batch_validation import canonical
+
+        names = ["村", "神殿", "塔"]
+        files = [["Map001.json"], ["Map002.json", "Map003.json"], ["Map004.json"]]
+        with TemporaryDirectory() as temporary:
+
+            def collect(root, mode, plan=None):
+                evidence = Evidence(root, mode, plan)
+
+                def native_ai(text, history, config, filename, line_files=None):
+                    # The translator names the files of the lines it sends.
+                    for start in range(0, len(text), 2):
+                        lines = text[start : start + 2]
+                        content = json.dumps(
+                            {f"Line{n + 1}": value for n, value in enumerate(lines)},
+                            ensure_ascii=False,
+                        )
+                        params = {"messages": [{"role": "user", "content": content}]}
+                        translation._thread_local.request_line_files = line_files[
+                            start : start + 2
+                        ]
+                        evidence.record(params)
+                        translation.queue_batch_request(content)
+                    return [text, [0, 0]]
+
+                def queue(content):
+                    translation._batch_queue_pending[content] = {
+                        "payload": content,
+                        "params": {},
+                    }
+                    return content
+
+                translation = SimpleNamespace(
+                    queue_batch_request=point(queue),
+                    BATCH_LOCK=threading.RLock(),
+                    _batch_queue_pending={},
+                    _write_request_debug_log=point(lambda *_: None),
+                    translateText=point(lambda *_: None),
+                    translateAI=point(native_ai),
+                    require_batch_result=point(lambda *_: None),
+                    cache_translation=point(lambda *_: None),
+                    _thread_local=threading.local(),
+                    last_translation_had_mismatch=lambda: False,
+                    get_batch_phase=lambda: "collect",
+                )
+                evidence.install(translation)
+                config = SimpleNamespace(batchSize=2)
+                translation.translateAI(
+                    names, [], config, "Map001.json", line_files=files
+                )
+                return evidence, translation._batch_queue_pending
+
+            root = Path(temporary) / "batch"
+            evidence, queued = collect(root, "batch")
+            # Requests and their identities stay the first map's, which asks.
+            self.assertEqual(
+                [
+                    (entry["dazedtl_file"], entry.get("dazedtl_line_files"))
+                    for entry in queued.values()
+                ],
+                [("Map001.json", files[:2]), ("Map001.json", files[2:])],
+            )
+            write_json(root / "log/batch_requests.json", queued)
+            results = {key: {"text": key} for key in queued}
+            write_json(root / "log/batch_results.json", results)
+            write_json(
+                root / "log/batch_history.json",
+                {
+                    "batches": [
+                        {
+                            "id": "batch",
+                            "api_status": "completed",
+                            "custom_ids": {str(n): key for n, key in enumerate(queued)},
+                        }
+                    ]
+                },
+            )
+            with evidence.connect() as connection:
+                connection.executemany(
+                    "INSERT INTO batch_validation VALUES (?,?,?,?,?)",
+                    [
+                        (
+                            key,
+                            "Map001.json",
+                            canonical(json.loads(key)),
+                            digest(results[key]),
+                            state,
+                        )
+                        for key, state in zip(queued, ("validated", "rejected"))
+                    ],
+                )
+            job = {"mode": "batch", "status": "complete"}
+            view = process_view.request_view(root, job)
+            self.assertEqual(
+                [(row["file"], row.get("files")) for row in view["rows"]],
+                [
+                    (
+                        "Map001.json",
+                        {"Map001.json": 1, "Map002.json": 1, "Map003.json": 1},
+                    ),
+                    ("Map004.json", None),
+                ],
+            )
+            # A name two maps share is a line of both.
+            self.assertEqual(
+                {
+                    name: (
+                        entry["first"],
+                        entry["lines"],
+                        entry["done"],
+                        entry["states"],
+                    )
+                    for name, entry in view["files"].items()
+                },
+                {
+                    "Map001.json": (0, 1, 1, ["validated"]),
+                    "Map002.json": (0, 1, 1, ["validated"]),
+                    "Map003.json": (0, 1, 1, ["validated"]),
+                    "Map004.json": (1, 1, 0, ["rejected"]),
+                },
+            )
+            self.assertEqual(
+                process_view.summary(root, job, view)["validationIssues"],
+                [{"file": "Map004.json", "rejected": 1}],
+            )
+            # An estimate finds each map's text, and a reused name leaves the
+            # rest in one request that keeps their maps.
+            reused = request_scope.identities("Map001.json", None, names[:1])[0]
+            root = Path(temporary) / "estimate"
+            _, queued = collect(
+                root,
+                "estimate",
+                {
+                    "dazedtl_continuation": {
+                        reused: {"source": "村", "response": "Village"}
+                    }
+                },
+            )
+            self.assertEqual(
+                [entry.get("dazedtl_line_files") for entry in queued.values()],
+                [files[1:]],
+            )
+            self.assertEqual(
+                process_view.translatable_files(root),
+                {name for group in files for name in group},
+            )
+
     def test_checkpoint_resume_reads_partial_json_without_mutating_frozen_inputs(self):
         from dazedtl.compatibility import checkpoints
         from dazedtl.storage import write_bytes

@@ -599,18 +599,44 @@ def no_request_files(root, job, items):
         (plan.get("dazedtl_request_policy") or {}).get("generationParameters")
         != GENERATION_PARAMETERS
         or files != set(plan.get("selected", []))
-        or any(item.get("file") not in files for item in items if not item.get("names"))
+        or any(
+            name not in files
+            for item in items
+            if not item.get("names")
+            for name in request_files(item)
+        )
     ):
         return []
     prepared = _prepared_files(str(root), ledger_stamp(root))
     if prepared is None or not prepared.issubset(files):
         return []
     return sorted(
-        files - prepared - {item["file"] for item in items} - set(job.get("errors", {}))
+        files
+        - prepared
+        - {name for item in items for name in request_files(item)}
+        - set(job.get("errors", {}))
     )
 
 
 REQUEST_PAGE = 100
+
+
+def file_lines(item):
+    """Each file's lines in a saved request, in line order. A request
+    gathering several files' lines, such as map display names, records the
+    files of each line; a name two maps share is a line of both."""
+    files, lines = item.get("lineFiles"), len(item["source"])
+    result = {}
+    if isinstance(files, list) and len(files) == lines:
+        for names in files:
+            for name in names:
+                result[name] = result.get(name, 0) + 1
+    return result or {item["file"]: lines}
+
+
+def request_files(row):
+    """The files a request row's lines belong to, with each one's lines."""
+    return row.get("files") or {row.get("file"): row.get("sourceItems", 0)}
 
 
 def attempts(rows):
@@ -638,6 +664,8 @@ def attempts(rows):
             "file": row["file"],
             "sourceItems": row["sourceItems"],
         }
+        if row.get("files"):
+            request["files"] = row["files"]
         if row.get("providerFinished"):
             request["providerFinished"] = True
         result.append(request)
@@ -773,26 +801,33 @@ def file_requests(requests, receipts):
             batches.setdefault(index, []).append(receipt["id"])
     files = {}
     for row in requests:
-        if not row["file"]:
-            continue
-        entry = files.setdefault(
-            row["file"],
-            {"first": row["index"], "requests": 0, "lines": 0, "done": 0, "states": []},
-        )
-        if row["state"] not in entry["states"]:
-            entry["states"].append(row["state"])
-        if row["state"] != "unused":
-            entry["requests"] += 1
-            entry["lines"] += row["sourceItems"]
-            if row["state"] in {"validated", "saved"}:
-                entry["done"] += row["sourceItems"]
-        if row["state"] == "submitted":
-            submitted = {
-                "batches": batches.get(row["indices"][-1], []),
-                "finished": bool(row.get("providerFinished")),
-            }
-            if submitted not in entry.setdefault("submitted", []):
-                entry["submitted"].append(submitted)
+        for name, lines in request_files(row).items():
+            if not name:
+                continue
+            entry = files.setdefault(
+                name,
+                {
+                    "first": row["index"],
+                    "requests": 0,
+                    "lines": 0,
+                    "done": 0,
+                    "states": [],
+                },
+            )
+            if row["state"] not in entry["states"]:
+                entry["states"].append(row["state"])
+            if row["state"] != "unused":
+                entry["requests"] += 1
+                entry["lines"] += lines
+                if row["state"] in {"validated", "saved"}:
+                    entry["done"] += lines
+            if row["state"] == "submitted":
+                submitted = {
+                    "batches": batches.get(row["indices"][-1], []),
+                    "finished": bool(row.get("providerFinished")),
+                }
+                if submitted not in entry.setdefault("submitted", []):
+                    entry["submitted"].append(submitted)
     return files
 
 
@@ -841,12 +876,15 @@ def request_view(root, job):
 
     def add(items, ledger, offset=0):
         for item in items:
+            lines = file_lines(item)
             row = {
                 "index": item["index"] + offset,
                 "state": item["state"],
-                "file": item["file"],
+                "file": next(iter(lines)),
                 "sourceItems": len(item["source"]),
             }
+            if len(lines) > 1:
+                row["files"] = lines
             # Names count toward no file's lines or skipped-file evidence.
             if item["file"] == NAMES_FILE:
                 row.update(file=None, names=True)
@@ -1022,14 +1060,14 @@ def summary(root, job, view=None):
     ]
     rejected = len(rejected_items)
     unresolved = [row for row in rejected_items if not row.get("replaced")]
-    validation_files = set(job.get("mismatches", {})) | {
-        row["file"] for row in unresolved if row["file"]
-    }
+    rejected_files = {}
+    for row in unresolved:
+        for name in request_files(row):
+            if name:
+                rejected_files[name] = rejected_files.get(name, 0) + 1
+    validation_files = set(job.get("mismatches", {})) | set(rejected_files)
     validation_issues = [
-        {
-            "file": name,
-            "rejected": sum(row["file"] == name for row in unresolved) or None,
-        }
+        {"file": name, "rejected": rejected_files.get(name)}
         for name in sorted(validation_files)
     ]
     if requests and any(
@@ -1180,7 +1218,14 @@ def summary(root, job, view=None):
             {
                 **{key: group[key] for key in ("id", "label", "batches")},
                 "total": len(group["rows"]),
-                "files": len({row["file"] for row in group["rows"] if row["file"]}),
+                "files": len(
+                    {
+                        name
+                        for row in group["rows"]
+                        for name in request_files(row)
+                        if name
+                    }
+                ),
                 "first": group["rows"][0]["index"] if group["rows"] else None,
             }
             for group in view["groups"]

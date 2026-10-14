@@ -1651,6 +1651,30 @@ try:
                 mismatchLogPath=str(router_root / "log/mismatches.txt"),
             )
             translation.set_batch_phase("collect")
+            # A call gathering several files' lines, as the grouped map display
+            # names do, records each request's own lines' files, also when a
+            # line without Japanese stays out of its request.
+            with (
+                patch.object(translation, "_batch_queue_pending", {}),
+                patch.object(translation, "flush_batch_queue", lambda: None),
+            ):
+                translation.translateAI(
+                    ["村", "Town", "神殿", "塔"],
+                    [],
+                    config,
+                    filename="Map001.json",
+                    line_files=[
+                        ["Map001.json"],
+                        ["Map002.json"],
+                        ["Map003.json", "Map004.json"],
+                        ["Map005.json"],
+                    ],
+                )
+                queued_names = translation._batch_queue_pending.values()
+                assert [entry["dazedtl_line_files"] for entry in queued_names] == [
+                    [["Map001.json"]],
+                    [["Map003.json", "Map004.json"], ["Map005.json"]],
+                ], queued_names
             translation.translateAI(["薬"], [], config, filename="Items.json")
             translation.translateAI(["回復", "毒"], [], config, filename="Items.json")
             estimate = translation.estimateBatchCost()
@@ -1694,10 +1718,21 @@ try:
             # Schema-shaped responses can fail native content validation without
             # being refusals. Retain the failed body and generic outcome before
             # the file finishes, even when human-readable logs are unavailable.
+            # A call gathering several files' lines, as the grouped map display
+            # names do, reports the rejection for those files, not its caller.
+            mismatches = []
             failed_output = translation.translateAI(
-                ["回復", "毒"], [], config, filename="Items.json"
+                ["回復", "毒"],
+                [],
+                config,
+                filename="Items.json",
+                mismatchList=mismatches,
+                line_files=[["Map002.json"], ["Map003.json", "Map004.json"]],
             )
             assert failed_output[0] == ["回復", "毒"], failed_output
+            assert mismatches == ["Map002.json", "Map003.json", "Map004.json"], (
+                mismatches
+            )
             (router_root / "log/translation.txt").unlink()
             (router_root / "log/mismatches.txt").unlink()
             batch_rows = [payload(router_root, index) for index in range(2)]

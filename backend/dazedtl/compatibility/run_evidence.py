@@ -128,6 +128,8 @@ class Evidence:
         # stretch, so their Batch requests rebuild identically.
         self.share_stretches = share_stretches
         self.local = threading.local()
+        # The translator's own thread state, once installed.
+        self.translation_local = None
         self.plan = plan or {}
         self.reused = dict(self.plan.get("dazedtl_continuation", {}))
         self.root, self.locations = Path(root), {}
@@ -259,6 +261,10 @@ class Evidence:
         cursor = getattr(self.local, "cursor", 0)
         self.local.sources = keys[cursor : cursor + len(values)] or keys
         self.local.cursor = cursor + len(values)
+        # The translator names the files of each line a request sends when
+        # its call gathers several files' lines, such as map display names.
+        files = getattr(self.translation_local, "request_line_files", None)
+        self.local.line_files = files if files and len(files) == len(values) else None
         self.prepared(
             params,
             "submitted" if self.mode == "translate" else "prepared",
@@ -282,6 +288,7 @@ class Evidence:
 
     def install(self, translation, module=None):
         """Records each request, response and validation outcome of this run."""
+        self.translation_local = getattr(translation, "_thread_local", None)
 
         def queued(native, *args, **kwargs):
             key = native(*args, **kwargs)
@@ -292,6 +299,13 @@ class Evidence:
                         dazedtl_sources=getattr(self.local, "sources", []),
                         dazedtl_file=getattr(self.local, "filename", None),
                     )
+                    # A request gathering several files' lines, such as map
+                    # display names, records the files of each line.
+                    files = getattr(self.local, "line_files", None)
+                    if files:
+                        entry["dazedtl_line_files"] = files
+                    else:
+                        entry.pop("dazedtl_line_files", None)
             return key
 
         translation.queue_batch_request.layer(LAYER, queued)
@@ -482,6 +496,10 @@ class Evidence:
                 part = call_signature.bind(*bound.args, **bound.kwargs)
                 lines = [index for start, end in group for index in range(start, end)]
                 part.arguments["text"] = [values[index] for index in lines]
+                if part.arguments.get("line_files"):
+                    part.arguments["line_files"] = [
+                        part.arguments["line_files"][index] for index in lines
+                    ]
                 history = part.arguments.get("history")
                 start = group[0][0]
                 if len(group) > 1:
@@ -518,10 +536,19 @@ class Evidence:
             text = bound.arguments.get("text")
             filename = bound.arguments.get("filename")
             values = text if isinstance(text, list) else [text]
-            if self.mode == "estimate" and any(
-                source_text(value, bound.arguments.get("config")) for value in values
-            ):
-                self.found_text(filename)
+            line_files = bound.arguments.get("line_files")
+            if line_files is None or len(line_files) != len(values):
+                line_files = None
+            if self.mode == "estimate":
+                config = bound.arguments.get("config")
+                if line_files is None:
+                    if any(source_text(value, config) for value in values):
+                        self.found_text(filename)
+                else:
+                    for names, value in zip(line_files, values):
+                        if source_text(value, config):
+                            for name in names:
+                                self.found_text(name)
             if not all(isinstance(value, str) for value in values):
                 return native(*args, **kwargs)
             if filename not in self.locations:

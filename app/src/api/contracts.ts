@@ -199,13 +199,16 @@ export type ValidationIssue = {
   rejected: number | null;
 };
 
-/** A source request at its latest attempt; `indices` lists every attempt. */
+/** A source request at its latest attempt; `indices` lists every attempt.
+A request holding lines of several files, such as map display names,
+lists each file's lines in `files`; `file` is the first of them. */
 export type ProcessRequest = {
   index: number;
   indices: number[];
   state: string;
   file: string | null;
   sourceItems: number;
+  files?: Record<string, number>;
   providerFinished?: boolean;
 };
 
