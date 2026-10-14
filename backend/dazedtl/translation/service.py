@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from dazedtl.settings.execution import (
+    LOOKED_UP,
     configuration,
     connection_summary,
     entries_per_request,
@@ -37,6 +38,26 @@ def priced_mode(finishes, run_mode, project_mode):
     project's, or its own for an estimate of declined lines, which an
     Assistant only project asks for in an API mode."""
     return run_mode if finishes else project_mode
+
+
+def changed_since(current, frozen_sha256, frozen):
+    """Whether the settings a run would freeze now differ from those it froze;
+    ``current`` is None when they can't form a run. Prices not looked up since
+    DazedTL started read as unchanged while everything else matches, so a
+    restart alone never outdates a quote; a run saved before its record kept
+    its configuration can only be compared once they are known."""
+    if current is None:
+        return True
+    rates = current.get("rates")
+    if not rates or (rates["input"] is not None and rates["output"] is not None):
+        return digest(current) != frozen_sha256
+    if frozen is None:
+        return False
+
+    def known(value):
+        return {key: item for key, item in value.items() if key not in LOOKED_UP}
+
+    return digest(known(current)) != digest(known(frozen))
 
 
 # Set while the project helper, run by the user's assistant, makes a request.
@@ -555,15 +576,16 @@ Additional project instructions:
                 priced = priced_mode(job.get("finishes"), view["mode"], mode)
                 if priced not in current:
                     # Cached prices only, so a snapshot never waits on a
-                    # pricing lookup; approval itself checks fully.
+                    # pricing lookup; approval itself checks fully. Settings
+                    # that can't form a run at all leave nothing to approve.
                     try:
-                        current[priced] = digest(
-                            self.api_configuration(priced, cached_only=True)[0]
-                        )
+                        current[priced] = self.api_configuration(
+                            priced, cached_only=True, unpriced=True
+                        )[0]
                     except ValueError:
-                        current[priced] = ""
-                view["settings_changed"] = (
-                    bool(current[priced]) and current[priced] != frozen
+                        current[priced] = None
+                view["settings_changed"] = changed_since(
+                    current[priced], frozen, job.get("configuration")
                 )
             views.append(view)
         return views
@@ -688,10 +710,12 @@ Additional project instructions:
         )
         return self.jobs.start(job["id"], project_id)
 
-    def api_configuration(self, mode, *, cached_only=False):
+    def api_configuration(self, mode, *, cached_only=False, unpriced=False):
         """The settings a run compiled now would freeze, with the Batch route
         that sets its price factor."""
-        cfg = configuration(self.settings, mode, cached_only=cached_only)
+        cfg = configuration(
+            self.settings, mode, cached_only=cached_only, unpriced=unpriced
+        )
         batch_provider = None
         if cfg["mode"] != "agent":
             # Earlier runs froze no policy and keep sending unit IDs.

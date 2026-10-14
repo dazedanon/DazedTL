@@ -56,6 +56,13 @@ export function ModelMenu({
           throw new Error(
             "Save or discard your Settings changes before switching models.",
           );
+        // Pages compare a saved estimate with prices DazedTL has already
+        // looked up, so look them up before the switch shows there. A model
+        // without a price still switches; its estimate then reads outdated.
+        if (current.activeConnectionId)
+          await api
+            .modelDefaults(current.activeConnectionId, next)
+            .catch(() => undefined);
         await api.saveSettings({
           ...current,
           values: { ...current.values, model: next },

@@ -26,7 +26,14 @@ def entries_per_request(settings):
     return selected["entriesPerRequest"] or preferences.DEFAULT_ENTRIES_PER_REQUEST
 
 
-def configuration(settings, mode, *, cached_only=False):
+# What a model's looked-up defaults decide, which a snapshot reading cached
+# prices only may not know yet.
+LOOKED_UP = ("rates", "maxOutputTokens", "openrouterBatch")
+
+
+def configuration(settings, mode, *, cached_only=False, unpriced=False):
+    """The settings a run freezes. ``unpriced`` returns them with unknown
+    rates instead of refusing, for comparisons that read cached prices only."""
     state = settings._read()
     language = state["values"]["language"]
     if mode == "agent":
@@ -61,7 +68,7 @@ def configuration(settings, mode, *, cached_only=False):
         if selected["pricing"] == "custom"
         else defaults.get("outputRate")
     )
-    if input_rate is None or output_rate is None:
+    if (input_rate is None or output_rate is None) and not unpriced:
         raise ValueError(
             "Model pricing is unknown. Set explicit rates in Settings before estimating."
         )
@@ -86,7 +93,7 @@ def configuration(settings, mode, *, cached_only=False):
             "batch_factor": None,
             "source": "custom"
             if selected["pricing"] == "custom"
-            else defaults["source"],
+            else defaults.get("source"),
         },
     }
     if connection["provider"] == "openrouter":

@@ -644,6 +644,11 @@ class WorkflowTests(unittest.TestCase):
         # as unchanged instead of failing every snapshot.
         rates["pricing"] = "automatic"
         self.assertFalse(outdated())
+        # Another model outdates it even before its prices are looked up.
+        connection = self.settings_data["connections"][0]
+        connection["model"] = "other-model"
+        self.assertTrue(outdated())
+        connection["model"] = "fixture-model"
         rates["pricing"] = "custom"
         write_json(self.game / "source.json", {"line": "変更。"})
         with self.assertRaises(ValueError):

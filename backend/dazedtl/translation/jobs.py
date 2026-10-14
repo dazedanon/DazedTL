@@ -177,6 +177,9 @@ class RunStore:
             "configuration_sha256": digest(plan["configuration"])
             if "configuration" in plan
             else None,
+            # Kept beside the plan, which a poll never reads, so a snapshot
+            # can tell what changed since the quote.
+            "configuration": plan.get("configuration"),
             "states": states,
             "mode": plan.get("configuration", {}).get("mode"),
             "action": plan.get("action") if plan["kind"] == "operation" else None,
