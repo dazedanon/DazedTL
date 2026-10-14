@@ -54,6 +54,10 @@ def _artifact(game: Path, relative: str) -> Path:
 
 
 def _read_artifact(game: Path, relative: str, evidence: dict) -> bytes:
+    return _read_artifact_digest(game, relative, evidence)[0]
+
+
+def _read_artifact_digest(game: Path, relative: str, evidence: dict) -> tuple[bytes, str]:
     path = _artifact(game, relative)
     before = path.stat()
     raw = path.read_bytes()
@@ -61,21 +65,31 @@ def _read_artifact(game: Path, relative: str, evidence: dict) -> bytes:
     if (before.st_mtime_ns, before.st_size) != (after.st_mtime_ns, after.st_size):
         raise ValueError(f"Progress artifact changed while reading: {relative}")
     key = path.relative_to(game.resolve()).as_posix()
-    evidence[key] = {"path": key, "sha256": _digest(raw),
+    sha256 = _digest(raw)
+    evidence[key] = {"path": key, "sha256": sha256,
                      "size": after.st_size, "mtime_ns": after.st_mtime_ns}
-    return raw
+    return raw, sha256
 
 
-def _count_records(project, relative, kind, evidence):
-    if relative is None:
-        return {"total": None, "translated": 0, "reviewed": 0}
-    exported = json.loads(_read_artifact(project.game_root, relative, evidence).decode("utf-8-sig"))
-    if (not isinstance(exported, dict) or type(exported.get("complete")) is not bool
-            or not isinstance(exported.get("units"), list)):
-        raise ValueError(f"{kind} records require a complete boolean and a units list.")
+# A text export may list parts in place of its units, each a file holding
+# {"units": [...]}, so saving one request rewrites one part. Parts are counted
+# by the digest of their bytes: an unchanged part is read and hashed for its
+# evidence but not parsed and checked again.
+_PART_RECORDS: dict[str, tuple[list, str]] = {}
+_PARTS_KEPT = 4096
+_CORPUS: dict[tuple, str] = {}
+
+
+def _corpus(sources: dict) -> str:
+    return _digest(json.dumps(sorted(sources.items()), ensure_ascii=False).encode())
+
+
+def _records(project, units, kind, evidence):
+    """Each distinct unit's id and source, and whether its saved translation
+    and its review are current. Identical duplicate ids count once."""
     unique = {}
-    translated = reviewed = 0
-    for unit in exported["units"]:
+    records = []
+    for unit in units:
         if not isinstance(unit, dict):
             raise ValueError("Each progress unit must be an object with a stable id.")
         identity = _line(unit.get("id"), "Unit id")
@@ -106,11 +120,62 @@ def _count_records(project, relative, kind, evidence):
         # A saved output for an older source or an older review never counts as
         # current completion. These hashes travel with the saved result/review.
         current = output_bytes is not None and unit.get("translated_from_sha256") == _digest(source_bytes)
-        translated += current
-        reviewed += current and unit.get("reviewed_sha256") == review_fingerprint(source_bytes, output_bytes)
-    return {"total": len(unique) if exported["complete"] else None,
-            "discovered": len(unique), "translated": translated, "reviewed": reviewed,
-            "corpus_sha256": _digest(json.dumps(sorted((key, value["source"]) for key, value in unique.items()), ensure_ascii=False).encode())}
+        reviewed = current and unit.get("reviewed_sha256") == review_fingerprint(source_bytes, output_bytes)
+        records.append((identity, source, current, reviewed))
+    return records
+
+
+def _part_records(project, relative, evidence):
+    """A text part's records and the digest of its ids and sources."""
+    raw, sha256 = _read_artifact_digest(project.game_root, relative, evidence)
+    known = _PART_RECORDS.get(sha256)
+    if known is None:
+        document = json.loads(raw.decode("utf-8-sig"))
+        if not isinstance(document, dict) or set(document) != {"units"} or not isinstance(document["units"], list):
+            raise ValueError("Each text export part must hold only a units list.")
+        records = _records(project, document["units"], "text", evidence)
+        known = records, _corpus({identity: source for identity, source, _current, _reviewed in records})
+        if len(_PART_RECORDS) >= _PARTS_KEPT:
+            _PART_RECORDS.clear()
+        _PART_RECORDS[sha256] = known
+    return known
+
+
+def _count_records(project, relative, kind, evidence):
+    if relative is None:
+        return {"total": None, "translated": 0, "reviewed": 0}
+    exported = json.loads(_read_artifact(project.game_root, relative, evidence).decode("utf-8-sig"))
+    parts = exported.get("parts") if isinstance(exported, dict) else None
+    if (not isinstance(exported, dict) or type(exported.get("complete")) is not bool
+            or parts is None and not isinstance(exported.get("units"), list)):
+        raise ValueError(f"{kind} records require a complete boolean and a units list.")
+    if parts is None:
+        groups = [_records(project, exported["units"], kind, evidence)]
+        corpus = None
+    else:
+        if kind != "text" or "units" in exported or not isinstance(parts, list):
+            raise ValueError("Only a text export can list parts, in place of its units list.")
+        known = [_part_records(project, part, evidence) for part in parts]
+        groups = [records for records, _corpus_part in known]
+        key = tuple(corpus_part for _records_part, corpus_part in known)
+        corpus = _CORPUS.get(key)
+    sources = {}
+    translated = reviewed = 0
+    for records in groups:
+        for identity, source, current, review in records:
+            if identity in sources:
+                raise ValueError(f"Unit {identity} appears in more than one part.")
+            sources[identity] = source
+            translated += current
+            reviewed += review
+    if corpus is None:
+        corpus = _corpus(sources)
+        if parts is not None:
+            _CORPUS.clear()
+            _CORPUS[key] = corpus
+    return {"total": len(sources) if exported["complete"] else None,
+            "discovered": len(sources), "translated": translated, "reviewed": reviewed,
+            "corpus_sha256": corpus}
 
 
 def _image_phase(project: LenProject, metric: dict) -> str:
