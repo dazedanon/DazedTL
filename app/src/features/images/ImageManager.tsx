@@ -754,6 +754,8 @@ function Manager({
   // holds its actions; a scroll, filter or preview saves without a word.
   const listSaving =
     draft.dirty && !sameImages(value.selection, state.selection);
+  // A failed save waits for Retry instead of saving.
+  const saveFailed = !!action.error && draft.dirty;
   const selectedBlocked = listSaving ? 0 : counts.selectedBlocked || 0;
   const jobRunning =
     !!state.job &&
@@ -992,7 +994,7 @@ function Manager({
       feedback={
         <div className="image-footer-context">
           {host.back}
-          {listSaving && <span>Saving choices…</span>}
+          {listSaving && !saveFailed && <span>Saving choices…</span>}
           {!!selectedBlocked && (
             <Button
               variant="link"
@@ -1333,13 +1335,20 @@ function Manager({
               message={owned ? "" : action.error}
               onDismiss={action.clear}
             />
-            {!!action.error && draft.dirty && (
+            {saveFailed && (
               <Button
                 pending={action.busy}
                 onClick={() =>
                   action.run(
                     async () => {
-                      images.set(await imagesApi.state(projectId));
+                      // A list changed since, such as by a report's new
+                      // ticks, keeps them; the unsaved edits replay on top.
+                      const before = imageDraft(images.latest());
+                      const saved = await imagesApi.state(projectId);
+                      images.set(saved);
+                      draft.session.edit((current) =>
+                        rebaseImageDraft(before, current, imageDraft(saved)),
+                      );
                       await draft.session.flush();
                     },
                     "Choices saved.",
