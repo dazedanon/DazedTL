@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { Job, NameTranslationPage } from "../../api/contracts";
 import { ExpandableText } from "../../ui/ExpandableText";
 import { NameTranslationFeedback } from "./NameTranslationFeedback";
+import { activeWorker } from "./translationView";
 
 /** Run evidence remains available even when no individual payload was retained. */
 export function RunTechnical({
@@ -106,7 +107,8 @@ export function RunTechnical({
             {error}
           </p>
         ))}
-        {!!process.uncertain && (
+        {/* A request the worker is still sending is not in doubt yet. */}
+        {!!process.uncertain && !activeWorker(job) && (
           <p className="muted">
             {process.uncertain}{" "}
             {process.uncertain === 1 ? "submission could" : "submissions could"}{" "}

@@ -8,7 +8,8 @@ import { type DisplayState, displayLabels } from "../../ui/displayStatus.ts";
 
 export const activeRun = (run?: Job | null) =>
   !!run && ["ready", "running", "waiting"].includes(run.status);
-const activeWorker = (run?: Job | null) =>
+/** The run's own worker is still going, whatever the app monitors after it. */
+export const activeWorker = (run?: Job | null) =>
   !!run &&
   ["ready", "running", "waiting"].includes(run.workerStatus ?? run.status);
 export const terminalBatch = (status: string) =>
