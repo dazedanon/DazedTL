@@ -13,7 +13,7 @@ import { Button } from "../../ui/Button";
 import { FieldRow } from "../../ui/FieldRow";
 import { Section } from "../../ui/Section";
 import { Message } from "../../ui/Feedback";
-import { priceRange } from "./apiRun";
+import { listedRun, priceRange } from "./apiRun";
 import { RequestLines } from "./RequestLines";
 
 const money = (value: number) => "$" + value.toFixed(4);
@@ -27,7 +27,9 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
   const [attach, setAttach] = useState({ run: "", index: 0, id: "" });
   // The operation compiling the plan; its run joins the list once saved.
   const [compiling, setCompiling] = useState("");
-  const jobs = state.jobs.filter((job) => job.kind === "translation");
+  const jobs = state.jobs.filter(
+    (job) => job.kind === "translation" && listedRun(job),
+  );
   const inspect = (job: TranslationJob, index = 0) =>
     action.run(async () => {
       setPreview(await api.translation.request(state.projectId, job.id, index));
@@ -130,7 +132,9 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
                 </Button>
               )}
               {job.mode !== "agent" &&
-                !["complete", "uncertain"].includes(job.status) && (
+                (job.approved
+                  ? !["complete", "uncertain"].includes(job.status)
+                  : job.status === "ready") && (
                   <Button
                     variant="primary"
                     disabled={
@@ -166,7 +170,20 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
                     : "Pause at the next safe point"}
                 </Button>
               )}
-              {job.mode === "batch" &&
+              {job.quote && !job.approved && job.status === "ready" && (
+                <Button
+                  disabled={action.busy}
+                  onClick={() =>
+                    action.run(() =>
+                      api.translation.stop(state.projectId, job.id, true),
+                    )
+                  }
+                >
+                  Discard estimate
+                </Button>
+              )}
+              {job.approved &&
+                job.mode === "batch" &&
                 job.can_cancel_provider !== false &&
                 job.status !== "complete" && (
                   <Button

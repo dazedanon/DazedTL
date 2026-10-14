@@ -8,9 +8,19 @@ export function attemptJobs(state: TranslationState) {
   );
 }
 
+/**
+ * Whether pages show a run: an estimate nobody approved only while it can
+ * still be approved, not once it was discarded or a newer one replaced it.
+ */
+export const listedRun = (job: TranslationJob) =>
+  !job.quote || job.approved || job.status === "ready";
+
 /** The latest API run the app holds for the assistant. */
 export const latestApiRun = (jobs: TranslationJob[]) =>
-  jobs.find((job) => job.kind === "translation" && job.mode !== "agent");
+  jobs.find(
+    (job) =>
+      job.kind === "translation" && job.mode !== "agent" && listedRun(job),
+  );
 
 /** A prepared run's estimate while it waits for the user's spending decision. */
 export const awaitingQuote = (run: TranslationJob | undefined) =>

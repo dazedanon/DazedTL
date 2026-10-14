@@ -17,9 +17,9 @@ Every engine follows the same route: `organize` compiles requests from the extra
 3. Inspect the run and its quote with `run --run ID`.
    Show the model/provider, source units, requests, estimated tokens and cost in the conversation.
    Missing pricing is not a $0 estimate; resolve missing settings or unsupported routes and request only the missing choice or access.
-4. Use existing spending authorization only if it covers this exact run, provider/model and cost; otherwise request approval here once the estimate is ready.
-   The user can also approve it on DazedTL's Progress tab, which starts the run.
-   Start an approved run with `start --run ID --approve TOKEN`; changed inputs need a new organize and estimate.
+4. Only the user approves spending, with the button on DazedTL's Progress tab, which starts the run; the helper cannot start a run they have not approved there.
+   Tell the user the estimate is ready there, finish independent work, then wait with `run --run ID --wait MINUTES` until it starts.
+   Each new `organize` replaces the estimate waiting for approval, so organize again only when inputs or API settings changed.
 5. Continue automatically through collection, accepted-result validation, injection, targeted QA and packaging.
    A cost approval is a decision within the run, not a request for a new translation prompt.
    Unsupported Batch routes must not silently fall back to full-price Live translation.
@@ -32,7 +32,7 @@ Image work, coding-assistant work, QA and provider queue time are excluded and m
 The initial quote does not authorize an unlimited retry loop or changes in model, scope or output contract.
 
 The estimate is invalidated by changed source inputs, compiled requests, shared guidance, references, compiler/templates, scope or API settings.
-Revalidate before reusing a saved authorized quote; do not ask again solely because the session resumed when the user's authorization and all dependencies still match.
+A run the user approved resumes with `start --run ID` while its frozen plan still matches; do not ask again solely because the session resumed.
 Old project.json GUI approvals are not imported as authorization for a new request set.
 Keys and raw private endpoint configuration never belong in the handoff or request plan.
 Pricing lookup can consult the application's public pricing catalog; it does not submit translation requests.
@@ -47,4 +47,4 @@ Record submitted/completed/failed request counts and provider wait status separa
 Provider request counters can remain unchanged while work is running; they do not establish completion percentage or a delivery ETA.
 Before provider waits, save progress and job IDs and explain the next checkpoint.
 Wait with the helper's `run --wait` instead of frequent polling, and continue independent work while the provider works.
-Reconcile usage after collection and estimate remaining retries before additional paid work; keep within the user's authorization.
+Reconcile usage after collection and estimate remaining retries before additional paid work, which the user approves as a new estimate.

@@ -530,13 +530,13 @@ This project uses the new DazedTL app as its state and execution owner. Keep the
 
 After a connection failure, inspect state and the relevant run before retrying any state-changing command; a lost response does not prove the action failed. Never blindly repeat a paid submission or project operation. The helper prints structured JSON; never copy API keys or the local connection token into game files, prompts, or arguments. If the app remains unreachable with permitted access, save local work and resume with the same prompt once the app is available. The app does not run the coding assistant itself.
 
-1. Inspect saved state, artifacts, existing Git branches and runs. Identify the engine using identify --engine <name> --evidence <project-relative investigation report>. Reuse valid work. When resuming, check the game files against Git and any saved hashes before trusting earlier notes, since a crash can undo a finished step such as a canary restore; restore and recheck anything changed, and record only checks whose output you saw. Do not re-submit in-flight work or regenerate reviewed translations merely because a session resumed. If state includes a legacyRun, recover it with legacy --action resume/answer/export; inspect its frozen approval before authorizing any additional submission. Preserve and review its exported results before importing matching receipts into the new request store.
+1. Inspect saved state, artifacts, existing Git branches and runs. Identify the engine using identify --engine <name> --evidence <project-relative investigation report>. Reuse valid work. When resuming, check the game files against Git and any saved hashes before trusting earlier notes, since a crash can undo a finished step such as a canary restore; restore and recheck anything changed, and record only checks whose output you saw. Do not re-submit in-flight work or regenerate reviewed translations merely because a session resumed. If state includes a legacyRun, recover it with legacy --action resume/export; only the user approves its submissions, in DazedTL. Preserve and review its exported results before importing matching receipts into the new request store.
 2. Before modifying runtime game files, run operation backup_source and wait for its saved job to complete. Use the app backup operations for all source/workspace checkpoints. They keep a deduplicated store in .dazedtl/backups/v2, exclude .dazedtl/backups from workspace snapshots, and reuse unchanged files and snapshots. Do not create additional full workspace copies, timestamped checkpoint directories or ZIPs inside .dazedtl. Keep existing older backups; never manually edit or prune the managed store. Investigate the engine and adapt Len's tools in .dazedtl/len-method/work. RPG Maker uses operation rpgmaker_prepare; Ace must first complete its reviewed decryption/conversion prerequisite. Honor the saved Forge choice. Other engines keep their native preparation and byte-preservation rules.
 3. Prepare a complete runtime patch-file manifest and establish Git through operation git_setup, supplying the actual game version, manifest, and untranslated-source attestation after inspecting the game. Existing baselines and branches must be reused. Never place English on original. The helper retains a second prepared-source snapshot for source mappings. Do not invent a source release number; use initial-unversioned when no official label exists. Then prove the delivery path with the skill's canary before bulk translation: write a few visible strings through the real injection path, verify that they read back from the installed files and survive the engine's round trip, read the window title with a script where the engine allows, and restore the game byte for byte, checked against hashes saved before the canary. Looking at the running game is optional; if you cannot capture it, record the visual check as pending and continue.
 4. Complete the shared setup investigation. Keep glossary, context and voice guidance in their shared files; preserve user edits. Record what runtime substitutions stand for, such as \\N[1] or \\V[3] or the engine's equivalents, in game.md, which every request carries. Then run census, which counts every piece of Japanese text in the original game itself, and wait for its run. What it counts is the scope: every map, event, scene, database entry, plugin and script, including ones that look unused. Never leave text out because of its content; scope is not yours to decide. If census lists archives it can't read, decode them with Len's tools into a folder in the game and run census --decoded <folder>.
 5. Write Len's extractor for this engine as code and save everything in scope as source units in the format units-format prints: one unit per message the player reads at once, with lines the engine stores separately, such as RPG Maker's consecutive 401 commands, joined by newlines; IDs your injector maps back, scene and group keys in play order, each line's kind, the speaker the engine's own evidence names (nameplates, face or speaker codes) or null, and literal protected tokens and layout bounds. Never inherit the previous speaker or infer identity or gender from speech style; unknown speakers are valid. Apart from requests you translate or review yourself, move game text only with scripts: never paste, retype, summarize or quote Japanese or translated game text in your replies or in files you write by hand. Run organize --input <project-relative units file>, adding --complete once the units cover the census, as API estimates require. It groups the lines into requests, compiles the run and replies with counts; when it names text that isn't extracted, fix the extractor and organize again, using the locations in census-uncovered.json. Text players never see, such as file names, internal names, comments, script code and another language's translation table, can be set aside only by rules in .dazedtl/len-method/work/scope-rules.json: version 1, rules of kind, field and reason (asset_name, identifier, comment, script_code, not_displayed or other_language), each optionally limited to files matching a path pattern (file) or to exact runs (values), such as a script format's Japanese command words. Dialogue, choices and names in formats DazedTL reads itself can't be set aside. Keep the units file unchanged while its run is in use. The translating model reads the surrounding Japanese, so scene and line notes are not needed.
 6. Assistant only: read request --run <id> --index <n>, translate with your own session using every context field, perform the source-checked dialogue pass, and save a JSON receipt with request_sha256 and translations. Use accept --run <id> --batch <id> --input <project-relative receipt>. If you won't translate a request, run decline --run <id> --batch <id> --reason <one line without game text> instead of softening, shortening or leaving out lines, and go on with the next; declining is the only way not to translate something, and its lines stay in scope. When only declined requests remain, don't report them as a blocker: Progress shows them to the user, who has another model translate them. Report next_action as waiting for the declined lines, finish all independent work, then wait with run --run <id> --wait <minutes> until they are saved. DazedTL makes no translation API calls in this mode unless the user approves one for declined lines. Follow the user's delegation instructions.
-7. Live API or API Batch: if no API connection is saved, finish all independent work first, then ask the user to add one in DazedTL's Settings. Inspect the run and its quote with run --run <id>; don't read requests merely to check them. Obtain any missing spending authorization in this same conversation, then use start --run <id> --approve <quote token>. This submits only the frozen reviewed request set. When you ask, tell the user they can also approve with the button on DazedTL's Progress tab, which starts the run itself; inspect the run before starting it. DazedTL runs the job; while it works, continue independent work such as images and fitting or injection tools. To wait, use run --run <id> --wait <minutes>, which returns when the run finishes or changes state, with a command timeout longer than the wait, instead of polling repeatedly. Resume saved jobs with start --run <id>. If the connection cannot run Batch, or a Batch run fails, prepare a Live quote for the remaining work and ask for its approval; never replace Batch with Live silently. Reconcile uncertain submissions before any retry; use attach-batch only with the matching provider job ID. Prepare a new remaining-work quote for failed requests. Do not ask the user to return to the app or copy another prompt at routine phase boundaries.
+7. Live API or API Batch: if no API connection is saved, finish all independent work first, then ask the user to add one in DazedTL's Settings. Inspect the run and its quote with run --run <id>; don't read requests merely to check them. Only the user approves spending, with the button on DazedTL's Progress tab, which starts the run; you can't start a run they haven't approved there. Tell them the estimate is ready there and report that as the progress blocker, finish all independent work, then wait with run --run <id> --wait <minutes> until it starts. Each new organize or compile replaces the estimate waiting for approval, so prepare one only when its inputs or the API settings changed. DazedTL runs the job; while it works, continue independent work such as images and fitting or injection tools. To wait, use run --run <id> --wait <minutes>, which returns when the run finishes or changes state, with a command timeout longer than the wait, instead of polling repeatedly. Resume saved jobs the user approved with start --run <id>. If the connection cannot run Batch, or a Batch run fails, prepare a Live quote for the remaining work and ask the user to approve it; never replace Batch with Live silently. Reconcile uncertain submissions before any retry; use attach-batch only with the matching provider job ID. Prepare a new remaining-work quote for failed requests. Do not ask the user to return to the app or copy another prompt at routine phase boundaries.
 8. Save translation records and report progress after each saved milestone, before waits, and at least every ten minutes. Use progress --input <project-relative report> for the maintained Len progress format. Routine progress reporting is lightweight; use operation backup_workspace or checkpoint for meaningful recovery milestones. Keep detailed evidence in status.md. Translation counts, source-checked review, images, injection, runtime QA and packaging are separate. Check every accepted line mechanically with scripts: IDs, protected tokens, layout bounds and untranslated text. Review accepted requests with review only after actually checking them, and any qa_notes they carry, against the Japanese; review the ones you are willing to read, record the rest as not reviewed in status.md, and go on. Preserve intentional ambiguity in the translation; retain any unresolved blocker in status.md. Fingerprints are evidence, not counters to fabricate. For a correction, include the current result_sha256 as replaces_sha256 in the receipt and use accept again. It archives the previous result and invalidates affected review/QA; ordinary retries cannot overwrite accepted translations.{images}
 {injection}. Get the translations with results --run <id>, which writes them by line ID to a file, and inject from that file with scripts. Fit using the actual engine/renderer. For MV/MZ, stage translated JSON and use operation write_rpgmaker with matching source, translated and output paths (or a registered backup_id). This preserves _original and refuses unsafe structural remapping. After an official source update, use rebase_rpgmaker with the current expected_original_commit when old metadata needs rebasing; it requires source bytes matching that exact original-branch file. Ordinary corrections keep their existing Japanese. Other engines retain native source/injection sidecars and use their own verified reconstruction tools. Record unresolved extraction explicitly.
 {qa}. Inject and verify the actual installed game. Use operation checkpoint with the complete runtime manifest to align original/main and create a local checkpoint plus a deduplicated workspace snapshot. Packaging reuses that snapshot when its contents are unchanged. Complete targeted structural, source/live and runtime QA; unavailable checks remain pending. For RPG Maker MV/MZ, the release playtest is DazedTL's too: after the checkpoint, run playtest --run --wait 20, which checks the game's files and plays it in a hidden window without writing to it; fix the crashes and plugin text its report lists through their own steps, run it again with --stops FILE for places its report lists as not reached when you know the event or map that leads there, and leave its findings in translated text to text QA, which reviews them. Report anything still out of reach as a coverage gap; never ask the user to play. For RPG Maker MV/MZ and VX Ace, text QA is DazedTL's own: after the checkpoint and any playtest, run qa --prepare and follow the README of the task it names until qa reports the task complete, then run qa --apply --wait 60, which applies the findings through DazedTL and saves their checkpoint. The user answers QA's open questions in DazedTL while apply waits. For MV/MZ, run playtest --run --wait 20 again after QA's apply and report its problems and coverage. DazedTL shows QA's stage and counts on Progress from its task, so report the qa phase without QA counts. Use operation package for a local Git patch after QA is complete; it needs organize --complete after the latest census, with every unit it accepted in your text export. Public publishing, uploads, remotes and pushes remain separate requests.
@@ -564,8 +564,16 @@ Additional project instructions:
         for declined requests keeps its own mode, whatever the project's."""
         current = {}
         views = []
+        newest = max(
+            (
+                job["created"]
+                for job in jobs
+                if job["kind"] == "translation" and job["quote"] is not None
+            ),
+            default="",
+        )
         for job in jobs:
-            view = self.jobs.store.view(job)
+            view = self.jobs.store.view(job, newest)
             frozen = job.get("configuration_sha256")
             if (
                 frozen
@@ -788,7 +796,10 @@ Additional project instructions:
     def run(self, project_id, run_id):
         self.jobs.reconcile()
         job = self.jobs.store.record(run_id, project_id)
-        return self.jobs.store.view(job)
+        waiting = job["status"] == "ready" and job["quote"] is not None
+        return self.jobs.store.view(
+            job, self.jobs.store.newest_estimate(project_id) if waiting else ""
+        )
 
     def request(self, project_id, run_id, index):
         _job, plan = self.jobs.store.load(run_id, project_id)
@@ -864,10 +875,24 @@ Additional project instructions:
         if plan["kind"] != "translation":
             raise ValueError("Use the project operation controls for this job.")
         if not self.jobs.store.authorized(job):
+            # Spending is the user's decision, made with the app's own button;
+            # the helper only resumes runs the user approved there.
+            if assistant_request.get():
+                raise ValueError(
+                    "Only the user approves API spending, with the button on DazedTL's Progress tab, which starts the run. Tell them the estimate is ready there, then wait with run --run "
+                    + run_id
+                    + " --wait <minutes>."
+                )
             self.clean_drafts(project_id)
             if not approval_token or approval_token != job["approval_token"]:
                 raise ValueError(
                     "Review and approve this exact quote before submitting."
+                )
+            if job["status"] != "ready" or job[
+                "created"
+            ] < self.jobs.store.newest_estimate(project_id):
+                raise ValueError(
+                    "This estimate was canceled or replaced by a newer one, so it can no longer be approved."
                 )
             # The quote priced the settings the run froze; approving it after
             # they change would approve a cost the user no longer sees.
@@ -884,7 +909,7 @@ Additional project instructions:
                     "API settings or the translation mode changed after this estimate. Compile and review a new plan."
                 )
             self.validate_current(project_id, plan)
-            self.jobs.store.authorize(job, in_app=not assistant_request.get())
+            self.jobs.store.authorize(job)
         return self.jobs.start(run_id, project_id)
 
     def stop(self, project_id, run_id, cancel_provider=False):
@@ -894,31 +919,33 @@ Additional project instructions:
             )
         if cancel_provider:
             job, plan = self.jobs.store.load(run_id, project_id)
-            if (
-                plan["kind"] != "translation"
-                or plan["configuration"]["mode"] != "batch"
-            ):
+            if plan["kind"] != "translation" or job["quote"] is None:
+                raise ValueError("Provider cancellation applies to Batch runs.")
+            if job["status"] == "complete":
+                return self.jobs.store.view(job)
+            # An estimate nobody approved sent nothing, whatever its mode.
+            if not self.jobs.store.authorized(job):
+                for row in job["states"].values():
+                    if row["state"] == "pending":
+                        row.update(
+                            state="failed", message="Canceled before submission."
+                        )
+                job.update(
+                    status="canceled",
+                    message="Canceled before submission; no requests were sent.",
+                )
+                self.jobs.store.save(job)
+                return self.jobs.store.view(job)
+            if plan["configuration"]["mode"] != "batch":
                 raise ValueError("Provider cancellation applies to Batch runs.")
             if plan["configuration"].get("provider") == "openrouter":
                 raise ValueError(
                     "OpenRouter does not expose Batch cancellation. Pause locally to stop future submissions; submitted work continues at the provider."
                 )
-            if job["status"] == "complete":
-                return self.jobs.store.view(job)
             write_json(
                 self.jobs.store.folder(run_id) / "cancel.json", {"requested": True}
             )
-            if self.jobs.store.authorized(job):
-                return self.jobs.start(run_id, project_id)
-            for row in job["states"].values():
-                if row["state"] == "pending":
-                    row.update(state="failed", message="Canceled before submission.")
-            job.update(
-                status="canceled",
-                message="Canceled before submission; no requests were sent.",
-            )
-            self.jobs.store.save(job)
-            return self.jobs.store.view(job)
+            return self.jobs.start(run_id, project_id)
         self.jobs.store.stop(run_id, project_id)
         return self.run(project_id, run_id)
 
@@ -1440,5 +1467,9 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
                 "Supported saved-run actions are resume, stop, answer, and export."
             )
         if action == "answer":
+            if approved and assistant_request.get():
+                raise ValueError(
+                    "Only the user approves API spending, in DazedTL. Tell them the saved run waits for their approval there."
+                )
             return handlers[action](project_id, token, approved)
         return handlers[action](project_id)

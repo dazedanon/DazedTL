@@ -35,9 +35,10 @@ Continue until the local delivery is verified or a question only the user can an
 blocks progress: spending approval, a missing API connection, denied access, or a decision
 no source evidence settles. Never ask for routine confirmations or for checks you can make
 yourself; record a check you cannot make, such as a screenshot, as pending and continue.
-Finish independent work before asking. In API mode, handle cost review in the same
-conversation and carry forward valid spending authorization. Do not ask the user to
-return to the app to estimate requests or copy a second prompt. Resume after the answer.
+Finish independent work before asking. In API mode, show the cost in the conversation;
+the user approves it with the button on DazedTL's Progress tab, the only way a run
+starts. Do not ask the user to estimate requests in the app or copy a second prompt.
+Resume after the answer.
 When a session or environment limit forces a handoff, save exact next actions and current
 progress; the same starting prompt resumes the work. Do not promise background execution
 after the assistant session ends. Uploading and publishing remain separate requests.
@@ -166,7 +167,7 @@ API Batch work reads `references/api-batch.md` first.
 Reuse the app's API Settings, pricing helpers and supported Batch backend.
 Prepare extraction, shared guidance and source units locally before paid submission; `organize` compiles the requests and the run carries the quote.
 A whole-job price remains unavailable until the complete unit inventory exists; do not label missing prices as $0.
-Present the run's quote in the conversation and obtain any missing spending authorization before starting it.
+Present the run's quote in the conversation; the user approves it on DazedTL's Progress tab, which starts the run.
 Changed source, scope, guidance, references or API settings require a fresh estimate; a quote is not a spending cap.
 
 Only an explicit preparation-only request ends with extraction, guidance, request plan and validation plan.

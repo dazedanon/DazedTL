@@ -169,7 +169,7 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
    - **Live API** sends one request at a time at the full price; new games start on it when your connection can't run Batch.
    - **Assistant only** needs no API key, but your assistant translates every line itself, which uses far more of its plan.
 
-   The API modes need a connection in Settings, and your assistant asks you to approve its estimate before anything is sent.
+   The API modes need a connection in Settings, and nothing is sent until you approve your assistant's estimate on **Progress**.
 2. Set which images to include and any instructions for your assistant.
    **Thorough investigation** looks for names, running jokes and speech habits in three independent passes instead of one, and that step then uses about three times as much of your assistant's plan.
 3. **Copy starting prompt** and paste it into your assistant.
@@ -180,9 +180,9 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
    With **Image text** on, it also finds the images with text, translates them and puts them in the game; **Images** shows where that stands and lets you change the list.
    For RPG Maker games it also runs text QA: **Text QA** appears once it starts, lists each correction with **Undo** and asks you only what it can't settle, which **Progress** points out.
    For MV and MZ games it runs the playtest too, which **Playtest** shows once it has.
-   When your assistant asks you to approve an API estimate, answer it or use the approve button on **Progress**.
-   If you approve there, tell your assistant so it waits for the results; **Progress** reminds you until it has checked in.
-   Changing your API settings or the mode makes a waiting estimate out of date, so ask your assistant for a new one.
+   Approve your assistant's API estimate with the button on **Progress**; your assistant can't start a run you haven't approved there.
+   A newer estimate replaces the one waiting, and changing your API settings or the mode makes a waiting estimate out of date, so ask your assistant for a new one.
+   After you approve, **Progress** reminds you to tell your assistant until it has checked in.
    If it goes quiet, for example at a usage limit, paste the prompt into a new session; it picks up the saved work.
    DazedTL counts the game's Japanese text itself, and **Progress** shows whether your assistant extracted all of it; it can't leave out maps or scenes on its own.
    In **Assistant only**, lines your assistant won't translate appear under **Declined lines** while it carries on.

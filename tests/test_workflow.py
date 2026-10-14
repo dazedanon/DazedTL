@@ -21,6 +21,7 @@ from dazedtl.translation.compilation import compile_requests
 from dazedtl.translation.files import digest, evidence, read_json
 from dazedtl.translation.game_update import ABSENT
 from dazedtl.translation.helper_command import helper_command
+from dazedtl.translation.jobs import REPLACED
 from dazedtl.translation.operations import (
     execute,
     lifecycle,
@@ -695,7 +696,19 @@ class WorkflowTests(unittest.TestCase):
         self.service.save(
             self.identity, selected["revision"], {**selected["options"], "mode": "live"}
         )
+        # Only the app's button approves, and only an estimate still waiting:
+        # not one the user discarded, which sent nothing in any mode, nor one
+        # a newer estimate replaced, nor any through the assistant's helper.
+        discarded = self.prepared(self.service.compile(self.identity, self.plan_path))
+        self.assertEqual(
+            self.service.stop(self.identity, discarded["id"], True)["status"],
+            "canceled",
+        )
+        stale = self.prepared(self.service.compile(self.identity, self.plan_path))
         run = self.prepared(self.service.compile(self.identity, self.plan_path))
+        self.assertEqual(
+            self.service.run(self.identity, stale["id"])["message"], REPLACED
+        )
         job, plan = self.service.jobs.store.load(run["id"])
         path = WORK + "/work/report.json"
 
@@ -712,30 +725,29 @@ class WorkflowTests(unittest.TestCase):
             self.service.progress(self.identity, path)
 
         report("Awaiting approval to spend $0.01.", "On approval: start the run.")
-        # An approval in the app is noted so Progress can remind the user to
-        # tell the assistant; one the assistant sends through the helper is not.
-        other = self.prepared(self.service.compile(self.identity, self.plan_path))
         helper = assistant_dispatch(
             SimpleNamespace(closing=False, translation=self.service),
             lambda _name, params: self.service.start(**params),
         )
         with patch.object(self.service.jobs, "start"):
+            for item in (discarded, stale):
+                with self.assertRaisesRegex(ValueError, "no longer be approved"):
+                    self.service.start(
+                        self.identity, item["id"], item["approval_token"]
+                    )
+            with self.assertRaisesRegex(ValueError, "Only the user approves"):
+                helper(
+                    "translation_start",
+                    {
+                        "project_id": self.identity,
+                        "run_id": run["id"],
+                        "approval_token": run["approval_token"],
+                    },
+                )
+            self.assertFalse(self.service.run(self.identity, run["id"])["approved"])
             self.service.start(self.identity, run["id"], run["approval_token"])
-            helper(
-                "translation_start",
-                {
-                    "project_id": self.identity,
-                    "run_id": other["id"],
-                    "approval_token": other["approval_token"],
-                },
-            )
-        self.assertEqual(
-            [
-                bool(self.service.run(self.identity, item["id"])["app_approved_at"])
-                for item in (run, other)
-            ],
-            [True, False],
-        )
+        # Progress reminds the user to tell the assistant about the approval.
+        self.assertTrue(self.service.run(self.identity, run["id"])["app_approved_at"])
         # The worker's first report as the approved run starts.
         progress_report.refresh(
             self.profile, self.identity, self.engine, plan, started=True

@@ -186,10 +186,10 @@ Either way the translations land in the same accepted store, so the declined req
 
 ## API execution and recovery
 
-Review the run's complete request set and quote before start --approve TOKEN.
-This is the spending decision inside the same assistant conversation or app run.
-The user can instead approve the quote on the Progress tab, which starts the run without the assistant; inspect the run before starting it.
-A quote stops being approvable once API settings or the translation mode change after it; start refuses it, so compile and review a new plan.
+Only the user approves spending, with the button on the Progress tab, which starts the run.
+start resumes only a run the user approved there, and run --wait waits while the estimate waits for that approval.
+Each compile or organize replaces the estimate still waiting, so only the newest one can be approved.
+A quote also stops being approvable once API settings or the translation mode change after it, so compile and review a new plan.
 A quote is an estimate, not a guaranteed bill or an unlimited retry allowance.
 It counts input tokens as Guided's estimate does, from the text each request sends, and output as 2.5 times the source payload the model echoes.
 New runs include one context-clarification retry for a confirmed provider refusal, with any additional usage billed in the originally selected mode.

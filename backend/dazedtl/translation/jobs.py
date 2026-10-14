@@ -23,6 +23,8 @@ from . import plan_file
 from .files import digest, read_json
 from .results import Results
 
+REPLACED = "Replaced by a newer estimate; no requests were sent."
+
 
 def now():
     return datetime.now(UTC).isoformat()
@@ -214,7 +216,7 @@ class RunStore:
         self.save(job)
         return job
 
-    def authorize(self, job, *, in_app=False):
+    def authorize(self, job):
         if job["quote"] is None:
             raise ValueError("API authorization requires a concrete quote.")
         key = self.root.parent / "approval.key"
@@ -233,10 +235,9 @@ class RunStore:
             key.read_bytes(), digest(receipt).encode("ascii"), hashlib.sha256
         ).hexdigest()
         write_json(self.folder(job["id"]) / "authorization.json", receipt)
-        # The assistant learns of an approval given in the app only when it
-        # next reaches the project, so Progress reminds the user until then.
-        if in_app:
-            job["app_approved_at"] = receipt["approved_at"]
+        # Only the app approves; the assistant learns of it when it next
+        # reaches the project, so Progress reminds the user until then.
+        job["app_approved_at"] = receipt["approved_at"]
         job["approved"] = True
         self.save(job)
 
@@ -327,7 +328,23 @@ class RunStore:
             value["message"] = declined_message(value)
         return value
 
-    def view(self, job):
+    def newest_estimate(self, project_id):
+        """When the project's newest API run was compiled. An estimate from
+        before it can no longer be approved, so each approval sends one
+        estimate's requests and an older quote for them never lingers."""
+        return max(
+            (
+                job["created"]
+                for job in self.list(project_id)
+                if job["kind"] == "translation" and job["quote"] is not None
+            ),
+            default="",
+        )
+
+    def view(self, job, newest=""):
+        """The run as pages and the helper read it; ``newest`` is when the
+        project's newest API run was compiled, which replaces any estimate
+        still waiting from before it."""
         job = self.settled(job)
         counts = {
             state: sum(row["state"] == state for row in job["states"].values())
@@ -341,7 +358,7 @@ class RunStore:
                 "uncertain",
             )
         }
-        return {
+        view = {
             key: job[key]
             for key in (
                 "id",
@@ -407,6 +424,14 @@ class RunStore:
                 if value["state"] in {"failed", "uncertain"}
             ],
         }
+        if (
+            view["status"] == "ready"
+            and job["quote"] is not None
+            and not view["approved"]
+            and job["created"] < newest
+        ):
+            view.update(status="canceled", message=REPLACED)
+        return view
 
     def overlapping(self, project_id, fingerprints, exclude=None):
         for job in self.list(project_id):

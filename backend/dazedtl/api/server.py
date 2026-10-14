@@ -220,7 +220,7 @@ class Application:
                             else "Estimate needs your approval",
                             detail="Ask your assistant for a new estimate."
                             if job.get("settings_changed")
-                            else "Approve it on Progress, or answer your assistant.",
+                            else "Approve it on Progress.",
                         )
                     else:
                         project.update(

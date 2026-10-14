@@ -402,7 +402,7 @@ function ApiRun({
       <StatusPanel
         title="API run"
         state="not_started"
-        description="Your assistant asks you to approve its estimate before anything is sent."
+        description="Your assistant's estimate appears here, and nothing is sent until you approve it."
       />
     );
   const mode = run.mode === "live" ? "live" : "batch";
@@ -445,9 +445,7 @@ function ApiRun({
         outdated
           ? "API settings or the translation mode changed after this estimate, so it can no longer be approved."
           : quote
-            ? run.finishes
-              ? "Nothing is sent until you approve this estimate."
-              : "Nothing is sent until you approve this estimate, here or in your assistant's conversation."
+            ? "Nothing is sent until you approve this estimate."
             : run.message
       }
     >

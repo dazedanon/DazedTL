@@ -69,8 +69,9 @@ def call(workspace, method, params):
 
 def wait(workspace, params, run, minutes):
     """Checks a run until its state changes or the time is up, so an assistant
-    waits in one command instead of polling turn by turn. An Assistant only
-    run waits while another model translates the lines it declined."""
+    waits in one command instead of polling turn by turn, including while an
+    estimate waits for the user's approval in DazedTL. An Assistant only run
+    waits while another model translates the lines it declined."""
     deadline = time.monotonic() + minutes * 60
 
     def state(run):
@@ -81,7 +82,7 @@ def wait(workspace, params, run, minutes):
     # every 15 seconds.
     pause = 1
     while state(run) == started and (
-        run["status"] in {"running", "waiting"} or run.get("declined_units", 0)
+        run["status"] in {"ready", "running", "waiting"} or run.get("declined_units", 0)
     ):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -340,8 +341,8 @@ def main():
     legacy.add_argument(
         "--action", choices=("resume", "stop", "answer", "export"), required=True
     )
+    # Answering declines a pending approval; only the user approves, in DazedTL.
     legacy.add_argument("--token", default="")
-    legacy.add_argument("--approved", action="store_true")
     operation = commands.add_parser(
         "operation",
         help="Start a saved engine/setup/delivery operation; inspect its ID with run",
@@ -384,6 +385,7 @@ def main():
         child = commands.add_parser(
             name,
             help={
+                "start": "Resume a run the user approved in DazedTL",
                 "results": "Write the run's accepted translations by line ID to a file for injection; replies with counts only",
                 "decline": "Assistant only: set aside a request you won't translate so another model can finish it",
             }.get(name),
@@ -402,12 +404,6 @@ def main():
                 "--cancel-provider",
                 action="store_true",
                 help="Request provider cancellation and retain completed results",
-            )
-        if name == "start":
-            child.add_argument(
-                "--approve",
-                default="",
-                help="Exact quote token, only after the user's spending authorization",
             )
         if name == "request":
             child.add_argument("--index", type=int, required=True)
@@ -514,8 +510,6 @@ def main():
                 params["index"] = args.index
             if args.command == "stop":
                 params["cancel_provider"] = args.cancel_provider
-            if args.command == "start":
-                params["approval_token"] = args.approve
             if args.command == "attach-batch":
                 params.update(index=args.index, provider_job_id=args.provider_job)
             if args.command == "identify":
@@ -530,9 +524,7 @@ def main():
                 if args.fix_headers:
                     params["fix_headers"] = True
             if args.command == "legacy":
-                params.update(
-                    action=args.action, token=args.token, approved=args.approved
-                )
+                params.update(action=args.action, token=args.token, approved=False)
             if args.command == "census":
                 method = "translation_operation"
                 params.update(
