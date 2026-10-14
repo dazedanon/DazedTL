@@ -55,7 +55,10 @@ Existing phased jobs retain their original engine-owned records and recovery pat
 Guided main text shares configuration while retaining independent database and event selections.
 Each phase binds its estimate to source, scope, provider and pricing, guidance, and layout.
 New estimate and Batch preparation workspaces are temporary until approval; they do not enter saved history or contribute translated outputs.
-Each Translate click discards that phase’s unapproved preparation and creates a fresh estimate, unless the phase's latest finished estimate still binds to exactly the current inputs: Translate then reopens it ([unchanged_estimate](../backend/dazedtl/translation/guided_actions.py)) and its dialog marks Estimate cost as reused, so declining or closing a review costs no second estimate.
+Each Translate click discards that phase’s unapproved preparation and creates a fresh estimate, unless the phase's latest finished estimate still binds to exactly the current inputs, or to inputs a model switch only prices differently: Translate then reopens it ([unchanged_estimate](../backend/dazedtl/translation/guided_actions.py)) and its dialog marks Estimate cost as reused, so declining or closing a review costs no second estimate.
+A model switch only prices an estimate differently ([repricing](../backend/dazedtl/translation/repricing.py)) when the connection and request settings stay the same, a sample request built for each model carries the same messages ([request_text](../backend/dazedtl/compatibility/request_text.py)), and the provider counts tokens the same way for every model, which leaves out Claude.
+Each estimate records the shape of its inputs without what such a switch changes, and its counts are then priced with the new model's rates by the engine's own formulas and DazedTL's pricing layers ([estimate_prices](../backend/dazedtl/compatibility/estimate_prices.py)), which a test holds to the engine's estimate for that model.
+A review's model can be switched in its dialog: the reviewed preparation is discarded first, since settings wait for its worker to end, and a Batch then prepares its requests again for the new model while the dialog shows the estimate at its prices.
 An estimate stays reusable through its Batch preparation and ends with approved work started from it or a Claude count it still needs.
 Decline discards a Batch preparation after its worker exits and keeps the finished estimate; restart removes all temporary work, estimates included, so a newer release estimates afresh.
 Approved work is retained before signaling the worker, including separately approved speaker translation.
@@ -152,6 +155,7 @@ A Claude estimate is then counted again as a Translate estimate is (see [Estimat
 The tasks run side by side, each with its own workers and count and with its inputs linked to the operation's one staged copy; the first task that fails stops the others.
 The newest finished operation holds the saved estimate.
 It reads current while every task's estimate inputs match: files, sources, guidance, options, layout, connection and prices, and the DazedTL release that made it, since another may estimate differently.
+A model switch that only prices its requests differently (see [Estimates and approval](#estimates-and-approval)) keeps it current at the new model's prices, from the counts the result keeps beside each task.
 Estimating again while it reads current would only repeat it, so the action waits for a change, except to retry a failed Claude count.
 They are computed with the Live configuration, since one estimate prices both Batch and Live; switching between them only changes which total leads.
 Stop ends the worker and keeps the previous estimate.
@@ -1038,6 +1042,7 @@ The native OpenAI token window remains OpenAI-only.
 Other providers' compatibility pricing resolver runs without credentials, reuses the preserved pricing rules, and labels cached catalog versus built-in rates.
 Its catalog download, address lookup included, ends after five seconds so the resolver answers before its caller stops waiting; past that, rates come from the saved catalog or the built-in defaults.
 Guided and Assistant-led snapshots match estimates on prices already looked up and never run the resolver; preparing, reviewing and approving work look prices up.
+Each model's last lookup is kept in the [model cache](../backend/dazedtl/compatibility/model_defaults.py), so snapshots after a restart still know it, and settings that differ only by prices not yet known read as unchanged; the model menu looks a model's prices up before it switches.
 The OpenRouter adapter uses ordered inline submission and stores terminal response evidence under the owning run before validating request IDs.
 Verified responses can be collected again without provider access; incomplete or conflicting mappings cannot create a fetched marker or trigger paid retries.
 The existing approval journal, monitor, ownership guards, and clarification allowance remain authoritative.
@@ -1130,6 +1135,8 @@ SDK-level paid retries are disabled.
 For compiled agent plans, an uncertain submission blocks overlapping work; Guided fresh-run review follows the separate policy above.
 Attaching a provider job still requires matching returned request IDs.
 Approval receipts bind the project, immutable plan and quote with a profile-local signature.
+Before approval, a quote whose settings only price its requests differently (see [Estimates and approval](#estimates-and-approval)) shows at the current prices with an approval token derived from them; approving with that token freezes the run's plan again with the current settings under the same run ID, since nothing has been sent or authorized, and a Batch runner counts each request's tokens for OpenAI's allowance when it packs them.
+Any other settings change outdates the quote, and Progress's Estimate again repeats the organize or compile that made the run.
 A saved boolean alone cannot authorize a worker.
 Workers hold per-run locks and stop issuing work after losing their owning process.
 Closing asks workers to stop at a checkpoint and a few seconds later ends any still running, with the processes they started.

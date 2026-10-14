@@ -189,7 +189,8 @@ Either way the translations land in the same accepted store, so the declined req
 Only the user approves spending, with the button on the Progress tab, which starts the run.
 start resumes only a run the user approved there, and run --wait waits while the estimate waits for that approval.
 Each compile or organize replaces the estimate still waiting, so only the newest one can be approved.
-A quote also stops being approvable once API settings or the translation mode change after it, so compile and review a new plan.
+When the user switches to another model of the same connection, or between Batch and Live, a waiting quote takes the new prices if every request keeps its text, and Progress shows them; approving it freezes the run again with those settings under the same run ID.
+Any other change to API settings or the mode outdates the quote: the user can estimate it again on Progress, which repeats the organize or compile that made it, or you compile and review a new plan.
 A quote is an estimate, not a guaranteed bill or an unlimited retry allowance.
 It counts input tokens as Guided's estimate does, from the text each request sends, and output as 2.5 times the source payload the model echoes.
 New runs include one context-clarification retry for a confirmed provider refusal, with any additional usage billed in the originally selected mode.

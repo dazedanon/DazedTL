@@ -79,7 +79,8 @@ Click **Estimate cost**: it estimates Database files, Maps & events and Other ev
 Estimating is free and translates nothing; for Claude models it uses Anthropic's free token count.
 On a large game this can take several minutes: each task shows how far it has got and about how long is left, and a finished estimate says how long it took.
 The other tasks use your assistant's plan, not your API key.
-If you change the guidance, the source choices, the game's files or the model, or update DazedTL, the estimate reads **Outdated**; click **Estimate again**.
+Choosing another model of the same connection usually shows its prices at once, since its requests stay the same; Claude models count tokens their own way, so they need a new estimate.
+If you change the guidance, the source choices or the game's files, choose a model whose requests differ, or update DazedTL, the estimate reads **Outdated**; click **Estimate again**.
 Until then **Estimate again** stays off, since it would give the same result.
 
 ### 3. Translate
@@ -95,6 +96,7 @@ Translate has five tasks.
    A Batch estimate is often a range: the provider charges less for instructions it reuses, but a Batch sends its requests together, so it may reuse few of them and cost up to the higher figure.
    Until the estimate is ready, its window shows each step, how far it has got and about how long is left.
    If you decline or close it, clicking **Translate** again reuses it while the files and settings are unchanged.
+   Choose another model beside the price to see its cost: the estimate takes the new prices at once when the requests stay the same, and a Batch then prepares its requests again for that model before you can submit.
    With **Batch**, names and labels the glossary lacks are translated first with Live, after their own review; they join the glossary even if you then decline the Batch.
 4. Click **Apply** to write the translations into the game.
 
@@ -181,7 +183,9 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
    For RPG Maker games it also runs text QA: **Text QA** appears once it starts, lists each correction with **Undo** and asks you only what it can't settle, which **Progress** points out.
    For MV and MZ games it runs the playtest too, which **Playtest** shows once it has.
    Approve your assistant's API estimate with the button on **Progress**; your assistant can't start a run you haven't approved there.
-   A newer estimate replaces the one waiting, and changing your API settings or the mode makes a waiting estimate out of date, so ask your assistant for a new one.
+   A newer estimate replaces the one waiting.
+   Choosing another model of the same connection, or switching between **API Batch** and **Live API**, shows the waiting estimate at the new prices at once when its requests stay the same; approving then sends them with your new choice.
+   Other changes, such as a Claude model or another connection, make it out of date; **Estimate again** prepares a new one without your assistant.
    After you approve, **Progress** reminds you to tell your assistant until it has checked in.
    If it goes quiet, for example at a usage limit, paste the prompt into a new session; it picks up the saved work.
    DazedTL counts the game's Japanese text itself, and **Progress** shows whether your assistant extracted all of it; it can't leave out maps or scenes on its own.
