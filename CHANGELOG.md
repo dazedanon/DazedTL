@@ -3,6 +3,12 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.15.1] - 2026-10-13
+
+### Changed
+
+- **Translate:** translating a file again after an earlier run translated part of it sends the remaining lines together, up to 50 per request, instead of one request for each gap between lines already translated. Large common events could become hundreds of requests of a few lines each, every one paying for the full instructions: one game's CommonEvents went from 415 requests to 142, with 57% fewer input tokens.
+
 ## [2.15.0] - 2026-10-13
 
 ### Added
@@ -564,6 +570,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.15.1]: https://github.com/dazedanon/DazedTL/compare/v2.15.0...v2.15.1
 [2.15.0]: https://github.com/dazedanon/DazedTL/compare/v2.14.2...v2.15.0
 [2.14.2]: https://github.com/dazedanon/DazedTL/compare/v2.14.1...v2.14.2
 [2.14.1]: https://github.com/dazedanon/DazedTL/compare/v2.14.0...v2.14.1
