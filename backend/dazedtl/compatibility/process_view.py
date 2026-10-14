@@ -14,6 +14,8 @@ from dazedtl.translation.files import digest, project_path, read_json
 # The engine's names pass translates the speakers of every file in one list and
 # records its requests under this name (engine util/speakers.NAMES_FILE).
 NAMES_FILE = "speakers"
+# Its receipt's label in the run log.
+NAMES_RECEIPT = "Speakers"
 
 
 @lru_cache(maxsize=8)
@@ -457,6 +459,28 @@ def file_metric(line, files):
     return {receipt[0]: receipt[1]} if receipt else {}
 
 
+def record_receipt(job, line):
+    """Keep a run log line's receipt with the run's: a file's from translating
+    or saving a Batch, or a names pass's from any phase, under NAMES_FILE."""
+    receipt = file_receipt(line, [*job.get("files", []), NAMES_RECEIPT])
+    if not receipt:
+        return
+    name, figures, used = receipt
+    receipts = job.get("file_metrics", {})
+    if name == NAMES_RECEIPT:
+        # A later names pass translates only names no earlier one did.
+        earlier = receipts.get(NAMES_FILE, {})
+        figures = {key: earlier.get(key, 0) + value for key, value in figures.items()}
+        name = NAMES_FILE
+    elif job.get("mode") != "translate" and job.get("phase") != "consume":
+        return
+    elif not used and name in receipts:
+        # A retry reads the files an earlier attempt saved back without
+        # usage; keep what that attempt cost.
+        return
+    job.setdefault("file_metrics", {})[name] = figures
+
+
 def file_receipts(job):
     """Each file's receipt figures, which also start a resumed attempt's
     total. Receipts recorded before tokens were have only cost and seconds."""
@@ -470,10 +494,12 @@ def file_receipts(job):
 
 
 def file_metrics(job):
-    """The cost and processing time shown for each file."""
+    """The cost and processing time shown for each file; the names pass is
+    the run's, not a file's."""
     return {
         name: {"cost": figures["cost"], "seconds": figures["seconds"]}
         for name, figures in file_receipts(job).items()
+        if name != NAMES_FILE
     }
 
 

@@ -650,7 +650,16 @@ class ManualJobs:
                 {"Items.json": {"cost": 0.0042, "seconds": 12.5}},
             )
             # A resumed attempt's TOTAL starts from the same receipts, with
-            # their tokens.
+            # their tokens, and from every names pass the run paid for, which
+            # names no file.
+            names = "Speakers: [Input: 30][Output: 6][Cost: $0.0100][1.5s] ✓"
+            metric_run["phase"] = "preparing"
+            controller._event(metric_run, {"event": "log", "args": [names]})
+            controller._event(metric_run, {"event": "log", "args": [names]})
+            self.assertEqual(
+                file_metrics(metric_run),
+                {"Items.json": {"cost": 0.0042, "seconds": 12.5}},
+            )
             self.assertEqual(
                 controller.receipts(metric_run),
                 {
@@ -659,7 +668,13 @@ class ManualJobs:
                         "output": 20,
                         "cost": 0.0042,
                         "seconds": 12.5,
-                    }
+                    },
+                    "speakers": {
+                        "input": 60,
+                        "output": 12,
+                        "cost": 0.02,
+                        "seconds": 3.0,
+                    },
                 },
             )
             restored = json.loads(json.dumps(metric_run))

@@ -1217,6 +1217,7 @@ class TranslationTaskCore:
                 f"🔤 Translating {len(pending)} speakers in grouped list batches…"
             )
             before_in, before_out = int(mvmz.TOKENS[0]), int(mvmz.TOKENS[1])
+            started = time.monotonic()
             speakers_saved = mvmz.finalizeSpeakerParse()
             if speakers_saved is False:
                 self.emit_log(
@@ -1227,16 +1228,46 @@ class TranslationTaskCore:
             delta_in = max(0, int(mvmz.TOKENS[0]) - before_in)
             delta_out = max(0, int(mvmz.TOKENS[1]) - before_out)
             if delta_in or delta_out:
-                cost = mvmz.calculateCost(delta_in, delta_out, mvmz.MODEL)
-                self.emit_log(
-                    f"Speakers: [Input: {delta_in}][Output: {delta_out}]"
-                    f"[Cost: ${cost:.4f}] ✓"
+                self._record_names_receipt(
+                    delta_in,
+                    delta_out,
+                    mvmz.calculateCost(delta_in, delta_out, mvmz.MODEL),
+                    time.monotonic() - started,
                 )
             self.emit_log("✅ Speaker translations saved to the game glossary.")
             self._speakers_translated = True
             return True
         finally:
             mvmz.setSpeakerParseMode(False)
+
+    def _record_names_receipt(self, tokens_in, tokens_out, cost, seconds):
+        """Logs what translating names together cost, a receipt the run's TOTAL
+        adds to its files'. A later names pass translates only names no earlier
+        one did, so its cost adds to theirs."""
+        from util.speakers import NAMES_FILE
+
+        receipt = {
+            "input": int(tokens_in),
+            "output": int(tokens_out),
+            "cost": round(cost, 4),
+            "seconds": round(seconds, 1),
+        }
+        self.emit_log(
+            f"Speakers: [Input: {receipt['input']}][Output: {receipt['output']}]"
+            f"[Cost: ${receipt['cost']:,.4f}][{receipt['seconds']}s] ✓"
+        )
+        earlier = self.receipts.get(NAMES_FILE)
+        if earlier is not None:
+            receipt = {key: earlier[key] + value for key, value in receipt.items()}
+        self.receipts[NAMES_FILE] = receipt
+
+    def _run_total(self, result):
+        """The run's TOTAL: every receipt it recorded, the earlier attempts'
+        and its names passes included, rather than the total the last file's
+        worker reported for that file."""
+        if self.estimate_only or self.parse_speakers or not self.receipts:
+            return result
+        return format_run_total(self.receipts.values())
 
     def _prepare_wolf_speakers(self, matching_files):
         """Scan WolfDawn JSON nameplates, then resolve all new speakers together."""
@@ -1316,6 +1347,7 @@ class TranslationTaskCore:
         self.emit_log(
             f"🔤 Translating {len(pending)} WOLF speakers in grouped list batches…"
         )
+        started = time.monotonic()
         tokens = wolfdawn.translateSpeakerNames(pending)
         if tokens is False:
             self.emit_log(
@@ -1324,17 +1356,18 @@ class TranslationTaskCore:
             )
             return False
         if tokens[0] or tokens[1]:
-            cost = wolfdawn.calculateCost(tokens[0], tokens[1], wolfdawn.MODEL)
-            self.emit_log(
-                f"Speakers: [Input: {tokens[0]}][Output: {tokens[1]}]"
-                f"[Cost: ${cost:.4f}] ✓"
+            self._record_names_receipt(
+                tokens[0],
+                tokens[1],
+                wolfdawn.calculateCost(tokens[0], tokens[1], wolfdawn.MODEL),
+                time.monotonic() - started,
             )
         self.emit_log("✅ Speaker translations saved to the game glossary.")
         return True
 
     @extensions.point
     def _run_files(self, matching_files, estimate_only, batch_phase=None):
-        """Process matching files; return the run's TOTAL or 'Fail'."""
+        """Process matching files; return last cost string or 'Fail'."""
         threads = int(os.getenv("fileThreads", "1"))
         total_cost = "Fail"
         had_failure = False
@@ -1432,16 +1465,6 @@ class TranslationTaskCore:
             self.emit_progress(completed_count, total_files, filename)
             return stopped
 
-        def _total():
-            # Every file's receipt, the earlier attempts' included, rather
-            # than the total the last file's worker reported for that file.
-            if not records_receipts or not self.receipts or total_cost in (
-                "Fail",
-                "Stopped",
-            ):
-                return total_cost
-            return format_run_total(self.receipts.values())
-
         def _completed_result():
             if had_failure:
                 return "Fail"
@@ -1456,7 +1479,7 @@ class TranslationTaskCore:
                 return format_estimate_total(comparison)
             if estimate_only:
                 return total_cost if total_cost != "Fail" else "Success"
-            return _total()
+            return total_cost
 
         for filename in unsupported_files:
             self._report_unsupported_mvmz_file(filename)
@@ -1498,7 +1521,7 @@ class TranslationTaskCore:
                         _handle_file_result(filename, worker_result)
             if not batch_phase:
                 return _completed_result()
-            return "Fail" if had_failure else _total()
+            return "Fail" if had_failure else total_cost
 
         # Pass 2 is always sequential: each file may harvest names into
         # glossary.txt, and later files need those entries on disk. Paid batch
@@ -1513,7 +1536,7 @@ class TranslationTaskCore:
                 )
                 if _handle_file_result(filename, result):
                     break
-            return "Fail" if had_failure else _total()
+            return "Fail" if had_failure else total_cost
 
         # Live RPG Maker translation reuses its workers too: a worker per file
         # imported the engine and read every map for actor names again, about
@@ -1996,6 +2019,7 @@ class TranslationTaskCore:
 
             # Report results
             if total_cost != "Fail" and not self.should_stop:
+                total_cost = self._run_total(total_cost)
                 if self.batch_mode:
                     try:
                         from util.translation import clearBatchFiles

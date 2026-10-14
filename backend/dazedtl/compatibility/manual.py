@@ -408,22 +408,11 @@ def manual_jobs(source, workspace, lock, allow_providers):
                 if (
                     event.get("event") == "log"
                     and args
-                    and (
-                        job.get("mode") == "translate"
-                        or job.get("mode") == "batch"
-                        and job.get("phase") == "consume"
-                    )
+                    and job.get("mode") in {"translate", "batch"}
                 ):
-                    from .process_view import file_receipt
+                    from .process_view import record_receipt
 
-                    receipt = file_receipt(args[0], job.get("files", []))
-                    if receipt:
-                        name, figures, used = receipt
-                        metrics = job.setdefault("file_metrics", {})
-                        # A retry reads the files an earlier attempt saved
-                        # back without usage; keep what that attempt cost.
-                        if used or name not in metrics:
-                            metrics[name] = figures
+                    record_receipt(job, args[0])
                 if (
                     event.get("event") == "finished"
                     and len(args) >= 2

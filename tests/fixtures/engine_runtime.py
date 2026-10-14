@@ -1348,22 +1348,27 @@ try:
         for path in live_root.glob("launches-*.txt"):
             path.unlink()
         many = [f"Map1{number:02d}.json" for number in range(12)]
-        # The run's TOTAL adds up each file's own total from every worker,
-        # starting from the receipts of the run's earlier attempts; a file read
-        # back without usage keeps what the earlier attempt cost.
+        # The run's TOTAL adds up each file's own total from every worker and
+        # its names passes, starting from the receipts of the run's earlier
+        # attempts; a file read back without usage keeps what the earlier
+        # attempt cost.
         resumed = TranslationTask(
             live_root,
             ("RPG Maker MV/MZ", (".json",), None),
             runner_script=runner,
             receipts={
+                "speakers": {"input": 30, "output": 6, "cost": 0.04, "seconds": 1.5},
                 "Map099.json": {"cost": 0.25, "seconds": 1.0},
                 "Map100.json": {"input": 50, "output": 5, "cost": 0.5, "seconds": 2},
                 "Map101.json": {"input": 7, "output": 7, "cost": 7.0, "seconds": 7},
             },
         )
+        resumed._record_names_receipt(20, 4, 0.06121, 0.54)
         with patch.dict(os.environ, {"fileThreads": "3"}):
-            total = resumed._run_files(many, False)
-        assert total == "TOTAL: [Input: 1216][Output: 16][Cost: $0.8600][8.5s] ✓", total
+            total = resumed._run_total(resumed._run_files(many, False))
+        assert total == "TOTAL: [Input: 1266][Output: 26][Cost: $0.9612][10.5s] ✓", (
+            total
+        )
         handed = [name for names in worker_files() for name in names]
         assert sorted(handed) == many, handed
         # That worker saves a Batch's files one after another; a file missing
