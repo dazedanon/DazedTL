@@ -1960,12 +1960,16 @@ class ImageService:
             index.selected(value["selection"])
         # Completion is accumulated across partial saves of this exact request:
         # a request whose every image has a result is answered, flag or not, so
-        # a forgotten flag never leaves the task waiting.
+        # a forgotten flag never leaves the task waiting. Until a report says
+        # it is complete, an image it holds as not examined is still to come:
+        # the assistant saves those placeholders as it goes.
         accounted = 0
         for identity in expected:
             row = index.get(identity)
             accepted = row.get("finding" if kind == "discovery" else "editResult") or {}
-            if accepted.get("requestId") == request["id"]:
+            if accepted.get("requestId") == request["id"] and (
+                report["complete"] or accepted.get("classification") != "not_examined"
+            ):
                 accounted += 1
         value[kind].update(
             status="complete"

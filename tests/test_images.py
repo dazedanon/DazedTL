@@ -323,6 +323,11 @@ class ImageTests(unittest.TestCase):
                 ("img/B.png", "sound_effects"),
             )
         ]
+        # A report saved on the way holds the images still to come as not
+        # examined, so the copied task keeps waiting for them.
+        later = {**found[1], "classification": "not_examined", "examined": False}
+        state = self.report(request, [found[0], later])["state"]
+        self.assertEqual(state["discovery"]["status"], "partial")
         # A report that answers every image completes without its flag.
         state = self.report(request, found)["state"]
         self.assertEqual(state["discovery"]["status"], "complete")

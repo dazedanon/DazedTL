@@ -523,6 +523,7 @@ Unexamined, failed, unreadable and changed sources remain unresolved; detector m
 Sound effects lettered into scene art are flavor, often hundreds per game: an image with nothing else is found Sound effects only and stays out of the list like a text-free one, and the image skill leaves them as they are in an image translated for its other text.
 Manual choices survive recommendations and filtering, and only byte-identical sources can reuse discovery evidence.
 An investigation report ticks each image it newly recommends once and opens the grid on the list, so an image the user took out stays out when the same request saves again; a report whose every image has a result completes the request even without its flag.
+Until a report sets that flag, an image it holds as not examined is still to come, because the assistant saves its partial reports with those placeholders; the copied task keeps waiting instead of reading finished and calling the user back.
 The translation task covers the list's images not yet in the game and makes their editable copies first, leaving out images that cannot be edited.
 Applied images stay ticked, so a finished list still reads done and Edit text still reaches them, but the list's Recommended view and Unsure leave them to Applied.
 Apply to game applies the list's translated images; a list that a click replaced in earlier versions gets its copied translation task's images back once.
