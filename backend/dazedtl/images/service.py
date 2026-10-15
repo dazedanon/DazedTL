@@ -1100,6 +1100,9 @@ class ImageService:
                                 "These filenames differ only by letter case and cannot be patched safely on Windows."
                             )
                             index.put(db, self._status(row), generation)
+                    # Variant families are grouped over the whole inventory,
+                    # so only a complete scan regroups them.
+                    index.refresh_families()
                     value = self._load(project_id)
                     fingerprint = hashlib.sha256()
                     for row in index.rows():
@@ -1548,6 +1551,7 @@ class ImageService:
         # the app preserved from it. editableHash is the working copy's when
         # the task was made; a report gives its final hash as candidateHash.
         names = {"frozenHash": "originalPngHash", "editableHash": "candidateHash"}
+        index = self._index(project_id)
         assets = [
             {
                 key: row.get(names.get(key, key))
@@ -1567,6 +1571,9 @@ class ImageService:
                     "sourceIssue",
                 )
             }
+            # Siblings that share this image's backdrop, with their originals
+            # and how far each is translated.
+            | {"family": index.family(row["id"])}
             for row in rows
         ]
         request = {
