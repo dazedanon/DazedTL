@@ -1354,17 +1354,29 @@ class ImageService:
             if not identities:
                 raise ValueError("Every image has been investigated.")
             return scope, self._ids(project_id, identities)
+        # Investigating all images again leaves out the settled ones: images
+        # in the game and the user's own exclusions.
+        if scope == "all":
+            identities = [
+                row["id"]
+                for row in self._index(project_id).rows()
+                if row["state"] != "applied" and not row.get("manualOverride")
+            ]
+            if not identities:
+                raise ValueError("Every image is already in the game.")
+            return scope, self._ids(project_id, identities)
         folders = options.get("folders", value["discovery"].get("folders", []))
         if scope == "folders" and not folders:
             raise ValueError("Choose at least one discovery folder.")
-        identities = []
-        for row in self._index(project_id).rows():
-            if scope == "all" or any(
+        identities = [
+            row["id"]
+            for row in self._index(project_id).rows()
+            if any(
                 row["folder"] == folder.rstrip("/")
                 or row["folder"].startswith(folder.rstrip("/") + "/")
                 for folder in folders
-            ):
-                identities.append(row["id"])
+            )
+        ]
         return scope, self._ids(project_id, identities)
 
     def _guidance(self, project_id):
@@ -1446,6 +1458,10 @@ class ImageService:
         )
         guidance = self._guidance(project_id)
         previous_id = value[kind].get("requestId", "")
+        # An investigation asked for again starts over: a finished one is
+        # neither handed out again nor resumed.
+        if kind == "discovery" and value[kind].get("status") == "complete":
+            previous_id = ""
         previous_entry = value["requests"].get(previous_id)
         # A task taken over from another project is resumed, never handed out again.
         if previous_entry and not previous_entry.get("carried"):
@@ -1627,6 +1643,11 @@ class ImageService:
                 "Related variants are suggestions, not reviewed equivalents. Only byte-identical source images may reuse evidence, identified explicitly. "
                 "Never mark an unexamined image examined. Retain partial findings and write reports atomically; do not claim complete until every requested asset is accounted for."
             )
+            if request.get("scope") == "all":
+                instructions += (
+                    " This investigation starts over: examine and classify each image again under these instructions "
+                    "instead of reusing findings or caches from earlier investigations, other than request.resumeReport."
+                )
         else:
             example["assets"] = [
                 {
@@ -1753,7 +1774,8 @@ class ImageService:
                     "Saved guidance changed after this task. Copy a new task before accepting these results."
                 )
         expected = {row["id"]: row for row in request["assets"]}
-        identities, updates, errors, recommended = set(), [], [], set()
+        identities, updates, errors = set(), [], []
+        recommended, dropped = set(), set()
         index = self._index(project_id)
         key = self.adapter.key(root, self._profile(project_id))
         for result in report["assets"]:
@@ -1834,14 +1856,19 @@ class ImageService:
                     "classification", classification
                 )
                 row.pop("staleReason", None)
-                # A recommendation joins the list once, so an image the user
-                # took out stays out when the same request saves again.
+                # A finding sets its image's tick once, so an image the user
+                # took out stays out when the same request saves again. A
+                # recommendation joins the list; an investigation of all
+                # images also takes out the ones it no longer recommends.
                 earlier = old.get("finding") or {}
-                if row["classification"] == "recommended" and not (
+                if not (
                     earlier.get("requestId") == request["id"]
-                    and earlier.get("classification") == "recommended"
+                    and earlier.get("classification") == classification
                 ):
-                    recommended.add(identity)
+                    if row["classification"] == "recommended":
+                        recommended.add(identity)
+                    elif request.get("scope") == "all":
+                        dropped.add(identity)
             else:
                 if result.get("status") not in {
                     "edited",
@@ -1903,15 +1930,28 @@ class ImageService:
             for row in updates:
                 index.put(db, row, row.get("generation", ""))
         # New recommendations are ticked to translate, and the grid opens on
-        # the list so the user reviews it next.
+        # the list so the user reviews it next. An image already translated
+        # stays in the list whatever a later finding says.
         listed = [
             row["id"]
             for row in updates
             if row["id"] in recommended
             and row["state"] not in {"applied", "skipped", "blocked"}
         ]
-        if listed:
-            value["selection"] = list(dict.fromkeys(value["selection"] + listed))
+        unlisted = {
+            row["id"]
+            for row in updates
+            if row["id"] in dropped
+            and not row.get("editResult")
+            and row["state"] not in {"ready", "needs_review", "applied"}
+        }
+        if listed or unlisted & set(value["selection"]):
+            value["selection"] = list(
+                dict.fromkeys(
+                    [item for item in value["selection"] if item not in unlisted]
+                    + listed
+                )
+            )
             value["view"].update(
                 showSelected=True, status="all", folder="", query="", scroll=0
             )

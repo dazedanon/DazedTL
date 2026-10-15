@@ -350,6 +350,37 @@ class ImageTests(unittest.TestCase):
             ["img/B.png", "img/A.png"],
         )
         self.reviewed_candidate()
+        # Investigating all images again starts over instead of handing out or
+        # resuming the finished investigation, and its findings replace the
+        # list, except for images already translated.
+        self.choose(["img/A.png", "img/B.png"])
+        again = self.service.action(self.identity, "discovery_task", {"scope": "all"})
+        redo = read_json(Path(again["request"]))
+        self.assertNotEqual(redo["id"], request["id"])
+        self.assertEqual(redo["resumeReport"], "")
+        self.assertIn("starts over", again["text"])
+        hashes = {row["id"]: row["sourceHash"] for row in redo["assets"]}
+        state = self.report(
+            redo,
+            [
+                {
+                    **found[0],
+                    "classification": "no_text",
+                    "sourceHash": hashes["img/A.png"],
+                },
+                # Set aside unexamined, it is settled rather than left to investigate.
+                {
+                    **found[1],
+                    "classification": "excluded",
+                    "examined": False,
+                    "method": "",
+                    "sourceHash": hashes["img/B.png"],
+                },
+            ],
+        )["state"]
+        self.assertEqual(
+            (state["selection"], state["counts"]["notExamined"]), (["img/A.png"], 0)
+        )
         self.choose(["img/A.png", "img/B.png"])
         preview = self.service.action(
             self.identity, "preview_apply", {"ready_only": True}

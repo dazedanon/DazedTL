@@ -116,6 +116,8 @@ Copy the task again to continue, or to have it recheck after you spot untranslat
 3. **Translate**: copy the translation task; your assistant edits copies of the ticked images.
 4. **Apply**: check the results, ask your assistant to redo any, then click **Apply to game**.
 
+**More > Investigate all images again** has your assistant start over; its recommendations replace your list, except images already translated.
+
 Clicking an image only previews it; its tick box, Space or Ctrl-click ticks it, and **Compare** shows the original beside the edited copy.
 
 **When something fails.** A banner above the files explains a failed run, and **Run history** lists the task's runs.

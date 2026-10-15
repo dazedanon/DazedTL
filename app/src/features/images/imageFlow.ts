@@ -61,6 +61,7 @@ export function imageFlow(
               : "translate";
   return {
     step,
+    investigated,
     listed,
     toTranslate,
     /** Images in the list the assistant has not translated yet. */

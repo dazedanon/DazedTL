@@ -257,12 +257,18 @@ class Index:
             examined = db.execute(
                 "SELECT count(*) FROM assets WHERE examined=1"
             ).fetchone()[0]
+            # Images in the game and excluded ones are settled, so they are
+            # not left for an investigation of the remaining images.
+            remaining = db.execute(
+                "SELECT count(*) FROM assets WHERE examined=0 AND state!='applied'"
+                " AND classification!='excluded'"
+            ).fetchone()[0]
             return {
                 "indexed": indexed,
                 "examined": examined,
                 "recommended": classifications.get("recommended", 0),
                 "uncertain": classifications.get("uncertain", 0),
-                "notExamined": indexed - examined,
+                "notExamined": remaining,
                 "ready": states.get("ready", 0),
                 "needsReview": states.get("needs_review", 0),
                 "blocked": states.get("blocked", 0),

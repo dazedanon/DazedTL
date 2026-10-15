@@ -808,7 +808,9 @@ function Manager({
     ? rejected
     : flow.step === "investigate"
       ? flow.waiting.investigation
-        ? "Your assistant is examining the images. The ones it recommends are ticked to translate as it saves them."
+        ? state.discovery.scope === "all"
+          ? "Your assistant is examining every image again. Its recommendations replace your list as it saves them."
+          : "Your assistant is examining the images. The ones it recommends are ticked to translate as it saves them."
         : "Your assistant examines the game's images and recommends the ones with text players read."
       : flow.step === "choose"
         ? flow.listed
@@ -961,6 +963,14 @@ function Manager({
           Investigate the {imageCount(counts.notExamined)} not examined
         </MenuItem>
       )}
+      {flow.step !== "investigate" && flow.investigated && (
+        <MenuItem
+          disabled={jobRunning}
+          onSelect={() => void perform("discovery_task", { scope: "all" })}
+        >
+          Investigate all images again
+        </MenuItem>
+      )}
       <MenuItem disabled={!value.selection.length} onSelect={editText}>
         Edit text…
       </MenuItem>
@@ -1016,7 +1026,14 @@ function Manager({
           disabled={busy || !counts.indexed}
           disabledReason={counts.indexed ? "" : "Index the images first."}
           {...step("discovery_task", "Copying…")}
-          onClick={() => void perform("discovery_task", { scope: "remaining" })}
+          // While a task waits, copying it again hands out the same task.
+          onClick={() =>
+            void perform("discovery_task", {
+              scope: flow.waiting.investigation
+                ? state.discovery.scope || "remaining"
+                : "remaining",
+            })
+          }
         />
       )}
       {translating && (
