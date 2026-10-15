@@ -12,6 +12,11 @@ def prepared(value):
     return json.dumps(value, ensure_ascii=False, indent=4).encode("utf-8")
 
 
+def compact(value):
+    """JSON as RPG Maker writes it inside a setting's string."""
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
 def line(text, original=None):
     command = {"code": 401, "indent": 0, "parameters": [text]}
     if original is not None:
@@ -76,6 +81,41 @@ class JsonMergeTests(unittest.TestCase):
                     "_original": {"name": "剣"},
                 },
             ],
+        )
+
+    def test_json_held_in_a_string_merges_by_the_values_inside(self):
+        # A plugin command's quest list is one string; the release adding a
+        # quest replaced every translated quest with the release's Japanese.
+        def quests(*rows):
+            return compact(
+                [compact({"Title": title, "Reward": reward}) for title, reward in rows]
+            )
+
+        def command(argument):
+            return [
+                {
+                    "code": 357,
+                    "indent": 0,
+                    "parameters": ["QuestSystem", "set", "", {"quests": argument}],
+                }
+            ]
+
+        base = command(quests(("生き抜く風", "10"), ("ヌシの情報", "20")))
+        translated = command(
+            quests(("Wind of Survival", "10"), ("Master's Lead", "20"))
+        )
+        official = command(
+            quests(("生き抜く風", "15"), ("ヌシの情報", "20"), ("新しい依頼", "5"))
+        )
+        self.assertEqual(
+            merged(base, translated, official),
+            command(
+                quests(
+                    ("Wind of Survival", "15"),
+                    ("Master's Lead", "20"),
+                    ("新しい依頼", "5"),
+                )
+            ),
         )
 
     def test_files_that_cannot_line_up_by_value_are_left_to_the_line_merge(self):

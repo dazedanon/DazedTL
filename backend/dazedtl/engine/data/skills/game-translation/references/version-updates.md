@@ -174,6 +174,22 @@ Run the continuation with `GIT_EDITOR=true`.
 
 The payoff is exactly this: official text wins at the conflicting line, a translated line nine rows away survives untouched, and the new official feature line lands.
 
+### Plugins: merge settings by value, never by line
+
+**RPG Maker's `plugins.js` keeps each plugin setting on one line, and a setting often holds a whole list as JSON in a string, such as every quest or every state description.**
+A release that adds one quest changes that line, so a line merge conflicts and `--theirs` returns every translated quest to Japanese.
+Plugins the translation registered (a font fix, an update check) sit beside the release's own registrations and are dropped the same way.
+
+- Parse the `$plugins` array from all three sides and line plugins up by name.
+- Merge each plugin both sides changed by value, opening every string that holds a JSON object or array, but only where writing that JSON back gives the exact same text.
+- Put each plugin only the translation registered back after the plugin it followed, and let the release's entry win for a plugin both registered.
+- Write the result in the release's own layout (RPG Maker's one entry per line, or the prepared format), and fall back to the hunk merge for any other layout.
+
+The same nested JSON appears in plugin command arguments inside maps and common events, so read those by value too.
+
+For plugin scripts, keep the hunk merge, then put back each translated line the release left byte-identical, but only where the translation changed nothing but text in quotes.
+Code the translation rewrote, such as an English word-wrap, stays as Git merged it.
+
 ### Preview: predict per file what the merge will destroy, before any ref moves
 
 Dry-run the same `merge-file --diff-algorithm=histogram --object-id --theirs` that apply will run, and classify each changed path from the `(base, translated, official)` blob triple **in this order**:

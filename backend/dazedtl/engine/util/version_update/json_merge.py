@@ -11,6 +11,10 @@ Translations record their source beside the text they changed, under
 ``_original``. A record keeps those notes for the fields whose translation
 carries over; a field whose translation the release changes comes back whole
 from the release, so no note names text that is no longer there.
+
+Plugin settings and plugin command arguments hold JSON inside strings, such
+as a whole quest list in one value; those merge by the values inside too, so
+a release that adds a quest keeps the translation of the quests it left.
 """
 
 from __future__ import annotations
@@ -21,10 +25,58 @@ from difflib import SequenceMatcher
 
 ORIGINAL = "_original"
 _MISSING = object()
+# The key under which expand() holds a string's JSON.
+_NESTED = "\0json"
 
 
 class _Unsafe(Exception):
     """The translation changed the data's shape, so values cannot line up."""
+
+
+def expand(value):
+    """The value with each string that holds a JSON object or array opened up,
+    when writing that JSON back gives the same text; collapse() writes it back."""
+    if isinstance(value, str):
+        if value[:1] in ("[", "{"):
+            try:
+                inner = json.loads(value)
+            except ValueError:
+                return value
+            if isinstance(inner, (dict, list)) and _compact(inner) == value:
+                return {_NESTED: expand(inner)}
+        return value
+    if isinstance(value, dict):
+        return {key: expand(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [expand(item) for item in value]
+    return value
+
+
+def collapse(value):
+    if isinstance(value, dict):
+        if _nested(value):
+            return _compact(collapse(value[_NESTED]))
+        return {key: collapse(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [collapse(item) for item in value]
+    return value
+
+
+def _compact(value) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _nested(value) -> bool:
+    return isinstance(value, dict) and _NESTED in value
+
+
+def merge_value(base, translation, release):
+    """The release's value with the translation of everything it left
+    unchanged, or None when the translation changed the value's shape."""
+    try:
+        return collapse(_merge(expand(base), expand(translation), expand(release)))
+    except _Unsafe:
+        return None
 
 
 def merge_json(base: bytes, translated: bytes, official: bytes) -> str | None:
@@ -45,9 +97,8 @@ def merge_json(base: bytes, translated: bytes, official: bytes) -> str | None:
         return None
     if release.rstrip("\n") != _format(new):
         return None
-    try:
-        merged = _merge(old, translation, new)
-    except _Unsafe:
+    merged = merge_value(old, translation, new)
+    if merged is None:
         return None
     return _format(merged) + release[len(release.rstrip("\n")) :]
 
@@ -66,6 +117,10 @@ def _plain(value):
 
 
 def _merge(old, translation, new):
+    if _nested(translation) != _nested(old):
+        # The translation wrote the JSON text another way, so the values
+        # inside cannot line up; the text merges as one value.
+        return copy.deepcopy(translation if _plain(old) == _plain(new) else new)
     plain_old, plain_translation = _plain(old), _plain(translation)
     if type(plain_translation) is not type(plain_old):
         raise _Unsafe

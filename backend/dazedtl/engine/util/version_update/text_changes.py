@@ -1,11 +1,13 @@
 """What an official update does to a game's text, line by line.
 
-A preview names the files an update changes; this reads the JSON among them
-as data, so its Japanese strings become lines: the old release's, the new
-release's, the translation's and what the game will hold once the update
-merges. Lines line up by text between the two releases, since a release that
-inserts a command shifts every position after it, and by position between a
-release and its translation, which only rewrites strings in place.
+A preview names the files an update changes; this reads the JSON and the
+plugins among them as data, so their Japanese strings become lines: the old
+release's, the new release's, the translation's and what the game will hold
+once the update merges. Lines line up by text between the two releases,
+since a release that inserts a command shifts every position after it, and
+by position between a release and its translation, which only rewrites
+strings in place. A plugin registry's settings read as data by plugin, and a
+plugin script's lines that hold Japanese in quotes are its strings.
 """
 
 from __future__ import annotations
@@ -13,11 +15,16 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+from collections import Counter
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from pathlib import Path
 
+from util.rpgmaker_plugin_registry import PluginRegistryError, plugin_entries
+
 from .git_workflow import GitWorkflowError, UpdatePreview, inspect_repository, merged_file, _tree_files
+from .json_merge import expand
+from .script_merge import is_plugin_registry, paired_lines, quoted_text
 
 JAPANESE = re.compile(r"[぀-ヿ㐀-䶿一-鿿ｦ-ﾟ]")
 # A file's lines a preview keeps for display, and all files' lines together;
@@ -82,9 +89,70 @@ def _parse(raw: bytes | None):
     if raw is None:
         return None
     try:
-        return json.loads(raw.decode("utf-8-sig"))
+        return expand(json.loads(raw.decode("utf-8-sig")))
     except (UnicodeDecodeError, ValueError):
         return None
+
+
+def _plugins(raw: bytes | None):
+    """A plugin registry's settings by plugin, so a plugin the translation or
+    the release registered shifts no other plugin's strings."""
+    if raw is None:
+        return None
+    try:
+        entries = plugin_entries(raw.decode("utf-8"))
+    except (UnicodeDecodeError, PluginRegistryError):
+        return None
+    document, seen = {}, Counter()
+    for value in entries:
+        name = str(value.get("name"))
+        document[f"{name}#{seen[name]}"] = expand(value.get("parameters"))
+        seen[name] += 1
+    return document
+
+
+def _script(raw: bytes | None) -> list[str] | None:
+    if raw is None:
+        return None
+    try:
+        return raw.decode("utf-8").splitlines()
+    except UnicodeDecodeError:
+        return None
+
+
+def _text_line(line: str) -> str:
+    """A script line that holds Japanese in quotes, or nothing for code and
+    comments, such as a plugin's help."""
+    text = line.strip()
+    if text.startswith(("//", "/*", "*")) or not any(JAPANESE.search(value) for value in quoted_text(text)):
+        return ""
+    return text
+
+
+def _documents(path, base, translated, official, merged):
+    """The sides as documents whose strings share keys: a release's by its
+    own, a translation by its source's and the merge by the new release's;
+    None when the new release's file cannot be read."""
+    if is_plugin_registry(path) or not path.casefold().endswith(".js"):
+        read = _plugins if is_plugin_registry(path) else _parse
+        new = read(official)
+        if new is None:
+            return None
+        result = read(merged)
+        return read(base), read(translated), new, new if result is None else result
+    old, translation, new, result = (_script(raw) for raw in (base, translated, official, merged))
+    if new is None:
+        return None
+    # A translation and a merge may add or remove lines, so each line takes
+    # the key of the release line it stands for.
+    return (
+        None if old is None else [_text_line(line) for line in old],
+        None
+        if translation is None
+        else {line: translation[other].strip() for line, other in paired_lines(old or [], translation).items()},
+        [_text_line(line) for line in new],
+        None if result is None else {line: result[other].strip() for line, other in paired_lines(new, result).items()},
+    )
 
 
 def _blobs(repo: Path, objects: list[str]) -> dict[str, bytes]:
@@ -229,7 +297,7 @@ def _replace_whole(path, current, official, budget) -> FileText:
 
 
 def text_changes(game_root: str | Path, preview: UpdatePreview) -> TextChanges:
-    """The lines a previewed update adds, changes and removes in the game's JSON files."""
+    """The lines a previewed update adds, changes and removes in the game's JSON files and plugins."""
     game = Path(game_root).expanduser().resolve()
     status = inspect_repository(game)
     if not status.repo_root:
@@ -245,7 +313,9 @@ def text_changes(game_root: str | Path, preview: UpdatePreview) -> TextChanges:
     tracked = [
         change.path
         for change in preview.file_changes
-        if change.path.casefold().endswith(".json") and not change.already_present and change.change != "Removed"
+        if change.path.casefold().endswith((".json", ".js"))
+        and not change.already_present
+        and change.change != "Removed"
     ]
     blobs = _blobs(
         repo,
@@ -259,7 +329,7 @@ def text_changes(game_root: str | Path, preview: UpdatePreview) -> TextChanges:
     budget = [ALL_LINES]
     files = []
     for path in tracked:
-        base, translated, official = (_parse(read(side, path)) for side in ("base", "translated", "official"))
+        base, translated, official = (read(side, path) for side in ("base", "translated", "official"))
         if official is None:
             continue
         entries = [trees[side].get(full(path)) for side in ("translated", "base", "official")]
@@ -267,8 +337,10 @@ def text_changes(game_root: str | Path, preview: UpdatePreview) -> TextChanges:
         if all(entries) and entries[0][1] not in (entries[1][1], entries[2][1]):
             # Both sides changed the file: what the merge keeps, or the new
             # release's file when Git cannot merge it, such as binary content.
-            merged = _parse(merged_file(repo, full(path), *(entry[1] for entry in entries))) or official
-        files.append(_compare(path, base, translated, official, merged, budget))
+            merged = merged_file(repo, full(path), *(entry[1] for entry in entries)) or official
+        documents = _documents(path, base, translated, official, merged)
+        if documents is not None:
+            files.append(_compare(path, *documents, budget))
     # Files outside Git, such as maps no translation version saved, replace
     # the game's copy whole, and no old release is kept to compare with.
     for change in preview.external_changes:

@@ -255,6 +255,32 @@ def plugin_entries(content: str) -> tuple[dict, ...]:
     return tuple(entry.value for entry in _parse_registry(content).entries)
 
 
+def entry_texts(content: str) -> tuple[tuple[dict, str], ...]:
+    """Each registry entry's values and its exact text, in load order."""
+    return tuple((entry.value, entry.raw) for entry in _parse_registry(content).entries)
+
+
+def with_entries(content: str, entries: list[str]) -> str | None:
+    """The registry holding these entry texts in place of its own, laid out as
+    `content` is: RPG Maker's own one entry per line, whose entries must each
+    be one line, or the canonical format; None for any other layout."""
+    registry = _parse_registry(content)
+    newline = "\r\n" if "\r\n" in content else "\n"
+    own = [entry.raw for entry in registry.entries]
+
+    def native(items: list[str]) -> str:
+        body = newline + ("," + newline).join(items) + newline if items else newline
+        return content[: registry.array_start + 1] + body + content[registry.array_end - 1 :]
+
+    if native(own) == content:
+        if any("\n" in entry or "\r" in entry for entry in entries):
+            return None
+        return native(entries)
+    if format_plugins_js(_render_registry(content, registry, own, newline)) == content:
+        return format_plugins_js(_render_registry(content, registry, entries, newline))
+    return None
+
+
 def plugin_names(content: str) -> tuple[str, ...]:
     """Validate a registry and return its plugin names in load order."""
     registry = _parse_registry(content)

@@ -16,6 +16,7 @@ from util.dazedformat import format_json_files
 from util.len_git import setup_git
 from util.len_translation import LenProject
 from util.project_preparation import prepare_rpgmaker_patch
+from util.rpgmaker_plugin_registry import plugin_entries
 from util.version_update import apply_official_update, preview_official_update
 from util.version_update.release_layout import inspect_release, stage_release
 from util.version_update.text_changes import text_changes
@@ -108,6 +109,27 @@ translation = [
 # changes that conversation too, the file merges by Git's lines, not by value.
 translation[3]["list"].insert(2, event_command(401, "(continued)"))
 write_json(common_events, translation)
+# The translation sets a plugin's text, registers a plugin of its own and
+# translates a script's string.
+plugins_js = game / "js/plugins.js"
+TRANSLATION_PLUGIN = (
+    '{"name":"Translation","status":true,"description":"","parameters":{}}'
+)
+plugins_js.write_text(
+    plugins_js.read_text(encoding="utf-8")
+    .replace("ようこそ、魔法の世界へ！", "Welcome to magic!")
+    .replace("\n];", ",\n" + TRANSLATION_PLUGIN + "\n];"),
+    encoding="utf-8",
+    newline="\n",
+)
+title_message = game / "js/plugins/TitleMessage.js"
+title_message.write_text(
+    title_message.read_text(encoding="utf-8").replace(
+        "冒険の始まり", "The adventure begins"
+    ),
+    encoding="utf-8",
+    newline="\n",
+)
 subprocess.run(
     [
         "git",
@@ -269,13 +291,39 @@ official[3]["list"][-2]["parameters"][0] = "会話3の最後の行"
 newer = temporary / "newer/data"
 newer.mkdir(parents=True)
 write_json(newer / "CommonEvents.json", official)
-preview = preview_official_update(game, newer.parent, "1.03", patch_overlay=True)
-entry = next(
-    entry
-    for entry in text_changes(game, preview).files
-    if entry.path == "data/CommonEvents.json"
+# It also gives the title plugin a subtitle and registers a plugin of its own,
+# which replaced the translated plugin and dropped the translation's plugin,
+# and edits the script line beside the translated one, which took the
+# translated line with it.
+(newer.parent / "js/plugins").mkdir(parents=True)
+(newer.parent / "js/plugins.js").write_text(
+    (fixture / "js/plugins.js")
+    .read_text(encoding="utf-8")
+    .replace('"fontSize":"28"', '"fontSize":"28","subtitle":"第二章"')
+    .replace(
+        "\n];",
+        ',\n{"name":"Battleback","status":true,"description":"","parameters":{}}\n];',
+    ),
+    encoding="utf-8",
+    newline="\n",
 )
-assert entry.replaced == 1, entry
+(newer.parent / "js/plugins/TitleMessage.js").write_text(
+    (fixture / "js/plugins/TitleMessage.js")
+    .read_text(encoding="utf-8")
+    .replace("parameters('TitleMessage')", 'parameters("TitleMessage")')
+    .replace("})();", "  console.log('第二章');\n})();"),
+    encoding="utf-8",
+    newline="\n",
+)
+preview = preview_official_update(game, newer.parent, "1.03", patch_overlay=True)
+text = {entry.path: entry for entry in text_changes(game, preview).files}
+assert text["data/CommonEvents.json"].replaced == 1, text
+for path in ("js/plugins.js", "js/plugins/TitleMessage.js"):
+    assert (text[path].to_translate, text[path].replaced, text[path].kept) == (
+        1,
+        0,
+        1,
+    ), text[path]
 result = apply_official_update(
     game,
     newer.parent,
@@ -291,4 +339,19 @@ assert result.complete, result
 merged = json.loads(common_events.read_text(encoding="utf-8"))
 translation[3]["list"][-2] = official[3]["list"][-2]
 assert merged == [None, official[1], *translation[2:4], official[4]], merged
+assert [
+    (entry["name"], entry["parameters"])
+    for entry in plugin_entries(plugins_js.read_text(encoding="utf-8"))
+] == [
+    (
+        "TitleMessage",
+        {"text": "Welcome to magic!", "fontSize": "28", "subtitle": "第二章"},
+    ),
+    ("Translation", {}),
+    ("Battleback", {}),
+], plugins_js.read_text(encoding="utf-8")
+script = title_message.read_text(encoding="utf-8")
+assert 'parameters("TitleMessage")' in script and "The adventure begins" in script, (
+    script
+)
 print("ok")

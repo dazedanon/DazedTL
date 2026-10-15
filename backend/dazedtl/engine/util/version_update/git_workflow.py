@@ -29,6 +29,7 @@ import jsbeautifier
 from util.paths import ensure_game_tool_gitignore, staging_folder
 
 from .json_merge import merge_json
+from .script_merge import is_plugin_registry, merge_plugins, restore_lines
 
 
 ORIGINAL_BRANCH = "original"
@@ -2115,16 +2116,12 @@ def _resolve_conflicts_with_official(repo: Path, prefix: str) -> tuple[str, ...]
 
         if all(stage in stages for stage in (1, 2, 3)):
             official_mode, official_object = stages[3]
-            # Game data merges by value, so a translated line next to a line
-            # the release inserted keeps its translation.
-            merged_json = (
-                _merged_json(repo, stages[1][1], stages[2][1], official_object)
-                if path.casefold().endswith(".json")
-                else None
-            )
-            if merged_json is not None:
+            # Game data and plugin settings merge by value, so a translated
+            # line next to a line the release inserted keeps its translation.
+            merged_value = _merged_by_value(repo, path, stages[1][1], stages[2][1], official_object)
+            if merged_value is not None:
                 blob = _run_git(
-                    repo, "hash-object", "-w", "--no-filters", "--stdin", input_text=merged_json
+                    repo, "hash-object", "-w", "--no-filters", "--stdin", input_text=merged_value
                 ).stdout.strip()
                 _run_git(
                     repo,
@@ -2149,6 +2146,9 @@ def _resolve_conflicts_with_official(repo: Path, prefix: str) -> tuple[str, ...]
             if merged.returncode == 0 and re.fullmatch(
                 r"[0-9a-f]{40,64}", merged_object
             ):
+                merged_object = _restored_object(
+                    repo, path, stages[1][1], stages[2][1], official_object, merged_object
+                )
                 _run_git(
                     repo,
                     "update-index",
@@ -2549,12 +2549,43 @@ def _merge_file() -> tuple[str, ...]:
     return ("merge-file",)
 
 
-def _merged_json(repo: Path, base: str, translated: str, official: str) -> str | None:
-    """Game data both sides changed, merged by value (see json_merge)."""
-    blobs = [_git_bytes(repo, "cat-file", "blob", identity) for identity in (base, translated, official)]
-    if any(blob.returncode for blob in blobs):
+def _blob_bytes(repo: Path, *objects: str) -> list[bytes] | None:
+    blobs = [_git_bytes(repo, "cat-file", "blob", identity) for identity in objects]
+    return None if any(blob.returncode for blob in blobs) else [blob.stdout for blob in blobs]
+
+
+def _merged_by_value(repo: Path, path: str, base: str, translated: str, official: str) -> str | None:
+    """Game data or a plugin registry both sides changed, merged by value
+    (see json_merge and script_merge)."""
+    if path.casefold().endswith(".json"):
+        merge = merge_json
+    elif is_plugin_registry(path):
+        merge = merge_plugins
+    else:
         return None
-    return merge_json(*(blob.stdout for blob in blobs))
+    blobs = _blob_bytes(repo, base, translated, official)
+    return None if blobs is None else merge(*blobs)
+
+
+def _restored(repo: Path, path: str, base: str, translated: str, official: str, merged: bytes) -> bytes:
+    """A script Git merged by line, with the translated lines the release left
+    back in place (see script_merge)."""
+    if not path.casefold().endswith(".js"):
+        return merged
+    blobs = _blob_bytes(repo, base, translated, official)
+    return merged if blobs is None else restore_lines(*blobs, merged)
+
+
+def _restored_object(repo: Path, path: str, base: str, translated: str, official: str, merged: str) -> str:
+    content = _blob_bytes(repo, merged)
+    if content is None:
+        return merged
+    restored = _restored(repo, path, base, translated, official, content[0])
+    if restored == content[0]:
+        return merged
+    return _run_git(
+        repo, "hash-object", "-w", "--no-filters", "--stdin", input_text=restored.decode("utf-8")
+    ).stdout.strip()
 
 
 def merged_file(repo: Path, path: str, translated: str, base: str, official: str) -> bytes | None:
@@ -2563,17 +2594,20 @@ def merged_file(repo: Path, path: str, translated: str, base: str, official: str
 
     Applying cherry-picks the release: a clean line merge is what Git writes,
     and a conflicted file is resolved as `_resolve_conflicts_with_official`
-    does, game data by value and anything else by hunk, the release winning.
+    does: game data and plugin registries by value, anything else by hunk
+    with the release winning, and then a script's translated lines the
+    release left go back in.
     """
     clean = _git_bytes(repo, *_merge_file(), "-p", "--object-id", translated, base, official)
     if clean.returncode == 0:
         return clean.stdout
-    if path.casefold().endswith(".json"):
-        merged = _merged_json(repo, base, translated, official)
-        if merged is not None:
-            return merged.encode("utf-8")
+    merged = _merged_by_value(repo, path, base, translated, official)
+    if merged is not None:
+        return merged.encode("utf-8")
     theirs = _git_bytes(repo, *_merge_file(), "-p", "--object-id", "--theirs", translated, base, official)
-    return theirs.stdout if theirs.returncode == 0 else None
+    if theirs.returncode:
+        return None
+    return _restored(repo, path, base, translated, official, theirs.stdout)
 
 
 def _display_path(path: str, game_prefix: str) -> str:
