@@ -2137,7 +2137,7 @@ def _resolve_conflicts_with_official(repo: Path, prefix: str) -> tuple[str, ...]
                 continue
             merged = _run_git(
                 repo,
-                "merge-file",
+                *_merge_file(),
                 "--object-id",
                 "--theirs",
                 stages[2][1],
@@ -2532,6 +2532,23 @@ def _git_bytes(repo: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
         raise GitWorkflowError(f"git {_command_name(args)} could not run") from exc
 
 
+@functools.cache
+def _merge_file() -> tuple[str, ...]:
+    """`git merge-file` with the histogram diff the cherry-pick's own merge uses.
+
+    Git's default diff stops searching after a few hundred changed lines and
+    pairs formatted JSON's repeated lines with the wrong commands, so the
+    release won conflicts it never had and replaced translations it left
+    unchanged. merge-file takes histogram from Git 2.44; an older Git keeps
+    the default.
+    """
+    version = _run_git(Path(tempfile.gettempdir()), "--version").stdout
+    match = re.match(r"git version (\d+)\.(\d+)", version)
+    if match and (int(match[1]), int(match[2])) >= (2, 44):
+        return ("merge-file", "--diff-algorithm=histogram")
+    return ("merge-file",)
+
+
 def _merged_json(repo: Path, base: str, translated: str, official: str) -> str | None:
     """Game data both sides changed, merged by value (see json_merge)."""
     blobs = [_git_bytes(repo, "cat-file", "blob", identity) for identity in (base, translated, official)]
@@ -2548,14 +2565,14 @@ def merged_file(repo: Path, path: str, translated: str, base: str, official: str
     and a conflicted file is resolved as `_resolve_conflicts_with_official`
     does, game data by value and anything else by hunk, the release winning.
     """
-    clean = _git_bytes(repo, "merge-file", "-p", "--object-id", translated, base, official)
+    clean = _git_bytes(repo, *_merge_file(), "-p", "--object-id", translated, base, official)
     if clean.returncode == 0:
         return clean.stdout
     if path.casefold().endswith(".json"):
         merged = _merged_json(repo, base, translated, official)
         if merged is not None:
             return merged.encode("utf-8")
-    theirs = _git_bytes(repo, "merge-file", "-p", "--object-id", "--theirs", translated, base, official)
+    theirs = _git_bytes(repo, *_merge_file(), "-p", "--object-id", "--theirs", translated, base, official)
     return theirs.stdout if theirs.returncode == 0 else None
 
 

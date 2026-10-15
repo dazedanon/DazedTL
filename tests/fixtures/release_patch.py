@@ -35,9 +35,55 @@ def lines(path):
     ]
 
 
+def write_json(path, value):
+    path.write_text(
+        json.dumps(value, ensure_ascii=False, indent=4), encoding="utf-8", newline="\n"
+    )
+
+
+def event_command(code, *parameters):
+    return {"code": code, "indent": 0, "parameters": list(parameters)}
+
+
+def common_event(number, commands):
+    return {
+        "id": number,
+        "list": [*commands, event_command(0)],
+        "name": f"会話{number}",
+        "switchId": 1,
+        "trigger": 0,
+    }
+
+
+def conversation(number, speaker, text, rows=5):
+    return common_event(
+        number,
+        [
+            line
+            for row in range(rows)
+            for line in (
+                event_command(101, "", 0, 0, 2, speaker),
+                event_command(401, text(row)),
+            )
+        ],
+    )
+
+
 # A prepared, translated game: formatted data, a baseline, one translated line.
 game = temporary / "game"
 shutil.copytree(fixture, game)
+# Two conversations between a scene and a slot the developer fills later.
+common_events = game / "data/CommonEvents.json"
+conversations = [
+    None,
+    common_event(1, [event_command(108, "")]),
+    *(
+        conversation(number, "サン", lambda row: f"会話{number}の{row}行目")
+        for number in (2, 3)
+    ),
+    common_event(4, []),
+]
+write_json(common_events, conversations)
 format_json_files(game / "data")
 setup_git(LenProject(game), version="1.0", current_is_untranslated=True)
 map001 = game / "data/Map001.json"
@@ -50,6 +96,18 @@ map001.write_text(
     encoding="utf-8",
     newline="\n",
 )
+translation = [
+    *conversations[:2],
+    *(
+        conversation(number, "San", lambda row: f"Talk {number}, line {row}.")
+        for number in (2, 3)
+    ),
+    conversations[4],
+]
+# Wrapping a line onto two changes the conversation's shape, so once a release
+# changes that conversation too, the file merges by Git's lines, not by value.
+translation[3]["list"].insert(2, event_command(401, "(continued)"))
+write_json(common_events, translation)
 subprocess.run(
     [
         "git",
@@ -195,4 +253,42 @@ assert lines(map001)[:3] == [
     TRANSLATED,
     "気をつけるのじゃぞ。",
 ], lines(map001)
+
+# The developer shows a scene's pictures above the conversations, fills the
+# slot below them and rewrites one translated line. Hundreds of lines added on
+# both sides exceeded what Git's default diff searches, so it lined the
+# repeated lines of formatted commands up against the wrong commands, and
+# resolving the one real conflict replaced every translated line between.
+official = json.loads(json.dumps(conversations))
+official[1]["list"][:0] = [
+    event_command(231, 1, f"cg{number:02}", 0, 0, 0, 0, 100, 100, 255, 0)
+    for number in range(40)
+]
+official[4] = conversation(4, "サン", lambda row: f"新しい会話の{row}行目", rows=20)
+official[3]["list"][-2]["parameters"][0] = "会話3の最後の行"
+newer = temporary / "newer/data"
+newer.mkdir(parents=True)
+write_json(newer / "CommonEvents.json", official)
+preview = preview_official_update(game, newer.parent, "1.03", patch_overlay=True)
+entry = next(
+    entry
+    for entry in text_changes(game, preview).files
+    if entry.path == "data/CommonEvents.json"
+)
+assert entry.replaced == 1, entry
+result = apply_official_update(
+    game,
+    newer.parent,
+    "1.03",
+    expected_tree=preview.proposed_tree,
+    expected_original_commit=preview.original_commit,
+    expected_translation_commit=preview.translation_commit,
+    expected_asset_manifest=preview.proposed_asset_manifest,
+    expected_baseline_asset_manifest=preview.baseline_asset_manifest,
+    patch_overlay=True,
+)
+assert result.complete, result
+merged = json.loads(common_events.read_text(encoding="utf-8"))
+translation[3]["list"][-2] = official[3]["list"][-2]
+assert merged == [None, official[1], *translation[2:4], official[4]], merged
 print("ok")

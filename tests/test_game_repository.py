@@ -19,6 +19,8 @@ class GameRepositoryTests(unittest.TestCase):
 
     def test_a_patch_keeps_the_files_it_leaves_out_and_unchanged_translations(self):
         # A patch applied as a complete game removed every file it left out,
-        # and its unformatted maps replaced their translated copies whole.
+        # its unformatted maps replaced their translated copies whole, and a
+        # conflict among hundreds of inserted lines replaced translations it
+        # never touched.
         returncode, output = patch.result()
         self.assertEqual(returncode, 0, output)

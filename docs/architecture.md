@@ -1163,7 +1163,9 @@ A release holding fewer than half of the game's files is a patch, copied over th
 The preview also reads the changed JSON files' Japanese strings as lines ([text_changes](../backend/dazedtl/engine/util/version_update/text_changes.py)): releases line up by text, a translation by position, and the merged result says which translations survive, so the review counts what applying will really drop.
 Applying cherry-picks the release, and a file Git cannot merge cleanly is resolved by [merged_file](../backend/dazedtl/engine/util/version_update/git_workflow.py)'s rules, which the preview and the line view follow too: prepared game data merges by value ([json_merge](../backend/dazedtl/engine/util/version_update/json_merge.py)), anything else by hunk with the release winning.
 Formatted JSON repeats each command's lines, so Git can line a command the release inserted up against a translated one and conflict; by value, whatever the release left keeps its translation and source note, and whatever it changed comes from the release untranslated.
-A translation that added or removed data, or a release file not in the prepared format, falls back to the hunk merge.
+A translation that added or removed data the release also changed, such as a line wrapped onto two in a conversation the release edits, or a release file not in the prepared format, falls back to the hunk merge.
+The hunk merge lines files up with Git's histogram diff, as the cherry-pick's own merge does: the default diff stops searching after a few hundred changed lines and pairs formatted JSON's repeated lines with the wrong commands, so the release won conflicts it never had and replaced translations it left unchanged.
+`git merge-file` takes the histogram diff from Git 2.44; an older Git keeps the default.
 A local delivery packages only reviewed Git files.
 Public publication remains a separate action.
 Guided rewrap application also requires a matching completed scan.

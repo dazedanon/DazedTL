@@ -159,11 +159,13 @@ For each path from `git diff --name-only --diff-filter=U -z`, read `git ls-files
 | Stage state | Meaning | Action |
 |---|---|---|
 | stage 3 missing | official release deleted the file | `git rm -f -- <path>` even though the translation modified it |
-| all three present | real content conflict | `git merge-file --object-id --theirs <ours-oid> <base-oid> <official-oid>` |
+| all three present | real content conflict | `git merge-file --diff-algorithm=histogram --object-id --theirs <ours-oid> <base-oid> <official-oid>` |
 | binary, or add/add | no textual base | `git checkout --theirs -- <path>` then `git add` |
 
 `merge-file --object-id` works purely on object IDs with no worktree files.
 It merges non-overlapping hunks and resolves only the genuinely overlapping ones in favour of the official side, leaving **no conflict markers behind**.
+Pass `--diff-algorithm=histogram` (Git 2.44+), the diff the cherry-pick's own merge uses.
+The default diff stops searching after a few hundred changed lines and pairs formatted JSON's repeated `"indent": 0,` and `]` lines with the wrong commands, so a block of commands inserted above unchanged translated dialogue "conflicts" with every translated line below it, and `--theirs` puts the Japanese back.
 Install the merged blob with `update-index --add --cacheinfo <official-mode>,<merged-oid>,<path>` - take the **official** file mode, not yours - then `checkout-index --force` to write it to disk.
 
 If `merge-file` fails and stderr does not mention `binary`, **raise** rather than guessing.
@@ -174,7 +176,7 @@ The payoff is exactly this: official text wins at the conflicting line, a transl
 
 ### Preview: predict per file what the merge will destroy, before any ref moves
 
-Dry-run the same `merge-file --object-id --theirs` that apply will run, and classify each changed path from the `(base, translated, official)` blob triple **in this order**:
+Dry-run the same `merge-file --diff-algorithm=histogram --object-id --theirs` that apply will run, and classify each changed path from the `(base, translated, official)` blob triple **in this order**:
 
 1. Translation never touched the path -> `New file` / `File removed` / `Official changes applied`. Not a loss.
 2. Official deleted it while the translation changed it -> `whole_file_replaced`, `Translated file removed`.
