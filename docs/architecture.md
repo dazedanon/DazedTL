@@ -806,6 +806,8 @@ Event text findings applied as source choices therefore stay current until the s
 The task's main copy action stays in its footer; an optional companion task, such as layout measurement, keeps its own on its result row.
 Each copy reply names its handoff: the task's kind, request id and the result files it expects back.
 A task whose assistant keeps working after its first results also names the file it saves last, and reads Waiting until that file is saved after the copy; Names & glossary ends with its measured line widths, which its prompt saves last even when nothing could be measured.
+A task whose assistant validates its results after saving them names the validator's report instead, and reads Waiting until a report saved after its last result passes; the player walkthrough skill publishes an MV/MZ page before validating it and republishes until its report passes, while other engines have no validator, so their saved page ends the task.
+The registry reads a report again only when its file time or size changes, and one still being written counts as none; a task whose assistant never validates waits until it is dismissed.
 A widths report with no measurement finishes the line width task as Done with its result Skipped, and the widths stay as they are.
 A widths report for the current request that the app cannot use reads Blocked with its reason, whichever task saved it, and the helper's context status gives the assistant the same reason; an earlier request's report is ignored.
 The [Application](../backend/dazedtl/api/server.py) records it in the [assistant task registry](../backend/dazedtl/translation/assistant_tasks.py) and strips it from the reply, so features keep their own requests, reports and validation.

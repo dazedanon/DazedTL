@@ -56,6 +56,39 @@ class AssistantTaskTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 tasks.copied(PROJECT, {**handoff, "kind": "unknown"})
 
+    def test_a_validation_report_is_read_again_once_it_changes(self):
+        # A failing report read as passing, or a later passing one hidden by
+        # the cache, would end the walkthrough early or never.
+        with TemporaryDirectory() as folder:
+            tasks = AssistantTasks(folder)
+            report = Path(folder, "validation-report.json")
+            tasks.copied(
+                PROJECT,
+                {
+                    "kind": "walkthrough",
+                    "requestId": "",
+                    "expects": [Path(folder, "WALKTHROUGH.html")],
+                    "validation": report,
+                },
+            )
+            self.assertIsNone(tasks.view(PROJECT)[0]["validation"])
+            moment = time.time()
+            for text, outcome in (
+                ('{"status": "failed", "summary": {"errors": 2}}', (False, 2)),
+                # The same size as the failing report; only its time changed.
+                ('{"status": "passed", "summary": {"errors": 0}}', (True, 0)),
+                # A report still being written has no outcome yet.
+                ('{"status": "pass', None),
+            ):
+                report.write_text(text)
+                moment += 1
+                os.utime(report, (moment, moment))
+                validation = tasks.view(PROJECT)[0]["validation"]
+                self.assertEqual(
+                    validation and (validation["passed"], validation["errors"]),
+                    outcome,
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

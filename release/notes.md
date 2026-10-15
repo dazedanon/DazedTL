@@ -8,3 +8,4 @@
 ### Fixed
 
 - **Images:** an image investigation your assistant has saved only part of no longer reads finished and plays the notification while your assistant is still looking at the other images.
+- **Player walkthrough:** an RPG Maker MV/MZ walkthrough no longer reads finished and plays the notification as soon as your assistant first saves `WALKTHROUGH.html`; it waits until your assistant's validation of the last saved page passes, and Release says when the page is saved but not validated yet or validation found errors.

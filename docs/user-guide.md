@@ -159,6 +159,7 @@ Translations that aren't in the game yet need **Apply** first.
 The ZIP shows **Outdated** once the game changes; build it again to include the changes.
 To let players update from a public repository, see [Publishing with GameUpdate](#publishing-with-gameupdate).
 **Player walkthrough** copies an optional task for your assistant to write a walkthrough for players.
+For an RPG Maker MV/MZ game it reads **Done** once your assistant's validation of the saved page passes.
 
 ### RPG Maker VX Ace
 

@@ -54,6 +54,15 @@ type AssistantTaskKind = Literal[
 ]
 
 
+class AssistantTaskValidation(TypedDict):
+    """The newest report from a validator the assistant runs on its results."""
+
+    savedAt: str
+    passed: bool
+    # The errors it counted; zero when it does not say.
+    errors: int
+
+
 class AssistantTaskRecord(TypedDict):
     """A task copied to a coding assistant; each feature keeps its results."""
 
@@ -66,6 +75,9 @@ class AssistantTaskRecord(TypedDict):
     # When the result the task saves last was saved, for a task that keeps
     # working after its first results; null until it is.
     finishedAt: NotRequired[str | None]
+    # For a task whose assistant validates its results after saving them;
+    # null while no readable report is saved.
+    validation: NotRequired[AssistantTaskValidation | None]
 
 
 class WorkspaceSnapshot(TypedDict):

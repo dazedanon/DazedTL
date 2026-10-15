@@ -2387,6 +2387,13 @@ export type AssistantTaskKind =
   | "qa"
   | "walkthrough";
 
+/** The newest report from a validator the assistant runs on its results. */
+export type AssistantTaskValidation = {
+  savedAt: string;
+  passed: boolean;
+  errors: number;
+};
+
 /** A task copied to a coding assistant; each feature keeps its results. */
 export type AssistantTaskRecord = {
   kind: AssistantTaskKind;
@@ -2395,6 +2402,7 @@ export type AssistantTaskRecord = {
   resultAt: string | null;
   dismissed: boolean;
   finishedAt?: string | null;
+  validation?: AssistantTaskValidation | null;
 };
 
 export type WorkspaceSnapshot = {

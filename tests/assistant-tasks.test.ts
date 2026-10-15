@@ -43,6 +43,20 @@ test("copied tasks wait for a newer result, and dismissed ones read Not started"
     withHandoff("not_started", assistantWaiting("walkthrough", earlier)),
     "waiting",
   );
+  // An MV/MZ page is validated after it is published, so only a passing
+  // report saved after its last save finishes the task.
+  const validated = (savedAt: string, passed: boolean) => ({
+    records: [
+      { ...later.records[0], validation: { savedAt, passed, errors: 0 } },
+    ],
+  });
+  for (const [sources, state] of [
+    [{ records: [{ ...later.records[0], validation: null }] }, "waiting"],
+    [validated("2026-10-07T10:31:00.000+00:00", false), "waiting"],
+    [validated("2026-10-07T10:29:00.000+00:00", true), "waiting"],
+    [validated("2026-10-07T10:31:00.000+00:00", true), undefined],
+  ] as const)
+    assert.equal(assistantTasks(sources)[0]?.state, state);
 
   // Copying an unchanged image task again reuses its request, so its report
   // still reads complete; it waits until a newer report is saved.

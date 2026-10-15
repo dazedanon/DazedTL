@@ -93,13 +93,25 @@ const savedSinceCopy = (record?: AssistantTaskRecord) =>
   !!record?.resultAt &&
   Date.parse(record.resultAt) >= Date.parse(record.copiedAt);
 
+/** The task's validation report, when it was saved after its last result. */
+const lastValidation = (record: AssistantTaskRecord) =>
+  record.validation &&
+  record.resultAt &&
+  Date.parse(record.validation.savedAt) >= Date.parse(record.resultAt)
+    ? record.validation
+    : null;
+
 /**
  * A copied task its assistant is still working on: nothing came back since
- * the copy, or the result it saves last has not. A dismissed task is not.
+ * the copy, the result it saves last has not, or, for a task whose assistant
+ * validates its results, no passing validation followed the last one. A
+ * dismissed task is not.
  */
 export function unfinishedCopy(record?: AssistantTaskRecord) {
   if (!record || record.dismissed) return false;
   if (!savedSinceCopy(record)) return true;
+  if (record.validation !== undefined && !lastValidation(record)?.passed)
+    return true;
   return (
     record.finishedAt !== undefined &&
     !(
@@ -241,8 +253,20 @@ function standing(
       ? waiting()
       : { state: "idle" };
   }
-  // The walkthrough is finished once its page is saved.
-  return copied && !back ? waiting() : { state: copied ? "finished" : "idle" };
+  // The walkthrough is finished once its page is saved. An MV/MZ page is
+  // validated only after it is published and republished until its report
+  // passes, so it finishes with a passing report after its last save.
+  if (!copied) return { state: "idle" };
+  if (!back) return waiting();
+  if (!unfinishedCopy(record)) return { state: "finished" };
+  const report = lastValidation(record);
+  return waiting(
+    !report
+      ? "Saved as WALKTHROUGH.html, waiting for validation"
+      : report.errors
+        ? `Validation found ${report.errors.toLocaleString()} ${report.errors === 1 ? "error" : "errors"} in WALKTHROUGH.html`
+        : "WALKTHROUGH.html did not pass validation",
+  );
 }
 
 /** When a task was handed out, for a task with no record of its own. */
@@ -313,6 +337,7 @@ export function assistantWaiting(
     dismissed: !!record?.dismissed,
     copied: !!record && !record.dismissed,
     since: task?.since || "",
+    detail: task?.detail || "",
     saved: savedSinceCopy(record),
   };
 }
@@ -324,6 +349,8 @@ export interface Handoff {
   /** Copied in this project, and not dismissed since. */
   copied: boolean;
   since: string;
+  /** What it waits for, when the shared list says. */
+  detail: string;
   saved: boolean;
 }
 
@@ -333,6 +360,7 @@ export const noHandoff: Handoff = {
   dismissed: false,
   copied: false,
   since: "",
+  detail: "",
   saved: false,
 };
 

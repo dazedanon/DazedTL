@@ -61,6 +61,13 @@ class GuidedContext:
                 "requestId": "",
                 "expects": [root / "WALKTHROUGH.html"],
             }
+            # The skill validates an MV/MZ page only after publishing it and
+            # republishes until its report passes; other engines have no
+            # validator, so their saved page ends the task.
+            if native["engine"] == "MVMZ":
+                handoff["validation"] = (
+                    root / ".dazedtl/walkthrough/validation-report.json"
+                )
         if name == "setup":
             schema = self.guided.backend.workflows.state(native["id"])["engine_schema"]
             request = speaker_setup.request(

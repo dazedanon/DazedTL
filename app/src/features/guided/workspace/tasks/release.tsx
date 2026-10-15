@@ -148,7 +148,7 @@ export function packageView(w: GuidedWorkspace): TaskView {
                 )}
                 <small>
                   {writing.waiting
-                    ? `Expecting WALKTHROUGH.html in the game folder · ${sinceLabel(writing.since)}`
+                    ? `${writing.detail || "Expecting WALKTHROUGH.html in the game folder"} · ${sinceLabel(writing.since)}`
                     : writing.saved
                       ? "Saved as WALKTHROUGH.html in the game folder."
                       : "Optional. Your coding assistant writes a portable walkthrough for players."}
