@@ -186,11 +186,15 @@ p.muted {
 [hidden] {
   display: none !important;
 }
-/* Read by assistive technology, not drawn. */
+/* Read by assistive technology, not drawn. The negative margin keeps it from
+   reaching past content that fills a scrolling box, which showed a scrollbar. */
 .sr-only {
   position: absolute;
   width: 1px;
   height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
