@@ -127,7 +127,8 @@ source lookup data, not proof that every database actor speaks. Variable mapping
 inspect assignments and runtime changes before treating them as identities. Resolve referenced IDs using
 their actual game context. Check the entire discovery result, not only a sample. A failed or stale scan is not complete;
 resolve its reported issue before continuing. If game data changes later in the investigation,
-refresh affected format findings and scan again before finishing. The scan is a local tool action,
+scan again before finishing. Once a scan applies the findings they stay a record of what you
+inspected, so rewrite them only when a change alters the evidence they cite. The scan is a local tool action,
 not the legacy paid name-translation run. No provider connection is needed.
 The app must be running with this project initialized. If loopback access is blocked, use the
 assistant's normal permission flow for this helper and verify its read-only status before retrying

@@ -2413,7 +2413,11 @@ class GuidedTests(unittest.TestCase):
         self.assertFalse(self.guided.speakers(self.identity)["current"])
         (self.source / "NewPluginData.JSON").unlink()
         write_json(self.source / "Items.json", [{"name": "changed"}])
-        self.assertFalse(self.guided.speakers(self.identity)["current"])
+        stale = self.guided.speakers(self.identity)
+        self.assertFalse(stale["current"])
+        # The setup task rewrote valid findings when it could not see why a
+        # scan went stale; the status names the changed file instead.
+        self.assertIn("Items.json", stale["issue"])
 
     def test_speaker_application_preserves_overrides_and_recovered_preferences_across_new_findings(
         self,

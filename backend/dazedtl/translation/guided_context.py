@@ -438,16 +438,19 @@ class GuidedContext:
         )
         result = saved.get("result") or {} if saved else {}
         available = saved is not None
-        current = bool(
-            saved
-            and job is not None
-            and job["id"] == saved["id"]
-            and result.get("configuration") == self.speaker_configuration(native)
-            and result.get("reportId")
+        current = bool(saved and job is not None and job["id"] == saved["id"])
+        # Why a saved scan no longer matches, so the next step is plain.
+        stale = ""
+        if current and result.get("configuration") != self.speaker_configuration(
+            native
+        ):
+            current, stale = False, "Speaker settings changed since the scan."
+        elif current and not (
+            result.get("reportId")
             == native.get("guided_speakers", {}).get("reportId")
-            and result.get("reportId")
             == self.speaker_findings(project_id, native)["reportId"]
-        )
+        ):
+            current, stale = False, "Speaker findings changed since the scan."
         if current:
             try:
                 root = Path(native["source"])
@@ -464,17 +467,22 @@ class GuidedContext:
                     if Path(name).parent == data_relative
                     and Path(name).suffix.lower() == ".json"
                 }
-                current = (
-                    inventory == scanned
-                    and bool(scanned)
-                    and all(
-                        self.guided.observed_digest(
+                changed = sorted(
+                    (inventory ^ scanned)
+                    | {
+                        name
+                        for name, sha in result["source_inputs"].items()
+                        if self.guided.observed_digest(
                             project_path(native["source"], name)
                         )
-                        == sha
-                        for name, sha in result["source_inputs"].items()
-                    )
+                        != sha
+                    }
                 )
+                current = bool(scanned) and not changed
+                if changed:
+                    shown = ", ".join(Path(name).name for name in changed[:3])
+                    more = f" and {len(changed) - 3} more" if len(changed) > 3 else ""
+                    stale = f"Game files changed since the scan: {shown}{more}."
             except OSError, ValueError:
                 current = False
         return {
@@ -495,5 +503,7 @@ class GuidedContext:
             "path": str(artifact) if available else None,
             "issue": "The saved scan file is missing or no longer matches its saved result."
             if not available and any(item["status"] == "complete" for item in jobs)
+            else f"{stale} Run the scan again."
+            if stale
             else "",
         }
