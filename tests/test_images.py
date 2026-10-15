@@ -25,6 +25,9 @@ from dazedtl.translation.files import digest, read_json
 from dazedtl.translation.operations import lifecycle_path
 from PIL import Image
 
+from tests.test_image_families import TEXTS, backdrop, letter
+from tests.test_image_families import png as rgba_png
+
 # Background scans finish in milliseconds, but a slow Windows CI runner took
 # over two seconds; like the probes, a stuck scan still fails within the
 # suite's budget (scripts/test.mjs).
@@ -711,6 +714,22 @@ class ImageTests(unittest.TestCase):
         self.assertEqual(
             self.service.list(self.identity, asset_id="img/A.png")["items"][0]["state"],
             "ready",
+        )
+
+    def test_a_scan_hands_each_task_the_family_of_its_images(self):
+        # Without its family, an assistant inpaints a backdrop the image's
+        # siblings hold exactly.
+        base = backdrop()
+        for index, strokes in enumerate(TEXTS[:3]):
+            write_bytes(
+                self.game / f"img/Card{index}.png", rgba_png(letter(base, strokes))
+            )
+        self.scan()
+        request, _ = self.request("discovery_task", ["img/Card0.png"])
+        family = request["assets"][0]["family"]
+        self.assertEqual(
+            [member["id"] for member in family["members"]],
+            ["img/Card0.png", "img/Card1.png", "img/Card2.png"],
         )
 
     def test_validation_catches_metadata_loss_hidden_colour_and_stray_changes(self):
