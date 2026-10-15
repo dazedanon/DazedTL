@@ -218,6 +218,11 @@
   width: 100%;
   min-width: 0;
 }
+/* The label's gap spaces a text box like every other field; the page
+   margin a textarea brings would push it away from its label. */
+.native-editor-block-form textarea {
+  margin: 0;
+}
 /* Position, then size: four across left each field too narrow for a
    four-digit coordinate beside its spinner. */
 .native-editor-box-fields {
