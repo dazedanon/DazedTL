@@ -6,6 +6,7 @@ findings are checked end to end without an assistant.
 
 import json
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 root, temporary = map(Path, sys.argv[1:])
@@ -1164,4 +1165,48 @@ for undo, expected in (
         regression_name="regression.json",
     )["valid"]
     assert message4() == expected, message4()
+
+
+def pace(lanes):
+    """A screen stage that reviewed bundles of ten targets in *lanes* at
+    once, two minutes each, up to a minute ago, with one bundle waiting."""
+    now = datetime.now(UTC)
+    rows = [
+        {
+            "id": f"screen-{index:04d}",
+            "status": "accepted",
+            # Two names taking turns are still one bundle at a time.
+            "assigned_to": f"rev-{index % max(2, lanes)}",
+            "assigned_at": (
+                now - timedelta(minutes=13 - 2 * (index // lanes))
+            ).isoformat(),
+            "accepted_at": (
+                now - timedelta(minutes=11 - 2 * (index // lanes))
+            ).isoformat(),
+            "item_count": 10,
+        }
+        for index in range(6 * lanes)
+    ]
+    rows.append({"id": "screen-0099", "status": "pending", "item_count": 10})
+    seen = {"bundles": 3, "seconds": 360.0, "last_seen": now.isoformat()}
+    return qa._estimate(
+        {
+            "workers": {f"rev-{index}": seen for index in range(max(2, lanes))},
+            "screen": {
+                "bundles": rows,
+                "total_items": 70 * lanes,
+                "accepted_items": 60 * lanes,
+            },
+        }
+    )
+
+
+# Time left follows the bundles in review at once, not the names seen.
+alone, together = pace(1), pace(4)
+assert alone["in_review_at_once"] == 1.0, alone
+assert alone["eta_seconds"] == round(alone["remaining"]["screen"] * 12), alone
+assert together["in_review_at_once"] == 4.0, together
+assert together["eta_seconds"] == round(together["remaining"]["screen"] * 12 / 4), (
+    together
+)
 print("ok")

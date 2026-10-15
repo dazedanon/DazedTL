@@ -21,7 +21,7 @@ import tempfile
 import unicodedata
 from collections import Counter, defaultdict
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
@@ -97,7 +97,8 @@ EARLY_DEEP_BATCH = DEFAULT_DEEP_ITEM_LIMIT
 # A bundle whose worker has not been seen this long, or three times a typical
 # bundle's time when longer, has stalled; the next idle worker takes it.
 STALL_MINIMUM_SECONDS = 20 * 60
-# Workers seen this recently count toward the estimate.
+# Workers seen this recently are active, and reviews in this much of QA's
+# latest work measure how many bundles it reviews at once.
 ACTIVE_WORKER_SECONDS = 30 * 60
 # Seconds one review target takes, by stage, until the task has measured it.
 DEFAULT_SECONDS_PER_ITEM = {"screen": 5.0, "deep": 60.0, "sweep": 4.0, "editorial": 30.0}
@@ -2727,6 +2728,43 @@ def _stalled(checkpoint: dict[str, Any], stage: str, row: dict[str, Any]) -> boo
     return idle > _stall_after(checkpoint, stage)
 
 
+def _pace(checkpoint: dict[str, Any], now: datetime) -> float:
+    """How many bundles QA reviewed at once in its latest work, on average.
+
+    Reviewers are counted by the bundles they held, not the names they used:
+    one session taking turns under two names reviews one bundle at a time.
+    The window ends at the latest review, so a pause leaves the pace as QA
+    last worked; idle time between bundles inside it slows the pace, as it
+    slows QA.
+    """
+    spans = []
+    for stage in REVIEW_STAGES:
+        for row in (checkpoint.get(stage) or {}).get("bundles", []):
+            if not row.get("assigned_at"):
+                continue
+            if row["status"] == "accepted" and row.get("accepted_at"):
+                end = datetime.fromisoformat(row["accepted_at"])
+            elif row["status"] == "assigned" and not _stalled(checkpoint, stage, row):
+                end = now
+            else:
+                continue
+            spans.append((datetime.fromisoformat(row["assigned_at"]), end))
+    if not spans:
+        return 0.0
+    latest = max(end for _start, end in spans)
+    recent = [
+        span for span in spans
+        if span[1] > latest - timedelta(seconds=ACTIVE_WORKER_SECONDS)
+    ]
+    start = max(
+        latest - timedelta(seconds=ACTIVE_WORKER_SECONDS),
+        min(begin for begin, _end in recent),
+    )
+    window = (latest - start).total_seconds()
+    reviewing = sum((end - max(begin, start)).total_seconds() for begin, end in recent)
+    return reviewing / window if window > 0 else 1.0
+
+
 def _estimate(checkpoint: dict[str, Any]) -> dict[str, Any]:
     """The work left by stage and the engine's estimate of its time."""
     now = datetime.now(timezone.utc)
@@ -2757,10 +2795,12 @@ def _estimate(checkpoint: dict[str, Any]) -> dict[str, Any]:
         _reviewed_seconds((checkpoint.get(stage) or {}).get("bundles", []))
         for stage in REVIEW_STAGES
     )
+    at_once = _pace(checkpoint, now)
     return {
         "remaining": remaining,
         "workers": active,
-        "eta_seconds": round(seconds / max(1, len(active))) if measured else None,
+        "in_review_at_once": round(at_once, 1),
+        "eta_seconds": round(seconds / (at_once or 1)) if measured else None,
     }
 
 
