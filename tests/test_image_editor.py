@@ -324,6 +324,37 @@ class EditorTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate_blocks([{**block, "style": broken}], 64, 32)
 
+    def test_a_box_keeps_a_saved_font_that_has_gone_missing(self):
+        identities = self.ids[:1]
+        state = self.editor.state("project", identities)
+        block = {
+            "id": "b",
+            "box": [2, 3, 20, 12],
+            "source": "日本語",
+            "target": "",
+            "skip": False,
+            "style": {"font": "game-font"},
+        }
+        change = {
+            **{
+                key: state["images"][0][key]
+                for key in ("assetId", "sourceHash", "candidateHash")
+            },
+            "status": "confirmed",
+            "blocks": [block],
+        }
+        listed = [{"id": "game-font", "label": "Face", "origin": "game"}]
+        with patch("dazedtl.images.editor.native.fonts", side_effect=lambda *_: listed):
+            state = self.editor.save("project", state["revision"], [change], identities)
+        # The game lost the font: the box's other edits still save, but no
+        # other font that is not listed can be chosen.
+        block["box"] = [2, 3, 24, 12]
+        state = self.editor.save("project", state["revision"], [change], identities)
+        self.assertEqual(state["images"][0]["blocks"][0]["box"], [2, 3, 24, 12])
+        block["style"] = {"font": "other-font"}
+        with self.assertRaisesRegex(ValueError, "font list"):
+            self.editor.save("project", state["revision"], [change], identities)
+
     def test_import_validates_every_region_before_copying_only_targets(self):
         exported = self.exported()
         path = Path(exported["result"]["path"])

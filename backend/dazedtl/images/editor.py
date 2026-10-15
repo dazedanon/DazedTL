@@ -406,13 +406,18 @@ class ImageEditor:
                 )
             value = entry.to_dict()
             blocks = validate_blocks(item.get("blocks"), entry.width, entry.height)
+            previous = {block["id"]: block for block in value["blocks"]}
+            # A box keeps a font that has since gone missing, such as a game
+            # font an update removed, so its other edits still save; rendering
+            # refuses it until another is chosen.
             if any(
                 block.get("style", {}).get("font")
                 and block["style"]["font"] not in font_ids
+                and block["style"]["font"]
+                != (previous.get(block["id"], {}).get("style") or {}).get("font")
                 for block in blocks
             ):
                 raise ValueError("Choose a font from the editor's font list.")
-            previous = {block["id"]: block for block in value["blocks"]}
             for block in blocks:
                 old = previous.get(block["id"])
                 if (
