@@ -454,12 +454,10 @@ def fill(
 
     ok, detail = _probe(method)
     if not ok:
-        complaint = (
-            f"{_name(method)} is not available ({detail}), so this was "
-            "reconstructed the fast way"
-        )
+        problem = f"{_name(method)} is not available ({detail})"
         if not allow_fallback:
-            raise InpaintError(complaint)
+            raise InpaintError(problem)
+        complaint = f"{problem}, so this was reconstructed the fast way"
         return _classical(rgb, solid, cv2.INPAINT_TELEA, radius), complaint
     try:
         if method == PATCHMATCH:
@@ -467,11 +465,10 @@ def fill(
         else:
             repaired = _model_fill(method, rgb, solid)
     except Exception as exc:
-        complaint = (
-            f"{_name(method)} failed ({exc}), so this was reconstructed the fast way"
-        )
+        problem = f"{_name(method)} failed ({exc})"
         if not allow_fallback:
-            raise InpaintError(complaint) from exc
+            raise InpaintError(problem) from exc
+        complaint = f"{problem}, so this was reconstructed the fast way"
         return _classical(rgb, solid, cv2.INPAINT_TELEA, radius), complaint
     # Only the hole is taken from the repair. Everywhere else the original
     # pixels are already right, and a model asked to reproduce them comes back
