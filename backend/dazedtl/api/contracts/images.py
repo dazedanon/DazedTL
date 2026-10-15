@@ -83,6 +83,9 @@ class ImageAsset(TypedDict):
     classification: ImageClassification
     reason: str
     blockedReason: str
+    # Why the assistant's review of this exact edit does not count yet: its
+    # recipe or validation; empty otherwise.
+    heldReason: str
     sourceIssue: NotRequired[str]
     encrypted: bool
     changed: bool

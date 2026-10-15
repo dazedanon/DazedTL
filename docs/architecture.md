@@ -528,7 +528,12 @@ The translation task covers the list's images not yet in the game and makes thei
 Applied images stay ticked, so a finished list still reads done and Edit text still reaches them, but the list's Recommended view and Unsure leave them to Applied.
 Apply to game applies the list's translated images; a list that a click replaced in earlier versions gets its copied translation task's images back once.
 Editing reports bind original and candidate hashes and a review version; changing either invalidates review.
-Compare shows the discovery finding and current AI-review evidence; hashes and backup paths stay out of reviews because Apply rechecks the exact reviewed bytes.
+Every image an assistant changes needs a [recipe](../backend/dazedtl/images/recipes.py) in the game's resource manifest: the command and hashed inputs that render it again and the regions its edit may change, so a later sibling starts from that recipe instead of pixels.
+Reading a report checks each changed image's recipe against its exact candidate and runs the same [validation](../backend/dazedtl/images/validation.py) as the validator command the task hands the assistant, bound to the source and candidate hashes and kept while its inputs are unchanged.
+A missing or stale recipe or a failed check holds the assistant's review, so the image reads Needs review with the reason, Apply never takes it and Assistant-led cannot apply it; the user's own review still counts, because only the user can accept an image the assistant cannot prove, and a copied task lists what to fix.
+Requests from before recipes keep their accepted reviews, and copying a task again hands out a new request under the current contract.
+The app never runs a recipe's command; the assistant's validator run does, so code in the game folder runs only in the assistant's own process.
+Compare shows the discovery finding, current AI-review evidence and what holds a review; hashes and backup paths stay out of reviews because Apply rechecks the exact reviewed bytes.
 Apply freezes the included batch and blocked reasons in a one-use preview, preflights every included asset before publication, and attempts runtime and metadata rollback on publication failure.
 Publication freezes candidate bytes and journals the reviewed source, output and original-backup hashes before writing runtime files.
 Restart reconciles only those exact authorized bytes, records partial or conflicting publication honestly, and retains reviewed restore for recovered outputs.

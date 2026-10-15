@@ -741,6 +741,7 @@ def build_translation_handoff(game_root: str | Path, engine_id: str, image_root:
         # base Python, which lacks the packages installed in the venv.
         "{{IMAGE_TOOL_PYTHON}}": str(Path(sys.executable).absolute()),
         "{{IMAGE_INPAINT_CLI}}": str((PROJECT_ROOT / "scripts" / "image_inpaint.py").resolve()),
+        "{{IMAGE_VALIDATE_CLI}}": str((PROJECT_ROOT / "scripts" / "image_validate.py").resolve()),
     }
     prompt = load_clipboard_skill("image_translation.md")
     missing = [token for token in replacements if token not in prompt]

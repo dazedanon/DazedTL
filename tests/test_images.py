@@ -5,9 +5,9 @@ import shutil
 import time
 import unittest
 from base64 import b64decode
-from contextlib import nullcontext
+from contextlib import nullcontext, redirect_stdout
 from copy import deepcopy
-from io import BytesIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -16,7 +16,7 @@ from unittest.mock import patch
 from dazedtl.api import views
 from dazedtl.api.contracts.validation import check_response
 from dazedtl.foreign_work import ForeignWorkError
-from dazedtl.images import ImageService
+from dazedtl.images import ImageService, recipes, validation
 from dazedtl.images.inventory import png_metadata
 from dazedtl.projects.store import Projects
 from dazedtl.storage import write_bytes, write_json
@@ -29,6 +29,7 @@ from PIL import Image
 # over two seconds; like the probes, a stuck scan still fails within the
 # suite's budget (scripts/test.mjs).
 SCAN_SECONDS = float(os.environ.get("DAZEDTL_TEST_BUDGET") or 10) * 0.8
+RENDERER = ".dazedtl/image_translation_resources/scripts/render.py"
 
 
 def png(color=(0, 0, 0, 0), size=(8, 8)):
@@ -176,12 +177,29 @@ class ImageTests(unittest.TestCase):
             "refresh_findings" if request["kind"] == "discovery" else "refresh_results",
         )
 
+    def recipe(self, asset, candidate, check=None, renderer=b"# fixture renderer"):
+        """Saves the recipe an assistant leaves for an edited image."""
+        write_bytes(self.game / RENDERER, renderer)
+        path = self.game / ".dazedtl/image_translation_resources/manifest.json"
+        manifest = read_json(path) if path.exists() else {"version": 1, "recipes": {}}
+        manifest["recipes"][asset["id"]] = {
+            "output": digest(candidate),
+            "command": ["{python}", RENDERER, asset["id"], "{output}"],
+            "inputs": {
+                RENDERER: digest(renderer),
+                asset["frozen"]: asset["frozenHash"],
+            },
+            "check": check or {"text": [[0, 0, 8, 8]]},
+        }
+        write_json(path, manifest)
+
     def reviewed_candidate(self, identity="img/A.png", color=(2, 3, 4, 100)):
         self.choose([identity])
         self.service.action(self.identity, "prepare")
         request, _ = self.request("edit_task")
         candidate = png(color)
         write_bytes(self.game / (".dazedtl/images/" + identity), candidate)
+        self.recipe(request["assets"][0], candidate)
         self.report(
             request,
             [
@@ -488,6 +506,7 @@ class ImageTests(unittest.TestCase):
         )
         candidate = png((2, 3, 4, 100))
         write_bytes(self.game / ".dazedtl/images/img/A.png", candidate)
+        self.recipe(request["assets"][0], candidate)
         hashes = {row["id"]: row["sourceHash"] for row in request["assets"]}
         review = {
             "version": 1,
@@ -634,6 +653,108 @@ class ImageTests(unittest.TestCase):
         item = self.service.list(self.identity)["items"][0]
         self.assertEqual(item["state"], "needs_review")
         self.assertFalse(item["aiReviewed"])
+
+    def test_an_edit_counts_as_reviewed_only_with_a_current_recipe_and_valid_pixels(
+        self,
+    ):
+        # Without a recipe the next sibling is reverse-engineered from pixels;
+        # the validator command and the report reader must agree on it.
+        self.choose(["img/A.png"])
+        request, copied = self.request("edit_task")
+        [asset] = request["assets"]
+        candidate = png((2, 3, 4, 100))
+        write_bytes(self.game / ".dazedtl/images/img/A.png", candidate)
+        review = {
+            "version": 1,
+            "visual": True,
+            "alpha": True,
+            "protectedPixels": True,
+            "layout": True,
+            "evidence": "Compared original/candidate at native resolution.",
+        }
+        row = {
+            "id": "img/A.png",
+            "sourceHash": asset["sourceHash"],
+            "candidateHash": digest(candidate),
+            "status": "edited",
+            "reason": "",
+            "review": review,
+        }
+
+        def read(check=None):
+            if check is not None:
+                self.recipe(asset, candidate, check)
+            self.report(request, [row], True)
+            with redirect_stdout(StringIO()):
+                exit_code = recipes.main(["request", copied["request"]])
+            item = self.service.list(self.identity, asset_id="img/A.png")["items"][0]
+            return item["state"], item["blockedReason"], exit_code
+
+        state, reason, exit_code = read()
+        self.assertEqual((state, exit_code), ("needs_review", 1))
+        self.assertIn("No reusable recipe", reason)
+        # A copied task again says what to fix instead of looking finished.
+        again = self.service.action(self.identity, "edit_task")
+        self.assertEqual(again["requestId"], request["id"])
+        self.assertIn("img/A.png: No reusable recipe", again["text"])
+        state, reason, exit_code = read({"text": [[0, 0, 4, 8]]})
+        self.assertEqual((state, exit_code), ("needs_review", 1))
+        self.assertIn("pixels changed outside the declared regions", reason)
+        self.assertEqual(read({"text": [[0, 0, 8, 8]]}), ("ready", "", 0))
+        # A shared renderer changed after the edit no longer reproduces it.
+        write_bytes(self.game / RENDERER, b"# changed for another image")
+        state, reason, _ = read()
+        self.assertEqual(state, "needs_review")
+        self.assertIn("recipe input scripts/render.py changed", reason)
+        # The user's own review stays the explicit way past a held review.
+        self.service.action(self.identity, "user_review", {"asset_ids": ["img/A.png"]})
+        self.assertEqual(
+            self.service.list(self.identity, asset_id="img/A.png")["items"][0]["state"],
+            "ready",
+        )
+
+    def test_validation_catches_metadata_loss_hidden_colour_and_stray_changes(self):
+        # A compositor rewrote colour under alpha 0 across a whole canvas and
+        # Pillow dropped the original's colour chunks; neither is visible.
+        pixels = Image.new("RGBA", (8, 8), (10, 20, 30, 0))
+        pixels.paste((90, 90, 90, 255), (4, 0, 8, 8))
+        stream = BytesIO()
+        pixels.save(stream, format="PNG", dpi=(72, 72), icc_profile=b"profile")
+        original = stream.getvalue()
+
+        def encoded(image):
+            stream = BytesIO()
+            image.save(stream, format="PNG")
+            return stream.getvalue()
+
+        lettered = pixels.copy()
+        lettered.paste((250, 250, 250, 255), (5, 1, 7, 3))
+        text = validation.region([[4, 0, 4, 4]], (8, 8), None)
+        lost = validation.check(original, encoded(lettered), text=text)
+        self.assertEqual(lost["failures"], ["chunks"])
+        self.assertIn("(iCCP, pHYs)", validation.summary(lost))
+        kept = validation.encode_like(encoded(lettered), original)
+        self.assertTrue(validation.check(original, kept, text=text)["ok"])
+        # Lettering over the transparent half may change its alpha, never the
+        # colour of pixels it leaves fully transparent.
+        composited = lettered.copy()
+        composited.paste((0, 0, 0, 0), (0, 0, 4, 8))
+        composited.paste((255, 255, 255, 255), (1, 1, 3, 2))
+        result = validation.check(
+            original,
+            validation.encode_like(encoded(composited), original),
+            intermediate=original,
+            text=validation.region([[0, 0, 8, 8]], (8, 8), None),
+        )
+        self.assertEqual(result["failures"], ["hidden_rgb"])
+        stray = validation.check(
+            original,
+            kept,
+            text=validation.region([[5, 1, 1, 2]], (8, 8), None),
+            protected=validation.region([[5, 4, 2, 2]], (8, 8), None),
+            clearance=3,
+        )
+        self.assertEqual(stray["failures"], ["confined", "clearance"])
 
     def test_structural_alpha_loss_and_source_changes_block_reviewed_outputs(self):
         self.reviewed_candidate(color=(2, 3, 4, 255))

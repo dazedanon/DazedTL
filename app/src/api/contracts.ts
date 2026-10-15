@@ -1862,6 +1862,7 @@ export type ImageAsset = {
   classification: ImageClassification;
   reason: string;
   blockedReason: string;
+  heldReason: string;
   sourceIssue?: string;
   encrypted: boolean;
   changed: boolean;

@@ -115,6 +115,7 @@ Copy the task again to continue, or to have it recheck after you spot untranslat
 2. **Choose**: recommended images arrive ticked under **Recommended**; untick any, or tick others under **Unsure** or **All images**.
 3. **Translate**: copy the translation task; your assistant edits copies of the ticked images.
 4. **Apply**: check the results, ask your assistant to redo any, then click **Apply to game**; applied images leave **Recommended** and **Unsure** for **Applied**.
+   An image your assistant changed without saving its recipe, or that failed the app's checks, reads **Needs review** with the reason; copy the translation task again so your assistant fixes it, or compare it and mark it reviewed yourself.
 
 **More > Investigate all images again** has your assistant start over; its recommendations replace your list, except images already translated.
 
