@@ -33,7 +33,7 @@ from util.translation import (
     split_vocab_source_aliases,
     translateAI as sharedtranslateAI,
 )
-from util.vocab import split_glossary_row
+from util.vocab import split_glossary_row, unverified_nameplate_row
 from util.speakers import NAMES_FILE, SPEAKER_BRACKET_INNER, strip_speaker_prefix
 from util import custom_patterns, extensions, rpgmaker_qa_lint
 from util.skills import ctx, load_system_prompt
@@ -7381,9 +7381,11 @@ def _merge_speaker_rows_into_game_characters(content: str, generated_pairs):
     candidates = []
     for block in legacy_blocks:
         candidates.extend(block.group(0).splitlines()[1:])
+    # A nameplate translated apart from its story stays marked until Project
+    # Setup checks it against the game.
     candidates.extend(
-        f"{source} ({translated})"
-        for source, translated in generated_pairs
+        unverified_nameplate_row(source, translated, origin[0] if origin else "translated without its story")
+        for source, translated, *origin in generated_pairs
         if source and translated and _speaker_translation_valid(source, translated)
     )
 
@@ -7422,6 +7424,39 @@ def _merge_speaker_rows_into_game_characters(content: str, generated_pairs):
     return section + content_without_speakers.lstrip("\r\n")
 
 
+# A reference game's nameplate translation is reused when this share of its
+# occurrences agree, so a word that is also an item, such as 杖, still counts.
+REFERENCE_NAME_SHARE = 0.9
+
+
+def _reference_speaker_names(vocab_path, names):
+    """Nameplates a registered reference game already translated one way, as
+    source -> (translation, reference title)."""
+    if not names:
+        return {}
+    try:
+        from util.reference_games import reference_context
+
+        pack = reference_context(Path(vocab_path).resolve().parent.parent, names)
+    except Exception:
+        return {}
+    found = {}
+    for source, rows in (pack.get("matches") or {}).items():
+        counts, titles = {}, {}
+        for row in rows:
+            counts[row["translation"]] = counts.get(row["translation"], 0) + row["occurrences"]
+            titles.setdefault(row["translation"], row["title"])
+        if not counts:
+            continue
+        best = max(counts, key=counts.get)
+        if counts[best] / sum(counts.values()) < REFERENCE_NAME_SHARE:
+            continue
+        translation = _normalize_speaker_nameplate(best)
+        if _speaker_translation_valid(source, translation):
+            found[source] = (translation, titles[best])
+    return found
+
+
 @extensions.point
 def finalizeSpeakerParse():
     """Batch translate collected speakers into # Game Characters."""
@@ -7453,7 +7488,15 @@ def finalizeSpeakerParse():
                 vocab_resolved.append((s, vocab_hit))
 
         newly_translated = []
+        referenced = _reference_speaker_names(vocab_path, to_translate)
         with _speakerCacheLock:
+            for source, (translated, title) in referenced.items():
+                if source not in _speakerCache:
+                    _speakerCache[source] = translated
+                    NAMESLIST.append([source, translated])
+                    newly_translated.append(
+                        (source, translated, f"from the reference game {title}")
+                    )
             for source, translated in vocab_resolved:
                 _speakerCache[source] = translated
                 for item in NAMESLIST:
@@ -7504,7 +7547,7 @@ def finalizeSpeakerParse():
                     if orig not in _speakerCache:
                         _speakerCache[orig] = norm
                         NAMESLIST.append([orig, norm])
-            newly_translated = translated_pairs
+            newly_translated += translated_pairs
             # Emit success only after every returned name passes validation.
             try:
                 cost = calculateCost(resp[1][0], resp[1][1], MODEL)

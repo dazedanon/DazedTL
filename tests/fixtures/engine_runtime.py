@@ -364,6 +364,48 @@ try:
                 parser._vocab_speaker_lookup("農夫の魂（夫）")
                 == "Farmer's Soul (Husband)"
             ), saved_names
+        # Setup read saved guesses such as a cameo's 存子 "Sonko" as approved
+        # spellings; they now say they were translated without their story.
+        assert "Unverified nameplate" in saved_names, saved_names
+        # A name a registered reference game already translated is reused
+        # instead of guessed: that game read 存子 as Aruko.
+        from util import reference_games
+
+        game, earlier = temporary / "names-game", temporary / "names-earlier"
+        game.mkdir()
+        for side, nameplate in (("ja", "存子"), ("en", "Aruko")):
+            (earlier / side).mkdir(parents=True)
+            (earlier / side / "Map001.json").write_text(
+                json.dumps(
+                    {
+                        "events": [
+                            None,
+                            {
+                                "id": 1,
+                                "pages": [
+                                    {
+                                        "list": [
+                                            {
+                                                "code": 101,
+                                                "parameters": ["", 0, 0, 2, nameplate],
+                                            },
+                                            {"code": 401, "parameters": ["……"]},
+                                        ]
+                                    }
+                                ],
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+        reference_games.add_paired_reference(
+            game, "Earlier game", earlier / "ja", earlier / "en"
+        )
+        named = parser._reference_speaker_names(
+            game / ".dazedtl/glossary.txt", ["存子", "初対面"]
+        )
+        assert named == {"存子": ("Aruko", "Earlier game")}, named
 
         # MV and Ace print the battler's name right before a particle-first
         # battle message; stripping the space after Taro printed "Arinafell!".

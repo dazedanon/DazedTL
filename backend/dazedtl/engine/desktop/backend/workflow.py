@@ -302,11 +302,16 @@ class Workflows:
         if name == "setup":
             text = self.documents(project_id)["glossary"]["text"]
             from util.reference_games import setup_reference_note
+            from util.vocab import is_unverified_nameplate, split_glossary_row
             pairs = []
             for header in ("Game Characters", "Speakers"):
                 match = re.search(rf"^[\t ]*#\s*{header}\s*$\r?\n(.*?)(?=^[\t ]*#|\Z)", text, re.M | re.S)
                 if match:
-                    pairs.extend(re.findall(r"^[\t ]*(.+?)\s+\((.+?)\)[\t ]*$", match.group(1), re.M))
+                    # Bare rows and marked ones are name guesses; curated rows carry notes.
+                    for line in match.group(1).splitlines():
+                        row = split_glossary_row(line.strip())
+                        if row and (not row[2].strip() or is_unverified_nameplate(row[2])):
+                            pairs.append(row[:2])
             engine = "wolf" if project["engine"] == "WOLF" else "rpgmaker"
             return load_project_setup(engine, prepend=build_known_speakers_context(engine, pairs) + ("" if engine == "wolf" else setup_reference_note(project["source"], project["data"])), thorough=thorough)
         if name == "walkthrough":

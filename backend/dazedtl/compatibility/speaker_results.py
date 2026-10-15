@@ -295,9 +295,15 @@ def merge_missing(text, rows, parse, aliases, keys, base_separator=""):
         known.update(source_keys)
     if not added:
         return text, []
+    from util.vocab import unverified_nameplate_row
+
     newline = "\r\n" if "\r\n" in text else "\n"
     entries = "".join(
-        f"{row['source']} ({row['translation']}){newline}" for row in added
+        unverified_nameplate_row(
+            row["source"], row["translation"], "reused from an earlier run"
+        )
+        + newline
+        for row in added
     )
     boundary = text.find(base_separator) if base_separator else -1
     boundary = len(text) if boundary < 0 else boundary

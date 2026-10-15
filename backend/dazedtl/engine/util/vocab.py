@@ -205,6 +205,20 @@ def split_glossary_row(line: str) -> tuple[str, str, str] | None:
     return None
 
 
+UNVERIFIED_NAMEPLATE = "Unverified nameplate"
+
+
+def unverified_nameplate_row(source: str, translation: str, origin: str) -> str:
+    """A glossary row for a nameplate translated apart from its story, marked
+    for Project Setup to confirm or correct."""
+    return f"{source} ({translation}) - {UNVERIFIED_NAMEPLATE}, {origin}."
+
+
+def is_unverified_nameplate(rest: str) -> bool:
+    """Whether a row's text after its translation is the unverified marker."""
+    return rest.strip().startswith(f"- {UNVERIFIED_NAMEPLATE}")
+
+
 _SECTION_PAIR_RE = re.compile(
     r"^(.+?)\s+\((.+)\)\s*$",
 )

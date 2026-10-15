@@ -193,7 +193,13 @@ class SpeakerResultTests(unittest.TestCase):
         keys = lambda value: [value]
         merged, added = speaker_results.merge_missing(text, rows, parse, aliases, keys)
         self.assertEqual(added, rows[-1:])
-        self.assertEqual(merged.replace("回想部屋 (Recollection Room)\n", ""), text)
+        self.assertEqual(
+            merged.replace(
+                "回想部屋 (Recollection Room) - Unverified nameplate, reused from an earlier run.\n",
+                "",
+            ),
+            text,
+        )
         self.assertEqual(
             speaker_results.merge_missing(merged, rows, parse, aliases, keys),
             (merged, []),
@@ -211,6 +217,8 @@ class SpeakerResultTests(unittest.TestCase):
         self.plan["context_hashes"] = {
             "game/.dazedtl/glossary.txt": digest(text.encode())
         }
+        from util.vocab import unverified_nameplate_row
+
         fake = SimpleNamespace(
             parseVocabWithCategories=parse,
             split_vocab_source_aliases=aliases,
@@ -220,7 +228,10 @@ class SpeakerResultTests(unittest.TestCase):
             "sys.modules",
             {
                 "util.translation": fake,
-                "util.vocab": SimpleNamespace(BASE_SEPARATOR="## Base separator"),
+                "util.vocab": SimpleNamespace(
+                    BASE_SEPARATOR="## Base separator",
+                    unverified_nameplate_row=unverified_nameplate_row,
+                ),
             },
         ):
             speaker_results.seed(self.root, self.plan, rows)

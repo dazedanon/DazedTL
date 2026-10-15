@@ -961,7 +961,8 @@ class GuidedTests(unittest.TestCase):
                 saved,
                 [
                     "# Game Characters\nミカ (Mika)\n\n"
-                    + "# Speakers\n回想部屋 (Recollection Room)\n\n"
+                    + "# Speakers\n回想部屋 (Recollection Room) - Unverified nameplate, "
+                    + "reused from an earlier run.\n\n"
                 ],
             )
             # Removing them from the game glossary is the user's choice.

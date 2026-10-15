@@ -105,6 +105,8 @@ Once approved, the frozen request remains authoritative for recovery and is neve
 The fresh Batch speaker check validates unresolved nameplates against frozen files and the current glossary before collection; it retains its separate approval if translation is needed.
 The estimate leading into a Batch scans the nameplates beside its own worker, and the preparation reuses that scan and submits the estimate's own requests when its frozen plan matches the estimate's ([adoptable_requests](../backend/dazedtl/engine/desktop/backend/manual.py)); it reads the files again only to collect after its names step translated names.
 Nameplates may contain character names or other display labels, so the review does not assume a character identity.
+A nameplate a registered reference game already translated one way, in at least 90% of its occurrences, takes that translation without a request.
+Every name the step or a later run's reuse adds is marked `Unverified nameplate` in the glossary, because it was translated apart from its story: a cameo's 存子 became "Sonko" where its creator reads it Aruko; Project Setup lists the marked rows as guesses and removes the marker from each name it verifies.
 This small preparation uses Live pricing to avoid waiting for a separate name Batch, and the review distinguishes it from the selected Batch mode for file text.
 The file-text Batch receives its own cost review after names are resolved.
 Collection itself never sends a Live request: a label or plugin argument translated on its own, such as a map event's `<LB:>` note, travels in the file-text Batch as a one-item request, and text collection cannot queue stops it before anything is sent.

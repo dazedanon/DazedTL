@@ -188,7 +188,9 @@ make no edits and report the evidence normally.
 - Treat bare target spellings from a prepended `<known_speakers>` block as provisional machine
   guesses made from isolated nameplates, not as approved translations. Use their Japanese source
   names as discovery anchors, verify each proper name against the full corpus, and replace
-  unsupported targets.
+  unsupported targets. Glossary rows whose note begins `Unverified nameplate` are the same kind
+  of guess, kept from a name translation or a reference game; rewrite each one you verify with
+  your own note, which removes the marker, and leave the marker on any you could not verify.
 - Separator: plain hyphen-minus `-` only (never em/en dash).
 - Descriptions entirely in English; refer to other characters by English name.
 - Commit to one spelling - never `Sylfia / Sylphia`.
