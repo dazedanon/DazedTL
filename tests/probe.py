@@ -6,7 +6,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, mkstemp
 
 
 class Probe:
@@ -46,36 +46,41 @@ class Probe:
         # Within the suite's budget (scripts/test.mjs), leaving room to report.
         budget = float(os.environ.get("DAZEDTL_TEST_BUDGET") or 10)
         self.deadline = time.monotonic() + budget * 0.8
-        self.process = subprocess.Popen(
-            [
-                sys.executable,
-                "-I",
-                "-X",
-                "utf8",
-                "-B",
-                str(root / "tests/fixtures" / script),
-                str(root),
-                temporary,
-            ],
-            cwd=temporary,
-            env=environment,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        # A file rather than pipes: a probe that printed much would wait on a
+        # full pipe until its test read it, and reading a finished probe's
+        # pipes after the deadline timed out on Windows, which failed a slow
+        # CI run whose probes had long finished. The child keeps its own handle.
+        descriptor, self.log = mkstemp(prefix="dazedtl-probe-")
+        with open(descriptor, "wb") as output:
+            self.process = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-I",
+                    "-X",
+                    "utf8",
+                    "-B",
+                    str(root / "tests/fixtures" / script),
+                    str(root),
+                    temporary,
+                ],
+                cwd=temporary,
+                env=environment,
+                stdout=output,
+                stderr=subprocess.STDOUT,
+            )
         atexit.register(self.close)
 
     def result(self):
         try:
-            output, errors = self.process.communicate(
-                timeout=max(0, self.deadline - time.monotonic())
-            )
+            self.process.wait(timeout=max(0, self.deadline - time.monotonic()))
+            output = Path(self.log).read_bytes().decode("utf-8", "replace")
         finally:
             self.close()
-        return self.process.returncode, output + errors
+        return self.process.returncode, output
 
     def close(self):
         if self.process.poll() is None:
             self.process.kill()
-            self.process.communicate()
+            self.process.wait()
+        Path(self.log).unlink(missing_ok=True)
         self.temporary.cleanup()
