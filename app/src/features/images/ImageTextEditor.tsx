@@ -723,7 +723,16 @@ function Editor({
                   </strong>
                 )}
               </div>
-              <Message message={pixels.error || image.error} />
+              {/* A render that just failed says why beside its button; the
+                  image's saved error is for when the editor opens again. */}
+              <Message
+                message={
+                  pixels.error ||
+                  (image.error && action.error.includes(image.error)
+                    ? ""
+                    : image.error)
+                }
+              />
               <div
                 ref={canvasArea}
                 className={`native-editor-canvases ${comparison ? "native-editor-compare" : ""}`}
