@@ -231,7 +231,10 @@
   gap: var(--space-2);
   margin-top: var(--space-2);
 }
+/* Fields with long choices, and whatever a choice adds below them, take the
+   whole row so their options are never cut off. */
 .native-editor-style-fields > label:first-child,
+.native-editor-style-fields > .native-editor-wide,
 .native-editor-style-fields > label:last-child {
   grid-column: 1 / -1;
 }

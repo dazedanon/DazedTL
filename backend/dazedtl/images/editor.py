@@ -30,6 +30,29 @@ def _colour(value):
     return [_number(item, 0, 255, "Colour", True) for item in value]
 
 
+#: The numbers of each text effect and their ranges, as the renderer reads them.
+EFFECT_FIELDS = {
+    "shadow": {
+        "dx": (-256, 256),
+        "dy": (-256, 256),
+        "spread": (0, 64),
+        "blur": (0, 64),
+    },
+    "glow": {"spread": (0, 64), "blur": (0, 64)},
+}
+
+
+def _effect(value, name):
+    fields = EFFECT_FIELDS[name]
+    if not isinstance(value, dict) or set(value) - {"color", *fields}:
+        raise ValueError(f"Invalid text {name}.")
+    effect: dict[str, object] = {"color": _colour(value.get("color"))}
+    for key, (low, high) in fields.items():
+        if key in value:
+            effect[key] = _number(value[key], low, high, f"{name.title()} {key}")
+    return effect
+
+
 def validate_blocks(blocks, width, height):
     """Reject malformed geometry/style before native deserialization or any write."""
     if not isinstance(blocks, list) or len(blocks) > 2000:
@@ -105,6 +128,8 @@ def validate_blocks(blocks, width, height):
                 "column_colors",
                 "donor",
                 "inpaint_method",
+                "shadow",
+                "glow",
             }
             if set(style) - allowed or style.get("background", "keep") not in {
                 "transparent",
@@ -120,8 +145,13 @@ def validate_blocks(blocks, width, height):
             for key in ("fill", "text_color", "outline_color"):
                 if normalized.get(key) is not None:
                     normalized[key] = _colour(normalized[key])
+            # A fitted recipe can stroke a fractional width, so this one stays
+            # a number rather than a whole one.
+            if "outline_width" in normalized:
+                normalized["outline_width"] = _number(
+                    normalized["outline_width"], 0, 64, "outline_width"
+                )
             for key, low, high in (
-                ("outline_width", 0, 64),
                 ("cap_height", 1, 512),
                 ("scale_x", 25, 400),
                 ("scale_y", 25, 400),
@@ -180,7 +210,12 @@ def validate_blocks(blocks, width, height):
                     or dy + dh > height
                 ):
                     raise ValueError("Background donor box must stay inside the image.")
-            normalized["inpaint_method"] = "telea"
+            for key in ("shadow", "glow"):
+                if normalized.get(key) is not None:
+                    normalized[key] = _effect(normalized[key], key)
+            normalized["inpaint_method"] = native.repair_method(
+                normalized.get("inpaint_method")
+            )
             item["style"] = normalized
         # Native OCR geometry stays in the saved job; renderer submissions cannot
         # inject word masks, arbitrary paint paths or resource commands.

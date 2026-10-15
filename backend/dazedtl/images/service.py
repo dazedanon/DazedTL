@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import sqlite3
+import sys
 import threading
 import time
 import uuid
@@ -19,6 +20,7 @@ from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import decode_json, digest, project_path, read_json
 from dazedtl.translation.operations import lifecycle, require_source_backup
 
+from . import recipes
 from .inventory import (
     Index,
     PreviewCache,
@@ -26,6 +28,7 @@ from .inventory import (
     png_metadata,
     png_preview,
     sha_file,
+    signature,
 )
 
 WORK = ".dazedtl/image_manager/guided"
@@ -42,6 +45,9 @@ EXAMINATION_METHODS = {"visual", "ocr", "local_ocr", "visual+ocr", "visual+local
 SCOPES = {"remaining", "all", "folders", "selected"}
 ASSISTANT_STEPS = ("status", "scan", "investigate", "translate", "apply")
 REVIEW_VERSION = 1
+# Editing requests from this version on accept the assistant's review of an
+# edited image only with a current recipe and passing validation.
+RECIPE_VERSION = 1
 VIEW = {
     "query": "",
     "status": "all",
@@ -121,6 +127,8 @@ class ImageService:
         self.mutating = set()
         self.threads = {}
         self.foreign = {}
+        # Recipe inputs by path and stat signature, hashed once per change.
+        self.hashes = {}
 
     def close(self):
         for event in self.cancellations.values():
@@ -473,6 +481,7 @@ class ImageService:
             "classification",
             "reason",
             "blockedReason",
+            "heldReason",
             "aiReviewed",
             "userReviewed",
             "destination",
@@ -682,10 +691,27 @@ class ImageService:
         }
         ai = row.get("aiReview") or {}
         user = row.get("userReview") or {}
+        proof = row.get("proof") or {}
+        # An assistant review that needs a recipe counts once the recipe and
+        # validation of this exact edit pass; until then their reason shows.
+        held = (
+            ai.get("proof")
+            and all(ai.get(key) == item for key, item in binding.items())
+            and not (
+                all(proof.get(key) == item for key, item in binding.items())
+                and proof.get("ok")
+            )
+        )
         row["aiReviewed"] = (
             ai.get("version") == REVIEW_VERSION
             and all(ai.get(key) == item for key, item in binding.items())
             and bool(ai.get("evidence"))
+            and not held
+        )
+        row["heldReason"] = (
+            proof.get("reason") or "Its recipe and validation are not saved."
+            if held
+            else ""
         )
         row["userReviewed"] = (
             user.get("version") == REVIEW_VERSION
@@ -734,8 +760,12 @@ class ImageService:
         else:
             row["state"], row["blockedReason"] = (
                 "needs_review",
-                "Compare the edited copy, then mark it reviewed.",
+                row["heldReason"] or "Compare the edited copy, then mark it reviewed.",
             )
+        # A held review explains only an image still waiting for review, not
+        # one the user reviewed, applied or that is blocked for another reason.
+        if row["state"] != "needs_review":
+            row["heldReason"] = ""
         return row
 
     def _inspect(self, project_id, row, old=None, key=None):
@@ -1070,6 +1100,9 @@ class ImageService:
                                 "These filenames differ only by letter case and cannot be patched safely on Windows."
                             )
                             index.put(db, self._status(row), generation)
+                    # Variant families are grouped over the whole inventory,
+                    # so only a complete scan regroups them.
+                    index.refresh_families()
                     value = self._load(project_id)
                     fingerprint = hashlib.sha256()
                     for row in index.rows():
@@ -1270,6 +1303,14 @@ class ImageService:
             "report": "",
             "applied": [],
         }
+        ticked = set(state["selection"])
+        view["problems"].extend(
+            row["id"] + ": " + row["heldReason"]
+            for row in self._index(project_id).rows()
+            if row["id"] in ticked
+            and row.get("heldReason")
+            and row["state"] == "needs_review"
+        )
         if task:
             # The task's text embeds the image skill; a file keeps it out of
             # the helper's printed reply.
@@ -1484,6 +1525,8 @@ class ImageService:
                 and previous.get("revisionComments", "") == comments
                 and previous_bindings == current_bindings
                 and previous.get("reviewVersion") == REVIEW_VERSION
+                and previous.get("recipeVersion")
+                == (RECIPE_VERSION if kind == "editing" else None)
             ):
                 value[kind]["copiedAt"] = now()
                 value[kind].pop("rejected", None)
@@ -1503,24 +1546,34 @@ class ImageService:
         )
         # The assistant saves its report there.
         report.parent.mkdir(parents=True, exist_ok=True)
+        # Each file's hash sits beside its path: sourceHash is the runtime
+        # file's, encrypted where the game encrypts, and frozenHash the PNG
+        # the app preserved from it. editableHash is the working copy's when
+        # the task was made; a report gives its final hash as candidateHash.
+        names = {"frozenHash": "originalPngHash", "editableHash": "candidateHash"}
+        index = self._index(project_id)
         assets = [
             {
-                key: row.get(key)
+                key: row.get(names.get(key, key))
                 for key in (
                     "id",
                     "path",
-                    "sourceHash",
-                    "candidateHash",
                     "runtime",
-                    "editable",
+                    "sourceHash",
+                    "encrypted",
                     "frozen",
+                    "frozenHash",
+                    "editable",
+                    "editableHash",
                     "width",
                     "height",
                     "mode",
-                    "encrypted",
                     "sourceIssue",
                 )
             }
+            # Siblings that share this image's backdrop, with their originals
+            # and how far each is translated.
+            | {"family": index.family(row["id"])}
             for row in rows
         ]
         request = {
@@ -1536,6 +1589,7 @@ class ImageService:
             "guidance": guidance,
             "report": str(report),
             "reviewVersion": REVIEW_VERSION,
+            **({"recipeVersion": RECIPE_VERSION} if kind == "editing" else {}),
             "revisionComments": comments,
             "resumeFrom": previous_id,
             "resumeRequest": value["requests"].get(previous_id, {}).get("path", ""),
@@ -1591,6 +1645,21 @@ class ImageService:
             skill = skill.replace("every PNG", "each requested PNG").replace(
                 "Every PNG", "Each requested PNG"
             )
+            # What kept the last results from being accepted, so a task copied
+            # again says what to fix rather than looking finished.
+            held = [
+                row["id"] + ": " + row["heldReason"]
+                for row in (
+                    self._index(project_id).get(asset["id"])
+                    for asset in request["assets"]
+                )
+                if row and row.get("heldReason") and row.get("state") == "needs_review"
+            ]
+            if held:
+                contract += (
+                    "\nThe app has not accepted these results yet; fix them, check again and save the report again:\n- "
+                    + "\n- ".join(held)
+                )
             contract += "\n\nApply the following image-only methodology within the exact request scope above. "
             contract += (
                 "The request's asset list overrides any broader editable-folder instruction in this reference.\n\n"
@@ -1637,6 +1706,7 @@ class ImageService:
                 "classify an image whose only Japanese is such lettering as sound_effects, also when its marks may be sound effects or decoration, "
                 "and recommend an image that also has other text for that text. "
                 "Use metadata, byte-identical duplicate groups, numbered contact sheets and enlarged crops/originals where needed. "
+                "An asset's family lists same-size images that share its backdrop: use it to find siblings likely to need the same treatment, but examine each image itself. "
                 "Process bounded batches, cache results by source hash, resume unchanged work and record coverage honestly. "
                 "Use Len's image census methodology as a reference, not its whole-game authorization. "
                 "Local installed OCR is optional; do not install/download tools, invoke hosted OCR or paid services without separate authorization. "
@@ -1657,7 +1727,7 @@ class ImageService:
                 {
                     "id": "copy an exact request asset ID",
                     "sourceHash": "copy its source hash",
-                    "candidateHash": "SHA-256 of the final editable PNG",
+                    "candidateHash": "SHA-256 of the final editable PNG, not the request's editableHash",
                     "status": "edited",
                     "reason": "",
                     "review": {
@@ -1673,7 +1743,12 @@ class ImageService:
             instructions = (
                 "Edit only the requested working PNG copies. Handle transcription, translation, rendering, validation and routine visual review. "
                 "Keep game runtime originals read-only, preserve exact filenames, PNG format, dimensions, mode and transparency. "
-                "Read frozen originals for redo and do not render repeatedly over translated pixels. Reuse glossary/context already saved in the request. "
+                "Each request asset names three files with their SHA-256 hashes: runtime and sourceHash are the game's file, encrypted where the game encrypts its images; "
+                "frozen and frozenHash are the original PNG the app preserved from it, which every render and redo starts from, never translated pixels; "
+                "editable and editableHash are the working copy as it was when this task was made. "
+                "An asset's family lists the images that share its backdrop: rebuild its background with the family solver before any inpainting (methodology section 4a), "
+                "and fit an accepted sibling's text recipe instead of measuring its lettering by hand (section 10). "
+                "Reuse glossary/context already saved in the request. "
                 "No mandatory user sign-off for every image. "
                 + (
                     "Settle uncertainties yourself; report an image you can't or won't edit as skipped with the reason; "
@@ -1681,9 +1756,11 @@ class ImageService:
                     else "Report genuine uncertainties/exclusions or material generative choices for user decision; "
                 )
                 + "do not call image-generation/paid services without separate authorization. "
-                "Record edited/unchanged/skipped/needs_review/error for each asset and bind review to exact source and candidate hashes. "
+                "Record edited/unchanged/skipped/needs_review/error for each asset; copy its sourceHash and give the final PNG's hash as candidateHash, which binds your review to those exact files. "
                 "Review original/candidate appearance, alpha, protected artwork and runtime layout. Do not assert checks you have not performed. "
-                "Retain image_translation_log.md and reusable layout/resource records outside the editable tree. "
+                "Save each changed image's recipe in the resource manifest (methodology section 15a) and check the request with the validator before saving your report: "
+                + self._validator(path)
+                + " The app runs the same checks when it reads your report and accepts your review of a changed image only with a current recipe and passing validation. "
                 "Write the structured report below atomically, with partial updates for resume. "
                 + (
                     "images --apply then puts the reviewed images into the game. "
@@ -1723,6 +1800,14 @@ class ImageService:
                 if own
                 else "\nCopying this task did not start an agent. Report what was completed, unresolved and skipped, then stop."
             )
+        )
+
+    def _validator(self, request_path):
+        """The validator command for a request, with the app's own Python."""
+        script = Path(self.backend.source) / "scripts/image_validate.py"
+        return (
+            f'"{Path(sys.executable).absolute()}" "{script}" request "{request_path}" --reproduce'
+            " (adapt the quoting to your shell)."
         )
 
     def _request(self, project_id, kind):
@@ -1782,6 +1867,11 @@ class ImageService:
         recommended, dropped = set(), set()
         index = self._index(project_id)
         key = self.adapter.key(root, self._profile(project_id))
+        recipe_book = (
+            recipes.manifest(root)
+            if request.get("recipeVersion") == RECIPE_VERSION
+            else None
+        )
         for result in report["assets"]:
             if (
                 not isinstance(result, dict)
@@ -1927,6 +2017,13 @@ class ImageService:
                         },
                         "saved": now(),
                     }
+                    # An edit that changes the image proves it can be rendered
+                    # again and stayed inside its declared regions.
+                    if recipe_book and row.get("changed"):
+                        row["aiReview"]["proof"] = RECIPE_VERSION
+                        row["proof"] = self._proof(
+                            root, request["id"], row, *recipe_book
+                        )
                 else:
                     row.pop("aiReview", None)
             updates.append(self._status(row))
@@ -1986,6 +2083,79 @@ class ImageService:
         value[kind].pop("rejectedHash", None)
         self._save(project_id, value)
         return {"state": self.state(project_id)}
+
+    def _proof(self, root, request_id, row, found, unreadable):
+        """The recipe and validation of a reported edit, bound to its hashes.
+        A validation whose inputs are unchanged is kept from the last read."""
+        binding = {
+            "version": RECIPE_VERSION,
+            "requestId": request_id,
+            "sourceHash": row["sourceHash"],
+            "candidateHash": row["candidateHash"],
+            "saved": now(),
+        }
+        if found is None or not row.get("frozen"):
+            reason = unreadable or "The image has no preserved original to check."
+            return {**binding, "ok": False, "reason": reason, "recipe": "invalid"}
+        try:
+            candidate = project_path(root, row["editable"]).read_bytes()
+        except OSError, ValueError:
+            candidate = b""
+        if digest(candidate) != row["candidateHash"]:
+            return {
+                **binding,
+                "ok": False,
+                "reason": "The edited copy changed while it was checked.",
+                "recipe": "",
+            }
+        image = {
+            "id": row["id"],
+            "frozen": row["frozen"],
+            "frozenHash": row.get("originalPngHash"),
+            "candidateHash": row["candidateHash"],
+            "candidate": candidate,
+            "originals": {
+                row.get(name)
+                for name in (
+                    "originalPngHash",
+                    "originalRuntimeHash",
+                    "runtimeBackupHash",
+                    "sourceHash",
+                )
+            }
+            - {None, ""},
+        }
+        result = recipes.proof(
+            root,
+            image,
+            found.get(row["id"]),
+            file_hash=lambda path: self._file_hash(root, path),
+            cached=row.get("proof"),
+        )
+        return {
+            **binding,
+            "ok": result["ok"],
+            "reason": result["reason"],
+            "recipe": result["recipe"]["state"],
+            "key": result["key"],
+            "validation": result["validation"],
+        }
+
+    def _file_hash(self, root, relative):
+        """A recipe input's hash, kept until the file changes."""
+        try:
+            path = project_path(root, relative, exists=False)
+            if not path.is_file():
+                return None
+            stamp = signature(path)
+            saved = self.hashes.get(str(path))
+            if saved and saved[0] == stamp:
+                return saved[1]
+            value = sha_file(path)
+        except OSError, ValueError:
+            return None
+        self.hashes[str(path)] = (stamp, value)
+        return value
 
     def _prepare(self, project_id, options):
         identities = self._chosen(project_id, options)

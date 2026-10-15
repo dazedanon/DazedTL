@@ -1135,8 +1135,8 @@ function Manager({
                   )
                 }
               >
-                {imageCount(flow.review)} changed after your assistant checked{" "}
-                {flow.review === 1 ? "it" : "them"}
+                {imageCount(flow.review)} {flow.review === 1 ? "needs" : "need"}{" "}
+                review
               </Button>
             )}
           </AssistantTask>

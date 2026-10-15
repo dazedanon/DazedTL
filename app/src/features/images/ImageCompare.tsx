@@ -7,6 +7,7 @@ import { DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
 import { ActionBar } from "../../ui/ActionBar";
 import { Message } from "../../ui/Feedback";
+import { Notice } from "../../ui/Notice";
 import { ExpandableText } from "../../ui/ExpandableText";
 import { imageDisplay } from "../../ui/displayStatus";
 import { StatusMark } from "../../ui/StatusMark";
@@ -80,10 +81,11 @@ export function ImageCompare({
       />
       <div className="image-compare-toolbar">
         {/* A blocking reason shows below the images, where it can be read
-            as an error; any other reason sits beside the state. */}
+            as an error, and so does what holds the assistant's review, beside
+            the actions that answer it; any other reason sits beside the state. */}
         <span className="image-review-status">
           <StatusMark state={imageDisplay(asset, listed)} />
-          {!blocking && imageReason(asset, listed) && (
+          {!blocking && !asset.heldReason && imageReason(asset, listed) && (
             <span>{imageReason(asset, listed)}</span>
           )}
         </span>
@@ -184,6 +186,9 @@ export function ImageCompare({
         </div>
         {blocking && (
           <Message message={asset.blockedReason || asset.sourceIssue || ""} />
+        )}
+        {!blocking && asset.heldReason && (
+          <Notice tone="warning">{asset.heldReason}</Notice>
         )}
         {(asset.reason || (asset.aiReviewed && asset.reviewEvidence)) && (
           <dl className="image-evidence">

@@ -528,11 +528,23 @@ The translation task covers the list's images not yet in the game and makes thei
 Applied images stay ticked, so a finished list still reads done and Edit text still reaches them, but the list's Recommended view and Unsure leave them to Applied.
 Apply to game applies the list's translated images; a list that a click replaced in earlier versions gets its copied translation task's images back once.
 Editing reports bind original and candidate hashes and a review version; changing either invalidates review.
-Compare shows the discovery finding and current AI-review evidence; hashes and backup paths stay out of reviews because Apply rechecks the exact reviewed bytes.
+Every image an assistant changes needs a [recipe](../backend/dazedtl/images/recipes.py) in the game's resource manifest: the command and hashed inputs that render it again and the regions its edit may change, so a later sibling starts from that recipe instead of pixels.
+Reading a report checks each changed image's recipe against its exact candidate and runs the same [validation](../backend/dazedtl/images/validation.py) as the validator command the task hands the assistant, bound to the source and candidate hashes and kept while its inputs are unchanged.
+A missing or stale recipe or a failed check holds the assistant's review, so the image reads Needs review with the reason, Apply never takes it and Assistant-led cannot apply it; the user's own review still counts, because only the user can accept an image the assistant cannot prove, and a copied task lists what to fix.
+Requests from before recipes keep their accepted reviews, and copying a task again hands out a new request under the current contract.
+The app never runs a recipe's command; the assistant's validator run does, so code in the game folder runs only in the assistant's own process.
+Compare shows the discovery finding, current AI-review evidence and what holds a review; hashes and backup paths stay out of reviews because Apply rechecks the exact reviewed bytes.
 Apply freezes the included batch and blocked reasons in a one-use preview, preflights every included asset before publication, and attempts runtime and metadata rollback on publication failure.
 Publication freezes candidate bytes and journals the reviewed source, output and original-backup hashes before writing runtime files.
 Restart reconciles only those exact authorized bytes, records partial or conflicting publication honestly, and retains reviewed restore for recovered outputs.
 Preserved originals and durable receipts support reviewed restore without removing editable copies or editor work.
+Indexing also records each image's untranslated original, its frozen copy, the Qt publisher's backup or the runtime file, with a tile signature kept in its own table and computed again only when that file changes.
+[Families](../backend/dazedtl/images/families.py) groups same-size images that share most non-flat tiles, such as name cards or area banners that differ only in their lettering, with the region where they differ and how far each member is translated.
+The [background solver](../backend/dazedtl/images/background.py) rebuilds a member's text-free backdrop from its family instead of inpainting it, never changing pixels the whole family agrees on: consensus from members the lettering does not reach, then a fitted glow inversion or a Laplace fill, whichever wins a leave-one-out test on the consensus pixels.
+Agents run it through [image_family.py](../backend/dazedtl/engine/scripts/image_family.py), which also checks a saved background for ghosts of a member's lettering.
+A complete scan regroups the families, and each request asset carries its family, so the editing task rebuilds a member's background before any inpainting and fits an accepted sibling's text recipe with [image_recipe.py](../backend/dazedtl/engine/scripts/image_recipe.py) instead of measuring lettering by hand.
+The solver uses the image tools' exact harmonic fill through the compatibility boundary, the same fill as the inpainting bridge and the image text editor.
+Recipe commands name DazedTL's tools by placeholder (`{python}`, `{recipe_cli}`, `{family_cli}`, `{inpaint_cli}`), so a recipe survives an update or a move of the app.
 The authenticated project helper exposes read-only image state, listing and previews; image application remains an app review.
 Clipboard handoffs never claim an external assistant is running.
 
@@ -549,6 +561,8 @@ Starting over moves the work folder to `.dazedtl/archived` under a dated name wi
 
 The optional [image text editor](../backend/dazedtl/images/editor.py) retains the toolkit's boxes, target-only exchange import, rendering and undo process behind compatibility adapters.
 Its local OCR capability is limited to installed offline resources, with no hosted fallback or model download.
+Its background repair runs only the deterministic local reconstructions (the harmonic fill by default, or Telea or Navier-Stokes), never an installed model.
+A render replaces only the source PNG's pixels and keeps its header and ancillary chunks, so gamma, colour profiles and text reach the game unchanged.
 Native Image Text translation uses the preserved isolated manual runner with project-owned frozen inputs, a current estimate and one-use paid approval, independently of JSON translation runs and image application.
 These runs have no run inspector, so a failed run's log tail appears beside its status.
 Import revalidates the exported source scope and copies targets only; rendering still requires structural validation and image review before runtime application.

@@ -13,6 +13,8 @@ from typing import cast
 
 from dazedtl.translation.files import project_path
 
+from . import families
+
 
 def sha_file(path):
     with path.open("rb") as stream:
@@ -30,7 +32,9 @@ def signature(path):
     ]
 
 
-def png_metadata(value):
+@contextmanager
+def _verified(value):
+    """The PNG image of bytes that passed verification."""
     from PIL import Image
 
     with warnings.catch_warnings():
@@ -38,7 +42,20 @@ def png_metadata(value):
         with Image.open(BytesIO(value)) as checked:
             checked.verify()
         with Image.open(BytesIO(value)) as image:
-            return describe_png(image)
+            yield image
+
+
+def png_metadata(value):
+    with _verified(value) as image:
+        return describe_png(image)
+
+
+def png_pixels(value):
+    """Metadata and RGBA pixels of verified PNG bytes, from one decode."""
+    import numpy as np
+
+    with _verified(value) as image:
+        return describe_png(image), np.asarray(image.convert("RGBA"))
 
 
 def png_preview(value, size):
@@ -115,6 +132,10 @@ class Index:
                 db.execute(
                     "CREATE INDEX IF NOT EXISTS image_state ON assets(state,classification)"
                 )
+                # Tile signatures of the untranslated originals, for families.
+                db.execute(
+                    "CREATE TABLE IF NOT EXISTS tiles (id TEXT PRIMARY KEY, data BLOB)"
+                )
         finally:
             db.close()
 
@@ -144,6 +165,14 @@ class Index:
 
     @staticmethod
     def put(db, row, generation=""):
+        # inspect_row hands over a new tile signature with the row; it is kept
+        # in its own table so rows stay small.
+        if "familyTiles" in row:
+            row = dict(row)
+            db.execute(
+                "INSERT INTO tiles(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data",
+                (row["id"], row.pop("familyTiles")),
+            )
         db.execute(
             "INSERT INTO assets(id,folder,name,classification,state,examined,generation,data) VALUES(?,?,?,?,?,?,?,?) "
             "ON CONFLICT(id) DO UPDATE SET folder=excluded.folder,name=excluded.name,"
@@ -305,6 +334,73 @@ class Index:
                 ).fetchone()[0],
             }
 
+    def families(self, db=None):
+        """Variant families among the indexed originals."""
+        if db is None:
+            with self.connection() as connection:
+                return self.families(connection)
+        entries = []
+        for data, blob in db.execute(
+            "SELECT assets.data, tiles.data FROM assets JOIN tiles ON tiles.id=assets.id"
+        ):
+            row = json.loads(data)
+            if row.get("original"):
+                entries.append(
+                    (
+                        row["id"],
+                        row.get("width"),
+                        row.get("height"),
+                        row.get("mode"),
+                        blob,
+                    )
+                )
+        return families.group(entries)
+
+    def refresh_families(self):
+        """Record on each row the family it belongs to, after a scan."""
+        with self.connection() as db:
+            found = {
+                member: family
+                for family in self.families(db)
+                for member in family["members"]
+            }
+            for identity, data in db.execute("SELECT id, data FROM assets").fetchall():
+                row = json.loads(data)
+                if row.get("family") != found.get(identity):
+                    if identity in found:
+                        row["family"] = found[identity]
+                    else:
+                        row.pop("family", None)
+                    db.execute(
+                        "UPDATE assets SET data=? WHERE id=?",
+                        (
+                            json.dumps(row, ensure_ascii=False, separators=(",", ":")),
+                            identity,
+                        ),
+                    )
+            return list({family["id"]: family for family in found.values()}.values())
+
+    def family(self, identity, db=None):
+        """The family of an image, with where each member's original is and
+        how far it is translated, or None."""
+        if db is None:
+            with self.connection() as connection:
+                return self.family(identity, connection)
+        family = (self.get(identity, db) or {}).get("family")
+        if not family:
+            return None
+        members = []
+        for member in family["members"]:
+            row = self.get(member, db) or {}
+            members.append(
+                {
+                    "id": member,
+                    "original": (row.get("original") or {}).get("path", ""),
+                    "translated": families.translated(row),
+                }
+            )
+        return {**family, "members": members}
+
     def folders(self):
         with self.connection() as db:
             return [
@@ -342,6 +438,18 @@ class PreviewCache:
                 self.bytes -= len(self.values.popitem(last=False)[1][1])
 
 
+def _observe(row, original, raw, pixels):
+    """Record where a row's untranslated original is, and hand its tile
+    signature to Index.put."""
+    relative, _encrypted, stamp = original
+    row["familyTiles"] = families.signature(pixels)
+    row["original"] = {
+        "path": relative,
+        "signature": stamp,
+        "pngHash": hashlib.sha256(raw).hexdigest(),
+    }
+
+
 def inspect_row(root, adapter, row, old, key):
     """Hash and inspect changed bytes only; cache is tied to file stat signatures."""
     row = {**(old or {}), **row}
@@ -352,6 +460,18 @@ def inspect_row(root, adapter, row, old, key):
         sourceIssue="",
     )
     runtime_changed = False
+    # Families compare untranslated originals, so a member already translated
+    # in the game still matches its siblings. An original is decoded for its
+    # tile signature only when its file changed.
+    stale = None
+    try:
+        relative, encrypted = families.original_file(root, row)
+        stamp = signature(project_path(root, relative))
+        known = row.get("original") or {}
+        if known.get("path") != relative or known.get("signature") != stamp:
+            stale = relative, encrypted, stamp
+    except OSError, ValueError, KeyError:
+        row.pop("original", None)
     try:
         if not row.get("runtime"):
             raise ValueError(
@@ -366,7 +486,13 @@ def inspect_row(root, adapter, row, old, key):
         if current_signature != row.get("sourceSignature") or row.get("encrypted"):
             source_hash = sha_file(runtime)
             raw = adapter.source_bytes(root, row, key)
-            row.update(png_metadata(raw))
+            if stale and stale[0] == row["runtime"]:
+                metadata, pixels = png_pixels(raw)
+                _observe(row, stale, raw, pixels)
+                stale = None
+            else:
+                metadata = png_metadata(raw)
+            row.update(metadata)
             runtime_changed = bool(
                 row.get("sourceHash") and row["sourceHash"] != source_hash
             )
@@ -378,6 +504,14 @@ def inspect_row(root, adapter, row, old, key):
     except (OSError, ValueError, KeyError) as exc:
         row["sourceIssue"] = str(exc)
         row["sourceHash"] = ""
+    if stale:
+        try:
+            raw = adapter.source_bytes(
+                root, {"runtime": stale[0], "encrypted": stale[1]}, key
+            )
+            _observe(row, stale, raw, png_pixels(raw)[1])
+        except OSError, ValueError, KeyError:
+            row.pop("original", None)
     path = project_path(root, row["editable"], exists=False)
     row["editablePath"] = row["editable"]
     row["editable"] = row["editablePath"]

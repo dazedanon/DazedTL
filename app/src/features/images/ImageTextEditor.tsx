@@ -42,7 +42,13 @@ const backgroundRepairs: Record<BackgroundRepair, string> = {
   vgradient: "Vertical gradient",
   hgradient: "Horizontal gradient",
   patch: "Clone clean strip",
-  inpaint: "Local OpenCV repair",
+  inpaint: "Rebuild from surroundings",
+};
+/** Local reconstructions for "inpaint"; the first is the default. */
+const repairMethods: Record<string, string> = {
+  harmonic: "Harmonic (smoothest)",
+  telea: "Telea (fast)",
+  ns: "Navier-Stokes (follows lines)",
 };
 /** Keep side-by-side canvases on the same region as one is scrolled. */
 const syncScroll = (source: HTMLElement) => {
@@ -1007,7 +1013,7 @@ function Editor({
                       }
                     />
                   </label>
-                  <label>
+                  <label className="native-editor-wide">
                     Repair background
                     <select
                       aria-label="Image background repair"
@@ -1033,6 +1039,32 @@ function Editor({
                       )}
                     </select>
                   </label>
+                  {block.style?.background === "inpaint" && (
+                    <label>
+                      Repair method
+                      <select
+                        aria-label="Image background repair method"
+                        value={
+                          Object.hasOwn(
+                            repairMethods,
+                            block.style.inpaint_method || "",
+                          )
+                            ? block.style.inpaint_method
+                            : "harmonic"
+                        }
+                        disabled={busy}
+                        onChange={(event) =>
+                          editStyle({ inpaint_method: event.target.value })
+                        }
+                      >
+                        {Object.entries(repairMethods).map(([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                   {block.style?.background === "solid" && (
                     <label>
                       Fill colour
