@@ -60,10 +60,12 @@ placeholder templates, inspect every distinct resolved value and relevant contex
 English frame merely because the Japanese template is identical. Split the policy or retain a
 backlog item when one frame is not natural for every member. Classify a correction as actionable
 only when its text is player-visible and release-reachable; keep hidden scaffolding, test content,
-and uncertain reachability in the backlog. If a canonical choice is a corpus minority, cite the
-primary in-game label, self-identification, or explicit user instruction that outweighs frequency;
-generated guidance alone is not proof. Only the coordinator, never a discovery worker, confirms
-families and applies guidance.
+and uncertain reachability in the backlog. A claim about how DazedTL or another tool will treat
+the data, such as skipping, overwriting or misreading a field, is actionable only after its source
+code or a direct test confirms that behavior; otherwise keep it in the backlog. If a canonical
+choice is a corpus minority, cite the primary in-game label, self-identification, or explicit user
+instruction that outweighs frequency; generated guidance alone is not proof. Only the coordinator,
+never a discovery worker, confirms families and applies guidance.
 
 ## Investigation method
 
@@ -98,6 +100,10 @@ families and applies guidance.
    and self-introductions establish identity or segmentation, not Latin orthography. Treat related
    lines from one role, motif, institution, or scene premise as one evidence class. Do not validate
    a spelling merely because every occurrence inherited the same provisional glossary guess.
+   Count only player-facing Latin text, such as a title screen, name card, or credit, as a creator
+   spelling. Asset filenames and internal labels are weak evidence at most: a creator who does not
+   localize may use romanization, shorthand, or a working name there, and a spelling found only
+   that way must still win on the other evidence.
 
    Research credible dictionaries and naming references rather than stopping at transliteration.
    Record meaning, pronunciation, morphology, and exact kana mismatch; compare cognates across

@@ -302,7 +302,11 @@ geometry rather than generic RPG Maker defaults whenever project code is availab
    help or list text at `listWidth`, and capture each. Calculated geometry often differs
    from what the player sees, so correct any value whose text is clipped, squeezed or wrapped by
    the game, and capture again. When the game cannot run or be captured, keep the measured values
-   and say what was not seen.
+   and say what was not seen. An RPG Maker MZ game also runs in a browser served from its folder
+   over local HTTP. A browser view without focus pauses the game, so set
+   `SceneManager.isGameActive = () => true`, wait for the title scene and
+   `DataManager.isDatabaseLoaded()` before `DataManager.setupNewGame()`, then step frames with
+   `SceneManager.updateMain()` and call `Graphics._app.render()` before each capture.
 
 Report these recommendations under **Manual changes > RPG Maker settings**. They are settings the
 user must review or change, so do not put them in a code fence:

@@ -40,7 +40,11 @@ I need `width`, `faceWidth`, `listWidth`, and `noteWidth`, the rows a message wi
    help or list text at `listWidth`, and capture each. Calculated geometry often differs
    from what the player sees, so correct any value whose text is clipped, squeezed or wrapped by
    the game, and capture again. When the game cannot run or be captured, keep the measured values
-   and say what was not seen.
+   and say what was not seen. An RPG Maker MZ game also runs in a browser served from its folder
+   over local HTTP. A browser view without focus pauses the game, so set
+   `SceneManager.isGameActive = () => true`, wait for the title scene and
+   `DataManager.isDatabaseLoaded()` before `DataManager.setupNewGame()`, then step frames with
+   `SceneManager.updateMain()` and call `Graphics._app.render()` before each capture.
 8. Recommend a readable font for each category. Use `keep current (<N>px)` when no game-side font
    change is needed; otherwise cite the exact plugin parameter or function that would change it.
 </instructions>
