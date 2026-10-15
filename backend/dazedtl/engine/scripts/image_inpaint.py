@@ -3,7 +3,8 @@
 
 Candidates keep the source PNG's header and every ancillary chunk (gamma,
 colour profile, text) and change no pixel outside the mask, including the
-colour stored under fully transparent pixels.
+colour stored under fully transparent pixels. ``install`` fetches the packages
+and models a method needs into this same Python.
 """
 
 from __future__ import annotations
@@ -42,29 +43,58 @@ def _runtime():
         from util.imagetools import inpaint, pngfile
     except (ImportError, ModuleNotFoundError) as exc:
         raise RuntimeError(
-            "The image editor resources are unavailable in this Python "
-            f"({sys.executable}): {exc}. Open Edit text in DazedTL and accept "
-            "the resource download before using the local inpainting bridge."
+            f"This Python ({sys.executable}) lacks the image libraries DazedTL "
+            f"installs with the app ({exc}). Run the bridge with the Image "
+            "Editor Python named in the image translation task."
         ) from exc
     return np, Image, inpaint, pngfile
 
 
 def _status() -> dict:
     _np, _image, inpaint, _pngfile = _runtime()
+    from util.imagetools import resources
+
     methods = []
     for method in inpaint.METHODS:
-        methods.append(
-            {
-                "available": inpaint.available(method),
-                "label": inpaint.METHOD_LABELS[method],
-                "name": method,
-                "status": inpaint.status(method),
-            }
-        )
+        row = {
+            "available": inpaint.available(method),
+            "label": inpaint.METHOD_LABELS[method],
+            "name": method,
+            "status": inpaint.status(method),
+        }
+        if not row["available"] and method not in inpaint.LOCAL:
+            row["download"] = resources.human(
+                resources.estimate([resources.get(method)])
+            )
+            row["install"] = inpaint.install_command(method)
+        methods.append(row)
     return {
         "ok": True,
         "python": sys.executable,
         "methods": methods,
+    }
+
+
+def _install(args) -> dict:
+    """Fetch what the named methods need, then report the methods again."""
+    _np, _image, inpaint, _pngfile = _runtime()
+    from util.imagetools import resources
+
+    unknown = [method for method in args.methods if method not in inpaint.METHODS]
+    if unknown:
+        raise ValueError(
+            f"Unknown method {unknown[0]!r}; choose from {', '.join(inpaint.METHODS)}"
+        )
+    chosen = [
+        resources.get(method) for method in args.methods if method not in inpaint.LOCAL
+    ]
+    wanted = [resource for resource in chosen if not resources.installed(resource)]
+    # stdout stays one JSON document; pip's and the download's progress go
+    # to stderr as they happen.
+    resources.install(wanted, log=lambda line: print(line, file=sys.stderr, flush=True))
+    return {
+        **_status(),
+        "installed": [resource.key for resource in wanted],
     }
 
 
@@ -185,6 +215,12 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("status", help="Report installed and loadable backends as JSON")
+    install = commands.add_parser(
+        "install", help="Download the packages and models the named methods need"
+    )
+    install.add_argument(
+        "methods", nargs="+", help="Methods reported unavailable by status, such as aot"
+    )
 
     fill = commands.add_parser(
         "fill", help="Reconstruct exactly the nonzero pixels in a full-size mask"
@@ -202,7 +238,12 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        payload = _status() if args.command == "status" else _fill(args)
+        if args.command == "status":
+            payload = _status()
+        elif args.command == "install":
+            payload = _install(args)
+        else:
+            payload = _fill(args)
     except Exception as exc:
         _print(
             {"error": f"{type(exc).__name__}: {exc}", "ok": False},

@@ -12,14 +12,15 @@ three families:
   line art crossing thin glyphs from being dragged into a smudge.
 * **PatchMatch** copies real patches from elsewhere in the picture instead of
   averaging, so screentone and hatching survive it. It is not a model - no
-  weights, no runtime - but it does need a small prebuilt library.
+  weights, no runtime - but it does need a small compiled library, which the
+  ``pypatchmatch`` package brings.
 * **LaMa**, **LaMa (manga)** and **AOT** are networks. They are the only ones
   that will invent plausible *structure* across a hole rather than blur over it.
 
 Everything past the first family is optional in the same way the RapidOCR
-fallback is: unavailable announces itself with the reason and the fix, and the
-rest of the tool carries on without it. Nothing is ever downloaded
-automatically - the files are the user's to place.
+fallback is: unavailable announces itself with the reason and the one command
+that fetches it, and the rest of the tool carries on without it. Nothing is
+ever downloaded automatically.
 
 Two things about this job are specific to game art and are easy to get wrong.
 
@@ -41,7 +42,7 @@ comes back for them is discarded, since their alpha keeps them invisible.
 
 from __future__ import annotations
 
-import ctypes
+import importlib
 import os
 import sys
 from dataclasses import dataclass
@@ -138,7 +139,6 @@ CROWDED = 0.90
 CROWDED_CONTEXT = 0.5
 
 MODEL_DIR = DATA_DIR / "models"
-LIB_DIR = DATA_DIR / "libs"
 
 SCALE_UNIT = "01"       # the picture arrives as 0..1
 SCALE_SIGNED = "-11"    # ...or as -1..1
@@ -196,23 +196,20 @@ MODELS = {
     ),
 }
 
-#: Prebuilt PatchMatch libraries, from
-#: https://github.com/dmMaze/PyPatchMatchInpaint/releases - unpack the archive
-#: for this platform into ``data/libs``. The Windows one brings its own
-#: ``opencv_world455.dll``, which has to sit in the same folder.
-PATCHMATCH_SOURCE = "https://github.com/dmMaze/PyPatchMatchInpaint/releases"
-PATCHMATCH_NAMES = (
-    "patchmatch_inpaint.dll",
-    "libpatchmatch_inpaint.so",
-    "libpatchmatch_inpaint.dylib",
-    "patchmatch_inpaint.dylib",
-)
-#: Patch size for PatchMatch. The reference default, and it holds up: smaller
-#: reproduces noise, larger starts transplanting recognisable pieces of the
-#: picture into the hole.
+#: Patch radius for PatchMatch, so patches are 31 px across. The reference
+#: default, and it holds up: smaller reproduces noise, larger starts
+#: transplanting recognisable pieces of the picture into the hole.
 PATCH_SIZE = 15
 
-LIB_ENV = "IMGTL_PATCHMATCH_LIBS"
+#: The bridge that fetches what is missing. Every "not available" names it
+#: with this interpreter, because the fix has to land in this Python and a
+#: bare ``python`` is often another one.
+BRIDGE = Path(__file__).resolve().parents[2] / "scripts" / "image_inpaint.py"
+
+
+def install_command(method: str) -> str:
+    """The exact command that installs what *method* needs into this Python."""
+    return f'"{sys.executable}" "{BRIDGE}" install {method}'
 
 
 def model_env(method: str) -> str:
@@ -232,22 +229,6 @@ def model_path(method: str = LAMA) -> Path:
         return Path(override)
     spec = MODELS.get(method)
     return MODEL_DIR / (spec.filename if spec else f"{method}.onnx")
-
-
-def library_dir() -> Path:
-    """Where the PatchMatch library is looked for."""
-    override = os.environ.get(LIB_ENV, "").strip()
-    return Path(override) if override else LIB_DIR
-
-
-def library_path() -> Path | None:
-    """The PatchMatch library on this machine, or None if it is not there."""
-    directory = library_dir()
-    for name in PATCHMATCH_NAMES:
-        candidate = directory / name
-        if candidate.is_file():
-            return candidate
-    return None
 
 
 def needs_context(method: str) -> bool:
@@ -277,8 +258,8 @@ def context_pad(method: str, width: int, height: int, crowded: bool) -> int:
 # ------------------------------------------------------------- availability
 
 
-def _probe_runtime() -> tuple[bool, str]:
-    """Is onnxruntime importable *here*, and if not, why exactly?
+def _probe_package(module: str, package: str, method: str) -> tuple[bool, str]:
+    """Is *module* importable *here*, and if not, why exactly?
 
     Every branch below names the interpreter. Two of these failures look
     identical from the outside and have opposite fixes - a package genuinely
@@ -286,43 +267,35 @@ def _probe_runtime() -> tuple[bool, str]:
     running under another - and without the path there is no way to tell them
     apart from the panel.
     """
-    import importlib
-
     importlib.invalidate_caches()
     where = f"(python: {sys.executable})"
     try:
-        importlib.import_module("onnxruntime")
+        importlib.import_module(module)
     except ModuleNotFoundError as exc:
-        if exc.name == "onnxruntime":
+        if exc.name == module:
             return False, (
-                f"onnxruntime is not installed in this Python {where} — "
-                "reopen this editor and accept the download, or run "
-                "“python -m util.imagetools.resources --default”"
+                f"{package} is not installed in this Python {where}. "
+                f"Install it with: {install_command(method)}"
             )
         # The package is there but something inside it is not. This is a
         # ModuleNotFoundError too, and calling it "not installed" sends the
         # reader off to reinstall a package they can plainly see on disk.
         return False, (
-            f"onnxruntime is installed but will not load {where}: no module "
-            f"named “{exc.name}”. Usually a half-finished or mismatched "
-            "install — pip install --force-reinstall onnxruntime"
+            f"{package} is installed but will not load {where}: no module "
+            f"named {exc.name!r}. Usually a half-finished or mismatched "
+            f"install; reinstall it with: \"{sys.executable}\" -m pip install "
+            f"--force-reinstall {package}"
         )
     except ImportError as exc:
         return False, (
-            f"onnxruntime will not load {where}: {exc} — on Windows, check "
-            "the Microsoft Visual C++ runtime and the installed backend version."
+            f"{package} will not load {where}: {exc}. On Windows, check "
+            "the Microsoft Visual C++ runtime and the installed version."
         )
     except Exception as exc:
         return False, (
-            f"onnxruntime will not load {where}: {type(exc).__name__}: {exc}"
+            f"{package} will not load {where}: {type(exc).__name__}: {exc}"
         )
     return True, ""
-
-
-#: How anything missing is obtained. Everything here is downloaded on demand
-#: rather than shipped, so the useful half of "this is unavailable" is where to
-#: get it - and that is one command, not a hunt through a release page.
-GET = "python -m util.imagetools.resources"
 
 
 def _probe(method: str) -> tuple[bool, str]:
@@ -332,33 +305,31 @@ def _probe(method: str) -> tuple[bool, str]:
         return True, "ready (OpenCV, no download)"
 
     if method == PATCHMATCH:
-        path = library_path()
-        if path is None:
+        ok, detail = _probe_package("patchmatch", "pypatchmatch", method)
+        if not ok:
+            return False, detail
+        library = importlib.import_module("patchmatch")
+        if not library.patchmatch_available:
             return False, (
-                f"no PatchMatch library in {library_dir()} — reopen this editor "
-                f"and accept the download, or run “{GET} patchmatch”. To use a "
-                f"copy from {PATCHMATCH_SOURCE} that you unpacked yourself, "
-                f"point {LIB_ENV} at it"
+                "pypatchmatch is installed but its compiled library will not "
+                f"load (python: {sys.executable}); reinstall it with: "
+                f"{install_command(method)}"
             )
-        try:
-            _patchmatch()
-        except Exception as exc:
-            return False, f"the PatchMatch library will not load: {exc}"
-        return True, f"ready ({path.name})"
+        return True, f"ready (pypatchmatch {library.__version__})"
 
     if method not in MODELS:
-        return False, f"unknown method “{method}”"
+        return False, f"unknown method {method!r}"
 
-    ok, detail = _probe_runtime()
+    ok, detail = _probe_package("onnxruntime", "onnxruntime", method)
     if not ok:
         return False, detail
     path = model_path(method)
     if not path.is_file():
         spec = MODELS[method]
         return False, (
-            f"no model at {path} — reopen this editor and tick “{method}”, or "
-            f"run “{GET} {method}”. To use a copy of {spec.filename} you "
-            f"already have (from {spec.source}), point {model_env(method)} at it"
+            f"no model at {path}. Download it with: {install_command(method)}. "
+            f"To use a copy of {spec.filename} you already have (from "
+            f"{spec.source}), point {model_env(method)} at it"
         )
     return True, f"ready ({path.name}, onnxruntime)"
 
@@ -576,16 +547,9 @@ def _session(method: str):
 
 
 def forget() -> None:
-    """Drop every loaded graph and library. For tests, and for swapping files."""
+    """Drop every loaded graph. For tests, and for swapping files."""
     _SESSIONS.clear()
     _PREFERRED.clear()
-    cookie = _LIBRARY.pop("dll_dir", None)
-    if cookie is not None:
-        # Closed rather than dropped: the search path entry outlives the
-        # reference otherwise, and a test that points the library somewhere
-        # else would still find the old folder.
-        cookie.close()
-    _LIBRARY.clear()
 
 
 def _pad_to(value: int, multiple: int = 8) -> int:
@@ -686,84 +650,14 @@ def _model_fill(method: str, rgb: np.ndarray, mask: np.ndarray) -> np.ndarray:
 # ----------------------------------------------------------------- PatchMatch
 
 
-class _Shape(ctypes.Structure):
-    _fields_ = [
-        ("width", ctypes.c_int),
-        ("height", ctypes.c_int),
-        ("channels", ctypes.c_int),
-    ]
+def _patchmatch_fill(rgb: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    import patchmatch
 
-
-class _Mat(ctypes.Structure):
-    _fields_ = [
-        ("data_ptr", ctypes.c_void_p),
-        ("shape", _Shape),
-        ("dtype", ctypes.c_int),
-    ]
-
-
-#: The library's own depth codes, which are OpenCV's.
-_DTYPES = {"uint8": 0, "int8": 1, "uint16": 2, "int16": 3, "int32": 4,
-           "float32": 5, "float64": 6}
-
-_LIBRARY: dict[str, object] = {}
-
-
-def _patchmatch():
-    """Load ``patchmatch_inpaint`` once and keep the handle alive.
-
-    The binding is written out here rather than vendored: the reference
-    wrapper hard-codes a relative library path, imports PIL, and carries three
-    entry points this tool has no use for. What matters is the ABI, and that is
-    four fields and one call.
-    """
-    if "lib" in _LIBRARY:
-        return _LIBRARY["lib"]
-    path = library_path()
-    if path is None:
-        raise FileNotFoundError(f"no PatchMatch library in {library_dir()}")
-    if sys.platform == "win32" and hasattr(os, "add_dll_directory"):
-        # The Windows build is linked against the opencv_world455.dll shipped
-        # beside it, which the loader will not find on its own.
-        _LIBRARY["dll_dir"] = os.add_dll_directory(str(path.parent))
-    lib = ctypes.CDLL(str(path))
-    lib.PM_free_pymat.argtypes = [_Mat]
-    lib.PM_inpaint.argtypes = [_Mat, _Mat, ctypes.c_int]
-    lib.PM_inpaint.restype = _Mat
-    lib.PM_set_random_seed.argtypes = [ctypes.c_uint]
-    lib.PM_set_verbose.argtypes = [ctypes.c_int]
-    lib.PM_set_verbose(0)
+    patchmatch.set_verbose(False)
     # Fixed, so that re-rendering a block twice gives the same picture twice.
     # The algorithm starts from a random correspondence field, and a preview
     # that shimmers on every keystroke reads as a bug.
-    lib.PM_set_random_seed(1)
-    _LIBRARY["lib"] = lib
-    return lib
-
-
-def _as_mat(array: np.ndarray) -> _Mat:
-    return _Mat(
-        ctypes.cast(array.ctypes.data, ctypes.c_void_p),
-        _Shape(array.shape[1], array.shape[0], array.shape[2]),
-        _DTYPES[str(array.dtype)],
+    patchmatch.set_random_seed(1)
+    return patchmatch.inpaint(
+        np.ascontiguousarray(rgb, dtype=np.uint8), mask > 0, patch_size=PATCH_SIZE
     )
-
-
-def _patchmatch_fill(rgb: np.ndarray, mask: np.ndarray) -> np.ndarray:
-    lib = _patchmatch()
-    picture = np.ascontiguousarray(rgb, dtype=np.uint8)
-    hole = np.ascontiguousarray((mask > 0).astype(np.uint8)[:, :, None])
-    returned = lib.PM_inpaint(
-        _as_mat(picture), _as_mat(hole), ctypes.c_int(PATCH_SIZE)
-    )
-    try:
-        borrowed = np.ctypeslib.as_array(
-            ctypes.cast(returned.data_ptr, ctypes.POINTER(ctypes.c_uint8)),
-            (returned.shape.height, returned.shape.width, returned.shape.channels),
-        )
-        # Copied before the library frees it - `as_array` is a view into memory
-        # that is about to stop being ours.
-        out = np.array(borrowed, dtype=np.uint8)
-    finally:
-        lib.PM_free_pymat(returned)
-    return out
