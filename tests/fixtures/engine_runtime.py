@@ -159,19 +159,26 @@ try:
         (guidance / ".dazedtl/skills").mkdir(parents=True)
         quirks = guidance / ".dazedtl/skills/quirks.md"
         quirks.write_text("Keep honorifics.", encoding="utf-8")
-        # The first build adds the game's files; only settled ones are reused.
-        load_system_prompt(guidance)
-        for path in [*guidance.rglob("*"), guidance]:
-            os.utime(path, ns=(10**18, 10**18))
+        # The bundled prompt is read too, and a fresh checkout leaves it too
+        # recent to reuse; a copy settles with the game's files.
+        bundled = temporary / "system.md"
+        bundled.write_bytes(runtime_data_file(PROMPT_PATH).read_bytes())
         built = []
-        with patch.object(prompts, "prepare_game_translation_context", built.append):
-            first = load_system_prompt(guidance)
-            assert "Keep honorifics." in first
-            assert load_system_prompt(guidance) == first and len(built) == 1, built
-            quirks.write_text("Drop honorifics.", encoding="utf-8")
-            os.utime(quirks, ns=(10**18 + 10**10, 10**18 + 10**10))
-            assert "Drop honorifics." in load_system_prompt(guidance)
-            assert len(built) == 2, built
+        with patch.object(prompts, "runtime_data_file", lambda _: bundled):
+            # The first build adds the game's files; only settled ones are reused.
+            load_system_prompt(guidance)
+            for path in [*guidance.rglob("*"), guidance, bundled]:
+                os.utime(path, ns=(10**18, 10**18))
+            with patch.object(
+                prompts, "prepare_game_translation_context", built.append
+            ):
+                first = load_system_prompt(guidance)
+                assert "Keep honorifics." in first
+                assert load_system_prompt(guidance) == first and len(built) == 1, built
+                quirks.write_text("Drop honorifics.", encoding="utf-8")
+                os.utime(quirks, ns=(10**18 + 10**10, 10**18 + 10**10))
+                assert "Drop honorifics." in load_system_prompt(guidance)
+                assert len(built) == 2, built
 
         # A real saved run recorded this pre-version byte hash; it must still pass
         # the native resume guard, alongside plans that record the version.
