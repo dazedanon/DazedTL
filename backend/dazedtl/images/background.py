@@ -35,6 +35,8 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
+from dazedtl.compatibility import image_editor
+
 KEPT, CONSENSUS, INVERTED, BLENDED, FILLED = range(5)
 METHODS = ("kept", "consensus", "inverted", "blended", "filled")
 # Distinct colours for viewing the method map as a palette PNG.
@@ -179,74 +181,14 @@ def _glow_mask(core, sigma, radius):
     return cv2.GaussianBlur(mask, (size, size), sigma, borderType=cv2.BORDER_CONSTANT)
 
 
-def _neighbours(values):
-    """The sum of each pixel's four neighbours, zero outside the image."""
-    padded = np.pad(values, ((1, 1), (1, 1), (0, 0)))
-    return padded[:-2, 1:-1] + padded[2:, 1:-1] + padded[1:-1, :-2] + padded[1:-1, 2:]
-
-
-def _laplace(values, hole, tolerance):
-    """Fill hole in a (height, width, channels) image whose other pixels are
-    fixed, by conjugate gradients from a guess solved at half size."""
-    height, width, channels = values.shape
-    if hole.sum() > 1024 and min(height, width) >= 8:
-        even = np.pad(values, ((0, height % 2), (0, width % 2), (0, 0)), mode="edge")
-        known = np.pad(~hole, ((0, height % 2), (0, width % 2)), mode="edge").astype(
-            np.float64
-        )
-        blocks = (even.shape[0] // 2, 2, even.shape[1] // 2, 2)
-        weight = known.reshape(blocks).sum((1, 3))
-        total = (even * known[..., None]).reshape(*blocks, channels).sum((1, 3))
-        coarse = _laplace(
-            total / np.maximum(weight, 1)[..., None], weight == 0, tolerance
-        )
-        guess = cv2.resize(
-            coarse, (even.shape[1], even.shape[0]), interpolation=cv2.INTER_LINEAR
-        )
-        values = np.where(
-            hole[..., None], guess.reshape(even.shape)[:height, :width], values
-        )
-    unknown = hole[..., None].astype(np.float64)
-    degree = _neighbours(np.ones((height, width, 1)))
-    rhs = _neighbours(values * (1 - unknown)) * unknown
-
-    def apply(x):
-        return (degree * x - _neighbours(x)) * unknown
-
-    x = values * unknown
-    r = rhs - apply(x)
-    z = r / degree
-    p = z.copy()
-    rz = (r * z).sum((0, 1))
-    scale = np.maximum(np.abs(rhs).sum((0, 1)), 1e-12)
-    for _ in range(4 * (height + width)):
-        if (np.abs(r).sum((0, 1)) / scale).max() < tolerance:
-            break
-        q = apply(p)
-        step = rz / np.maximum((p * q).sum((0, 1)), 1e-30)
-        x += step * p
-        r -= step * q
-        z = r / degree
-        following = (r * z).sum((0, 1))
-        p = z + following / np.maximum(rz, 1e-30) * p
-        rz = following
-    return np.where(hole[..., None], x, values)
-
-
-def harmonic_fill(values, mask, tolerance=1e-3):
+def harmonic_fill(values, mask):
     """Solve Laplace's equation for the masked pixels of a float image, with
-    the other pixels as fixed boundary."""
+    the other pixels as fixed boundary: the image tools' exact fill, which the
+    inpainting bridge and the image text editor run too."""
     result = values.astype(np.float64, copy=True)
     if not mask.any() or mask.all():
         return result
-    flat = result.ndim == 2
-    if flat:
-        result = result[..., None]
-    x, y, w, h = _bounds(mask)
-    x0, y0 = max(0, x - 1), max(0, y - 1)
-    x1, y1 = min(mask.shape[1], x + w + 1), min(mask.shape[0], y + h + 1)
-    result[y0:y1, x0:x1] = _laplace(result[y0:y1, x0:x1], mask[y0:y1, x0:x1], tolerance)
-    return result[..., 0] if flat else result
+    return image_editor.harmonic_fill(result, mask)
 
 
 def _consensus(flat, eligible):

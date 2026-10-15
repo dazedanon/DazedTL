@@ -20,6 +20,14 @@ def repair_method(value):
     return value if value in REPAIRS else "telea"
 
 
+def harmonic_fill(values, hole):
+    """The image tools' exact Laplace fill over *hole*, for the family
+    background solver."""
+    from util.imagetools import harmonic
+
+    return harmonic.fill(values, hole)
+
+
 def local_ocr():
     # This package generation bundles its ONNX weights. The newer `rapidocr`
     # package may download models at construction, so it is deliberately absent.
