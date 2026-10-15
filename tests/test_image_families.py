@@ -2,6 +2,7 @@
 
 import sqlite3
 import unittest
+from contextlib import closing
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -206,11 +207,11 @@ class FamilyTests(unittest.TestCase):
             with index.connection() as db:
                 for row in rows:
                     Index.put(db, row)
-            stored = (
-                sqlite3.connect(index.path)
-                .execute("SELECT count(*), max(instr(data, 'familyTiles')) FROM assets")
-                .fetchone()
-            )
+            # Closed at once, or Windows can't remove the folder afterwards.
+            with closing(sqlite3.connect(index.path)) as db:
+                stored = db.execute(
+                    "SELECT count(*), max(instr(data, 'familyTiles')) FROM assets"
+                ).fetchone()
             self.assertEqual(stored, (5, 0))
             self.assertEqual(
                 index.refresh_families()[0]["members"], [row["id"] for row in rows]
