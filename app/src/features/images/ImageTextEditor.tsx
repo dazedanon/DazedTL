@@ -44,11 +44,11 @@ const backgroundRepairs: Record<BackgroundRepair, string> = {
   patch: "Clone clean strip",
   inpaint: "Rebuild from surroundings",
 };
-/** The local reconstructions the backend runs for "inpaint"; Telea by default. */
+/** Local reconstructions for "inpaint"; the first is the default. */
 const repairMethods: Record<string, string> = {
+  harmonic: "Harmonic (smoothest)",
   telea: "Telea (fast)",
   ns: "Navier-Stokes (follows lines)",
-  harmonic: "Harmonic (smoothest)",
 };
 /** Keep side-by-side canvases on the same region as one is scrolled. */
 const syncScroll = (source: HTMLElement) => {
@@ -1050,7 +1050,7 @@ function Editor({
                             block.style.inpaint_method || "",
                           )
                             ? block.style.inpaint_method
-                            : "telea"
+                            : "harmonic"
                         }
                         disabled={busy}
                         onChange={(event) =>

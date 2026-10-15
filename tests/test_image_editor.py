@@ -305,7 +305,7 @@ class EditorTests(unittest.TestCase):
                 32,
             )
         # The editor runs its local repairs as chosen, and never a model.
-        for chosen, runs in (("harmonic", "harmonic"), ("lama", "telea")):
+        for chosen, runs in (("telea", "telea"), ("lama", "harmonic")):
             style = {"background": "inpaint", "inpaint_method": chosen}
             block = {**bad[0], "box": [1, 1, 10, 10], "style": style}
             self.assertEqual(
