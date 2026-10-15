@@ -1,5 +1,6 @@
 """Protect scoped handoff, stale reviews and all-or-nothing image application."""
 
+import os
 import shutil
 import time
 import unittest
@@ -23,6 +24,11 @@ from dazedtl.translation.backups import snapshot, store_path
 from dazedtl.translation.files import digest, read_json
 from dazedtl.translation.operations import lifecycle_path
 from PIL import Image
+
+# Background scans finish in milliseconds, but a slow Windows CI runner took
+# over two seconds; like the probes, a stuck scan still fails within the
+# suite's budget (scripts/test.mjs).
+SCAN_SECONDS = float(os.environ.get("DAZEDTL_TEST_BUDGET") or 10) * 0.8
 
 
 def png(color=(0, 0, 0, 0), size=(8, 8)):
@@ -131,7 +137,7 @@ class ImageTests(unittest.TestCase):
 
     def scan(self):
         self.service.action(self.identity, "scan")
-        deadline = time.monotonic() + 2
+        deadline = time.monotonic() + SCAN_SECONDS
         while self.service.state(self.identity)["job"]["status"] == "running":
             if time.monotonic() > deadline:
                 self.fail("Fixture scan did not finish.")
@@ -423,7 +429,7 @@ class ImageTests(unittest.TestCase):
         write_bytes(self.game / "img/C.png", png((9, 9, 9, 255)))
         # The scan runs on; status names the next step once it finishes.
         self.service.assistant(self.identity, "scan")
-        deadline = time.monotonic() + 2
+        deadline = time.monotonic() + SCAN_SECONDS
         while (step := self.service.assistant(self.identity, "status"))[
             "next"
         ] == "scan":
