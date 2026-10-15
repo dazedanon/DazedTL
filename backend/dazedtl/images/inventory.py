@@ -169,7 +169,10 @@ class Index:
         if folder:
             parts.append("(folder=? OR instr(folder,?)=1)")
             parameters.extend((folder.rstrip("/"), folder.rstrip("/") + "/"))
-        if filter and filter != "all":
+        # The list's own view leaves images already in the game to Applied.
+        if filter == "not_applied":
+            parts.append("state!='applied'")
+        elif filter and filter != "all":
             parts.append("(classification=? OR state=?)")
             parameters.extend((filter, filter))
         if selected_only:
@@ -199,7 +202,13 @@ class Index:
             total = db.execute(
                 "SELECT count(*) FROM assets" + where, parameters
             ).fetchone()[0]
-            selected_where = where + (" AND " if where else " WHERE ") + "selected=1"
+            # Ticked images already in the game have left the list's view, so
+            # no view counts them as images in the list it hides.
+            selected_where = (
+                where
+                + (" AND " if where else " WHERE ")
+                + "selected=1 AND state!='applied'"
+            )
             selected = db.execute(
                 "SELECT count(*) FROM assets" + selected_where, parameters
             ).fetchone()[0]
@@ -223,7 +232,7 @@ class Index:
                     query=filters.get("query", ""), folder=filters.get("folder", "")
                 )
                 views = db.execute(
-                    "SELECT count(*), total(selected=1),"
+                    "SELECT count(*), total(selected=1 AND state!='applied'),"
                     " total(classification='uncertain' OR state='uncertain'),"
                     " total(classification='ready' OR state='ready'),"
                     " total(classification='applied' OR state='applied')"

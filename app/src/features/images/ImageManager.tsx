@@ -491,6 +491,7 @@ function Manager({
     state.inventoryRevision,
     listRevision,
     state.selection,
+    flow.applied,
     range.start,
     range.end,
   );
@@ -849,9 +850,11 @@ function Manager({
     onClick: () => void perform(key),
   });
   const busy = action.busy || jobRunning;
-  // The grid's views, from the list to translate to every image.
+  // The grid's views, from the list to translate to every image. Applied
+  // images stay ticked, so the steps still count them, but leave the list's
+  // view for Applied.
   const views = {
-    list: { showSelected: true, status: "all" },
+    list: { showSelected: true, status: "not_applied" },
     uncertain: { showSelected: false, status: "uncertain" },
     ready: { showSelected: false, status: "ready" },
     applied: { showSelected: false, status: "applied" },
@@ -859,12 +862,16 @@ function Manager({
   } as const;
   type GridView = keyof typeof views | "";
   const shown: GridView = value.view.showSelected
-    ? value.view.status === "all"
+    ? value.view.status === "not_applied"
       ? "list"
       : ""
     : (["uncertain", "ready", "applied", "all"] as const).find(
         (key) => key === value.view.status,
       ) || "";
+  // An empty list view, unless a folder or search hides its images, has
+  // nothing left to translate.
+  const listDone =
+    shown === "list" && !value.view.folder && !value.view.query.trim();
   // Which views show follows the whole game, so the switch keeps its shape;
   // their numbers follow the folder and search, as the grid does.
   const scoped = grid.views;
@@ -876,9 +883,9 @@ function Manager({
   }[] = [
     {
       value: "list",
-      label: "To translate",
-      shown: !!value.selection.length,
-      count: scoped?.list ?? value.selection.length,
+      label: "Recommended",
+      shown: flow.listed > flow.applied,
+      count: scoped?.list ?? flow.listed - flow.applied,
     },
     {
       value: "uncertain",
@@ -1249,7 +1256,9 @@ function Manager({
                       ? "No images indexed"
                       : folderSearch
                         ? "No matches in this folder"
-                        : "No matching images"}
+                        : listDone
+                          ? "Nothing left to translate"
+                          : "No matching images"}
                   </h3>
                   {/* A search inside a folder looks only there, which the grid
                   alone does not show. */}
@@ -1283,7 +1292,9 @@ function Manager({
                       ? "Index images"
                       : folderSearch
                         ? "Search all folders"
-                        : "Clear filters"}
+                        : listDone
+                          ? "Show all images"
+                          : "Clear filters"}
                   </Button>
                 </div>
               ) : (

@@ -53,6 +53,8 @@ VIEW = {
     "viewedImage": "",
     "workflowMode": "discovery",
 }
+# The view of the list to translate, without the images already in the game.
+LIST_VIEW = {"showSelected": True, "status": "not_applied"}
 
 
 def now():
@@ -179,11 +181,13 @@ class ImageService:
                     dict.fromkeys(value["selection"] + self._requested(root, value))
                 )
                 if value["selection"]:
-                    value["view"].update(
-                        showSelected=True, status="all", folder="", query=""
-                    )
+                    value["view"].update(LIST_VIEW, folder="", query="")
                 value["listVersion"] = 2
                 self._save(project_id, value)
+            # Earlier versions' view of the list also showed images in the game.
+            view = value["view"]
+            if view.get("showSelected") and view.get("status") == "all":
+                view.update(LIST_VIEW)
             return value
         return {
             "version": 1,
@@ -1952,9 +1956,7 @@ class ImageService:
                     + listed
                 )
             )
-            value["view"].update(
-                showSelected=True, status="all", folder="", query="", scroll=0
-            )
+            value["view"].update(LIST_VIEW, folder="", query="", scroll=0)
             index.selected(value["selection"])
         # Completion is accumulated across partial saves of this exact request:
         # a request whose every image has a result is answered, flag or not, so

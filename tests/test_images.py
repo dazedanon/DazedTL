@@ -393,6 +393,16 @@ class ImageTests(unittest.TestCase):
         self.choose(["img/A.png"])
         with self.assertRaisesRegex(ValueError, "already in the game"):
             self.service.action(self.identity, "edit_task")
+        # The applied image stays ticked but leaves the Recommended view, also
+        # when an earlier version saved that view.
+        write_json(
+            saved, {**read_json(saved), "view": {"showSelected": True, "status": "all"}}
+        )
+        view = self.service.state(self.identity)["view"]
+        listed = self.service.list(
+            self.identity, filter=view["status"], selected_only=view["showSelected"]
+        )
+        self.assertEqual((listed["total"], listed["views"]["list"]), (0, 0))
         self.assertEqual(editing["assets"][0]["id"], "img/A.png")
 
     def test_an_assistant_led_assistant_runs_the_steps_and_its_progress_completes(

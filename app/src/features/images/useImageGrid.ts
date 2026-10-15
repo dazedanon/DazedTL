@@ -65,7 +65,8 @@ const nearestPages = (from: number, total: number) =>
  * the view read after it so scrolling finds its images listed. `revision`
  * reloads them, while saving a different `selection` only recounts the
  * selected matches, so ticking images never reloads the grid and the
- * To translate view keeps a tile its user just unticked.
+ * Recommended view keeps a tile its user just unticked. `applied` of the
+ * selected images are in the game, which the list leaves to Applied.
  */
 export function useImageGrid(
   projectId: string,
@@ -73,6 +74,7 @@ export function useImageGrid(
   inventory: string,
   revision: number,
   selection: readonly string[],
+  applied: number,
   start: number,
   end: number,
 ) {
@@ -214,7 +216,7 @@ export function useImageGrid(
   // so it stays until the next count arrives; a reload or other filters wait
   // for their own.
   const saved = useMemo(() => selection.join("\n"), [selection]);
-  const chosen = selection.length;
+  const chosen = selection.length - applied;
   const [counted, setCounted] = useState<{
     scope: Scope;
     hidden: number;
