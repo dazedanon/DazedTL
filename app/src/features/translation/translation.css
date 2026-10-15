@@ -181,6 +181,16 @@
 .lens-run-body .request-picker {
   width: 24rem;
 }
+/* Paging belongs to the Requests tab, so the tabs stay first and keep their
+   place when it leaves with another tab. */
+@container request-reader (max-width: 620px) {
+  .lens-run-body .request-toolbar .ui-tabs {
+    order: 0;
+  }
+  .lens-run-body .request-navigation {
+    padding-bottom: var(--space-2);
+  }
+}
 .lens-run-body > :not(.request-reader) {
   flex-shrink: 0;
 }
