@@ -66,7 +66,7 @@ from util.rpgmaker_rewrap import (
     rewrap_value,
     widest_line,
 )
-from util.skills import rpgmaker_qa_skill_parts
+from util.skills import rpgmaker_qa_skill_file, rpgmaker_qa_skill_parts
 
 
 TASK_SCHEMA = "rpgmaker-qa-task-v3"
@@ -160,7 +160,7 @@ SOURCE_FIX_ALLOWED_FLAGS = {
     "database-numbers": ("visible-number-mismatch",),
     "battler-name": (ADDED_BATTLER_NAME,),
 }
-# Every module whose rules shape bundles, flags or findings.
+# Every module whose rules shape bundles, flags, findings or the briefs.
 _ENGINE_SOURCES = (
     "rpgmaker_qa.py", "rpgmaker_qa_manifest.py", "rpgmaker_qa_lint.py",
     "rpgmaker_qa_preflight.py", "rpgmaker_qa_reach.py", "rpgmaker_qa_checks.py",
@@ -168,11 +168,11 @@ _ENGINE_SOURCES = (
     "rpgmaker_screens/__init__.py", "rpgmaker_screens/capture.cjs",
     "rpgmaker_screens/harness.js", "rpgmaker_window/__init__.py",
     "rpgmaker_window/launcher.cjs", "rpgmaker_window/bridge.cjs",
+    "skills/setup.py",
 )
 # Lint proposals per review item, so a decline sets aside few of them.
 LINT_ITEM_LIMIT = 60
 
-QA_POLICY_VERSION = "rpgmaker-qa-scene-motif-editorial-reference-check-database-v17"
 FORCED_DEEP_MECHANICAL_FLAGS = frozenset({
     "empty-live",
     "unchanged-source",
@@ -717,39 +717,18 @@ def _disallowed_flags(
 
 
 def _engine_fingerprint() -> str:
-    """Fingerprint every rule/configuration that affects reusable QA evidence."""
-    contract = {
-        "policy": QA_POLICY_VERSION,
-        "engine_source_sha256": _sha256(b"".join(
-            (Path(__file__).parent / name).read_bytes() for name in _ENGINE_SOURCES
-        )),
-        "schemas": {
-            "task": TASK_SCHEMA,
-            "checkpoint": CHECKPOINT_SCHEMA,
-            "bundle": BUNDLE_SCHEMA,
-            "screen_result": SCREEN_RESULT_SCHEMA,
-            "deep_result": DEEP_RESULT_SCHEMA,
-            "findings": FINDINGS_SCHEMA,
-        },
-        "bundle_limits": {
-            "screen_chars": DEFAULT_SCREEN_CHAR_BUDGET,
-            "screen_items": DEFAULT_SCREEN_ITEM_LIMIT,
-            "deep_chars": DEFAULT_DEEP_CHAR_BUDGET,
-            "deep_items": DEFAULT_DEEP_ITEM_LIMIT,
-        },
-        "forced_deep_mechanical_flags": sorted(FORCED_DEEP_MECHANICAL_FLAGS),
-        "forced_deep_event_codes": sorted(FORCED_DEEP_EVENT_CODES),
-        "risk_cues": {
-            label: pattern.pattern for label, pattern in sorted(_JP_RISK_CUES.items())
-        },
-        # The policy the README and briefs are made from.
-        "policy_sha256": _sha256("\n".join(
-            "\n".join(rpgmaker_qa_skill_parts(focus))
-            for focus in ("database", "risky-codes", "dialogue", "release")
-        )),
-        "screen_inconsistent_source_evidence": True,
-    }
-    return _sha256(_canonical_bytes(contract))
+    """Fingerprint the files that define QA's rules: the engine modules and
+    the policy the README and briefs are made from.
+
+    Only the files count, never this process's loaded values: the app keeps
+    the code it started with while each QA worker loads the files as they are,
+    so once the files change, both still agree on which rules are current.
+    """
+    files = {name: Path(__file__).parent / name for name in _ENGINE_SOURCES}
+    files["policy"] = rpgmaker_qa_skill_file()
+    return _sha256(_canonical_bytes({
+        name: _sha256(path.read_bytes()) for name, path in files.items()
+    }))
 
 
 def _atomic_write_json(path: Path, value: Any) -> None:

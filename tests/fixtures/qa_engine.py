@@ -1008,6 +1008,17 @@ assert [
     ("plugin", "Prompt", 1, "unknown"),
     ("custom", "Synopsis.json", 1, "unread"),
 ], untranslated["sources"]
+# The rules are the files that define them, never the values this process
+# loaded: the app keeps the code it started with while QA workers load the
+# updated files, and both must agree on which rules are current.
+fingerprint = qa._engine_fingerprint()
+schema, qa.TASK_SCHEMA = qa.TASK_SCHEMA, "older"
+assert qa._engine_fingerprint() == fingerprint
+qa.TASK_SCHEMA = schema
+policy = temporary / "policy.md"
+policy.write_bytes(qa.rpgmaker_qa_skill_file().read_bytes() + b"\nA new rule.\n")
+qa.rpgmaker_qa_skill_file = lambda: policy
+assert qa._engine_fingerprint() != fingerprint
 # After an update changes the rules, the task still reports where it stood,
 # but nothing made under the old rules can be applied.
 qa._engine_fingerprint = lambda: "updated"

@@ -214,6 +214,11 @@ def _embed_identity_rules(prompt: str) -> str:
     return prompt.replace(_CHARACTER_IDENTITY_PLACEHOLDER, _read_skill_file("character_identity.md").strip())
 
 
+def rpgmaker_qa_skill_file() -> Path:
+    """The RPG Maker QA policy file, as QA reads it."""
+    return runtime_data_file(SKILLS_DIR / _RPGMAKER_QA_FILENAME)
+
+
 def rpgmaker_qa_skill_parts(focus: str) -> tuple[str, str]:
     """The shared RPG Maker QA policy and one focus's section, separately."""
     valid_focuses = {key for key, _label in RPGMAKER_QA_FOCUSES}
