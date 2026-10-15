@@ -3,6 +3,16 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.19.0] - 2026-10-15
+
+### Added
+
+- **History:** **Inspect** beside each request error opens that request, and **Inspect run** finds a request by number, file, state or error text instead of paging with **Next**; the request shows its error above its lines.
+
+### Fixed
+
+- **Inspect:** after choosing a request, typing in the request box starts a new search instead of adding to the chosen request's name.
+
 ## [2.18.0] - 2026-10-14
 
 ### Changed
@@ -618,6 +628,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.19.0]: https://github.com/dazedanon/DazedTL/compare/v2.18.0...v2.19.0
 [2.18.0]: https://github.com/dazedanon/DazedTL/compare/v2.17.0...v2.18.0
 [2.17.0]: https://github.com/dazedanon/DazedTL/compare/v2.16.0...v2.17.0
 [2.16.0]: https://github.com/dazedanon/DazedTL/compare/v2.15.1...v2.16.0
