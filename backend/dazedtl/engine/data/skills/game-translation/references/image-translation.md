@@ -6,6 +6,9 @@ the full image census; it does not require approval for each filename. A text-on
 request does not itself authorize replacing unrelated artwork. Follow the scope
 and work mode in [SKILL.md](../SKILL.md).
 
+When DazedTL's Image Manager hands you an image task, its request, report and methodology replace this reference's workspace, review records and manifests.
+Its frozen originals are the pristine sources, the game's `.dazedtl/image_translation_resources` folder is the stable per-game workspace with one recipe per edited image, and its validator checks each edit; the app, not you, installs the reviewed images.
+
 For **manual/no-API work**, transcribe and translate locally, using local image
 tools for measurements, masks and lettering. Do not call hosted OCR, translation
 or image-generation services. The Musi Dream example below used no such services.
@@ -1322,7 +1325,7 @@ of the gate is the crops, not the count.
 
 - **Always re-edit from SOURCE after a botched attempt.** Never stack a fix onto a damaged output - the damage compounds. Purely additive follow-ups (`load_out`) are the only exception.
 - **Stop iterating on a detector after two failed rounds and measure instead.** Six rounds went into a plate detector that kept trading one family's correctness for another's. The fix was a per-row clip that made detection stop mattering. If round three is still regressing, the model of the problem is wrong, not the thresholds. Read a coordinate grid over the image and hardcode a table - the skill's own advice, and it is cheaper than it feels.
-- Keep every edit as a **rerunnable script** (per-image or per-family) so a late wording change is a re-run, not archaeology. Park the per-game workspace (pristine originals, the script, fitted models, outputs) under a stable project folder outside the game (the bundled snapshots used `Active Projects/<game>/images/`) - game folders are volatile by policy, and the parked script is what makes next month's wording change a one-command re-run. This is also what makes the toolkit itself disposable: a bad in-place patch destroyed the shared helper module mid-run, and rebuilding it cost nothing because every family script read from the pristine SRC and could simply be re-run. Not one output was lost.
+- Keep every edit as a **rerunnable script** (per-image or per-family) so a late wording change is a re-run, not archaeology. Park the per-game workspace (pristine originals, the script, fitted models, outputs) under a stable project folder outside the game (the bundled snapshots used `Active Projects/<game>/images/`) - game folders are volatile by policy, and the parked script is what makes next month's wording change a one-command re-run. DazedTL image tasks keep it in the game's `.dazedtl/image_translation_resources` instead. This is also what makes the toolkit itself disposable: a bad in-place patch destroyed the shared helper module mid-run, and rebuilding it cost nothing because every family script read from the pristine SRC and could simply be re-run. Not one output was lost.
 - **Read a coordinate grid, don't count pixels in your head.** A zoom with labelled x/y gridlines drawn over it turns "measure the plate" into reading two numbers off the picture, and it is faster than any probe for one-off layouts. Keep `grid()` beside `zoom()` and reach for it first.
 - Batch by technique (transparent text → logos/glow → bubbles → documents → handwriting), viewing outputs after each batch. Every batch here surfaced at least one probe-vs-reality surprise.
 - Verification severity triage: leftover JP / damaged art / wrong meaning = fix. Style-nit = judgment call. "Translation liberty" flags from agents = usually fine.

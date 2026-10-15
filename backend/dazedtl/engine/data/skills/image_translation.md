@@ -24,8 +24,8 @@ capitalization, and style consistently. If it is missing or does not cover a ter
 gap and follow the remaining translation precedence below.
 
 The user approves deterministic edits to the PNGs already present under the editable image
-folder, creation or update of the single work log required below, and maintenance of reusable
-image-editing resources under this project-local directory:
+folder and maintenance of the work log and reusable image-editing resources under this
+project-local directory:
 
 `{{GAME_ROOT}}/.dazedtl/image_translation_resources`
 
@@ -37,14 +37,14 @@ Use these exact local paths with platform-appropriate command quoting:
 
 - Image Editor Python: `{{IMAGE_TOOL_PYTHON}}`
 - Local inpainting bridge: `{{IMAGE_INPAINT_CLI}}`
+- Image validator: `{{IMAGE_VALIDATE_CLI}}`
 
 Do not modify runtime game images or unrelated project files; the Image Manager will patch
-validated edits later. Keep verified originals under `.dazedtl/image_backups`, user-supplied clean
-art under `.dazedtl/clean_images`, reusable resources under the directory above, and disposable
-candidates under that resource directory's `work/` subtree or in an isolated temporary directory.
-None of these may be placed inside the editable image folder where the Image Manager could mistake
-them for patchable assets. Work through all editable PNGs without asking for confirmation unless a
-hard safety rule below requires review.
+validated edits later.
+When the task supplies frozen originals, they are the verified originals; otherwise keep verified originals under `.dazedtl/image_backups`.
+Keep user-supplied clean art under `.dazedtl/clean_images`, the work log, recipes and reusable resources under the directory above, and disposable candidates under that resource directory's `work/` subtree or in an isolated temporary directory.
+None of these may be placed inside the editable image folder where the Image Manager could mistake them for patchable assets.
+Work through all editable PNGs without asking for confirmation unless a hard safety rule below requires review.
 
 Runtime assets may be read or decoded in memory or into an isolated temporary directory when
 needed to reconstruct an editable image, when permitted by the engine-profile guidance. This does
@@ -112,11 +112,8 @@ When complete source-language removal is in scope, translate visible source text
 asset unless the user explicitly excludes it, even when the file appears to be an authoring or
 reference composite.
 
-The task context grants editing authority only for existing PNGs inside the editable image folder,
-its single required `image_translation_log.md` file, verified backups under
-`.dazedtl/image_backups`, and reusable support files under
-`.dazedtl/image_translation_resources`. Treat `.dazedtl/clean_images` as read-only supplied input
-unless the user explicitly asks to change it.
+The task context grants editing authority only for existing PNGs inside the editable image folder, verified backups under `.dazedtl/image_backups`, and the work log, recipes and reusable support files under `.dazedtl/image_translation_resources`.
+Treat `.dazedtl/clean_images` as read-only supplied input unless the user explicitly asks to change it.
 
 ### 1a. Load reusable project resources
 
@@ -124,19 +121,19 @@ Before designing or rendering anything, inspect:
 
 `{{GAME_ROOT}}/.dazedtl/image_translation_resources`
 
-If it exists, read its manifest or index first and reuse its accepted renderer, layouts, clean-art
-mappings, exact fonts, masks, approved isolated wordmarks, runtime keepouts, and diagnostics. Run
-any bundled resource validator before relying on hashes or paths. A resource package records prior
-decisions; it does not override the current glossary, the verified original, or visible evidence.
-Report and repair stale paths, missing licensed fonts, hash drift, or contradictory layout data
-instead of silently falling back or starting an inconsistent second workflow.
+If it exists, read its `manifest.json` first and reuse its accepted renderer, layouts, clean-art mappings, exact fonts, masks, approved isolated wordmarks, runtime keepouts, and diagnostics.
+The recipe of an already translated sibling (section 15a) names the renderer, layout, fonts and effect stack that produced it, so a new member of its family starts from that recipe instead of being fitted again from pixels.
+Check the recipes you reuse with the validator's `recipes` command and `--reproduce` (section 13) before relying on their hashes or paths.
+A resource package records prior decisions; it does not override the current glossary, the verified original, or visible evidence.
+Report and repair stale paths, missing licensed fonts, hash drift, or contradictory layout data instead of silently falling back or starting an inconsistent second workflow.
 
-If the directory does not exist, create it when the task produces non-trivial reusable decisions
-or assets. Do not create empty placeholder subdirectories.
+If the directory does not exist, create it with your first recipe.
+Do not create empty placeholder subdirectories.
 
 ### 2. Preserve originals
 
 Create or verify a backup before changing any material asset.
+When the task supplies a frozen original with its hash, that file is the verified original: check its hash and render from it, without making another backup.
 
 - Keep the original filename and relative directory structure in the backup.
 - Never overwrite the only copy.
@@ -524,9 +521,10 @@ translated labels and suffixes cannot collide with right-aligned or centered run
 
 ### 12. Render representative candidates first
 
-Render from the verified original or backup, never from an earlier candidate. Prefer a
-deterministic raster backend such as ImageMagick, Pillow, OpenCV, or Skia. Keep operations
-explicit and repeatable.
+Render from the verified original or backup, never from an earlier candidate.
+Prefer a deterministic raster backend such as ImageMagick, Pillow, OpenCV, or Skia.
+Keep operations explicit and repeatable, in the renderer your recipe runs.
+Pillow and most editors drop the original's metadata chunks when they save, which can shift colors in game; write the final PNG with the original's header and chunks, or re-encode it with the validator's `encode`.
 
 Before rendering the full batch, render and inspect at least one representative of every
 background class, geometry, and progression state. For a multi-page memo set, this normally
@@ -546,28 +544,41 @@ view that may hide the conversation, or a verbal claim that numerical checks pas
 
 ### 13. Validate before installation
 
-Perform all applicable checks:
+Run the validator on every changed image before reporting it.
+It makes the checks a look at the image misses and writes diagnostic composites for the visual checks below:
 
-- Decode the candidate successfully.
-- Confirm exact expected dimensions.
-- Confirm format, bit depth, and channel layout.
-- Confirm alpha remains present when required.
-- For every non-opaque candidate, inspect a contrast-enhanced alpha-only view and an alpha diff
-  against the verified source. Confirm alpha changes stay within the approved reconstruction mask
-  and contain no unexplained rectangles, long axis-aligned edges, isolated corners, bands, or
-  step changes.
-- Composite every non-opaque candidate over black, white, midtone, and strongly colored diagnostic
-  backdrops, plus a checkerboard and the actual runtime background when available. Inspect these
-  composites at original resolution and intended runtime scale and opacity.
+- The candidate decodes, with the original's dimensions, color mode and identical PNG header.
+- Every other chunk of the original is kept byte for byte: color (gAMA, cHRM, sRGB, iCCP), density (pHYs), text (tEXt, zTXt, iTXt) and a palette's PLTE and tRNS.
+- Changed pixels stay inside the cleanup and text regions the recipe declares; with a text-free intermediate, its changes stay inside the cleanup region and the lettering's inside the text region.
+- Alpha changes stay inside those regions, and color under fully transparent pixels is left as it was outside the cleanup region.
+- Protected shapes are unchanged and the text keeps the declared clearance from them.
+
+```text
+"{{IMAGE_TOOL_PYTHON}}" "{{IMAGE_VALIDATE_CLI}}" request REQUEST.json --reproduce --diagnostics "{{GAME_ROOT}}/.dazedtl/image_translation_resources/work/validation"
+"{{IMAGE_TOOL_PYTHON}}" "{{IMAGE_VALIDATE_CLI}}" recipes "{{GAME_ROOT}}" --asset img/pictures/Sibling.png --reproduce
+"{{IMAGE_TOOL_PYTHON}}" "{{IMAGE_VALIDATE_CLI}}" files --original ORIGINAL.png --candidate CANDIDATE.png --intermediate TEXTFREE.png --cleanup MASK.png --text X,Y,WIDTH,HEIGHT
+"{{IMAGE_TOOL_PYTHON}}" "{{IMAGE_VALIDATE_CLI}}" encode CANDIDATE.png --like ORIGINAL.png --output FINAL.png
+```
+
+`request` checks a task's changed images and their recipes exactly as the Image Manager does when it reads your report, and `--reproduce` also runs each recipe and compares its output hash.
+`recipes` checks saved recipes, such as a sibling's you are about to reuse, against their inputs.
+`files` checks one candidate while you iterate, before its recipe exists; regions take mask PNGs or boxes and repeat.
+`encode` writes a candidate's pixels with the original's header and chunks.
+Fix what a failed check reports in the image; never widen a declared region beyond what the edit needs merely to pass.
+
+Then perform all applicable visual checks:
+
+- For every non-opaque candidate, inspect the validator's alpha view and difference for unexplained
+  rectangles, long axis-aligned edges, isolated corners, bands, or step changes.
+- Inspect the validator's composites of every non-opaque candidate over black, white, midtone,
+  strongly colored and checkerboard backdrops, plus the actual runtime background when available,
+  at original resolution and intended runtime scale and opacity.
 - Compare source and candidate over the same backdrops. Inspect every mask boundary and corner for
   seams, matte halos, color fringe, ornament discontinuities, and altered translucent paint.
 - Exercise the game's expected scaling/filtering path, or a close deterministic equivalent, so
   low-alpha hidden-color defects cannot pass merely because the unscaled PNG looks clean.
-- Compare protected crops against the original with a zero-pixel-difference target.
-- Confirm changed pixels remain inside approved regions.
-- For surgical cleanup, inspect the text-free intermediate and require zero changed pixels outside
-  the approved source-glyph cleanup mask before adding target text. In the final candidate, require
-  zero changes outside the union of that cleanup mask and the approved target/effect mask.
+- For surgical cleanup, inspect the brightened text-free intermediate for glyph remains before
+  adding target text.
 - Inspect every variant in a contact sheet.
 - Inspect important images at original resolution.
 - Reopen every flattened composite or authoring mockup at native scale after all child-component
@@ -615,7 +626,7 @@ After validation:
 
 Create or update exactly one UTF-8 Markdown log at:
 
-`{{EDITABLE_IMAGES_FOLDER}}/image_translation_log.md`
+`{{GAME_ROOT}}/.dazedtl/image_translation_resources/image_translation_log.md`
 
 Keep the log lightweight and reviewable. Do not create per-image logs or embed images, binary
 data, or long command output. Include a short run summary with the backup location and validation
@@ -641,8 +652,44 @@ Use this canonical project-local root:
 
 `{{GAME_ROOT}}/.dazedtl/image_translation_resources`
 
-Keep a concise `manifest.json` or equivalent index with project-relative paths and cryptographic
-hashes. Store only the subdirectories the project needs:
+Its `manifest.json` holds a recipe for every image you change, keyed by the image's ID from the task, such as `img/pictures/Title.png`.
+The Image Manager checks these recipes when it reads your report and accepts your review of a changed image only while its recipe is current and the image passes the validator.
+Keep any other keys the project needs, such as shared resources or known issues, beside `recipes`.
+
+```json
+{
+  "version": 1,
+  "recipes": {
+    "img/pictures/Title.png": {
+      "output": "SHA-256 of the edited PNG",
+      "command": ["{python}", ".dazedtl/image_translation_resources/scripts/render.py", "Title", "--out", "{output}"],
+      "inputs": {
+        ".dazedtl/image_translation_resources/scripts/render.py": "SHA-256",
+        ".dazedtl/image_translation_resources/layouts/title.json": "SHA-256",
+        ".dazedtl/image_manager/guided/originals/img/pictures/Title.png": "SHA-256",
+        "fonts/GameFont.otf": "SHA-256"
+      },
+      "check": {
+        "intermediate": ".dazedtl/image_translation_resources/work/Title_textfree.png",
+        "cleanup": ".dazedtl/image_translation_resources/assets/Title_cleanup.png",
+        "text": [[120, 40, 380, 64]],
+        "protected": [[0, 0, 96, 96]],
+        "clearance": 4
+      }
+    }
+  }
+}
+```
+
+- `output` is the edited PNG's SHA-256, the hash you report for it.
+- `command` renders the image again from the game folder: `{output}` is the path it writes and `{python}` the Image Editor Python.
+- `inputs` maps every file the command reads to its SHA-256, by project-relative path: at least the renderer or layout from this folder and the original it starts from, plus fonts, donors and clean layers.
+  A changed or missing input makes the recipe out of date, so after changing a shared renderer or layout, render each image that uses it again, confirm its output hash and update its recipe.
+- `check` declares what the edit may change: `cleanup`, the pixels the text removal reconstructs, and `text`, the translated text with its effects, each a mask PNG whose nonzero pixels are in the region or a list of `[x, y, width, height]` boxes; declare at least one.
+  Add the text-free `intermediate` when you reconstruct pixels, so cleanup and lettering are checked separately, and `protected` shapes with the `clearance` in pixels the text keeps from them where the layout needs it.
+  Keep these files until the Image Manager has read your report, or have the renderer write them.
+
+Store only the subdirectories the project needs:
 
 - `scripts/` for deterministic renderers, validators, mask builders, and contact-sheet tools.
 - `layouts/` for machine-readable text, coordinates, bounds, font sizes, effect stacks, clean-layer
@@ -672,9 +719,9 @@ permitted, save its license beside it. Otherwise record the exact family, source
 hash, and a tested fallback, and report that exact reproduction depends on the original font being
 available. Never allow an unreported font substitution.
 
-After an accepted revision, update the renderer or layout data, manifest hashes, useful
-diagnostics, and work log together. Actually run saved scripts and the resource validator. Do not
-store secrets, model credentials, unrelated game data, package caches, or large disposable output.
+After an accepted revision, update the renderer or layout data, recipes, useful diagnostics, and work log together.
+Run the validator with `--reproduce` so every saved recipe is shown to render its image.
+Do not store secrets, model credentials, unrelated game data, package caches, or large disposable output.
 
 ### 16. Report concisely
 
@@ -755,10 +802,10 @@ Do not paste full image files, large encoded data, or unrelated source code.
 - Never accept a transparent candidate with seams, matte halos, square corners, or color fringes
   on any diagnostic or available runtime background, even if its standalone preview looks clean.
 - Never modify files outside the editable image folder except for verified originals under
-  `.dazedtl/image_backups`, reusable support files under `.dazedtl/image_translation_resources`,
-  and isolated temporary validation artifacts. Treat `.dazedtl/clean_images` as read-only unless
-  the user explicitly authorizes changes. Inside the editable image folder, create no new
-  non-image artifact except the single required `image_translation_log.md` work log.
+  `.dazedtl/image_backups`, the work log, recipes and reusable support files under
+  `.dazedtl/image_translation_resources`, and isolated temporary validation artifacts. Treat
+  `.dazedtl/clean_images` as read-only unless the user explicitly authorizes changes. Inside the
+  editable image folder, create no non-image artifact.
 
 ## Decision rules
 
@@ -818,9 +865,9 @@ Consider the task complete only when:
 - Originals remain recoverable.
 - Every materially generative installed asset has an inspectable proof and explicit user visual
   approval, and its generated inputs and deterministic recomposition are recorded reproducibly.
-- The reusable-resource manifest, renderer or layouts, font references, input mappings,
-  diagnostics, and accepted hashes reflect the installed revision whenever those artifacts exist
-  or the current task produced reusable work.
+- Every changed image has a current recipe in the resource manifest and passes the validator,
+  and the renderer or layouts, font references, input mappings and diagnostics reflect the
+  installed revision.
 - `image_translation_log.md` accounts for every reviewed image and text region without duplicate
   current-run entries.
 - When any disposition is `skipped` or `review`, the user-facing response ends with the complete
