@@ -32,7 +32,7 @@ from util.rpgmaker_qa_manifest import build_manifest
 
 
 REGISTRY_SCHEMA = "dazedtl-reference-games-v1"
-INDEX_SCHEMA = "dazedtl-reference-index-v1"
+INDEX_SCHEMA = "dazedtl-reference-index-v2"
 OVERLAP_SCHEMA = "dazedtl-reference-overlaps-v1"
 REGISTRY_RELATIVE = GAME_METADATA_RELATIVE / "reference-games.json"
 INDEX_RELATIVE = GAME_METADATA_RELATIVE / "reference-index.json"
@@ -572,6 +572,9 @@ def _command_strings(commands: list[dict[str, Any]], path: tuple[Any, ...]) -> I
                         lines.append(child_parameters[0])
                 cursor += 1
             if lines:
+                if code == 101 and isinstance(parameters, list):
+                    # The message's header holds its nameplate.
+                    yield from _strings(parameters, base + ("parameters",))
                 yield "/" + "/".join(str(part) for part in base + ("text",)), "\n".join(lines)
                 index = cursor
                 continue
