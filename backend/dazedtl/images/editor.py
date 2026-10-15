@@ -314,7 +314,7 @@ class ImageEditor:
         write_json(job.path, payload)
 
     def state(self, project_id, asset_ids=None):
-        _root, work, job, rows, selected, revision = self._open(project_id, asset_ids)
+        root, work, job, rows, selected, revision = self._open(project_id, asset_ids)
         saved = read_json(job.path, limit=8_000_000) if job.path.exists() else {}
         images = []
         for row in rows:
@@ -347,7 +347,8 @@ class ImageEditor:
         status = native.local_ocr()
         with self._context():
             fonts = [
-                {key: item[key] for key in ("id", "label")} for item in native.fonts()
+                {key: item[key] for key in ("id", "label", "origin")}
+                for item in native.fonts(root)
             ]
         return {
             "revision": revision,
@@ -367,7 +368,7 @@ class ImageEditor:
             asset_ids = [
                 item.get("assetId") for item in images if isinstance(item, dict)
             ]
-        _root, _work, job, rows, selected, current = self._open(project_id, asset_ids)
+        root, _work, job, rows, selected, current = self._open(project_id, asset_ids)
         if revision != current:
             raise ValueError(
                 "Image work changed elsewhere. Reload before saving this draft."
@@ -376,7 +377,7 @@ class ImageEditor:
             raise ValueError("Save only images in the opened editor scope.")
         by_id, seen = {row["id"]: row for row in rows}, set()
         with self._context():
-            font_ids = {item["id"] for item in native.fonts()}
+            font_ids = {item["id"] for item in native.fonts(root)}
         pending = []
         for item in images:
             if not isinstance(item, dict) or set(item) - {
@@ -410,9 +411,7 @@ class ImageEditor:
                 and block["style"]["font"] not in font_ids
                 for block in blocks
             ):
-                raise ValueError(
-                    "Choose an installed font from the editor's font list."
-                )
+                raise ValueError("Choose a font from the editor's font list.")
             previous = {block["id"]: block for block in value["blocks"]}
             for block in blocks:
                 old = previous.get(block["id"])
@@ -434,7 +433,7 @@ class ImageEditor:
         if hasattr(self.core, "_idle"):
             self.core._idle(project_id)
         arguments = arguments or {}
-        _root, work, job, rows, selected, current = self._open(project_id, asset_ids)
+        root, work, job, rows, selected, current = self._open(project_id, asset_ids)
         if revision != current:
             raise ValueError("Image work changed elsewhere. Reload before continuing.")
         if not rows:
@@ -529,6 +528,7 @@ class ImageEditor:
                             notes[identity] = native.render(
                                 job,
                                 entry,
+                                game=root,
                                 expected_candidate=row.get("candidateHash"),
                                 expected_original=row.get("originalPngHash"),
                             )

@@ -549,6 +549,8 @@ Starting over moves the work folder to `.dazedtl/archived` under a dated name wi
 
 The optional [image text editor](../backend/dazedtl/images/editor.py) retains the toolkit's boxes, target-only exchange import, rendering and undo process behind compatibility adapters.
 Its local OCR capability is limited to installed offline resources, with no hosted fallback or model download.
+Its text styles share the effect model of fitted [text recipes](../backend/dazedtl/engine/util/imagetools/effects.py), so a recipe's slot style is a valid editor style and the panel edits every effect in it.
+Its font list puts the faces a game ships in `fonts` or `www/fonts` ahead of installed ones, because recipes draw with them; a style saves only the list's id, which for a game font comes from its path inside the game, so a moved copy keeps it and no file path reaches the renderer from a style.
 Native Image Text translation uses the preserved isolated manual runner with project-owned frozen inputs, a current estimate and one-use paid approval, independently of JSON translation runs and image application.
 These runs have no run inspector, so a failed run's log tail appears beside its status.
 Import revalidates the exported source scope and copies targets only; rendering still requires structural validation and image review before runtime application.

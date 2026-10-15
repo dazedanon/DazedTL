@@ -110,8 +110,8 @@ class Style:
     outline_color: list[int] | None = None
     # Whole pixels when measured; a recipe fitted to supersampled type can need
     # a half - the MZ message window strokes 1.5px outside every glyph. The
-    # editor's fit ladder still strokes whole pixels (``fonts.stroke_at``); the
-    # recipe renderer draws the width as written.
+    # editor's fit ladder keeps the half as the type shrinks
+    # (``fonts.stroke_at``); the recipe renderer draws the width as written.
     outline_width: float = 0
     # Never measured: see ``measure_outline`` for why a reading of the source
     # cannot tell these from an outline. They come from a recipe fitted to an

@@ -3,6 +3,7 @@
 No provider modules, hosted OCR, downloads or runtime asset replacement live here.
 """
 
+import os
 from copy import deepcopy
 from functools import lru_cache
 from importlib.util import find_spec
@@ -34,8 +35,25 @@ def local_ocr():
     }
 
 
+#: Where games keep the faces their own text is drawn in: MV and MZ beside
+#: their data folder (a deployed MV under www), VX Ace in Fonts.
+GAME_FONT_FOLDERS = (("fonts",), ("www", "fonts"))
+#: FreeType reads WOFF as well as the desktop formats, and MV and MZ ship
+#: their default faces as WOFF.
+GAME_FONT_SUFFIXES = {".ttf", ".ttc", ".otf", ".woff", ".woff2"}
+
+
+def fonts(game=None):
+    """The editor's font list: the game's own faces first, then installed ones.
+
+    Each entry's ``id`` is all a saved style holds; ``path`` stays here and is
+    looked up again from the id when the image is drawn.
+    """
+    return [*(game_fonts(game) if game is not None else []), *installed_fonts()]
+
+
 @lru_cache(maxsize=1)
-def fonts():
+def installed_fonts():
     from util.imagetools.fonts import available_fonts, font_name
 
     from dazedtl.translation.files import digest
@@ -45,9 +63,98 @@ def fonts():
             "id": digest(str(path).encode())[:24],
             "label": font_name(str(path)),
             "path": str(path),
+            "origin": "installed",
         }
         for path in available_fonts()
     ]
+
+
+def game_fonts(game):
+    """The faces a game ships for its own text, named by their place in it.
+
+    A recipe fitted to an accepted image draws with the game's font
+    (``fonts/UtsukushiFONT.otf``), which no installed list has, so adjusting
+    that recipe here needs the same face. Its id comes from the path inside the
+    game rather than on this machine, so a moved or copied game keeps the font
+    it chose. Folders are matched without regard to case, as Windows and a VX
+    Ace ``Fonts`` folder need. Links, files outside the game and anything
+    FreeType cannot open are left out.
+    """
+    from util.imagetools.fonts import font_name
+
+    from dazedtl.translation.files import digest, project_path
+
+    found, labels = {}, {}
+    for parts in GAME_FONT_FOLDERS:
+        folder = _folder(Path(game), parts)
+        if folder is None:
+            continue
+        try:
+            names = sorted(os.listdir(folder), key=str.casefold)
+        except OSError:
+            continue
+        for name in names:
+            if Path(name).suffix.lower() not in GAME_FONT_SUFFIXES:
+                continue
+            relative = Path(folder, name).relative_to(game).as_posix()
+            identity = digest(("game:" + relative.casefold()).encode())[:24]
+            try:
+                path = project_path(game, relative)
+                stat = path.stat()
+            except OSError, ValueError:
+                continue
+            if identity in found or not _readable(
+                str(path), stat.st_size, stat.st_mtime_ns
+            ):
+                continue
+            label = font_name(str(path))
+            labels.setdefault(label, []).append(identity)
+            found[identity] = {
+                "id": identity,
+                "label": label,
+                "path": str(path),
+                "origin": "game",
+                "file": name,
+            }
+    # Two files of one family (a full face and its subset) read alike, so the
+    # file tells them apart.
+    for identities in labels.values():
+        if len(identities) > 1:
+            for identity in identities:
+                found[identity]["label"] += " · " + found[identity]["file"]
+    return [
+        {key: value for key, value in item.items() if key != "file"}
+        for item in found.values()
+    ]
+
+
+def _folder(game, parts):
+    """*parts* below *game* as the disk spells them, if every one is a real folder."""
+    folder = game
+    for part in parts:
+        try:
+            names = os.listdir(folder)
+        except OSError:
+            return None
+        match = next((name for name in sorted(names) if name.casefold() == part), None)
+        if match is None:
+            return None
+        folder = folder / match
+        if folder.is_symlink() or not folder.is_dir():
+            return None
+    return folder
+
+
+@lru_cache(maxsize=256)
+def _readable(path, _size, _modified):
+    """Whether FreeType opens the face; the size and time key out a changed file."""
+    from PIL import ImageFont
+
+    try:
+        ImageFont.truetype(path, 10)
+    except OSError, ValueError:
+        return False
+    return True
 
 
 def _job(root, work, originals):
@@ -182,7 +289,7 @@ def _verify_pixels(job, entry, expected_candidate, expected_original):
             )
 
 
-def render(job, entry, *, expected_candidate=None, expected_original=None):
+def render(job, entry, *, game, expected_candidate=None, expected_original=None):
     from io import BytesIO
 
     import numpy as np
@@ -211,7 +318,7 @@ def render(job, entry, *, expected_candidate=None, expected_original=None):
             "Colour-key PNGs need the assistant image route to preserve their transparency."
         )
     ensure(source, entry)
-    catalog = {item["id"]: item["path"] for item in fonts()}
+    catalog = {item["id"]: item["path"] for item in fonts(game)}
     names = {
         block.block_id: block.style.font
         for block in entry.blocks
@@ -219,7 +326,7 @@ def render(job, entry, *, expected_candidate=None, expected_original=None):
     }
     if any(name not in catalog for name in names.values()):
         raise ValueError(
-            "The saved font is unavailable. Choose an installed font before rendering."
+            "The saved font is no longer available. Choose a font from the list before rendering."
         )
     for block in entry.blocks:
         if block.style is not None:

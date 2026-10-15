@@ -5,7 +5,8 @@ translucent band and fully transparent pixels hiding colour. The recipe tool
 must read the numbers back from the pixels alone, through the command line the
 assistant uses, then draw a sibling that keeps the family's rule and leaves
 every pixel it does not reach byte-identical. The Image Editor draws the same
-effects, with a shadow that falls the same way whichever way the type runs.
+effects, with a shadow that falls the same way whichever way the type runs and
+a fractional outline as written, and offers the game's own fonts.
 """
 
 import contextlib
@@ -268,4 +269,49 @@ for vertical in (False, True):
         right + 5,
         bottom + 5,
     ), marks
+
+# A fitted 1.5px outline is drawn as one, between the whole widths either side
+# of it, rather than rounded up to 2px.
+ink = []
+for width in (1, 1.5, 2):
+    look = dict(
+        shadowed, shadow=None, outline_color=[0, 0, 0, 255], outline_width=width
+    )
+    block = TextBlock(
+        "b",
+        Box(20, 20, 140, 60),
+        source_text="x",
+        target_text="Ag",
+        style=Style.from_dict(look),
+    )
+    result = render_entry(plain, ImageEntry("x.png", blocks=[block]))
+    ink.append(int((plain[..., :3].astype(int) - result.array[..., :3]).clip(0).sum()))
+assert ink[0] < ink[1] < ink[2], ink
+
+# The game's own faces join the font list by their place in the game, so a
+# moved copy keeps them; a link out of the game and an unreadable file do not.
+sys.path.insert(0, str(root / "backend"))
+from dazedtl.compatibility.image_editor import game_fonts
+
+game = temporary / "game"
+(game / "Fonts").mkdir(parents=True)
+(game / "www/fonts").mkdir(parents=True)
+(game / "Fonts/Title.ttf").write_bytes(font.read_bytes())
+(game / "www/fonts/Window.ttf").write_bytes(font.read_bytes())
+(game / "Fonts/Broken.otf").write_bytes(b"not a face")
+(game / "Fonts/notes.txt").write_text("not a face")
+try:
+    os.symlink(font, game / "Fonts/Outside.ttf")
+except OSError:  # Windows without the symlink privilege
+    pass
+listed = game_fonts(game)
+assert [Path(item["path"]).name for item in listed] == ["Title.ttf", "Window.ttf"], (
+    listed
+)
+assert {item["origin"] for item in listed} == {"game"}
+# One family in two files reads alike, so each label names its file.
+assert listed[0]["label"].endswith(" · Title.ttf"), listed
+moved = temporary / "moved"
+game.rename(moved)
+assert [item["id"] for item in game_fonts(moved)] == [item["id"] for item in listed]
 print("ok")

@@ -209,7 +209,7 @@ class EditorTests(unittest.TestCase):
         for name, function in {
             "load": Job,
             "image_size": lambda _: (64, 32),
-            "fonts": list,
+            "fonts": lambda *_: [],
             "local_ocr": lambda: {"available": False, "detail": "Fixture OCR blocked"},
             "exchange": exchange,
             "set_entry": lambda job, value: setattr(

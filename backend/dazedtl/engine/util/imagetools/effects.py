@@ -117,27 +117,41 @@ class Glow:
 # --------------------------------------------------------------- coverage
 
 
-def disc(radius: float) -> np.ndarray:
-    """A round brush reaching *radius* pixels from the centre, corners included.
+def disc(radius: int) -> np.ndarray:
+    """A round brush reaching *radius* whole pixels from the centre, corners included.
 
     Built from the distance to the centre rather than taken from
     ``getStructuringElement``, whose ``MORPH_ELLIPSE`` at 3x3 is a plus sign
     rather than a disc. The four diagonal neighbours it leaves out are exactly
     the corners of a stem, so a one-pixel stroke - the commonest width there is
-    - came out with four bare specks on every upright in the line. A fractional
-    radius lands between its neighbours rather than being rounded to one.
+    - came out with four bare specks on every upright in the line.
     """
-    reach = max(0, math.ceil(radius))
-    span = np.arange(-reach, reach + 1, dtype=np.float32)
+    span = np.arange(-radius, radius + 1, dtype=np.float32)
     grid = np.hypot(*np.meshgrid(span, span))
     return (grid <= radius + 0.5).astype(np.uint8)
 
 
 def dilate(coverage: np.ndarray, radius: float) -> np.ndarray:
-    """*coverage* grown by *radius* pixels, by taking the most ink under a disc."""
+    """*coverage* grown by *radius* pixels, by taking the most ink under a disc.
+
+    A fractional radius blends the two whole ones either side of it: a 1.5px
+    stroke is the 1px stroke with the 2px one's outer ring at half strength,
+    which is how a rasteriser's 1.5px stroke lands on the pixel grid. A single
+    disc in between would instead reach two pixels along the axes and only one
+    and a half on the diagonals, so round letters came out with flat sides.
+    """
     if radius <= 0:
         return coverage
-    return cv2.dilate(coverage, disc(radius))
+    whole = math.floor(radius)
+    part = radius - whole
+    inner = cv2.dilate(coverage, disc(whole)) if whole else coverage
+    if part < 1e-6:
+        return inner
+    outer = cv2.dilate(coverage, disc(whole + 1)).astype(np.float32)
+    mixed = inner + (outer - inner) * part
+    if np.issubdtype(coverage.dtype, np.integer):
+        mixed = np.round(mixed)
+    return mixed.astype(coverage.dtype)
 
 
 def blur(plane: np.ndarray, sigma: float) -> np.ndarray:

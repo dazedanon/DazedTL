@@ -7,6 +7,7 @@ wrapping only when the region is tall enough to hold more than one line.
 
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass
 from functools import lru_cache
@@ -99,7 +100,8 @@ class FittedText:
     height: int
     fits: bool
     reason: str = ""
-    stroke: int = 0
+    #: Whole pixels, or halves for a fractional width (see ``stroke_at``).
+    stroke: float = 0
     ink_top: int = 0
     #: Extra space between characters, in pixels at this size. Carried here
     #: rather than re-derived from the style so the renderer draws the spacing
@@ -471,18 +473,35 @@ def size_for_cap(font_path: str, cap_height: int) -> int:
     return best
 
 
-def stroke_at(size: int, stroke_width: int, reference: int) -> int:
+def stroke_at(size: int, stroke_width: float, reference: int) -> float:
     """How wide the stroke is when the type is set at *size*.
 
     Shared with the renderer rather than worked out twice. The measured stroke
     belongs to the Japanese, which is usually set larger than the English that
     replaces it; a stroke that does not shrink with the type closes up the
     counters and turns small text into a blob.
+
+    A measured width is whole pixels and stays whole. A fractional one comes
+    from a recipe fitted to an accepted image - the MZ message window strokes
+    1.5px - and keeps halves, so the editor draws what the recipe says rather
+    than a pixel more. Either way it never thins below a pixel, or below the
+    width asked for when that is less.
     """
     if stroke_width <= 0:
         return 0
-    scaled = stroke_width * size / max(1, reference)
-    return int(max(1, min(stroke_width, round(scaled))))
+    step = 1.0 if float(stroke_width).is_integer() else 0.5
+    scaled = round(stroke_width * size / max(1, reference) / step) * step
+    stroke = min(stroke_width, max(min(stroke_width, 1.0), scaled))
+    return int(stroke) if float(stroke).is_integer() else stroke
+
+
+def stroke_room(stroke: float) -> int:
+    """The whole pixels a stroke needs on each side of the type.
+
+    A half-pixel stroke still paints into the next pixel out, so the fit keeps
+    that pixel free and the renderer frames the type inside it.
+    """
+    return math.ceil(stroke)
 
 
 def _extent(
@@ -530,7 +549,7 @@ def fit_text(
     allow_wrap: bool = True,
     min_size: int = 7,
     line_spacing: float = 1.15,
-    stroke_width: int = 0,
+    stroke_width: float = 0,
     tracking: int = 0,
     width_scale: int = 100,
     height_scale: int = 100,
@@ -567,11 +586,12 @@ def fit_text(
     best_overflow: FittedText | None = None
     for size in range(start, min_size - 1, -1):
         stroke = stroke_at(size, stroke_width, reference)
+        pad = stroke_room(stroke)
         # The stroke is drawn around the stretched tile rather than stretched
         # with it - a 2px stroke is 2px whatever the type is doing - so it comes
         # off the room before the stretch is divided out, never after.
-        room_height = max(1, int((max_height - 2 * stroke) / rise))
-        room_width = max(1, int((max_width - 2 * stroke) / stretch))
+        room_height = max(1, int((max_height - 2 * pad) / rise))
+        room_width = max(1, int((max_width - 2 * pad) / stretch))
         step = tracking_px(size, tracking)
 
         lines = [text]
@@ -587,8 +607,8 @@ def fit_text(
             font_path=font_path,
             size=size,
             line_height=line_height,
-            width=int(round(widest * stretch)) + 2 * stroke,
-            height=int(round(ink_height * rise)) + 2 * stroke,
+            width=int(round(widest * stretch)) + 2 * pad,
+            height=int(round(ink_height * rise)) + 2 * pad,
             fits=widest <= room_width and ink_height <= room_height,
             stroke=stroke,
             ink_top=ink_top,

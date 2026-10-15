@@ -119,6 +119,8 @@ Copy the task again to continue, or to have it recheck after you spot untranslat
 **More > Investigate all images again** has your assistant start over; its recommendations replace your list, except images already translated.
 
 Clicking an image only previews it; its tick box, Space or Ctrl-click ticks it, and **Compare** shows the original beside the edited copy.
+**More > Edit text…** opens the ticked images in the Image Text Editor, where you draw boxes over the original text and type their translation.
+Each box's **Text style** sets the font, with the game's own fonts first, its colour, and an optional outline, shadow and glow, each with its own colour and opacity; **Render image** draws the result onto the editable copy.
 
 **When something fails.** A banner above the files explains a failed run, and **Run history** lists the task's runs.
 **Inspect** shows each request's text, the AI's reply and the technical details.
