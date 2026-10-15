@@ -943,16 +943,18 @@ function Editor({
                 {["X", "Y", "Width", "Height"].map((label, index) => (
                   <label key={label}>
                     {label}
-                    <input
-                      type="number"
+                    <NumberInput
                       aria-label={`Box ${label}`}
+                      whole
                       min={index < 2 ? 0 : 1}
-                      max={index % 2 === 0 ? image?.width : image?.height}
+                      max={
+                        (index % 2 === 0 ? image?.width : image?.height) ?? 1
+                      }
                       value={block.box[index]}
                       disabled={busy}
-                      onChange={(event) => {
+                      onChange={(number) => {
                         const next = [...block.box] as ImageTextBlock["box"];
-                        next[index] = Number(event.target.value);
+                        next[index] = number;
                         editBlock({ box: next }, true);
                       }}
                     />
@@ -1053,6 +1055,7 @@ function Editor({
                     Letter height (px)
                     <NumberInput
                       aria-label="Image letter height in pixels"
+                      whole
                       min={1}
                       max={512}
                       value={style.cap_height || 12}
@@ -1648,13 +1651,14 @@ function Editor({
  * A number typed freely and saved once it reads as one. While a minus sign or
  * an emptied field is half typed the field keeps it, rather than the store
  * turning it back into the last number; the saved value is held to the range
- * the renderer accepts.
+ * the renderer accepts, and to whole pixels where it counts them.
  */
 function NumberInput({
   value,
   min,
   max,
   step = 1,
+  whole = false,
   onChange,
   ...input
 }: Omit<
@@ -1665,6 +1669,7 @@ function NumberInput({
   min: number;
   max: number;
   step?: number;
+  whole?: boolean;
   onChange: (value: number) => void;
 }) {
   const [typed, setTyped] = useState<string | null>(null);
@@ -1680,7 +1685,9 @@ function NumberInput({
         setTyped(event.target.value);
         const number = event.target.valueAsNumber;
         if (Number.isFinite(number))
-          onChange(Math.min(max, Math.max(min, number)));
+          onChange(
+            Math.min(max, Math.max(min, whole ? Math.round(number) : number)),
+          );
       }}
       onBlur={() => setTyped(null)}
     />
