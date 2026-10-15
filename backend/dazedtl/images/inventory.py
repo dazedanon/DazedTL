@@ -50,12 +50,15 @@ def png_metadata(value):
         return describe_png(image)
 
 
-def png_pixels(value):
-    """Metadata and RGBA pixels of verified PNG bytes, from one decode."""
-    import numpy as np
-
+def png_signature(value):
+    """Metadata and family tile signature of verified PNG bytes, from one
+    decode; the signature is None for a mode it can't read."""
     with _verified(value) as image:
-        return describe_png(image), np.asarray(image.convert("RGBA"))
+        metadata = describe_png(image)
+        try:
+            return metadata, families.signature(image)
+        except OSError, ValueError:
+            return metadata, None
 
 
 def png_preview(value, size):
@@ -132,9 +135,21 @@ class Index:
                 db.execute(
                     "CREATE INDEX IF NOT EXISTS image_state ON assets(state,classification)"
                 )
-                # Tile signatures of the untranslated originals, for families.
+                # Tile signatures of the untranslated originals, by size, for
+                # families; the first table held an older signature.
+                db.execute("DROP TABLE IF EXISTS tiles")
                 db.execute(
-                    "CREATE TABLE IF NOT EXISTS tiles (id TEXT PRIMARY KEY, data BLOB)"
+                    "CREATE TABLE IF NOT EXISTS family_tiles (id TEXT PRIMARY KEY,"
+                    " width INTEGER, height INTEGER, mode TEXT, data BLOB)"
+                )
+                db.execute(
+                    "CREATE INDEX IF NOT EXISTS family_size ON family_tiles(width,height,mode)"
+                )
+                db.execute(
+                    "CREATE TABLE IF NOT EXISTS family_groups (id TEXT PRIMARY KEY, data TEXT)"
+                )
+                db.execute(
+                    "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)"
                 )
         finally:
             db.close()
@@ -166,13 +181,29 @@ class Index:
     @staticmethod
     def put(db, row, generation=""):
         # inspect_row hands over a new tile signature with the row; it is kept
-        # in its own table so rows stay small.
+        # in its own table so rows stay small, and families group again only
+        # after a signature changed.
         if "familyTiles" in row:
             row = dict(row)
+            original = row["original"]
             db.execute(
-                "INSERT INTO tiles(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data",
-                (row["id"], row.pop("familyTiles")),
+                "INSERT INTO family_tiles(id,width,height,mode,data) VALUES(?,?,?,?,?) "
+                "ON CONFLICT(id) DO UPDATE SET width=excluded.width,height=excluded.height,"
+                "mode=excluded.mode,data=excluded.data",
+                (
+                    row["id"],
+                    original["width"],
+                    original["height"],
+                    original["mode"],
+                    row.pop("familyTiles"),
+                ),
             )
+            Index._regroup(db)
+        elif (
+            not row.get("original")
+            and db.execute("DELETE FROM family_tiles WHERE id=?", (row["id"],)).rowcount
+        ):
+            Index._regroup(db)
         db.execute(
             "INSERT INTO assets(id,folder,name,classification,state,examined,generation,data) VALUES(?,?,?,?,?,?,?,?) "
             "ON CONFLICT(id) DO UPDATE SET folder=excluded.folder,name=excluded.name,"
@@ -334,51 +365,95 @@ class Index:
                 ).fetchone()[0],
             }
 
+    @staticmethod
+    def _regroup(db):
+        db.execute(
+            "INSERT INTO meta(key,value) VALUES('familiesStale','1') "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+        )
+
     def families(self, db=None):
-        """Variant families among the indexed originals."""
+        """Variant families among the indexed originals, one size at a time."""
         if db is None:
             with self.connection() as connection:
                 return self.families(connection)
-        entries = []
-        for data, blob in db.execute(
-            "SELECT assets.data, tiles.data FROM assets JOIN tiles ON tiles.id=assets.id"
-        ):
-            row = json.loads(data)
-            if row.get("original"):
-                entries.append(
-                    (
-                        row["id"],
-                        row.get("width"),
-                        row.get("height"),
-                        row.get("mode"),
-                        blob,
-                    )
-                )
-        return families.group(entries)
+        found = []
+        for width, height, mode, count in db.execute(
+            "SELECT width, height, mode, count(*) FROM family_tiles"
+            " GROUP BY width, height, mode HAVING count(*) > 1"
+        ).fetchall():
+            found += families.group_size(
+                width,
+                height,
+                db.execute(
+                    "SELECT id, data FROM family_tiles WHERE width=? AND height=? AND mode IS ?",
+                    (width, height, mode),
+                ),
+                count,
+            )
+        return found
 
     def refresh_families(self):
-        """Record on each row the family it belongs to, after a scan."""
+        """Record each family once and on each member the family it belongs
+        to, after a scan. Nothing is grouped again until a signature changes."""
         with self.connection() as db:
-            found = {
-                member: family
-                for family in self.families(db)
+            stale = db.execute(
+                "SELECT value FROM meta WHERE key='familiesStale'"
+            ).fetchone()
+            if stale and stale[0] == "0":
+                return [
+                    json.loads(data)
+                    for (data,) in db.execute("SELECT data FROM family_groups")
+                ]
+            found = self.families(db)
+            db.execute("DELETE FROM family_groups")
+            db.executemany(
+                "INSERT INTO family_groups(id,data) VALUES(?,?)",
+                (
+                    (family["id"], json.dumps(family, ensure_ascii=False))
+                    for family in found
+                ),
+            )
+            # A member keeps only the family's ID, size and region, so rows stay
+            # small however large the family.
+            membership = {
+                member: {
+                    "id": family["id"],
+                    "size": len(family["members"]),
+                    "region": family["region"],
+                }
+                for family in found
                 for member in family["members"]
             }
-            for identity, data in db.execute("SELECT id, data FROM assets").fetchall():
-                row = json.loads(data)
-                if row.get("family") != found.get(identity):
-                    if identity in found:
-                        row["family"] = found[identity]
-                    else:
-                        row.pop("family", None)
-                    db.execute(
-                        "UPDATE assets SET data=? WHERE id=?",
-                        (
-                            json.dumps(row, ensure_ascii=False, separators=(",", ":")),
-                            identity,
-                        ),
-                    )
-            return list({family["id"]: family for family in found.values()}.values())
+            # Rows are read in pages, so only a page of them is in memory.
+            last = 0
+            while page := db.execute(
+                "SELECT rowid, id, data FROM assets WHERE rowid>? ORDER BY rowid LIMIT 512",
+                (last,),
+            ).fetchall():
+                last = page[-1][0]
+                changes = []
+                for _rowid, identity, data in page:
+                    row = json.loads(data)
+                    if row.get("family") != membership.get(identity):
+                        if identity in membership:
+                            row["family"] = membership[identity]
+                        else:
+                            row.pop("family", None)
+                        changes.append(
+                            (
+                                json.dumps(
+                                    row, ensure_ascii=False, separators=(",", ":")
+                                ),
+                                identity,
+                            )
+                        )
+                db.executemany("UPDATE assets SET data=? WHERE id=?", changes)
+            db.execute(
+                "INSERT INTO meta(key,value) VALUES('familiesStale','0') "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+            )
+            return found
 
     def family(self, identity, db=None):
         """The family of an image, with where each member's original is and
@@ -386,9 +461,16 @@ class Index:
         if db is None:
             with self.connection() as connection:
                 return self.family(identity, connection)
-        family = (self.get(identity, db) or {}).get("family")
-        if not family:
+        summary = (self.get(identity, db) or {}).get("family")
+        stored = (
+            summary
+            and db.execute(
+                "SELECT data FROM family_groups WHERE id=?", (summary["id"],)
+            ).fetchone()
+        )
+        if not stored:
             return None
+        family = json.loads(stored[0])
         members = []
         for member in family["members"]:
             row = self.get(member, db) or {}
@@ -438,15 +520,20 @@ class PreviewCache:
                 self.bytes -= len(self.values.popitem(last=False)[1][1])
 
 
-def _observe(row, original, raw, pixels):
+def _observe(row, original, png_hash, metadata, tiles):
     """Record where a row's untranslated original is, and hand its tile
     signature to Index.put."""
     relative, _encrypted, stamp = original
-    row["familyTiles"] = families.signature(pixels)
+    if tiles is None:
+        row.pop("original", None)
+        return
+    row["familyTiles"] = tiles
     row["original"] = {
         "path": relative,
         "signature": stamp,
-        "pngHash": hashlib.sha256(raw).hexdigest(),
+        "tiles": families.VERSION,
+        "pngHash": png_hash,
+        **{key: metadata[key] for key in ("width", "height", "mode")},
     }
 
 
@@ -462,16 +549,29 @@ def inspect_row(root, adapter, row, old, key):
     runtime_changed = False
     # Families compare untranslated originals, so a member already translated
     # in the game still matches its siblings. An original is decoded for its
-    # tile signature only when its file changed.
-    stale = None
+    # tile signature only when its file changed, and one that is the runtime
+    # file shares that file's stat, hash and decode.
     try:
-        relative, encrypted = families.original_file(root, row)
-        stamp = signature(project_path(root, relative))
-        known = row.get("original") or {}
-        if known.get("path") != relative or known.get("signature") != stamp:
-            stale = relative, encrypted, stamp
-    except OSError, ValueError, KeyError:
-        row.pop("original", None)
+        original = families.original_file(root, row)
+    except ValueError:
+        original = None
+    known = row.get("original") or {}
+
+    def stale(relative, stamp):
+        return (known.get("path"), known.get("signature"), known.get("tiles")) != (
+            relative,
+            stamp,
+            families.VERSION,
+        )
+
+    pending = None
+    if original and original[0] != row.get("runtime"):
+        try:
+            stamp = signature(project_path(root, original[0]))
+            if stale(original[0], stamp):
+                pending = (*original, stamp)
+        except OSError, ValueError:
+            original = None
     try:
         if not row.get("runtime"):
             raise ValueError(
@@ -479,6 +579,12 @@ def inspect_row(root, adapter, row, old, key):
             )
         runtime = project_path(root, row["runtime"])
         current_signature = signature(runtime)
+        if (
+            original
+            and original[0] == row["runtime"]
+            and stale(original[0], current_signature)
+        ):
+            pending = (*original, current_signature)
         if row.get("encrypted") and key is None:
             raise ValueError(
                 "The encryption key is unavailable. Restore System.json before preparing this asset."
@@ -486,10 +592,11 @@ def inspect_row(root, adapter, row, old, key):
         if current_signature != row.get("sourceSignature") or row.get("encrypted"):
             source_hash = sha_file(runtime)
             raw = adapter.source_bytes(root, row, key)
-            if stale and stale[0] == row["runtime"]:
-                metadata, pixels = png_pixels(raw)
-                _observe(row, stale, raw, pixels)
-                stale = None
+            png_hash = hashlib.sha256(raw).hexdigest()
+            if pending and pending[0] == row["runtime"]:
+                metadata, tiles = png_signature(raw)
+                _observe(row, pending, png_hash, metadata, tiles)
+                pending = None
             else:
                 metadata = png_metadata(raw)
             row.update(metadata)
@@ -498,20 +605,24 @@ def inspect_row(root, adapter, row, old, key):
             )
             row.update(
                 sourceHash=source_hash,
-                sourcePngHash=hashlib.sha256(raw).hexdigest(),
+                sourcePngHash=png_hash,
                 sourceSignature=current_signature,
             )
     except (OSError, ValueError, KeyError) as exc:
         row["sourceIssue"] = str(exc)
         row["sourceHash"] = ""
-    if stale:
+        if original and original[0] == row.get("runtime"):
+            original = pending = None
+    if pending:
         try:
             raw = adapter.source_bytes(
-                root, {"runtime": stale[0], "encrypted": stale[1]}, key
+                root, {"runtime": pending[0], "encrypted": pending[1]}, key
             )
-            _observe(row, stale, raw, png_pixels(raw)[1])
+            _observe(row, pending, hashlib.sha256(raw).hexdigest(), *png_signature(raw))
         except OSError, ValueError, KeyError:
-            row.pop("original", None)
+            original = None
+    if original is None:
+        row.pop("original", None)
     path = project_path(root, row["editable"], exists=False)
     row["editablePath"] = row["editable"]
     row["editable"] = row["editablePath"]

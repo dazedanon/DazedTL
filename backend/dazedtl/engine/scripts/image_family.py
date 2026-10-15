@@ -65,7 +65,12 @@ def _inventory(root: Path):
     with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as db:
         rows = {row["id"]: row for row in (json.loads(data) for (data,) in db.execute("SELECT data FROM assets"))}
         try:
-            stored = dict(db.execute("SELECT id, data FROM tiles"))
+            stored = {
+                identity: (width, height, mode, data)
+                for identity, width, height, mode, data in db.execute(
+                    "SELECT id, width, height, mode, data FROM family_tiles"
+                )
+            }
         except sqlite3.OperationalError:
             stored = {}
     return rows, stored
@@ -106,16 +111,19 @@ def _families(root: Path, rows: dict, stored: dict, key):
         try:
             relative, _encrypted = families.original_file(root, row)
             known = row.get("original") or {}
-            blob = None
-            if known.get("path") == relative and known.get("signature") == inventory.signature(
-                project_path(root, relative)
-            ):
-                blob = stored.get(identity)
-            if blob is None:
-                blob = families.signature(inventory.png_pixels(_original(root, row, key)[1])[1])
+            fresh = (known.get("path"), known.get("signature"), known.get("tiles")) == (
+                relative,
+                inventory.signature(project_path(root, relative)),
+                families.VERSION,
+            )
+            entry = stored.get(identity) if fresh else None
+            if entry is None:
+                metadata, blob = inventory.png_signature(_original(root, row, key)[1])
+                entry = (metadata["width"], metadata["height"], metadata["mode"], blob)
         except (OSError, ValueError, KeyError):
             continue
-        entries.append((identity, *size, blob))
+        if entry[3] is not None:
+            entries.append((identity, *entry))
     return families.group(entries)
 
 

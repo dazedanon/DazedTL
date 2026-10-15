@@ -538,8 +538,10 @@ Apply freezes the included batch and blocked reasons in a one-use preview, prefl
 Publication freezes candidate bytes and journals the reviewed source, output and original-backup hashes before writing runtime files.
 Restart reconciles only those exact authorized bytes, records partial or conflicting publication honestly, and retains reviewed restore for recovered outputs.
 Preserved originals and durable receipts support reviewed restore without removing editable copies or editor work.
-Indexing also records each image's untranslated original, its frozen copy, the Qt publisher's backup or the runtime file, with a tile signature kept in its own table and computed again only when that file changes.
+Indexing also records each image's untranslated original, its frozen copy, the Qt publisher's backup or the runtime file, with a tile signature kept in its own table.
+The signature samples a grid from the decode the scan already makes, and is computed again only when that file changes.
 [Families](../backend/dazedtl/images/families.py) groups same-size images that share most non-flat tiles, such as name cards or area banners that differ only in their lettering, with the region where they differ and how far each member is translated.
+It checks only pairs that share one of each image's smallest tile keys, never every pair, and a complete scan groups again only after a signature changed.
 The [background solver](../backend/dazedtl/images/background.py) rebuilds a member's text-free backdrop from its family instead of inpainting it, never changing pixels the whole family agrees on: consensus from members the lettering does not reach, then a fitted glow inversion or a Laplace fill, whichever wins a leave-one-out test on the consensus pixels.
 Agents run it through [image_family.py](../backend/dazedtl/engine/scripts/image_family.py), which also checks a saved background for ghosts of a member's lettering.
 A complete scan regroups the families, and each request asset carries its family, so the editing task rebuilds a member's background before any inpainting and fits an accepted sibling's text recipe with [image_recipe.py](../backend/dazedtl/engine/scripts/image_recipe.py) instead of measuring lettering by hand.

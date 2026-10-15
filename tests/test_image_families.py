@@ -5,6 +5,7 @@ import unittest
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 import cv2
 import numpy as np
@@ -225,8 +226,13 @@ class FamilyTests(unittest.TestCase):
                     ("img/pictures/Card1.png", ""),
                 ],
             )
-            # An unchanged original is not decoded again on the next scan.
+            # An unchanged original is not decoded again on the next scan, and
+            # families are not grouped again until a signature changes.
             again = inspect_row(
                 root, adapter, entries[1], index.get(entries[1]["id"]), None
             )
             self.assertNotIn("familyTiles", again)
+            with index.connection() as db:
+                Index.put(db, again)
+            with patch.object(families, "group_size", side_effect=AssertionError):
+                self.assertEqual(len(index.refresh_families()), 1)
