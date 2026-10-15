@@ -11,13 +11,15 @@ from pathlib import Path
 from dazedtl.storage import write_bytes, write_json
 
 #: The background reconstructions this editor runs: deterministic, with
-#: nothing to download. Installed models are never chosen here.
-REPAIRS = ("telea", "ns", "harmonic")
+#: nothing to download. Installed models are never chosen here. Harmonic is
+#: the default because it settles glyphs over line art into the shading
+#: instead of dragging the lines across them as Telea and Navier-Stokes do.
+REPAIRS = ("harmonic", "telea", "ns")
 
 
 def repair_method(value):
-    """*value* when this editor runs it, otherwise Telea."""
-    return value if value in REPAIRS else "telea"
+    """*value* when this editor runs it, otherwise the harmonic fill."""
+    return value if value in REPAIRS else "harmonic"
 
 
 def harmonic_fill(values, hole):
