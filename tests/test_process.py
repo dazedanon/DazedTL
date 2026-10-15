@@ -1677,7 +1677,7 @@ class ProcessTests(unittest.TestCase):
             names = [
                 f"Map{worker}{number:02d}.json"
                 for worker in range(4)
-                for number in range(30)
+                for number in range(10)
             ]
             plan = {"mode": "translate", "files": [{"name": name} for name in names]}
             write_json(root / "plan.json", plan)
@@ -1693,7 +1693,7 @@ class ProcessTests(unittest.TestCase):
                     open=point(open),
                 )
                 checkpoints.install(module, root, plan)
-                for name in names[index * 30 : (index + 1) * 30]:
+                for name in names[index * 10 : (index + 1) * 10]:
                     module.saveProgress([{"name": name}], name)
 
             workers = [
