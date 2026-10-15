@@ -2,4 +2,4 @@
 
 ### Changed
 
-- **Images:** the **To translate** view is now **Recommended**, and images applied to the game leave it for **Applied**.
+- **Images:** the **To translate** view is now **Recommended**, and images applied to the game leave it and **Unsure** for **Applied**.
