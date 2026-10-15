@@ -594,6 +594,20 @@
     return false;
   }
 
+  /** One capture of the screen, named for what it shows, or none once the
+   * run holds its limit or the screen can't be read. */
+  function snapshot(kind) {
+    if (state.captures >= CAPTURE_LIMIT) return null;
+    try {
+      const data = SceneManager.snap().canvas.toDataURL("image/jpeg", 0.82);
+      const name = `${String(++state.captures).padStart(3, "0")}-${kind}`;
+      send("capture", { name, stop: state.stop, scene: sceneName(), data });
+      return name;
+    } catch {
+      return null;
+    }
+  }
+
   /** Records what the tour found since it last looked, once it is on
    * screen, with one capture of the screen; a finding on a bitmap nobody
    * sees is dropped. The tour looks before it changes anything. */
@@ -611,15 +625,7 @@
       .splice(0, state.pending.length)
       .filter((row) => !seen.has(row.key) && onScreen(row.bitmap));
     if (!shown.length) return;
-    let name;
-    if (state.captures < CAPTURE_LIMIT)
-      try {
-        const data = SceneManager.snap().canvas.toDataURL("image/jpeg", 0.82);
-        name = `${String(++state.captures).padStart(3, "0")}-${shown[0].type}`;
-        send("capture", { name, stop: state.stop, scene: sceneName(), data });
-      } catch {
-        // A screen that can't be read keeps its findings without a picture.
-      }
+    const name = snapshot(shown[0].type);
     for (const row of shown) {
       seen.add(row.key);
       send(row.type, { ...row.event, ...(name && { capture: name }) });
@@ -1312,11 +1318,87 @@
       await leave("Scene_Map");
     } else if (step.do === "script") {
       await new Function(step.script)();
+    } else if (step.do === "text") {
+      return await showText(step);
     } else {
       return { status: "failed", note: `Unknown stop: ${step.do}` };
     }
     const result = await play(step.seconds || 60, 30);
     return { status: "done", note: `${result.messages} messages` };
+  }
+
+  /** Shows a layout check's lines in the window it names, measures them
+   * against the room that window gives text, and captures the screen. */
+  async function showText(step) {
+    let shown;
+    let left;
+    let right = 0;
+    if (step.window === "help") {
+      SceneManager.push(Scene_Item);
+      if (!(await until(() => isScene("Scene_Item"), 10)))
+        return { status: "failed", note: "The item screen did not open." };
+      await settle();
+      shown = scene()._helpWindow;
+      if (!shown)
+        return { status: "failed", note: "The item screen has no help window." };
+      shown.setText(step.lines.join("\n"));
+      // MZ draws help text inside its item padding; MV inside its text padding.
+      left = right = shown.itemPadding ? shown.itemPadding() : shown.textPadding();
+    } else {
+      // A closed window places itself for the next message, face or none.
+      await until(
+        () =>
+          !$gameMessage.isBusy() &&
+          !$gameMap.isEventRunning() &&
+          scene()._messageWindow.isClosed(),
+        20,
+      );
+      const [face, index] = step.face || ["", 0];
+      $gameMessage.setFaceImage(face, index);
+      if ($gameMessage.setSpeakerName) $gameMessage.setSpeakerName(step.speaker || "");
+      for (const line of step.lines) $gameMessage.add(line);
+      const drawn = await fast(() =>
+        until(() => {
+          const message = scene()._messageWindow;
+          return message.isOpen() && !message._textState && message.pause;
+        }, 20),
+      );
+      shown = scene()._messageWindow;
+      if (!drawn)
+        return { status: "failed", note: "The message did not finish drawing." };
+      left = shown.newLineX.length ? shown.newLineX({ rtl: false }) : shown.newLineX();
+    }
+    await frames(4);
+    const measure = (line) =>
+      Math.ceil(shown.textSizeEx ? shown.textSizeEx(line).width : shown.textWidth(line));
+    const widest = Math.max(...step.lines.map(measure));
+    const room = Math.floor(shown.contentsWidth() - left - right);
+    const rows = Math.floor(shown.contentsHeight() / shown.lineHeight());
+    const fits = widest <= room && step.lines.length <= rows;
+    const capture = snapshot("layout");
+    send("layout", {
+      stop: state.stop,
+      title: step.title,
+      window: step.window,
+      characters: step.characters,
+      face: !!(step.face && step.face[0]),
+      lines: step.lines.length,
+      rows,
+      widest,
+      room,
+      fits,
+      ...(capture && { capture }),
+    });
+    if (step.window === "help") await leave("Scene_Map");
+    else {
+      shown.pause = false;
+      shown.terminateMessage();
+      await until(() => !$gameMessage.isBusy() && shown.isClosed(), 5);
+    }
+    return {
+      status: "done",
+      note: `${widest} of ${room} pixels on ${step.lines.length} of ${rows} rows`,
+    };
   }
 
   // ---------------------------------------------------------------- tour

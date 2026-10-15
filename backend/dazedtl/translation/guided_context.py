@@ -81,7 +81,13 @@ class GuidedContext:
             context_command = helper_command(
                 self.guided.translation.workspace, project_id, "context"
             )
-            text += context_setup.instructions(context_request, context_command)
+            text += context_setup.instructions(
+                context_request,
+                context_command,
+                helper_command(
+                    self.guided.translation.workspace, project_id, "playtest"
+                ),
+            )
             documents = self.guided.backend.workflows.documents(native["id"])
             handoff = {
                 "kind": "names",
@@ -124,7 +130,13 @@ class GuidedContext:
             command = helper_command(
                 self.guided.translation.workspace, project_id, "context"
             )
-            text += context_setup.layout_instructions(request, command)
+            text += context_setup.layout_instructions(
+                request,
+                command,
+                helper_command(
+                    self.guided.translation.workspace, project_id, "playtest"
+                ),
+            )
             handoff = {
                 "kind": "line_widths",
                 "requestId": request["request_id"],

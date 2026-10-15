@@ -18,6 +18,7 @@ from util import rpgmaker_window
 from util.playtest.checks import static_checks
 
 SCHEMA = "rpgmaker-playtest-report-v1"
+LAYOUT_SCHEMA = "rpgmaker-layout-check-v1"
 HARNESS = Path(__file__).with_name("harness") / "main.cjs"
 # The tour every run takes, in order.
 TOUR = (
@@ -41,6 +42,15 @@ STOP_KINDS = {
     "script": ("script",),
 }
 DEFAULT_MINUTES = 15
+LAYOUT_MINUTES = 6
+# English for a layout check's lines, cut to the exact width each checks.
+LAYOUT_SAMPLE = (
+    "Well, I suppose we should keep moving before the snow buries the road "
+    "again. Master, look over there, the old bridge is still standing! We can "
+    "rest at the village tonight and ask the chief about the mountain shrine. "
+    "Nothing about this place makes sense, but I will not give up on finding "
+    "a way home for all of us."
+).split()
 OPENING_SECONDS = 120
 BATTLE_SECONDS = 60
 # Problems an engine scene shows in its standard help or message window,
@@ -97,14 +107,17 @@ def tour(
     minutes: float,
     log: Callable[[str], None],
     stopped: Callable[[], bool] = lambda: False,
+    standard: bool = True,
 ) -> dict[str, Any]:
-    """Plays the game; the runtime part of the report, or why it could not."""
+    """Plays the game; the runtime part of the report, or why it could not.
+    Without the standard tour it only starts a game for `stops`."""
     try:
         web = rpgmaker_window.web_root(data)
     except rpgmaker_window.WindowUnavailable as missing:
         return {"unavailable": str(missing)}
+    first = TOUR[:-1] if standard else TOUR[:3]
     plan = {
-        "stops": [{"id": stop_id, "title": title} for stop_id, title in TOUR[:-1]]
+        "stops": [{"id": stop_id, "title": title} for stop_id, title in first]
         + stops
         + [{"id": TOUR[-1][0], "title": TOUR[-1][1]}],
         "opening": OPENING_SECONDS,
@@ -387,6 +400,113 @@ def observations(report: dict[str, Any]) -> list[dict[str, Any]]:
             "note": note[:480],
         })
     return found
+
+
+LAYOUT_WIDTHS = ("width", "faceWidth", "listWidth", "messageRows")
+
+
+def read_widths(value: Any) -> dict[str, int]:
+    """A layout check's widths, checked: whole characters per line for each
+    window and the rows one message shows."""
+    if not isinstance(value, dict):
+        raise ValueError("Give the layout check's widths as an object.")
+    widths = {}
+    for key in LAYOUT_WIDTHS:
+        number = value.get(key)
+        if number is None:
+            continue
+        limit = 20 if key == "messageRows" else 400
+        if type(number) is not int or not 1 <= number <= limit:
+            raise ValueError(f"{key} must be a whole number from 1 to {limit}.")
+        widths[key] = number
+    if not {"width", "faceWidth", "listWidth"} & set(widths):
+        raise ValueError("Give at least one of width, faceWidth and listWidth.")
+    return widths
+
+
+def layout_lines(characters: int, count: int) -> list[str]:
+    """`count` lines of English prose, each exactly `characters` long."""
+    lines = []
+    for number in range(count):
+        words = LAYOUT_SAMPLE[number * 7 % len(LAYOUT_SAMPLE):] + LAYOUT_SAMPLE
+        text = " ".join(words)
+        while len(text) <= characters:
+            text += " " + " ".join(LAYOUT_SAMPLE)
+        line = text[:characters]
+        # A line ending at a space would draw one character short.
+        lines.append(line[:-1] + "." if line.endswith(" ") else line)
+    return lines
+
+
+def layout_probes(data: Path, widths: dict[str, int]) -> list[dict[str, Any]]:
+    """The layout check's stops: a full message window, one under the game's
+    first actor face, and a help window, each at its width."""
+    rows = int(widths.get("messageRows") or 4)
+    face = None
+    try:
+        for actor in json.loads((data / "Actors.json").read_text(encoding="utf-8-sig")):
+            if isinstance(actor, dict) and actor.get("faceName"):
+                face = [actor["faceName"], int(actor.get("faceIndex") or 0)]
+                break
+    except (OSError, ValueError):
+        pass
+    probes = []
+    for key, window, title, count, shown in (
+        ("width", "message", "Message", rows, None),
+        ("faceWidth", "message", "Message with a face", rows, face),
+        ("listWidth", "help", "Help text", 2, None),
+    ):
+        characters = widths.get(key)
+        if not characters or (key == "faceWidth" and not face):
+            continue
+        probes.append({
+            "id": f"layout-{key}",
+            "title": f"{title}, {characters} characters",
+            "do": "text",
+            "window": window,
+            "characters": characters,
+            "lines": layout_lines(characters, count),
+            **({"face": shown} if shown else {}),
+        })
+    return probes
+
+
+def layout(
+    game_root: str | Path,
+    data_root: str | Path,
+    out: str | Path,
+    widths: dict[str, int],
+    log: Callable[[str], None] = print,
+    stopped: Callable[[], bool] = lambda: False,
+) -> dict[str, Any]:
+    """Shows English at each width in the game's own windows, measures it
+    and captures each; writes layout.json to `out` and changes no game file."""
+    data = Path(data_root).expanduser().resolve()
+    target = Path(out).expanduser().resolve()
+    target.mkdir(parents=True, exist_ok=True)
+    probes = layout_probes(data, widths)
+    runtime = tour(data, target, probes, LAYOUT_MINUTES, log, stopped, standard=False)
+    reached = {stop["id"]: stop for stop in runtime.get("stops", [])}
+    result = {
+        "schema": LAYOUT_SCHEMA,
+        "widths": widths,
+        "probes": runtime.get("layout", []),
+        "missing": [
+            {
+                "title": probe["title"],
+                "note": (reached.get(probe["id"]) or {}).get("note", "not reached"),
+            }
+            for probe in probes
+            if probe["title"] not in {row.get("title") for row in runtime.get("layout", [])}
+        ],
+        "overflow": runtime.get("overflow", []),
+        "captures": runtime.get("captures", []),
+        **({"unavailable": runtime["unavailable"]} if "unavailable" in runtime else {}),
+    }
+    (target / "layout.json").write_text(
+        json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8"
+    )
+    return result
 
 
 def run(

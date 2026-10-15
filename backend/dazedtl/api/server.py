@@ -428,10 +428,11 @@ class Application:
         apply and undo go through the app's publication, never a direct write."""
         return self.text_qa.run(project_id, step, findings, question, choice)
 
-    def translation_playtest(self, project_id, step, stops=None):
+    def translation_playtest(self, project_id, step, stops=None, widths=None):
         """The release playtest for the Playtest task or the project's
-        assistant; it plays the game and writes nothing into it."""
-        return self.playtest.run(project_id, step, stops)
+        assistant, and its layout check; both play the game and write
+        nothing into it."""
+        return self.playtest.run(project_id, step, stops, widths)
 
     def plugins_action(self, project_id, action, options=None):
         return self._handed_off(

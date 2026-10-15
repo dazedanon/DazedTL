@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections import Counter
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from dazedtl.storage import write_json
 
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from .guided import Guided
     from .text_qa import TextQA
 
-STEPS = ("status", "report", "run")
+STEPS = ("status", "report", "run", "layout")
 
 
 class Playtest:
@@ -28,12 +28,14 @@ class Playtest:
         self.guided = guided
         self.text_qa = text_qa
 
-    def run(self, project_id, step, stops=None):
+    def run(self, project_id, step, stops=None, widths=None):
         if step not in STEPS:
             raise ValueError("Choose a playtest step: " + ", ".join(STEPS) + ".")
         native = self.native(project_id)
         if step == "run":
             self.start(project_id, stops)
+        if step == "layout":
+            self.check_layout(project_id, widths)
         return self.status(project_id, native, report=step == "report")
 
     def native(self, project_id):
@@ -66,9 +68,69 @@ class Playtest:
             self.guided.path(project_id, "playtest-operation"), {"id": job["id"]}
         )
 
-    def operation(self, project_id):
+    def check_layout(self, project_id, widths):
+        """Shows English at the given widths in the game's own windows; it
+        keeps its own report, never the playtest's."""
+        preview = self.guided.preview(
+            project_id, "layout_capture", None, {"widths": widths}
+        )
+        job = self.guided.execute(project_id, preview["token"])
+        write_json(self.guided.path(project_id, "layout-operation"), {"id": job["id"]})
+
+    def layout(self, project_id, native):
+        """The latest layout check: each window's fit and its capture."""
+        from dazedtl.compatibility.playtest import latest_layout
+
+        operation = self.operation(project_id, "layout-operation")
+        try:
+            saved = latest_layout(self.guided.backend.workflows.folder(native["id"]))
+        except OSError, ValueError, KeyError, TypeError:
+            saved = None
+        if not operation and not saved:
+            return None
+        result: dict[str, Any] = {"operation": operation} if operation else {}
+        if saved:
+            files = {capture["name"]: capture["file"] for capture in saved["captures"]}
+            result.update(
+                finished_at=saved["finished_at"],
+                widths=saved["widths"],
+                probes=[
+                    {
+                        **{
+                            key: probe[key]
+                            for key in (
+                                "title",
+                                "fits",
+                                "widest",
+                                "room",
+                                "lines",
+                                "rows",
+                            )
+                        },
+                        **(
+                            {
+                                "capture": str(
+                                    Path(saved["folder"]) / files[probe["capture"]]
+                                )
+                            }
+                            if probe.get("capture") in files
+                            else {}
+                        ),
+                    }
+                    for probe in saved["probes"]
+                ],
+                missing=saved["missing"],
+                **(
+                    {"unavailable": saved["unavailable"]}
+                    if saved.get("unavailable")
+                    else {}
+                ),
+            )
+        return result
+
+    def operation(self, project_id, pointer="playtest-operation"):
         """The last playtest started, with its current state."""
-        path = self.guided.path(project_id, "playtest-operation")
+        path = self.guided.path(project_id, pointer)
         if not path.exists():
             return None
         identity = read_json(path)["id"]
@@ -117,6 +179,9 @@ class Playtest:
             "next": following,
             **({"operation": operation} if operation else {}),
         }
+        layout = self.layout(project_id, native)
+        if layout:
+            result["layout"] = layout
         if report and state.get("report"):
             from dazedtl.compatibility.playtest import STORAGE
 

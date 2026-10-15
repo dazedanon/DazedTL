@@ -340,7 +340,7 @@ def review(path, documents, native, name, revision, choice):
     return {"saved": True}
 
 
-def instructions(value, command):
+def instructions(value, command, capture):
     return (
         f"""
 ## Save guidance and optional layout recommendations
@@ -363,7 +363,7 @@ Read `{command}` to confirm the saved files are available.
 
 Do not execute translation, paid name translation or API submission as part of this setup task.
 """
-        + layout_instructions(value, command)
+        + layout_instructions(value, command, capture)
         + f"""
 Save `{REPORT}` last, after every other step of this task, including the speaker slip reviews
 and guidance files: the app shows this task as finished once that report is saved.
@@ -371,7 +371,7 @@ and guidance files: the app shows this task as finished once that report is save
     )
 
 
-def layout_instructions(value, command):
+def layout_instructions(value, command, capture):
     example = {
         "version": 1,
         "request_id": value["request_id"],
@@ -395,6 +395,12 @@ Those values are schema examples, not measurements. `messageRows` is the rows on
 shows before the game starts a new window. Use only measured values with source evidence, confirmed
 on screen as the measurement steps describe, and say in `reason` what the captures showed or what
 could not be seen; otherwise save the report with `layout` null and report the unresolved geometry.
+For an RPG Maker MV/MZ game the app confirms them itself: write the candidate widths, such as
+{{"width": 55, "faceWidth": 50, "listWidth": 70, "messageRows": 4}}, to a JSON file and run
+`{capture} --layout FILE --wait 10`. It shows English exactly that wide in the game's message window
+with and without a face and in its help window, and `layout.probes` gives each one's widest line,
+the room the window gives it, its rows and its capture file; look at the captures. Note windows and
+plugin windows still need your own check.
 The app automatically saves verified widths as the project’s character limits; the user does not
 need to accept them in Layout. Read `{command}` to confirm `layoutApplication` is `applied`.
 If it shows `layoutRejected`, fix what it names and save the report again.

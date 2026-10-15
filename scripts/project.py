@@ -163,7 +163,10 @@ def wait_playtest(workspace, params, result, minutes):
     report file."""
     deadline = time.monotonic() + minutes * 60
     status = {"project_id": params["project_id"], "step": "report"}
-    while (result.get("operation") or {}).get("status") == "running":
+    while "running" in {
+        (result.get("operation") or {}).get("status"),
+        ((result.get("layout") or {}).get("operation") or {}).get("status"),
+    }:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             return result
@@ -274,6 +277,14 @@ def main():
     )
     playtest_step.add_argument(
         "--report", action="store_true", help="Where it stands, with the report file"
+    )
+    playtest_step.add_argument(
+        "--layout",
+        type=Path,
+        metavar="WIDTHS",
+        help="Show English at the widths in a JSON file, such as "
+        '{"width": 55, "faceWidth": 50, "listWidth": 70, "messageRows": 4}, in the '
+        "game's message and help windows, and capture each; it keeps its own report",
     )
     playtest.add_argument(
         "--stops",
@@ -479,8 +490,18 @@ def main():
                     awaiting_answers(args.workspace, params, args.wait)
             if args.command == "playtest":
                 params["step"] = (
-                    "run" if args.run else "report" if args.report else "status"
+                    "run"
+                    if args.run
+                    else "report"
+                    if args.report
+                    else "layout"
+                    if args.layout
+                    else "status"
                 )
+                if args.layout:
+                    params["widths"] = json.loads(
+                        args.layout.read_text(encoding="utf-8-sig")
+                    )
                 if args.stops:
                     params["stops"] = json.loads(
                         args.stops.read_text(encoding="utf-8-sig")

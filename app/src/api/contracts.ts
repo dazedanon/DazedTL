@@ -889,6 +889,30 @@ export type PlaytestOperation = {
   message: string;
 };
 
+export type LayoutProbe = {
+  title: string;
+  fits: boolean;
+  /** Pixels the widest line takes. */
+  widest: number;
+  /** Pixels the window gives a line. */
+  room: number;
+  lines: number;
+  /** Rows the window shows. */
+  rows: number;
+  /** The capture's file. */
+  capture?: string;
+};
+
+/** English shown at given widths in the game's own windows. */
+export type LayoutCheck = {
+  operation?: PlaytestOperation;
+  finished_at?: string;
+  widths?: Record<string, number>;
+  probes?: LayoutProbe[];
+  missing?: Record<string, string>[];
+  unavailable?: string;
+};
+
 /** Where the release playtest stands, for the assistant's project helper. */
 export type PlaytestStatus = {
   current: boolean;
@@ -905,6 +929,7 @@ export type PlaytestStatus = {
   operation?: PlaytestOperation;
   /** The saved report file. */
   report?: string;
+  layout?: LayoutCheck;
 };
 
 export type PlaytestCapture = {
@@ -2517,9 +2542,11 @@ export type TranslationQaRequest = {
 
 export type TranslationPlaytestRequest = {
   project_id: string;
-  step: "status" | "report" | "run";
+  step: "status" | "report" | "run" | "layout";
   /** Places only the game's events reach, played after the standard tour. */
   stops?: Record<string, unknown>[];
+  /** With layout: characters per line as width, faceWidth and listWidth, and messageRows. */
+  widths?: Record<string, number>;
 };
 
 export type PlaytestCaptureRequest = {

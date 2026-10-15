@@ -235,6 +235,11 @@ class Workflows:
             focus = options.get("focus", "release")
             selected = {"stops": read_stops(options.get("stops")),
                         "focus": focus if focus in dict(RPGMAKER_QA_FOCUSES) else "release"}
+        if action == "layout_capture":
+            from util.playtest.run import read_widths
+            if project["engine"] != "MVMZ":
+                raise ValueError("The layout check plays RPG Maker MV and MZ games.")
+            selected = {"widths": read_widths(options.get("widths"))}
         if action.startswith(("playtest_", "inspector_", "forge_")) and action != "playtest_status":
             values = SettingsStore(self.workspace).read()["values"]
             selected["playtest"] = {"hotkey": values["tlHotkey"], "forgeHotkey": values["forgeHotkey"],

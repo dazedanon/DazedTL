@@ -27,6 +27,7 @@ launch((run) => {
     overflow: [],
     scenes: [],
     captures: [],
+    layout: [],
     messages: { shown: 0, choices: 0, sources: {} },
     battle: 0,
     crashes: [],
@@ -94,6 +95,7 @@ launch((run) => {
     } else if (type === "error") report.errors.push(value);
     else if (type === "japanese") report.japanese.push(value);
     else if (type === "overflow") report.overflow.push(value);
+    else if (type === "layout") report.layout.push(value);
     else if (type === "scene") report.scenes.push(value);
     else if (type === "message") {
       report.messages.shown++;

@@ -66,6 +66,55 @@ def run_playtest(plan, log):
     }
 
 
+# A layout check keeps its own reports, so it never replaces the playtest's.
+LAYOUT_POINTER = "layout-check.json"
+LAYOUT_STORAGE = "layout-check"
+
+
+def run_layout(plan, log):
+    from desktop.backend.workflow_actions import validate_plan
+    from util.playtest.run import layout
+
+    validate_plan(plan)
+    folder = Path(plan["folder"])
+    storage = folder / LAYOUT_STORAGE
+    storage.mkdir(exist_ok=True)
+    name = datetime.now(UTC).strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
+    result = layout(
+        plan["project"]["source"],
+        plan["project"]["data"],
+        storage / name,
+        plan["options"]["widths"],
+        log=log,
+        stopped=getattr(log, "stopped", lambda: False),
+    )
+    write_json(
+        folder / LAYOUT_POINTER,
+        {"report": name, "finished_at": datetime.now(UTC).isoformat()},
+    )
+    for old in sorted(path for path in storage.iterdir() if path.is_dir())[:-KEEP]:
+        if old.name != name:
+            shutil.rmtree(old, ignore_errors=True)
+    return {
+        "probes": len(result["probes"]),
+        "fit": sum(probe["fits"] for probe in result["probes"]),
+    }
+
+
+def latest_layout(folder) -> dict | None:
+    """The latest layout check, with its folder, or None."""
+    pointer = Path(folder) / LAYOUT_POINTER
+    if not pointer.exists():
+        return None
+    saved = read_json(pointer)
+    path = project_path(Path(folder) / LAYOUT_STORAGE, saved["report"] + "/layout.json")
+    return {
+        **read_json(path),
+        "finished_at": saved["finished_at"],
+        "folder": str(path.parent),
+    }
+
+
 def latest(folder) -> tuple[dict, dict] | None:
     """The pointer to the latest report and the report, or None."""
     pointer = Path(folder) / POINTER

@@ -242,11 +242,17 @@ class TranslationQaRequest(TypedDict):
 
 class TranslationPlaytestRequest(TypedDict):
     project_id: str
-    step: Literal["status", "report", "run"]
+    step: Literal["status", "report", "run", "layout"]
     stops: NotRequired[
         Annotated[
             list[dict[str, object]],
             "Places only the game's events reach, played after the standard tour.",
+        ]
+    ]
+    widths: NotRequired[
+        Annotated[
+            dict[str, int],
+            "With layout: characters per line as width, faceWidth and listWidth, and messageRows.",
         ]
     ]
 

@@ -14,7 +14,13 @@ sys.path.insert(0, str(root / "backend/dazedtl/engine"))
 
 from util import rpgmaker_qa as qa
 from util.playtest.checks import static_checks
-from util.playtest.run import compare, merge, observations
+from util.playtest.run import (
+    compare,
+    layout_probes,
+    merge,
+    observations,
+    read_widths,
+)
 
 game = temporary / "game"
 data = game / "data"
@@ -387,4 +393,28 @@ assert [(row["worker"], row["note"]) for row in rows] == [
 ], rows
 assert "Items.json#/1/description" in qa.observed_names(noted)
 assert not qa.observed_names(plain)
+
+# A layout check proves a width only with lines exactly that wide, in as
+# many rows as one message shows, under the face the game's actors use.
+layout_data = temporary / "layout"
+layout_data.mkdir()
+write(
+    layout_data / "Actors.json",
+    [None, {"faceName": ""}, {"faceName": "face02", "faceIndex": 3}],
+)
+widths = read_widths({"width": 55, "faceWidth": 50, "listWidth": 70, "messageRows": 4})
+probes = {probe["id"]: probe for probe in layout_probes(layout_data, widths)}
+assert [len(line) for line in probes["layout-width"]["lines"]] == [55] * 4, probes
+assert [len(line) for line in probes["layout-faceWidth"]["lines"]] == [50] * 4, probes
+assert [len(line) for line in probes["layout-listWidth"]["lines"]] == [70] * 2, probes
+assert probes["layout-faceWidth"]["face"] == ["face02", 3], probes
+assert not any(
+    line.endswith(" ") for probe in probes.values() for line in probe["lines"]
+)
+for wrong in ({"width": "55"}, {"width": 0}, {"messageRows": 4}):
+    try:
+        read_widths(wrong)
+    except ValueError:
+        continue
+    raise AssertionError(f"{wrong} was accepted")
 print("ok")

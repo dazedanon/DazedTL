@@ -578,6 +578,27 @@ class PlaytestOperation(TypedDict):
     message: str
 
 
+class LayoutProbe(TypedDict):
+    title: str
+    fits: bool
+    widest: Annotated[int, "Pixels the widest line takes."]
+    room: Annotated[int, "Pixels the window gives a line."]
+    lines: int
+    rows: Annotated[int, "Rows the window shows."]
+    capture: NotRequired[Annotated[str, "The capture's file."]]
+
+
+class LayoutCheck(TypedDict):
+    """English shown at given widths in the game's own windows."""
+
+    operation: NotRequired[PlaytestOperation]
+    finished_at: NotRequired[str]
+    widths: NotRequired[dict[str, int]]
+    probes: NotRequired[list[LayoutProbe]]
+    missing: NotRequired[list[dict[str, str]]]
+    unavailable: NotRequired[str]
+
+
 class PlaytestStatus(TypedDict):
     """Where the release playtest stands, for the assistant's project helper."""
 
@@ -590,6 +611,7 @@ class PlaytestStatus(TypedDict):
     next: Annotated[str, "The step to run next."]
     operation: NotRequired[PlaytestOperation]
     report: NotRequired[Annotated[str, "The saved report file."]]
+    layout: NotRequired[LayoutCheck]
 
 
 class PlaytestCapture(TypedDict):
