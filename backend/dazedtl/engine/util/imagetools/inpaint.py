@@ -207,6 +207,10 @@ PATCH_SIZE = 15
 BRIDGE = Path(__file__).resolve().parents[2] / "scripts" / "image_inpaint.py"
 
 
+#: Microsoft's permanent link to the current x64 Visual C++ Redistributable.
+VC_REDIST = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+
+
 def install_command(method: str) -> str:
     """The exact command that installs what *method* needs into this Python."""
     return f'"{sys.executable}" "{BRIDGE}" install {method}'
@@ -287,6 +291,15 @@ def _probe_package(module: str, package: str, method: str) -> tuple[bool, str]:
             f"--force-reinstall {package}"
         )
     except ImportError as exc:
+        system = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
+        if sys.platform == "win32" and not (system / "msvcp140.dll").is_file():
+            # The Python DazedTL installs carries only part of this runtime,
+            # and onnxruntime needs the rest; a fresh Windows has none of it.
+            return False, (
+                f"{package} will not load {where}: this Windows lacks the "
+                "Microsoft Visual C++ Redistributable (x64). Install it from "
+                f"{VC_REDIST}, then check again."
+            )
         return False, (
             f"{package} will not load {where}: {exc}. On Windows, check "
             "the Microsoft Visual C++ runtime and the installed version."

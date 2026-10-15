@@ -30,6 +30,7 @@ restart.
 from __future__ import annotations
 
 import hashlib
+import ssl
 import subprocess
 import sys
 import urllib.request
@@ -326,6 +327,29 @@ def _pip(specs, log=None, should_stop=None) -> None:
         )
 
 
+def _tls() -> ssl.SSLContext:
+    """A context that can verify the download servers on every platform.
+
+    The Python DazedTL installs on Windows brings no certificate authorities of
+    its own, so urllib's default context refused every HTTPS download there
+    ("unable to get local issuer certificate") while pip, which carries its
+    own, worked. The system's store comes first, so a proxy's certificate
+    that the machine trusts is trusted here too.
+    """
+    try:
+        import truststore
+
+        return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    except ImportError:
+        pass
+    try:
+        import certifi
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
 def _fetch(
     url: str, dest: Path, sha256: str = "", progress=None, log=None, should_stop=None
 ) -> None:
@@ -341,7 +365,7 @@ def _fetch(
     _log(log, f"Downloading {dest.name}")
     digest = hashlib.sha256()
     try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+        with urllib.request.urlopen(request, timeout=TIMEOUT, context=_tls()) as response:
             total = int(response.headers.get("Content-Length") or 0)
             done = 0
             with open(part, "wb") as handle:
