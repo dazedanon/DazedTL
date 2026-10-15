@@ -549,6 +549,7 @@ Starting over moves the work folder to `.dazedtl/archived` under a dated name wi
 
 The optional [image text editor](../backend/dazedtl/images/editor.py) retains the toolkit's boxes, target-only exchange import, rendering and undo process behind compatibility adapters.
 Its local OCR capability is limited to installed offline resources, with no hosted fallback or model download.
+Its background repair runs only the deterministic local reconstructions (Telea, Navier-Stokes and the harmonic fill), never an installed model.
 A render replaces only the source PNG's pixels and keeps its header and ancillary chunks, so gamma, colour profiles and text reach the game unchanged.
 Native Image Text translation uses the preserved isolated manual runner with project-owned frozen inputs, a current estimate and one-use paid approval, independently of JSON translation runs and image application.
 These runs have no run inspector, so a failed run's log tail appears beside its status.

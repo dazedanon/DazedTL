@@ -180,7 +180,9 @@ def validate_blocks(blocks, width, height):
                     or dy + dh > height
                 ):
                     raise ValueError("Background donor box must stay inside the image.")
-            normalized["inpaint_method"] = "telea"
+            normalized["inpaint_method"] = native.repair_method(
+                normalized.get("inpaint_method")
+            )
             item["style"] = normalized
         # Native OCR geometry stays in the saved job; renderer submissions cannot
         # inject word masks, arbitrary paint paths or resource commands.

@@ -10,6 +10,15 @@ from pathlib import Path
 
 from dazedtl.storage import write_bytes, write_json
 
+#: The background reconstructions this editor runs: deterministic, with
+#: nothing to download. Installed models are never chosen here.
+REPAIRS = ("telea", "ns", "harmonic")
+
+
+def repair_method(value):
+    """*value* when this editor runs it, otherwise Telea."""
+    return value if value in REPAIRS else "telea"
+
 
 def local_ocr():
     # This package generation bundles its ONNX weights. The newer `rapidocr`
@@ -98,7 +107,7 @@ def set_entry(job, value):
     for block, raw in zip(entry.blocks, value["blocks"]):
         measured = measure(pixels, block, [item.box for item in entry.blocks]).to_dict()
         measured.update(raw.get("style") or {})
-        measured["inpaint_method"] = "telea"
+        measured["inpaint_method"] = repair_method(measured.get("inpaint_method"))
         block.style = Style.from_dict(measured)
     apply_flags(entry)
     job.images = [entry if old.relpath == entry.relpath else old for old in job.images]
@@ -222,9 +231,9 @@ def render(job, entry, *, expected_candidate=None, expected_original=None):
         )
     for block in entry.blocks:
         if block.style is not None:
-            # Background repair in this tool is deterministic OpenCV only.
-            # Installed generative models are not silently selected by `ensure`.
-            block.style.inpaint_method = "telea"
+            # Background repair in this tool is deterministic only. Installed
+            # generative models are not silently selected by `ensure`.
+            block.style.inpaint_method = repair_method(block.style.inpaint_method)
             if block.style.font:
                 block.style.font = catalog[block.style.font]
     try:
