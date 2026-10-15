@@ -25,6 +25,15 @@ from . import validation
 
 RESOURCES = ".dazedtl/image_translation_resources"
 MANIFEST = RESOURCES + "/manifest.json"
+# DazedTL's own tools, named in a recipe's command by placeholder so the
+# recipe outlives an update or a move of the app.
+SCRIPTS = Path(__file__).resolve().parents[1] / "engine/scripts"
+TOOLS = {
+    "{python}": sys.executable,
+    "{recipe_cli}": str(SCRIPTS / "image_recipe.py"),
+    "{family_cli}": str(SCRIPTS / "image_family.py"),
+    "{inpaint_cli}": str(SCRIPTS / "image_inpaint.py"),
+}
 CHECK_KEYS = {"intermediate", "cleanup", "text", "protected", "clearance"}
 REGIONS = ("cleanup", "text", "protected")
 
@@ -245,10 +254,11 @@ def reproduce(root, entry):
     folder.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="reproduce-", dir=folder) as temporary:
         output = Path(temporary) / "output.png"
-        command = [
-            part.replace("{output}", str(output)).replace("{python}", sys.executable)
-            for part in entry["command"]
-        ]
+        command = []
+        for part in entry["command"]:
+            for name, value in {**TOOLS, "{output}": str(output)}.items():
+                part = part.replace(name, value)
+            command.append(part)
         try:
             finished = subprocess.run(
                 command,

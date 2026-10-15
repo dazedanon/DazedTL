@@ -542,6 +542,9 @@ Indexing also records each image's untranslated original, its frozen copy, the Q
 [Families](../backend/dazedtl/images/families.py) groups same-size images that share most non-flat tiles, such as name cards or area banners that differ only in their lettering, with the region where they differ and how far each member is translated.
 The [background solver](../backend/dazedtl/images/background.py) rebuilds a member's text-free backdrop from its family instead of inpainting it, never changing pixels the whole family agrees on: consensus from members the lettering does not reach, then a fitted glow inversion or a Laplace fill, whichever wins a leave-one-out test on the consensus pixels.
 Agents run it through [image_family.py](../backend/dazedtl/engine/scripts/image_family.py), which also checks a saved background for ghosts of a member's lettering.
+A complete scan regroups the families, and each request asset carries its family, so the editing task rebuilds a member's background before any inpainting and fits an accepted sibling's text recipe with [image_recipe.py](../backend/dazedtl/engine/scripts/image_recipe.py) instead of measuring lettering by hand.
+The solver uses the image tools' exact harmonic fill through the compatibility boundary, the same fill as the inpainting bridge and the image text editor.
+Recipe commands name DazedTL's tools by placeholder (`{python}`, `{recipe_cli}`, `{family_cli}`, `{inpaint_cli}`), so a recipe survives an update or a move of the app.
 The authenticated project helper exposes read-only image state, listing and previews; image application remains an app review.
 Clipboard handoffs never claim an external assistant is running.
 

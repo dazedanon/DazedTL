@@ -320,6 +320,8 @@ class ImageCompatibility:
             "{{IMAGE_TOOL_PYTHON}}": str(Path(sys.executable).absolute()),
             "{{IMAGE_INPAINT_CLI}}": str(source / "scripts/image_inpaint.py"),
             "{{IMAGE_VALIDATE_CLI}}": str(source / "scripts/image_validate.py"),
+            "{{IMAGE_RECIPE_CLI}}": str(source / "scripts/image_recipe.py"),
+            "{{IMAGE_FAMILY_CLI}}": str(source / "scripts/image_family.py"),
         }
         for name, replacement in replacements.items():
             value = value.replace(name, replacement)

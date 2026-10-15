@@ -1706,6 +1706,7 @@ class ImageService:
                 "classify an image whose only Japanese is such lettering as sound_effects, also when its marks may be sound effects or decoration, "
                 "and recommend an image that also has other text for that text. "
                 "Use metadata, byte-identical duplicate groups, numbered contact sheets and enlarged crops/originals where needed. "
+                "An asset's family lists same-size images that share its backdrop: use it to find siblings likely to need the same treatment, but examine each image itself. "
                 "Process bounded batches, cache results by source hash, resume unchanged work and record coverage honestly. "
                 "Use Len's image census methodology as a reference, not its whole-game authorization. "
                 "Local installed OCR is optional; do not install/download tools, invoke hosted OCR or paid services without separate authorization. "
@@ -1745,6 +1746,8 @@ class ImageService:
                 "Each request asset names three files with their SHA-256 hashes: runtime and sourceHash are the game's file, encrypted where the game encrypts its images; "
                 "frozen and frozenHash are the original PNG the app preserved from it, which every render and redo starts from, never translated pixels; "
                 "editable and editableHash are the working copy as it was when this task was made. "
+                "An asset's family lists the images that share its backdrop: rebuild its background with the family solver before any inpainting (methodology section 4a), "
+                "and fit an accepted sibling's text recipe instead of measuring its lettering by hand (section 10). "
                 "Reuse glossary/context already saved in the request. "
                 "No mandatory user sign-off for every image. "
                 + (

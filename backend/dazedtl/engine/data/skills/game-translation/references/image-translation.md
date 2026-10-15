@@ -8,6 +8,7 @@ and work mode in [SKILL.md](../SKILL.md).
 
 When DazedTL's Image Manager hands you an image task, its request, report and methodology replace this reference's workspace, review records and manifests.
 Its frozen originals are the pristine sources, the game's `.dazedtl/image_translation_resources` folder is the stable per-game workspace with one recipe per edited image, and its validator checks each edit; the app, not you, installs the reviewed images.
+Its family background solver, text recipe fitter and inpainting bridge come before the hand-built erasers, sibling medians and fit ladders below, which remain the reference for what those tools do not cover.
 
 For **manual/no-API work**, transcribe and translate locally, using local image
 tools for measurements, masks and lettering. Do not call hosted OCR, translation
