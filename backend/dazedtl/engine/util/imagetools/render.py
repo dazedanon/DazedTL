@@ -26,13 +26,14 @@ different reactions from the person looking at the preview.
 from __future__ import annotations
 
 import zlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw
 
+from util.imagetools import effects
 from util.imagetools.fonts import (
     FittedText,
     _load,
@@ -638,20 +639,6 @@ def _unbounded(
 MAX_WORK = 4096
 
 
-def _disc(radius: int) -> np.ndarray:
-    """A round brush *radius* pixels out from the centre, corners included.
-
-    Built from the distance to the centre rather than taken from
-    ``getStructuringElement``, whose ``MORPH_ELLIPSE`` at 3x3 is a plus sign
-    rather than a disc. The four diagonal neighbours it leaves out are exactly
-    the corners of a stem, so a one-pixel stroke - the commonest width there is
-    - came out with four bare specks on every upright in the line.
-    """
-    span = np.arange(-radius, radius + 1, dtype=np.float32)
-    grid = np.hypot(*np.meshgrid(span, span))
-    return (grid <= radius + 0.5).astype(np.uint8)
-
-
 def _layer(mask: np.ndarray, colour) -> Image.Image:
     """One flat colour, opaque exactly as far as *mask* says.
 
@@ -688,7 +675,9 @@ def _write(draw, at, line, font, step, **ink) -> None:
         draw.text((x + offset, y), char, font=font, **ink)
 
 
-def _stroked(size, fitted, align, text_color, outline) -> Image.Image:
+def _stroked(
+    size, fitted, align, text_color, outline, shadow=None, glow=None
+) -> tuple[Image.Image, int]:
     """One block's lines, stretched to the block, with the stroke around them.
 
     Three steps, in this order, and the order is what makes each of them right:
@@ -721,6 +710,11 @@ def _stroked(size, fitted, align, text_color, outline) -> Image.Image:
     Between letters set close together the antialiased rims meet, and that
     invisible 30%-alpha bridge fenced the gap off, so the stroke was taken out
     of it and white-on-white type ran into itself.
+
+    A glow and a shadow are grown from the same coverage and painted under the
+    stroke, as ``util.imagetools.effects`` lays out. Unlike the stroke they do
+    not take room from the type: they are drawn into a margin around the block,
+    as they would be around the original's. Returns the tile and that margin.
     """
     stroke = fitted.stroke if outline else 0
     stretch = max(1, fitted.width_scale) / 100.0
@@ -767,21 +761,34 @@ def _stroked(size, fitted, align, text_color, outline) -> Image.Image:
         coverage = framed
 
     mask = np.array(coverage)
-    fill = _layer(mask, text_color)
-    if not stroke:
-        return fill
-    return Image.alpha_composite(
-        _layer(cv2.dilate(mask, _disc(stroke)), outline), fill
+    margin = effects.reach(0, shadow, glow)
+    if margin:
+        mask = cv2.copyMakeBorder(
+            mask, margin, margin, margin, margin, cv2.BORDER_CONSTANT, value=0
+        )
+
+    def grow(spread: float) -> np.ndarray:
+        return effects.dilate(mask, spread).astype(np.float32) / 255.0
+
+    layers = effects.stack(
+        grow, text_color, outline_color=outline, outline_width=stroke,
+        shadow=shadow, glow=glow,
     )
+    tile = None
+    for colour, plane in layers:
+        layer = _layer(np.round(plane * 255.0).astype(np.uint8), colour)
+        tile = layer if tile is None else Image.alpha_composite(tile, layer)
+    return tile, margin
 
 
-def _tile(size: tuple[int, int], layout: Layout, style: Style) -> Image.Image:
-    """Draw the fitted lines onto a transparent tile."""
+def _tile(size: tuple[int, int], layout: Layout, style: Style) -> tuple[Image.Image, int]:
+    """Draw the fitted lines onto a transparent tile, and say how far it overhangs."""
     outline = None
     if style.outline_color and style.outline_width > 0:
         outline = tuple(style.outline_color)
     return _stroked(
-        size, layout.fitted, layout.align, tuple(style.text_color), outline
+        size, layout.fitted, layout.align, tuple(style.text_color), outline,
+        style.shadow, style.glow,
     )
 
 
@@ -789,11 +796,18 @@ def paste(overlay: Image.Image, layout: Layout, style: Style, vertical: bool) ->
     """Add one block's text to a transparent overlay, in place."""
     box = layout.box
     size = (box.h, box.w) if vertical else (box.w, box.h)
-    tile = _tile(size, layout, style)
+    if vertical and style.shadow is not None:
+        # The tile is drawn level and turned a quarter anticlockwise, and the
+        # shadow's offset would turn with it. A shadow falls the same way on
+        # the whole picture, so it is turned back first: what lands below
+        # right of the type is still below right once it stands upright.
+        shadow = replace(style.shadow, dx=-style.shadow.dy, dy=style.shadow.dx)
+        style = replace(style, shadow=shadow)
+    tile, margin = _tile(size, layout, style)
     if vertical:
         tile = tile.transpose(Image.ROTATE_90)
     patch = Image.new("RGBA", overlay.size, (0, 0, 0, 0))
-    patch.paste(tile, (box.x, box.y))
+    patch.paste(tile, (box.x - margin, box.y - margin))
     overlay.alpha_composite(patch)
 
 

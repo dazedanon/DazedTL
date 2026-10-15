@@ -2063,6 +2063,20 @@ export type ImagePixels = ImageMetadata & {
 
 export type Colour = number[];
 
+export type ImageTextShadow = {
+  color: Colour;
+  dx?: number;
+  dy?: number;
+  spread?: number;
+  blur?: number;
+};
+
+export type ImageTextGlow = {
+  color: Colour;
+  spread?: number;
+  blur?: number;
+};
+
 export type ImageTextStyle = {
   background?:
     | "transparent"
@@ -2076,6 +2090,8 @@ export type ImageTextStyle = {
   text_color?: Colour;
   outline_color?: Colour | null;
   outline_width?: number;
+  shadow?: ImageTextShadow | null;
+  glow?: ImageTextGlow | null;
   cap_height?: number;
   align?: "left" | "center" | "right";
   font?: string;
