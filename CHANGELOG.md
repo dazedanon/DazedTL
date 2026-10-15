@@ -3,6 +3,13 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.20.1] - 2026-10-15
+
+### Fixed
+
+- **Translate:** translating an RPG Maker MV/MZ or SRPG Studio game's database again after a game update no longer replaces the game glossary's database sections, such as Items, Skills and Weapons, with only the names it just translated; the other rows stay, and a name translated again takes its new translation.
+- **Translate:** adding translated names to a glossary section no longer drops a row that has a note after its translation, such as a character's voice notes in Game Characters.
+
 ## [2.20.0] - 2026-10-15
 
 ### Added
@@ -652,6 +659,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.20.1]: https://github.com/dazedanon/DazedTL/compare/v2.20.0...v2.20.1
 [2.20.0]: https://github.com/dazedanon/DazedTL/compare/v2.19.0...v2.20.0
 [2.19.0]: https://github.com/dazedanon/DazedTL/compare/v2.18.0...v2.19.0
 [2.18.0]: https://github.com/dazedanon/DazedTL/compare/v2.17.0...v2.18.0
