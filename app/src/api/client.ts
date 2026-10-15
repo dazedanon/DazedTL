@@ -127,6 +127,8 @@ export const api = {
       request("translation_compile", { project_id, input_path }),
     request: (project_id: string, run_id: string, index: number) =>
       request("translation_request", { project_id, run_id, index }),
+    requests: (project_id: string, run_id: string) =>
+      request("translation_requests", { project_id, run_id }),
     start: (project_id: string, run_id: string, approval_token = "") =>
       request("translation_start", { project_id, run_id, approval_token }),
     stop: (project_id: string, run_id: string, cancel_provider = false) =>

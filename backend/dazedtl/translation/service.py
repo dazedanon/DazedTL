@@ -931,6 +931,17 @@ Additional project instructions:
             },
         }
 
+    def requests(self, project_id, run_id):
+        """Each request's ID and state in plan order, read from the run's
+        record alone: a large run's plan takes far longer to read."""
+        job = self.jobs.store.settled(self.jobs.store.record(run_id, project_id))
+        if job["kind"] != "translation":
+            raise ValueError("Choose a translation run.")
+        return [
+            {"id": identity, "state": row["state"]}
+            for identity, row in job["states"].items()
+        ]
+
     def results(self, project_id, run_id):
         """Writes the run's accepted translations by line ID for the engine's
         injector, and replies with counts only."""

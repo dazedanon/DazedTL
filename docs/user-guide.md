@@ -199,6 +199,7 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
 Your assistant's session uses its own plan in every mode, so on a limited plan pick a smaller model or lower reasoning effort.
 
 Follow progress and check the translations in the Project page's **History**.
+**Inspect run** shows a run's requests one at a time; type a request number, file name or **Failed** in its request box to find one, or choose **Inspect** beside a request error.
 Notes beside a translation flag text the AI wasn't sure about; check them against the original.
 
 ## Publishing with GameUpdate

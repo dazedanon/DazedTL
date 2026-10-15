@@ -3,6 +3,7 @@ import { api } from "../../api/client";
 import { messageOf } from "../../api/errors";
 import type {
   RequestPreview,
+  RunRequestState,
   TranslationBatch,
   TranslationJob,
 } from "../../api/contracts";
@@ -14,12 +15,13 @@ import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { Button } from "../../ui/Button";
+import { ComboBox } from "../../ui/ComboBox";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Feedback, Message } from "../../ui/Feedback";
 import { FieldRow } from "../../ui/FieldRow";
 import { Modal } from "../../ui/Modal";
 import { TabPanel, Tabs } from "../../ui/Tabs";
-import { batchLabel, runMode, unconfirmedBatch } from "./apiRun";
+import { batchLabel, requestState, runMode, unconfirmedBatch } from "./apiRun";
 import { RequestLines } from "./RequestLines";
 
 export type RunView = "requests" | "batches";
@@ -94,6 +96,43 @@ export function LenRunInspector({
   });
   const preview = shown?.index === index ? shown : null;
   const readError = read.error === undefined ? "" : messageOf(read.error);
+  // Each request's ID and state, so one can be found by either; read again
+  // once a state changes. Until then requests are chosen by number.
+  const listRead = useRead(
+    `${projectId}:${job.id}:${Object.values(job.counts).join()}`,
+    () => api.translation.requests(projectId, job.id),
+  );
+  const [rows, setRows] = useState<RunRequestState[]>([]);
+  useOnChange(listRead.value, (value) => {
+    if (value) setRows(value);
+  });
+  const listError =
+    listRead.error === undefined ? "" : messageOf(listRead.error);
+  const messages = new Map(
+    job.issues.map((issue) => [issue.index, issue.message]),
+  );
+  const choices = Array.from({ length: job.requests }, (_, position) => {
+    const number = position + 1;
+    const label = `Request ${number.toLocaleString()} of ${job.requests.toLocaleString()}`;
+    const row = rows.at(position);
+    const state = row ? requestState(row.state) : undefined;
+    return {
+      value: String(position),
+      label,
+      // A line ID names its file before any "#"; the whole ID still matches
+      // a search, as typed numbers do with or without separators, and a
+      // failure's message.
+      description: row && state && `${state.label} · ${row.id.split("#")[0]}`,
+      tone: state?.tone,
+      searchText: [
+        label,
+        `Request ${number}`,
+        state?.label,
+        row?.id,
+        messages.get(position),
+      ].join("\n"),
+    };
+  });
   const [reviewedRetry, setReviewedRetry] = useState(false);
   const [receipt, setReceipt] = useState("");
   const feedback = (key: string, pendingText: string) => ({
@@ -111,12 +150,10 @@ export function LenRunInspector({
       message,
       key,
     );
-  const uncertain =
-    !!preview &&
-    job.mode === "live" &&
-    job.issues.some(
-      (issue) => issue.id === preview.request.id && issue.state === "uncertain",
-    );
+  const issue =
+    preview && job.issues.find((item) => item.id === preview.request.id);
+  // A Live request that may have been billed has its own review below.
+  const uncertain = job.mode === "live" && issue?.state === "uncertain";
   const request = readError ? (
     <>
       <Message message={readError} />
@@ -128,7 +165,19 @@ export function LenRunInspector({
     </p>
   ) : (
     <>
-      <p className="lens-request-id">{preview.request.id}</p>
+      <div className="lens-request-head">
+        <span className="lens-request-id">{preview.request.id}</span>
+        {issue && !uncertain && (
+          <span
+            className="request-outcome"
+            data-state={issue.state === "failed" ? "failed" : "warning"}
+          >
+            {issue.state === "failed"
+              ? `Failed: ${issue.message}`
+              : issue.message}
+          </span>
+        )}
+      </div>
       <RequestLines preview={preview} />
       {preview.result && (
         <ActionControl
@@ -249,6 +298,21 @@ export function LenRunInspector({
       </details>
     </>
   );
+  // The request still shows when the run's request list could not be read;
+  // choosing by number keeps working.
+  const requestPage = (
+    <>
+      {listError && !readError && (
+        <>
+          <Message
+            message={`Request IDs and states could not be read: ${listError}`}
+          />
+          <Button onClick={listRead.retry}>Try again</Button>
+        </>
+      )}
+      {request}
+    </>
+  );
   const batchList = (
     <ActionList>
       {sent.map(({ batch, index }) => (
@@ -314,10 +378,16 @@ export function LenRunInspector({
             )}
             {view === "requests" && (
               <div className="request-navigation">
-                <span>
-                  Request {(index + 1).toLocaleString()} of{" "}
-                  {job.requests.toLocaleString()}
-                </span>
+                <div className="request-picker">
+                  <ComboBox
+                    selectionOnly
+                    aria-label="Choose request"
+                    value={String(index)}
+                    options={choices}
+                    disabled={action.busy}
+                    onChange={(value) => setIndex(Number(value))}
+                  />
+                </div>
                 <div className="actions">
                   <Button
                     variant="quiet"
@@ -346,10 +416,10 @@ export function LenRunInspector({
           >
             {batches.length ? (
               <TabPanel id={tabId} value={view}>
-                {view === "requests" ? request : batchList}
+                {view === "requests" ? requestPage : batchList}
               </TabPanel>
             ) : (
-              request
+              requestPage
             )}
           </div>
         </DialogBody>

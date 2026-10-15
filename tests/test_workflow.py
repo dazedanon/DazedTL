@@ -286,6 +286,9 @@ class WorkflowTests(unittest.TestCase):
         preview = self.service.request(self.identity, run["id"], 0)
         # The assistant reads an accepted request back for a correction.
         check_response("translation_request", preview)
+        requests = self.service.requests(self.identity, run["id"])
+        check_response("translation_requests", requests)
+        self.assertEqual(requests, [{"id": "scene", "state": "accepted"}])
         reviewed = preview["result"]
         self.assertIn("line", reviewed["reviewed"])
         index = read_json(self.game / (WORK + "/work/translation-units.json"))

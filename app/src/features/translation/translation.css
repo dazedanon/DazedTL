@@ -165,9 +165,9 @@
 .translation-path {
   overflow-wrap: anywhere;
 }
-.translation-batch-list {
-  padding-left: var(--space-4);
-  overflow-wrap: anywhere;
+.translation-run .action-list + .link-button {
+  margin-top: var(--space-2);
+  font-size: var(--font-control);
 }
 /* The run inspector keeps one size while it pages and switches tabs; its
    reader scrolls below the toolbar. */
@@ -177,15 +177,26 @@
 .lens-run-body {
   overflow: hidden;
 }
+/* Its list also names each request's state and file. */
+.lens-run-body .request-picker {
+  width: 24rem;
+}
 .lens-run-body > :not(.request-reader) {
   flex-shrink: 0;
 }
-.lens-request-id {
-  margin: 0;
-  color: var(--color-muted);
+/* The request's ID, and its failure under it. */
+.lens-request-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
   font-size: var(--font-small);
+  overflow-wrap: anywhere;
 }
-.lens-request-id + .translation-table-wrap {
+.lens-request-id {
+  color: var(--color-muted);
+}
+.lens-request-head + .translation-table-wrap {
   margin-top: var(--space-2);
 }
 

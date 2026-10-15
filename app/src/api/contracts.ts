@@ -1237,8 +1237,15 @@ export type TranslationBatch = {
 
 export type TranslationIssue = {
   id: string;
+  index: number;
   state: string;
   message: string;
+};
+
+/** A run's request in plan order, for choosing one by its ID or state. */
+export type RunRequestState = {
+  id: string;
+  state: string;
 };
 
 export type QaRequest = {
@@ -3011,6 +3018,7 @@ export type RpcContract = {
   };
   translation_run: { request: RunRequest; response: TranslationJob };
   translation_request: { request: RunIndexRequest; response: RequestPreview };
+  translation_requests: { request: RunRequest; response: RunRequestState[] };
   translation_results: { request: RunRequest; response: TranslationResults };
   translation_backups: { request: ProjectRequest; response: BackupCatalog };
   translation_update_task: { request: ProjectRequest; response: UpdateTask };

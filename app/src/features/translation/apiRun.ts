@@ -110,6 +110,27 @@ export const declinedEstimate = (
 ) =>
   jobs.find((job) => job.kind === "operation" && job.finishes === declined.id);
 
+/** A run's request state as the run inspector names it; a tone marks the
+    states that need the user. */
+export function requestState(state: string) {
+  if (state === "failed") return { label: "Failed", tone: "error" } as const;
+  if (state === "uncertain")
+    return { label: "Submission unconfirmed", tone: "warning" } as const;
+  return {
+    label:
+      (
+        {
+          pending: "Pending",
+          sending: "Sending",
+          queued: "At provider",
+          accepted: "Saved",
+          declined: "Declined",
+        } as Record<string, string>
+      )[state] || "Status unavailable",
+    tone: undefined,
+  };
+}
+
 /** How a run sends its requests, as History names it. */
 export const runMode = (job: TranslationJob) =>
   job.mode === "agent"

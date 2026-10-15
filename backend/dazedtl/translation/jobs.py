@@ -438,9 +438,11 @@ class RunStore:
             "can_cancel_provider": (job.get("quote") or {}).get("provider")
             != "openrouter",
             "cancel_requested": self.cancel_requested(job["id"]),
+            # States keep the plan's request order, so the position is the
+            # index translation_request reads.
             "issues": [
-                {"id": key, **value}
-                for key, value in job["states"].items()
+                {"id": key, "index": index, **value}
+                for index, (key, value) in enumerate(job["states"].items())
                 if value["state"] in {"failed", "uncertain"}
             ],
         }

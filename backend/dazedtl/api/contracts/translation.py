@@ -61,8 +61,17 @@ class TranslationBatch(TypedDict):
 
 class TranslationIssue(TypedDict):
     id: str
+    # The request's position in the run, as translation_request reads it.
+    index: int
     state: str
     message: str
+
+
+class RunRequestState(TypedDict):
+    """A run's request in plan order, for choosing one by its ID or state."""
+
+    id: str
+    state: str
 
 
 class QaRequest(TypedDict):

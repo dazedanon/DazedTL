@@ -54,6 +54,9 @@
 .request-outcome[data-state="pending"] {
   color: var(--color-muted);
 }
+.request-outcome[data-state="warning"] {
+  color: var(--color-warning);
+}
 .request-selection-file {
   overflow-wrap: anywhere;
   font-size: var(--font-small);

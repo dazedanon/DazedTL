@@ -770,6 +770,7 @@ def routes(app):
         "organize",
         "run",
         "request",
+        "requests",
         "results",
         "start",
         "stop",

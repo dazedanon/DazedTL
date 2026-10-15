@@ -889,6 +889,14 @@ class TranslationTests(unittest.TestCase):
                 "later": "failed",
             },
         )
+        # Inspect opens a failure by its position in the plan.
+        self.assertEqual(
+            [
+                (issue["id"], issue["index"])
+                for issue in self.store.view(current)["issues"]
+            ],
+            [("second", 2), ("later", 3)],
+        )
         self.assertEqual(current["usage"]["input_tokens"], 13)
         self.assertEqual(current["usage"]["output_tokens"], 10)
         self.assertEqual(current["status"], "failed")

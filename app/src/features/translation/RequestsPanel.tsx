@@ -5,6 +5,7 @@ import { useApplication } from "../../app/ApplicationProvider";
 import { useAction } from "../../state/useAction";
 import { flushDrafts } from "../../state/leaveGuards";
 import { ActionControl } from "../../ui/ActionControl";
+import { ActionList, ActionRow } from "../../ui/ActionList";
 import { Button } from "../../ui/Button";
 import { Feedback } from "../../ui/Feedback";
 import { FieldRow } from "../../ui/FieldRow";
@@ -20,6 +21,8 @@ import {
 import { LenRunInspector, type RunView } from "./LenRunInspector";
 
 const money = (value: number) => "$" + value.toFixed(4);
+/** Rows a run's request list shows before its explicit Show all. */
+const listPreview = 10;
 export function RequestsPanel({ state }: { state: TranslationState }) {
   const application = useApplication();
   const action = useAction({ observer: application });
@@ -37,6 +40,20 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
     (job) => job.kind === "translation" && listedRun(job),
   );
   const inspected = jobs.find((job) => job.id === inspecting.run);
+  // The run lists showing all their rows, as `${run}:${list}`.
+  const [expanded, setExpanded] = useState<string[]>([]);
+  const shown = <T,>(key: string, rows: T[]) =>
+    expanded.includes(key) ? rows : rows.slice(0, listPreview);
+  const showAll = (key: string, count: number) =>
+    count > listPreview &&
+    !expanded.includes(key) && (
+      <Button
+        variant="link"
+        onClick={() => setExpanded((value) => [...value, key])}
+      >
+        Show all {count.toLocaleString()}
+      </Button>
+    );
   // A run's actions report once, after its last button.
   const runActions = ["start", "stop", "discard", "cancel"];
   const runKey = (name: string, run: string) => `${name}:${run}`;
@@ -231,13 +248,23 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
                   {job.issues.length} request{" "}
                   {job.issues.length === 1 ? "error" : "errors"}
                 </summary>
-                <ul>
-                  {job.issues.map((issue) => (
-                    <li key={issue.id}>
-                      {issue.id}: {issue.message}
-                    </li>
+                <ActionList compact>
+                  {shown(`${job.id}:issues`, job.issues).map((issue) => (
+                    <ActionRow
+                      key={issue.id}
+                      title={issue.id}
+                      description={issue.message}
+                    >
+                      <Button
+                        variant="link"
+                        onClick={() => inspect(job.id, issue.index)}
+                      >
+                        Inspect
+                      </Button>
+                    </ActionRow>
                   ))}
-                </ul>
+                </ActionList>
+                {showAll(`${job.id}:issues`, job.issues.length)}
               </details>
             )}
             {!!job.qa_requests?.length && (
@@ -248,16 +275,23 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
                     : `${job.qa_requests.length} requests have`}{" "}
                   source review notes
                 </summary>
-                <ul className="translation-batch-list">
-                  {job.qa_requests.map((request) => (
-                    <li key={request.id}>
-                      {request.id} · {request.notes} notes{" "}
-                      <Button onClick={() => inspect(job.id, request.index)}>
-                        Inspect source notes
+                <ActionList compact>
+                  {shown(`${job.id}:notes`, job.qa_requests).map((request) => (
+                    <ActionRow
+                      key={request.id}
+                      title={request.id}
+                      description={`${request.notes} ${request.notes === 1 ? "note" : "notes"}`}
+                    >
+                      <Button
+                        variant="link"
+                        onClick={() => inspect(job.id, request.index)}
+                      >
+                        Inspect
                       </Button>
-                    </li>
+                    </ActionRow>
                   ))}
-                </ul>
+                </ActionList>
+                {showAll(`${job.id}:notes`, job.qa_requests.length)}
               </details>
             )}
           </article>

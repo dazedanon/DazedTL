@@ -78,6 +78,7 @@ from dazedtl.api.contracts.translation import (
     ProjectOptions,
     ReleaseInspection,
     RequestPreview,
+    RunRequestState,
     TranslationJob,
     TranslationOptions,
     TranslationProgress,
@@ -701,6 +702,7 @@ METHODS: dict[str, Method] = {
     "translation_organize": Method(TranslationOrganizeRequest, TranslationJob),
     "translation_run": Method(RunRequest, TranslationJob, refresh=False),
     "translation_request": Method(RunIndexRequest, RequestPreview, refresh=False),
+    "translation_requests": Method(RunRequest, list[RunRequestState], refresh=False),
     "translation_results": Method(RunRequest, TranslationResults, refresh=False),
     "translation_backups": Method(ProjectRequest, BackupCatalog, refresh=False),
     # The assistant's task for the text an applied update brought in.
