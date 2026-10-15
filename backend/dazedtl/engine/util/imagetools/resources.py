@@ -13,6 +13,12 @@ because the bridge sets up the engine's import path itself.
 Model files are pinned to a repository revision and checked against their
 published SHA-256, so a model replaced upstream is refused rather than loaded.
 
+On Windows the models need one thing more: Microsoft's C++ runtime, which
+onnxruntime links to and a fresh Windows lacks. ``install`` runs Microsoft's
+own Redistributable for it, verified by its signature rather than a pinned
+checksum, because Microsoft replaces that download with every runtime update
+and the newest one is what every onnxruntime build can run on.
+
 **This module must import on a bare checkout**, before any of it is installed,
 because it is what does the installing. Standard library only - no numpy, no
 cv2, no PyQt. The rest of ``util.imagetools`` is not importable until
@@ -30,9 +36,13 @@ restart.
 from __future__ import annotations
 
 import hashlib
+import os
+import shutil
 import ssl
+import struct
 import subprocess
 import sys
+import tempfile
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -63,6 +73,14 @@ PIP_SIZES = {
     "rapidocr-onnxruntime": 15_000_000,
 }
 
+#: Microsoft's permanent link to the newest x64 Visual C++ Redistributable.
+VC_REDIST_URL = "https://aka.ms/vc14/vc_redist.x64.exe"
+#: Its size in October 2026, for the "about this much" line only.
+VC_REDIST_SIZE = 18_731_856
+#: The parts of that runtime onnxruntime loads besides the vcruntime140 pair
+#: that every Python on Windows carries next to itself.
+VC_LIBRARIES = ("msvcp140.dll", "msvcp140_1.dll")
+
 
 class Cancelled(Exception):
     """The user stopped the download."""
@@ -91,13 +109,15 @@ class Resource:
     default: bool = False
     #: The workflow cannot start without it, so it cannot be unticked.
     required: bool = False
+    #: Runs on onnxruntime, which needs Microsoft's C++ runtime on Windows.
+    cpp_runtime: bool = False
 
     def missing_pips(self) -> tuple[str, ...]:
         """The requirement specifiers whose import name is not found."""
         return tuple(
             spec
             for spec, module in zip(self.pips, self.modules, strict=True)
-            if not _importable(module)
+            if not importable(module)
         )
 
 
@@ -117,6 +137,7 @@ RESOURCES: tuple[Resource, ...] = (
         detail="fast neural fill; weaker on saturated colour",
         pips=("onnxruntime>=1.17",),
         modules=("onnxruntime",),
+        cpp_runtime=True,
         url=HUGGINGFACE.format(
             repo="ogkalu/aot-inpainting",
             revision="42ffc84ff1bd46dd95f1c5a41e83ee7e98f39189",
@@ -133,6 +154,7 @@ RESOURCES: tuple[Resource, ...] = (
         detail="LaMa fine-tuned on manga and anime - the best of these on game art",
         pips=("onnxruntime>=1.17",),
         modules=("onnxruntime",),
+        cpp_runtime=True,
         url=HUGGINGFACE.format(
             repo="ogkalu/lama-manga-onnx-dynamic",
             revision="ee4ed4a8447b6730fc41d34f90876b6c48af925a",
@@ -148,6 +170,7 @@ RESOURCES: tuple[Resource, ...] = (
         detail="the original LaMa export, trained on photographs",
         pips=("onnxruntime>=1.17",),
         modules=("onnxruntime",),
+        cpp_runtime=True,
         url=HUGGINGFACE.format(
             repo="Carve/LaMa-ONNX",
             revision="c3c0c9e468934d62e79c329e35d82dd09ff8c444",
@@ -199,7 +222,7 @@ def get(key: str) -> Resource:
     raise KeyError(f"No image-workflow resource named {key!r}")
 
 
-def _importable(module: str) -> bool:
+def importable(module: str) -> bool:
     from importlib.util import find_spec
 
     try:
@@ -213,6 +236,8 @@ def installed(resource: Resource | str) -> bool:
     if isinstance(resource, str):
         resource = get(resource)
     if resource.missing_pips():
+        return False
+    if resource.cpp_runtime and vc_runtime_problem():
         return False
     return resource.dest is None or resource.dest.is_file()
 
@@ -252,7 +277,111 @@ def estimate(resources) -> int:
             if name not in seen:
                 seen.add(name)
                 total += PIP_SIZES.get(name, 0)
+    if any(resource.cpp_runtime for resource in resources) and vc_runtime_problem():
+        total += VC_REDIST_SIZE
     return total
+
+
+# ------------------------------------------------- Microsoft's C++ runtime
+
+def _system_folder() -> Path:
+    """Windows' System32, asked of Windows rather than of the environment.
+
+    Helpers can run with a filtered environment that has no ``SystemRoot``.
+    """
+    import ctypes
+
+    buffer = ctypes.create_unicode_buffer(260)
+    ctypes.windll.kernel32.GetSystemDirectoryW(buffer, len(buffer))  # type: ignore[attr-defined]
+    return Path(buffer.value)
+
+
+def linker_version(path: Path) -> tuple[int, int] | None:
+    """The MSVC toolset a Windows DLL was linked with, from its PE header."""
+    try:
+        with open(path, "rb") as handle:
+            head = handle.read(4096)
+    except OSError:
+        return None
+    if head[:2] != b"MZ" or len(head) < 0x40:
+        return None
+    (offset,) = struct.unpack_from("<I", head, 0x3C)
+    # The optional header follows the 4-byte signature and the 20-byte file
+    # header; its third and fourth bytes are the linker's major and minor.
+    if offset + 28 > len(head) or head[offset : offset + 4] != b"PE\0\0":
+        return None
+    return head[offset + 26], head[offset + 27]
+
+
+#: VS_FIXEDFILEINFO's signature and structure version, as stored in a DLL.
+_FIXED_FILE_INFO = struct.pack("<II", 0xFEEF04BD, 0x00010000)
+
+
+def file_version(path: Path) -> tuple[int, int, int, int] | None:
+    """A Windows DLL's file version, from the fixed block of its resources."""
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    at = data.find(_FIXED_FILE_INFO)
+    if at < 0 or at + 16 > len(data):
+        return None
+    high, low = struct.unpack_from("<II", data, at + 8)
+    return high >> 16, high & 0xFFFF, low >> 16, low & 0xFFFF
+
+
+def runtime_problem(needed: tuple[int, int] | None, folders) -> str:
+    """What keeps a DLL linked with toolset *needed* from running, or "".
+
+    *folders* are searched in order, as Windows searches for an extension's
+    dependencies; the first copy of each library is the one that loads.
+    """
+    for name in VC_LIBRARIES:
+        copy = next(
+            (folder / name for folder in folders if (folder / name).is_file()), None
+        )
+        if copy is None:
+            return (
+                "this Windows lacks the Microsoft Visual C++ Redistributable (x64) "
+                "that onnxruntime needs"
+            )
+        version = file_version(copy)
+        if needed and version and version[:2] < needed:
+            return (
+                f"onnxruntime needs the Microsoft Visual C++ Redistributable "
+                f"{needed[0]}.{needed[1]} or newer, and this Windows has "
+                f"{'.'.join(map(str, version))}"
+            )
+    return ""
+
+
+def vc_runtime_problem() -> str:
+    """Why onnxruntime cannot run on this Windows, or "" when it can.
+
+    onnxruntime's Windows wheels link Microsoft's C++ library (msvcp140)
+    dynamically. The Python DazedTL installs carries only vcruntime140, so on a
+    fresh Windows the import fails with "DLL load failed". A runtime older than
+    the toolset onnxruntime was built with is worse: it can load and then crash
+    the process. So this reads the files instead of importing anything. Before
+    onnxruntime is installed, only a missing runtime can be told.
+    """
+    if sys.platform != "win32":
+        return ""
+    from importlib.util import find_spec
+
+    try:
+        spec = find_spec("onnxruntime")
+    except (ImportError, ValueError):
+        spec = None
+    capi = Path(spec.origin).parent / "capi" if spec and spec.origin else None
+    # The extension's own folder, the Python beside the executable, then
+    # System32.
+    folders = [Path(sys.base_prefix), _system_folder()]
+    if capi:
+        folders.insert(0, capi)
+    return runtime_problem(
+        linker_version(capi / "onnxruntime.dll") if capi else None, folders
+    )
 
 
 def human(size: int) -> str:
@@ -396,6 +525,93 @@ def _fetch(
         raise
 
 
+def _check_signature(path: Path) -> None:
+    """Refuse a file that Microsoft did not sign, or whose signature is broken."""
+    powershell = _system_folder() / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+    # The path travels in the environment, so no quoting can reinterpret it.
+    script = (
+        "$s = Get-AuthenticodeSignature -LiteralPath $env:DAZEDTL_SIGNED; "
+        "[Console]::Out.Write([string]$s.Status + \"`n\" + "
+        "$s.SignerCertificate.Subject)"
+    )
+    try:
+        result = subprocess.run(
+            [str(powershell), "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            env={**os.environ, "DAZEDTL_SIGNED": str(path)},
+            creationflags=_no_window(),
+            timeout=120,
+        )
+        status, _, subject = result.stdout.partition("\n")
+    except (OSError, subprocess.SubprocessError) as exc:
+        status, subject = f"unreadable ({exc})", ""
+    if status.strip() != "Valid" or "O=Microsoft Corporation" not in subject:
+        raise OSError(
+            f"{path.name} does not carry a valid Microsoft signature "
+            f"({status.strip() or 'unreadable'}), so it was not run."
+        )
+
+
+#: Exit codes of Microsoft's installer that leave the runtime in place:
+#: success, success pending a restart, and a newer runtime already installed.
+_VC_REDIST_DONE = (0, 3010, 1638)
+#: The user said no, in the installer or at Windows' administrator prompt.
+_VC_REDIST_DECLINED = (1602, 1223)
+
+
+def install_vc_runtime(progress=None, log=None, should_stop=None) -> None:
+    """Install Microsoft's C++ runtime when onnxruntime cannot run without it.
+
+    Microsoft's installer asks Windows for administrator rights, so the user
+    sees one Windows prompt; nothing else here needs one.
+    """
+    problem = vc_runtime_problem()
+    if not problem:
+        return
+    _log(log, f"- Microsoft Visual C++ Redistributable: {problem}")
+    # One fixed folder, emptied first, so an install stopped while Windows'
+    # prompt was open leaves no installer behind for long.
+    folder = Path(tempfile.gettempdir()) / "dazedtl-vc-redist"
+    shutil.rmtree(folder, ignore_errors=True)
+    installer = folder / "vc_redist.x64.exe"
+    try:
+        _fetch(
+            VC_REDIST_URL, installer, progress=progress, log=log, should_stop=should_stop
+        )
+        _check_signature(installer)
+        _check(should_stop)
+        _log(
+            log,
+            "Running Microsoft's installer; Windows asks for administrator "
+            "permission",
+        )
+        code = subprocess.run(
+            [str(installer), "/install", "/passive", "/norestart"], check=False
+        ).returncode
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+    if code in _VC_REDIST_DECLINED:
+        raise Cancelled(
+            "The Microsoft Visual C++ Redistributable was not installed because "
+            "its installer or the administrator prompt was declined."
+        )
+    if code not in _VC_REDIST_DONE:
+        raise RuntimeError(
+            f"Microsoft's Visual C++ Redistributable installer exited {code}. "
+            f"Its log is in {tempfile.gettempdir()} (dd_vcredist_amd64_*.log); "
+            f"it can also be installed by hand from {VC_REDIST_URL}"
+        )
+    problem = vc_runtime_problem()
+    if problem:
+        raise RuntimeError(
+            f"Microsoft's installer finished (exit {code}), but {problem}"
+            + (". Restart Windows, then check again." if code == 3010 else ".")
+        )
+    _log(log, "Microsoft Visual C++ Redistributable ready")
+
+
 def activate() -> None:
     """Make freshly installed packages importable without a restart."""
     import importlib
@@ -443,6 +659,17 @@ def install(resources, progress=None, log=None, should_stop=None) -> None:
             activate()
         for spec in resource.pips:
             handled.add(_requirement_name(spec))
+        # After pip, so the check knows which toolset the onnxruntime just
+        # installed needs; before the model, which is useless without it.
+        if resource.cpp_runtime and "vc_redist" not in handled:
+            handled.add("vc_redist")
+            install_vc_runtime(
+                progress=lambda done, total, key=resource.key: (
+                    progress(key, done, total) if progress else None
+                ),
+                log=log,
+                should_stop=should_stop,
+            )
 
         if resource.dest is None:
             continue

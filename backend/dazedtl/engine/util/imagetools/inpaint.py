@@ -51,7 +51,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from util.imagetools import harmonic
+from util.imagetools import harmonic, resources
 from util.paths import DATA_DIR
 
 TELEA = "telea"
@@ -207,10 +207,6 @@ PATCH_SIZE = 15
 BRIDGE = Path(__file__).resolve().parents[2] / "scripts" / "image_inpaint.py"
 
 
-#: Microsoft's permanent link to the current x64 Visual C++ Redistributable.
-VC_REDIST = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
-
-
 def install_command(method: str) -> str:
     """The exact command that installs what *method* needs into this Python."""
     return f'"{sys.executable}" "{BRIDGE}" install {method}'
@@ -291,15 +287,6 @@ def _probe_package(module: str, package: str, method: str) -> tuple[bool, str]:
             f"--force-reinstall {package}"
         )
     except ImportError as exc:
-        system = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
-        if sys.platform == "win32" and not (system / "msvcp140.dll").is_file():
-            # The Python DazedTL installs carries only part of this runtime,
-            # and onnxruntime needs the rest; a fresh Windows has none of it.
-            return False, (
-                f"{package} will not load {where}: this Windows lacks the "
-                "Microsoft Visual C++ Redistributable (x64). Install it from "
-                f"{VC_REDIST}, then check again."
-            )
         return False, (
             f"{package} will not load {where}: {exc}. On Windows, check "
             "the Microsoft Visual C++ runtime and the installed version."
@@ -333,6 +320,19 @@ def _probe(method: str) -> tuple[bool, str]:
     if method not in MODELS:
         return False, f"unknown method {method!r}"
 
+    # Read from the files before any import: with a runtime older than its
+    # build, onnxruntime can load and then take the whole process down.
+    runtime = resources.vc_runtime_problem()
+    if runtime:
+        package = "" if resources.importable("onnxruntime") else (
+            "onnxruntime is not installed in this Python, and "
+        )
+        return False, (
+            f"{package}{runtime} (python: {sys.executable}). Install "
+            f"{'them' if package else 'it'} with: {install_command(method)}. "
+            "Microsoft's installer asks Windows for administrator permission; "
+            f"the runtime can also be installed by hand from {resources.VC_REDIST_URL}"
+        )
     ok, detail = _probe_package("onnxruntime", "onnxruntime", method)
     if not ok:
         return False, detail

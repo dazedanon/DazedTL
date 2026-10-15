@@ -63,9 +63,9 @@ def _status() -> dict:
             "status": inpaint.status(method),
         }
         if not row["available"] and method not in inpaint.LOCAL:
-            row["download"] = resources.human(
-                resources.estimate([resources.get(method)])
-            )
+            size = resources.estimate([resources.get(method)])
+            if size:
+                row["download"] = resources.human(size)
             row["install"] = inpaint.install_command(method)
         methods.append(row)
     return {
