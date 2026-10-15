@@ -1908,11 +1908,15 @@ def _preparedBatchMapName(filename: str):
 
 
 def update_vocab_section(category: str, pairs: list[tuple[str, str]]):
-    """Harvest translated DB names into the shared game glossary helper."""
+    """Harvest translated DB names into the shared game glossary helper.
+
+    A run translates only the names still in Japanese, so its pairs join the
+    category's section instead of replacing it.
+    """
     try:
         from util.vocab import update_vocab_section as _shared_update_vocab_section
 
-        _shared_update_vocab_section(category, pairs)
+        _shared_update_vocab_section(category, pairs, merge=True, overwrite=True)
     except Exception:
         traceback.print_exc()
 

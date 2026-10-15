@@ -220,6 +220,8 @@ def is_unverified_nameplate(rest: str) -> bool:
 
 
 _SECTION_ROW_SOURCE_RE = re.compile(r"^(.+?)\s+\(")
+# A row that is only "source (translation)", without a note after it.
+_SECTION_PLAIN_ROW_RE = re.compile(r"^.+?\s+\(.+\)$")
 
 _DECORATIVE_GLOSSARY_PUNCTUATION = frozenset({"•", "‣", "⁃", "※"})
 
@@ -269,24 +271,38 @@ def normalize_generated_glossary_pair(source: str, target: str) -> tuple[str, st
     return clean_source, clean_target
 
 
-def _merge_section_rows(section_body: str, pairs: dict[str, str]) -> list[str]:
-    """Return a section's rows with ``pairs`` added for sources it lacks.
+def _merge_section_rows(
+    section_body: str, pairs: dict[str, str], *, overwrite: bool = False
+) -> list[str]:
+    """Return a section's rows with ``pairs`` merged in.
 
     Existing rows stay exactly as written, including a note after the
-    translation (``サンク (Sank) - Male``); only absent sources are appended.
+    translation (``サンク (Sank) - Male``), and sources the section lacks are
+    appended. With ``overwrite`` a source already present takes its new
+    translation, unless its row carries a note: that row was written by hand.
     """
     rows = section_body.rstrip().splitlines()
     present = set()
-    for row in rows:
-        found = _SECTION_ROW_SOURCE_RE.match(row.strip())
-        if found:
-            present.add(found.group(1))
+    for index, row in enumerate(rows):
+        text = row.strip()
+        found = _SECTION_ROW_SOURCE_RE.match(text)
+        if not found:
+            continue
+        source = found.group(1)
+        present.add(source)
+        if overwrite and source in pairs and _SECTION_PLAIN_ROW_RE.match(text):
+            rows[index] = f"{source} ({pairs[source]})"
     rows.extend(f"{src} ({dst})" for src, dst in pairs.items() if src not in present)
     return rows
 
 
 def update_vocab_section(
-    category: str, pairs, *, merge: bool = False, game_root=None
+    category: str,
+    pairs,
+    *,
+    merge: bool = False,
+    overwrite: bool = False,
+    game_root=None,
 ) -> None:
     """Insert or replace a ``# {category}`` section in the game-specific vocab.
 
@@ -303,6 +319,10 @@ def update_vocab_section(
     - ``merge``: when True, keep existing rows for this category as written,
       including notes after the translation, and only add sources that are not
       already present (names.json stays authoritative).
+    - ``overwrite``: with ``merge``, a source already present takes its new
+      translation instead of keeping the old one, except on a row with a note.
+      A pass that translated only some of a category's names uses both, so the
+      rest of the section survives and the glossary matches the written files.
 
     Collect skips writes (source text is still untranslated). Consume writes
     immediately so sequential Pass 2 files can load harvested names.
@@ -337,7 +357,9 @@ def update_vocab_section(
         )
         match = pattern.search(game_part)
         if merge and match:
-            block_lines = _merge_section_rows(match.group(2), dedup)
+            block_lines = _merge_section_rows(
+                match.group(2), dedup, overwrite=overwrite
+            )
         else:
             block_lines = [f"{src} ({dst})" for src, dst in dedup.items()]
         new_block = f"# {category}\n" + "\n".join(block_lines) + "\n\n"

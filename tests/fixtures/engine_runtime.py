@@ -414,6 +414,63 @@ try:
         )
         assert named == {"存子": ("Aruko", "Earlier game")}, named
 
+        # A database pass translates only the names still in Japanese. It used
+        # to replace the whole glossary section with them, which erased about
+        # 1,100 rows of a game after a patch added a few items.
+        from modules import srpg
+        from util.paths import ensure_game_glossary
+        from util.vocab import BASE_SEPARATOR
+
+        harvest = temporary / "harvest-game"
+        (harvest / "log").mkdir(parents=True)
+        glossary = ensure_game_glossary(harvest)
+        game_text = "# Items\n薬 (Potion)\n毒 (Poison)\n\n# Skills\n火 (Fire)\n\n"
+        game_text += "# Game Characters\nサンク (Sank) - Male\n\n"
+        base_text = BASE_SEPARATOR + "# Honorifics\nさん (san)\n"
+        glossary.write_text(game_text + base_text, encoding="utf-8", newline="\n")
+        items = [None] + [
+            {"id": number, "name": name, "description": "", "note": ""}
+            for number, name in enumerate(["Potion", "新薬"], 1)
+        ]
+
+        def database_names(text, _history, *_args, **_kwargs):
+            return [["EN:" + value for value in text], [0, 0]]
+
+        directory = os.getcwd()
+        os.chdir(harvest)
+        try:
+            with (
+                patch.dict(os.environ, {"DAZED_GAME_ROOT": str(harvest)}),
+                patch.multiple(
+                    parser,
+                    IGNORETLTEXT=True,
+                    translateAI=extensions.point(database_names),
+                ),
+            ):
+                parser.searchNames(items, None, "Items", "Items.json")
+                assert items[2]["name"] == "EN:新薬", items
+                text = glossary.read_text(encoding="utf-8")
+                assert text == (
+                    game_text.replace("毒 (Poison)\n", "毒 (Poison)\n新薬 (EN:新薬)\n")
+                    + base_text
+                ), text
+                # SRPG Studio fills the same sections; its characters stay as
+                # curated, while a name translated again takes its new spelling.
+                srpg.update_vocab_section(
+                    "Game Characters",
+                    [("サンク", "Sunk"), ("新人", "Newbie")],
+                    curated=True,
+                )
+                srpg.update_vocab_section("Items", [("毒", "Venom")])
+                text = glossary.read_text(encoding="utf-8")
+                expected = game_text.replace(
+                    "毒 (Poison)", "毒 (Venom)\n新薬 (EN:新薬)"
+                )
+                expected = expected.replace("Male\n", "Male\n新人 (Newbie)\n")
+                assert text == expected + base_text, text
+        finally:
+            os.chdir(directory)
+
         # MV and Ace print the battler's name right before a particle-first
         # battle message; stripping the space after Taro printed "Arinafell!".
         assert parser._strip_taro_placeholder('"Taro fell!"') == " fell!"

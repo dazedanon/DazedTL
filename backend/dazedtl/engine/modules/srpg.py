@@ -113,12 +113,20 @@ MAP_FILES = [
 ]
 
 
-def update_vocab_section(category: str, pairs: list[tuple[str, str]]):
-    """Harvest translated DB names into the shared game glossary helper."""
+def update_vocab_section(
+    category: str, pairs: list[tuple[str, str]], *, curated: bool = False
+):
+    """Harvest translated DB names into the shared game glossary helper.
+
+    A run translates only part of a category, so its pairs join the section
+    instead of replacing it. A curated section keeps the rows it already has.
+    """
     try:
         from util.vocab import update_vocab_section as _shared_update_vocab_section
 
-        _shared_update_vocab_section(category, pairs)
+        _shared_update_vocab_section(
+            category, pairs, merge=True, overwrite=not curated
+        )
     except Exception:
         traceback.print_exc()
 
@@ -854,7 +862,9 @@ def translateGeneric(data, filename, translatedDataList=None, pbar=None):
 
                 if section:
                     vocab_pairs = list(zip(originalNameList, nameList))
-                    update_vocab_section(section, vocab_pairs)
+                    update_vocab_section(
+                        section, vocab_pairs, curated=section == "Game Characters"
+                    )
             except Exception:
                 traceback.print_exc()
         
