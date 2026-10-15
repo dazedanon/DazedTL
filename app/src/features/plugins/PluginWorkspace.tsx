@@ -3,6 +3,7 @@ import { TriangleAlert } from "lucide-react";
 import { useApplication } from "../../app/ApplicationProvider";
 import { pluginsApi } from "../../api/plugins";
 import type {
+  PluginActionResult,
   PluginForeignWork,
   PluginPreview,
   PluginReceipt,
@@ -28,7 +29,6 @@ import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { ForeignWork } from "../../ui/ForeignWork";
 import { Modal } from "../../ui/Modal";
 import { selectionNames } from "../../ui/displayText";
-import { PluginApplyContent } from "./PluginApplyContent";
 import {
   pluginFilesBlocked,
   pluginFilesLeft,
@@ -57,7 +57,6 @@ const fileName = (path: string) => path.split("/").pop() || path;
 const controlled = (key: string) =>
   [
     "plugin_task",
-    "preview_apply",
     "apply",
     "restore",
     "adopt",
@@ -66,22 +65,33 @@ const controlled = (key: string) =>
   ].includes(key) || key.startsWith("preview_restore:");
 
 /**
- * Each file the app cannot read with why, one sentence per reason:
+ * Each file left unchanged with why, one sentence per reason:
  * "OldTool.js stays unchanged. Plugin files must be UTF-8 text."
  */
-function unreadableDetail(rows: PluginState["unreadable"], kept: boolean) {
+function unchangedDetail(
+  rows: { path: string; reason: string }[],
+  kept = false,
+) {
   const reasons = new Map<string, string[]>();
   for (const row of rows)
-    reasons.set(row.issue, [...(reasons.get(row.issue) || []), row.path]);
+    reasons.set(row.reason, [...(reasons.get(row.reason) || []), row.path]);
   return [...reasons]
-    .map(([issue, paths]) => {
+    .map(([reason, paths]) => {
       const names = selectionNames(paths.map(fileName));
       return kept
-        ? `You kept ${names} unchanged. ${issue}`
-        : `${names} ${paths.length === 1 ? "stays" : "stay"} unchanged. ${issue}`;
+        ? `You kept ${names} unchanged. ${reason}`
+        : `${names} ${paths.length === 1 ? "stays" : "stay"} unchanged. ${reason}`;
     })
     .join(" ");
 }
+const unreadableDetail = (rows: PluginState["unreadable"], kept: boolean) =>
+  unchangedDetail(
+    rows.map(({ path, issue }) => ({ path, reason: issue })),
+    kept,
+  );
+/** What an apply that left checked files unchanged wrote, and why it left them. */
+const partlyApplied = ({ completed = 0, blocked = [] }: PluginActionResult) =>
+  `${fileCount(completed, "plugin file")} applied. ${unchangedDetail(blocked)}`;
 
 /** Where the assistant's task stands and each result it returns. */
 function pluginTask(state: PluginState, handoff: Handoff, keep: ReactNode) {
@@ -194,7 +204,6 @@ export function PluginWorkspace({
   backControl,
   next,
   beforeAction,
-  applyControl,
   disabled = false,
 }: {
   projectId: string;
@@ -207,8 +216,6 @@ export function PluginWorkspace({
   /** The host's Continue control; it leads once the task's work is done. */
   next: (variant: "primary" | "quiet") => ReactNode;
   beforeAction: () => Promise<unknown>;
-  /** Replaces Review & apply with the host's own review. */
-  applyControl?: ReactNode;
   disabled?: boolean;
 }) {
   const application = useApplication();
@@ -272,6 +279,14 @@ export function PluginWorkspace({
           : result.value.message || "",
         "plugin_task",
       );
+  };
+  // The assistant's checks are the review: a list of files could not show
+  // what changed. Once everything is in, the task itself reads Applied; a
+  // file left unchanged keeps the control, which says why.
+  const apply = async () => {
+    const result = await run("apply");
+    if (result.ok && result.value.blocked?.length)
+      action.report(partlyApplied(result.value), "apply");
   };
   const feedback = (key: string) => ({
     pending: action.busy && action.key === key,
@@ -411,7 +426,7 @@ export function PluginWorkspace({
         </div>
       )}
       {footer(
-        ["apply", "restore", "adopt", "start_over"].includes(action.key) &&
+        ["restore", "adopt", "start_over"].includes(action.key) &&
           action.notice && (
             <span role="status" className="plugin-success">
               {action.notice}
@@ -436,16 +451,16 @@ export function PluginWorkspace({
             }
             onClick={copyTask}
           />
-          {counts.ready > 0 &&
-            (applyControl ?? (
-              <ActionControl
-                label="Review & apply"
-                variant="primary"
-                disabled={busy}
-                {...feedback("preview_apply")}
-                onClick={() => run("preview_apply")}
-              />
-            ))}
+          {counts.ready > 0 && (
+            <ActionControl
+              label="Apply to game"
+              variant="primary"
+              disabled={busy}
+              pendingText="Applying…"
+              {...feedback("apply")}
+              onClick={apply}
+            />
+          )}
           {next(finished ? "primary" : "quiet")}
         </>,
       )}
@@ -523,29 +538,46 @@ export function PluginWorkspace({
       )}
       {preview && (
         <Modal
-          label={
-            preview.mode === "apply"
-              ? "Apply plugin files"
-              : "Restore plugin files"
-          }
+          label="Restore plugin files"
           size="md"
           className="plugin-review-modal"
           dismissible={!action.busy}
           onDismiss={() => setPreview(null)}
         >
           <DialogHeader
-            title={`${preview.mode === "apply" ? "Apply" : "Restore"} ${fileCount(preview.files.length, "plugin file")}`}
-            description={
-              preview.blocked.length
-                ? `${preview.blocked.length} blocked, awaiting or excluded`
-                : undefined
-            }
+            title={`Restore ${fileCount(preview.files.length, "plugin file")}`}
+            description="Each file is checked again before its saved backup replaces it."
           />
           <DialogBody className="plugin-review-body">
-            <PluginApplyContent preview={preview} />
-            <Message
-              message={action.key === preview.mode ? action.error : ""}
-            />
+            <div className="plugin-review-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Game file</th>
+                    <th>Text changes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.files.map((file) => (
+                    <tr key={file.path}>
+                      <td>{file.destination}</td>
+                      <td>{file.changes}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {!!preview.blocked.length && (
+              <details open>
+                <summary>Files left unchanged</summary>
+                {preview.blocked.map((file) => (
+                  <p key={file.path}>
+                    <strong>{file.path}</strong> · {file.reason}
+                  </p>
+                ))}
+              </details>
+            )}
+            <Message message={action.key === "restore" ? action.error : ""} />
           </DialogBody>
           <ActionBar feedback={null}>
             <Button disabled={action.busy} onClick={() => setPreview(null)}>
@@ -553,16 +585,14 @@ export function PluginWorkspace({
             </Button>
             <ActionControl
               variant="primary"
-              label={`${preview.mode === "apply" ? "Apply" : "Restore"} ${fileCount(preview.files.length, "plugin file")}`}
+              label={`Restore ${fileCount(preview.files.length, "plugin file")}`}
               disabled={busy || !preview.files.length}
-              {...feedback(preview.mode)}
+              {...feedback("restore")}
               onClick={async () => {
                 const result = await run(
-                  preview.mode,
+                  "restore",
                   { token: preview.token },
-                  preview.mode === "apply"
-                    ? "Reviewed plugin files applied."
-                    : "Reviewed plugin files restored.",
+                  "Reviewed plugin files restored.",
                 );
                 if (result.ok) setPreview(null);
               }}

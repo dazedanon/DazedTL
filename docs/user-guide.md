@@ -106,7 +106,7 @@ Approved Batch work carries on after DazedTL restarts.
 **Other event text** translates the sources chosen in **Event text sources**, like the other files.
 
 **Plugin files**: copy the task to your assistant, which finds and translates the player-visible text in every plugin.
-**Review & apply** shows what goes into the game.
+**Apply to game** writes the translated plugins into the game in one click and keeps a backup of each, which **Recovery** restores.
 Copy the task again to continue, or to have it recheck after you spot untranslated plugin text.
 
 **Images** has four steps, and the filled button is always the next one:

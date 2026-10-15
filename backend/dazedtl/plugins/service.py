@@ -1,4 +1,4 @@
-"""Retained assistant investigation, exact text edits and reviewed runtime publication."""
+"""Retained assistant investigation, exact text edits and checked runtime publication."""
 
 import json
 import re
@@ -7,7 +7,7 @@ import uuid
 from collections import Counter
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from dazedtl import foreign_work
 from dazedtl.foreign_work import ForeignWorkError
@@ -982,19 +982,14 @@ class PluginService:
             value = self.load(project_id)
             if action == "plugin_task":
                 result = self.copy_task(project_id, value)
-            elif action in {"preview_apply", "preview_restore"}:
-                return {
-                    "preview": preview_view(
-                        self.preview(
-                            project_id,
-                            value,
-                            "apply" if action == "preview_apply" else "restore",
-                            options,
-                        )
-                    )
-                }
-            elif action in {"apply", "restore"}:
-                return self.publish(project_id, value, action, options)
+            elif action == "apply":
+                return self.apply(project_id, value)
+            elif action == "preview_restore":
+                preview = self.preview(project_id, value, "restore", options)
+                self.previews[preview["token"]] = deepcopy(preview)
+                return {"preview": preview_view(preview)}
+            elif action == "restore":
+                return self.restore(project_id, value, options)
             elif action == "keep_unreadable":
                 result = self.keep_unreadable(value, options.get("paths"))
             else:
@@ -1268,7 +1263,7 @@ class PluginService:
                 "Report every translated occurrence with its exact decoded target.\n"
                 "The app rejects bytes outside the listed spans, unlisted decoded leaves and stale hashes, and syntax alone does not verify meaning. "
                 "When a check fails, the helper returns a request for the files still needing work, with each failedCheck: repair the same working copies and report them under that request. "
-                "Applying to the game is a separate review in the app; do not claim rendered fit without testing it.\n"
+                "Applying to the game is a separate step in the app; do not claim rendered fit without testing it.\n"
             )
         text += reference_folders.instructions(context["references"])
         text += (
@@ -1380,7 +1375,7 @@ class PluginService:
                 ]
                 result = {
                     "stage": "complete",
-                    "message": "Every plugin file is investigated and its player text translated. Applying to the game is reviewed in the app."
+                    "message": "Every plugin file is investigated and its player text translated. The user applies it to the game in the app."
                     + (
                         " These files could not be read and were left unchanged: "
                         + ", ".join(unreadable)
@@ -1892,12 +1887,13 @@ class PluginService:
                 if item["path"] in value["files"]
             ]
         else:
-            # Files the game already carries are done, not left unchanged.
+            # Only checked translations go in; files the game already
+            # carries, and those the assistant still works on, are not
+            # left unchanged.
             rows = [
                 row
                 for row in value["files"].values()
-                if any(item["id"] in selected for item in row["occurrences"])
-                and self.row_status(value, row) != "applied"
+                if self.row_status(value, row) == "ready"
             ]
             originals = self.current_originals(project_id, value)
         for row in rows:
@@ -2070,7 +2066,6 @@ class PluginService:
             "originalBinding": value["originals"].get("binding", ""),
             "manifest": WORK + "/publications/" + token + "/runtime-manifest.json",
         }
-        self.previews[token] = deepcopy(preview)
         return preview
 
     def _publish_file(self, root, path, raw):
@@ -2102,25 +2097,56 @@ class PluginService:
             }
         return {**document, "files": files}
 
-    def publish(self, project_id, value, mode, options):
+    def apply(self, project_id, value):
+        """Writes every checked translation into the game in one step. A list
+        of files could not show the user what changed, so the app's checks
+        are the review: each file is checked again here and backed up for
+        Recovery."""
+        preview = self.preview(project_id, value, "apply", {})
+        if not preview["files"]:
+            if not preview["blocked"]:
+                raise ValueError("No plugin file is ready to apply.")
+            reasons = {}
+            for row in preview["blocked"]:
+                reasons.setdefault(row["reason"], []).append(
+                    PurePosixPath(row["path"]).name
+                )
+            raise ValueError(
+                " ".join(
+                    ["Nothing was applied."]
+                    + [
+                        ", ".join(names) + ": " + reason
+                        for reason, names in reasons.items()
+                    ]
+                )
+            )
+        return {
+            **self.publish(project_id, value, preview),
+            "blocked": preview["blocked"],
+        }
+
+    def restore(self, project_id, value, options):
+        """Restores an application's backups once they still match the
+        restore the user reviewed."""
         self.translation.idle(project_id)
         self.translation.clean_drafts(project_id)
-        token = options.get("token")
-        preview = self.previews.pop(token, None)
-        if not preview or preview["projectId"] != project_id or preview["mode"] != mode:
-            raise ValueError("This publication review expired or was already used.")
+        preview = self.previews.pop(options.get("token"), None)
+        if (
+            not preview
+            or preview["projectId"] != project_id
+            or preview["mode"] != "restore"
+        ):
+            raise ValueError("This restore review expired or was already used.")
         if datetime.fromisoformat(preview["created"]) < datetime.now(UTC) - timedelta(
             minutes=20
         ):
-            raise ValueError(
-                "This publication review expired. Review the exact current batch again."
-            )
+            raise ValueError("This restore review expired. Review the restore again.")
         if not preview["files"]:
-            raise ValueError("The reviewed batch is empty. Nothing was published.")
+            raise ValueError("The reviewed restore is empty. Nothing was restored.")
         if preview["selection"] != value["selection"]:
             raise ValueError("Selection changed after review.")
         included, _blocked = self.checked_rows(
-            project_id, value, mode, {"receipt": preview["receipt"]}
+            project_id, value, "restore", {"receipt": preview["receipt"]}
         )
         keys = (
             "path",
@@ -2134,9 +2160,14 @@ class PluginService:
         if [{key: row[key] for key in keys} for row in included] != [
             {key: row[key] for key in keys} for row in preview["files"]
         ]:
-            raise ValueError(
-                "Source, scope, candidate or original changed after review. Review the exact batch again."
-            )
+            raise ValueError("A file changed after review. Review the restore again.")
+        return self.publish(project_id, value, preview)
+
+    def publish(self, project_id, value, preview):
+        """Backs up and writes a checked batch, rolling back what it wrote if
+        any file fails."""
+        token = preview["token"]
+        mode = preview["mode"]
         _, root = self.record(project_id)
         publication = deepcopy(preview)
         publication["id"] = token

@@ -1316,7 +1316,6 @@ export function useGuidedWorkspace({
     value && value.projectId === project.id ? value : null;
   // What each task has reviewed and ready to go into the game.
   const pendingInput = {
-    plugins: ownState(application.snapshot?.plugins)?.counts.ready || 0,
     images: ownState(application.snapshot?.images)?.counts.selectedReady || 0,
     rewraps: fittingCurrent ? fittingEligible : 0,
   };

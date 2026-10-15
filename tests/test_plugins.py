@@ -426,9 +426,11 @@ class PluginTests(unittest.TestCase):
         forged = self.service.load(self.identity)
         forged["files"][path]["result"]["status"] = "ready"
         self.service.save(self.identity, forged)
-        review = self.service.action(self.identity, "preview_apply")["preview"]
-        self.assertTrue(any(item["path"] == path for item in review["blocked"]))
-        self.assertNotIn(path, [item["path"] for item in review["files"]])
+        # A result that failed its checks stays out of the game whatever its
+        # status says.
+        applied = self.service.action(self.identity, "apply")
+        self.assertEqual([item["path"] for item in applied["blocked"]], [path])
+        self.assertNotIn(path, [item["path"] for item in applied["receipt"]["files"]])
         write_bytes(candidate, good)
         row["candidateHash"] = digest(good)
         report["files"].append({"path": "www/js/plugins/New.js", "sourceHash": "x"})
@@ -436,7 +438,7 @@ class PluginTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "out-of-scope"):
             self.service.continue_task(self.identity, current["requestId"])
 
-    def test_apply_cancel_stale_preview_one_use_restore_and_rollback(self):
+    def test_apply_checks_rolls_back_and_restores_after_review(self):
         _, _, task = self.investigation()
         first = read_json(task["request"])
         paths = [row["path"] for row in first["files"]]
@@ -462,21 +464,26 @@ class PluginTests(unittest.TestCase):
         counts = self.service.state(self.identity)["counts"]
         self.assertLess(counts["investigated"], counts["files"])
         write_bytes(self.game / paths[0], before[paths[0]])
-        canceled = self.service.action(self.identity, "preview_apply")["preview"]
+        # Apply checks each file again; a working copy changed after its
+        # checks stays out of the game.
+        saved = self.service.load(self.identity)["files"]
+        candidates = {
+            candidate: candidate.read_bytes()
+            for candidate in (
+                self.game / saved[path]["prepared"]["candidate"] for path in paths
+            )
+        }
+        for candidate, raw in candidates.items():
+            write_bytes(candidate, raw + b" ")
+        with self.assertRaisesRegex(
+            ValueError, "Nothing was applied.*Working copy changed"
+        ):
+            self.service.action(self.identity, "apply")
         self.assertTrue(
             all((self.game / path).read_bytes() == raw for path, raw in before.items())
         )
-        path = paths[0]
-        candidate = (
-            self.game
-            / self.service.load(self.identity)["files"][path]["prepared"]["candidate"]
-        )
-        raw = candidate.read_bytes()
-        write_bytes(candidate, raw + b" ")
-        with self.assertRaisesRegex(ValueError, "changed after review"):
-            self.service.action(self.identity, "apply", {"token": canceled["token"]})
-        write_bytes(candidate, raw)
-        preview = self.service.action(self.identity, "preview_apply")["preview"]
+        for candidate, raw in candidates.items():
+            write_bytes(candidate, raw)
         original_publish = self.service._publish_file
         calls = []
 
@@ -490,24 +497,19 @@ class PluginTests(unittest.TestCase):
             patch.object(self.service, "_publish_file", side_effect=fail),
             self.assertRaisesRegex(ValueError, "rollback attempted"),
         ):
-            self.service.action(self.identity, "apply", {"token": preview["token"]})
+            self.service.action(self.identity, "apply")
         self.assertTrue(
             all((self.game / path).read_bytes() == raw for path, raw in before.items())
         )
-        preview = self.service.action(self.identity, "preview_apply")["preview"]
-        result = self.service.action(
-            self.identity, "apply", {"token": preview["token"]}
-        )
-        # Reviews and receipts keep recovery-only fields away from the renderer.
-        check_response("plugins_action", {"preview": preview})
+        result = self.service.action(self.identity, "apply")
+        # Receipts keep recovery-only fields away from the renderer.
         check_response("plugins_action", result)
+        self.assertEqual(result["blocked"], [])
         self.assertTrue(result["receipt"]["restorable"])
         self.assertEqual(result["state"]["counts"]["applied"], 2)
-        with self.assertRaisesRegex(ValueError, "already used"):
-            self.service.action(self.identity, "apply", {"token": preview["token"]})
-        # Applied files are done, not listed as left unchanged in a later review.
-        later = self.service.action(self.identity, "preview_apply")["preview"]
-        self.assertEqual((later["files"], later["blocked"]), ([], []))
+        # Applied files are done, not left unchanged by a later apply.
+        with self.assertRaisesRegex(ValueError, "No plugin file is ready"):
+            self.service.action(self.identity, "apply")
         applied = (self.game / paths[0]).read_bytes()
         write_bytes(self.game / paths[0], applied + b"\n// edited")
         counts = self.service.state(self.identity)["counts"]
@@ -517,9 +519,9 @@ class PluginTests(unittest.TestCase):
         write_bytes(self.game / paths[0], applied)
         saved = self.service.load(self.identity)
         original_saved = deepcopy(saved)
-        saved["receipts"][-1]["files"][0]["backup"] = saved["files"][path]["prepared"][
-            "candidate"
-        ]
+        saved["receipts"][-1]["files"][0]["backup"] = saved["files"][paths[0]][
+            "prepared"
+        ]["candidate"]
         self.service.save(self.identity, saved)
         with self.assertRaisesRegex(ValueError, "exact approved publication"):
             self.service.action(
@@ -529,7 +531,18 @@ class PluginTests(unittest.TestCase):
         restore = self.service.action(
             self.identity, "preview_restore", {"receipt": result["receipt"]["id"]}
         )["preview"]
+        check_response("plugins_action", {"preview": restore})
+        # A game file edited after the restore was reviewed is not overwritten.
+        write_bytes(self.game / paths[0], applied + b"\n// edited")
+        with self.assertRaisesRegex(ValueError, "changed after review"):
+            self.service.action(self.identity, "restore", {"token": restore["token"]})
+        write_bytes(self.game / paths[0], applied)
+        restore = self.service.action(
+            self.identity, "preview_restore", {"receipt": result["receipt"]["id"]}
+        )["preview"]
         self.service.action(self.identity, "restore", {"token": restore["token"]})
+        with self.assertRaisesRegex(ValueError, "already used"):
+            self.service.action(self.identity, "restore", {"token": restore["token"]})
         self.assertTrue(
             all((self.game / path).read_bytes() == raw for path, raw in before.items())
         )
@@ -538,12 +551,7 @@ class PluginTests(unittest.TestCase):
         state = self.service.state(self.identity)
         self.assertFalse(any(receipt["restorable"] for receipt in state["receipts"]))
         self.assertEqual(state["counts"]["ready"], 2)
-        self.assertEqual(
-            len(
-                self.service.action(self.identity, "preview_apply")["preview"]["files"]
-            ),
-            2,
-        )
+        self.assertEqual(self.service.action(self.identity, "apply")["completed"], 2)
 
     def test_partial_results_are_handed_back_until_complete(self):
         _, _, task = self.investigation()
@@ -848,10 +856,7 @@ class PluginTests(unittest.TestCase):
             row["path"]: (self.game / row["path"]).read_bytes()
             for row in request["files"]
         }
-        preview = self.service.action(self.identity, "preview_apply")["preview"]
-        receipt = self.service.action(
-            self.identity, "apply", {"token": preview["token"]}
-        )["receipt"]["id"]
+        receipt = self.service.action(self.identity, "apply")["receipt"]["id"]
 
         def reopened(name):
             profile = self.root / name
@@ -906,7 +911,6 @@ class PluginTests(unittest.TestCase):
         self,
     ):
         _request, _report = self.translated()
-        preview = self.service.action(self.identity, "preview_apply")["preview"]
         publish = self.service._publish_file
         count = 0
 
@@ -921,9 +925,10 @@ class PluginTests(unittest.TestCase):
             patch.object(self.service, "_publish_file", side_effect=interrupt),
             self.assertRaises(KeyboardInterrupt),
         ):
-            self.service.action(self.identity, "apply", {"token": preview["token"]})
+            self.service.action(self.identity, "apply")
+        [publication] = self.service.load(self.identity)["pending"]
         journal = self.service.path(
-            self.identity, "publications/" + preview["token"] + "/approval.json"
+            self.identity, "publications/" + publication + "/approval.json"
         )
         original = journal.read_bytes()
         document = read_json(journal)

@@ -1,19 +1,13 @@
 import { useState } from "react";
 import { messageOf } from "../../../api/errors";
 import { imagesApi } from "../../../api/images";
-import { pluginsApi } from "../../../api/plugins";
-import type {
-  ImagePreview,
-  Job,
-  PluginPreview,
-  Preview,
-} from "../../../api/contracts";
+import type { ImagePreview, Job, Preview } from "../../../api/contracts";
 import { type Observer, useAction } from "../../../state/useAction";
 import { type PendingPart, reviewSignature } from "../pending";
 
 /** The part an open review applies, and why its last Apply failed. */
 export type PartReview = PendingPart & {
-  preview: Preview | ImagePreview | PluginPreview;
+  preview: Preview | ImagePreview;
   failure: string;
 };
 
@@ -70,8 +64,6 @@ export function usePendingChanges({
     return ids;
   };
   const prepare = async (part: PendingPart) => {
-    if (part.id === "plugins")
-      return (await pluginsApi.action(projectId, "preview_apply")).preview;
     if (part.id === "images")
       return (
         await imagesApi.action(projectId, "preview_apply", {
@@ -82,12 +74,6 @@ export function usePendingChanges({
     return preparePreview(request.name, request.options);
   };
   const applyPart = async (part: PartReview) => {
-    if (part.id === "plugins") {
-      await pluginsApi.action(projectId, "apply", {
-        token: (part.preview as PluginPreview).token,
-      });
-      return;
-    }
     if (part.id === "images") {
       await imagesApi.action(projectId, "apply", {
         token: (part.preview as ImagePreview).token,
@@ -97,8 +83,7 @@ export function usePendingChanges({
     const request = guided(part);
     // Rewraps and QA fixes share the Guided review, which keeps one preview
     // at a time, so each is previewed again just before it runs and must
-    // match what was reviewed. Images and plugin files keep their own
-    // one-use tokens.
+    // match what was reviewed. Images keep their own one-use tokens.
     const fresh = await preparePreview(request.name, request.options);
     if (reviewSignature(fresh) !== reviewSignature(part.preview as Preview))
       throw new Error(

@@ -1,4 +1,4 @@
-"""Plugin files: the assistant's task and reviewed application."""
+"""Plugin files: the assistant's task, its application and reviewed restores."""
 
 from typing import Literal, NotRequired, TypedDict
 
@@ -92,6 +92,8 @@ class PluginActionResult(TypedDict):
     preview: NotRequired[PluginPreview]
     receipt: NotRequired[PluginReceipt]
     completed: NotRequired[int]
+    # Checked files an apply left unchanged, with why.
+    blocked: NotRequired[list[PluginBlocked]]
     message: NotRequired[str]
     request: NotRequired[str]
     requestId: NotRequired[str]

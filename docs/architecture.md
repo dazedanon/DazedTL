@@ -483,8 +483,9 @@ Legacy Guided review receipts remain readable for existing records.
 ## Plugins and images
 
 Guided Plugin files and Images are Translate tasks; positions saved by earlier stage layouts open them without rewriting saved run records.
-The [plugin service](../backend/dazedtl/plugins/service.py) owns retained investigation, working copies and reviewed publication for MV/MZ root and `www` layouts.
-The assistant decides which plugin text players see; the user does not review files or individual strings, and reviews only what Apply writes into the game.
+The [plugin service](../backend/dazedtl/plugins/service.py) owns retained investigation, working copies and checked publication for MV/MZ root and `www` layouts.
+The assistant decides which plugin text players see, and the user reviews neither files nor strings.
+Apply to game writes every checked file in one click, because a list of files could not show what changed; it checks each file again and backs it up first, and Recovery restores an application after a review of its own.
 An Acorn AST inventory and recursive decoded parameter paths bind reports to exact source bytes without evaluating plugin code.
 Original Japanese database fields, notetags, command arguments and parameter evidence come from a verified source backup even after runtime JSON has been translated, so a task cannot start without it.
 Known lookup values, code keys, embedded expressions, serialization structure and control tokens remain protected by the app and are never asked about; a file with nothing else, and no JSON it loads, needs no investigation.
@@ -818,9 +819,9 @@ Release plans bind the profile's working-source index and original blobs; refres
 Check's Line width check and Text QA tasks share retained file choices and check settings.
 Each task applies its own work and shows what it has not applied; no cross-task list reminds the user of skipped work, because the stages and tasks already show it.
 Text tasks and Release apply saved output through the Guided action review.
-The Review & apply buttons in Plugin files and Line width check, and Images' Apply to game, open one [PendingReview](../app/src/features/guided/workspace/PendingReview.tsx) of their part, whose content reuses that part's own review; Assistant-led's Image Manager keeps its own review, and Text QA applies its verified corrections in one click.
+Line width check's Apply and Images' Apply to game open one [PendingReview](../app/src/features/guided/workspace/PendingReview.tsx) of their part, whose content reuses that part's own review; Assistant-led's Image Manager keeps its own review, and Plugin files and Text QA apply their checked work in one click.
 Its [hook](../app/src/features/guided/workspace/usePendingChanges.ts) prepares the part's preview from observed state through [pending.ts](../app/src/features/guided/pending.ts) and applies it under one action key, so a repeated click cannot start it twice.
-Image and plugin parts execute their own one-use tokens; the Guided review keeps one preview at a time, so rewraps and QA fixes are previewed again just before they execute and refuse to run if the bytes they would write, compared by hash, differ from what was reviewed.
+Image parts execute their own one-use tokens; the Guided review keeps one preview at a time, so rewraps and QA fixes are previewed again just before they execute and refuse to run if the bytes they would write, compared by hash, differ from what was reviewed.
 Images restore in the Image Manager and plugin files in their workspace; applied text batches have no restore of their own, since Git version tracking and Backups undo them.
 A text batch whose publication was interrupted or could not roll back raises a notice on every Guided task with its Review restore, because part of it may be in the game.
 TL Inspector and Forge install from a Playtest tools sheet in Check's task header, where applied text is playtested, and an Ace game's native packing sits in the same header; both reuse the Guided action reviews and operation tracking, and the Project page stays about status, history, updates and backups.

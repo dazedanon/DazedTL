@@ -2335,6 +2335,7 @@ export type PluginActionResult = {
   preview?: PluginPreview;
   receipt?: PluginReceipt;
   completed?: number;
+  blocked?: PluginBlocked[];
   message?: string;
   request?: string;
   requestId?: string;

@@ -2,7 +2,7 @@
 
 import type { Preview } from "../../api/contracts.ts";
 
-export type PendingPartId = "plugins" | "images" | "rewraps";
+export type PendingPartId = "images" | "rewraps";
 
 export interface PendingPart {
   id: PendingPartId;
@@ -13,8 +13,6 @@ export interface PendingPart {
 
 /** Each task's work that is ready to apply. */
 export type PendingInput = {
-  /** Plugin files checked and ready to apply. */
-  plugins: number;
   /** Images reviewed and ready to apply. */
   images: number;
   /** Line rewraps a current line width check would write. */
@@ -25,7 +23,6 @@ const parts: Record<
   PendingPartId,
   { title: string; one: string; many?: string }
 > = {
-  plugins: { title: "Plugin files", one: "plugin file" },
   images: { title: "Images", one: "image" },
   rewraps: { title: "Rewrapped lines", one: "rewrap" },
 };

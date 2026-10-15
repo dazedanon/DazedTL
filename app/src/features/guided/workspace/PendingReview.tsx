@@ -1,15 +1,10 @@
-import type {
-  ImagePreview,
-  PluginPreview,
-  Preview,
-} from "../../../api/contracts";
+import type { ImagePreview, Preview } from "../../../api/contracts";
 import { ActionBar } from "../../../ui/ActionBar";
 import { Button } from "../../../ui/Button";
 import { DialogBody, DialogHeader } from "../../../ui/Dialog";
 import { Message } from "../../../ui/Feedback";
 import { Modal } from "../../../ui/Modal";
 import { ImageApplyContent } from "../../images/ImageApply";
-import { PluginApplyContent } from "../../plugins/PluginApplyContent";
 import { PublicationContent } from "../PublicationContent";
 import type { PartReview, PendingChanges } from "./usePendingChanges";
 
@@ -17,8 +12,6 @@ import type { PartReview, PendingChanges } from "./usePendingChanges";
 function PartContent({ part }: { part: PartReview }) {
   if (part.id === "images")
     return <ImageApplyContent preview={part.preview as ImagePreview} />;
-  if (part.id === "plugins")
-    return <PluginApplyContent preview={part.preview as PluginPreview} />;
   return <PublicationContent preview={part.preview as Preview} />;
 }
 
