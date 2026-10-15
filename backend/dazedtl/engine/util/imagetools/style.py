@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 import cv2
 import numpy as np
 
+from util.imagetools.effects import Glow, Shadow
 from util.imagetools.geometry import Box
 
 # Erase strategies, safest first. The first three are exact reconstructions;
@@ -107,7 +108,16 @@ class Style:
     donor: Box | None = None
     text_color: list[int] = field(default_factory=lambda: [255, 255, 255, 255])
     outline_color: list[int] | None = None
-    outline_width: int = 0
+    # Whole pixels when measured; a recipe fitted to supersampled type can need
+    # a half - the MZ message window strokes 1.5px outside every glyph. The
+    # editor's fit ladder still strokes whole pixels (``fonts.stroke_at``); the
+    # recipe renderer draws the width as written.
+    outline_width: float = 0
+    # Never measured: see ``measure_outline`` for why a reading of the source
+    # cannot tell these from an outline. They come from a recipe fitted to an
+    # accepted translation (``util.imagetools.recipe``) or from the panel.
+    shadow: Shadow | None = None
+    glow: Glow | None = None
     cap_height: int = 12
     align: str = "center"
     # The one thing pixels cannot tell us. Empty means "whatever the dialog is
@@ -163,6 +173,12 @@ class Style:
             data["column_colors"] = self.column_colors
         if self.donor is not None:
             data["donor"] = self.donor.as_xywh()
+        # Only when set, like the gradients above, so a job written before the
+        # effects existed reads and writes back unchanged.
+        if self.shadow is not None:
+            data["shadow"] = self.shadow.to_dict()
+        if self.glow is not None:
+            data["glow"] = self.glow.to_dict()
         return data
 
     @staticmethod
@@ -176,7 +192,7 @@ class Style:
             donor=Box.from_any(data["donor"]) if data.get("donor") else None,
             text_color=list(data.get("text_color") or [255, 255, 255, 255]),
             outline_color=data.get("outline_color"),
-            outline_width=int(data.get("outline_width") or 0),
+            outline_width=_width(data.get("outline_width")),
             cap_height=int(data.get("cap_height") or 12),
             align=str(data.get("align") or "center"),
             font=str(data.get("font") or ""),
@@ -192,7 +208,15 @@ class Style:
             confidence=float(data.get("confidence") or 0.0),
             notes=[str(note) for note in data.get("notes") or []],
             locked=bool(data.get("locked")),
+            shadow=Shadow.from_dict(data.get("shadow")),
+            glow=Glow.from_dict(data.get("glow")),
         )
+
+
+def _width(value) -> float:
+    """An outline width, kept a whole number whenever it is one."""
+    width = max(0.0, float(value or 0))
+    return int(width) if width.is_integer() else width
 
 
 # -------------------------------------------------------------------- colour
@@ -991,8 +1015,10 @@ def measure_outline(
 
     All three effects are measured and redrawn the same way, as a stroke. At the
     sizes UI text is set, a soft glow and a hard outline of the same colour land
-    within a pixel of each other, and pretending to tell them apart would add a
-    knob that changes nothing.
+    within a pixel of each other, and pretending to tell them apart from one
+    reading of the Japanese would be a guess. The style's own glow and shadow
+    are fitted instead, against an accepted English sibling whose text is known
+    exactly - see ``util.imagetools.fitter``.
     """
     if not mask.any():
         return None, 0

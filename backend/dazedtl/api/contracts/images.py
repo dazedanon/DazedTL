@@ -288,6 +288,20 @@ class ImagePixels(ImageMetadata):
 type Colour = list[int]
 
 
+class ImageTextShadow(TypedDict):
+    color: Colour
+    dx: NotRequired[float]
+    dy: NotRequired[float]
+    spread: NotRequired[float]
+    blur: NotRequired[float]
+
+
+class ImageTextGlow(TypedDict):
+    color: Colour
+    spread: NotRequired[float]
+    blur: NotRequired[float]
+
+
 class ImageTextStyle(TypedDict):
     background: NotRequired[
         Literal[
@@ -297,7 +311,9 @@ class ImageTextStyle(TypedDict):
     fill: NotRequired[Colour | None]
     text_color: NotRequired[Colour]
     outline_color: NotRequired[Colour | None]
-    outline_width: NotRequired[int]
+    outline_width: NotRequired[float]
+    shadow: NotRequired[ImageTextShadow | None]
+    glow: NotRequired[ImageTextGlow | None]
     cap_height: NotRequired[int]
     align: NotRequired[Literal["left", "center", "right"]]
     font: NotRequired[str]

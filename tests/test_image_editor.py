@@ -304,6 +304,25 @@ class EditorTests(unittest.TestCase):
                 64,
                 32,
             )
+        # A style from a fitted recipe saves; a malformed effect never reaches
+        # the renderer.
+        fitted = {
+            "outline_width": 1.5,
+            "shadow": {"color": [0, 0, 0, 170], "dx": -2, "dy": 3.5, "blur": 1},
+            "glow": {"color": [200, 120, 255, 140], "spread": 1, "blur": 3},
+        }
+        block = {**bad[0], "box": [1, 1, 10, 10], "style": fitted}
+        style = validate_blocks([block], 64, 32)[0]["style"]
+        self.assertEqual(
+            {key: style[key] for key in fitted}, fitted, "the fitted effects survive"
+        )
+        for broken in (
+            {"shadow": {"color": [0, 0, 0], "dx": 1}},
+            {"glow": {"color": [0, 0, 0, 255], "blur": 999}},
+            {"glow": {"color": [0, 0, 0, 255], "path": "/x"}},
+        ):
+            with self.assertRaises(ValueError):
+                validate_blocks([{**block, "style": broken}], 64, 32)
 
     def test_import_validates_every_region_before_copying_only_targets(self):
         exported = self.exported()
