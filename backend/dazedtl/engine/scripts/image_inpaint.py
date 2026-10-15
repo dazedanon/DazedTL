@@ -100,13 +100,7 @@ def _context_window(rgba, mask, method: str, inpaint, np) -> tuple[int, int, int
     tight_mask = mask[y:y2, x:x2]
     tight_alpha = rgba[y:y2, x:x2, 3]
     crowded = float((tight_mask | (tight_alpha == 0)).mean()) > inpaint.CROWDED
-    if inpaint.needs_context(method):
-        share = inpaint.CONTEXT
-    elif crowded:
-        share = inpaint.CROWDED_CONTEXT
-    else:
-        share = 0.0
-    pad = int(max(x2 - x, y2 - y) * share)
+    pad = inpaint.context_pad(method, x2 - x, y2 - y, crowded)
     return (
         max(0, x - pad),
         max(0, y - pad),

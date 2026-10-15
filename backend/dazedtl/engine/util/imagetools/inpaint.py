@@ -1,12 +1,15 @@
 """Putting the artwork back where the source text was.
 
 `style.py` decides *what* to erase and `render.py` decides *how*; this decides
-what fills the hole when the answer is "reconstruct it". Six methods, in three
-families:
+what fills the hole when the answer is "reconstruct it". Seven methods, in
+three families:
 
-* **Telea** and **Navier-Stokes** ship with OpenCV, cost nothing, and diffuse
-  the surrounding colour inwards. They are honest on flat backgrounds and they
-  smear on anything with a pattern in it.
+* **Telea**, **Navier-Stokes** and **Harmonic** need nothing installed and
+  diffuse the surrounding colour inwards. They are honest on flat backgrounds
+  and they smear on anything with a pattern in it. The first two ship with
+  OpenCV and march in from the edge; the harmonic membrane (``harmonic.py``)
+  solves for the smoothest surface through the whole edge at once, which keeps
+  line art crossing thin glyphs from being dragged into a smudge.
 * **PatchMatch** copies real patches from elsewhere in the picture instead of
   averaging, so screentone and hatching survive it. It is not a model - no
   weights, no runtime - but it does need a small prebuilt library.
@@ -47,10 +50,12 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from util.imagetools import harmonic
 from util.paths import DATA_DIR
 
 TELEA = "telea"
 NS = "ns"
+HARMONIC = "harmonic"
 PATCHMATCH = "patchmatch"
 LAMA = "lama"
 LAMA_MANGA = "lama_manga"
@@ -63,27 +68,30 @@ class InpaintError(RuntimeError):
 
 # Ordered cheapest-first, which is also least-surprising-first: this is the
 # order they appear in the "Inpainting model" list.
-METHODS = (TELEA, NS, PATCHMATCH, LAMA, LAMA_MANGA, AOT)
+METHODS = (TELEA, NS, HARMONIC, PATCHMATCH, LAMA, LAMA_MANGA, AOT)
 
-#: The two that need nothing installed.
-CLASSICAL = (TELEA, NS)
+#: The three that need nothing installed. They read only the pixels touching
+#: the hole, so they are never handed a frame of context.
+LOCAL = (TELEA, NS, HARMONIC)
 
 METHOD_LABELS = {
-    TELEA: "Fast — walk inwards from the edges",
-    NS: "Fast — follow the lines through",
-    PATCHMATCH: "PatchMatch — copy real patches from nearby",
-    LAMA: "LaMa — a model that invents the missing texture",
-    LAMA_MANGA: "LaMa (manga) — the same model, taught on comic art",
-    AOT: "AOT — a lighter model, tuned for speech bubbles",
+    TELEA: "Fast - walk inwards from the edges",
+    NS: "Fast - follow the lines through",
+    HARMONIC: "Smooth - blend the whole edge evenly across the hole",
+    PATCHMATCH: "PatchMatch - copy real patches from nearby",
+    LAMA: "LaMa - a model that invents the missing texture",
+    LAMA_MANGA: "LaMa (manga) - the same model, taught on comic art",
+    AOT: "AOT - a lighter model, tuned for speech bubbles",
 }
 
 #: The same methods at note length: the render note says which reconstruction
 #: actually ran, and the label's explanatory half would drown the sentence it
-#: sits in. The two classical fills need distinct names here precisely because
+#: sits in. The two OpenCV fills need distinct names here precisely because
 #: their long labels both open with "Fast".
 SHORT_NAMES = {
     TELEA: "Telea",
     NS: "Navier–Stokes",
+    HARMONIC: "Harmonic",
     PATCHMATCH: "PatchMatch",
     LAMA: "LaMa",
     LAMA_MANGA: "LaMa (manga)",
@@ -108,8 +116,8 @@ PREFERRED = AOT
 RADIUS = 3
 
 # How much of the picture around the block the context-hungry methods are
-# shown, as a multiple of the block's own size. Telea and Navier-Stokes
-# deliberately get none of this: they average their way inwards from the mask
+# shown, as a multiple of the block's own size. The local fills deliberately
+# get none of this: they average their way inwards from the mask
 # edge, and a wider crop only gives them somewhere further away to average
 # from. Everything else is the opposite - a model has nothing to say about a
 # hole with no picture around it, and PatchMatch has nothing to copy.
@@ -244,7 +252,26 @@ def library_path() -> Path | None:
 
 def needs_context(method: str) -> bool:
     """Whether this method wants to see the picture around the hole."""
-    return method not in CLASSICAL
+    return method not in LOCAL
+
+
+def context_pad(method: str, width: int, height: int, crowded: bool) -> int:
+    """Pixels of picture to add around a *width* x *height* block for *method*.
+
+    *crowded* says the block's own crop is past ``CROWDED`` unknown. The
+    harmonic fill reads exactly the ring of pixels touching the hole, so one
+    pixel of margin gives it everything the whole picture would, and more
+    changes nothing.
+    """
+    if method == HARMONIC:
+        return 1
+    if needs_context(method):
+        share = CONTEXT
+    elif crowded:
+        share = CROWDED_CONTEXT
+    else:
+        share = 0.0
+    return int(max(width, height) * share)
 
 
 # ------------------------------------------------------------- availability
@@ -299,7 +326,9 @@ GET = "python -m util.imagetools.resources"
 
 
 def _probe(method: str) -> tuple[bool, str]:
-    if method in CLASSICAL:
+    if method == HARMONIC:
+        return True, "ready (NumPy, no download)"
+    if method in LOCAL:
         return True, "ready (OpenCV, no download)"
 
     if method == PATCHMATCH:
@@ -434,6 +463,8 @@ def fill(
         return rgb, ""
     if method == NS:
         return _classical(rgb, solid, cv2.INPAINT_NS, radius), ""
+    if method == HARMONIC:
+        return harmonic.fill_pixels(np.ascontiguousarray(rgb), solid > 0), ""
     if method in (TELEA, "") or method not in METHODS:
         return _classical(rgb, solid, cv2.INPAINT_TELEA, radius), ""
 
@@ -478,7 +509,8 @@ def reconstruct_rgba(
     The caller chooses the contextual crop. Fully transparent pixels inside it
     are not trusted as colour context, while only the requested hole is copied
     back. Alpha is reconstructed separately because the RGB models do not know
-    about it. Returns ``(pixels, complaint, changed_mask_pixels)``.
+    about it - except by the harmonic fill, which solves colour and opacity
+    together, premultiplied. Returns ``(pixels, complaint, changed_mask_pixels)``.
     """
     if rgba.ndim != 3 or rgba.shape[2] != 4 or rgba.dtype != np.uint8:
         raise ValueError("rgba must be an HxWx4 uint8 array")
@@ -490,6 +522,10 @@ def reconstruct_rgba(
         return rgba.copy(), "", 0
 
     original = np.ascontiguousarray(rgba)
+    if method == HARMONIC:
+        result = harmonic.fill_pixels(original, hole)
+        changed = int(((result != original).any(axis=2) & hole).sum())
+        return result, "", changed
     result = original.copy()
     unknown = hole | (original[:, :, 3] == 0)
     rgb = cv2.cvtColor(original, cv2.COLOR_RGBA2RGB)
@@ -508,7 +544,7 @@ def reconstruct_rgba(
 
 def _name(method: str) -> str:
     """The method under the name the user chose it by."""
-    return METHOD_LABELS.get(method, method).split("—")[0].strip()
+    return SHORT_NAMES.get(method, method)
 
 
 # ---------------------------------------------------------------- the models
