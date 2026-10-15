@@ -1,9 +1,12 @@
-"""Local image reconstruction, on small generated pictures."""
+"""Local image reconstruction and PNG rewriting, on small generated pictures."""
 
+import io
+import struct
 import unittest
 
 import numpy as np
-from util.imagetools import harmonic, inpaint
+from PIL import Image, PngImagePlugin
+from util.imagetools import harmonic, inpaint, pngfile
 
 
 class HarmonicFillTests(unittest.TestCase):
@@ -47,6 +50,45 @@ class HarmonicFillTests(unittest.TestCase):
         edge = result[17, 24:34]
         self.assertTrue((np.diff(edge[:, 3].astype(int)) >= 0).all())
         self.assertTrue((edge[edge[:, 3] > 0, :3] == 0).all())
+
+
+class PngRewriteTests(unittest.TestCase):
+    def test_rewrite_keeps_header_and_ancillary_chunks_in_order(self):
+        info = PngImagePlugin.PngInfo()
+        info.add(b"gAMA", struct.pack(">I", 45455))
+        info.add(
+            b"cHRM",
+            struct.pack(">8I", 31270, 32900, 64000, 33000, 30000, 60000, 15000, 6000),
+        )
+        info.add_text("Software", "fixture")
+        info.add_itxt("Comment", "テスト", lang="ja")
+        rgba = np.zeros((12, 16, 4), np.uint8)
+        rgba[:, :, :3] = (9, 8, 7)  # colour under alpha 0
+        rgba[4:8, 4:12] = (200, 100, 50, 255)
+        stream = io.BytesIO()
+        Image.fromarray(rgba, "RGBA").save(
+            stream, format="PNG", pnginfo=info, dpi=(144, 144), icc_profile=b"profile"
+        )
+        template = stream.getvalue()
+        edited = rgba.copy()
+        edited[5:7, 5:11] = (1, 2, 3, 255)
+
+        written = pngfile.encode_like(edited, template)
+        old, new = pngfile.chunks(template), pngfile.chunks(written)
+        self.assertEqual(
+            [chunk for kind, chunk in new if kind != b"IDAT"],
+            [chunk for kind, chunk in old if kind != b"IDAT"],
+        )
+        kinds = [kind for kind, _chunk in old]
+        for kind in (b"gAMA", b"cHRM", b"iCCP", b"pHYs", b"tEXt", b"iTXt"):
+            self.assertIn(kind, kinds)
+        with Image.open(io.BytesIO(written)) as decoded:
+            np.testing.assert_array_equal(np.asarray(decoded), edited)
+
+        sixteen = io.BytesIO()
+        Image.fromarray(np.zeros((4, 4), np.uint16)).save(sixteen, "PNG")
+        with self.assertRaisesRegex(ValueError, "16-bit"):
+            pngfile.encode_like(np.zeros((4, 4, 4), np.uint8), sixteen.getvalue())
 
 
 if __name__ == "__main__":

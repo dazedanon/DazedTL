@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
-"""Expose DazedTL's local inpainting backends to image-translation helpers."""
+"""Expose DazedTL's local inpainting backends to image-translation helpers.
+
+Candidates keep the source PNG's header and every ancillary chunk (gamma,
+colour profile, text) and change no pixel outside the mask, including the
+colour stored under fully transparent pixels.
+"""
 
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import sys
@@ -33,18 +39,18 @@ def _runtime():
         import numpy as np
         from PIL import Image
 
-        from util.imagetools import inpaint
+        from util.imagetools import inpaint, pngfile
     except (ImportError, ModuleNotFoundError) as exc:
         raise RuntimeError(
             "The image editor resources are unavailable in this Python "
             f"({sys.executable}): {exc}. Open Edit text in DazedTL and accept "
             "the resource download before using the local inpainting bridge."
         ) from exc
-    return np, Image, inpaint
+    return np, Image, inpaint, pngfile
 
 
 def _status() -> dict:
-    _np, _image, inpaint = _runtime()
+    _np, _image, inpaint, _pngfile = _runtime()
     methods = []
     for method in inpaint.METHODS:
         methods.append(
@@ -63,20 +69,23 @@ def _status() -> dict:
 
 
 def _load_inputs(image_path: Path, mask_path: Path):
-    np, Image, inpaint = _runtime()
+    np, Image, inpaint, pngfile = _runtime()
     if not image_path.is_file():
         raise ValueError(f"Input image does not exist: {image_path}")
     if not mask_path.is_file():
         raise ValueError(f"Mask image does not exist: {mask_path}")
 
-    with Image.open(image_path) as source:
-        if source.format != "PNG":
-            raise ValueError(f"Input must be a PNG, not {source.format or 'unknown'}")
-        if source.mode not in ("RGB", "RGBA"):
-            raise ValueError(
-                f"Input must be an 8-bit RGB or RGBA PNG, not mode {source.mode}"
-            )
-        source_mode = source.mode
+    data = image_path.read_bytes()
+    if not data.startswith(pngfile.SIGNATURE):
+        raise ValueError("Input must be a PNG")
+    head = pngfile.header(data)
+    source_mode = head.mode
+    if source_mode not in ("RGB", "RGBA"):
+        raise ValueError(
+            "Input must be an 8-bit RGB or RGBA PNG, not colour type "
+            f"{head.colour_type} at {head.bit_depth} bits"
+        )
+    with Image.open(io.BytesIO(data)) as source:
         rgba = np.asarray(source.convert("RGBA"), dtype=np.uint8).copy()
 
     with Image.open(mask_path) as source_mask:
@@ -88,7 +97,7 @@ def _load_inputs(image_path: Path, mask_path: Path):
         mask = np.asarray(source_mask.convert("L"), dtype=np.uint8) > 0
     if not mask.any():
         raise ValueError("Mask contains no nonzero pixels")
-    return np, Image, inpaint, rgba, mask, source_mode
+    return np, inpaint, pngfile, data, rgba, mask, source_mode
 
 
 def _context_window(rgba, mask, method: str, inpaint, np) -> tuple[int, int, int, int]:
@@ -109,7 +118,7 @@ def _context_window(rgba, mask, method: str, inpaint, np) -> tuple[int, int, int
     )
 
 
-def _save_png(Image, pixels, mode: str, output: Path, *, replace: bool) -> None:
+def _save_png(encoded: bytes, output: Path, *, replace: bool) -> None:
     if output.exists() and not replace:
         raise ValueError(f"Output already exists (pass --replace to overwrite it): {output}")
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -119,17 +128,16 @@ def _save_png(Image, pixels, mode: str, output: Path, *, replace: bool) -> None:
     os.close(descriptor)
     temporary = Path(temporary_name)
     try:
-        rendered = Image.fromarray(pixels, mode="RGBA")
-        if mode == "RGB":
-            rendered = rendered.convert("RGB")
-        rendered.save(temporary, format="PNG")
+        temporary.write_bytes(encoded)
         os.replace(temporary, output)
     finally:
         temporary.unlink(missing_ok=True)
 
 
 def _fill(args) -> dict:
-    np, Image, inpaint, rgba, mask, source_mode = _load_inputs(args.image, args.mask)
+    np, inpaint, pngfile, data, rgba, mask, source_mode = _load_inputs(
+        args.image, args.mask
+    )
     if args.method not in inpaint.METHODS:
         raise ValueError(
             f"Unknown method {args.method!r}; choose from {', '.join(inpaint.METHODS)}"
@@ -154,10 +162,17 @@ def _fill(args) -> dict:
     if not np.array_equal(candidate[~mask], rgba[~mask]):
         raise RuntimeError("Reconstruction changed pixels outside the supplied mask")
 
-    _save_png(Image, candidate, source_mode, args.output, replace=args.replace)
+    _save_png(pngfile.encode_like(candidate, data), args.output, replace=args.replace)
     return {
         "changed_mask_pixels": changed,
         "context_xywh": [x, y, x2 - x, y2 - y],
+        "kept_chunks": sorted(
+            {
+                kind.decode("latin-1")
+                for kind, _chunk in pngfile.chunks(data)
+                if kind not in (b"IHDR", b"IDAT", b"IEND")
+            }
+        ),
         "mask_pixels": int(mask.sum()),
         "method": args.method,
         "mode": source_mode,

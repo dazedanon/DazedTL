@@ -187,24 +187,23 @@ def render(job, entry, *, expected_candidate=None, expected_original=None):
 
     import numpy as np
     from PIL import Image
+    from util.imagetools import pngfile
     from util.imagetools.paint import load_cut, load_layer
     from util.imagetools.render import render_entry
     from util.imagetools.style import ensure
 
     source_path = job.source_path(entry)
     _verify_pixels(job, entry, expected_candidate, expected_original)
-    with Image.open(source_path) as original:
-        mode = original.mode
+    # The output is the source file with new pixels, so its header, colour
+    # profile, gamma and text chunks reach the game unchanged.
+    template = source_path.read_bytes()
+    with Image.open(BytesIO(template)) as original:
         source = np.array(original.convert("RGBA"))
-        metadata = {
-            key: original.info[key]
-            for key in ("icc_profile", "dpi", "exif")
-            if key in original.info
-        }
         colour_key = original.info.get("transparency")
-    if mode not in {"RGB", "RGBA", "L", "LA"}:
+    problem = pngfile.header(template).problem()
+    if problem:
         raise ValueError(
-            "Indexed PNGs need the assistant image route to preserve their palette."
+            f"This image needs the assistant image route, because {problem}."
         )
     if colour_key is not None:
         raise ValueError(
@@ -241,13 +240,12 @@ def render(job, entry, *, expected_candidate=None, expected_original=None):
                 block.style.font = names[block.block_id]
     if result.failures:
         raise ValueError("; ".join(note.message for note in result.failures))
-    output = BytesIO()
-    Image.fromarray(result.array).convert(mode).save(output, format="PNG", **metadata)
+    output = pngfile.encode_like(result.array, template)
     _verify_pixels(job, entry, expected_candidate, expected_original)
     original_path = job.original_path(entry)
     if not original_path.is_file():
         write_bytes(original_path, job.image_path(entry).read_bytes())
-    write_bytes(job.image_path(entry), output.getvalue())
+    write_bytes(job.image_path(entry), output)
     entry.status = "rendered"
     return [
         {
