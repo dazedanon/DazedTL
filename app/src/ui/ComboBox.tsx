@@ -197,8 +197,22 @@ export function ComboBox({
             show();
           }
         }}
+        onPaste={(event) => {
+          if (selectionOnly && query === null) event.currentTarget.select();
+        }}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing) return;
+          // An edit of the shown label starts a new search, wherever the
+          // caret is: a choice or a click can leave it inside the label.
+          if (
+            selectionOnly &&
+            query === null &&
+            (!(event.ctrlKey || event.metaKey) ||
+              event.getModifierState("AltGraph")) &&
+            (event.key.length === 1 ||
+              ["Process", "Backspace", "Delete"].includes(event.key))
+          )
+            event.currentTarget.select();
           if (event.key === "ArrowDown" || event.key === "ArrowUp") {
             event.preventDefault();
             setOpen(true);
