@@ -206,6 +206,10 @@ assert state["not_translated"] == {"total": 3, "may_show": 2}, state["not_transl
 # of tempfile's private ones, which on Windows lock the app out of the files an
 # elevated assistant writes.
 assert task.stat().st_mode == task.parent.stat().st_mode, oct(task.stat().st_mode)
+# A worker's brief holds every role it may be handed, filled in for this task.
+worker = qa.brief(task, "worker")
+assert "{{" not in worker and str(task / "context.json") in worker, worker
+assert all(f"## {title}" in worker for title in qa._BRIEF_SECTIONS["worker"]), worker
 
 
 def result_path(name, value):
@@ -1201,11 +1205,12 @@ def pace(lanes):
     )
 
 
-# Time left follows the bundles in review at once, not the names seen.
+# Time left follows the bundles in review at once, not the names seen, and
+# status says when bundles wait while reviewers take them one at a time.
 alone, together = pace(1), pace(4)
-assert alone["in_review_at_once"] == 1.0, alone
+assert alone["one_at_a_time"] and alone["in_review_at_once"] == 1.0, alone
 assert alone["eta_seconds"] == round(alone["remaining"]["screen"] * 12), alone
-assert together["in_review_at_once"] == 4.0, together
+assert not together["one_at_a_time"] and together["in_review_at_once"] == 4.0, together
 assert together["eta_seconds"] == round(together["remaining"]["screen"] * 12 / 4), (
     together
 )

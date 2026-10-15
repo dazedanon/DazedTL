@@ -332,6 +332,12 @@ class TextQA:
             )
         elif stage == "complete":
             following = "Run qa --apply."
+        elif (qa.get("activity") or {}).get("one_at_a_time"):
+            following = (
+                "Bundles wait while QA reviews one at a time; start four workers as "
+                "the task README's Coordinator section says, and review until status "
+                "reports complete."
+            )
         else:
             following = (
                 "Review with the task README's commands until status reports complete."

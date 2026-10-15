@@ -329,15 +329,17 @@ def qa_state(plan):
             # Lint families lead the screen bundles; the line names them
             # until every proposal is reviewed or declined.
             stage, done, total = "lint", lint["accepted"], lint["total"]
+        estimate = engine_status["estimate"]
         activity = {
             "stage": stage,
             "done": done,
             "total": total,
             **(
-                {"eta_seconds": int(engine_status["estimate"]["eta_seconds"])}
-                if engine_status["estimate"]["eta_seconds"] is not None
+                {"eta_seconds": int(estimate["eta_seconds"])}
+                if estimate["eta_seconds"] is not None
                 else {}
             ),
+            **({"one_at_a_time": True} if estimate["one_at_a_time"] else {}),
         }
     return {
         "current": current,

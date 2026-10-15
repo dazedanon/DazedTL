@@ -51,13 +51,17 @@ export function timeLeft(seconds: number) {
   return `about ${Math.round(minutes / 60)} h left`;
 }
 
-/** The one activity line, such as "Deep review 412 of 621 · about 25 min left". */
+/**
+ * The one activity line, such as "Deep review 412 of 621 · about 25 min
+ * left", which says when reviewers take one bundle at a time while others wait.
+ */
 export function qaActivity(qa: QaState) {
   const activity = qa.activity;
   if (!activity) return "";
   return [
     `${stageNames[activity.stage]} ${activity.done.toLocaleString()} of ${activity.total.toLocaleString()}`,
     activity.eta_seconds !== undefined && timeLeft(activity.eta_seconds),
+    activity.one_at_a_time && "one reviewer at a time",
   ]
     .filter(Boolean)
     .join(" · ");

@@ -83,7 +83,9 @@ def main() -> int:
     show = sub.add_parser("show", help="Print a bundle compactly for review.")
     show.add_argument("--task", required=True, type=Path)
     show.add_argument("--bundle", required=True)
-    brief = sub.add_parser("brief", help="Print one reviewer role's fixed brief.")
+    brief = sub.add_parser(
+        "brief", help="Print one reviewer role's fixed brief, or a worker's for every role."
+    )
     brief.add_argument("--task", required=True, type=Path)
     brief.add_argument("--role", required=True, choices=rpgmaker_qa.QA_ROLES)
     context = sub.add_parser(

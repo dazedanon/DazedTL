@@ -24,6 +24,8 @@ The [release playtest](#release-playtest) extends the same goals to what text QA
   Observations on lines in declined scenes stay out, like the lines themselves.
 - A deep review can correct a scene as a unit: several of its lines, each with its own text, applied and undone together and reviewed together in editorial.
   Single-line corrections and word-for-word sweep rules cannot fix a [defect that spans a scene](#scene-corrections), and the unit keeps such a fix from being half applied, half undone or left partly in declined text.
+- Reviewers run as four workers at once, each a fresh session for a few bundles at a time under a worker brief DazedTL writes; the coordinator starts them and reviews nothing itself.
+  A [single session](#parallel-workers) taking turns under two worker names was five times slower, read more per bundle and made every check its own second read.
 
 ## Why
 
@@ -71,6 +73,19 @@ The same second run left defects that span a scene.
 Map010 event 120 page 2 narrates in the past tense until the climax and in the present for its last five boxes.
 Deep review could retense only the box its item named, which moved the switch one box later, so editorial withdrew that correction as no better than the text it replaced (QA-0050).
 Map013 event 19 page 2 had the same shape (QA-0093).
+
+### Parallel workers
+
+The release QA of Fuuma Chronicle: Tower of Lilith ran for more than twelve hours, with one session doing all the reviewing:
+
+- The policy let one worker take every role in turn, so the coordinator started no workers.
+  It reviewed every bundle itself, taking turns under two worker names because a check must go to another worker than the one that screened its lines, so each check was the same session reading its own lines again.
+- It screened 352 bundles, half of them checks, in 9.5 hours, about 37 an hour, and its conversation was compacted about once an hour.
+- An earlier attempt at the same task, whose coordinator ran four sub-agents in runs of six to eight bundles, reviewed 87 bundles in 28 minutes, about 190 an hour.
+  It read about 1.0 million cached tokens per bundle to the single session's 2.6 million, since a short run keeps its conversation small; the two ran on different models, so that comparison is approximate.
+- That coordinator wrote its own worker guide, which also told the workers what to decline, a choice the policy leaves to each reviewer.
+  A worker brief DazedTL writes gives every coordinator the same loop and leaves nothing to add but decisions every reviewer follows.
+- The time left divided the work by the worker names seen in the last half hour, so the session taking turns under two names showed half its real time left.
 
 ## Release playtest
 

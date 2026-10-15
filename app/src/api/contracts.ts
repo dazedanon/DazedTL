@@ -681,6 +681,8 @@ export type QaActivity = {
   done: number;
   total: number;
   eta_seconds?: number;
+  /** Bundles waited while reviewers took one at a time. */
+  one_at_a_time?: boolean;
 };
 
 /** A prepared task the app can't read or trust, for the helper's next step. */

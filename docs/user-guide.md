@@ -131,6 +131,7 @@ All Check tasks are optional:
 
 - **Line width check** finds applied lines wider than the saved line widths and rewraps them; **Edit settings** chooses what it covers.
 - **Text QA**: **Start text QA** copies the task, and your assistant reviews the translated text and applies the corrections it verifies.
+  It runs four reviewers at once; when the page says **one reviewer at a time**, your assistant is reviewing alone, which takes several times longer, so ask it to start the reviewers its QA task describes.
   A correction too wide for its box is rewrapped to the Line widths saved when QA started.
   QA also opens the game's screens, such as its menus, item lists and shop, without changing the game, and shortens names and commands the game squeezes or cuts off; **Review them** lists such text QA can't change, such as a plugin's menu.
   Answer the questions it can't settle on the page; each correction is listed with **Undo**, and an undone one with **Apply again**; **Review them** lists the lines QA did not cover.

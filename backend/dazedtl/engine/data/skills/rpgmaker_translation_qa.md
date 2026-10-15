@@ -1,7 +1,7 @@
 # RPG Maker text QA
 
-<!-- qa-contract:rpgmaker-qa-v16
-single-policy role-briefs app-owned-inventory immutable-review-bundles database-checks
+<!-- qa-contract:rpgmaker-qa-v17
+single-policy role-briefs parallel-workers worker-brief app-owned-inventory immutable-review-bundles database-checks
 battler-name-source-fix
 scene-affine-screen sampled-screen-checks lint-group-review declined-disposition
 helper-scoped-declines unit-declines coordinator-declines evidence-preserving-deep
@@ -47,19 +47,20 @@ do not call a model-provider API.
 
 ## Coordinator
 
-You run the task. Read `context.json` once for the glossary, translation guidance and reference
-translations, then run `{{CLI}} status --task {{TASK}}`.
+You run the task; four workers review it at the same time.
+Read the task's context, {{CONTEXT}}, once for the glossary, translation guidance and reference translations, then run `{{CLI}} status --task {{TASK}}`.
 
-1. Use two to four reviewers when the helper can run parallel workers, each with a unique name.
-   Give each the brief for its role: `{{CLI}} brief --task {{TASK}} --role <screen|deep|group|editorial>`.
-   One worker may take every role in turn, except that a check never goes to the worker that screened its lines, and an editorial bundle never goes to a worker that wrote one of its judgment corrections.
+1. Start four workers that run at the same time, such as background sub-agents, each a fresh session with a name of its own, such as `rev-1` to `rev-4`.
+   Give each only this prompt: `You are text QA worker <name>. Run {{CLI}} brief --task {{TASK}} --role worker and follow it.`
+   A worker's run ends after a few bundles, which keeps its reviews sharp and its cost low; start its next run under the same name with the same prompt until `status` reports `complete`.
+   Restart a worker that `next` gave no bundle once `status` shows `bundles_pending` again or no worker is running, since accepted bundles open new ones and `next` opens the next stage.
+   Choices every reviewer must follow go through `decide` (step 6), never into a worker's prompt.
+   Never review bundles yourself, and never give one session two worker names: a check is another reviewer's independent read, so DazedTL keeps it from the worker that screened its lines, and an editorial bundle from a worker that wrote one of its judgment corrections.
+   When your helper cannot run workers at the same time, run them one after another; when it cannot start workers at all, report that instead of reviewing under several names.
    A worker runs on your helper unless it names another, such as a different AI helper or model, with `--helper <name>` on its first `next` or `decline`.
-2. Workers claim bundles with `next` and submit results with `accept` until `next` returns no
-   bundle; `next` moves QA through its stages by itself. Write results only in `{{RECEIPTS}}`,
-   one file per bundle named after its ID; DazedTL keeps the accepted copy. A worker that cannot
-   finish a bundle releases it. A worker not seen for twenty minutes, or three times a typical
-   bundle's time, loses its bundle to the next idle worker; the first accepted result counts.
-   `status` gives the engine's estimate of the time left.
+2. `next` moves QA through its stages by itself.
+   A worker not seen for twenty minutes, or three times a typical bundle's time, loses its bundle to the next idle worker; the first accepted result counts.
+   `status` gives the engine's estimate of the time left, and reports `one_at_a_time` when bundles waited while QA reviewed one at a time: start the workers that are missing.
 3. Declined items move to a bundle of their own, which `next` offers only to workers on another helper; a decline there sets it aside.
    Decline items you read and will not review, such as a scene with its lint proposals and motif variants, with `decline` under your own name while no worker holds their bundle; the rest of the bundle then reaches your workers without them.
    When no worker on another helper will take them, give `next` `--skip-declined`, and it sets them aside once the rest of their stage is reviewed.
@@ -69,7 +70,7 @@ translations, then run `{{CLI}} status --task {{TASK}}`.
    DazedTL checks at least a quarter of each reviewer's scene and line targets, starting with its first bundle, and every bundle of a reviewer whose checks found at least two problems it missed and more than it found there.
    What either screen reports goes to deep review, and `status` counts checks apart from coverage under `screen.checks`.
    Lines a check declines stay screened once and count as unchecked, so another bundle is checked in their place.
-   Screening ends only when every check is accepted, so keep a second screen worker until then.
+   Screening ends only when every check is accepted, so keep at least two workers running until then.
 5. Deep bundles open while screening continues, and `next` hands them out once no screen bundle is waiting.
    QA then moves through the sweep and editorial stages until `status` reports `complete`.
    `{{CLI}} advance --task {{TASK}}` and `{{CLI}} finalize --task {{TASK}}` take the same steps by hand.
@@ -89,6 +90,22 @@ translations, then run `{{CLI}} status --task {{TASK}}`.
    no reviewer read it and QA did not correct it. When you report QA, name it as not reviewed,
    with what `findings.json` says about whether players can reach each file or plugin; never
    present it as checked.
+
+## Worker
+
+You are one reviewer, named in your prompt: give that name as `--worker` in every command, and never another.
+Run each command below with `{{CLI}}` before it and `--task {{TASK}}`, as Commands lists them.
+
+1. Claim a bundle with `next --worker <name>`, then read all of it with `show --bundle <id>`, a long one in parts.
+   Copy item IDs exactly from the bundle file `next` names.
+   Before your first review, read the task's context, {{CONTEXT}}, once for the glossary, translation guidance and reference translations, and follow the choices `decisions` prints.
+2. Review it under its role's brief below: `screen-` bundles, checks ending in `-c1` included, as the screen reviewer, with their lint families as the group reviewer; `deep-` bundles as the deep reviewer; `sweep-` bundles as the group reviewer; and `editorial-` bundles as the editorial reviewer.
+3. Write the result to `{{RECEIPTS}}` as `<bundle id>.json`, the only place you write results, and submit it with `accept --result <file>`.
+   When accept refuses it, fix what it names and submit again; release a bundle you cannot finish with `release --bundle <id>`.
+4. Claim the next bundle.
+   Stop after accepting six bundles, or when `next` gives you none, and never while you hold one: the coordinator starts your next run, and a fresh run keeps your reviews sharp and their cost low.
+
+End with a short report: the bundles you accepted, how many exceptions, corrections and declines they held, what `next` said last, and any error you could not resolve.
 
 ## Screen reviewer
 
@@ -224,7 +241,7 @@ line's current text as its replacement leaves that line as it is.
 
 Prefix every command with `{{CLI}}`:
 
-- `status --task {{TASK}}`, `brief --task {{TASK}} --role <role>`
+- `status --task {{TASK}}`, `brief --task {{TASK}} --role <screen|deep|group|editorial|worker>`
 - `next --task {{TASK}} --worker <name> [--helper <name>] [--bundle <id>] [--skip-declined]`, then read the bundle with `show --task {{TASK}} --bundle <id>`, which prints it compactly; the bundle file it names holds the same content as JSON
 - `accept --task {{TASK}} --result <result.json>`, `release --task {{TASK}} --bundle <id>`
 - `decline --task {{TASK}} --worker <name> [--helper <name>] --bundle <id> --item <id> --reason "<one line>"`, repeating `--item` and `--reason` together, for items of a bundle no other worker holds

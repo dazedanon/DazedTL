@@ -357,6 +357,9 @@ class QaActivity(TypedDict):
     done: int
     total: int
     eta_seconds: NotRequired[int]
+    one_at_a_time: NotRequired[
+        Annotated[bool, "Bundles waited while reviewers took one at a time."]
+    ]
 
 
 class QaUnreadable(TypedDict):

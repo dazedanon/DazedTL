@@ -100,6 +100,10 @@ STALL_MINIMUM_SECONDS = 20 * 60
 # Workers seen this recently are active, and reviews in this much of QA's
 # latest work measure how many bundles it reviews at once.
 ACTIVE_WORKER_SECONDS = 30 * 60
+# QA's latest work reviews one bundle at a time while others wait when it held
+# this many bundles and fewer than this many were in review at once.
+ONE_AT_A_TIME_BUNDLES = 3
+ONE_AT_A_TIME_BELOW = 1.5
 # Seconds one review target takes, by stage, until the task has measured it.
 DEFAULT_SECONDS_PER_ITEM = {"screen": 5.0, "deep": 60.0, "sweep": 4.0, "editorial": 30.0}
 
@@ -168,7 +172,7 @@ _ENGINE_SOURCES = (
 # Lint proposals per review item, so a decline sets aside few of them.
 LINT_ITEM_LIMIT = 60
 
-QA_POLICY_VERSION = "rpgmaker-qa-scene-motif-editorial-reference-check-database-v16"
+QA_POLICY_VERSION = "rpgmaker-qa-scene-motif-editorial-reference-check-database-v17"
 FORCED_DEEP_MECHANICAL_FLAGS = frozenset({
     "empty-live",
     "unchanged-source",
@@ -2358,7 +2362,18 @@ def runtime_command(script: str | Path) -> str:
     return prefix + shell_argument(sys.executable) + ' -X utf8 ' + shell_argument(script)
 
 
-QA_ROLES = ("screen", "deep", "group", "editorial")
+# Each brief's sections besides the policy, commands and result formats; a
+# worker reviews whichever bundle next gives it.
+_BRIEF_SECTIONS = {
+    "screen": ("Screen reviewer",),
+    "deep": ("Deep reviewer",),
+    "group": ("Group reviewer",),
+    "editorial": ("Editorial reviewer",),
+    "worker": (
+        "Worker", "Screen reviewer", "Deep reviewer", "Group reviewer", "Editorial reviewer",
+    ),
+}
+QA_ROLES = tuple(_BRIEF_SECTIONS)
 _SKILL_SECTION_RE = re.compile(r"^## (.+)$", re.M)
 
 
@@ -2388,6 +2403,7 @@ def _skill_values(task_dir: Path, task: dict[str, Any]) -> dict[str, str]:
             Path(__file__).resolve().parents[1] / "scripts" / "rpgmaker_qa.py"
         ),
         "TASK": shell_argument(task_dir),
+        "CONTEXT": str(task_dir / "context.json"),
         "RECEIPTS": str(
             Path(task["game_root"]) / ".dazedtl" / "qa-receipts" / task_dir.name
         ),
@@ -2417,11 +2433,9 @@ def brief(task_dir: str | Path, role: str) -> str:
         raise ValueError("Choose a role: " + ", ".join(QA_ROLES))
     root, task, _checkpoint = _load_task(task_dir)
     _intro, sections, focus = _skill_sections(task["focus"])
-    title = {"screen": "Screen reviewer", "deep": "Deep reviewer",
-             "group": "Group reviewer", "editorial": "Editorial reviewer"}[role]
     parts = [focus] + [
         f"## {name}\n\n{sections[name]}"
-        for name in ("Policy", title, "Commands", "Result formats")
+        for name in ("Policy", *_BRIEF_SECTIONS[role], "Commands", "Result formats")
     ]
     return _fill("\n\n".join(parts) + "\n", _skill_values(root, task))
 
@@ -2728,8 +2742,9 @@ def _stalled(checkpoint: dict[str, Any], stage: str, row: dict[str, Any]) -> boo
     return idle > _stall_after(checkpoint, stage)
 
 
-def _pace(checkpoint: dict[str, Any], now: datetime) -> float:
-    """How many bundles QA reviewed at once in its latest work, on average.
+def _pace(checkpoint: dict[str, Any], now: datetime) -> tuple[float, int]:
+    """How many bundles QA reviewed at once in its latest work, on average,
+    and how many bundles that work held.
 
     Reviewers are counted by the bundles they held, not the names they used:
     one session taking turns under two names reviews one bundle at a time.
@@ -2750,7 +2765,7 @@ def _pace(checkpoint: dict[str, Any], now: datetime) -> float:
                 continue
             spans.append((datetime.fromisoformat(row["assigned_at"]), end))
     if not spans:
-        return 0.0
+        return 0.0, 0
     latest = max(end for _start, end in spans)
     recent = [
         span for span in spans
@@ -2762,7 +2777,7 @@ def _pace(checkpoint: dict[str, Any], now: datetime) -> float:
     )
     window = (latest - start).total_seconds()
     reviewing = sum((end - max(begin, start)).total_seconds() for begin, end in recent)
-    return reviewing / window if window > 0 else 1.0
+    return (reviewing / window if window > 0 else 1.0), len(recent)
 
 
 def _estimate(checkpoint: dict[str, Any]) -> dict[str, Any]:
@@ -2795,11 +2810,20 @@ def _estimate(checkpoint: dict[str, Any]) -> dict[str, Any]:
         _reviewed_seconds((checkpoint.get(stage) or {}).get("bundles", []))
         for stage in REVIEW_STAGES
     )
-    at_once = _pace(checkpoint, now)
+    at_once, recent = _pace(checkpoint, now)
+    waiting = any(
+        row["status"] == "pending" and not row.get("declined_by")
+        for stage in REVIEW_STAGES
+        for row in (checkpoint.get(stage) or {}).get("bundles", [])
+    )
     return {
         "remaining": remaining,
         "workers": active,
         "in_review_at_once": round(at_once, 1),
+        # Bundles waited while reviewers took them one after another.
+        "one_at_a_time": waiting
+        and recent >= ONE_AT_A_TIME_BUNDLES
+        and at_once < ONE_AT_A_TIME_BELOW,
         "eta_seconds": round(seconds / (at_once or 1)) if measured else None,
     }
 
