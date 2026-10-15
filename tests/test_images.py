@@ -365,7 +365,7 @@ class ImageTests(unittest.TestCase):
             [
                 {
                     **found[0],
-                    "classification": "no_text",
+                    "classification": "uncertain",
                     "sourceHash": hashes["img/A.png"],
                 },
                 # Set aside unexamined, it is settled rather than left to investigate.
@@ -394,15 +394,25 @@ class ImageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "already in the game"):
             self.service.action(self.identity, "edit_task")
         # The applied image stays ticked but leaves the Recommended view, also
-        # when an earlier version saved that view.
+        # when an earlier version saved that view, and Unsure.
         write_json(
             saved, {**read_json(saved), "view": {"showSelected": True, "status": "all"}}
         )
-        view = self.service.state(self.identity)["view"]
+        state = self.service.state(self.identity)
         listed = self.service.list(
-            self.identity, filter=view["status"], selected_only=view["showSelected"]
+            self.identity,
+            filter=state["view"]["status"],
+            selected_only=state["view"]["showSelected"],
         )
-        self.assertEqual((listed["total"], listed["views"]["list"]), (0, 0))
+        self.assertEqual(
+            (
+                listed["total"],
+                self.service.list(self.identity, filter="uncertain")["total"],
+                listed["views"],
+                state["counts"]["uncertain"],
+            ),
+            (0, 0, {"all": 2, "list": 0, "uncertain": 0, "ready": 0, "applied": 1}, 0),
+        )
         self.assertEqual(editing["assets"][0]["id"], "img/A.png")
 
     def test_an_assistant_led_assistant_runs_the_steps_and_its_progress_completes(

@@ -169,12 +169,15 @@ class Index:
         if folder:
             parts.append("(folder=? OR instr(folder,?)=1)")
             parameters.extend((folder.rstrip("/"), folder.rstrip("/") + "/"))
-        # The list's own view leaves images already in the game to Applied.
+        # The list's own view and Unsure leave images already in the game to
+        # Applied.
         if filter == "not_applied":
             parts.append("state!='applied'")
         elif filter and filter != "all":
             parts.append("(classification=? OR state=?)")
             parameters.extend((filter, filter))
+            if filter == "uncertain":
+                parts.append("state!='applied'")
         if selected_only:
             parts.append("selected=1")
         return (" WHERE " + " AND ".join(parts) if parts else ""), parameters
@@ -233,7 +236,7 @@ class Index:
                 )
                 views = db.execute(
                     "SELECT count(*), total(selected=1 AND state!='applied'),"
-                    " total(classification='uncertain' OR state='uncertain'),"
+                    " total(classification='uncertain' AND state!='applied'),"
                     " total(classification='ready' OR state='ready'),"
                     " total(classification='applied' OR state='applied')"
                     " FROM assets" + scope,
@@ -266,6 +269,11 @@ class Index:
             examined = db.execute(
                 "SELECT count(*) FROM assets WHERE examined=1"
             ).fetchone()[0]
+            # An image in the game is no longer unsure.
+            uncertain = db.execute(
+                "SELECT count(*) FROM assets WHERE classification='uncertain'"
+                " AND state!='applied'"
+            ).fetchone()[0]
             # Images in the game and excluded ones are settled, so they are
             # not left for an investigation of the remaining images.
             remaining = db.execute(
@@ -276,7 +284,7 @@ class Index:
                 "indexed": indexed,
                 "examined": examined,
                 "recommended": classifications.get("recommended", 0),
-                "uncertain": classifications.get("uncertain", 0),
+                "uncertain": uncertain,
                 "notExamined": remaining,
                 "ready": states.get("ready", 0),
                 "needsReview": states.get("needs_review", 0),

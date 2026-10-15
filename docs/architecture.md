@@ -521,7 +521,7 @@ Sound effects lettered into scene art are flavor, often hundreds per game: an im
 Manual choices survive recommendations and filtering, and only byte-identical sources can reuse discovery evidence.
 An investigation report ticks each image it newly recommends once and opens the grid on the list, so an image the user took out stays out when the same request saves again; a report whose every image has a result completes the request even without its flag.
 The translation task covers the list's images not yet in the game and makes their editable copies first, leaving out images that cannot be edited.
-Applied images stay ticked, so a finished list still reads done and Edit text still reaches them, but the list's Recommended view leaves them to Applied.
+Applied images stay ticked, so a finished list still reads done and Edit text still reaches them, but the list's Recommended view and Unsure leave them to Applied.
 Apply to game applies the list's translated images; a list that a click replaced in earlier versions gets its copied translation task's images back once.
 Editing reports bind original and candidate hashes and a review version; changing either invalidates review.
 Compare shows the discovery finding and current AI-review evidence; hashes and backup paths stay out of reviews because Apply rechecks the exact reviewed bytes.
