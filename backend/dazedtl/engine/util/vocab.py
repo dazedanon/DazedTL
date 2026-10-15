@@ -219,9 +219,7 @@ def is_unverified_nameplate(rest: str) -> bool:
     return rest.strip().startswith(f"- {UNVERIFIED_NAMEPLATE}")
 
 
-_SECTION_PAIR_RE = re.compile(
-    r"^(.+?)\s+\((.+)\)\s*$",
-)
+_SECTION_ROW_SOURCE_RE = re.compile(r"^(.+?)\s+\(")
 
 _DECORATIVE_GLOSSARY_PUNCTUATION = frozenset({"•", "‣", "⁃", "※"})
 
@@ -271,18 +269,20 @@ def normalize_generated_glossary_pair(source: str, target: str) -> tuple[str, st
     return clean_source, clean_target
 
 
-def _parse_section_pairs(section_body: str) -> dict[str, str]:
-    """Parse ``src (dst)`` lines from a vocab section body (no header)."""
-    pairs: dict[str, str] = {}
-    for raw in section_body.splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        m = _SECTION_PAIR_RE.match(line)
-        if not m:
-            continue
-        pairs[m.group(1)] = m.group(2)
-    return pairs
+def _merge_section_rows(section_body: str, pairs: dict[str, str]) -> list[str]:
+    """Return a section's rows with ``pairs`` added for sources it lacks.
+
+    Existing rows stay exactly as written, including a note after the
+    translation (``サンク (Sank) - Male``); only absent sources are appended.
+    """
+    rows = section_body.rstrip().splitlines()
+    present = set()
+    for row in rows:
+        found = _SECTION_ROW_SOURCE_RE.match(row.strip())
+        if found:
+            present.add(found.group(1))
+    rows.extend(f"{src} ({dst})" for src, dst in pairs.items() if src not in present)
+    return rows
 
 
 def update_vocab_section(
@@ -300,8 +300,9 @@ def update_vocab_section(
       wins); no-ops (empty translation or unchanged after normalisation) are
       dropped. Leading database-label decoration is removed from generated
       rows. When nothing survives filtering the file is left untouched.
-    - ``merge``: when True, keep existing entries for this category and only add
-      sources that are not already present (names.json stays authoritative).
+    - ``merge``: when True, keep existing rows for this category as written,
+      including notes after the translation, and only add sources that are not
+      already present (names.json stays authoritative).
 
     Collect skips writes (source text is still untranslated). Consume writes
     immediately so sequential Pass 2 files can load harvested names.
@@ -336,15 +337,9 @@ def update_vocab_section(
         )
         match = pattern.search(game_part)
         if merge and match:
-            merged = _parse_section_pairs(match.group(2))
-            for src, dst in dedup.items():
-                if src not in merged:
-                    merged[src] = dst
-            dedup = merged
-            if not dedup:
-                return
-
-        block_lines = [f"{src} ({dst})" for src, dst in dedup.items()]
+            block_lines = _merge_section_rows(match.group(2), dedup)
+        else:
+            block_lines = [f"{src} ({dst})" for src, dst in dedup.items()]
         new_block = f"# {category}\n" + "\n".join(block_lines) + "\n\n"
 
         if match:
