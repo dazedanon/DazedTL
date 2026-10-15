@@ -3,6 +3,16 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.17.0] - 2026-10-14
+
+### Added
+
+- **Images:** **More > Investigate all images again** has your assistant investigate the images again from the start. Its recommendations replace your list of images to translate, except images already translated.
+
+### Fixed
+
+- **Images:** **More** no longer offers to investigate images "not examined" when your assistant had set them aside; the task stopped with "Every image has been investigated."
+
 ## [2.16.0] - 2026-10-14
 
 ### Added
@@ -602,6 +612,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.17.0]: https://github.com/dazedanon/DazedTL/compare/v2.16.0...v2.17.0
 [2.16.0]: https://github.com/dazedanon/DazedTL/compare/v2.15.1...v2.16.0
 [2.15.1]: https://github.com/dazedanon/DazedTL/compare/v2.15.0...v2.15.1
 [2.15.0]: https://github.com/dazedanon/DazedTL/compare/v2.14.2...v2.15.0
