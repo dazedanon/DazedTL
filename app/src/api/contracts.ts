@@ -2149,6 +2149,7 @@ export type ImageEditorImage = {
 export type ImageFont = {
   id: string;
   label: string;
+  origin: "game" | "installed";
 };
 
 export type LocalOcr = {

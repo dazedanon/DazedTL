@@ -1,5 +1,11 @@
 import { Plus } from "lucide-react";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type ComponentProps,
+} from "react";
 import { api } from "../../api/client";
 import { imagesApi } from "../../api/images";
 import { messageOf } from "../../api/errors";
@@ -9,6 +15,8 @@ import type {
   ImageNativeTranslationPreview,
   ImageNativeTranslationState,
   ImageTextBlock,
+  ImageTextGlow,
+  ImageTextShadow,
   ImageTextStyle,
 } from "../../api/contracts";
 import { useAction } from "../../state/useAction";
@@ -84,12 +92,35 @@ const colourHex = (value: number[] | null | undefined) =>
     .slice(0, 3)
     .map((channel) => channel.toString(16).padStart(2, "0"))
     .join("");
-const colourChannels = (value: string) => [
+/** A picked colour keeps the opacity it had: the alpha is the opacity. */
+const withColour = (value: string, previous: number[]) => [
   ...[1, 3, 5].map((index) =>
     Number.parseInt(value.slice(index, index + 2), 16),
   ),
-  255,
+  previous[3] ?? 255,
 ];
+const opacityPercent = (colour: number[]) =>
+  Math.round(((colour[3] ?? 255) * 100) / 255);
+const withOpacity = (percent: number, colour: number[]) => [
+  ...colour.slice(0, 3),
+  Math.round((percent * 255) / 100),
+];
+// What `util.imagetools.effects` draws for a field a saved effect leaves out,
+// and what an effect starts as when it is switched on.
+const shadowDefaults: Required<ImageTextShadow> = {
+  color: [0, 0, 0, 180],
+  dx: 2,
+  dy: 2,
+  spread: 0,
+  blur: 1,
+};
+const glowDefaults: Required<ImageTextGlow> = {
+  color: [255, 255, 255, 150],
+  spread: 1,
+  blur: 3,
+};
+const opaqueBlack = [0, 0, 0, 255];
+const opaqueWhite = [255, 255, 255, 255];
 
 export function ImageTextEditor(props: ImageTextEditorProps) {
   const scopeKey = JSON.stringify(props.assetIds);
@@ -287,6 +318,40 @@ function Editor({
     if (block)
       editBlock({ style: { ...block.style, ...update, locked: true } });
   }
+  // The saved style holds only the effects that are on, so one switched off
+  // keeps its numbers here, for as long as the editor is open, to come back
+  // with when it is switched on again.
+  const setAside = useRef(new Map<string, Partial<ImageTextStyle>>());
+  function toggleEffect(name: "outline" | "shadow" | "glow", on: boolean) {
+    if (!block) return;
+    const kept = setAside.current.get(block.id) ?? {};
+    if (!on)
+      setAside.current.set(block.id, {
+        ...kept,
+        ...(name === "outline"
+          ? { outline_width: style.outline_width }
+          : { [name]: style[name] }),
+      });
+    if (name === "outline")
+      editStyle(
+        on
+          ? {
+              outline_width: kept.outline_width || 1,
+              outline_color: style.outline_color || opaqueBlack,
+            }
+          : { outline_width: 0 },
+      );
+    else if (name === "shadow")
+      editStyle({ shadow: on ? kept.shadow || shadowDefaults : null });
+    else editStyle({ glow: on ? kept.glow || glowDefaults : null });
+  }
+  const style: ImageTextStyle = block?.style ?? {};
+  const outlined = (style.outline_width ?? 0) > 0 && !!style.outline_color;
+  const shadow = style.shadow && { ...shadowDefaults, ...style.shadow };
+  const glow = style.glow && { ...glowDefaults, ...style.glow };
+  const fonts = state.fonts || [];
+  const gameFonts = fonts.filter((font) => font.origin === "game");
+  const installedFonts = fonts.filter((font) => font.origin !== "game");
   async function operate(
     name: "ocr" | "export" | "import" | "render" | "undo",
     options: Record<string, unknown> = {},
@@ -664,7 +729,16 @@ function Editor({
                   </strong>
                 )}
               </div>
-              <Message message={pixels.error || image.error} />
+              {/* A render that just failed says why beside its button; the
+                  image's saved error is for when the editor opens again. */}
+              <Message
+                message={
+                  pixels.error ||
+                  (image.error && action.error.includes(image.error)
+                    ? ""
+                    : image.error)
+                }
+              />
               <div
                 ref={canvasArea}
                 className={`native-editor-canvases ${comparison ? "native-editor-compare" : ""}`}
@@ -875,16 +949,18 @@ function Editor({
                 {["X", "Y", "Width", "Height"].map((label, index) => (
                   <label key={label}>
                     {label}
-                    <input
-                      type="number"
+                    <NumberInput
                       aria-label={`Box ${label}`}
+                      whole
                       min={index < 2 ? 0 : 1}
-                      max={index % 2 === 0 ? image?.width : image?.height}
+                      max={
+                        (index % 2 === 0 ? image?.width : image?.height) ?? 1
+                      }
                       value={block.box[index]}
                       disabled={busy}
-                      onChange={(event) => {
+                      onChange={(number) => {
                         const next = [...block.box] as ImageTextBlock["box"];
-                        next[index] = Number(event.target.value);
+                        next[index] = number;
                         editBlock({ box: next }, true);
                       }}
                     />
@@ -929,45 +1005,75 @@ function Editor({
               <details open>
                 <summary>Text style</summary>
                 <div className="native-editor-style-fields">
-                  <label>
+                  <label className="native-editor-style-wide">
                     Font
+                    {/* A closed select cuts a long name short without an
+                        ellipsis, so the whole name is a hover away. */}
                     <select
                       aria-label="Image font"
-                      value={block.style?.font || ""}
+                      title={
+                        fonts.find((font) => font.id === style.font)?.label
+                      }
+                      value={style.font || ""}
                       disabled={busy}
                       onChange={(event) =>
                         editStyle({ font: event.target.value })
                       }
                     >
                       <option value="">System default</option>
-                      {(state.fonts || []).map((font) => (
-                        <option key={font.id} value={font.id}>
-                          {font.label}
-                        </option>
-                      ))}
+                      {/* A face the game no longer has still reads as chosen,
+                          so rendering's refusal has a visible cause. */}
+                      {style.font &&
+                        !fonts.some((font) => font.id === style.font) && (
+                          <option value={style.font} disabled>
+                            Unavailable font
+                          </option>
+                        )}
+                      {gameFonts.length > 0 ? (
+                        <>
+                          <optgroup label="This game">
+                            {gameFonts.map((font) => (
+                              <option key={font.id} value={font.id}>
+                                {font.label}
+                              </option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="Installed">
+                            {installedFonts.map((font) => (
+                              <option key={font.id} value={font.id}>
+                                {font.label}
+                              </option>
+                            ))}
+                          </optgroup>
+                        </>
+                      ) : (
+                        installedFonts.map((font) => (
+                          <option key={font.id} value={font.id}>
+                            {font.label}
+                          </option>
+                        ))
+                      )}
                     </select>
                   </label>
                   {/* The renderer sizes type by its capital height, which
                       is what the measurement reads off the original. */}
                   <label>
                     Letter height (px)
-                    <input
+                    <NumberInput
                       aria-label="Image letter height in pixels"
-                      type="number"
+                      whole
                       min={1}
                       max={512}
-                      value={block.style?.cap_height || 12}
+                      value={style.cap_height || 12}
                       disabled={busy}
-                      onChange={(event) =>
-                        editStyle({ cap_height: Number(event.target.value) })
-                      }
+                      onChange={(cap_height) => editStyle({ cap_height })}
                     />
                   </label>
                   <label>
                     Alignment
                     <select
                       aria-label="Image text alignment"
-                      value={block.style?.align || "center"}
+                      value={style.align || "center"}
                       disabled={busy}
                       onChange={(event) =>
                         editStyle({
@@ -980,44 +1086,117 @@ function Editor({
                       ))}
                     </select>
                   </label>
-                  <label>
-                    Text colour
-                    <input
-                      aria-label="Image text colour"
-                      type="color"
-                      value={colourHex(block.style?.text_color)}
-                      disabled={busy}
-                      onChange={(event) =>
-                        editStyle({
-                          text_color: colourChannels(event.target.value),
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    Outline
-                    <input
-                      aria-label="Image outline size"
-                      type="number"
-                      min={0}
-                      max={64}
-                      value={block.style?.outline_width || 0}
-                      disabled={busy}
-                      onChange={(event) =>
-                        editStyle({
-                          outline_width: Number(event.target.value),
-                          outline_color: block.style?.outline_color || [
-                            0, 0, 0, 255,
-                          ],
-                        })
-                      }
-                    />
-                  </label>
-                  <label className="native-editor-wide">
+                  <ColourFields
+                    label="Text colour"
+                    name="Image text"
+                    value={style.text_color || opaqueWhite}
+                    disabled={busy}
+                    onChange={(text_color) => editStyle({ text_color })}
+                  />
+                  {/* The effects under the face, nearest first; each one's
+                      fields show while it is on. */}
+                  <EffectToggle
+                    label="Outline"
+                    checked={outlined}
+                    disabled={busy}
+                    onChange={(on) => toggleEffect("outline", on)}
+                  />
+                  {outlined && (
+                    <>
+                      <ColourFields
+                        label="Colour"
+                        name="Image outline"
+                        value={style.outline_color || opaqueBlack}
+                        disabled={busy}
+                        onChange={(outline_color) =>
+                          editStyle({ outline_color })
+                        }
+                      />
+                      <label>
+                        Width (px)
+                        <NumberInput
+                          aria-label="Image outline size"
+                          min={0.5}
+                          max={64}
+                          step={0.5}
+                          value={style.outline_width || 1}
+                          disabled={busy}
+                          onChange={(outline_width) =>
+                            editStyle({ outline_width })
+                          }
+                        />
+                      </label>
+                    </>
+                  )}
+                  <EffectToggle
+                    label="Shadow"
+                    checked={!!shadow}
+                    disabled={busy}
+                    onChange={(on) => toggleEffect("shadow", on)}
+                  />
+                  {shadow && (
+                    <>
+                      <ColourFields
+                        label="Colour"
+                        name="Image shadow"
+                        value={shadow.color}
+                        disabled={busy}
+                        onChange={(color) =>
+                          editStyle({ shadow: { ...shadow, color } })
+                        }
+                      />
+                      <EffectNumbers
+                        name="shadow"
+                        fields={[
+                          ["dx", "X offset", -256, 256],
+                          ["dy", "Y offset", -256, 256],
+                          ["blur", "Blur", 0, 64],
+                          ["spread", "Spread", 0, 64],
+                        ]}
+                        value={shadow}
+                        disabled={busy}
+                        onChange={(update) =>
+                          editStyle({ shadow: { ...shadow, ...update } })
+                        }
+                      />
+                    </>
+                  )}
+                  <EffectToggle
+                    label="Glow"
+                    checked={!!glow}
+                    disabled={busy}
+                    onChange={(on) => toggleEffect("glow", on)}
+                  />
+                  {glow && (
+                    <>
+                      <ColourFields
+                        label="Colour"
+                        name="Image glow"
+                        value={glow.color}
+                        disabled={busy}
+                        onChange={(color) =>
+                          editStyle({ glow: { ...glow, color } })
+                        }
+                      />
+                      <EffectNumbers
+                        name="glow"
+                        fields={[
+                          ["blur", "Blur", 0, 64],
+                          ["spread", "Spread", 0, 64],
+                        ]}
+                        value={glow}
+                        disabled={busy}
+                        onChange={(update) =>
+                          editStyle({ glow: { ...glow, ...update } })
+                        }
+                      />
+                    </>
+                  )}
+                  <label className="native-editor-style-wide">
                     Repair background
                     <select
                       aria-label="Image background repair"
-                      value={block.style?.background || "keep"}
+                      value={style.background || "keep"}
                       disabled={busy}
                       onChange={(event) => {
                         const background = event.target.value;
@@ -1025,7 +1204,7 @@ function Editor({
                         editStyle({
                           background,
                           ...(background === "solid"
-                            ? { fill: block.style?.fill || [0, 0, 0, 255] }
+                            ? { fill: style.fill || opaqueBlack }
                             : {}),
                         });
                       }}
@@ -1039,17 +1218,17 @@ function Editor({
                       )}
                     </select>
                   </label>
-                  {block.style?.background === "inpaint" && (
-                    <label>
+                  {style.background === "inpaint" && (
+                    <label className="native-editor-style-wide">
                       Repair method
                       <select
                         aria-label="Image background repair method"
                         value={
                           Object.hasOwn(
                             repairMethods,
-                            block.style.inpaint_method || "",
+                            style.inpaint_method || "",
                           )
-                            ? block.style.inpaint_method
+                            ? style.inpaint_method
                             : "harmonic"
                         }
                         disabled={busy}
@@ -1065,17 +1244,20 @@ function Editor({
                       </select>
                     </label>
                   )}
-                  {block.style?.background === "solid" && (
+                  {style.background === "solid" && (
                     <label>
                       Fill colour
                       <input
                         aria-label="Image background fill"
                         type="color"
-                        value={colourHex(block.style.fill)}
+                        value={colourHex(style.fill)}
                         disabled={busy}
                         onChange={(event) =>
                           editStyle({
-                            fill: colourChannels(event.target.value),
+                            fill: withColour(
+                              event.target.value,
+                              style.fill || opaqueBlack,
+                            ),
                           })
                         }
                       />
@@ -1495,6 +1677,148 @@ function Editor({
       )}
     </Modal>
   );
+}
+
+/**
+ * A number typed freely and saved once it reads as one. While a minus sign or
+ * an emptied field is half typed the field keeps it, rather than the store
+ * turning it back into the last number; the saved value is held to the range
+ * the renderer accepts, and to whole pixels where it counts them.
+ */
+function NumberInput({
+  value,
+  min,
+  max,
+  step = 1,
+  whole = false,
+  onChange,
+  ...input
+}: Omit<
+  ComponentProps<"input">,
+  "type" | "value" | "min" | "max" | "step" | "onChange"
+> & {
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  whole?: boolean;
+  onChange: (value: number) => void;
+}) {
+  const [typed, setTyped] = useState<string | null>(null);
+  return (
+    <input
+      {...input}
+      type="number"
+      min={min}
+      max={max}
+      step={step}
+      value={typed ?? String(value)}
+      onChange={(event) => {
+        setTyped(event.target.value);
+        const number = event.target.valueAsNumber;
+        if (Number.isFinite(number))
+          onChange(
+            Math.min(max, Math.max(min, whole ? Math.round(number) : number)),
+          );
+      }}
+      onBlur={() => setTyped(null)}
+    />
+  );
+}
+/** One layer's colour and its opacity, which is the colour's alpha. */
+function ColourFields({
+  label,
+  name,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  /** Names the two inputs for assistive technology, such as "Image shadow". */
+  name: string;
+  value: number[];
+  disabled: boolean;
+  onChange: (colour: number[]) => void;
+}) {
+  return (
+    <>
+      <label>
+        {label}
+        <input
+          aria-label={`${name} colour`}
+          type="color"
+          value={colourHex(value)}
+          disabled={disabled}
+          onChange={(event) => onChange(withColour(event.target.value, value))}
+        />
+      </label>
+      <label>
+        Opacity (%)
+        <NumberInput
+          aria-label={`${name} opacity in percent`}
+          min={0}
+          max={100}
+          value={opacityPercent(value)}
+          disabled={disabled}
+          onChange={(percent) => onChange(withOpacity(percent, value))}
+        />
+      </label>
+    </>
+  );
+}
+function EffectToggle({
+  label,
+  checked,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  disabled: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="toggle native-editor-style-wide native-editor-effect">
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      {label}
+    </label>
+  );
+}
+/** An effect's distances in pixels, two to a row under its colour. */
+function EffectNumbers<Key extends string>({
+  name,
+  fields,
+  value,
+  disabled,
+  onChange,
+}: {
+  name: string;
+  fields: [key: Key, label: string, min: number, max: number][];
+  value: Record<Key, number>;
+  disabled: boolean;
+  onChange: (update: Partial<Record<Key, number>>) => void;
+}) {
+  return fields.map(([key, label, min, max]) => (
+    <label key={key}>
+      {label} (px)
+      <NumberInput
+        aria-label={`Image ${name} ${label.toLowerCase()} in pixels`}
+        min={min}
+        max={max}
+        step={0.5}
+        value={value[key]}
+        disabled={disabled}
+        onChange={(number) =>
+          onChange({ [key]: number } as Partial<Record<Key, number>>)
+        }
+      />
+    </label>
+  ));
 }
 
 const money = (value: unknown) => "$" + Number(value).toFixed(5);

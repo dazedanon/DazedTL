@@ -218,6 +218,11 @@
   width: 100%;
   min-width: 0;
 }
+/* The label's gap spaces a text box like every other field; the page
+   margin a textarea brings would push it away from its label. */
+.native-editor-block-form textarea {
+  margin: 0;
+}
 /* Position, then size: four across left each field too narrow for a
    four-digit coordinate beside its spinner. */
 .native-editor-box-fields {
@@ -233,14 +238,12 @@
 }
 /* Fields with long choices, and whatever a choice adds below them, take the
    whole row so their options are never cut off. */
-.native-editor-style-fields > label:first-child,
-.native-editor-style-fields > .native-editor-wide,
-.native-editor-style-fields > label:last-child {
+.native-editor-style-fields > .native-editor-style-wide {
   grid-column: 1 / -1;
 }
 .native-editor-style-fields input[type="color"] {
   padding: 0;
-  min-height: 2rem;
+  height: var(--control-height);
 }
 .native-editor-notes {
   flex: 0 0 auto;

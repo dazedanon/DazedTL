@@ -42,6 +42,7 @@ from util.imagetools.fonts import (
     line_ink,
     resolve_font,
     size_for_cap,
+    stroke_room,
     variant,
 )
 from util.imagetools import inpaint as inpaintmod
@@ -711,11 +712,12 @@ def _stroked(
     as they would be around the original's. Returns the tile and that margin.
     """
     stroke = fitted.stroke if outline else 0
+    pad = stroke_room(stroke)
     stretch = max(1, fitted.width_scale) / 100.0
     rise = max(1, fitted.height_scale) / 100.0
     # What is left of the block once the stroke has its margin. The fit measured
     # against the same figure, so the ink is known to sit inside it.
-    inner = (max(1, size[0] - 2 * stroke), max(1, size[1] - 2 * stroke))
+    inner = (max(1, size[0] - 2 * pad), max(1, size[1] - 2 * pad))
     work = (
         max(1, min(MAX_WORK, int(round(inner[0] / stretch)))),
         max(1, min(MAX_WORK, int(round(inner[1] / rise)))),
@@ -746,12 +748,12 @@ def _stroked(
 
     if work != inner:
         coverage = coverage.resize(inner, Image.LANCZOS)
-    if stroke:
+    if pad:
         # ``paste`` rather than a slice assignment: it clips, and a block only
         # two pixels tall with a five-pixel stroke would otherwise be an error
         # about array shapes rather than a very heavily stroked full stop.
         framed = Image.new("L", (int(size[0]), int(size[1])), 0)
-        framed.paste(coverage, (stroke, stroke))
+        framed.paste(coverage, (pad, pad))
         coverage = framed
 
     mask = np.array(coverage)

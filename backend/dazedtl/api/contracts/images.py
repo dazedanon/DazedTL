@@ -374,6 +374,8 @@ class ImageEditorImage(TypedDict):
 class ImageFont(TypedDict):
     id: str
     label: str
+    # The game's own faces come first, then the ones installed on this machine.
+    origin: Literal["game", "installed"]
 
 
 class LocalOcr(TypedDict):
