@@ -2,11 +2,13 @@
 
 import io
 import struct
+import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 from PIL import Image, PngImagePlugin
-from util.imagetools import harmonic, inpaint, pngfile
+from util.imagetools import harmonic, inpaint, pngfile, resources
 
 
 class HarmonicFillTests(unittest.TestCase):
@@ -89,6 +91,55 @@ class PngRewriteTests(unittest.TestCase):
         Image.fromarray(np.zeros((4, 4), np.uint16)).save(sixteen, "PNG")
         with self.assertRaisesRegex(ValueError, "16-bit"):
             pngfile.encode_like(np.zeros((4, 4, 4), np.uint8), sixteen.getvalue())
+
+
+def _dll(linker=(14, 44), version=None) -> bytes:
+    """A Windows DLL's header, with a version resource when *version* is given."""
+    data = bytearray(0x100)
+    data[:2] = b"MZ"
+    struct.pack_into("<I", data, 0x3C, 0x80)
+    data[0x80:0x84] = b"PE\0\0"
+    data[0x80 + 26 : 0x80 + 28] = bytes(linker)
+    if version:
+        major, minor, build, revision = version
+        data += struct.pack(
+            "<4I", 0xFEEF04BD, 0x10000, major << 16 | minor, build << 16 | revision
+        )
+    return bytes(data)
+
+
+class VisualCppRuntimeTests(unittest.TestCase):
+    def test_the_first_copy_windows_loads_must_be_as_new_as_the_build(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            early, system = root / "python", root / "System32"
+            early.mkdir()
+            system.mkdir()
+            library = root / "onnxruntime.dll"
+            library.write_bytes(_dll(linker=(14, 44)))
+            needed = resources.linker_version(library)
+            self.assertEqual(needed, (14, 44))
+
+            def place(where, version):
+                for name in resources.VC_LIBRARIES:
+                    (where / name).write_bytes(_dll(version=version))
+
+            folders = [early, system]
+            self.assertIn("lacks", resources.runtime_problem(needed, folders))
+            place(system, (14, 29, 30133, 0))
+            self.assertIn(
+                "14.44 or newer, and this Windows has 14.29.30133.0",
+                resources.runtime_problem(needed, folders),
+            )
+            # Before onnxruntime is installed its toolset is unknown.
+            self.assertEqual(resources.runtime_problem(None, folders), "")
+            place(early, (14, 50, 35717, 0))
+            self.assertEqual(resources.runtime_problem(needed, folders), "")
+            # An older copy ahead of a newer one is the copy that loads.
+            self.assertIn(
+                "this Windows has 14.29",
+                resources.runtime_problem(needed, [system, early]),
+            )
 
 
 if __name__ == "__main__":
