@@ -197,7 +197,10 @@ class ProcessTests(unittest.TestCase):
         threading.Thread(target=serve, daemon=True).start()
         closed = socket.socket()
         closed.bind(("127.0.0.1", 0))
-        dead = f"http://127.0.0.1:{closed.getsockname()[1]}/"
+        # Windows retries a refused local connection for about two seconds but
+        # rejects 0.0.0.0 at once; elsewhere it is refused locally. Neither
+        # ever connects.
+        dead = f"http://0.0.0.0:{closed.getsockname()[1]}/"
         closed.close()
         live = f"http://127.0.0.1:{server.getsockname()[1]}/"
         refusal = b"HTTP/1.1 402 Payment Required\r\nContent-Length: 0\r\n\r\n"
