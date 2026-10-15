@@ -155,12 +155,17 @@ class PluginService:
         self.context = context
         self.lock = threading.RLock()
         self.previews, self.cache, self.observed, self.foreign = {}, {}, {}, {}
+        # The app's own folders, which a game must stay apart from; resolving
+        # a path costs a file open on Windows, and every plugin call checks.
+        self.protected = [
+            Path(path).resolve()
+            for path in (self.translation.workspace, self.backend.source)
+        ]
 
     def record(self, project_id):
         project = self.projects.get(project_id)
         root = Path(project["source"]).resolve(strict=True)
-        for protected in (self.translation.workspace, self.backend.source):
-            path = Path(protected).resolve()
+        for path in self.protected:
             if root.is_relative_to(path) or path.is_relative_to(root):
                 raise ValueError(
                     "Plugin work needs a game separate from the app and profile."
