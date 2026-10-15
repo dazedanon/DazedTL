@@ -213,7 +213,9 @@ def validate_blocks(blocks, width, height):
             for key in ("shadow", "glow"):
                 if normalized.get(key) is not None:
                     normalized[key] = _effect(normalized[key], key)
-            normalized["inpaint_method"] = "telea"
+            normalized["inpaint_method"] = native.repair_method(
+                normalized.get("inpaint_method")
+            )
             item["style"] = normalized
         # Native OCR geometry stays in the saved job; renderer submissions cannot
         # inject word masks, arbitrary paint paths or resource commands.

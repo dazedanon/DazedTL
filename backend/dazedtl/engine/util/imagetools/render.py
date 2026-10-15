@@ -329,17 +329,11 @@ def _reconstruct(
         (mask | (array[trows, tcols][:, :, 3] == 0)).mean()
     ) > inpaintmod.CROWDED
 
-    if inpaintmod.needs_context(method):
-        share = inpaintmod.CONTEXT
-    elif crowded:
-        # A diffusion fill reads only from the pixels it is handed, and a box
-        # drawn tightly around a word is mostly word. Left on the tight crop it
-        # returns the picture unchanged and raises nothing, so the block came
-        # back marked reconstructed with the source text still on it.
-        share = inpaintmod.CROWDED_CONTEXT
-    else:
-        share = 0.0
-    pad = int(max(target.w, target.h) * share)
+    # A crowded crop matters to a diffusion fill: it reads only from the pixels
+    # it is handed, and a box drawn tightly around a word is mostly word. Left
+    # on the tight crop it returns the picture unchanged and raises nothing, so
+    # the block came back marked reconstructed with the source text still on it.
+    pad = inpaintmod.context_pad(method, target.w, target.h, crowded)
     window = target.expand(pad, bounds) if pad else target
 
     rows, cols = window.slices()

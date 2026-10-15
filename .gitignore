@@ -9,3 +9,5 @@ __pycache__/
 .DS_Store
 .local/
 .runtime/
+# Inpainting models fetched by the image bridge, about 440 MB.
+backend/dazedtl/engine/data/models/

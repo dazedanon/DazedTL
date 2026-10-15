@@ -323,6 +323,13 @@ class EditorTests(unittest.TestCase):
         ):
             with self.assertRaises(ValueError):
                 validate_blocks([{**block, "style": broken}], 64, 32)
+        # The editor runs its local repairs as chosen, and never a model.
+        for chosen, runs in (("harmonic", "harmonic"), ("lama", "telea")):
+            style = {"background": "inpaint", "inpaint_method": chosen}
+            block = {**bad[0], "box": [1, 1, 10, 10], "style": style}
+            self.assertEqual(
+                validate_blocks([block], 64, 32)[0]["style"]["inpaint_method"], runs
+            )
 
     def test_import_validates_every_region_before_copying_only_targets(self):
         exported = self.exported()

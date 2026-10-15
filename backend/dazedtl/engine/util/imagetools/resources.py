@@ -5,10 +5,13 @@ else in DazedTL needs (numpy, OpenCV, an OCR client) and around 450 MB of
 neural-network weights. Neither belongs in ``requirements.txt``, because
 everyone who never opens this workflow would pay for both.
 
-So nothing here is fetched until the user asks for it. ``gui/image_manager.py``
-calls ``ensure_resources`` when the *Edit text…* button is pressed; that shows
-what is missing and what it costs, and only then does anything leave the
-network.
+So nothing here is fetched until the user asks for it. The local inpainting
+bridge (``scripts/image_inpaint.py``) reports what each missing method costs
+in its ``status`` and fetches it with ``install``, which works from any folder
+because the bridge sets up the engine's import path itself.
+
+Model files are pinned to a repository revision and checked against their
+published SHA-256, so a model replaced upstream is refused rather than loaded.
 
 **This module must import on a bare checkout**, before any of it is installed,
 because it is what does the installing. Standard library only - no numpy, no
@@ -26,7 +29,8 @@ restart.
 
 from __future__ import annotations
 
-import shutil
+import hashlib
+import ssl
 import subprocess
 import sys
 import urllib.request
@@ -37,9 +41,8 @@ from util.paths import DATA_DIR
 
 #: Where ``util.imagetools.inpaint`` looks. Repeated rather than imported
 #: because that module needs numpy and cv2, which may be exactly what is
-#: missing. ``ResourceManifestTests`` asserts the two agree.
+#: missing.
 MODEL_DIR = DATA_DIR / "models"
-LIB_DIR = DATA_DIR / "libs"
 
 USER_AGENT = "DazedTL"
 #: Big enough that the syscall overhead disappears on a 200 MB model, small
@@ -47,10 +50,7 @@ USER_AGENT = "DazedTL"
 CHUNK = 256 * 1024
 TIMEOUT = 60
 
-HUGGINGFACE = "https://huggingface.co/{repo}/resolve/main/{filename}"
-PATCHMATCH_RELEASE = (
-    "https://github.com/dmMaze/PyPatchMatchInpaint/releases/download/v1.0/{asset}"
-)
+HUGGINGFACE = "https://huggingface.co/{repo}/resolve/{revision}/{filename}"
 
 #: Rough wheel sizes, only ever used to fill in the "about this much" line
 #: before anything is downloaded. The progress bars use ``Content-Length``.
@@ -58,8 +58,8 @@ PIP_SIZES = {
     "numpy": 16_000_000,
     "opencv-python-headless": 40_000_000,
     "chrome-lens-py": 12_000_000,
-    "onnxruntime": 16_000_000,
-    "py7zr": 3_000_000,
+    "onnxruntime": 24_000_000,
+    "pypatchmatch": 650_000,
     "rapidocr-onnxruntime": 15_000_000,
 }
 
@@ -77,43 +77,28 @@ class Resource:
     detail: str
     #: Requirement specifiers handed to pip.
     pips: tuple[str, ...] = ()
-    #: Import names that prove the pips landed. Checked with ``find_spec``,
-    #: which does not execute them - importing numpy here would defeat the
-    #: whole deferred-import arrangement.
+    #: The import name that proves each pip landed, in the same order. Checked
+    #: with ``find_spec``, which does not execute them - importing numpy here
+    #: would defeat the whole deferred-import arrangement.
     modules: tuple[str, ...] = ()
-    #: A file to download, or the directory an archive unpacks into.
+    #: A file to download.
     url: str = ""
     dest: Path | None = None
     size: int = 0
-    #: Set when ``url`` points at an archive rather than the file itself.
-    archive: bool = False
-    #: Filenames under ``dest`` any one of which proves an archive unpacked.
-    proof: tuple[str, ...] = ()
+    #: The file's published SHA-256; a download that does not match is refused.
+    sha256: str = ""
     #: Pre-ticked in the download prompt.
     default: bool = False
     #: The workflow cannot start without it, so it cannot be unticked.
     required: bool = False
-    #: ``sys.platform`` values this is published for; empty means all.
-    platforms: tuple[str, ...] = ()
 
-
-def _patchmatch_asset() -> str:
-    """The release asset for this machine, or "" where none is published.
-
-    Only Windows and Apple Silicon builds exist. There is no Linux build at
-    all, so the row is hidden there rather than offered and then failing.
-    """
-    if sys.platform == "win32":
-        return "windows_patchmatch_libs.7z"
-    if sys.platform == "darwin" and _is_arm():
-        return "macos_arm64_patchmatch_libs.7z"
-    return ""
-
-
-def _is_arm() -> bool:
-    import platform
-
-    return platform.machine().lower() in {"arm64", "aarch64"}
+    def missing_pips(self) -> tuple[str, ...]:
+        """The requirement specifiers whose import name is not found."""
+        return tuple(
+            spec
+            for spec, module in zip(self.pips, self.modules, strict=True)
+            if not _importable(module)
+        )
 
 
 RESOURCES: tuple[Resource, ...] = (
@@ -132,9 +117,14 @@ RESOURCES: tuple[Resource, ...] = (
         detail="fast neural fill; weaker on saturated colour",
         pips=("onnxruntime>=1.17",),
         modules=("onnxruntime",),
-        url=HUGGINGFACE.format(repo="ogkalu/aot-inpainting", filename="aot.onnx"),
+        url=HUGGINGFACE.format(
+            repo="ogkalu/aot-inpainting",
+            revision="42ffc84ff1bd46dd95f1c5a41e83ee7e98f39189",
+            filename="aot.onnx",
+        ),
         dest=MODEL_DIR / "aot.onnx",
         size=23_068_213,
+        sha256="ffd39ed8e2a275869d3b49180d030f0d8b8b9c2c20ed0e099ecd207201f0eada",
         default=True,
     ),
     Resource(
@@ -145,10 +135,12 @@ RESOURCES: tuple[Resource, ...] = (
         modules=("onnxruntime",),
         url=HUGGINGFACE.format(
             repo="ogkalu/lama-manga-onnx-dynamic",
+            revision="ee4ed4a8447b6730fc41d34f90876b6c48af925a",
             filename="lama-manga-dynamic.onnx",
         ),
         dest=MODEL_DIR / "lama-manga-dynamic.onnx",
         size=206_291_843,
+        sha256="de31ffa5ba26916b8ea35319f6c12151ff9654d4261bccf0583a69bb095315f9",
     ),
     Resource(
         key="lama",
@@ -156,27 +148,24 @@ RESOURCES: tuple[Resource, ...] = (
         detail="the original LaMa export, trained on photographs",
         pips=("onnxruntime>=1.17",),
         modules=("onnxruntime",),
-        url=HUGGINGFACE.format(repo="Carve/LaMa-ONNX", filename="lama_fp32.onnx"),
+        url=HUGGINGFACE.format(
+            repo="Carve/LaMa-ONNX",
+            revision="c3c0c9e468934d62e79c329e35d82dd09ff8c444",
+            filename="lama_fp32.onnx",
+        ),
         dest=MODEL_DIR / "lama_fp32.onnx",
         size=208_044_816,
+        sha256="1faef5301d78db7dda502fe59966957ec4b79dd64e16f03ed96913c7a4eb68d6",
     ),
     Resource(
         key="patchmatch",
         label="PatchMatch reconstruction",
-        detail="best texture of the six, and by far the slowest (~4.5s a box)",
-        pips=("py7zr>=0.21",),
-        modules=("py7zr",),
-        url=PATCHMATCH_RELEASE.format(asset=_patchmatch_asset() or "unavailable"),
-        dest=LIB_DIR,
-        size=12_385_730,
-        archive=True,
-        proof=(
-            "patchmatch_inpaint.dll",
-            "libpatchmatch_inpaint.so",
-            "libpatchmatch_inpaint.dylib",
-            "patchmatch_inpaint.dylib",
-        ),
-        platforms=("win32", "darwin"),
+        detail="best texture of these, and by far the slowest (~4.5s a box)",
+        # Its wheels carry the compiled library with OpenCV linked in, for
+        # Windows, Linux and macOS alike. Pinned exactly: it is native code
+        # from a young release line, so an update is a choice, not a surprise.
+        pips=("pypatchmatch==2.1.1",),
+        modules=("patchmatch",),
     ),
     Resource(
         key="rapidocr",
@@ -200,14 +189,7 @@ RESOURCES: tuple[Resource, ...] = (
 
 def available() -> tuple[Resource, ...]:
     """The resources that can be fetched on this machine."""
-    rows = []
-    for resource in RESOURCES:
-        if resource.platforms and sys.platform not in resource.platforms:
-            continue
-        if resource.key == "patchmatch" and not _patchmatch_asset():
-            continue
-        rows.append(resource)
-    return tuple(rows)
+    return RESOURCES
 
 
 def get(key: str) -> Resource:
@@ -230,13 +212,9 @@ def installed(resource: Resource | str) -> bool:
     """Whether everything this resource brings is already present."""
     if isinstance(resource, str):
         resource = get(resource)
-    if not all(_importable(module) for module in resource.modules):
+    if resource.missing_pips():
         return False
-    if resource.dest is None:
-        return True
-    if resource.archive:
-        return any((resource.dest / name).is_file() for name in resource.proof)
-    return resource.dest.is_file()
+    return resource.dest is None or resource.dest.is_file()
 
 
 def missing(keys: list[str] | tuple[str, ...] | None = None) -> list[Resource]:
@@ -267,14 +245,12 @@ def estimate(resources) -> int:
     total = 0
     seen: set[str] = set()
     for resource in resources:
-        if resource.dest is not None and not installed(resource):
+        if resource.dest is not None and not resource.dest.is_file():
             total += resource.size
-        for spec in resource.pips:
+        for spec in resource.missing_pips():
             name = _requirement_name(spec)
-            if name in seen:
-                continue
-            seen.add(name)
-            if not all(_importable(m) for m in resource.modules):
+            if name not in seen:
+                seen.add(name)
                 total += PIP_SIZES.get(name, 0)
     return total
 
@@ -351,19 +327,45 @@ def _pip(specs, log=None, should_stop=None) -> None:
         )
 
 
-def _fetch(url: str, dest: Path, progress=None, log=None, should_stop=None) -> None:
-    """Download to ``<dest>.part``, then rename.
+def _tls() -> ssl.SSLContext:
+    """A context that can verify the download servers on every platform.
+
+    The Python DazedTL installs on Windows brings no certificate authorities of
+    its own, so urllib's default context refused every HTTPS download there
+    ("unable to get local issuer certificate") while pip, which carries its
+    own, worked. The system's store comes first, so a proxy's certificate
+    that the machine trusts is trusted here too.
+    """
+    try:
+        import truststore
+
+        return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    except ImportError:
+        pass
+    try:
+        import certifi
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
+def _fetch(
+    url: str, dest: Path, sha256: str = "", progress=None, log=None, should_stop=None
+) -> None:
+    """Download to ``<dest>.part``, check it, then rename.
 
     The rename is the only thing that publishes the file, so an interrupted
-    download can never be mistaken for a complete one - which for a 200 MB
-    model would surface much later as an unreadable ONNX graph.
+    or altered download can never be mistaken for a complete one - which for
+    a 200 MB model would surface much later as an unreadable ONNX graph.
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_name(dest.name + ".part")
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     _log(log, f"Downloading {dest.name}")
+    digest = hashlib.sha256()
     try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+        with urllib.request.urlopen(request, timeout=TIMEOUT, context=_tls()) as response:
             total = int(response.headers.get("Content-Length") or 0)
             done = 0
             with open(part, "wb") as handle:
@@ -373,6 +375,7 @@ def _fetch(url: str, dest: Path, progress=None, log=None, should_stop=None) -> N
                     if not chunk:
                         break
                     handle.write(chunk)
+                    digest.update(chunk)
                     done += len(chunk)
                     if progress is not None:
                         progress(done, total)
@@ -381,43 +384,16 @@ def _fetch(url: str, dest: Path, progress=None, log=None, should_stop=None) -> N
                 f"{dest.name} stopped short: {done} of {total} bytes. "
                 "Nothing was kept."
             )
+        if sha256 and digest.hexdigest() != sha256:
+            raise OSError(
+                f"{dest.name} does not match its published checksum. "
+                "Nothing was kept."
+            )
         part.replace(dest)
         _log(log, f"{dest.name} ready ({human(done)})")
     except BaseException:
         part.unlink(missing_ok=True)
         raise
-
-
-def _unpack(archive: Path, into: Path, log=None) -> None:
-    """Flatten an archive into *into*.
-
-    Flattened on purpose: the library loader looks in one directory, and the
-    published archives nest their payload differently per platform. Extraction
-    goes to a staging folder first and only plain files are moved across by
-    basename, so nothing an archive claims about its own paths can write
-    outside the destination.
-    """
-    import py7zr
-
-    staging = into.parent / f"{into.name}.unpack"
-    shutil.rmtree(staging, ignore_errors=True)
-    staging.mkdir(parents=True, exist_ok=True)
-    try:
-        with py7zr.SevenZipFile(archive, "r") as bundle:
-            bundle.extractall(path=staging)
-        into.mkdir(parents=True, exist_ok=True)
-        moved = 0
-        root = staging.resolve()
-        for path in staging.rglob("*"):
-            if not path.is_file():
-                continue
-            if root not in path.resolve().parents:
-                continue
-            shutil.move(str(path), str(into / path.name))
-            moved += 1
-        _log(log, f"Unpacked {moved} file(s) into {into}")
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
 
 
 def activate() -> None:
@@ -458,10 +434,10 @@ def install(resources, progress=None, log=None, should_stop=None) -> None:
 
         specs = [
             spec
-            for spec in resource.pips
+            for spec in resource.missing_pips()
             if _requirement_name(spec) not in handled
         ]
-        if specs and not all(_importable(m) for m in resource.modules):
+        if specs:
             _log(log, f"- {resource.label}: installing {', '.join(specs)}")
             _pip(specs, log=log, should_stop=should_stop)
             activate()
@@ -470,42 +446,21 @@ def install(resources, progress=None, log=None, should_stop=None) -> None:
 
         if resource.dest is None:
             continue
-        if installed(resource):
+        if resource.dest.is_file():
             _log(log, f"- {resource.label}: already here")
             continue
 
         _check(should_stop)
-        if resource.archive:
-            if not _patchmatch_asset() and resource.key == "patchmatch":
-                raise RuntimeError(
-                    "No PatchMatch build is published for this platform."
-                )
-            # Downloaded outside the library folder so a failed unpack cannot
-            # leave an archive sitting where the loader goes looking.
-            staging = DATA_DIR / f"_{resource.key}.archive"
-            _fetch(
-                resource.url,
-                staging,
-                progress=lambda done, total, key=resource.key: (
-                    progress(key, done, total) if progress else None
-                ),
-                log=log,
-                should_stop=should_stop,
-            )
-            try:
-                _unpack(staging, resource.dest, log=log)
-            finally:
-                staging.unlink(missing_ok=True)
-        else:
-            _fetch(
-                resource.url,
-                resource.dest,
-                progress=lambda done, total, key=resource.key: (
-                    progress(key, done, total) if progress else None
-                ),
-                log=log,
-                should_stop=should_stop,
-            )
+        _fetch(
+            resource.url,
+            resource.dest,
+            resource.sha256,
+            progress=lambda done, total, key=resource.key: (
+                progress(key, done, total) if progress else None
+            ),
+            log=log,
+            should_stop=should_stop,
+        )
 
     activate()
 

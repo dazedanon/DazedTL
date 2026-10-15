@@ -10,6 +10,15 @@ from pathlib import Path
 
 from dazedtl.storage import write_bytes, write_json
 
+#: The background reconstructions this editor runs: deterministic, with
+#: nothing to download. Installed models are never chosen here.
+REPAIRS = ("telea", "ns", "harmonic")
+
+
+def repair_method(value):
+    """*value* when this editor runs it, otherwise Telea."""
+    return value if value in REPAIRS else "telea"
+
 
 def local_ocr():
     # This package generation bundles its ONNX weights. The newer `rapidocr`
@@ -98,7 +107,7 @@ def set_entry(job, value):
     for block, raw in zip(entry.blocks, value["blocks"]):
         measured = measure(pixels, block, [item.box for item in entry.blocks]).to_dict()
         measured.update(raw.get("style") or {})
-        measured["inpaint_method"] = "telea"
+        measured["inpaint_method"] = repair_method(measured.get("inpaint_method"))
         block.style = Style.from_dict(measured)
     apply_flags(entry)
     job.images = [entry if old.relpath == entry.relpath else old for old in job.images]
@@ -187,24 +196,23 @@ def render(job, entry, *, expected_candidate=None, expected_original=None):
 
     import numpy as np
     from PIL import Image
+    from util.imagetools import pngfile
     from util.imagetools.paint import load_cut, load_layer
     from util.imagetools.render import render_entry
     from util.imagetools.style import ensure
 
     source_path = job.source_path(entry)
     _verify_pixels(job, entry, expected_candidate, expected_original)
-    with Image.open(source_path) as original:
-        mode = original.mode
+    # The output is the source file with new pixels, so its header, colour
+    # profile, gamma and text chunks reach the game unchanged.
+    template = source_path.read_bytes()
+    with Image.open(BytesIO(template)) as original:
         source = np.array(original.convert("RGBA"))
-        metadata = {
-            key: original.info[key]
-            for key in ("icc_profile", "dpi", "exif")
-            if key in original.info
-        }
         colour_key = original.info.get("transparency")
-    if mode not in {"RGB", "RGBA", "L", "LA"}:
+    problem = pngfile.header(template).problem()
+    if problem:
         raise ValueError(
-            "Indexed PNGs need the assistant image route to preserve their palette."
+            f"This image needs the assistant image route, because {problem}."
         )
     if colour_key is not None:
         raise ValueError(
@@ -223,9 +231,9 @@ def render(job, entry, *, expected_candidate=None, expected_original=None):
         )
     for block in entry.blocks:
         if block.style is not None:
-            # Background repair in this tool is deterministic OpenCV only.
-            # Installed generative models are not silently selected by `ensure`.
-            block.style.inpaint_method = "telea"
+            # Background repair in this tool is deterministic only. Installed
+            # generative models are not silently selected by `ensure`.
+            block.style.inpaint_method = repair_method(block.style.inpaint_method)
             if block.style.font:
                 block.style.font = catalog[block.style.font]
     try:
@@ -241,13 +249,12 @@ def render(job, entry, *, expected_candidate=None, expected_original=None):
                 block.style.font = names[block.block_id]
     if result.failures:
         raise ValueError("; ".join(note.message for note in result.failures))
-    output = BytesIO()
-    Image.fromarray(result.array).convert(mode).save(output, format="PNG", **metadata)
+    output = pngfile.encode_like(result.array, template)
     _verify_pixels(job, entry, expected_candidate, expected_original)
     original_path = job.original_path(entry)
     if not original_path.is_file():
         write_bytes(original_path, job.image_path(entry).read_bytes())
-    write_bytes(job.image_path(entry), output.getvalue())
+    write_bytes(job.image_path(entry), output)
     entry.status = "rendered"
     return [
         {

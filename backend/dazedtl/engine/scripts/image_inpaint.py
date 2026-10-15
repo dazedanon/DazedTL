@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
-"""Expose DazedTL's local inpainting backends to image-translation helpers."""
+"""Expose DazedTL's local inpainting backends to image-translation helpers.
+
+Candidates keep the source PNG's header and every ancillary chunk (gamma,
+colour profile, text) and change no pixel outside the mask, including the
+colour stored under fully transparent pixels. ``install`` fetches the packages
+and models a method needs into this same Python.
+"""
 
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import sys
@@ -33,28 +40,34 @@ def _runtime():
         import numpy as np
         from PIL import Image
 
-        from util.imagetools import inpaint
+        from util.imagetools import inpaint, pngfile
     except (ImportError, ModuleNotFoundError) as exc:
         raise RuntimeError(
-            "The image editor resources are unavailable in this Python "
-            f"({sys.executable}): {exc}. Open Edit text in DazedTL and accept "
-            "the resource download before using the local inpainting bridge."
+            f"This Python ({sys.executable}) lacks the image libraries DazedTL "
+            f"installs with the app ({exc}). Run the bridge with the Image "
+            "Editor Python named in the image translation task."
         ) from exc
-    return np, Image, inpaint
+    return np, Image, inpaint, pngfile
 
 
 def _status() -> dict:
-    _np, _image, inpaint = _runtime()
+    _np, _image, inpaint, _pngfile = _runtime()
+    from util.imagetools import resources
+
     methods = []
     for method in inpaint.METHODS:
-        methods.append(
-            {
-                "available": inpaint.available(method),
-                "label": inpaint.METHOD_LABELS[method],
-                "name": method,
-                "status": inpaint.status(method),
-            }
-        )
+        row = {
+            "available": inpaint.available(method),
+            "label": inpaint.METHOD_LABELS[method],
+            "name": method,
+            "status": inpaint.status(method),
+        }
+        if not row["available"] and method not in inpaint.LOCAL:
+            row["download"] = resources.human(
+                resources.estimate([resources.get(method)])
+            )
+            row["install"] = inpaint.install_command(method)
+        methods.append(row)
     return {
         "ok": True,
         "python": sys.executable,
@@ -62,21 +75,47 @@ def _status() -> dict:
     }
 
 
+def _install(args) -> dict:
+    """Fetch what the named methods need, then report the methods again."""
+    _np, _image, inpaint, _pngfile = _runtime()
+    from util.imagetools import resources
+
+    unknown = [method for method in args.methods if method not in inpaint.METHODS]
+    if unknown:
+        raise ValueError(
+            f"Unknown method {unknown[0]!r}; choose from {', '.join(inpaint.METHODS)}"
+        )
+    chosen = [
+        resources.get(method) for method in args.methods if method not in inpaint.LOCAL
+    ]
+    wanted = [resource for resource in chosen if not resources.installed(resource)]
+    # stdout stays one JSON document; pip's and the download's progress go
+    # to stderr as they happen.
+    resources.install(wanted, log=lambda line: print(line, file=sys.stderr, flush=True))
+    return {
+        **_status(),
+        "installed": [resource.key for resource in wanted],
+    }
+
+
 def _load_inputs(image_path: Path, mask_path: Path):
-    np, Image, inpaint = _runtime()
+    np, Image, inpaint, pngfile = _runtime()
     if not image_path.is_file():
         raise ValueError(f"Input image does not exist: {image_path}")
     if not mask_path.is_file():
         raise ValueError(f"Mask image does not exist: {mask_path}")
 
-    with Image.open(image_path) as source:
-        if source.format != "PNG":
-            raise ValueError(f"Input must be a PNG, not {source.format or 'unknown'}")
-        if source.mode not in ("RGB", "RGBA"):
-            raise ValueError(
-                f"Input must be an 8-bit RGB or RGBA PNG, not mode {source.mode}"
-            )
-        source_mode = source.mode
+    data = image_path.read_bytes()
+    if not data.startswith(pngfile.SIGNATURE):
+        raise ValueError("Input must be a PNG")
+    head = pngfile.header(data)
+    source_mode = head.mode
+    if source_mode not in ("RGB", "RGBA"):
+        raise ValueError(
+            "Input must be an 8-bit RGB or RGBA PNG, not colour type "
+            f"{head.colour_type} at {head.bit_depth} bits"
+        )
+    with Image.open(io.BytesIO(data)) as source:
         rgba = np.asarray(source.convert("RGBA"), dtype=np.uint8).copy()
 
     with Image.open(mask_path) as source_mask:
@@ -88,7 +127,7 @@ def _load_inputs(image_path: Path, mask_path: Path):
         mask = np.asarray(source_mask.convert("L"), dtype=np.uint8) > 0
     if not mask.any():
         raise ValueError("Mask contains no nonzero pixels")
-    return np, Image, inpaint, rgba, mask, source_mode
+    return np, inpaint, pngfile, data, rgba, mask, source_mode
 
 
 def _context_window(rgba, mask, method: str, inpaint, np) -> tuple[int, int, int, int]:
@@ -100,13 +139,7 @@ def _context_window(rgba, mask, method: str, inpaint, np) -> tuple[int, int, int
     tight_mask = mask[y:y2, x:x2]
     tight_alpha = rgba[y:y2, x:x2, 3]
     crowded = float((tight_mask | (tight_alpha == 0)).mean()) > inpaint.CROWDED
-    if inpaint.needs_context(method):
-        share = inpaint.CONTEXT
-    elif crowded:
-        share = inpaint.CROWDED_CONTEXT
-    else:
-        share = 0.0
-    pad = int(max(x2 - x, y2 - y) * share)
+    pad = inpaint.context_pad(method, x2 - x, y2 - y, crowded)
     return (
         max(0, x - pad),
         max(0, y - pad),
@@ -115,7 +148,7 @@ def _context_window(rgba, mask, method: str, inpaint, np) -> tuple[int, int, int
     )
 
 
-def _save_png(Image, pixels, mode: str, output: Path, *, replace: bool) -> None:
+def _save_png(encoded: bytes, output: Path, *, replace: bool) -> None:
     if output.exists() and not replace:
         raise ValueError(f"Output already exists (pass --replace to overwrite it): {output}")
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -125,17 +158,16 @@ def _save_png(Image, pixels, mode: str, output: Path, *, replace: bool) -> None:
     os.close(descriptor)
     temporary = Path(temporary_name)
     try:
-        rendered = Image.fromarray(pixels, mode="RGBA")
-        if mode == "RGB":
-            rendered = rendered.convert("RGB")
-        rendered.save(temporary, format="PNG")
+        temporary.write_bytes(encoded)
         os.replace(temporary, output)
     finally:
         temporary.unlink(missing_ok=True)
 
 
 def _fill(args) -> dict:
-    np, Image, inpaint, rgba, mask, source_mode = _load_inputs(args.image, args.mask)
+    np, inpaint, pngfile, data, rgba, mask, source_mode = _load_inputs(
+        args.image, args.mask
+    )
     if args.method not in inpaint.METHODS:
         raise ValueError(
             f"Unknown method {args.method!r}; choose from {', '.join(inpaint.METHODS)}"
@@ -160,10 +192,17 @@ def _fill(args) -> dict:
     if not np.array_equal(candidate[~mask], rgba[~mask]):
         raise RuntimeError("Reconstruction changed pixels outside the supplied mask")
 
-    _save_png(Image, candidate, source_mode, args.output, replace=args.replace)
+    _save_png(pngfile.encode_like(candidate, data), args.output, replace=args.replace)
     return {
         "changed_mask_pixels": changed,
         "context_xywh": [x, y, x2 - x, y2 - y],
+        "kept_chunks": sorted(
+            {
+                kind.decode("latin-1")
+                for kind, _chunk in pngfile.chunks(data)
+                if kind not in (b"IHDR", b"IDAT", b"IEND")
+            }
+        ),
         "mask_pixels": int(mask.sum()),
         "method": args.method,
         "mode": source_mode,
@@ -176,6 +215,12 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("status", help="Report installed and loadable backends as JSON")
+    install = commands.add_parser(
+        "install", help="Download the packages and models the named methods need"
+    )
+    install.add_argument(
+        "methods", nargs="+", help="Methods reported unavailable by status, such as aot"
+    )
 
     fill = commands.add_parser(
         "fill", help="Reconstruct exactly the nonzero pixels in a full-size mask"
@@ -193,7 +238,12 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        payload = _status() if args.command == "status" else _fill(args)
+        if args.command == "status":
+            payload = _status()
+        elif args.command == "install":
+            payload = _install(args)
+        else:
+            payload = _fill(args)
     except Exception as exc:
         _print(
             {"error": f"{type(exc).__name__}: {exc}", "ok": False},
