@@ -384,6 +384,8 @@ class PublicationTests(unittest.TestCase):
         engine._sha256 = lambda value: "task"
         engine._canonical_bytes = lambda value: b""
         engine.status = lambda root: {}
+        refreshed = []
+        engine.refresh_kept = lambda root, kept: refreshed.append((root, kept))
         write_json(
             task_dir / "findings.json",
             {
@@ -476,6 +478,9 @@ class PublicationTests(unittest.TestCase):
             state = text.qa_state(plan)
         _close_contracts()
         TypeAdapter(QaState).validate_json(json.dumps(state), strict=True)
+        # A current task's never-translated report follows what Plugin files
+        # keeps, here nothing.
+        self.assertEqual(refreshed, [(task_dir, [])])
         self.assertEqual(state["findings"][0]["correction"], "Arjilee Plateau")
         self.assertEqual(state["findings"][0]["files"], ["MapInfos.json"])
         scene = state["findings"][1]

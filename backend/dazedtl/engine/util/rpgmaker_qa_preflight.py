@@ -7,15 +7,17 @@ QA has no translation of these to review and never corrects them; they need
 translation or a plugin task instead. Plugin settings the plugin task keeps in
 Japanese on purpose, such as lookup keys, are not reported. Each file or
 plugin is one source, with whether players can reach a custom file's or
-plugin's text.
+plugin's text. The report records every plugin setting it read, so it can
+follow the plugin task's later decisions without reading the game again.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from util.rpgmaker_qa_reach import MAY_SHOW, Reach
 
@@ -175,6 +177,35 @@ def _text(value: str) -> str:
         value = inner
 
 
+def _settings(entries: list[Any]) -> list[tuple[tuple, str]]:
+    """Each turned-on plugin's Japanese settings that may be text players
+    read, rather than code or an asset path, by where they are."""
+    found = []
+    for plugin in entries:
+        if not isinstance(plugin, dict) or plugin.get("status") is not True:
+            continue
+        for parts, value in _leaves(plugin.get("parameters") or {}):
+            if (
+                japanese(value)
+                and not _SCRIPT_RE.search(value)
+                and not _ASSET_PATH_RE.match(value)
+            ):
+                found.append(((str(plugin.get("name") or ""), *parts), value))
+    return found
+
+
+def kept_digest(kept: Iterable[dict[str, Any]]) -> str:
+    """The kept settings' digest, whatever their order."""
+    rows = sorted(
+        json.dumps(
+            [setting["plugin"], [*setting["path"]], setting["value"]],
+            ensure_ascii=False,
+        )
+        for setting in kept
+    )
+    return hashlib.sha256("\n".join(rows).encode("utf-8")).hexdigest()
+
+
 def _plugin_entries(script: Path) -> list[Any]:
     """The game's plugin list in js/plugins.js, or none it can read."""
     try:
@@ -206,7 +237,7 @@ def preflight(
         covered.setdefault(record["file"], set()).update(record["live_pointers"])
     entries = _plugin_entries(data.parent / "js" / "plugins.js")
     reach = Reach(data, entries)
-    rows: dict[str, list[dict[str, Any]]] = {name: [] for name in _KINDS}
+    rows: dict[str, list[dict[str, Any]]] = {"untranslated": [], "custom_data": []}
     for path in sorted(data.glob("*.json"), key=lambda item: item.name):
         try:
             document = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -221,43 +252,81 @@ def preflight(
             for parts, value in _leaves(document):
                 if japanese(value):
                     _entry(rows["custom_data"], path.name, parts, value, "custom data")
+    settings = _settings(entries)
+    plugins = {
+        "reach": {
+            name: list(reach.plugin(name))
+            for name in sorted({location[0] for location, _value in settings})
+        },
+        "settings": [[list(location), value] for location, value in settings],
+    }
+    return _report(
+        {name: len(found) for name, found in rows.items()},
+        _sources(rows, lambda _kind, file, _plugin: reach.data_file(file)),
+        plugins,
+        kept,
+    )
+
+
+def with_kept(
+    document: dict[str, Any], kept: Iterable[dict[str, Any]]
+) -> dict[str, Any] | None:
+    """A report again for the plugin settings the plugin task keeps now, from
+    the settings it recorded, or None for one from before it recorded them."""
+    if "plugins" not in document:
+        return None
+    others = [source for source in document["sources"] if source["kind"] != "plugin"]
+    return _report(document["counts"], others, document["plugins"], kept)
+
+
+def _report(
+    counts: dict[str, int],
+    others: list[dict[str, Any]],
+    plugins: dict[str, Any],
+    kept: Iterable[dict[str, Any]],
+) -> dict[str, Any]:
+    """The report from its data and custom file sources and the plugin
+    settings it read, leaving out those the plugin task keeps."""
+    kept = list(kept)
     decided = {
         (pointer((setting["plugin"], *setting["path"])), setting["value"])
         for setting in kept
     }
+    rows: list[dict[str, Any]] = []
     left = 0
-    for plugin in entries:
-        if not isinstance(plugin, dict) or plugin.get("status") is not True:
+    for location, value in plugins["settings"]:
+        if (pointer(location), _text(value)) in decided:
+            left += 1
             continue
-        for parts, value in _leaves(plugin.get("parameters") or {}):
-            if (
-                not japanese(value)
-                or _SCRIPT_RE.search(value)
-                or _ASSET_PATH_RE.match(value)
-            ):
-                continue
-            location = (str(plugin.get("name") or ""), *parts)
-            if (pointer(location), _text(value)) in decided:
-                left += 1
-                continue
-            _entry(
-                rows["plugin_parameters"], "js/plugins.js", location, value,
-                "plugin parameter",
-            )
-    sources = _sources(rows, reach)
+        _entry(rows, "js/plugins.js", location, value, "plugin parameter")
+    reached = plugins["reach"]
+    sources = _ordered(
+        others
+        + _sources(
+            {"plugin_parameters": rows},
+            lambda _kind, _file, plugin: tuple(reached[plugin]),
+        )
+    )
     return {
         "schema": SCHEMA,
-        "counts": {name: len(rows[name]) for name in _KINDS},
-        # Plugin settings left out because the plugin task keeps them.
+        "counts": {**counts, "plugin_parameters": len(rows)},
+        # Plugin settings left out because the plugin task keeps them, and
+        # the decisions they were left out by.
         "kept": left,
+        "kept_sha256": kept_digest(kept),
         "may_show": sum(item["count"] for item in sources if may_show(item)),
         "sources": sources,
+        "plugins": plugins,
     }
 
 
-def _sources(rows: dict[str, list[dict[str, Any]]], reach: Reach | None) -> list[dict]:
+def _sources(
+    rows: dict[str, list[dict[str, Any]]],
+    reach: Callable[[str, str, str], tuple[str, str]] | None,
+) -> list[dict]:
     """Rows by file, and plugin settings by plugin, those players may see
-    first; without reach, sources say nothing of it."""
+    first; *reach* gives a custom file's or plugin's reach and evidence from
+    its kind, file and plugin, and without it sources say nothing of it."""
     sources: dict[tuple[str, str, str], dict[str, Any]] = {}
     for category, kind in _KINDS.items():
         for row in rows.get(category, []):
@@ -271,9 +340,8 @@ def _sources(rows: dict[str, list[dict[str, Any]]], reach: Reach | None) -> list
                     "count": 0,
                 }
                 if reach and kind != "data":
-                    source["reach"], source["evidence"] = (
-                        reach.plugin(plugin) if kind == "plugin"
-                        else reach.data_file(row["file"])
+                    source["reach"], source["evidence"] = reach(
+                        kind, row["file"], plugin
                     )
                 source["texts"] = []
             source["count"] += 1
@@ -281,9 +349,13 @@ def _sources(rows: dict[str, list[dict[str, Any]]], reach: Reach | None) -> list
                 source["texts"].append(
                     {key: row[key] for key in ("pointer", "kind", "text")}
                 )
+    return _ordered(list(sources.values()))
+
+
+def _ordered(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
     kinds = list(_KINDS.values())
     return sorted(
-        sources.values(),
+        sources,
         key=lambda item: (
             not may_show(item), kinds.index(item["kind"]),
             item["file"], item.get("plugin", ""),

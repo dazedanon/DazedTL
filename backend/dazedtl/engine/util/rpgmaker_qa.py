@@ -45,8 +45,10 @@ from util import rpgmaker_qa_lint as lint
 from util.rpgmaker_header_check import check as check_headers
 from util.rpgmaker_qa_preflight import (
     REASON as NOT_TRANSLATED_REASON,
+    kept_digest,
     preflight,
     read_sources,
+    with_kept,
 )
 from util.game_settings import (
     MESSAGE_ROWS_KEY,
@@ -769,8 +771,12 @@ def _safe_task_root(output_root: str | Path, game_root: Path) -> Path:
 
 
 @contextmanager
-def _task_lock(task_dir: Path):
-    """Serialize cross-process checkpoint mutations for parallel helpers."""
+def _task_lock(task_dir: Path, wait: bool = True):
+    """Serialize cross-process checkpoint mutations for parallel helpers.
+
+    Without *wait*, it yields whether it got the lock instead of waiting for
+    another process to let go of it.
+    """
     lock_path = task_dir / ".checkpoint.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with open(lock_path, "a+b") as handle:
@@ -779,16 +785,26 @@ def _task_lock(task_dir: Path):
             handle.write(b"\0")
             handle.flush()
         handle.seek(0)
-        if os.name == "nt":
-            import msvcrt
-
-            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
-        else:
-            import fcntl
-
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         try:
-            yield
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(
+                    handle.fileno(), msvcrt.LK_LOCK if wait else msvcrt.LK_NBLCK, 1
+                )
+            else:
+                import fcntl
+
+                fcntl.flock(
+                    handle.fileno(), fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB)
+                )
+        except OSError:
+            if wait:
+                raise
+            yield False
+            return
+        try:
+            yield True
         finally:
             handle.seek(0)
             if os.name == "nt":
@@ -2470,7 +2486,10 @@ def prepare_task(
     inventory lacks is left out.
 
     *kept* names the plugin settings the plugin task keeps in Japanese on
-    purpose, which the never-translated report leaves out.
+    purpose, which the never-translated report leaves out. A task prepared
+    again keeps its review, but reads that report again, since plugin
+    settings, custom data files and the plugin task's decisions change it
+    without changing the inventory.
     """
     game = Path(game_root).expanduser().resolve()
     data = Path(data_root).expanduser().resolve()
@@ -2513,6 +2532,9 @@ def prepare_task(
             task = _read_json(existing)
             if task.get("schema") != TASK_SCHEMA:
                 raise ValueError(f"Existing QA task has an unsupported schema: {task_dir}")
+            report = preflight(data, manifest, kept)
+            with _task_lock(task_dir):
+                _write_report(task_dir, report)
             return task_dir, status(task_dir)
 
         staging = new_folder(task_parent, f".{task_key}.")
@@ -2520,8 +2542,7 @@ def prepare_task(
             write_manifest(manifest, staging / "inventory.json")
             _atomic_write_json(staging / "inventory-validation.json", validation)
             # Japanese never translated is reported, never silently skipped.
-            untranslated = preflight(data, manifest, kept)
-            _atomic_write_json(staging / "preflight.json", untranslated)
+            _atomic_write_json(staging / "preflight.json", preflight(data, manifest, kept))
             _atomic_write_json(staging / "context.json", context)
             compact_items = _compact_items(manifest, context)
             forced_candidates = {
@@ -2609,10 +2630,6 @@ def prepare_task(
                 "context_sha256": context["content_sha256"],
                 "screen_index_sha256": screen_index_document["content_sha256"],
                 "counts": manifest["counts"],
-                "not_translated": {
-                    "total": sum(untranslated["counts"].values()),
-                    "may_show": untranslated["may_show"],
-                },
             }
             checkpoint = {
                 "schema": CHECKPOINT_SCHEMA,
@@ -2876,7 +2893,7 @@ def status(task_dir: str | Path) -> dict[str, Any]:
             "total": task["counts"]["records"],
             "unresolved": task["counts"]["unresolved"],
         },
-        "not_translated": _not_translated(task),
+        "not_translated": _not_translated(root),
         **({"interface": task["interface"]} if task.get("interface") else {}),
         "screen": {
             "accepted": screen["accepted_items"],
@@ -2930,14 +2947,98 @@ def status(task_dir: str | Path) -> dict[str, Any]:
     }
 
 
-def _not_translated(task: dict[str, Any]) -> dict[str, int]:
+# Each task's never-translated counts and the plugin decisions they follow,
+# kept while its preflight.json is unchanged: the app reads them every poll.
+_REPORTS: dict[Path, tuple[tuple[int, int, int], dict[str, Any]]] = {}
+
+
+def _report_summary(root: Path) -> dict[str, Any]:
+    path = root / "preflight.json"
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        # A task from before the preflight.
+        return {"total": 0, "may_show": 0, "kept_sha256": None}
+    signature = (stat.st_ino, stat.st_size, stat.st_mtime_ns)
+    cached = _REPORTS.get(path)
+    if cached and cached[0] == signature:
+        return cached[1]
+    report = _read_json(path)
+    summary = {**_counted(report), "kept_sha256": report.get("kept_sha256")}
+    _REPORTS[path] = (signature, summary)
+    return summary
+
+
+def _counted(report: dict[str, Any]) -> dict[str, int]:
+    """A report's never-translated text, and what players may see of it; one
+    from before reach was read counts it all as what players may see."""
+    total = sum(report["counts"].values())
+    return {"total": total, "may_show": report.get("may_show", total)}
+
+
+def _not_translated(root: Path) -> dict[str, int]:
     """Japanese never translated, which QA did not review: all of it, and
-    what players may see. A task prepared before reach was read counts it
-    all as what players may see."""
-    if "not_translated" in task:
-        return task["not_translated"]
-    total = sum((task.get("preflight") or {}).values())
-    return {"total": total, "may_show": total}
+    what players may see, as the task's preflight.json reports it now."""
+    summary = _report_summary(root)
+    return {"total": summary["total"], "may_show": summary["may_show"]}
+
+
+def _not_translated_report(report: dict[str, Any]) -> dict[str, Any]:
+    """Never a passing count: Japanese no reviewer read, by file and plugin,
+    with whether players can reach it; preflight.json lists its text."""
+    return {
+        "reason": NOT_TRANSLATED_REASON,
+        **_counted(report),
+        "sources": [
+            {key: value for key, value in source.items() if key != "texts"}
+            for source in read_sources(report)
+        ],
+    }
+
+
+def _write_report(root: Path, report: dict[str, Any]) -> None:
+    """Saves the never-translated report a task holds now, its findings' copy
+    first; the caller holds the task's lock."""
+    path = root / "preflight.json"
+    if path.is_file() and _read_json(path) == report:
+        return
+    findings = root / "findings.json"
+    if findings.is_file():
+        document = _read_json(findings)
+        document["not_translated"] = _not_translated_report(report)
+        if "coverage" in document:
+            document["coverage"]["not_translated"] = _counted(report)
+        _atomic_write_json(findings, document)
+    _atomic_write_json(path, report)
+
+
+def refresh_kept(task_dir: str | Path, kept: Iterable[dict[str, Any]]) -> None:
+    """Has a task's never-translated report follow the plugin task's
+    decisions, which change without changing the game's files, from the
+    plugin settings the report recorded.
+
+    Polls call it, so it costs a file check while the decisions are those
+    the report followed, and leaves the work to a later call while another
+    process holds the task. A report from before it recorded the settings
+    waits for the task to be prepared again.
+    """
+    root = Path(task_dir).expanduser().resolve()
+    kept = list(kept)
+    recorded = _report_summary(root)["kept_sha256"]
+    if recorded is None or recorded == kept_digest(kept):
+        return
+    with _task_lock(root, wait=False) as locked:
+        if not locked:
+            return
+        report = with_kept(_read_json(root / "preflight.json"), kept)
+        if report is None:
+            return
+        try:
+            _write_report(root, report)
+        except OSError:
+            # Windows can't replace a file another program is reading; a
+            # later poll writes it.
+            pass
 
 
 def _declined_lint(screen: dict[str, Any]) -> int:
@@ -6197,17 +6298,9 @@ def _draft_document(
         "not_reviewed": _not_reviewed(declined, records),
         "sweep_dropped": sweep_dropped,
         "scene_dropped": scene_dropped,
-        # Never a passing count: Japanese no reviewer read, by file and
-        # plugin, with whether players can reach it; preflight.json lists
-        # its text.
-        "not_translated": {
-            "reason": NOT_TRANSLATED_REASON,
-            **_not_translated(task),
-            "sources": [
-                {key: value for key, value in source.items() if key != "texts"}
-                for source in read_sources(_read_json(root / "preflight.json"))
-            ],
-        },
+        "not_translated": _not_translated_report(
+            _read_json(root / "preflight.json")
+        ),
     }
 
 
@@ -7014,6 +7107,10 @@ def _complete_editorial(
         "superseded": superseded,
         "lint_dropped": lint_dropped,
         "editorial_rounds": int(editorial.get("round", 0)),
+        # Plugin files' decisions may have changed the report since the draft.
+        "not_translated": _not_translated_report(
+            _read_json(root / "preflight.json")
+        ),
     }
     findings_path = root / "findings.json"
     checkpoint["stage"] = "complete"

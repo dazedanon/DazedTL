@@ -87,6 +87,16 @@ def undecided(item):
     )
 
 
+# Each game's kept settings while its plugin state and the file that state
+# describes are unchanged: Text QA asks on every poll.
+_KEPT = {}
+
+
+def _signature(path):
+    stat = path.stat()
+    return stat.st_ino, stat.st_size, stat.st_mtime_ns
+
+
 def kept_settings(root):
     """Plugin settings whose Japanese Plugin files keeps on purpose, each as
     its plugin, parameter path and value: lookup keys the app protects and
@@ -99,32 +109,56 @@ def kept_settings(root):
     text. A setting another entry of the same plugin leaves open stays out.
     """
     try:
-        value = read_json(project_path(root, WORK + "/state.json"), limit=64_000_000)
-        row = value["files"][value["layout"]]
-        current = digest(project_path(root, value["layout"]).read_bytes())
-        if row.get("issue") or (
-            current not in {row["sourceHash"], row.get("applied", {}).get("afterHash")}
-            and PluginService.row_status(value, row) not in SETTLED
+        path = project_path(root, WORK + "/state.json")
+        signature = _signature(path)
+        cached = _KEPT.get(path)
+        if (
+            cached
+            and cached[0] == signature
+            and (cached[1] is None or _signature(cached[1]) == cached[2])
         ):
-            return []
-        kept, open_ = set(), set()
-        for item in row["occurrences"]:
-            if "parameterPath" not in item:
-                continue
-            setting = (
-                item["plugin"],
-                (
-                    *item["parameterPath"],
-                    *(part for part in item["logical"] if part != "$decode"),
-                ),
-                item["value"],
-            )
-            if item["protected"] or item.get("finding", {}).get("disposition") in KEPT:
-                kept.add(setting)
-            else:
-                open_.add(setting)
-    except OSError, ValueError, KeyError, TypeError, AttributeError:
+            return list(cached[3])
+        value = read_json(path, limit=64_000_000)
+    except OSError, ValueError:
         return []
+    layout, saved, kept = None, None, []
+    try:
+        layout = project_path(root, value["layout"])
+        saved = _signature(layout)
+        kept = _kept(value, digest(layout.read_bytes()))
+    except OSError:
+        return []
+    except ValueError, KeyError, TypeError, AttributeError:
+        # Plugin files has not found the plugin list yet, or another app
+        # version saved state it can't read.
+        layout = None
+    _KEPT[path] = (signature, layout, saved, kept)
+    return list(kept)
+
+
+def _kept(value, current):
+    row = value["files"][value["layout"]]
+    if row.get("issue") or (
+        current not in {row["sourceHash"], row.get("applied", {}).get("afterHash")}
+        and PluginService.row_status(value, row) not in SETTLED
+    ):
+        return []
+    kept, open_ = set(), set()
+    for item in row["occurrences"]:
+        if "parameterPath" not in item:
+            continue
+        setting = (
+            item["plugin"],
+            (
+                *item["parameterPath"],
+                *(part for part in item["logical"] if part != "$decode"),
+            ),
+            item["value"],
+        )
+        if item["protected"] or item.get("finding", {}).get("disposition") in KEPT:
+            kept.add(setting)
+        else:
+            open_.add(setting)
     return [
         {"plugin": plugin, "path": list(path), "value": text}
         for plugin, path, text in sorted(kept - open_, key=repr)

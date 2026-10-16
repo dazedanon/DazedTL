@@ -203,6 +203,8 @@ def _set_aside(plan, log):
 def qa_state(plan):
     from util import rpgmaker_qa as qa
 
+    from dazedtl.plugins.service import kept_settings
+
     if not _pointer(plan).exists():
         return {
             "current": False,
@@ -215,6 +217,10 @@ def qa_state(plan):
     saved, root, task, document = _prepared(plan)
     rules_changed = task["engine_fingerprint"] != qa._engine_fingerprint()
     current = saved["binding"] == binding(plan) and not rules_changed
+    if current:
+        # Plugin files decides what it keeps in Japanese without changing the
+        # game's files; the never-translated report follows its decisions.
+        qa.refresh_kept(root, kept_settings(plan["project"]["source"]))
     # Batches applied or undone from this task, oldest first; a restored one
     # counts for neither. Records saved before batches named their task count
     # when made after it was prepared.

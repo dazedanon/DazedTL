@@ -928,6 +928,44 @@ assert sorted(row["correction"] for row in findings["findings"]) == [
     "The arousal is building…",
     "The arousal won't stop.",
 ], findings["findings"]
+
+
+def untranslated_sources():
+    document = json.loads((task / "findings.json").read_text(encoding="utf-8"))
+    return [
+        row.get("plugin") or row["file"]
+        for row in document["not_translated"]["sources"]
+    ]
+
+
+# Preparing again keeps the review and reads what was never translated again:
+# the prompt now holds the text the plugin task keeps, which leaves its plugin
+# out of the report and the findings.
+review = (task / "checkpoint.json").read_bytes()
+plugins = game / "js/plugins.js"
+plugins.write_text(
+    plugins.read_text(encoding="utf-8").replace("スキップしますか？", "スキップする？"),
+    encoding="utf-8",
+)
+again, state = qa.prepare_task(
+    game,
+    data,
+    "release",
+    storage,
+    screen_item_limit=3,
+    fit={"widths": {"messageRows": 3}},
+    kept=kept,
+)
+assert again == task and state["stage"] == "complete", state
+assert (task / "checkpoint.json").read_bytes() == review
+assert state["not_translated"] == {"total": 2, "may_show": 1}, state["not_translated"]
+assert untranslated_sources() == ["Map001.json", "Synopsis.json"]
+# Between preparations the report follows the plugin task's decisions from the
+# settings it recorded: without its decision on the prompt, the prompt is
+# listed again.
+qa.refresh_kept(task, kept[:2])
+assert qa.status(task)["not_translated"] == {"total": 3, "may_show": 2}
+assert untranslated_sources() == ["Map001.json", "Prompt", "Synopsis.json"]
 # Source fixes go through the same correction map, apply and regression the
 # app runs on its disposable copy; this game is the test's own copy.
 # The user chose the open question's proposal, so it applies too.
