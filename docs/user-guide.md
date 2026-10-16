@@ -110,6 +110,7 @@ Approved Batch work carries on after DazedTL restarts.
 **Apply to game** writes the translated plugins into the game in one click and keeps a backup of each, which **Recovery** restores.
 Copy the task again to continue, or to have it recheck after you spot untranslated plugin text.
 When **Text QA** finds plugin labels too long for the screen, such as a menu command, the task waits on them: copy it again and your assistant shortens them, or keeps one with its reason, then click **Apply to game**.
+Your assistant checks each shorter label in the game: DazedTL plays it in a hidden window with the shorter text, without changing the game, and the label counts only once it fits there.
 
 **Images** has four steps, and the filled button is always the next one:
 

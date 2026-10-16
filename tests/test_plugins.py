@@ -642,8 +642,48 @@ class PluginTests(unittest.TestCase):
             self.service.continue_task(self.identity, request["requestId"])
         answer["targets"] = {go["id"]: "Go"}
         write_json(request["report"], report)
-        done = self.service.continue_task(self.identity, request["requestId"])
+        # A shorter label counts once the game shows it fitting, on its
+        # screen captured with the copy served in place of the game's file.
+        held = read_json(
+            self.service.continue_task(self.identity, request["requestId"])["request"]
+        )
+        self.assertIn("plugins --capture", held["files"][0]["failedCheck"])
+        plans = []
+        self.service.capture_labels = lambda _project, plan: plans.append(plan)
+        self.service.capture(self.identity, start=True)
+        (plan,) = plans
+        self.assertEqual([row["serve"] for row in plan["files"]], ["js/plugins.js"])
+        self.assertEqual(
+            [(row["text"], row["shows"]) for row in plan["labels"]], [("Start", ["Go"])]
+        )
+        self.service.captured = lambda _project: {
+            "report": "check",
+            "finished_at": "now",
+            "files": {row["path"]: row["hash"] for row in plan["files"]},
+            "labels": [
+                {
+                    "text": "Start",
+                    "title": "Menu",
+                    "shows": ["Go"],
+                    "fits": True,
+                    "note": "The game draws Go in full.",
+                    "capture": "/check/menu.png",
+                }
+            ],
+        }
+        view = self.service.capture(self.identity)
+        check_response("plugins_capture", view)
+        self.assertTrue(view["current"])
+        report.update(
+            {key: held[key] for key in self.identity_keys}, labels=decisions[:1]
+        )
+        write_json(held["report"], report)
+        done = self.service.continue_task(self.identity, held["requestId"])
         self.assertEqual(done["stage"], "complete")
+        self.assertEqual(
+            self.service.load(self.identity)["labels"]["Start"]["capture"],
+            "/check/menu.png",
+        )
         state = self.service.state(self.identity)
         self.assertEqual(
             [row["state"] for row in state["labels"]], ["ready", "kept", "elsewhere"]

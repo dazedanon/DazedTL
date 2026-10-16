@@ -175,6 +175,20 @@ def wait_playtest(workspace, params, result, minutes):
     return call(workspace, "translation_playtest", status)
 
 
+def wait_capture(workspace, params, result, minutes):
+    """Waits while the game shows the shortened labels, then returns how each
+    one shows on its screen."""
+    deadline = time.monotonic() + minutes * 60
+    status = {"project_id": params["project_id"]}
+    while (result.get("operation") or {}).get("status") == "running":
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(5, remaining))
+        result = call(workspace, "plugins_capture", status)
+    return result
+
+
 def main():
     # Assistants read this through a pipe, which Windows encodes in the ANSI
     # code page; game names and text need UTF-8 however the helper is started.
@@ -303,9 +317,23 @@ def main():
         "plugins",
         help="Read plugin work or continue the copied agent task after saving its report",
     )
-    plugins.add_argument(
+    plugins_step = plugins.add_mutually_exclusive_group()
+    plugins_step.add_argument(
         "--continue-request",
         help="Exact active request ID; checks the report and returns the next stage without publishing game files",
+    )
+    plugins_step.add_argument(
+        "--capture",
+        action="store_true",
+        help="Play the game with the shortening request's working copies served in place "
+        "of its files and capture each label's screen again; it writes nothing into the game",
+    )
+    plugins.add_argument(
+        "--wait",
+        type=float,
+        default=0,
+        metavar="MINUTES",
+        help="With --capture: wait up to MINUTES for the capture to finish",
     )
     commands.add_parser("prepare")
     commands.add_parser(
@@ -508,10 +536,16 @@ def main():
                     )
             if args.command == "plugins":
                 method = (
-                    "plugins_continue" if args.continue_request else "plugins_state"
+                    "plugins_continue"
+                    if args.continue_request
+                    else "plugins_capture"
+                    if args.capture
+                    else "plugins_state"
                 )
                 if args.continue_request:
                     params["request_id"] = args.continue_request
+                if args.capture:
+                    params["start"] = True
             # A run's ID; the playtest's --run is a flag instead.
             if isinstance(getattr(args, "run", None), str):
                 params["run_id"] = args.run
@@ -570,6 +604,8 @@ def main():
                 result = settle_qa(args.workspace, params, result)
             if args.command == "playtest" and args.wait > 0:
                 result = wait_playtest(args.workspace, params, result, args.wait)
+            if args.command == "plugins" and args.capture and args.wait > 0:
+                result = wait_capture(args.workspace, params, result, args.wait)
             if getattr(args, "image_step", None) == "scan":
                 while result["scan"] == "running":
                     time.sleep(2)

@@ -77,6 +77,28 @@ class Playtest:
         job = self.guided.execute(project_id, preview["token"])
         write_json(self.guided.path(project_id, "layout-operation"), {"id": job["id"]})
 
+    def check_labels(self, project_id, plan):
+        """Captures the screens of Plugin files' shortened labels with its
+        working copies served in place of the game's files; it keeps its own
+        report, never the playtest's."""
+        preview = self.guided.preview(project_id, "label_capture", None, plan)
+        job = self.guided.execute(project_id, preview["token"])
+        write_json(self.guided.path(project_id, "label-operation"), {"id": job["id"]})
+
+    def labels(self, project_id):
+        """The latest label check, with the operation that makes it, or None."""
+        from dazedtl.compatibility.playtest import latest_labels
+
+        native = self.guided.record(project_id)[1]
+        operation = self.operation(project_id, "label-operation")
+        try:
+            saved = latest_labels(self.guided.backend.workflows.folder(native["id"]))
+        except OSError, ValueError, KeyError, TypeError:
+            saved = None
+        if not operation and not saved:
+            return None
+        return {**(saved or {}), **({"operation": operation} if operation else {})}
+
     def layout(self, project_id, native):
         """The latest layout check: each window's fit and its capture."""
         from dazedtl.compatibility.playtest import latest_layout

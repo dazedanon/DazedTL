@@ -240,6 +240,11 @@ class Workflows:
             if project["engine"] != "MVMZ":
                 raise ValueError("The layout check plays RPG Maker MV and MZ games.")
             selected = {"widths": read_widths(options.get("widths"))}
+        if action == "label_capture":
+            from util.rpgmaker_screens import read_label_plan
+            if project["engine"] != "MVMZ":
+                raise ValueError("The label check plays RPG Maker MV and MZ games.")
+            selected = read_label_plan(options, project["source"])
         if action.startswith(("playtest_", "inspector_", "forge_")) and action != "playtest_status":
             values = SettingsStore(self.workspace).read()["values"]
             selected["playtest"] = {"hotkey": values["tlHotkey"], "forgeHotkey": values["forgeHotkey"],

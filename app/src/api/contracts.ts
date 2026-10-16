@@ -2415,6 +2415,41 @@ export type PluginState = {
   labels: PluginLabel[];
 };
 
+/** How a label of the shortening request shows on its screen captured
+with the working copies served in place of the game's files. */
+export type PluginLabelFit = {
+  text: string;
+  /** The screen QA's capture found it on. */
+  title: string;
+  /** The text that screen should draw now. */
+  shows: string[];
+  /** Whether the game draws that text in full. */
+  fits: boolean;
+  /** What the game draws there. */
+  note: string;
+  /** The screen's capture file. */
+  capture?: string;
+  /** The share of the width it needs the game drew it in. */
+  squeezed?: number;
+  /** Its end is cut off at its window's edge. */
+  clipped?: boolean;
+};
+
+/** The latest capture of the shortening request's labels on their
+screens, for the assistant's project helper. */
+export type PluginCapture = {
+  requestId: string;
+  operation?: PlaytestOperation;
+  finishedAt?: string;
+  /** It served the request's working copies as they are now. */
+  current?: boolean;
+  labels?: PluginLabelFit[];
+  /** Why DazedTL couldn't run the game. */
+  unavailable?: string;
+  /** The step to take next. */
+  next: string;
+};
+
 export type PluginForeignWork = ForeignWork & {
   investigated: number;
   translated: number;
@@ -2537,6 +2572,12 @@ export type ForeignWorkRequest = {
 export type PluginsContinueRequest = {
   project_id: string;
   request_id: string;
+};
+
+export type PluginsCaptureRequest = {
+  project_id: string;
+  /** Capture the shortening request's working copies as they are now first. */
+  start?: boolean;
 };
 
 export type ImagesListRequest = {
@@ -3273,6 +3314,7 @@ export type RpcContract = {
     response: ImageNativeTranslationActionResult;
   };
   plugins_state: { request: ProjectRequest; response: PluginState };
+  plugins_capture: { request: PluginsCaptureRequest; response: PluginCapture };
   plugins_action: { request: ActionRequest; response: PluginActionResult };
   plugins_continue: {
     request: PluginsContinueRequest;

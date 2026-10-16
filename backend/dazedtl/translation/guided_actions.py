@@ -48,6 +48,7 @@ NATIVE_ACTIONS = {
     "glossary_apply",
     "release_playtest",
     "layout_capture",
+    "label_capture",
     "runtime_restore",
     "playtest_install",
     "playtest_status",

@@ -13,6 +13,7 @@ After reopening the app, the same invocation reads the new connection descriptor
 
 The single plugin task uses `plugins` to read its active request and `plugins --continue-request ID` after saving each request-bound report.
 Continuation validates findings, prepares scoped working copies and returns the next request, for whatever is left, to the same agent session until every plugin file is done and every plugin label Text QA found too long for the screen is shortened or kept.
+While a request asks to shorten labels, `plugins --capture --wait MINUTES` plays the game with its working copies served in place of the game's files and returns, for each label, the text its screen draws now, whether it fits and the capture.
 Saved progress appears through the app observer.
 The helper cannot publish plugin files; final runtime Apply stays in the app.
 Read the active request before resuming after a lost reply.

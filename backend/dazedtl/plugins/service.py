@@ -28,7 +28,9 @@ from .documents import (
     leaves,
     occurrence_id,
     occurrences,
+    read_leaf,
     reason,
+    redrawn,
     validate,
 )
 
@@ -173,6 +175,14 @@ def no_labels(_project_id):
     return {"task": "", "labels": []}
 
 
+def no_capture(_project_id, _plan):
+    raise ValueError("DazedTL can't capture this game's screens.")
+
+
+def no_captured(_project_id):
+    return None
+
+
 # Stored reviews and receipts also keep the working copies and frozen bytes that
 # publication and recovery check; the renderer sees only what it shows.
 REVIEW_KEYS = (
@@ -238,6 +248,20 @@ def safe_name(name):
     return name
 
 
+def web_prefix(root):
+    """Where the game's web folder, which holds js/plugins.js, is in it."""
+    matches = [
+        prefix
+        for prefix in ("www/", "")
+        if (Path(root) / (prefix + "js/plugins.js")).is_file()
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            "Choose a game with one unambiguous js/plugins.js or www/js/plugins.js."
+        )
+    return matches[0]
+
+
 class PluginService:
     def __init__(
         self,
@@ -248,6 +272,8 @@ class PluginService:
         documents=None,
         context=no_context,
         labels=no_labels,
+        capture=no_capture,
+        captured=no_captured,
     ):
         self.projects, self.translation, self.backend = projects, translation, backend
         self.documents = documents or Documents()
@@ -257,6 +283,9 @@ class PluginService:
         # Labels Text QA's latest capture found too long for the screen that
         # it holds no line of, which this task shortens.
         self.labels = labels
+        # Starts a capture of those labels' screens with the shortening
+        # copies served in place of the game's files, and reads the latest.
+        self.capture_labels, self.captured = capture, captured
         self.lock = threading.RLock()
         self.previews, self.cache, self.observed, self.foreign = {}, {}, {}, {}
         self.located = {}
@@ -503,16 +532,7 @@ class PluginService:
             )
         if project["engine"] != "MVMZ":
             raise ValueError("Plugin files support RPG Maker MV/MZ.")
-        matches = [
-            prefix
-            for prefix in ("www/", "")
-            if (root / (prefix + "js/plugins.js")).is_file()
-        ]
-        if len(matches) != 1:
-            raise ValueError(
-                "Choose a game with one unambiguous js/plugins.js or www/js/plugins.js."
-            )
-        prefix = matches[0]
+        prefix = web_prefix(root)
         config = prefix + "js/plugins.js"
         parsed = self.documents.parse(
             [
@@ -1133,6 +1153,207 @@ class PluginService:
             for path, items in sorted(found.items())
         ]
 
+    def capture(self, project_id, start=False):
+        """The latest capture of the shortening request's labels on their
+        screens, with its working copies served in place of the game's
+        files, for the assistant's helper; *start* captures the copies as
+        they are now first."""
+        with self.lock:
+            value = self.load(project_id)
+            request = self.fit_request(value)
+            _, root = self.record(project_id)
+            served = self.served(root, request)
+            plan = {
+                "files": served,
+                "labels": self.label_plan(request, served, root),
+                "request": request["requestId"],
+            }
+        if start:
+            self.capture_labels(project_id, plan)
+        return self.capture_view(project_id, request, served)
+
+    @staticmethod
+    def fit_request(value):
+        request = next(
+            (
+                row
+                for row in value["requests"].values()
+                if row["requestId"] == value.get("activeRequest")
+            ),
+            None,
+        )
+        if not request or request["kind"] != "fit":
+            raise ValueError(
+                "Only a request to shorten labels has screens to capture. Read plugin "
+                "status and follow its active request."
+            )
+        return request
+
+    def served(self, root, request):
+        """Each shortening copy of a request as the capture serves it: in
+        place of its file, by that file's path under the game's web folder,
+        with the hash of its bytes now."""
+        prefix = web_prefix(root)
+        rows = []
+        for item in request["files"]:
+            if not item["path"].startswith(prefix):
+                raise ValueError("A plugin file is outside the game's web folder.")
+            rows.append(
+                {
+                    "path": item["path"],
+                    "serve": item["path"][len(prefix) :],
+                    "candidate": item["candidate"],
+                    "hash": digest(self.source(root, item["candidate"])),
+                }
+            )
+        return rows
+
+    def label_plan(self, request, served, root):
+        """Each requested label with the text its screen should draw now: what
+        its changed candidates draw in its place, or the label itself while
+        none changed."""
+        found, parsed = {}, {}
+        for item in request["files"]:
+            for candidate in item["candidates"]:
+                found[candidate["id"]] = (item, candidate)
+        labels = []
+        for label in request["labels"]:
+            shows = []
+            for identity in label["candidates"]:
+                item, candidate = found[identity]
+                if item["path"] not in parsed:
+                    raw = self.source(root, item["candidate"])
+                    parsed[item["path"]] = self.documents.parse(
+                        [
+                            {
+                                "path": item["path"],
+                                "source": raw.decode(),
+                                "kind": item["kind"],
+                            }
+                        ]
+                    )[item["path"]]
+                literals = parsed[item["path"]]["literals"]
+                if candidate["token"] >= len(literals):
+                    continue
+                now = read_leaf(
+                    literals[candidate["token"]]["value"], candidate["logical"]
+                )
+                text = (
+                    redrawn(candidate["value"], label["text"], now)
+                    if isinstance(now, str) and now != candidate["value"]
+                    else None
+                )
+                if text and text not in shows:
+                    shows.append(text)
+            labels.append(
+                {
+                    **pick(label, ("text", "title", "capture")),
+                    "shows": shows or [label["text"]],
+                }
+            )
+        return labels
+
+    def capture_view(self, project_id, request, served):
+        """Where the label capture stands for the request's copies as they are."""
+        saved = self.captured(project_id) or {}
+        operation = saved.get("operation")
+        view = {"requestId": request["requestId"]}
+        if operation:
+            view["operation"] = operation
+        helper = helper_command(
+            self.translation.workspace,
+            project_id,
+            "plugins",
+            "--capture",
+            "--wait",
+            "10",
+        )
+        if "report" in saved:
+            current = saved["files"] == {row["path"]: row["hash"] for row in served}
+            asked = {label["text"] for label in request["labels"]}
+            view.update(
+                finishedAt=saved["finished_at"],
+                current=current,
+                labels=[
+                    {
+                        key: row[key]
+                        for key in (
+                            "text",
+                            "title",
+                            "shows",
+                            "fits",
+                            "note",
+                            "capture",
+                            "squeezed",
+                            "clipped",
+                        )
+                        if key in row
+                    }
+                    for row in saved["labels"]
+                    if row["text"] in asked
+                ],
+                **(
+                    {"unavailable": saved["unavailable"]}
+                    if "unavailable" in saved
+                    else {}
+                ),
+            )
+        if operation and operation["status"] == "running":
+            following = (
+                "DazedTL is capturing the labels' screens; wait for it with " + helper
+            )
+        elif "report" not in saved:
+            following = "Capture your working copies with " + helper
+        elif not view["current"]:
+            following = (
+                "Your working copies changed after the last capture; capture them again with "
+                + helper
+            )
+        elif "unavailable" in saved:
+            following = (
+                "DazedTL couldn't run the game, so size the English from how short of "
+                "room each label is; the app records that the labels weren't seen."
+            )
+        elif all(row["fits"] for row in view["labels"]) and len(view["labels"]) == len(
+            request["labels"]
+        ):
+            following = "Every label fits on its screen; report them."
+        else:
+            following = (
+                "Look at each capture, shorten the labels that don't fit and capture "
+                "again; keep a label only when no shorter English keeps its meaning."
+            )
+        view["next"] = following
+        return view
+
+    def unseen(self, project_id, request, root, texts):
+        """Why the latest capture doesn't show these shortened labels fitting
+        on their screens with the request's copies as they are, or ""; and
+        what it saw of each, which the decision keeps."""
+        saved = self.captured(project_id) or {}
+        served = {row["path"]: row["hash"] for row in self.served(root, request)}
+        if "report" not in saved or saved["files"] != served:
+            problem = (
+                "Capture your working copies with plugins --capture and look at each "
+                "label on its screen before reporting it shortened."
+            )
+            return problem, {}
+        if "unavailable" in saved:
+            return "", {text: {"unseen": saved["unavailable"]} for text in texts}
+        rows = {row["text"]: row for row in saved["labels"]}
+        problems, seen = [], {}
+        for text in texts:
+            row = rows.get(text)
+            if not row:
+                problems.append(
+                    f"The latest capture didn't measure {text}; capture again."
+                )
+            elif not row["fits"]:
+                problems.append(f"{text}: {row['note']} See {row['capture']}.")
+            else:
+                seen[text] = {"capture": row["capture"]}
+        return " ".join(problems), seen
+
     def fingerprint(self, root, path):
         """A file's hash, read again only when its file signature changes."""
         target = project_path(root, path)
@@ -1662,7 +1883,7 @@ class PluginService:
                     {
                         "text": "exact requested label",
                         "decision": "shortened|kept",
-                        "evidence": "what the capture shows and which listed text the plugin draws there",
+                        "evidence": "what the captures before and after your change show, and which listed text the plugin draws there",
                         "reason": "why it stays as it is (kept only)",
                     }
                 ],
@@ -1686,9 +1907,20 @@ class PluginService:
                 "Their paths are relative to the game folder " + str(root) + ".\n"
                 "Keep the meaning, the glossary's terms and the same English wherever the game shows the same term; a setting that lists several labels keeps its separators and item count. "
                 "Change only listed candidates, keeping quote style, structure, interpolation and control codes.\n"
+                "Size the shorter English from how short of room each label is, with the font and window width the plugin's code sets, then check it on screen: run\n"
+                + helper_command(
+                    self.translation.workspace,
+                    project_id,
+                    "plugins",
+                    "--capture",
+                    "--wait",
+                    "10",
+                )
+                + "\nDazedTL plays the game in a hidden window with your working copies served in place of the game's files, writing nothing into the game, and captures each label's screen again. "
+                "For each label it lists the text the screen should draw now, whether it draws it in full, a note on what it draws instead, and the capture; look at each capture, and shorten again and capture again until the labels fit.\n"
                 "Report a decision for every label: shortened, with each changed candidate in its file's targets, or kept with the reason, only when no shorter English keeps its meaning or the plugin draws none of its candidates there. "
-                "The captures show the screens before your change and DazedTL can't capture your working copies, so size the shorter English from how short of room each label is, with the font and window width the plugin's code sets, and say in evidence how you sized it. "
-                "The app checks each working copy as it checks translations; when a check fails, the helper returns a request with each failedCheck. Applying to the game stays in the app.\n"
+                "The app accepts a shortened label only when the latest capture of exactly these working copies shows it fitting; when DazedTL can't run the game, the capture says so, and the app records the label as not seen. "
+                "The app also checks each working copy as it checks translations; when a check fails, the helper returns a request with each failedCheck. Applying to the game stays in the app.\n"
             )
         text += reference_folders.instructions(context["references"])
         text += (
@@ -2312,6 +2544,8 @@ class PluginService:
         allowed = {row["path"]: row for row in request["files"]}
         updated = deepcopy(value)
         errors, shortened, failed, passed = [], {}, set(), 0
+        # What the latest capture of these copies shows of each label.
+        sightings = {}
         for answer in rows:
             path = answer["path"]
             wanted = allowed[path]
@@ -2353,6 +2587,14 @@ class PluginService:
             if not evidence.strip():
                 raise ValueError("Results need saved meaning and fit evidence.")
             touched = {text for identity in targets for text in labels_of[identity]}
+            # A shorter label counts once the game shows it fitting.
+            problem, seen = self.unseen(project_id, request, root, sorted(touched))
+            if problem:
+                fitting["failed"] = problem
+                errors.append(path + ": " + problem)
+                failed |= touched
+                continue
+            sightings.update(seen)
             try:
                 self.promote_fit(
                     root,
@@ -2387,6 +2629,8 @@ class PluginService:
                 continue
             saved[text] = {
                 **decision,
+                # The capture that showed it fitting, or why none could.
+                **sightings.get(text, {}),
                 # The files that hold its shorter text.
                 "files": sorted(shortened.get(text, ())),
                 "task": request["qaTask"],

@@ -21,6 +21,7 @@ from util.playtest.run import (
     observations,
     read_widths,
 )
+from util.rpgmaker_screens import label_fits
 
 game = temporary / "game"
 data = game / "data"
@@ -417,4 +418,45 @@ for wrong in ({"width": "55"}, {"width": 0}, {"messageRows": 4}):
     except ValueError:
         continue
     raise AssertionError(f"{wrong} was accepted")
+
+# A shortened label fits only when its screen draws the shorter text in full:
+# not squeezed, and not while the game still draws the old text, which means
+# the plugin draws another setting there.
+menu = {
+    "name": "menu",
+    "file": "menu.png",
+    "title": "Menu",
+    "labels": [
+        {"text": "Bestiary"},
+        {"text": "\\C[2]Records", "squeezed": 0.9},
+        {"text": "Location:", "squeezed": 0.91},
+    ],
+}
+fits = label_fits(
+    [
+        {"text": text, "title": "Menu", "capture": "/qa/menu.png", "shows": shows}
+        for text, shows in (
+            ("Monster Compendium", ["Bestiary"]),
+            ("Journey Records", ["Records"]),
+            ("Location:", ["Place:"]),
+            ("Objective", ["Goal"]),
+        )
+    ],
+    {"screens": [menu]},
+    "/check",
+)
+assert [(row["fits"], row.get("squeezed")) for row in fits] == [
+    (True, None),
+    (False, 0.9),
+    (False, 0.91),
+    (False, None),
+], fits
+assert (
+    fits[1]["note"] == "The game draws Records squeezed to 90% of the width it needs."
+)
+assert fits[2]["note"] == (
+    "The game still draws Location: there, squeezed to 91% of the width it needs, "
+    "not Place:."
+), fits
+assert fits[3]["capture"] == str(Path("/check") / "menu.png"), fits
 print("ok")

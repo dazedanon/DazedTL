@@ -49,6 +49,7 @@ from dazedtl.api.contracts.images import (
 )
 from dazedtl.api.contracts.plugins import (
     PluginActionResult,
+    PluginCapture,
     PluginState,
 )
 from dazedtl.api.contracts.runs import (
@@ -134,6 +135,16 @@ class ForeignWorkRequest(TypedDict):
 class PluginsContinueRequest(TypedDict):
     project_id: str
     request_id: str
+
+
+class PluginsCaptureRequest(TypedDict):
+    project_id: str
+    start: NotRequired[
+        Annotated[
+            bool,
+            "Capture the shortening request's working copies as they are now first.",
+        ]
+    ]
 
 
 class ImagesListRequest(TypedDict):
@@ -789,6 +800,7 @@ METHODS: dict[str, Method] = {
     ),
     # Plugins
     "plugins_state": Method(ProjectRequest, PluginState, refresh=False),
+    "plugins_capture": Method(PluginsCaptureRequest, PluginCapture, refresh=False),
     "plugins_action": Method(ActionRequest, PluginActionResult),
     "plugins_continue": Method(PluginsContinueRequest, PluginActionResult),
     "plugins_adopt": Method(ForeignWorkRequest, PluginActionResult),

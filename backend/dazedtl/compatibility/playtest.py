@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from dazedtl.storage import write_json
-from dazedtl.translation.files import project_path, read_json
+from dazedtl.translation.files import digest, project_path, read_json
 
 POINTER = "playtest.json"
 STORAGE = "playtest"
@@ -116,6 +116,79 @@ def latest_layout(folder) -> dict | None:
         "finished_at": saved["finished_at"],
         "folder": str(path.parent),
     }
+
+
+# A label check keeps its own reports too: the labels Plugin files shortens,
+# on their screens captured with its working copies served in place of the
+# game's files.
+LABELS_POINTER = "label-check.json"
+LABELS_STORAGE = "label-check"
+
+
+def run_labels(plan, log):
+    from desktop.backend.workflow_actions import validate_plan
+    from util import rpgmaker_screens
+
+    validate_plan(plan)
+    folder = Path(plan["folder"])
+    options = plan["options"]
+    storage = folder / LABELS_STORAGE
+    storage.mkdir(exist_ok=True)
+    name = datetime.now(UTC).strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
+    out = storage / name
+    source = Path(plan["project"]["source"])
+    # The working copies are served as they were when the check started, so
+    # its report shows the bytes it names.
+    overlay = {}
+    for row in options["files"]:
+        raw = project_path(source, row["candidate"]).read_bytes()
+        if digest(raw) != row["hash"]:
+            raise ValueError(
+                "A working copy changed after the label check started. Capture again."
+            )
+        served = out / "served" / row["serve"]
+        served.parent.mkdir(parents=True, exist_ok=True)
+        served.write_bytes(raw)
+        overlay[row["serve"]] = served
+    screens = sorted(
+        {rpgmaker_screens.screen_of(label["capture"]) for label in options["labels"]}
+    )
+    try:
+        listing = rpgmaker_screens.capture(
+            plan["project"]["data"], out, overlay=overlay, screens=screens, progress=log
+        )
+        result = {
+            "labels": rpgmaker_screens.label_fits(options["labels"], listing, out)
+        }
+    except rpgmaker_screens.WindowUnavailable as error:
+        result = {"labels": [], "unavailable": str(error)}
+    write_json(out / "labels.json", result)
+    write_json(
+        folder / LABELS_POINTER,
+        {
+            "report": name,
+            "finished_at": datetime.now(UTC).isoformat(),
+            "request": options["request"],
+            "files": {row["path"]: row["hash"] for row in options["files"]},
+        },
+    )
+    for old in sorted(path for path in storage.iterdir() if path.is_dir())[:-KEEP]:
+        if old.name != name:
+            shutil.rmtree(old, ignore_errors=True)
+    return {
+        "labels": len(result["labels"]),
+        "fit": sum(row["fits"] for row in result["labels"]),
+    }
+
+
+def latest_labels(folder) -> dict | None:
+    """The latest label check, with its folder, or None."""
+    pointer = Path(folder) / LABELS_POINTER
+    if not pointer.exists():
+        return None
+    saved = read_json(pointer)
+    path = project_path(Path(folder) / LABELS_STORAGE, saved["report"] + "/labels.json")
+    return {**read_json(path), **saved, "folder": str(path.parent)}
 
 
 def latest(folder) -> tuple[dict, dict] | None:

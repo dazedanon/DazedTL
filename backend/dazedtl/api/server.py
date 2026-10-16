@@ -75,15 +75,17 @@ class Application:
             self.projects, self.translation, self.settings, self.backend
         )
         self.text_qa = TextQA(self.guided)
+        self.playtest = Playtest(self.guided, self.text_qa)
         self.plugins = PluginService(
             self.projects,
             self.translation,
             self.backend,
             context=self.guided.assistant_context,
             labels=self.text_qa.plugin_labels,
+            capture=self.playtest.check_labels,
+            captured=self.playtest.labels,
         )
         self.assistant_tasks = AssistantTasks(self.workspace)
-        self.playtest = Playtest(self.guided, self.text_qa)
         self.image_editor = ImageEditor(self.images)
         self.image_native = ImageNativeTranslation(self.images, self.image_editor)
         self.translation.image_units = self.images.progress_units
@@ -842,6 +844,7 @@ def routes(app):
         )
     methods["plugins_action"] = (app.plugins_action, lambda value, _params: value)
     methods["plugins_state"] = (app.plugins.state, lambda value, _params: value)
+    methods["plugins_capture"] = (app.plugins.capture, lambda value, _params: value)
     methods["plugins_continue"] = (
         app.plugins.continue_task,
         lambda value, _params: value,

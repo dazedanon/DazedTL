@@ -29,12 +29,13 @@ LABELS = {
     "reference_remove": "Remove reference registration", "reference_build": "Build exact reference matches", "images_status": "Refresh image readiness",
     "release_playtest": "Play the game for the release playtest",
     "layout_capture": "Show test text in the game's windows",
+    "label_capture": "Show shortened plugin labels in the game",
     "glossary_check": "Check glossary terms",
 }
-# The release playtest and the glossary check write only their reports,
-# never the game.
+# The release playtest, the layout and label checks and the glossary check
+# write only their reports, never the game.
 READ_ONLY = {"git_status", "rewrap_preview", "qa_status", "playtest_status", "editors", "images_status", "release_playtest",
-             "layout_capture", "glossary_check"}
+             "layout_capture", "label_capture", "glossary_check"}
 LABELS.update(wolf.LABELS)
 READ_ONLY.update(wolf.READ_ONLY)
 

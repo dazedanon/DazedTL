@@ -301,6 +301,29 @@ def draws(value, label):
     )
 
 
+def redrawn(value, label, changed):
+    """What the game draws in place of *label* once the setting text *value*
+    that draws it becomes *changed*: the whole text, or the list item in the
+    label's place; None when the list no longer lines up."""
+    shown = DRAW_CODES.sub("", value).strip()
+    now = DRAW_CODES.sub("", changed).strip()
+    if shown == label:
+        return now
+    items = [item.strip() for item in LIST_SEPARATORS.split(shown)]
+    after = [item.strip() for item in LIST_SEPARATORS.split(now)]
+    if label in items and len(after) == len(items):
+        return after[items.index(label)]
+    return None
+
+
+def read_leaf(value, logical):
+    """The string at a decoded parameter path of a literal's text, or None."""
+    for path, leaf, _opaque in leaves(value):
+        if path == list(logical):
+            return leaf
+    return None
+
+
 def occurrence_id(path, fingerprint, literal, logical):
     """A text location bound to the exact bytes of its file, by their hash."""
     return digest(

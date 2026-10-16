@@ -1,8 +1,9 @@
 """Plugin files: the assistant's task, its application and reviewed restores."""
 
-from typing import Literal, NotRequired, TypedDict
+from typing import Annotated, Literal, NotRequired, TypedDict
 
 from dazedtl.api.contracts.common import ForeignWork
+from dazedtl.api.contracts.guided import PlaytestOperation
 
 
 class PluginFileReview(TypedDict):
@@ -99,6 +100,37 @@ class PluginState(TypedDict):
     # Whether that request still waits for the assistant's report.
     awaiting: bool
     labels: list[PluginLabel]
+
+
+class PluginLabelFit(TypedDict):
+    """How a label of the shortening request shows on its screen captured
+    with the working copies served in place of the game's files."""
+
+    text: str
+    title: Annotated[str, "The screen QA's capture found it on."]
+    shows: Annotated[list[str], "The text that screen should draw now."]
+    fits: Annotated[bool, "Whether the game draws that text in full."]
+    note: Annotated[str, "What the game draws there."]
+    capture: NotRequired[Annotated[str, "The screen's capture file."]]
+    squeezed: NotRequired[
+        Annotated[float, "The share of the width it needs the game drew it in."]
+    ]
+    clipped: NotRequired[Annotated[bool, "Its end is cut off at its window's edge."]]
+
+
+class PluginCapture(TypedDict):
+    """The latest capture of the shortening request's labels on their
+    screens, for the assistant's project helper."""
+
+    requestId: str
+    operation: NotRequired[PlaytestOperation]
+    finishedAt: NotRequired[str]
+    current: NotRequired[
+        Annotated[bool, "It served the request's working copies as they are now."]
+    ]
+    labels: NotRequired[list[PluginLabelFit]]
+    unavailable: NotRequired[Annotated[str, "Why DazedTL couldn't run the game."]]
+    next: Annotated[str, "The step to take next."]
 
 
 class PluginForeignWork(ForeignWork):

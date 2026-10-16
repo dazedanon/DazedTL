@@ -46,6 +46,10 @@ def run_action(plan, log):
         from dazedtl.compatibility.playtest import run_layout
 
         return run_layout(plan, log)
+    if plan["action"] == "label_capture":
+        from dazedtl.compatibility.playtest import run_labels
+
+        return run_labels(plan, log)
     if plan["action"] in {
         "prepare_game",
         "format_data",
