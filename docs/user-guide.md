@@ -133,6 +133,10 @@ Lines the AI got wrong keep their original text until you translate again.
 All Check tasks are optional:
 
 - **Line width check** finds applied lines wider than the saved line widths and rewraps them; **Edit settings** chooses what it covers.
+- **Glossary check**: **Check glossary terms** lists translated lines whose English doesn't use the glossary's English for a term in their Japanese, such as a place name translated before its glossary row existed.
+  For each line, or a whole term at once, choose **Use proposal**, **Keep text** or **Write a fix**, then **Apply fixes**; History on the Project page can restore them.
+  Lines without a proposal are often ordinary words written like a term, so keep those.
+  When the game's wording is the one you want, change the glossary row instead and check again.
 - **Text QA**: **Start text QA** copies the task, and your assistant reviews the translated text and applies the corrections it verifies.
   It runs four reviewers at once; when the page says **one reviewer at a time**, your assistant is reviewing alone, which takes several times longer, so ask it to start the reviewers its QA task describes.
   A correction too wide for its box is rewrapped to the Line widths saved when QA started.

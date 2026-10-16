@@ -14,6 +14,7 @@ from dazedtl.api.contracts.guided import (
     EventTextPicker,
     EventTextRequest,
     FileTextPreview,
+    GlossaryReport,
     GuidedForm,
     GuidedOptions,
     GuidedPreferences,
@@ -260,6 +261,14 @@ class TranslationPlaytestRequest(TypedDict):
 class PlaytestCaptureRequest(TypedDict):
     project_id: str
     name: str
+
+
+class GlossaryRequest(TypedDict):
+    project_id: str
+    step: Literal["choose", "apply"]
+    keys: NotRequired[list[str]]
+    choice: NotRequired[Literal["keep", "use", "edit", "clear"]]
+    text: NotRequired[Annotated[str, "The user's own fix, for one line."]]
 
 
 class QaReviewedRequest(TypedDict):
@@ -742,6 +751,8 @@ METHODS: dict[str, Method] = {
     "translation_qa": Method(TranslationQaRequest, TextQaStatus),
     "guided_qa_report": Method(ProjectRequest, QaReport, refresh=False),
     "guided_qa_reviewed": Method(QaReviewedRequest, QaReport),
+    "guided_glossary": Method(GlossaryRequest, GlossaryReport),
+    "guided_glossary_report": Method(ProjectRequest, GlossaryReport, refresh=False),
     "translation_playtest": Method(TranslationPlaytestRequest, PlaytestStatus),
     "guided_playtest_capture": Method(
         PlaytestCaptureRequest, PlaytestCapture, refresh=False

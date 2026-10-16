@@ -44,6 +44,8 @@ NATIVE_ACTIONS = {
     "qa_status",
     "qa_apply",
     "qa_undo",
+    "glossary_check",
+    "glossary_apply",
     "release_playtest",
     "layout_capture",
     "runtime_restore",
@@ -89,6 +91,7 @@ READY_ACTIONS = {
     "rewrap_apply",
     "qa_apply",
     "qa_undo",
+    "glossary_apply",
     "runtime_restore",
     "ace_pack",
     "qa_prepare",
@@ -97,7 +100,13 @@ READY_ACTIONS = {
     "guided_review",
     "guided_package",
 } | TOOL_ACTIONS
-PUBLICATION_ACTIONS = {"rewrap_apply", "qa_apply", "qa_undo", "runtime_restore"}
+PUBLICATION_ACTIONS = {
+    "rewrap_apply",
+    "qa_apply",
+    "qa_undo",
+    "glossary_apply",
+    "runtime_restore",
+}
 
 
 @dataclass
@@ -577,8 +586,9 @@ class GuidedActions:
                     "No saved translation output is available for these files yet."
                 )
             options = {"files": paths}
-        if action == "qa_prepare":
-            # QA fits its corrections with the line width check's settings.
+        if action in {"qa_prepare", "glossary_check"}:
+            # QA fits its corrections, and the glossary check its fixes, with
+            # the line width check's settings.
             text = self.guided.saved_form(project_id)["text"]
             options = {
                 **options,
@@ -602,7 +612,7 @@ class GuidedActions:
             )
         result = (
             self.guided.backend.guided_text_preview(native["id"], action, options)
-            if action in {"runtime_restore", "qa_apply", "qa_undo"}
+            if action in {"runtime_restore", "qa_apply", "qa_undo", "glossary_apply"}
             else self.guided.backend.guided_export_preview(
                 native["id"], paths, run_output=run_output
             )
@@ -669,10 +679,12 @@ class GuidedActions:
                     "format_plugins",
                     "gameupdate",
                     "qa_prepare",
-                    # QA applies its finished findings, and undoes one, in
-                    # one click; History restores either batch.
+                    # QA applies its finished findings, and undoes one, and
+                    # the glossary check applies the fixes chosen on its
+                    # page, in one click; History restores each batch.
                     "qa_apply",
                     "qa_undo",
+                    "glossary_apply",
                     "playtest_install",
                     "playtest_apply",
                     "inspector_install",

@@ -11,6 +11,7 @@ import type {
 import { investigationResults } from "./contextView.ts";
 import { unfinishedCopy } from "../assistant/assistantTasks.ts";
 import { nothingToTranslate } from "./eventTextSelection.ts";
+import { glossaryPhase } from "./glossaryView.ts";
 import { guidanceAvailability } from "./guidanceReview.ts";
 import { pluginsComplete } from "../plugins/pluginTask.ts";
 import { imageFlow } from "../images/imageFlow.ts";
@@ -113,6 +114,9 @@ export function completedTasks(
       ? ["package"]
       : []),
     ...(lineWidthsChecked(state) ? ["fitting"] : []),
+    ...(glossaryPhase(state.readiness.glossary) === "done"
+      ? ["glossary-check"]
+      : []),
     // A playtest of the game as it is now has done its check.
     ...(state.readiness.playtest.current && state.readiness.playtest.played
       ? ["release-playtest"]

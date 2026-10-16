@@ -7,12 +7,30 @@ export type LineChangeRow = {
   /** The side of a change the row shows, tinted to match. */
   change?: "added" | "removed";
   lang?: string;
+  /** Spans of the text to mark, such as the terms a check names. */
+  marks?: readonly { start: number; end: number }[];
 };
+
+/** The text in runs, each marked when a span covers it. */
+function markedRuns(text: string, marks: LineChangeRow["marks"] = []) {
+  const runs: WordRun[] = [];
+  let position = 0;
+  for (const { start, end } of [...marks].sort((a, b) => a.start - b.start)) {
+    if (start < position) continue;
+    if (start > position)
+      runs.push({ text: text.slice(position, start), changed: false });
+    runs.push({ text: text.slice(start, end), changed: true });
+    position = end;
+  }
+  if (position < text.length)
+    runs.push({ text: text.slice(position), changed: false });
+  return runs;
+}
 
 /**
  * A line and the other versions of it, each labelled in a column. When the
  * line was both removed and added, the words that changed between the two
- * are marked.
+ * are marked; a row may also mark spans of its own, such as a term.
  */
 export function LineChange({ rows }: { rows: readonly LineChangeRow[] }) {
   const removed = rows.find((row) => row.change === "removed");
@@ -38,8 +56,10 @@ export function LineChange({ rows }: { rows: readonly LineChangeRow[] }) {
   return (
     <dl className="line-change">
       {rows.map((row, index) => {
-        const runs = marked(row);
-        const Mark = row.change === "added" ? "ins" : "del";
+        const diff = marked(row);
+        const runs =
+          diff || (row.marks?.length ? markedRuns(row.text, row.marks) : null);
+        const Mark = !diff ? "mark" : row.change === "added" ? "ins" : "del";
         return (
           <Fragment key={index}>
             <dt data-change={row.change}>{row.label}</dt>

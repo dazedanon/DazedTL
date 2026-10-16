@@ -1695,3 +1695,10 @@ pre {
 .line-change del {
   background: var(--color-error-surface);
 }
+.line-change mark {
+  padding: 0 var(--space-half);
+  border-radius: var(--control-radius);
+  background: var(--color-accent-subtle);
+  color: inherit;
+  box-decoration-break: clone;
+}

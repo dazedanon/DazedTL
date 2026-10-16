@@ -220,8 +220,8 @@ class Workflows:
             if options.get("focus") not in dict(RPGMAKER_QA_FOCUSES):
                 raise ValueError("Choose an existing QA focus.")
             selected["focus"] = options["focus"]
-        if action == "qa_prepare":
-            # QA fits its corrections to the Line widths as the line width check would.
+        if action in {"qa_prepare", "glossary_check"}:
+            # QA and glossary fixes fit to the Line widths as the line width check would.
             from util.rpgmaker_rewrap import SUPPORTED_EVENT_CODES, parse_event_codes
             check = self._check_settings(options.get("check", {}), project)
             selected["fit"] = {"widths": check["widths"], "categories": check["categories"],

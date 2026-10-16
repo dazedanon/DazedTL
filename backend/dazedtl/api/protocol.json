@@ -1,5 +1,5 @@
 {
-  "version": "12b9b893986d490f",
+  "version": "f318916f6574c466",
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
@@ -371,6 +371,14 @@
     },
     "guided_qa_reviewed": {
       "refresh": true,
+      "duringClose": false
+    },
+    "guided_glossary": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "guided_glossary_report": {
+      "refresh": false,
       "duringClose": false
     },
     "translation_playtest": {

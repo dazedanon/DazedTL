@@ -400,14 +400,23 @@ export function useGuidedWorkspace({
   });
   const disabled = operationBusy || translationFlow.active;
 
-  const navigate = async (step: GuidedStep, task: string) => {
+  const navigate = async (
+    step: GuidedStep,
+    task: string,
+    contextDocument?: string,
+  ) => {
     await flushDrafts();
-    application.navigateGuided(project.id, { step, task });
+    application.navigateGuided(project.id, {
+      step,
+      task,
+      ...(contextDocument && { contextDocument }),
+    });
   };
-  const move = (step: GuidedStep, task: string) =>
+  /** Opens a task, and for Guidance one of its documents. */
+  const move = (step: GuidedStep, task: string, contextDocument?: string) =>
     action.run(
       async () => {
-        await navigate(step, task);
+        await navigate(step, task, contextDocument);
         setPanel(null);
       },
       "",
@@ -872,6 +881,7 @@ export function useGuidedWorkspace({
         "forge_remove",
         "editors",
         "rewrap_preview",
+        "glossary_check",
         "qa_prepare",
       ].includes(name);
     // A tool row reports only its latest change, so installing again

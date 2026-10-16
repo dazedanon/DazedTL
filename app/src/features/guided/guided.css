@@ -1212,6 +1212,75 @@
   list-style: none;
   overflow-wrap: anywhere;
 }
+/* The glossary check: its result, then a part for each kind of line, each
+   with groups of lines that lack the same terms. A group's choices for all
+   its lines sit at its heading's end, over the rows' own. */
+.glossary-check {
+  display: grid;
+  gap: var(--space-6);
+  margin-top: var(--space-6);
+}
+.glossary-check > .check-results-heading {
+  margin-bottom: 0;
+}
+.glossary-check h3 {
+  margin: 0;
+}
+.glossary-check .check-results-heading h3 {
+  margin-right: auto;
+}
+.glossary-check > section > p.muted {
+  max-width: var(--measure);
+  margin: var(--space-1) 0 0;
+}
+.glossary-summary,
+.glossary-terms {
+  margin: 0 auto 0 0;
+}
+.glossary-group {
+  margin-top: var(--space-5);
+}
+.glossary-group > .check-results-heading {
+  margin-bottom: var(--space-2);
+}
+.glossary-group > .action-list {
+  margin: 0;
+}
+.glossary-group > .link-button {
+  margin-top: var(--space-2);
+  font-size: var(--font-control);
+}
+.glossary-terms {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  font-weight: var(--weight-medium);
+}
+.glossary-terms small {
+  font-size: var(--font-control);
+  font-weight: var(--weight-regular);
+}
+/* Where a line is, then writing a fix for it. */
+.action-row-label > small.glossary-place {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  margin-top: var(--space-2);
+  color: var(--color-muted);
+}
+.glossary-fix {
+  margin-top: var(--space-1);
+}
+.glossary-fix textarea {
+  width: 100%;
+  margin: 0;
+  font: inherit;
+  line-height: 1.5;
+  resize: vertical;
+}
+
 /* How far the playtest's tour got, with its coverage sheet in line. */
 .playtest-coverage {
   display: flex;

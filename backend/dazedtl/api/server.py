@@ -813,6 +813,11 @@ def routes(app):
         app.text_qa.reviewed,
         lambda value, _params: value,
     )
+    methods["guided_glossary"] = (app.guided.glossary.run, lambda value, _params: value)
+    methods["guided_glossary_report"] = (
+        app.guided.glossary.report,
+        lambda value, _params: value,
+    )
     methods["translation_playtest"] = (
         app.translation_playtest,
         lambda value, _params: value,
