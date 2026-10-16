@@ -715,6 +715,15 @@ class PluginTests(unittest.TestCase):
             [row["state"] for row in restarted.state(self.identity)["labels"]],
             ["waiting", "kept"],
         )
+        # The game draws an applied file's own bytes, so a label an edit made
+        # after the apply put there is found there, not in the working copy.
+        game = self.game / "www/js/plugins.js"
+        write_bytes(game, game.read_bytes().replace(b'"Go"', b'"Begin game"'))
+        restarted.labels = capture("qa-3", "Begin game")
+        self.assertEqual(
+            [row["state"] for row in restarted.state(self.identity)["labels"]],
+            ["waiting"],
+        )
 
     def test_partial_results_are_handed_back_until_complete(self):
         _, _, task = self.investigation()

@@ -934,6 +934,14 @@ class PluginService:
         once it has one, else the game's own file."""
         return row["prepared"]["candidate"] if row.get("prepared") else row["path"]
 
+    def drawn_copy(self, value, row):
+        """The file whose bytes the game draws: an applied file's own, which
+        edits after the apply, such as a game update's, may have changed, else
+        the bytes Apply gives it."""
+        if self.row_status(value, row) == "applied":
+            return row["path"]
+        return self.current_copy(row)
+
     def find_labels(self, project_id, value, texts):
         """Where the game draws each label from: text in the bytes each plugin
         file gets that a loaded plugin can draw and the app lets the
@@ -945,12 +953,13 @@ class PluginService:
             if row.get("issue"):
                 continue
             try:
-                rows.append((row, self.fingerprint(root, self.current_copy(row))))
+                drawn = self.drawn_copy(value, row)
+                rows.append((row, drawn, self.fingerprint(root, drawn)))
             except OSError, ValueError:
                 continue
         key = (
             tuple(texts),
-            tuple((row["path"], hashed) for row, hashed in rows),
+            tuple((row["path"], hashed) for row, _drawn, hashed in rows),
             value["originals"].get("binding", ""),
         )
         saved = self.located.get(project_id)
@@ -964,8 +973,8 @@ class PluginService:
             for text in texts
         }
         found = {text: [] for text in texts}
-        for row, hashed in rows:
-            raw = self.source(root, self.current_copy(row))
+        for row, drawn, hashed in rows:
+            raw = self.source(root, drawn)
             wanted = [text for text in texts if words[text] in raw]
             if not wanted:
                 continue
