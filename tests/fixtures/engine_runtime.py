@@ -475,14 +475,14 @@ try:
         # together and rewrapped them by width, losing a weapon's skill line
         # and the full-width-space rows a detail note draws as blank rows.
         skill_line = "鋭い刃。\n\\C[24]武器スキル：\\C[0]刺突"
-        detail = "重厚な大斧\n　\n以下の特殊効果を持つ\n・毎ターンTP25増加"
+        detail = "重厚な大斧\n\u3000\n以下の特殊効果を持つ\n・毎ターンTP25増加"
         answers = {
             "刺突剣": "Rapier",
             "短剣": "Dagger",
             skill_line: "A keen blade.\n\\C[24]Weapon Skill: \\C[0]Thrust",
             "短い刃。\n予備の武器。": "A short blade.\n"
             "A spare weapon kept in reserve for when the first breaks.",
-            detail: "A massive greataxe favored by strongmen\n　\n"
+            detail: "A massive greataxe favored by strongmen\n\u3000\n"
             "Has the following special effects\n・TP +25 every turn",
         }
         weapons = [
@@ -524,7 +524,7 @@ try:
                 # A line too wide wraps evenly on its own; blank rows stay.
                 assert weapons[1]["note"] == (
                     "<NameColor:23>\n<dPlnText:A massive greataxe\n"
-                    "favored by strongmen\n　\nHas the following\n"
+                    "favored by strongmen\n\u3000\nHas the following\n"
                     "special effects\n・TP +25 every turn>"
                 ), weapons[1]["note"]
                 # A help window has the source's rows; text that needs more
@@ -539,6 +539,21 @@ try:
                 assert sent == [], sent
         finally:
             os.chdir(directory)
+        # Rewrap and the line width check keep those lines too.
+        from util.rpgmaker_rewrap import RewrapOptions, rewrap_directory
+
+        rewrapped = temporary / "rewrapped"
+        rewrapped.mkdir()
+        (rewrapped / "Weapons.json").write_text(json.dumps(weapons), encoding="utf-8")
+        report = rewrap_directory(
+            rewrapped,
+            RewrapOptions(55, 55, 40, 30, max_protected_rows=0),
+            file_names=["Weapons.json"],
+            apply=True,
+        )
+        assert not report.errors, report.errors
+        written = json.loads((rewrapped / "Weapons.json").read_text(encoding="utf-8"))
+        assert written == weapons, written
 
         # MV and Ace print the battler's name right before a particle-first
         # battle message; stripping the space after Taro printed "Arinafell!".

@@ -325,7 +325,9 @@ def _rewrap_database_lists(
                 continue
             if not _should_rewrap(before, options.list_width, options):
                 continue
-            after = _rewrap_text(before, options.list_width)
+            after = _rewrap_lines(
+                before, options.list_width, _source_rows(entry, field_name, before)
+            )
             if collector.offer(
                 category=LIST_HELP,
                 locator=f"/{index}/{field_name}",
@@ -643,7 +645,7 @@ def _note_bodies(note: str, width: int, only_over_limit: bool):
             after = (
                 dazedwrap.wrapSGDesc(before, width)
                 if structured
-                else _rewrap_text(before, width)
+                else _rewrap_lines(before, width)
             )
             yield start, end, before, after
             occupied.append((start, end))
@@ -655,10 +657,13 @@ def _replace_spans(text: str, edits: list[tuple[int, int, str]]) -> str:
     return text
 
 
-def rewrap_value(text: str, width: int, *, note: bool = False) -> str:
+def rewrap_value(
+    text: str, width: int, *, note: bool = False, rows: int | None = None
+) -> str:
     """One value as the line width check rewraps it when a line is wider than
-    *width*: text keeps a leading speaker line and ``<br>`` breaks, and a
-    note rewraps only its known tag bodies."""
+    *width*: text keeps a leading speaker line and ``<br>`` breaks, a note
+    rewraps only its known tag bodies, and database text whose source spends
+    *rows* lines on its window keeps its line breaks."""
     if note:
         return _replace_spans(
             text,
@@ -666,6 +671,8 @@ def rewrap_value(text: str, width: int, *, note: bool = False) -> str:
         )
     if not text.strip() or not over_width(text, width):
         return text
+    if rows is not None:
+        return _rewrap_lines(text, width, rows)
     return _rewrap_text(text, width)
 
 
@@ -698,6 +705,26 @@ def _rewrap_text(text: str, width: int) -> str:
     if uses_br:
         wrapped = wrapped.replace("\n", "<br>")
     return prefix + wrapped
+
+
+def _rewrap_lines(text: str, width: int, rows: int | None = None) -> str:
+    """Database text rewrapped as the database pass wraps it, keeping its
+    line breaks: ``\\n``, or ``<br>`` in text without one."""
+    if "<br>" in text and "\n" not in text:
+        return dazedwrap.wrapLines(text.replace("<br>", "\n"), width, rows).replace(
+            "\n", "<br>"
+        )
+    return dazedwrap.wrapLines(text, width, rows)
+
+
+def _source_rows(entry: dict, field_name: str, text: str) -> int:
+    """The lines a database field's source spends on its window: its
+    ``_original`` text when DazedTL kept one, else the text itself."""
+    original = entry.get("_original")
+    source = original.get(field_name) if isinstance(original, dict) else None
+    if not isinstance(source, str) or not source.strip():
+        source = text
+    return source.count("\n") + 1
 
 
 def _should_rewrap(text: str, width: int, options: RewrapOptions) -> bool:

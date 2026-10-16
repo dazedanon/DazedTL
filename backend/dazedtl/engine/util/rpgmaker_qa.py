@@ -555,6 +555,9 @@ def _box(record: dict[str, Any], layout: dict[str, Any]) -> dict[str, Any] | Non
         )
         if area == NOTES:
             box["note"] = True
+        elif code is None:
+            # Database help text keeps its lines within the source's rows.
+            box["source_rows"] = str(record.get("source") or "").count("\n") + 1
     return box or None
 
 
@@ -569,7 +572,12 @@ def _fit(correction: str, live: str, box: dict[str, Any] | None) -> str:
     line width check would, when it widens a line past the box."""
     if not box or not box.get("wraps") or not _widens(correction, live, box["width"]):
         return correction
-    return rewrap_value(correction, box["width"], note=bool(box.get("note")))
+    return rewrap_value(
+        correction,
+        box["width"],
+        note=bool(box.get("note")),
+        rows=box.get("source_rows"),
+    )
 
 
 def _fitted(correction: str, live: str, boxes: list[dict[str, Any] | None]) -> str:
