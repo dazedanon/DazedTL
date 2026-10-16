@@ -400,7 +400,8 @@ For an RPG Maker MV/MZ game the app confirms them itself: write the candidate wi
 `{capture} --layout FILE --wait 10`. It shows English exactly that wide in the game's message window
 with and without a face and in its help window, and `layout.probes` gives each one's widest line,
 the room the window gives it, its rows and its capture file; look at the captures. Note windows and
-plugin windows still need your own check.
+plugin windows still need your own check; measure `noteWidth` on the window that draws the note tags
+the layout analysis names, not on other note text.
 The app automatically saves verified widths as the project’s character limits; the user does not
 need to accept them in Layout. Read `{command}` to confirm `layoutApplication` is `applied`.
 If it shows `layoutRejected`, fix what it names and save the report again.

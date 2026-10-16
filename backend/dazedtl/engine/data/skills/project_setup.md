@@ -311,6 +311,11 @@ geometry rather than generic RPG Maker defaults whenever project code is availab
    `DataManager.isDatabaseLoaded()` before `DataManager.setupNewGame()`, then step frames with
    `SceneManager.updateMain()` and call `Graphics._app.render()` before each capture.
 
+`noteWidth` covers only the note bodies DazedTL wraps: {{WRAPPED_NOTE_TAGS}}.
+DazedTL keeps the source's line breaks in every other note text and never wraps it.
+Measure `Notes` on the window that draws the wrapped tags this game uses, and keep the current value when it uses none.
+Never lower `noteWidth` for other note text, such as monster compendium lore; when its window is narrower than its lines, report that window and its limit under Exceptions/playtests for manual reflow.
+
 Report these recommendations under **Manual changes > RPG Maker settings**. They are settings the
 user must review or change, so do not put them in a code fence:
 

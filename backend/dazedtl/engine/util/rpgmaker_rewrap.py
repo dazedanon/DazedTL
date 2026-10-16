@@ -53,6 +53,19 @@ _NOTE_BODY_PATTERNS: tuple[tuple[re.Pattern[str], bool], ...] = (
     (re.compile(r"<ClassMessage>\n?(.*?)</ClassMessage>", re.DOTALL), False),
     (re.compile(r"<コメント:\n?(.*?)>", re.DOTALL), False),
 )
+# Those tags as the setup prompts name them: noteWidth is measured on the
+# window that draws them, since no other note text is wrapped.
+WRAPPED_NOTE_TAGS = (
+    "<SG説明:...>",
+    "<sub_1:...>",
+    "<sub_2:...>",
+    "<sub_3:...>",
+    "<infowindow:...>",
+    "<dPlnText:...>",
+    "<ExtendDesc:...>",
+    "<ClassMessage>...</ClassMessage>",
+    "<コメント:...>",
+)
 
 _SPEAKER_LINE = re.compile(
     r"^(?P<prefix>(?:\[[^\]\n]{1,100}\]|"

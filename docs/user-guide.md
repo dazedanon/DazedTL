@@ -73,6 +73,7 @@ Change any choice under **Source choices**; **Other event text** in Translate tr
 If your assistant cannot measure the game's windows, its task still finishes and the current widths stay; change them yourself if needed and save.
 If the app cannot use your assistant's report, Line widths says why; copy the measurement task again or keep the current widths.
 Message rows is how many rows one message window shows; Text QA keeps its corrections within it.
+Notes is the width of note text DazedTL wraps, such as an item's detail panel; other note text, such as a monster book's lore, keeps the game's own line breaks.
 
 **Cost estimate** shows what translating the whole game costs with your API key before you translate anything.
 Click **Estimate cost**: it estimates Database files, Maps & events and Other event text over all their files, with the model shown beside it, and lists each task's cost.

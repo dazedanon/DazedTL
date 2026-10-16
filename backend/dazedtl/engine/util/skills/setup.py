@@ -7,6 +7,7 @@ from pathlib import Path
 
 from util.paths import SKILLS_DIR, runtime_data_file
 from util.rpgmaker_markers import SUPPORTED_CODE408_MARKERS
+from util.rpgmaker_rewrap import WRAPPED_NOTE_TAGS
 
 _ENGINE_MARKERS = {
     "rpgmaker": ("<!-- engine:rpgmaker -->", "<!-- /engine:rpgmaker -->"),
@@ -141,6 +142,7 @@ def load_project_setup(engine: str = "rpgmaker", *, prepend: str = "", thorough:
         f"`{marker}`" for marker in sorted(SUPPORTED_CODE408_MARKERS)
     )
     body = body.replace("{{SUPPORTED_CODE408_MARKERS}}", marker_list or "none")
+    body = _with_note_tags(body)
     if prepend:
         return prepend.rstrip() + "\n\n" + body
     return body
@@ -156,7 +158,14 @@ def load_clipboard_skill(name: str) -> str:
     path_name = Path(name)
     if path_name.name != name or path_name.suffix.casefold() != ".md":
         raise ValueError(f"Invalid clipboard skill filename: {name!r}")
-    return _read_skill_file(name).strip() + "\n"
+    return _with_note_tags(_read_skill_file(name).strip()) + "\n"
+
+
+def _with_note_tags(text: str) -> str:
+    """A prompt naming the note tags DazedTL wraps where it asks for them."""
+    return text.replace(
+        "{{WRAPPED_NOTE_TAGS}}", ", ".join(f"`{tag}`" for tag in WRAPPED_NOTE_TAGS)
+    )
 
 
 def load_walkthrough_skill(game_root: str | Path, engine: str) -> str:

@@ -48,6 +48,10 @@ I need `width`, `faceWidth`, `listWidth`, and `noteWidth`, the rows a message wi
    `SceneManager.updateMain()` and call `Graphics._app.render()` before each capture.
 8. Recommend a readable font for each category. Use `keep current (<N>px)` when no game-side font
    change is needed; otherwise cite the exact plugin parameter or function that would change it.
+9. `noteWidth` covers only the note bodies DazedTL wraps: {{WRAPPED_NOTE_TAGS}}.
+   DazedTL keeps the source's line breaks in every other note text and never wraps it.
+   Measure Notes on the window that draws the wrapped tags this game uses, and keep the current value when it uses none.
+   Never lower `noteWidth` for other note text, such as monster compendium lore; when its window is narrower than its lines, report that window and its limit under exceptions for manual reflow.
 </instructions>
 
 <output_format>
