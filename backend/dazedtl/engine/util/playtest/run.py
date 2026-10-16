@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 from util import rpgmaker_window
 from util.playtest.checks import static_checks
@@ -518,9 +518,12 @@ def run(
     log: Callable[[str], None] = print,
     stopped: Callable[[], bool] = lambda: False,
     previous: dict[str, Any] | None = None,
+    kept: Iterable[dict[str, Any]] = (),
 ) -> dict[str, Any]:
     """The full playtest of one game; writes report.json to `out`. With the
-    previous report, it counts what was fixed since and marks what is new."""
+    previous report, it counts what was fixed since and marks what is new.
+    *kept* names the plugin settings the plugin task keeps in Japanese on
+    purpose, which it does not report as never translated."""
     game = Path(game_root).expanduser().resolve()
     data = Path(data_root).expanduser().resolve()
     target = Path(out).expanduser().resolve()
@@ -528,7 +531,7 @@ def run(
     extra = read_stops(stops)
     started = time.time()
     log("Checking the game's files")
-    static = static_checks(game, data)
+    static = static_checks(game, data, kept)
     runtime = tour(data, target, extra, minutes, log, stopped)
     merged = merge(static, runtime, data.relative_to(game).as_posix())
     report = {

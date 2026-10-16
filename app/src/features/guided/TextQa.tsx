@@ -27,10 +27,10 @@ import {
   qaCorrections,
   qaGroups,
   qaInterface,
-  qaMayShow,
   qaNotTranslated,
   qaOrigin,
   qaPhase,
+  qaReach,
   qaSource,
   qaStages,
   qaSummary,
@@ -561,12 +561,7 @@ function UntranslatedSource({ source }: { source: QaUntranslatedSource }) {
       </span>
       {source.reach && (
         <p>
-          <strong>
-            {qaMayShow(source)
-              ? "Players may see this."
-              : "Players don't see this now."}
-          </strong>{" "}
-          {source.evidence}
+          <strong>{qaReach(source)}</strong> {source.evidence}
         </p>
       )}
       <ul className="text-qa-texts">

@@ -16,7 +16,7 @@ import shutil
 import subprocess
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from util.rpgmaker_plugin_registry import PluginRegistryError, plugin_entries
 from util.rpgmaker_qa_checks import BATTLE_MESSAGES, battler_name_note, runtime
@@ -183,9 +183,10 @@ class _Checks:
                     identity=f"{name}#{location}",
                 )
 
-    def untranslated(self) -> None:
-        """Text never translated, by file or plugin, with its reach."""
-        found = preflight(self.data, {"records": []})
+    def untranslated(self, kept: Iterable[dict[str, Any]]) -> None:
+        """Text never translated, by file or plugin, with its reach, but for
+        plugin settings the plugin task keeps in Japanese on purpose."""
+        found = preflight(self.data, {"records": []}, kept)
         for source in read_sources(found):
             kind = source["kind"]
             file = (
@@ -446,9 +447,14 @@ def _acorn() -> Path | None:
     return None
 
 
-def static_checks(game_root: str | Path, data_root: str | Path) -> dict[str, Any]:
+def static_checks(
+    game_root: str | Path,
+    data_root: str | Path,
+    kept: Iterable[dict[str, Any]] = (),
+) -> dict[str, Any]:
     """Every static problem in a game, with what the checks could not read.
-    File paths are relative to the game folder."""
+    File paths are relative to the game folder; *kept* names the plugin
+    settings the plugin task keeps in Japanese on purpose."""
     game = Path(game_root).expanduser().resolve()
     data = Path(data_root).expanduser().resolve()
     if game not in data.parents:
@@ -459,7 +465,7 @@ def static_checks(game_root: str | Path, data_root: str | Path) -> dict[str, Any
     for name, document in checks.documents.items():
         reach.scan(name, document)
     checks.japanese()
-    checks.untranslated()
+    checks.untranslated(kept)
     checks.codes()
     checks.descriptions()
     checks.plugin_code(

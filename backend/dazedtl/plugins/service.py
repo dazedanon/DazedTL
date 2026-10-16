@@ -32,6 +32,9 @@ SCAN_RULES = 2
 # with the assistant.
 DECIDED = {"visible", "latent", "protected", "editor_only", "non_visible"}
 DISPOSITIONS = DECIDED | {"unresolved"}
+# Decisions that keep an occurrence's Japanese: a key or name the plugin
+# compares, and text players never read.
+KEPT = DECIDED - {"visible"}
 # File states with nothing left to apply: the game holds the translation, or
 # the file has nothing to translate.
 SETTLED = {"applied", "translated", "none"}
@@ -73,6 +76,50 @@ def undecided(item):
         not item["protected"]
         and item.get("finding", {}).get("disposition") not in DECIDED
     )
+
+
+def kept_settings(root):
+    """Plugin settings whose Japanese Plugin files keeps on purpose, each as
+    its plugin, parameter path and value: lookup keys the app protects and
+    text the assistant decided players never read.
+
+    Its findings count while js/plugins.js is the file it scanned or applied,
+    or once the file is settled, since Plugin files keeps a settled file's
+    findings through later edits; the value says which text each finding was
+    about. Work another project saved counts too, as it describes the same
+    text. A setting another entry of the same plugin leaves open stays out.
+    """
+    try:
+        value = read_json(project_path(root, WORK + "/state.json"), limit=64_000_000)
+        row = value["files"][value["layout"]]
+        current = digest(project_path(root, value["layout"]).read_bytes())
+        if row.get("issue") or (
+            current not in {row["sourceHash"], row.get("applied", {}).get("afterHash")}
+            and PluginService.row_status(value, row) not in SETTLED
+        ):
+            return []
+        kept, open_ = set(), set()
+        for item in row["occurrences"]:
+            if "parameterPath" not in item:
+                continue
+            setting = (
+                item["plugin"],
+                (
+                    *item["parameterPath"],
+                    *(part for part in item["logical"] if part != "$decode"),
+                ),
+                item["value"],
+            )
+            if item["protected"] or item.get("finding", {}).get("disposition") in KEPT:
+                kept.add(setting)
+            else:
+                open_.add(setting)
+    except OSError, ValueError, KeyError, TypeError, AttributeError:
+        return []
+    return [
+        {"plugin": plugin, "path": list(path), "value": text}
+        for plugin, path, text in sorted(kept - open_, key=repr)
+    ]
 
 
 def no_context(_project_id):

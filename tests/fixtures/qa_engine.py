@@ -161,7 +161,14 @@ write("Synopsis.json", [{"text": "あらすじ"}])
             {
                 "name": "Prompt",
                 "status": True,
-                "parameters": {"text": "スキップしますか？"},
+                "parameters": {
+                    "text": "スキップしますか？",
+                    "key": "決定",
+                    # Multi-line settings are stored as JSON strings.
+                    "help": json.dumps(
+                        "決定で進む\nキャンセルで戻る", ensure_ascii=False
+                    ),
+                },
             }
         ],
         ensure_ascii=False,
@@ -169,6 +176,14 @@ write("Synopsis.json", [{"text": "あらすじ"}])
     + ";\n",
     encoding="utf-8",
 )
+# The plugin task keeps a lookup key and a help text players never read in
+# Japanese; its finding on the prompt was about text the setting no longer
+# holds, so the prompt is still reported.
+kept = [
+    {"plugin": "Prompt", "path": ["key"], "value": "決定"},
+    {"plugin": "Prompt", "path": ["help"], "value": "決定で進む\nキャンセルで戻る"},
+    {"plugin": "Prompt", "path": ["text"], "value": "スキップする？"},
+]
 
 
 def source(identity):
@@ -190,6 +205,7 @@ task, state = qa.prepare_task(
     storage,
     screen_item_limit=3,
     fit={"widths": {"messageRows": 3}},
+    kept=kept,
 )
 assert state["stage"] == "screen", state
 forced = json.loads((task / "checkpoint.json").read_text())["deep"]["candidate_reasons"]

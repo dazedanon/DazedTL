@@ -27,6 +27,8 @@ def run_playtest(plan, log):
     from desktop.backend.workflow_actions import validate_plan
     from util.playtest.run import run
 
+    from dazedtl.plugins.service import kept_settings
+
     validate_plan(plan)
     folder = Path(plan["folder"])
     storage = folder / STORAGE
@@ -44,6 +46,7 @@ def run_playtest(plan, log):
         log=log,
         stopped=getattr(log, "stopped", lambda: False),
         previous=before[1] if before else None,
+        kept=kept_settings(plan["project"]["source"]),
     )
     write_json(
         folder / POINTER,

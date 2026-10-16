@@ -4,8 +4,10 @@ The QA inventory holds only text the engine translated, which keeps its
 Japanese in `_original`. This reports the rest that players may read: lines
 and fields without `_original`, custom data files, and plugin parameters.
 QA has no translation of these to review and never corrects them; they need
-translation or a plugin task instead. Each file or plugin is one source, with
-whether players can reach a custom file's or plugin's text.
+translation or a plugin task instead. Plugin settings the plugin task keeps in
+Japanese on purpose, such as lookup keys, are not reported. Each file or
+plugin is one source, with whether players can reach a custom file's or
+plugin's text.
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from util.rpgmaker_qa_reach import MAY_SHOW, Reach
 
@@ -160,6 +162,19 @@ def _untranslated(name: str, document: Any, covered: set[str], rows: list) -> No
             _entry(rows, name, path, value, kind)
 
 
+def _text(value: str) -> str:
+    """A setting's text as the plugin task reads it: plugin editors store some
+    settings, such as multi-line text, as JSON strings."""
+    while True:
+        try:
+            inner = json.loads(value)
+        except ValueError:
+            return value
+        if not isinstance(inner, str):
+            return value
+        value = inner
+
+
 def _plugin_entries(script: Path) -> list[Any]:
     """The game's plugin list in js/plugins.js, or none it can read."""
     try:
@@ -174,8 +189,17 @@ def _plugin_entries(script: Path) -> list[Any]:
     return entries if isinstance(entries, list) else []
 
 
-def preflight(data_root: str | Path, manifest: dict[str, Any]) -> dict[str, Any]:
-    """Japanese that players may read and the QA inventory does not hold."""
+def preflight(
+    data_root: str | Path,
+    manifest: dict[str, Any],
+    kept: Iterable[dict[str, Any]] = (),
+) -> dict[str, Any]:
+    """Japanese that players may read and the QA inventory does not hold.
+
+    *kept* names the plugin settings the plugin task keeps in Japanese on
+    purpose, each by plugin, parameter path and the value it decided on; a
+    setting is left out while it still holds that value.
+    """
     data = Path(data_root).expanduser().resolve()
     covered: dict[str, set[str]] = {}
     for record in manifest["records"]:
@@ -194,27 +218,38 @@ def preflight(data_root: str | Path, manifest: dict[str, Any]) -> dict[str, Any]
             )
             reach.scan(path.name, document)
         else:
-            for pointer, value in _leaves(document):
+            for parts, value in _leaves(document):
                 if japanese(value):
-                    _entry(rows["custom_data"], path.name, pointer, value, "custom data")
+                    _entry(rows["custom_data"], path.name, parts, value, "custom data")
+    decided = {
+        (pointer((setting["plugin"], *setting["path"])), setting["value"])
+        for setting in kept
+    }
+    left = 0
     for plugin in entries:
         if not isinstance(plugin, dict) or plugin.get("status") is not True:
             continue
-        for pointer, value in _leaves(plugin.get("parameters") or {}):
+        for parts, value in _leaves(plugin.get("parameters") or {}):
             if (
-                japanese(value)
-                and not _SCRIPT_RE.search(value)
-                and not _ASSET_PATH_RE.match(value)
+                not japanese(value)
+                or _SCRIPT_RE.search(value)
+                or _ASSET_PATH_RE.match(value)
             ):
-                _entry(
-                    rows["plugin_parameters"], "js/plugins.js",
-                    (str(plugin.get("name") or ""), *pointer), value,
-                    "plugin parameter",
-                )
+                continue
+            location = (str(plugin.get("name") or ""), *parts)
+            if (pointer(location), _text(value)) in decided:
+                left += 1
+                continue
+            _entry(
+                rows["plugin_parameters"], "js/plugins.js", location, value,
+                "plugin parameter",
+            )
     sources = _sources(rows, reach)
     return {
         "schema": SCHEMA,
         "counts": {name: len(rows[name]) for name in _KINDS},
+        # Plugin settings left out because the plugin task keeps them.
+        "kept": left,
         "may_show": sum(item["count"] for item in sources if may_show(item)),
         "sources": sources,
     }

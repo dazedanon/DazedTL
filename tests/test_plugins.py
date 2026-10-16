@@ -12,7 +12,7 @@ from dazedtl.api.contracts.validation import check_response
 from dazedtl.foreign_work import ForeignWorkError
 from dazedtl.plugins import PluginService
 from dazedtl.plugins.documents import Documents, occurrences, replace_leaf, validate
-from dazedtl.plugins.service import safe_name
+from dazedtl.plugins.service import kept_settings, safe_name
 from dazedtl.projects.store import Projects
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.backups import snapshot, store_path
@@ -99,9 +99,10 @@ class PluginTests(unittest.TestCase):
     def write(self, path, value):
         write_bytes(self.game / path, value.encode())
 
-    def investigation(self, task=None, *, advance=True, only=None):
+    def investigation(self, task=None, *, advance=True, only=None, kept=()):
         """Answers a copied task's investigation for every file, or `only`
-        those, and continues the task unless told not to."""
+        those, with the `kept` values found editor-only, and continues the
+        task unless told not to."""
         task = task or self.service.action(self.identity, "plugin_task")
         request = read_json(task["request"])
         rows = []
@@ -117,7 +118,11 @@ class PluginTests(unittest.TestCase):
                     "occurrences": [
                         {
                             "id": item["id"],
-                            "disposition": "latent" if item["latent"] else "visible",
+                            "disposition": "editor_only"
+                            if item["value"] in kept
+                            else "latent"
+                            if item["latent"]
+                            else "visible",
                             "safe": True,
                             "evidence": "Fixture drawText consumer checked; keys remain read-only",
                             "reason": "Player-visible static label",
@@ -439,7 +444,7 @@ class PluginTests(unittest.TestCase):
             self.service.continue_task(self.identity, current["requestId"])
 
     def test_apply_checks_rolls_back_and_restores_after_review(self):
-        _, _, task = self.investigation()
+        _, _, task = self.investigation(kept={"目的地"})
         first = read_json(task["request"])
         paths = [row["path"] for row in first["files"]]
         # Files translated under an earlier request stay publishable while a
@@ -457,12 +462,21 @@ class PluginTests(unittest.TestCase):
         )
         before = {path: (self.game / path).read_bytes() for path in paths}
         self.assertEqual(self.service.state(self.identity)["counts"]["ready"], 2)
+        # Text QA leaves out the settings the assistant keeps in Japanese, by
+        # plugin, parameter path and the value it decided on.
+        kept = [
+            {"plugin": "PluginA", "path": ["List", index, "Text"], "value": "目的地"}
+            for index in (0, 1)
+        ]
+        self.assertEqual(kept_settings(self.game), kept)
         # A game edit under a translation not applied yet goes back to the
-        # assistant; once applied, later edits are expected.
+        # assistant, along with what it kept; once applied, later edits are
+        # expected.
         edited = before[paths[0]] + b"\n// edited"
         write_bytes(self.game / paths[0], edited)
         counts = self.service.state(self.identity)["counts"]
         self.assertLess(counts["investigated"], counts["files"])
+        self.assertEqual(kept_settings(self.game), [])
         write_bytes(self.game / paths[0], before[paths[0]])
         # Apply checks each file again; a working copy changed after its
         # checks stays out of the game.
@@ -516,6 +530,7 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(
             (counts["applied"], counts["investigated"]), (2, counts["files"])
         )
+        self.assertEqual(kept_settings(self.game), kept)
         write_bytes(self.game / paths[0], applied)
         saved = self.service.load(self.identity)
         original_saved = deepcopy(saved)

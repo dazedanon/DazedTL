@@ -209,9 +209,17 @@ export function qaInterface(found: QaInterface | undefined) {
   return `${found.outside.toLocaleString()} squeezed ${found.outside === 1 ? "label" : "labels"} QA can't correct`;
 }
 
-/** Whether players may see a source's text: no evidence rules it out. */
-export function qaMayShow(source: QaUntranslatedSource) {
-  return source.reach !== "uncalled" && source.reach !== "unread";
+/**
+ * Whether players may see a source's text: no evidence rules it out. The
+ * evidence is about a whole plugin or file, so of several texts players may
+ * see only some.
+ */
+export function qaReach(source: QaUntranslatedSource) {
+  if (source.reach === "uncalled" || source.reach === "unread")
+    return "Players don't see this now.";
+  return source.count > 1
+    ? "Players may see some of this."
+    : "Players may see this.";
 }
 
 /** A source's name and what kind of text it holds. */

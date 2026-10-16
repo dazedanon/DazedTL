@@ -2454,6 +2454,7 @@ def prepare_task(
     progress: Callable[[str], None] | None = None,
     observations: Iterable[dict[str, Any]] = (),
     observer: str = "playtest",
+    kept: Iterable[dict[str, Any]] = (),
 ) -> tuple[Path, dict[str, Any]]:
     """Create or reuse one immutable QA task and its exhaustive screen bundles.
 
@@ -2467,6 +2468,9 @@ def prepare_task(
     translated text, start in its checkpoint, so deep review takes their lines;
     a task with different observations is another task, and one a line the
     inventory lacks is left out.
+
+    *kept* names the plugin settings the plugin task keeps in Japanese on
+    purpose, which the never-translated report leaves out.
     """
     game = Path(game_root).expanduser().resolve()
     data = Path(data_root).expanduser().resolve()
@@ -2516,7 +2520,7 @@ def prepare_task(
             write_manifest(manifest, staging / "inventory.json")
             _atomic_write_json(staging / "inventory-validation.json", validation)
             # Japanese never translated is reported, never silently skipped.
-            untranslated = preflight(data, manifest)
+            untranslated = preflight(data, manifest, kept)
             _atomic_write_json(staging / "preflight.json", untranslated)
             _atomic_write_json(staging / "context.json", context)
             compact_items = _compact_items(manifest, context)

@@ -419,6 +419,8 @@ def run_qa(plan, log):
     from desktop.backend.workflow_actions import validate_plan
     from util import rpgmaker_qa as qa
 
+    from dazedtl.plugins.service import kept_settings
+
     validate_plan(plan)
     folder = Path(plan["folder"])
     if plan["action"] == "qa_prepare":
@@ -436,6 +438,7 @@ def run_qa(plan, log):
             interface=True,
             progress=log,
             observations=observations,
+            kept=kept_settings(plan["project"]["source"]),
         )
         if observations:
             log(f"QA reviews {len(observations)} line(s) the playtest found")

@@ -144,6 +144,7 @@ All Check tasks are optional:
   QA also opens the game's screens, such as its menus, item lists and shop, without changing the game, and shortens names and commands the game squeezes or cuts off; **Review them** lists such text QA can't change, such as a plugin's menu.
   Answer the questions it can't settle on the page; each correction is listed with **Undo**, and an undone one with **Apply again**; **Review them** lists the lines QA did not cover.
   That includes Japanese that was never translated, which QA can't review, with whether players can see it; translate what they can in its own task, such as **Plugin files**.
+  Plugin settings **Plugin files** keeps in Japanese on purpose, such as names a plugin looks up, are not listed.
   A correction that changes several lines of one scene, such as narration that switches tense, is listed and undone as one.
   To take out every correction at once, inspect **Apply QA corrections** in the Project page's **History** and choose **Review restore**.
 - **Playtest** (MV and MZ): **Run playtest** has DazedTL check the game's files and play it in a hidden window for a few minutes, writing nothing into the game.
