@@ -55,7 +55,12 @@ class PluginCounts(TypedDict):
     # Text locations chosen for translation.
     selected: int
     ready: int
+    # Files ready to apply whose translation is in the game, where only
+    # shortened labels wait.
+    shortened: int
     applied: int
+    # Labels from Text QA still waiting for the assistant to shorten.
+    labels: int
 
 
 class PluginUnreadable(TypedDict):
@@ -63,6 +68,20 @@ class PluginUnreadable(TypedDict):
     issue: str
     # The user chose to leave it unchanged while it fails this way.
     kept: bool
+
+
+class PluginLabel(TypedDict):
+    """A label Text QA's latest capture found too long for the screen that QA
+    holds no line of, and where it stands here: waiting for the assistant,
+    shortened and ready to apply or applied, kept as it is, or found in no
+    plugin file."""
+
+    text: str
+    # The captured screen that shows it.
+    title: str
+    state: Literal["waiting", "ready", "applied", "kept", "elsewhere"]
+    # Why the assistant kept it as it is.
+    reason: NotRequired[str]
 
 
 class PluginState(TypedDict):
@@ -79,6 +98,7 @@ class PluginState(TypedDict):
     activeRequest: str
     # Whether that request still waits for the assistant's report.
     awaiting: bool
+    labels: list[PluginLabel]
 
 
 class PluginForeignWork(ForeignWork):

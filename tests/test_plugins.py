@@ -47,7 +47,11 @@ class PluginTests(unittest.TestCase):
                 "name": "PluginA",
                 "status": True,
                 "description": "説明",
-                "parameters": {"Label": "開始", "List": encoded},
+                "parameters": {
+                    "Label": "開始",
+                    "List": encoded,
+                    "Help": "Return to the title screen",
+                },
             },
             {"name": "PluginB", "status": False, "description": "", "parameters": {}},
         ]
@@ -567,6 +571,110 @@ class PluginTests(unittest.TestCase):
         self.assertFalse(any(receipt["restorable"] for receipt in state["receipts"]))
         self.assertEqual(state["counts"]["ready"], 2)
         self.assertEqual(self.service.action(self.identity, "apply")["completed"], 2)
+
+    def test_labels_text_qa_found_too_long_hold_the_task_until_applied(self):
+        # QA can't write plugin files, so its squeezed plugin labels must
+        # reach the assistant here, keep the task open and go into the game
+        # only through a checked copy.
+        self.translated()
+        self.service.action(self.identity, "apply")
+        capture = lambda task, *texts: (
+            lambda _project: {
+                "task": task,
+                "labels": [
+                    {
+                        "text": text,
+                        "title": "Menu",
+                        "capture": "/qa/menu.png",
+                        "squeezed": 0.75,
+                    }
+                    for text in texts
+                ],
+            }
+        )
+        # "Start" was translated here, the help text was English already and
+        # a label in no plugin file stays with QA.
+        self.service.labels = capture(
+            "qa-1", "Start", "Return to the title screen", "Status Effects"
+        )
+        state = self.service.state(self.identity)
+        self.assertEqual(state["counts"]["labels"], 2)
+        self.assertEqual(
+            [row["state"] for row in state["labels"]],
+            ["waiting", "waiting", "elsewhere"],
+        )
+        task = self.service.action(self.identity, "plugin_task")
+        self.assertEqual(task["stage"], "fit")
+        request = read_json(task["request"])
+        found = {row["path"]: row for row in request["files"]}
+        config = found["www/js/plugins.js"]
+        go = next(item for item in config["candidates"] if item["value"] == "Start")
+        help_text = next(
+            item for item in config["candidates"] if item["value"].startswith("Return")
+        )
+        raw = (self.game / config["candidate"]).read_bytes()
+        literal = self.service.documents.parse(
+            [{"path": "x", "source": raw.decode(), "kind": "parameters"}]
+        )["x"]["literals"][go["token"]]
+        edited = raw[: literal["start"]] + b'"Go"' + raw[literal["end"] :]
+        write_bytes(self.game / config["candidate"], edited)
+        decisions = [
+            {"text": "Start", "decision": "shortened", "evidence": "Menu capture"},
+            {
+                "text": "Return to the title screen",
+                "decision": "kept",
+                "evidence": "Menu capture",
+                "reason": "Its window scrolls the help text",
+            },
+        ]
+        answer = {
+            "path": config["path"],
+            "sourceHash": config["sourceHash"],
+            "candidateHash": digest(edited),
+            "evidence": "Shorter menu command",
+            "targets": {go["id"]: "Go", help_text["id"]: "Back"},
+        }
+        report = {key: request[key] for key in self.identity_keys}
+        report.update(labels=decisions, files=[answer], complete=True)
+        # Text for a label the assistant kept is refused.
+        write_json(request["report"], report)
+        with self.assertRaises(ValueError):
+            self.service.continue_task(self.identity, request["requestId"])
+        answer["targets"] = {go["id"]: "Go"}
+        write_json(request["report"], report)
+        done = self.service.continue_task(self.identity, request["requestId"])
+        self.assertEqual(done["stage"], "complete")
+        state = self.service.state(self.identity)
+        self.assertEqual(
+            [row["state"] for row in state["labels"]], ["ready", "kept", "elsewhere"]
+        )
+        self.assertEqual(
+            (
+                state["counts"]["labels"],
+                state["counts"]["ready"],
+                state["counts"]["shortened"],
+            ),
+            (0, 1, 1),
+        )
+        self.assertNotIn(b'"Go"', (self.game / "www/js/plugins.js").read_bytes())
+        self.service.action(self.identity, "apply")
+        self.assertIn(b'"Go"', (self.game / "www/js/plugins.js").read_bytes())
+        self.assertEqual(self.status("www/js/plugins.js"), "applied")
+        restarted = PluginService(
+            self.projects, self.translation, self.backend, documents=self.documents
+        )
+        restarted.labels = self.service.labels
+        self.assertEqual(
+            [row["state"] for row in restarted.state(self.identity)["labels"]],
+            ["applied", "kept", "elsewhere"],
+        )
+        # A newer capture that finds the shorter text still too long hands it
+        # out again; a kept label stays kept.
+        restarted.labels = capture("qa-2", "Go", "Return to the title screen")
+        self.assertEqual(
+            [row["state"] for row in restarted.state(self.identity)["labels"]],
+            ["waiting", "kept"],
+        )
 
     def test_partial_results_are_handed_back_until_complete(self):
         _, _, task = self.investigation()

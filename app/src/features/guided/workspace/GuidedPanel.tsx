@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { PathInput } from "../../../ui/PathInput";
 import { api } from "../../../api/client";
+import { useApplication } from "../../../app/ApplicationProvider";
 import { flushDrafts } from "../../../state/leaveGuards";
 import { ActionBar } from "../../../ui/ActionBar";
 import { ActionControl } from "../../../ui/ActionControl";
@@ -71,8 +72,10 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
     fields,
     editText,
     editForm,
+    move,
   } = w;
   const owned = useOwnedFeedback(action.key);
+  const plugins = useApplication().snapshot?.plugins;
   // Only a scan started from this dialog confirms its result here.
   const [scanStarted, setScanStarted] = useState("");
   if (!panel) return null;
@@ -84,6 +87,14 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
           api.guided.qaReviewed(project.id, identities)
         }
         onClose={closePanel}
+        plugins={
+          plugins?.projectId === project.id
+            ? {
+                labels: plugins.labels,
+                open: () => void move("translate", "plugins"),
+              }
+            : undefined
+        }
       />
     );
   const findingsReady = ["ready", "applied"].includes(findings.status);

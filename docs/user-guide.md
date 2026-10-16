@@ -109,6 +109,7 @@ Approved Batch work carries on after DazedTL restarts.
 **Plugin files**: copy the task to your assistant, which finds and translates the player-visible text in every plugin.
 **Apply to game** writes the translated plugins into the game in one click and keeps a backup of each, which **Recovery** restores.
 Copy the task again to continue, or to have it recheck after you spot untranslated plugin text.
+When **Text QA** finds plugin labels too long for the screen, such as a menu command, the task waits on them: copy it again and your assistant shortens them, or keeps one with its reason, then click **Apply to game**.
 
 **Images** has four steps, and the filled button is always the next one:
 
@@ -141,7 +142,8 @@ All Check tasks are optional:
 - **Text QA**: **Start text QA** copies the task, and your assistant reviews the translated text and applies the corrections it verifies.
   It runs four reviewers at once; when the page says **one reviewer at a time**, your assistant is reviewing alone, which takes several times longer, so ask it to start the reviewers its QA task describes.
   A correction too wide for its box is rewrapped to the Line widths saved when QA started.
-  QA also opens the game's screens, such as its menus, item lists and shop, without changing the game, and shortens names and commands the game squeezes or cuts off; **Review them** lists such text QA can't change, such as a plugin's menu.
+  QA also opens the game's screens, such as its menus, item lists and shop, without changing the game, and shortens names and commands the game squeezes or cuts off.
+  **Review them** lists such text QA can't change; what comes from plugins goes to **Plugin files**, where its assistant shortens it, and each label shows where it stands there.
   Answer the questions it can't settle on the page; each correction is listed with **Undo**, and an undone one with **Apply again**; **Review them** lists the lines QA did not cover.
   That includes Japanese that was never translated, which QA can't review, with whether players can see it; translate what they can in its own task, such as **Plugin files**.
   Plugin settings **Plugin files** keeps in Japanese on purpose, such as names a plugin looks up, are not listed.

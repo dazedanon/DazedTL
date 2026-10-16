@@ -21,7 +21,16 @@ from dazedtl.translation.operations import (
     require_source_backup,
 )
 
-from .documents import Documents, decode, occurrences, reason, validate
+from .documents import (
+    Documents,
+    decode,
+    draws,
+    leaves,
+    occurrence_id,
+    occurrences,
+    reason,
+    validate,
+)
 
 WORK = ".dazedtl/plugin-work"
 # Bump when scanning finds different files, text or problems, so saved scans
@@ -126,6 +135,10 @@ def no_context(_project_id):
     return {"translated": "", "references": []}
 
 
+def no_labels(_project_id):
+    return {"task": "", "labels": []}
+
+
 # Stored reviews and receipts also keep the working copies and frozen bytes that
 # publication and recovery check; the renderer sees only what it shows.
 REVIEW_KEYS = (
@@ -193,15 +206,26 @@ def safe_name(name):
 
 class PluginService:
     def __init__(
-        self, projects, translation, backend, *, documents=None, context=no_context
+        self,
+        projects,
+        translation,
+        backend,
+        *,
+        documents=None,
+        context=no_context,
+        labels=no_labels,
     ):
         self.projects, self.translation, self.backend = projects, translation, backend
         self.documents = documents or Documents()
         # Where the game's established English lives beyond its guidance files:
         # the translated text folder and the reference games.
         self.context = context
+        # Labels Text QA's latest capture found too long for the screen that
+        # it holds no line of, which this task shortens.
+        self.labels = labels
         self.lock = threading.RLock()
         self.previews, self.cache, self.observed, self.foreign = {}, {}, {}, {}
+        self.located = {}
         # The app's own folders, which a game must stay apart from; resolving
         # a path costs a file open on Windows, and every plugin call checks.
         self.protected = [
@@ -729,7 +753,14 @@ class PluginService:
                     if key in old and row["sourceHash"] == prior.get("sourceHash"):
                         item[key] = old[key]
             if row["sourceHash"] == prior.get("sourceHash"):
-                for key in ("prepared", "result", "applied", "examined"):
+                for key in (
+                    "prepared",
+                    "result",
+                    "applied",
+                    "examined",
+                    "fit",
+                    "fitting",
+                ):
                     if key in prior:
                         row[key] = prior[key]
             elif prior.get("applied") and row["sourceHash"] == prior["applied"].get(
@@ -810,7 +841,8 @@ class PluginService:
             and result.get("candidateHash") == row["applied"]["afterHash"]
         ):
             return "applied"
-        if not ids:
+        # Text shortened for the screen counts as the file's text too.
+        if not ids and not row.get("fit"):
             return "none"
         if not checked:
             return "translate"
@@ -842,25 +874,254 @@ class PluginService:
             if self.row_status(value, row) == "translate"
         ]
 
+    @staticmethod
+    def current_copy(row):
+        """The file whose bytes the game gets: a file's checked working copy
+        once it has one, else the game's own file."""
+        return row["prepared"]["candidate"] if row.get("prepared") else row["path"]
+
+    def find_labels(self, project_id, value, texts):
+        """Where the game draws each label from: text in the bytes each plugin
+        file gets that a loaded plugin can draw and the app lets the
+        assistant change, so no lookup value, code key or default. Found
+        again only when a file, the labels or the originals change."""
+        _, root = self.record(project_id)
+        rows = []
+        for row in value["files"].values():
+            if row.get("issue"):
+                continue
+            try:
+                rows.append((row, self.fingerprint(root, self.current_copy(row))))
+            except OSError, ValueError:
+                continue
+        key = (
+            tuple(texts),
+            tuple((row["path"], hashed) for row, hashed in rows),
+            value["originals"].get("binding", ""),
+        )
+        saved = self.located.get(project_id)
+        if saved and saved[0] == key:
+            return saved[1]
+        _prefix, _catalog, config = self.inventory(project_id)
+        originals = value["originals"]
+        # A label's longest word, to skip files that cannot hold it.
+        words = {
+            text: max(re.findall(r"[^\W_]{3,}", text), key=len, default=text).encode()
+            for text in texts
+        }
+        found = {text: [] for text in texts}
+        for row, hashed in rows:
+            raw = self.source(root, self.current_copy(row))
+            wanted = [text for text in texts if words[text] in raw]
+            if not wanted:
+                continue
+            parsed = self.documents.parse(
+                [{"path": row["path"], "source": raw.decode(), "kind": row["kind"]}]
+            )[row["path"]]
+            if parsed["issues"]:
+                continue
+            code_keys = {
+                item["value"] for item in parsed["literals"] if item["protected"]
+            }
+            lookup = set(
+                originals.get(
+                    "structuralKeys" if row["kind"] == "parameters" else "keys", []
+                )
+            )
+            japanese = {
+                (item["token"], tuple(item["logical"])): item["value"]
+                for item in row["occurrences"]
+            }
+            for index, literal in enumerate(parsed["literals"]):
+                if literal["protected"] or literal["kind"] == "default":
+                    continue
+                plugin, enabled, parameter = row["plugin"], row["enabled"], None
+                if row["kind"] == "parameters":
+                    path = literal.get("path") or []
+                    if not (
+                        len(path) >= 3
+                        and type(path[0]) is int
+                        and path[1] == "parameters"
+                        and path[0] < len(config["plugins"])
+                    ):
+                        continue
+                    entry = config["plugins"][path[0]]
+                    plugin, enabled, parameter = entry["name"], entry["loads"], path[2:]
+                if not enabled:
+                    continue
+                for logical, text, opaque in leaves(literal["value"]):
+                    if opaque or text in lookup or text in code_keys:
+                        continue
+                    for label in wanted:
+                        if not draws(text, label):
+                            continue
+                        source = japanese.get((index, tuple(logical)))
+                        found[label].append(
+                            {
+                                "id": occurrence_id(
+                                    row["path"], hashed, literal, logical
+                                ),
+                                "path": row["path"],
+                                "plugin": plugin,
+                                "token": index,
+                                "logical": logical,
+                                "value": text,
+                                "line": literal["line"],
+                                "start": literal["start"],
+                                "end": literal["end"],
+                                "kind": literal["kind"],
+                                **({"parameterPath": parameter} if parameter else {}),
+                                **({"source": source} if source else {}),
+                            }
+                        )
+        self.located[project_id] = (key, found)
+        return found
+
+    def label_rows(self, project_id, value):
+        """Each label from Text QA's latest capture with where it stands here:
+        waiting for the assistant, shortened for that capture and ready to
+        apply or applied, kept for a reason the assistant gave, or found in
+        no plugin file; and the waiting ones with the text they could come
+        from."""
+        handed = self.labels(project_id)
+        if not handed["labels"]:
+            return {"task": handed["task"], "rows": [], "waiting": []}
+        texts = sorted({label["text"] for label in handed["labels"]})
+        # Before the task first reads the plugins, or while it can't, every
+        # label waits for it; a copied task reports why.
+        try:
+            found = (
+                self.find_labels(project_id, value, texts) if value["binding"] else None
+            )
+        except OSError, ValueError, UnicodeError:
+            found = None
+        decided = value.get("labels", {})
+        rows, waiting = [], []
+        for label in handed["labels"]:
+            decision = decided.get(label["text"], {})
+            # A label shortened for an earlier capture that still shows it
+            # did not change what the game draws.
+            settled = decision.get("decision") == "kept" or (
+                decision.get("decision") == "shortened"
+                and decision.get("task") == handed["task"]
+            )
+            state = (
+                "kept"
+                if decision.get("decision") == "kept"
+                else (
+                    "ready"
+                    if any(
+                        path in value["files"]
+                        and self.row_status(value, value["files"][path]) == "ready"
+                        for path in decision.get("files", [])
+                    )
+                    else "applied"
+                )
+                if settled
+                else "waiting"
+                if found is None or found[label["text"]]
+                else "elsewhere"
+            )
+            rows.append(
+                {
+                    "text": label["text"],
+                    "title": label["title"],
+                    "state": state,
+                    **({"reason": decision["reason"]} if state == "kept" else {}),
+                }
+            )
+            if state == "waiting" and found:
+                waiting.append(
+                    {
+                        **pick(
+                            label, ("text", "title", "capture", "squeezed", "clipped")
+                        ),
+                        "candidates": found[label["text"]],
+                    }
+                )
+        return {"task": handed["task"], "rows": rows, "waiting": waiting}
+
+    def prepare_fit(self, project_id, value, waiting):
+        """An editable copy of the bytes each file with a waiting label's text
+        gets, apart from its translation's working copy, so that copy keeps
+        its checks while the assistant shortens labels."""
+        _, root = self.record(project_id)
+        for path in sorted(
+            {item["path"] for label in waiting for item in label["candidates"]}
+        ):
+            row = value["files"][path]
+            self.runtime_allowlist(project_id, value, row)
+            raw = self.source(root, self.current_copy(row))
+            fitting = row.get("fitting")
+            if fitting and fitting["originalHash"] == digest(raw):
+                self.copy_boundary(root, fitting)
+                if (
+                    digest(self.source(root, fitting["original"]))
+                    == fitting["originalHash"]
+                ):
+                    self.source(root, fitting["candidate"])
+                    continue
+            identity = uuid.uuid4().hex
+            base = WORK + "/copies/" + identity + "/" + path
+            write_bytes(project_path(root, base + ".original", exists=False), raw)
+            write_bytes(project_path(root, base, exists=False), raw)
+            row["fitting"] = {
+                "original": base + ".original",
+                "originalHash": digest(raw),
+                "candidate": base,
+                "copyRoot": WORK + "/copies/" + identity,
+                "prepared": now(),
+            }
+
+    @staticmethod
+    def fit_files(value, waiting):
+        """Each file a waiting label's text is in, with that text and the
+        copy the assistant shortens it in."""
+        found = {}
+        for label in waiting:
+            for item in label["candidates"]:
+                found.setdefault(item["path"], {})[item["id"]] = item
+        return [
+            {
+                "path": path,
+                "plugin": value["files"][path]["plugin"],
+                "sourceHash": value["files"][path]["sourceHash"],
+                "kind": value["files"][path]["kind"],
+                "enabled": value["files"][path]["enabled"],
+                "candidates": list(items.values()),
+                # Why the last shortened copy of this file was not accepted.
+                "failedCheck": value["files"][path]["fitting"].get("failed", ""),
+                **pick(
+                    value["files"][path]["fitting"],
+                    ("original", "originalHash", "candidate", "copyRoot"),
+                ),
+            }
+            for path, items in sorted(found.items())
+        ]
+
+    def fingerprint(self, root, path):
+        """A file's hash, read again only when its file signature changes."""
+        target = project_path(root, path)
+        stat = target.stat()
+        signature = (
+            stat.st_dev,
+            stat.st_ino,
+            stat.st_size,
+            stat.st_mtime_ns,
+            stat.st_ctime_ns,
+        )
+        cached = self.observed.get(str(target))
+        if not cached or cached[0] != signature:
+            cached = (signature, digest(self.source(root, path)))
+            self.observed[str(target)] = cached
+        return cached[1]
+
     def observe(self, project_id, value):
         """Bounded observations invalidate displayed checks without rewriting assistant work."""
         _, root = self.record(project_id)
 
         def fingerprint(path):
-            target = project_path(root, path)
-            stat = target.stat()
-            signature = (
-                stat.st_dev,
-                stat.st_ino,
-                stat.st_size,
-                stat.st_mtime_ns,
-                stat.st_ctime_ns,
-            )
-            cached = self.observed.get(str(target))
-            if not cached or cached[0] != signature:
-                cached = (signature, digest(self.source(root, path)))
-                self.observed[str(target)] = cached
-            return cached[1]
+            return self.fingerprint(root, path)
 
         for row in value["files"].values():
             try:
@@ -940,12 +1201,21 @@ class PluginService:
                     value = self.load(project_id)
             self.observe(project_id, value)
             project, _ = self.record(project_id)
+            selected = set(value["selection"])
+            stands = {
+                path: self.row_status(value, row)
+                for path, row in value["files"].items()
+            }
             # Files with nothing for the assistant to decide stay out of the
             # counts, so they read as the assistant's progress; a changed file
-            # counts until a scan says what it holds now.
+            # counts until a scan says what it holds now. A file whose only
+            # change shortens labels has no text to translate.
             statuses = Counter(
-                self.row_status(value, row)
-                for row in value["files"].values()
+                stands[path]
+                if any(item["id"] in selected for item in row["occurrences"])
+                or stands[path] not in SETTLED | {"ready"}
+                else "none"
+                for path, row in value["files"].items()
                 if row.get("issue")
                 or row.get("stale")
                 or row.get("loaderLiterals")
@@ -954,6 +1224,10 @@ class PluginService:
             translated = (
                 statuses["ready"] + statuses["applied"] + statuses["translated"]
             )
+            ready = [
+                row for path, row in value["files"].items() if stands[path] == "ready"
+            ]
+            labels = self.label_rows(project_id, value)["rows"]
             active = next(
                 (
                     request
@@ -983,9 +1257,18 @@ class PluginService:
                     "textFiles": translated + statuses["translate"],
                     "selected": len(value["selection"]),
                     "translated": translated,
-                    "ready": statuses["ready"],
-                    "applied": statuses["applied"],
+                    "ready": len(ready),
+                    # Of those, files whose translation is in the game and
+                    # only shortened labels wait.
+                    "shortened": sum(
+                        bool(row["result"].get("onlyLabels")) for row in ready
+                    ),
+                    "applied": sum(stand == "applied" for stand in stands.values()),
+                    "labels": sum(row["state"] == "waiting" for row in labels),
                 },
+                # Text QA's labels too long for the screen, from its latest
+                # capture, and where each stands here.
+                "labels": labels,
                 # A file kept unchanged stays kept while it fails the same way.
                 "unreadable": [
                     {
@@ -1096,14 +1379,19 @@ class PluginService:
 
     def advance(self, project_id, value, current=None):
         """The next request: text still to investigate first, then files to
-        translate. A request whose scope has not changed is handed out again,
-        so its saved report is extended rather than orphaned."""
+        translate, then labels Text QA found too long for the screen. A
+        request whose scope has not changed is handed out again, so its saved
+        report is extended rather than orphaned."""
         kind, scope = "investigation", self.investigation_scope(value)
         if not scope:
             kind, scope = "translation", self.translation_scope(value)
-            if not scope:
+            if scope:
+                self.prepare(project_id, value)
+        if not scope:
+            kind, scope = "fit", self.label_rows(project_id, value)
+            if not scope["waiting"]:
                 return None
-            self.prepare(project_id, value)
+            self.prepare_fit(project_id, value, scope["waiting"])
         if current and self.same_scope(project_id, value, current, kind, scope):
             key = "findings" if kind == "investigation" else "editing"
             value[key] = {**value[key], "status": "awaiting_report"}
@@ -1152,7 +1440,7 @@ class PluginService:
         request_path = self.path(project_id, "requests/" + identity + ".json")
         report_path = self.path(project_id, "reports/" + identity + ".json")
         files = []
-        for path, items in scope:
+        for path, items in [] if kind == "fit" else scope:
             row = value["files"][path]
             if kind == "translation" and not row.get("prepared"):
                 raise ValueError("A file to translate has no working copy: " + path)
@@ -1174,6 +1462,8 @@ class PluginService:
                     **row.get("prepared", {}),
                 }
             )
+        if kind == "fit":
+            files = self.fit_files(value, scope["waiting"])
         # Translation follows prepare(), which checked the originals.
         self.current_sources(project_id, value, files)
         context = self.context(project_id)
@@ -1199,6 +1489,25 @@ class PluginService:
                 "path": str(request_path),
                 "automatic": True,
                 "previousRequestId": previous,
+                **(
+                    {
+                        "qaTask": scope["task"],
+                        "labels": [
+                            {
+                                **pick(
+                                    label,
+                                    ("text", "title", "capture", "squeezed", "clipped"),
+                                ),
+                                "candidates": [
+                                    item["id"] for item in label["candidates"]
+                                ],
+                            }
+                            for label in scope["waiting"]
+                        ],
+                    }
+                    if kind == "fit"
+                    else {}
+                ),
             }
         )
         value["findings" if kind == "investigation" else "editing"] = {
@@ -1216,7 +1525,7 @@ class PluginService:
         }
         text = (
             "Translate the text this game's plugins show to players. This is one DazedTL Plugin files task; copying it did not start an assistant. Keep DazedTL open.\n"
-            "Work through it in this conversation: after each report, the helper below checks it and returns the next request, until every plugin file is investigated and its player text translated. "
+            "Work through it in this conversation: after each report, the helper below checks it and returns the next request, until every plugin file is investigated and its player text translated, and every plugin label Text QA found too long for the screen is shortened. "
             "Do not ask the user to copy another prompt or approve routine steps; ask only about choices the evidence cannot settle, after finishing the independent work.\n\n"
             "Read the request JSON: " + str(request_path) + "\n"
             "Save a structured report at: " + str(report_path) + "\n"
@@ -1269,7 +1578,7 @@ class PluginService:
                     else ""
                 )
             )
-        else:
+        elif kind == "translation":
             schema = {
                 **identity_fields,
                 "files": [
@@ -1311,6 +1620,41 @@ class PluginService:
                 "The app rejects bytes outside the listed spans, unlisted decoded leaves and stale hashes, and syntax alone does not verify meaning. "
                 "When a check fails, the helper returns a request for the files still needing work, with each failedCheck: repair the same working copies and report them under that request. "
                 "Applying to the game is a separate step in the app; do not claim rendered fit without testing it.\n"
+            )
+        else:
+            schema = {
+                **identity_fields,
+                "labels": [
+                    {
+                        "text": "exact requested label",
+                        "decision": "shortened|kept",
+                        "evidence": "what the capture shows and which listed text the plugin draws there",
+                        "reason": "why it stays as it is (kept only)",
+                    }
+                ],
+                "files": [
+                    {
+                        "path": "exact requested path",
+                        "sourceHash": "request hash",
+                        "candidateHash": "working copy SHA-256",
+                        "evidence": "how the shorter English keeps the meaning and fits",
+                        "targets": {
+                            "requested candidate ID": "exact decoded shorter English"
+                        },
+                    }
+                ],
+            }
+            text += (
+                "SHORTEN. Text QA ran the game, captured its screens and found these plugin labels too long for the screen: the game squeezes or cuts them off. "
+                "Each label lists its screen, its capture (an image to look at) and how short of room it is: squeezed 0.75 means the game drew it at 75% of the width it needs, so the English needs about a quarter less width; clipped means its end is cut off. "
+                "Its candidates are the plugin text it can come from, with the Japanese source where the app has it.\n"
+                "Look at each capture, read the plugin's code to find which candidates it draws there, and shorten those in each file's working copy (candidate) until the label fits; runtime files and frozen copies (original) are read-only. "
+                "Their paths are relative to the game folder " + str(root) + ".\n"
+                "Keep the meaning, the glossary's terms and the same English wherever the game shows the same term; a setting that lists several labels keeps its separators and item count. "
+                "Change only listed candidates, keeping quote style, structure, interpolation and control codes.\n"
+                "Report a decision for every label: shortened, with each changed candidate in its file's targets, or kept with the reason, only when no shorter English keeps its meaning or the plugin draws none of its candidates there. "
+                "The captures show the screens before your change and DazedTL can't capture your working copies, so size the shorter English from how short of room each label is, with the font and window width the plugin's code sets, and say in evidence how you sized it. "
+                "The app checks each working copy as it checks translations; when a check fails, the helper returns a request with each failedCheck. Applying to the game stays in the app.\n"
             )
         text += reference_folders.instructions(context["references"])
         text += (
@@ -1390,7 +1734,9 @@ class PluginService:
             self.translation.clean_drafts(project_id)
             self.refresh(project_id, value, request["kind"])
             problems = (
-                value["editing"]["errors"] if request["kind"] == "translation" else []
+                value["editing"]["errors"]
+                if request["kind"] in {"translation", "fit"}
+                else []
             )
             # Retain accepted findings even if later preparation cannot finish.
             self.save(project_id, value)
@@ -1401,28 +1747,35 @@ class PluginService:
             result = self.advance(project_id, value, request)
             self.save(project_id, value)
             if result:
-                left = (
-                    self.investigation_scope(value)
+                count, noun, verb = (
+                    (len(self.investigation_scope(value)), "file", "investigate")
                     if result["stage"] == "investigation"
-                    else self.translation_scope(value)
+                    else (len(self.translation_scope(value)), "file", "translate")
+                    if result["stage"] == "translation"
+                    else (
+                        len(self.label_rows(project_id, value)["waiting"]),
+                        "label",
+                        "shorten",
+                    )
                 )
                 result["message"] = (
-                    f"{len(left)} {'file' if len(left) == 1 else 'files'} left to "
-                    + (
-                        "investigate"
-                        if result["stage"] == "investigation"
-                        else "translate"
-                    )
-                    + "."
+                    f"{count} {noun if count == 1 else noun + 's'} left to {verb}."
                     + (" Failed checks: " + "; ".join(problems) if problems else "")
                 )
             else:
                 unreadable = [
                     path for path, row in value["files"].items() if row.get("issue")
                 ]
+                labels = self.label_rows(project_id, value)["rows"]
                 result = {
                     "stage": "complete",
-                    "message": "Every plugin file is investigated and its player text translated. The user applies it to the game in the app."
+                    "message": "Every plugin file is investigated and its player text translated"
+                    + (
+                        ", and every plugin label Text QA found too long for the screen is shortened or kept"
+                        if any(row["state"] != "elsewhere" for row in labels)
+                        else ""
+                    )
+                    + ". The user applies it to the game in the app."
                     + (
                         " These files could not be read and were left unchanged: "
                         + ", ".join(unreadable)
@@ -1476,26 +1829,49 @@ class PluginService:
             )
             for row in rows
         ]
-        return (
+        same = (
             request["kind"] == kind
             and request["binding"] == value["binding"]
             and request["guidance"] == self.guidance(root)
             and request["originals"]
             == pick(value["originals"], ("backupId", "binding"))
             and request["layout"] == value["layout"]
-            and shape(request["files"])
-            == shape(
-                {
-                    "path": path,
-                    "sourceHash": value["files"][path]["sourceHash"],
-                    "occurrences": items,
-                }
-                for path, items in scope
+        )
+        if kind == "fit":
+            # The same labels in the same copies, which the assistant may
+            # have started shortening.
+            labels = lambda rows: [
+                (row["text"], row["capture"], row["candidates"]) for row in rows
+            ]
+            files = lambda rows: [
+                (row["path"], row["originalHash"], row["candidate"]) for row in rows
+            ]
+            return (
+                same
+                and request["qaTask"] == scope["task"]
+                and labels(request["labels"])
+                == labels(
+                    {
+                        **label,
+                        "candidates": [item["id"] for item in label["candidates"]],
+                    }
+                    for label in scope["waiting"]
+                )
+                and files(request["files"])
+                == files(self.fit_files(value, scope["waiting"]))
             )
+        return same and shape(request["files"]) == shape(
+            {
+                "path": path,
+                "sourceHash": value["files"][path]["sourceHash"],
+                "occurrences": items,
+            }
+            for path, items in scope
         )
 
     def saved_request(self, project_id, request_id):
-        """A translation request this project issued, as the profile recorded it."""
+        """A translation or shortening request this project issued, as the
+        profile recorded it."""
         if not isinstance(request_id, str) or not re.fullmatch(
             r"[0-9a-f]{32}", request_id
         ):
@@ -1504,7 +1880,7 @@ class PluginService:
             )
         request = read_json(self.path(project_id, "requests/" + request_id + ".json"))
         self.verify_request(project_id, request)
-        if request.get("kind") != "translation":
+        if request.get("kind") not in {"translation", "fit"}:
             raise ValueError(
                 "Saved results need the translation task that asked for them."
             )
@@ -1620,6 +1996,8 @@ class PluginService:
         if any(row.get("path") not in allowed for row in rows):
             raise ValueError("Report contains an out-of-scope file.")
         self.current_sources(project_id, value, request["files"])
+        if kind == "fit":
+            return self.accept_fit(project_id, value, request, report, rows)
         if kind == "translation":
             self.current_originals(project_id, value)
         accepted = 0
@@ -1693,6 +2071,9 @@ class PluginService:
                 ids = {item["id"] for item in approved}
                 if not isinstance(targets, dict) or set(targets) - ids:
                     raise ValueError("Results contain unapproved occurrence IDs.")
+                # Text shortened for the screen stays as it was checked.
+                fitted = [item for item in row.get("fit", []) if item["id"] not in ids]
+                kept = {item["id"]: item["target"] for item in fitted}
                 evidence = bounded(
                     answer.get("evidence", ""), "Translation review evidence"
                 )
@@ -1718,8 +2099,8 @@ class PluginService:
                         candidate,
                         parsed["original/" + path],
                         parsed["candidate/" + path],
-                        approved,
-                        targets,
+                        [*approved, *fitted],
+                        {**kept, **targets},
                     )
                     complete = set(targets) == ids
                     status = (
@@ -1743,7 +2124,7 @@ class PluginService:
                     "reason": reason,
                     "checks": checks,
                     "candidateHash": digest(candidate),
-                    "targets": targets,
+                    "targets": {**kept, **targets},
                     "evidence": evidence,
                     "requestId": request["requestId"],
                     "selection": sorted(ids),
@@ -1854,6 +2235,287 @@ class PluginService:
             "message": "Saved " + kind + " report checked.",
             "errors": errors,
         }
+
+    def accept_fit(self, project_id, value, request, report, rows):
+        """Checks a report on labels too long for the screen. A label counts
+        as shortened once a checked working copy holds text that no longer
+        draws it, and as kept with the assistant's reason; a copy that fails
+        its checks stays with the assistant with its failedCheck."""
+        _, root = self.record(project_id)
+        originals = self.current_originals(project_id, value)
+        asked = {label["text"]: label for label in request["labels"]}
+        answers = report.get("labels", [])
+        if (
+            not isinstance(answers, list)
+            or any(not isinstance(item, dict) for item in answers)
+            or len({item.get("text") for item in answers}) != len(answers)
+        ):
+            raise ValueError("Label decisions must be unique entries.")
+        decisions = {}
+        for item in answers:
+            if item.get("text") not in asked or item.get("decision") not in {
+                "shortened",
+                "kept",
+            }:
+                raise ValueError("Unknown label or invalid decision.")
+            evidence = bounded(item.get("evidence", ""), "Label evidence")
+            reason = bounded(item.get("reason", ""), "Label reason")
+            if not evidence.strip() or (
+                item["decision"] == "kept" and not reason.strip()
+            ):
+                raise ValueError(
+                    "Every label decision needs evidence, and a kept label its reason."
+                )
+            decisions[item["text"]] = {
+                "decision": item["decision"],
+                "evidence": evidence,
+                "reason": reason,
+            }
+        labels_of = {}
+        for text, label in asked.items():
+            for identity in label["candidates"]:
+                labels_of.setdefault(identity, set()).add(text)
+        allowed = {row["path"]: row for row in request["files"]}
+        updated = deepcopy(value)
+        errors, shortened, failed, passed = [], {}, set(), 0
+        for answer in rows:
+            path = answer["path"]
+            wanted = allowed[path]
+            row = updated["files"][path]
+            if answer.get("sourceHash") != wanted["sourceHash"]:
+                raise ValueError("Report source hash does not match: " + path)
+            keys = ("original", "originalHash", "candidate", "copyRoot")
+            fitting = row.get("fitting") or {}
+            if pick(fitting, keys) != pick(wanted, keys):
+                raise ValueError(
+                    "This file's copy for shortening changed. Read plugin status and use its active request."
+                )
+            self.copy_boundary(root, fitting)
+            base = self.source(root, fitting["original"])
+            edited = self.source(root, fitting["candidate"])
+            if digest(base) != fitting["originalHash"]:
+                raise ValueError("Frozen copy changed: " + path)
+            if answer.get("candidateHash") != digest(edited):
+                raise ValueError("Candidate hash does not match: " + path)
+            targets = answer.get("targets")
+            candidates = {item["id"]: item for item in wanted["candidates"]}
+            if (
+                not isinstance(targets, dict)
+                or not targets
+                or set(targets) - set(candidates)
+            ):
+                raise ValueError("Results contain unrequested candidate IDs.")
+            if any(
+                not any(
+                    decisions.get(text, {}).get("decision") == "shortened"
+                    for text in labels_of[identity]
+                )
+                for identity in targets
+            ):
+                raise ValueError(
+                    "Change only candidates of labels you report as shortened."
+                )
+            evidence = bounded(answer.get("evidence", ""), "Shortening evidence")
+            if not evidence.strip():
+                raise ValueError("Results need saved meaning and fit evidence.")
+            touched = {text for identity in targets for text in labels_of[identity]}
+            try:
+                self.promote_fit(
+                    root,
+                    updated,
+                    row,
+                    base,
+                    edited,
+                    {identity: candidates[identity] for identity in targets},
+                    targets,
+                    originals,
+                )
+            except (ValueError, UnicodeError) as exc:
+                fitting["failed"] = str(exc)
+                errors.append(path + ": " + str(exc))
+                failed |= touched
+                continue
+            row["result"].update(evidence=evidence, requestId=request["requestId"])
+            passed += 1
+            for identity, target in targets.items():
+                for text in labels_of[identity]:
+                    if not draws(target, text):
+                        shortened.setdefault(text, set()).add(path)
+        saved = updated.setdefault("labels", {})
+        for text, decision in decisions.items():
+            if decision["decision"] == "shortened" and (
+                text in failed or text not in shortened
+            ):
+                if text not in failed:
+                    errors.append(
+                        text + ": no checked copy holds shorter text for this label"
+                    )
+                continue
+            saved[text] = {
+                **decision,
+                # The files that hold its shorter text.
+                "files": sorted(shortened.get(text, ())),
+                "task": request["qaTask"],
+                "requestId": request["requestId"],
+                "saved": now(),
+            }
+        updated["editing"] = {
+            "status": "current"
+            if not errors and set(decisions) == set(asked)
+            else "partial",
+            "errors": errors,
+            "accepted": passed,
+            "reported": len(rows),
+            "expected": len(allowed),
+            "saved": now(),
+            "requestId": request["requestId"],
+        }
+        value.clear()
+        value.update(updated)
+        return {
+            "accepted": len(decisions),
+            "message": "Saved shortening report checked.",
+            "errors": errors,
+        }
+
+    def promote_fit(self, root, value, row, base, edited, approved, targets, originals):
+        """Makes a checked shortening copy the file's working copy. The copy
+        is checked against the bytes it started from, then as the whole
+        working copy against the frozen original, with the shortened text as
+        approved text of its own."""
+        path = row["path"]
+        parsed = self.documents.parse(
+            [
+                {"path": "base/" + path, "source": base.decode(), "kind": row["kind"]},
+                {
+                    "path": "edited/" + path,
+                    "source": edited.decode(),
+                    "kind": row["kind"],
+                },
+            ]
+        )
+        validate(
+            base,
+            edited,
+            parsed["base/" + path],
+            parsed["edited/" + path],
+            list(approved.values()),
+            targets,
+        )
+        if edited == base:
+            raise ValueError("No label text changed in the working copy.")
+        prepared = row.get("prepared")
+        if prepared:
+            self.copy_boundary(root, prepared)
+            original = self.source(root, prepared["original"])
+            if digest(original) != prepared["originalHash"]:
+                raise ValueError("Frozen original changed.")
+        else:
+            original = base
+        first = self.documents.parse(
+            [
+                {
+                    "path": "original/" + path,
+                    "source": original.decode(),
+                    "kind": row["kind"],
+                }
+            ]
+        )["original/" + path]
+        if len(first["literals"]) != len(parsed["base/" + path]["literals"]):
+            raise ValueError(
+                "Literal inventory changed; unrelated code or new literals are not allowed."
+            )
+        selected = set(value["selection"])
+        own = {
+            item["id"]: item for item in row["occurrences"] if item["id"] in selected
+        }
+        fitted = {item["id"]: item for item in row.get("fit", [])}
+        merged = {
+            **{identity: item["target"] for identity, item in fitted.items()},
+            **{
+                identity: target
+                for identity, target in row.get("result", {}).get("targets", {}).items()
+                if identity in own
+            },
+        }
+        hashed = digest(original)
+        for identity, candidate in approved.items():
+            literal = first["literals"][candidate["token"]]
+            text = next(
+                (
+                    text
+                    for logical, text, _opaque in leaves(literal["value"])
+                    if logical == candidate["logical"]
+                ),
+                None,
+            )
+            if text is None:
+                raise ValueError("The decoded parameter path changed.")
+            located = occurrence_id(path, hashed, literal, candidate["logical"])
+            merged[located] = targets[identity]
+            if located not in own:
+                fitted[located] = {
+                    "id": located,
+                    "file": path,
+                    "token": candidate["token"],
+                    "logical": candidate["logical"],
+                    "value": text,
+                    "line": literal["line"],
+                    "start": literal["start"],
+                    "end": literal["end"],
+                    "protected": False,
+                    "kind": literal["kind"],
+                    "target": targets[identity],
+                }
+        lookup = set(
+            originals["structuralKeys" if row["kind"] == "parameters" else "keys"]
+        )
+        code_keys = {item["value"] for item in first["literals"] if item["protected"]}
+        if any(
+            item["value"] in lookup or item["value"] in code_keys
+            for item in fitted.values()
+        ):
+            raise ValueError(
+                "Protected original lookup or code value cannot be published."
+            )
+        checks = validate(
+            original,
+            edited,
+            first,
+            parsed["edited/" + path],
+            [*own.values(), *fitted.values()],
+            merged,
+        )
+        # Whether the file's translation is in the game, or waits with it.
+        settled = self.row_status(value, row) != "ready" or bool(
+            row.get("result", {}).get("onlyLabels")
+        )
+        if prepared:
+            write_bytes(project_path(root, prepared["candidate"]), edited)
+        else:
+            identity = uuid.uuid4().hex
+            copy = WORK + "/copies/" + identity + "/" + path
+            write_bytes(project_path(root, copy + ".original", exists=False), base)
+            write_bytes(project_path(root, copy, exists=False), edited)
+            row["prepared"] = {
+                "original": copy + ".original",
+                "originalHash": digest(base),
+                "candidate": copy,
+                "copyRoot": WORK + "/copies/" + identity,
+                "prepared": now(),
+            }
+        row["fit"] = list(fitted.values())
+        row["result"] = {
+            "status": "ready",
+            "reason": "",
+            "checks": checks,
+            "candidateHash": digest(edited),
+            "targets": merged,
+            "selection": sorted(own),
+            "onlyLabels": settled,
+            "saved": now(),
+        }
+        row.pop("fitting", None)
 
     def prepare(self, project_id, value):
         """Editable copies of every file with chosen text; runtime files stay unchanged."""
@@ -2006,11 +2668,20 @@ class PluginService:
                         (item for item in request["files"] if item["path"] == path),
                         None,
                     )
-                    if (
-                        not asked
-                        or sorted(item["id"] for item in asked["occurrences"]) != ids
+                    if not asked or (
+                        request["kind"] == "translation"
+                        and sorted(item["id"] for item in asked["occurrences"]) != ids
                     ):
                         raise ValueError("The exact approved occurrence scope changed.")
+                    # The chosen text, and any text shortened for the screen.
+                    approved = [
+                        *(
+                            item
+                            for item in row["occurrences"]
+                            if item["id"] in selected
+                        ),
+                        *row.get("fit", []),
+                    ]
                     original = self.source(root, prepared["original"])
                     parsed = self.documents.parse(
                         [
@@ -2029,7 +2700,7 @@ class PluginService:
                     actual = {
                         item["id"]: item
                         for item in occurrences(
-                            path, original, parsed["original/" + path]
+                            path, original, parsed["original/" + path], every=True
                         )
                     }
                     lookup_keys = set(
@@ -2042,7 +2713,7 @@ class PluginService:
                         for item in parsed["original/" + path]["literals"]
                         if item["protected"]
                     }
-                    for occurrence in asked["occurrences"]:
+                    for occurrence in approved:
                         checked = actual.get(occurrence["id"])
                         if not checked or any(
                             checked[key] != occurrence[key]
@@ -2064,7 +2735,7 @@ class PluginService:
                         output,
                         parsed["original/" + path],
                         parsed["candidate/" + path],
-                        asked["occurrences"],
+                        approved,
                         result["targets"],
                     )
                 if current == after:

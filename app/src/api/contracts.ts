@@ -2376,13 +2376,26 @@ export type PluginCounts = {
   translated: number;
   selected: number;
   ready: number;
+  shortened: number;
   applied: number;
+  labels: number;
 };
 
 export type PluginUnreadable = {
   path: string;
   issue: string;
   kept: boolean;
+};
+
+/** A label Text QA's latest capture found too long for the screen that QA
+holds no line of, and where it stands here: waiting for the assistant,
+shortened and ready to apply or applied, kept as it is, or found in no
+plugin file. */
+export type PluginLabel = {
+  text: string;
+  title: string;
+  state: "waiting" | "ready" | "applied" | "kept" | "elsewhere";
+  reason?: string;
 };
 
 export type PluginState = {
@@ -2396,6 +2409,7 @@ export type PluginState = {
   receipts: PluginReceipt[];
   activeRequest: string;
   awaiting: boolean;
+  labels: PluginLabel[];
 };
 
 export type PluginForeignWork = ForeignWork & {

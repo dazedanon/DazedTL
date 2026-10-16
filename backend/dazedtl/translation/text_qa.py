@@ -57,6 +57,70 @@ def _save_task_record(folder: Path, name: str, task: str, value) -> None:
 class TextQA:
     def __init__(self, guided: Guided):
         self.guided = guided
+        # Each game's latest capture labels, by the files they come from.
+        self.outside: dict[str, tuple[Any, dict[str, Any]]] = {}
+
+    def plugin_labels(self, project_id):
+        """Labels the latest QA task of a Guided game, whatever its focus,
+        found squeezed or cut off on a captured screen that QA holds no line
+        of, such as a plugin's menu command, for Plugin files to shorten.
+        Read on every observation, so the task's files are read again only
+        when they change."""
+        from dazedtl.compatibility.text import (
+            qa_capture,
+            qa_outside,
+            qa_pointed_task,
+            qa_pointers,
+        )
+
+        none: dict[str, Any] = {"task": "", "labels": []}
+        project = self.guided.projects.get(project_id)
+        native = self.guided.backend.workflows.projects.get(project.get("backend_id"))
+        if project.get("method") != "guided" or not native:
+            return none
+        folder = self.folder(native)
+        try:
+            signed = [
+                (stat.st_mtime_ns, stat.st_size, path)
+                for path in qa_pointers(folder)
+                if path.is_file() and (stat := path.stat())
+            ]
+            if not signed:
+                return none
+            pointer = max(signed)
+            saved = self.outside.get(project_id)
+            if saved and saved[0][0] == pointer:
+                task = saved[0][1]
+            else:
+                task = qa_pointed_task(folder, pointer[2])
+            screens = qa_capture(task)
+            stat = screens.stat() if screens.is_file() else None
+            key = (pointer, task, stat and (stat.st_mtime_ns, stat.st_size))
+            if not saved or saved[0] != key:
+                saved = (
+                    key,
+                    {
+                        "task": task.name,
+                        "labels": [
+                            {
+                                field: row[field]
+                                for field in (
+                                    "text",
+                                    "title",
+                                    "capture",
+                                    "squeezed",
+                                    "clipped",
+                                )
+                                if field in row
+                            }
+                            for row in qa_outside(task)
+                        ],
+                    },
+                )
+                self.outside[project_id] = saved
+            return saved[1]
+        except OSError, ValueError, KeyError, TypeError:
+            return none
 
     def run(self, project_id, step, findings=None, question="", choice=""):
         if step not in STEPS:

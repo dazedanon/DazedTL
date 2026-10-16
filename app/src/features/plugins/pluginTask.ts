@@ -11,12 +11,14 @@ export const pluginFilesBlocked = ({ unreadable }: PluginState) =>
 
 /**
  * Plugin files is done once every plugin with Japanese text is investigated
- * and its player text translated, with nothing waiting to go into the game
- * and every file the app cannot read kept unchanged.
+ * and its player text translated, every label Text QA found too long for the
+ * screen is shortened or kept, nothing waits to go into the game and every
+ * file the app cannot read is kept unchanged.
  */
 export const pluginsComplete = (state: PluginState) =>
   state.scanned &&
   !pluginFilesLeft(state) &&
+  !state.counts.labels &&
   !state.counts.ready &&
   !pluginFilesBlocked(state).length;
 
@@ -43,7 +45,12 @@ export function pluginTaskState(
   if (waiting) return "waiting";
   if (counts.ready) return "ready";
   if (left && copied) return "outdated";
-  if (!state.scanned || counts.investigated < counts.files || left)
+  if (
+    !state.scanned ||
+    counts.investigated < counts.files ||
+    left ||
+    counts.labels
+  )
     return "not_started";
   if (pluginFilesBlocked(state).length) return "blocked";
   return counts.applied ? "applied" : "done";

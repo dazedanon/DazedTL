@@ -16,6 +16,13 @@ OPAQUE = re.compile(r'^\s*(?:\{\s*"|\[\s*["\[{])')
 TOKENS = re.compile(
     r"\$\{[^}]*\}|#\{[^}]*\}|\\(?:[A-Za-z]+\[[^\]]*\]|[A-Za-z.!|^><{}$]|[nrtbfv0])|%(?:\d+\$)?[-+0 #]*\d*(?:\.\d+)?[a-zA-Z%]|\{\d+\}"
 )
+# Codes the game turns into colors, icons or values as it draws text.
+DRAW_CODES = re.compile(r"\\+[A-Za-z]+\[[^\]]*\]|\\+[A-Za-z{}|.!><^$]")
+# How a setting lists several labels in one line, such as
+# "Accuracy,Evasion,Critical Rate".
+LIST_SEPARATORS = re.compile(r"[,;|]")
+# A list item is a short label, unlike a clause of a sentence.
+LIST_ITEM = re.compile(r"[^.!?]{1,40}")
 
 
 def decode(value):
@@ -281,22 +288,41 @@ def json_document(path, source):
     }
 
 
-def occurrences(path, raw, parsed):
+def draws(value, label):
+    """Whether the game draws *label* from a setting's text: the whole text, or
+    one item of a list of short labels, without its color and icon codes."""
+    shown = DRAW_CODES.sub("", value).strip()
+    items = [item.strip() for item in LIST_SEPARATORS.split(shown)]
+    return shown == label or (
+        "\n" not in shown
+        and len(items) > 1
+        and all(LIST_ITEM.fullmatch(item) for item in items)
+        and label in items
+    )
+
+
+def occurrence_id(path, fingerprint, literal, logical):
+    """A text location bound to the exact bytes of its file, by their hash."""
+    return digest(
+        {
+            "path": path,
+            "hash": fingerprint,
+            "span": [literal["start"], literal["end"]],
+            "logical": logical,
+        }
+    )[:24]
+
+
+def occurrences(path, raw, parsed, *, every=False):
+    """Each Japanese text location in a parsed file, or every one."""
     fingerprint = digest(raw)
     rows = []
     for index, literal in enumerate(parsed["literals"]):
         values = leaves(literal["value"])
         for logical, value, opaque in values:
-            if not JAPANESE.search(value):
+            if not every and not JAPANESE.search(value):
                 continue
-            identity = digest(
-                {
-                    "path": path,
-                    "hash": fingerprint,
-                    "span": [literal["start"], literal["end"]],
-                    "logical": logical,
-                }
-            )[:24]
+            identity = occurrence_id(path, fingerprint, literal, logical)
             rows.append(
                 {
                     "id": identity,

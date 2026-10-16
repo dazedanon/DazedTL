@@ -37,6 +37,7 @@ import {
 
 const fileCount = (count: number, noun = "file") =>
   `${count} ${noun}${count === 1 ? "" : "s"}`;
+const labelCount = (count: number) => fileCount(count, "label");
 /** What a receipt did, in words; its backend status codes stay internal. */
 const receiptTitle = ({ mode, status, files }: PluginReceipt) => {
   const done = mode === "apply" ? "Applied" : "Restored";
@@ -109,15 +110,25 @@ function pluginTask(state: PluginState, handoff: Handoff, keep: ReactNode) {
     taskState === "outdated" ? "outdated" : "not_started";
   // Work left with no request out, beside files ready to apply or in
   // progress adopted from another project.
-  const unfinished =
+  const filesUnfinished =
     left > 0 && (counts.investigated > 0 || counts.translated > 0)
       ? ` ${fileCount(left)} still ${left === 1 ? "needs" : "need"} your assistant; copy the task again to continue.`
       : "";
+  // Labels from Text QA's latest capture that only this task can shorten.
+  const handed = state.labels.filter((row) => row.state !== "elsewhere");
+  const labelsLeft = counts.labels;
+  const unfinished =
+    filesUnfinished +
+    (!labelsLeft
+      ? ""
+      : filesUnfinished
+        ? ` Text QA also found ${labelCount(labelsLeft)} too long for the screen.`
+        : ` Text QA found ${labelCount(labelsLeft)} too long for the screen; copy the task so your assistant shortens ${labelsLeft === 1 ? "it" : "them"}.`);
   const description =
     taskState === "waiting"
       ? "Results appear here as your assistant saves them. It continues through every plugin file on its own."
       : taskState === "ready"
-        ? `${fileCount(counts.ready)} translated and checked, ready to apply.${unfinished}`
+        ? `${fileCount(counts.ready)} checked and ready to apply.${unfinished}`
         : taskState === "outdated"
           ? `${fileCount(left)} changed since your assistant finished. Copy the task again to update ${left === 1 ? "it" : "them"}.`
           : taskState === "blocked"
@@ -138,6 +149,8 @@ function pluginTask(state: PluginState, handoff: Handoff, keep: ReactNode) {
       ? "waiting"
       : idle;
   // Before any text is found there is no translation to be out of date.
+  // A file whose translation is in the game, where only shortened labels
+  // wait, reads applied here and ready in the labels row.
   const translation: DisplayState = !counts.textFiles
     ? investigating
       ? "not_started"
@@ -146,9 +159,9 @@ function pluginTask(state: PluginState, handoff: Handoff, keep: ReactNode) {
       ? waiting && !investigating
         ? "waiting"
         : idle
-      : counts.ready
+      : counts.ready > counts.shortened
         ? "ready"
-        : counts.applied
+        : counts.applied || counts.shortened
           ? "applied"
           : "done";
   const results: AssistantResult[] = [
@@ -177,6 +190,35 @@ function pluginTask(state: PluginState, handoff: Handoff, keep: ReactNode) {
             : "Nothing to translate",
     },
   ];
+  if (handed.length) {
+    const count = (stands: string) =>
+      handed.filter((row) => row.state === stands).length;
+    const shortened = count("ready") + count("applied");
+    const kept = count("kept");
+    results.push({
+      id: "labels",
+      title: "Labels too long for the screen",
+      state: labelsLeft
+        ? waiting
+          ? "waiting"
+          : "not_started"
+        : count("ready")
+          ? "ready"
+          : shortened
+            ? "applied"
+            : "done",
+      detail: labelsLeft
+        ? labelsLeft === handed.length
+          ? `${labelCount(labelsLeft)} from Text QA`
+          : `${labelsLeft} of ${labelCount(handed.length)} from Text QA left`
+        : [
+            shortened ? `${shortened} shortened` : "",
+            kept ? `${kept} kept as ${kept === 1 ? "it is" : "they are"}` : "",
+          ]
+            .filter(Boolean)
+            .join(", "),
+    });
+  }
   if (blocked.length)
     results.push({
       id: "unreadable",
@@ -412,7 +454,7 @@ export function PluginWorkspace({
         progress={
           task.taskState === "waiting" ? sinceLabel(handoff.since) : undefined
         }
-        help="Keep DazedTL open while your assistant works. It investigates every plugin file, translates the text players see and asks only about choices it can't settle. Copying the task again once it is done has your assistant recheck its decisions, for example after you find untranslated plugin text in the game."
+        help="Keep DazedTL open while your assistant works. It investigates every plugin file, translates the text players see, shortens plugin labels Text QA found too long for the screen and asks only about choices it can't settle. Copying the task again once it is done has your assistant recheck its decisions, for example after you find untranslated plugin text in the game."
         description={task.description}
         results={task.results}
       />

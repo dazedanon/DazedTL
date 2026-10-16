@@ -381,6 +381,41 @@ def qa_state(plan):
     }
 
 
+def qa_pointers(folder):
+    """Each focus's record of its prepared QA task in a game's workspace."""
+    from util.rpgmaker_qa_manifest import FOCUSES
+
+    return [Path(folder) / ("text-qa-" + focus + ".json") for focus in sorted(FOCUSES)]
+
+
+def qa_pointed_task(folder, pointer):
+    """The task folder a focus's record names, inside QA's storage."""
+    return _task_folder({"folder": str(folder)}, read_json(pointer))
+
+
+def qa_capture(task):
+    """The listing of the screens a prepared QA task captured."""
+    from util import rpgmaker_qa as qa
+
+    return Path(task) / qa.INTERFACE_FOLDER / "screens.json"
+
+
+def qa_outside(task):
+    """Text the prepared QA task in *task* found squeezed or cut off on a
+    captured screen that its inventory holds no line of, such as a plugin's
+    menu command: each label's text, screen title, capture and how short of
+    room it is. A task that captured nothing has none."""
+    from util import rpgmaker_qa as qa
+
+    root = Path(task)
+    if not qa_capture(root).is_file():
+        return []
+    _places, outside = qa._interface_places(
+        root / qa.INTERFACE_FOLDER, qa._read_json(root / "inventory.json")
+    )
+    return outside
+
+
 def qa_report(plan):
     """What QA could not cover: lines no reviewer judged, with whether the user
     reviewed them, Japanese never translated, by file and plugin, and text the
@@ -398,9 +433,7 @@ def qa_report(plan):
     reviewed = set(
         _task_record(plan["folder"], "text-qa-reviewed.json", str(root)) or []
     )
-    _places, outside = qa._interface_places(
-        root / qa.INTERFACE_FOLDER, qa._read_json(root / "inventory.json")
-    )
+    outside = qa_outside(root)
     interface = state.get("interface") or {}
     return {
         "not_reviewed": [

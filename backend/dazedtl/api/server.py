@@ -74,14 +74,15 @@ class Application:
         self.images = ImageService(
             self.projects, self.translation, self.settings, self.backend
         )
+        self.text_qa = TextQA(self.guided)
         self.plugins = PluginService(
             self.projects,
             self.translation,
             self.backend,
             context=self.guided.assistant_context,
+            labels=self.text_qa.plugin_labels,
         )
         self.assistant_tasks = AssistantTasks(self.workspace)
-        self.text_qa = TextQA(self.guided)
         self.playtest = Playtest(self.guided, self.text_qa)
         self.image_editor = ImageEditor(self.images)
         self.image_native = ImageNativeTranslation(self.images, self.image_editor)

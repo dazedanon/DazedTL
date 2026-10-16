@@ -5,12 +5,15 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type {
+  PluginLabel,
   QaFinding,
+  QaInterfaceText,
   QaQuestion,
   QaReport,
   QaState,
   QaUntranslatedSource,
 } from "../../api/contracts";
+import type { DisplayState } from "../../ui/displayStatus";
 import { ActionControl } from "../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { AssistantTask, type AssistantTaskState } from "../../ui/AssistantTask";
@@ -590,18 +593,99 @@ function UntranslatedSource({ source }: { source: QaUntranslatedSource }) {
   );
 }
 
+/** A label's state in Plugin files, in the words every screen shares. */
+const pluginLabelStates: Record<
+  Exclude<PluginLabel["state"], "elsewhere">,
+  DisplayState
+> = {
+  waiting: "not_started",
+  ready: "ready",
+  applied: "applied",
+  // The assistant settled it by keeping it, with its reason beside it.
+  kept: "done",
+};
+
+/**
+ * Text the game squeezes or cuts off that QA holds no line of. In Guided,
+ * Plugin files shortens what comes from plugin files, so each label says
+ * where it stands there.
+ */
+function ScreenLabels({
+  rows,
+  plugins,
+}: {
+  rows: QaInterfaceText[];
+  plugins?: QaPluginLabels;
+}) {
+  const stands = new Map(plugins?.labels.map((row) => [row.text, row]));
+  const handed = (row: QaInterfaceText) => {
+    const state = stands.get(row.text)?.state;
+    return state && state !== "elsewhere" ? state : undefined;
+  };
+  const open = rows.some((row) =>
+    ["waiting", "ready"].includes(handed(row) || ""),
+  );
+  return (
+    <section aria-label="Too long for the screen">
+      <div className="check-results-heading">
+        <h3>Too long for the screen · {rows.length.toLocaleString()}</h3>
+        {plugins && open && (
+          <Button variant="link" onClick={plugins.open}>
+            Open Plugin files
+          </Button>
+        )}
+      </div>
+      <p className="muted">
+        {rows.some(handed)
+          ? "The game squeezes or cuts off this text, which QA doesn't correct. Plugin files' assistant shortens what comes from plugins when you copy that task, and you apply it there."
+          : "The game squeezes or cuts off this text, but it comes from outside the data QA corrects, such as a plugin's menu. Shorten it in its own task, such as Plugin files."}
+      </p>
+      <ActionList>
+        {rows.map((row) => {
+          const label = stands.get(row.text);
+          const state = handed(row);
+          // The mark says where a handed label stands; only a kept one adds
+          // why, and one Plugin files can't find where it goes instead.
+          const note =
+            label?.state === "kept"
+              ? `Kept as it is: ${label.reason || ""}`
+              : label?.state === "elsewhere"
+                ? "In no plugin file; shorten it in its own task"
+                : "";
+          return (
+            <ActionRow
+              key={row.text + row.title}
+              title={row.text}
+              description={[row.title, note].filter(Boolean).join(" · ")}
+            >
+              {state && <StatusMark state={pluginLabelStates[state]} />}
+            </ActionRow>
+          );
+        })}
+      </ActionList>
+    </section>
+  );
+}
+
+/** Where Guided's Plugin files task stands on each squeezed label. */
+export type QaPluginLabels = { labels: PluginLabel[]; open: () => void };
+
 /**
  * What QA did not cover: lines reviewers declined, which the user may read
- * and mark, and Japanese that was never translated.
+ * and mark, Japanese that was never translated, and text too long for the
+ * screen that QA holds no line of.
  */
 export function QaCoverage({
   load,
   markReviewed,
   onClose,
+  plugins,
 }: {
   load: () => Promise<QaReport>;
   markReviewed: (identities: string[]) => Promise<QaReport>;
   onClose: () => void;
+  /** Guided's Plugin files labels; Assistant-led has no such task. */
+  plugins?: QaPluginLabels;
 }) {
   const [report, setReport] = useState<QaReport | null>(null);
   const [error, setError] = useState("");
@@ -708,26 +792,7 @@ export function QaCoverage({
               </section>
             )}
             {report.interface_outside.length > 0 && (
-              <section aria-label="Too long for the screen">
-                <h3>
-                  Too long for the screen ·{" "}
-                  {report.interface_outside.length.toLocaleString()}
-                </h3>
-                <p className="muted">
-                  The game squeezes or cuts off this text, but it comes from
-                  outside the data QA corrects, such as a plugin's menu. Shorten
-                  it in its own task, such as Plugin files.
-                </p>
-                <ActionList>
-                  {report.interface_outside.map((row) => (
-                    <ActionRow
-                      key={row.text + row.title}
-                      title={row.text}
-                      description={row.title}
-                    />
-                  ))}
-                </ActionList>
-              </section>
+              <ScreenLabels rows={report.interface_outside} plugins={plugins} />
             )}
           </>
         )}
