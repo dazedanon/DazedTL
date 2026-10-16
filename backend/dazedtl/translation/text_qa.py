@@ -93,14 +93,27 @@ class TextQA:
                 task = saved[0][1]
             else:
                 task = qa_pointed_task(folder, pointer[2])
-            screens = qa_capture(task)
-            stat = screens.stat() if screens.is_file() else None
-            key = (pointer, task, stat and (stat.st_mtime_ns, stat.st_size))
+            captured = qa_capture(task)
+            stat = (
+                captured["listing"].stat()
+                if captured and captured["listing"].is_file()
+                else None
+            )
+            key = (
+                pointer,
+                task,
+                captured and captured["round"],
+                stat and (stat.st_mtime_ns, stat.st_size),
+            )
             if not saved or saved[0] != key:
                 saved = (
                     key,
                     {
-                        "task": task.name,
+                        # A capture taken again is another capture, whose
+                        # labels Plugin files hands out again.
+                        "task": task.name
+                        if not captured or captured["round"] == 1
+                        else f"{task.name}/{captured['round']}",
                         "labels": [
                             {
                                 field: row[field]

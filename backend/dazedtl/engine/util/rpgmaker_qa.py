@@ -32,6 +32,7 @@ from util.paths import (
     GAME_SKILL_RESERVED_NAMES,
     GAME_SKILLS_RELATIVE,
     new_folder,
+    replace_with_retry,
 )
 from util.rpgmaker_qa_manifest import (
     _mechanical_evidence,
@@ -57,6 +58,7 @@ from util.game_settings import (
 )
 from util.reference_games import reference_context
 from util import rpgmaker_screens
+from util.rpgmaker_screens import screen_of, shown_text
 from util.rpgmaker_rewrap import (
     DIALOGUE,
     FACE_DIALOGUE,
@@ -1563,25 +1565,161 @@ def _database_checks(
 
 
 # Captures of the game's interface screens, and those taken again with a
-# finding's corrections in place, under the task's folder.
+# finding's corrections in place, under the task's folder. Each capture is a
+# round in a folder of its own, which the record beside them names with the
+# plugin files it ran with, so a reused task captures again once they change.
 INTERFACE_FOLDER = "interface"
+CAPTURE_RECORD = "capture.json"
+CAPTURE_SCHEMA = "rpgmaker-qa-capture-v1"
 # The places one interface-fit check names before counting the rest.
 INTERFACE_PLACES_LISTED = 3
-# Control codes the game turns into colors, icons or values as it draws text.
-_DRAW_CODE_RE = re.compile(r"\\+[A-Za-z]+\[[^\]]*\]|\\+[A-Za-z{}|.!><^$]")
 _ENEMY_LETTER_RE = re.compile(r"\s?[A-ZＡ-Ｚ]$")
-# A capture's file name before its page number, and the screen that makes it.
-_CAPTURE_SCREENS = {
-    "title": "title", "menu": "menu", "items": "items", "skills": "skills",
-    "equip": "equipment", "status": "status", "shop": "shop",
-    "options": "options", "game-end": "options", "battle": "battles",
-    "choices": "choices",
-}
+# Who notes the lines a capture taken again finds squeezed.
+RECAPTURE_OBSERVER = "interface"
 
 
-def _shown_text(text: Any) -> str:
-    """Text as the game draws it, without the codes it turns into colors."""
-    return _DRAW_CODE_RE.sub("", str(text or "")).strip()
+def _capture_record(root: Path) -> dict[str, Any] | None:
+    path = root / INTERFACE_FOLDER / CAPTURE_RECORD
+    return _read_json(path) if path.is_file() else None
+
+
+def interface_capture(task_dir: str | Path) -> dict[str, Any] | None:
+    """A task's latest interface capture: its round, its folder, what it
+    found and the squeezed clusters it found too late for review; None for a
+    task prepared without one."""
+    root = Path(task_dir)
+    record = _capture_record(root)
+    if record:
+        return {
+            "round": record["round"],
+            "folder": root / INTERFACE_FOLDER / record["folder"],
+            "summary": record["summary"],
+            "unreviewed": record.get("unreviewed", []),
+        }
+    # A task from before captures kept a record has its one capture in the
+    # folder itself.
+    found = _read_json(root / "task.json").get("interface")
+    if not found:
+        return None
+    return {
+        "round": 1,
+        "folder": root / INTERFACE_FOLDER,
+        "summary": found,
+        "unreviewed": [],
+    }
+
+
+def _capture_folder(root: Path) -> Path:
+    found = interface_capture(root)
+    return found["folder"] if found else root / INTERFACE_FOLDER
+
+
+def _capture_round(
+    data: Path,
+    root: Path,
+    number: int,
+    manifest: dict[str, Any],
+    progress: Callable[[str], None] | None,
+) -> tuple[dict[str, Any], dict[str, list[dict[str, Any]]]]:
+    """Capture the interface screens as round *number* of the task in *root*:
+    its record, unsaved, and where each cluster's text shows squeezed."""
+    plugins = rpgmaker_screens.plugins_sha256(data)
+    name = f"round-{number}"
+    staging = new_folder(root / INTERFACE_FOLDER, f".{name}.")
+    try:
+        summary = _capture_interface(data, staging, progress)
+        # A round an interrupted prepare left behind is in no record.
+        shutil.rmtree(root / INTERFACE_FOLDER / name, ignore_errors=True)
+        staging.rename(root / INTERFACE_FOLDER / name)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    places, outside = _interface_places(root / INTERFACE_FOLDER / name, manifest)
+    record = {
+        "schema": CAPTURE_SCHEMA,
+        "round": number,
+        "folder": name,
+        "captured_at": _utc_now(),
+        # A capture that failed is of no plugin files, so the next prepare
+        # tries again.
+        "plugins_sha256": None if summary.get("error") else plugins,
+        "summary": summary | {"squeezed": len(places), "outside": len(outside)},
+    }
+    return record, places
+
+
+def _save_capture_record(root: Path, record: dict[str, Any]) -> None:
+    path = root / INTERFACE_FOLDER / CAPTURE_RECORD
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_bytes(_canonical_bytes(record) + b"\n")
+    # The app's polls read the record; Windows can't replace a file while
+    # one does.
+    replace_with_retry(temporary, path)
+
+
+def _recapture(
+    root: Path,
+    data: Path,
+    manifest: dict[str, Any],
+    progress: Callable[[str], None] | None,
+) -> None:
+    """Capture a reused task's interface screens again once the plugin files
+    they ran with changed, keeping its review. Lines the new capture finds
+    squeezed go to deep review as observations while QA still takes them,
+    and are recorded as unreviewed once it is complete."""
+    previous = _capture_record(root)
+    if previous is None or previous.get(
+        "plugins_sha256"
+    ) == rpgmaker_screens.plugins_sha256(data):
+        return
+    record, places = _capture_round(
+        data, root, previous["round"] + 1, manifest, progress
+    )
+    with _task_lock(root):
+        root, _task, checkpoint = _load_task(root)
+        complete = checkpoint["stage"] == "complete"
+        candidates = checkpoint["deep"].get("candidate_reasons") or {}
+        observed = {row["cluster_id"] for row in checkpoint.get("observations") or []}
+        fresh = sorted(
+            cluster_id for cluster_id in places
+            if "interface-fit" not in (candidates.get(cluster_id) or {}).get("reasons", [])
+            and cluster_id not in observed
+        )
+        record["unreviewed"] = sorted(
+            set(previous.get("unreviewed", [])) & set(places)
+            | (set(fresh) if complete else set())
+        )
+        record["summary"]["squeezed"] -= len(record["unreviewed"])
+        if record["unreviewed"]:
+            record["summary"]["unreviewed"] = len(record["unreviewed"])
+        # Deep items read the squeezed places from the latest capture.
+        _save_capture_record(root, record)
+        if fresh and not complete:
+            # A cluster is named by its representative line.
+            _note_observations(
+                checkpoint,
+                [
+                    {
+                        "identity": cluster_id,
+                        "cluster_id": cluster_id,
+                        "categories": ["ui"],
+                        "note": "The game draws this text with too little room on a "
+                        "screen captured again after its plugin files changed.",
+                    }
+                    for cluster_id in fresh
+                ],
+                checkpoint["stage"],
+                RECAPTURE_OBSERVER,
+            )
+            checkpoint["updated_at"] = _utc_now()
+            _atomic_write_json(root / "checkpoint.json", checkpoint)
+            _issue_new_evidence(root, checkpoint)
+    if complete:
+        # Review bundles name the captures they were made with; once QA is
+        # complete no reviewer reads the earlier ones again.
+        for folder in (root / INTERFACE_FOLDER).glob("round-*"):
+            if folder.name != record["folder"]:
+                shutil.rmtree(folder, ignore_errors=True)
 
 
 def _capture_interface(
@@ -1617,7 +1755,7 @@ def _interface_places(
     cluster_of = _cluster_by_identity(manifest)
     by_text: dict[str, set[str]] = defaultdict(set)
     for record in manifest["records"]:
-        shown = _shown_text(record["live"])
+        shown = shown_text(record["live"])
         if shown and "\n" not in shown:
             by_text[shown].add(cluster_of[record["identity"]])
     places: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -1632,8 +1770,8 @@ def _interface_places(
                 **{key: label[key] for key in ("squeezed", "clipped") if key in label},
             }
             # A battle names repeated enemies with a letter, such as "Slime Ａ".
-            clusters = by_text.get(_shown_text(label["text"])) or by_text.get(
-                _ENEMY_LETTER_RE.sub("", _shown_text(label["text"]))
+            clusters = by_text.get(shown_text(label["text"])) or by_text.get(
+                _ENEMY_LETTER_RE.sub("", shown_text(label["text"]))
             )
             if not clusters:
                 outside.setdefault(label["text"], {"text": label["text"], **place})
@@ -1679,7 +1817,7 @@ def _interface_after(
 ) -> dict[str, list[dict[str, Any]]]:
     """Captures of the screens that squeezed or cut off a finding's text, taken
     again with the corrections in place, by finding."""
-    folder = root / INTERFACE_FOLDER
+    folder = _capture_folder(root)
     places, _outside = _interface_places(folder, manifest)
     if not places:
         return {}
@@ -1751,7 +1889,7 @@ def _interface_after(
             },
         })
     screens = sorted({
-        _CAPTURE_SCREENS.get(Path(place["capture"]).stem.split("-")[0], "")
+        screen_of(place["capture"])
         for found in shown_on.values() for place in found
     } - {""})
     try:
@@ -1765,13 +1903,13 @@ def _interface_after(
     for finding in findings:
         if finding["id"] not in shown_on:
             continue
-        texts = {_shown_text(change["correction"]) for change in _changes(finding)}
+        texts = {shown_text(change["correction"]) for change in _changes(finding)}
         titles = {place["title"] for place in shown_on[finding["id"]]}
         found = []
         for screen in listing["screens"]:
             labels = [
                 label for label in screen.get("labels") or []
-                if _shown_text(label["text"]) in texts
+                if shown_text(label["text"]) in texts
             ]
             if labels and (screen["title"] in titles or screen["name"].startswith("choices")):
                 worst = min(labels, key=lambda label: label.get("squeezed", 1))
@@ -2478,7 +2616,9 @@ def prepare_task(
     corrections to; a task already prepared keeps the ones it was made with.
     With *interface*, the game's interface screens are captured, and text the
     game squeezes or cuts off on them goes to deep review with its captures;
-    *progress* hears which screen the capture is on.
+    *progress* hears which screen the capture is on. A task prepared again
+    captures them again once the game's plugin files changed since, keeping
+    its review.
 
     Observations made outside QA, such as the release playtest's findings in
     translated text, start in its checkpoint, so deep review takes their lines;
@@ -2535,6 +2675,8 @@ def prepare_task(
             report = preflight(data, manifest, kept)
             with _task_lock(task_dir):
                 _write_report(task_dir, report)
+            if interface:
+                _recapture(task_dir, data, manifest, progress)
             return task_dir, status(task_dir)
 
         staging = new_folder(task_parent, f".{task_key}.")
@@ -2554,16 +2696,12 @@ def prepare_task(
                 _merge_candidate(
                     forced_candidates, cluster_id, [entry["check"] for entry in failed]
                 )
-            captured = (
-                _capture_interface(data, staging / INTERFACE_FOLDER, progress)
-                if interface
-                else None
-            )
-            if captured is not None:
-                places, outside = _interface_places(staging / INTERFACE_FOLDER, manifest)
+            if interface:
+                (staging / INTERFACE_FOLDER).mkdir()
+                capture, places = _capture_round(data, staging, 1, manifest, progress)
+                _save_capture_record(staging, capture)
                 for cluster_id in places:
                     _merge_candidate(forced_candidates, cluster_id, ["interface-fit"])
-                captured |= {"squeezed": len(places), "outside": len(outside)}
             # A likely slip in a line's Show Text header goes to deep review,
             # where a reviewer fixes the header or says why it is right.
             headers = _header_flags(data, manifest)
@@ -2625,7 +2763,6 @@ def prepare_task(
                 "engine_fingerprint": engine_fingerprint,
                 "screen_configuration": screen_configuration,
                 "layout": layout,
-                **({"interface": captured} if captured is not None else {}),
                 "manifest_sha256": manifest["content_sha256"],
                 "context_sha256": context["content_sha256"],
                 "screen_index_sha256": screen_index_document["content_sha256"],
@@ -2894,7 +3031,11 @@ def status(task_dir: str | Path) -> dict[str, Any]:
             "unresolved": task["counts"]["unresolved"],
         },
         "not_translated": _not_translated(root),
-        **({"interface": task["interface"]} if task.get("interface") else {}),
+        **(
+            {"interface": captured["summary"]}
+            if (captured := interface_capture(root))
+            else {}
+        ),
         "screen": {
             "accepted": screen["accepted_items"],
             "total": screen["total_items"],
@@ -5527,7 +5668,7 @@ def _deep_items(
         by_source[cluster["source"]].append(cluster)
     data_root = Path(task["data_root"])
     failed_checks = _database_checks(manifest, context, data_root)
-    for cluster_id, found in _interface_checks(root / INTERFACE_FOLDER, manifest).items():
+    for cluster_id, found in _interface_checks(_capture_folder(root), manifest).items():
         failed_checks[cluster_id] = [*failed_checks.get(cluster_id, []), *found]
     document_cache: dict[str, Any] = {}
     candidate_reasons = basis["candidates"]

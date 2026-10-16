@@ -11,7 +11,9 @@ them off.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
@@ -22,10 +24,45 @@ HERE = Path(__file__).resolve().parent
 # Captures of a large game take a few minutes; a game that never finishes
 # starting stops here.
 DEFAULT_TIMEOUT = 600
+# A capture's file name before its page number, and the screen that makes it.
+_CAPTURE_SCREENS = {
+    "title": "title", "menu": "menu", "items": "items", "skills": "skills",
+    "equip": "equipment", "status": "status", "shop": "shop",
+    "options": "options", "game-end": "options", "battle": "battles",
+    "choices": "choices",
+}
+# Control codes the game turns into colors, icons or values as it draws text.
+_DRAW_CODE_RE = re.compile(r"\\+[A-Za-z]+\[[^\]]*\]|\\+[A-Za-z{}|.!><^$]")
 
 
 def _load(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8-sig"))
+
+
+def shown_text(text: Any) -> str:
+    """Text as the game draws it, without the codes it turns into colors."""
+    return _DRAW_CODE_RE.sub("", str(text or "")).strip()
+
+
+def screen_of(capture: str | Path) -> str:
+    """The screen, as *screens* names it, that makes a capture file, or ""."""
+    return _CAPTURE_SCREENS.get(Path(capture).stem.split("-")[0], "")
+
+
+def plugins_sha256(data_root: str | Path) -> str:
+    """A digest of the game's plugin list and plugin code beside *data_root*,
+    which change what its screens draw without changing its data."""
+    web = Path(data_root).resolve().parent
+    folder = web / "js" / "plugins"
+    files = [web / "js" / "plugins.js"]
+    if folder.is_dir():
+        files += sorted(path for path in folder.rglob("*") if path.is_file())
+    digest = hashlib.sha256()
+    for path in files:
+        if path.is_file():
+            digest.update(path.relative_to(web).as_posix().encode("utf-8") + b"\0")
+            digest.update(hashlib.sha256(path.read_bytes()).digest())
+    return digest.hexdigest()
 
 
 def _command_lists(node: Any, pointer: str = ""):
@@ -127,3 +164,4 @@ def capture(
             + (f": {played.errors}" if played.errors else ".")
         )
     return _load(listing)
+

@@ -148,6 +148,7 @@ All Check tasks are optional:
   That includes Japanese that was never translated, which QA can't review, with whether players can see it; translate what they can in its own task, such as **Plugin files**.
   Plugin settings **Plugin files** keeps in Japanese on purpose, such as names a plugin looks up, are not listed.
   The list follows what **Plugin files** decides, and running QA again after plugin text changes updates it and keeps the review done so far.
+  Running QA again after plugin files change also opens the game's screens again, so labels **Plugin files** shortened drop off the list; game text that is squeezed only now goes to review, or once QA finished, **Review them** lists it as squeezed after QA.
   A correction that changes several lines of one scene, such as narration that switches tense, is listed and undone as one.
   To take out every correction at once, inspect **Apply QA corrections** in the Project page's **History** and choose **Review restore**.
 - **Playtest** (MV and MZ): **Run playtest** has DazedTL check the game's files and play it in a hidden window for a few minutes, writing nothing into the game.

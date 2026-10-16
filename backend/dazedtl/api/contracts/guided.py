@@ -419,6 +419,13 @@ class QaInterface(TypedDict):
         ]
     ]
     outside: NotRequired[Annotated[int, "Squeezed or cut-off text QA can't correct."]]
+    unreviewed: NotRequired[
+        Annotated[
+            int,
+            "Lines a capture taken again after QA was complete found squeezed, "
+            "which no reviewer judged on screen.",
+        ]
+    ]
     error: NotRequired[Annotated[str, "Why no screen was captured."]]
 
 
@@ -428,6 +435,7 @@ class QaReport(TypedDict):
     not_reviewed: list[QaReportLine]
     not_translated: list[QaUntranslatedSource]
     interface_outside: list[QaInterfaceText]
+    interface_unreviewed: list[QaInterfaceText]
     interface_error: NotRequired[str]
 
 

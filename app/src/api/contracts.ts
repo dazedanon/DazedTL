@@ -736,6 +736,8 @@ export type QaInterface = {
   squeezed?: number;
   /** Squeezed or cut-off text QA can't correct. */
   outside?: number;
+  /** Lines a capture taken again after QA was complete found squeezed, which no reviewer judged on screen. */
+  unreviewed?: number;
   /** Why no screen was captured. */
   error?: string;
 };
@@ -745,6 +747,7 @@ export type QaReport = {
   not_reviewed: QaReportLine[];
   not_translated: QaUntranslatedSource[];
   interface_outside: QaInterfaceText[];
+  interface_unreviewed: QaInterfaceText[];
   interface_error?: string;
 };
 

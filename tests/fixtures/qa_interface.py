@@ -1,9 +1,10 @@
 """Interface captures in the text QA engine, on a generated game.
 
 The capture runs the game in Electron, so a stand-in writes what it would:
-the item list squeezes a weapon's name and the menu squeezes a plugin's
-command. Reviewers are played with fixed results, from the deep check that
-names the capture to the editorial pass that reads the corrected one.
+the menu squeezes a plugin's command, and the item list squeezes a weapon's
+name once a plugin change narrows its window. Reviewers are played with fixed
+results, from the deep check that names the capture to the editorial pass
+that reads the corrected one.
 """
 
 import json
@@ -21,6 +22,7 @@ data.mkdir(parents=True)
 (game / "index.html").write_text("<html></html>", encoding="utf-8")
 LONG = "Legendary Sword of the Northern Wastes"
 SHORT = "Northern Sword"
+SPEAR = "Ancient Spear"
 (data / "Weapons.json").write_text(
     json.dumps(
         [
@@ -31,12 +33,33 @@ SHORT = "Northern Sword"
                 "description": "",
                 "_original": {"name": "北方の伝説の剣"},
             },
+            {
+                "id": 2,
+                "name": SPEAR,
+                "description": "",
+                "_original": {"name": "古代の槍"},
+            },
         ],
         ensure_ascii=False,
     ),
     encoding="utf-8",
 )
 (data / "System.json").write_text(json.dumps({"gameTitle": "Test"}), encoding="utf-8")
+plugins = game / "js" / "plugins.js"
+plugins.parent.mkdir()
+
+
+def configure(command, room):
+    """The plugin list: the menu command and how many letters the item list
+    fits, which the stand-in reads as the game's plugins would draw them."""
+    settings = {"command": command, "room": room}
+    plugins.write_text(
+        "var $plugins = " + json.dumps([{"name": "Menu", "parameters": settings}]),
+        encoding="utf-8",
+    )
+
+
+configure("Monster Compendium", 40)
 captures = []
 
 
@@ -50,16 +73,25 @@ def capture(
     all_choices=False,
     progress=None,
 ):
-    """What the capture writes: before corrections, a squeezed weapon name and
-    plugin command; after, the weapon as the corrected data names it."""
+    """What the capture writes: the weapons in an item list as wide as the
+    plugins make it, and the plugin's menu command, squeezed when long; with
+    corrections, the weapons as the corrected data names them."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    name = LONG
+    weapons = json.loads((data / "Weapons.json").read_text(encoding="utf-8"))
     if overlay:
-        name = json.loads(
+        weapons = json.loads(
             Path(overlay["data/Weapons.json"]).read_text(encoding="utf-8")
-        )[1]["name"]
-    squeezed = {"squeezed": 0.7} if len(name) > 20 else {}
+        )
+    settings = json.loads(plugins.read_text(encoding="utf-8").split("= ", 1)[1])[0][
+        "parameters"
+    ]
+
+    def label(text, window, room):
+        return {"text": text, "window": window} | (
+            {"squeezed": 0.7} if len(text) > room else {}
+        )
+
     listing = {
         "game": {"engine": "MZ", "width": 816, "height": 624},
         "screens": [
@@ -67,7 +99,10 @@ def capture(
                 "name": "items-2-01",
                 "file": "items-2-01.png",
                 "title": "Items: Weapons",
-                "labels": [{"text": name, "window": "Window_ItemList", **squeezed}],
+                "labels": [
+                    label(weapon["name"], "Window_ItemList", settings["room"])
+                    for weapon in weapons[1:]
+                ],
             },
             *(
                 []
@@ -78,11 +113,7 @@ def capture(
                         "file": "menu.png",
                         "title": "Menu",
                         "labels": [
-                            {
-                                "text": "Monster Compendium",
-                                "window": "Window_MenuCommand",
-                                "squeezed": 0.75,
-                            }
+                            label(settings["command"], "Window_MenuCommand", 12)
                         ],
                     }
                 ]
@@ -102,16 +133,36 @@ qa.rpgmaker_screens.capture = capture
 task, state = qa.prepare_task(
     game, data, "release", temporary / "storage", interface=True
 )
-# The squeezed name goes to deep review; the plugin's command is QA's to report.
-assert state["interface"] == {"captured": 2, "squeezed": 1, "outside": 1}, state
-forced = json.loads((task / "checkpoint.json").read_text())["deep"]["candidate_reasons"]
-assert [candidate["reasons"] for candidate in forced.values()] == [["interface-fit"]], (
-    forced
+# The plugin's command is QA's to report; nothing QA holds is squeezed.
+assert state["interface"] == {"captured": 2, "squeezed": 0, "outside": 1}, state
+
+
+def outside():
+    _places, found = qa._interface_places(
+        qa.interface_capture(task)["folder"],
+        json.loads((task / "inventory.json").read_text()),
+    )
+    return [row["text"] for row in found]
+
+
+assert outside() == ["Monster Compendium"], outside()
+# A plugin change that shortens the command and narrows the item list keeps
+# the task and its review, and captures again: the command fits, and the
+# weapon's name, now squeezed, goes to deep review.
+configure("Bestiary", 20)
+again, state = qa.prepare_task(
+    game, data, "release", temporary / "storage", interface=True
 )
-_places, outside = qa._interface_places(
-    task / qa.INTERFACE_FOLDER, json.loads((task / "inventory.json").read_text())
-)
-assert [row["text"] for row in outside] == ["Monster Compendium"], outside
+assert again == task and len(captures) == 2, captures
+assert state["interface"] == {"captured": 2, "squeezed": 1, "outside": 0}, state
+assert outside() == [], outside()
+observed = json.loads((task / "checkpoint.json").read_text())["observations"]
+assert [(row["identity"].split("@")[0], row["worker"]) for row in observed] == [
+    ("Weapons.json#/1/_original/name", "interface")
+], observed
+# Unchanged plugin files keep the capture.
+qa.prepare_task(game, data, "release", temporary / "storage", interface=True)
+assert len(captures) == 2, captures
 shown = {}
 
 
@@ -170,9 +221,9 @@ while qa.status(task)["stage"] != "complete":
         qa.finalize(task)
 # The deep reviewer read which screen squeezed the name, and its capture.
 assert "check interface-fit" in shown["deep"] and "Items: Weapons" in shown["deep"]
-assert str(task / qa.INTERFACE_FOLDER / "items-2-01.png") in shown["deep"], shown[
-    "deep"
-]
+assert str(qa.interface_capture(task)["folder"] / "items-2-01.png") in shown["deep"], (
+    shown["deep"]
+)
 # Editorial read the screen captured again with the correction served in
 # place of the game's data, which left the game's own file alone.
 assert "corrected screen, fits: Items: Weapons" in shown["editorial"], shown[
@@ -186,4 +237,19 @@ assert (
     "findings"
 ]
 assert (finding["current"], finding["correction"]) == (LONG, SHORT), finding
+# Once QA is complete, a line a later capture finds squeezed is recorded as
+# unreviewed instead of reopening review.
+configure("Bestiary", 10)
+_task, state = qa.prepare_task(
+    game, data, "release", temporary / "storage", interface=True
+)
+assert state["stage"] == "complete", state
+assert state["interface"] == {
+    "captured": 2,
+    "squeezed": 1,
+    "outside": 0,
+    "unreviewed": 1,
+}, state
+(spear,) = qa.interface_capture(task)["unreviewed"]
+assert spear.startswith("Weapons.json#/2/"), spear
 print("ok")

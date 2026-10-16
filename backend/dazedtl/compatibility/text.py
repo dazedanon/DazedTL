@@ -370,7 +370,13 @@ def qa_state(plan):
             {
                 "interface": {
                     key: interface[key]
-                    for key in ("captured", "squeezed", "outside", "error")
+                    for key in (
+                        "captured",
+                        "squeezed",
+                        "outside",
+                        "unreviewed",
+                        "error",
+                    )
                     if key in interface
                 }
             }
@@ -400,10 +406,15 @@ def qa_pointed_task(folder, pointer):
 
 
 def qa_capture(task):
-    """The listing of the screens a prepared QA task captured."""
+    """A prepared QA task's latest capture of the game's screens: its round,
+    which a capture taken again counts up, and its listing; None for a task
+    prepared without one."""
     from util import rpgmaker_qa as qa
 
-    return Path(task) / qa.INTERFACE_FOLDER / "screens.json"
+    captured = qa.interface_capture(task)
+    if not captured:
+        return None
+    return {"round": captured["round"], "listing": captured["folder"] / "screens.json"}
 
 
 def qa_outside(task):
@@ -414,12 +425,36 @@ def qa_outside(task):
     from util import rpgmaker_qa as qa
 
     root = Path(task)
-    if not qa_capture(root).is_file():
+    captured = qa.interface_capture(root)
+    if not captured or not (captured["folder"] / "screens.json").is_file():
         return []
     _places, outside = qa._interface_places(
-        root / qa.INTERFACE_FOLDER, qa._read_json(root / "inventory.json")
+        captured["folder"], qa._read_json(root / "inventory.json")
     )
     return outside
+
+
+def qa_unreviewed(task):
+    """Lines a capture taken again after QA was complete found squeezed, so
+    no reviewer judged them on screen: each one's English and the screen."""
+    from util import rpgmaker_qa as qa
+    from util import rpgmaker_screens
+
+    root = Path(task)
+    captured = qa.interface_capture(root)
+    if not captured or not captured["unreviewed"]:
+        return []
+    manifest = qa._read_json(root / "inventory.json")
+    places, _outside = qa._interface_places(captured["folder"], manifest)
+    records, _clusters = qa._record_maps(manifest)
+    return [
+        {
+            "text": rpgmaker_screens.shown_text(records[cluster_id]["live"]),
+            "title": places[cluster_id][0]["title"],
+        }
+        for cluster_id in captured["unreviewed"]
+        if cluster_id in places
+    ]
 
 
 def qa_report(plan):
@@ -450,6 +485,7 @@ def qa_report(plan):
         "interface_outside": [
             {"text": row["text"], "title": row["title"]} for row in outside
         ],
+        "interface_unreviewed": qa_unreviewed(root),
         **({"interface_error": interface["error"]} if "error" in interface else {}),
     }
 

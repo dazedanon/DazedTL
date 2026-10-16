@@ -205,8 +205,14 @@ export function qaNotTranslated({ total, may_show }: QaNotTranslated) {
 export function qaInterface(found: QaInterface | undefined) {
   if (!found) return "";
   if (found.error) return "Interface screens not captured";
-  if (!found.outside) return "";
-  return `${found.outside.toLocaleString()} squeezed ${found.outside === 1 ? "label" : "labels"} QA can't correct`;
+  return [
+    found.outside &&
+      `${found.outside.toLocaleString()} squeezed ${found.outside === 1 ? "label" : "labels"} QA can't correct`,
+    found.unreviewed &&
+      `${found.unreviewed.toLocaleString()} squeezed after QA`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /**
