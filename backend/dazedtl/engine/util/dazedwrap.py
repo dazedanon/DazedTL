@@ -119,6 +119,52 @@ def wrapText(text: str, width: int) -> str:
     return "\n\n".join(wrapped_segments)
 
 
+def wrapLines(text: str, width: int, rows: int | None = None) -> str:
+    """
+    Wrap text whose line breaks are authored, such as a database note or
+    description, keeping every line break.
+
+    Only a line wider than *width* wraps, onto lines of its own. Blank lines
+    stay as they are, including the full-width-space lines that plugins which
+    skip an empty line need to draw an empty row.
+
+    *rows* is the number of lines the source spends on a window of fixed
+    height, such as a help window. When kept lines would need more rows than
+    that and running them together as :func:`wrapText` does needs fewer, the
+    text flows instead.
+    """
+    if not text:
+        return ""
+
+    lines = []
+    for line in text.split("\n"):
+        if not line.strip() or _get_visible_length(line) <= width:
+            lines.append(line)
+        else:
+            lines.append(_wrapLine(line, width))
+    kept = "\n".join(lines)
+    if rows is None or kept.count("\n") < rows:
+        return kept
+    flowed = wrapText(text, width)
+    return flowed if flowed.count("\n") < kept.count("\n") else kept
+
+
+def _wrapLine(line: str, width: int) -> str:
+    """One authored line too wide for *width*, wrapped onto as many lines as
+    :func:`wrapText` needs but evened out, so its last line is not a stray
+    word. The line's indent stays on its first line."""
+    body = line.lstrip()
+    wrapped = wrapText(body, width)
+    rows = wrapped.count("\n") + 1
+    # The narrowest width that still fits the same rows evens them out.
+    for narrower in range(-(-_get_visible_length(body) // rows), width):
+        even = wrapText(body, narrower)
+        if even.count("\n") + 1 == rows:
+            wrapped = even
+            break
+    return line[: len(line) - len(body)] + wrapped
+
+
 def wrapSGDesc(text: str, width: int) -> str:
     """Structured word-wrap for SG plugin description blocks.
 

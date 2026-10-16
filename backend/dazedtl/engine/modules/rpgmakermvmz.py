@@ -977,7 +977,14 @@ def _has_japanese_text(text) -> bool:
     if not sample.strip():
         return False
     sample = convert_corner_brackets(sample, TRANSLATION_CONFIG.convertQuotes)
-    return bool(re.search(LANGREGEX, sample))
+    # A full-width space is layout, such as the blank row a translated note
+    # keeps from its source, not Japanese still to translate.
+    return bool(re.search(LANGREGEX, sample.replace("\u3000", " ")))
+
+
+def _source_rows(source) -> int:
+    """The lines database text spends on its window in the source."""
+    return str(source or "").count("\n") + 1
 
 
 def _text_needs_translation(current) -> bool:
@@ -3075,7 +3082,7 @@ def searchNames(data, pbar, context, filename):
             if regex.startswith(r"<SG説明:"):
                 translated = dazedwrap.wrapSGDesc(translated, width=NOTEWIDTH)
             else:
-                translated = dazedwrap.wrapText(translated, width=NOTEWIDTH)
+                translated = dazedwrap.wrapLines(translated, NOTEWIDTH)
             translated = translated.replace('"', "")
         # Use a safe literal match for the replacement (no re.escape, just str.replace)
         data[idx]["note"] = data[idx]["note"].replace(match_text, translated, 1)
@@ -3160,7 +3167,7 @@ def searchNames(data, pbar, context, filename):
                     if "profile" in data[i]:
                         prof_src = _entry_field_source(data[i], "profile")
                         if prof_src and _entry_field_needs_translation(data[i], "profile"):
-                            profileList.append(prof_src.replace("\n", " "))
+                            profileList.append(prof_src)
                             profileSourceList.append(prof_src)
                             profileIndexList.append(i)
                     i += 1
@@ -3177,7 +3184,7 @@ def searchNames(data, pbar, context, filename):
                         desc_src = _entry_field_source(data[i], "description")
                         if desc_src != "":
                             if _entry_field_needs_translation(data[i], "description"):
-                                descriptionList.append(desc_src.replace("\n", " "))
+                                descriptionList.append(desc_src)
                                 descriptionSourceList.append(desc_src)
                                 descriptionIndexList.append(i)
                     i += 1
@@ -3194,7 +3201,7 @@ def searchNames(data, pbar, context, filename):
                         desc_src = _entry_field_source(data[i], "description")
                         if desc_src:
                             if _entry_field_needs_translation(data[i], "description"):
-                                descriptionList.append(desc_src.replace("\n", " "))
+                                descriptionList.append(desc_src)
                                 descriptionSourceList.append(desc_src)
                                 descriptionIndexList.append(i)
                     i += 1
@@ -3274,7 +3281,9 @@ def searchNames(data, pbar, context, filename):
                     for idx, raw_prof, translated in zip(
                         profileIndexList, profileSourceList, translatedProfileBatch
                     ):
-                        data[idx]["profile"] = dazedwrap.wrapText(translated, LISTWIDTH)
+                        data[idx]["profile"] = dazedwrap.wrapLines(
+                            translated, LISTWIDTH, _source_rows(raw_prof)
+                        )
                         _apply_entry_field_original(data[idx], "profile", raw_prof)
 
                     j = i
@@ -3344,7 +3353,9 @@ def searchNames(data, pbar, context, filename):
                         descriptionSourceList,
                         translatedDescriptionBatch,
                     ):
-                        data[idx]["description"] = dazedwrap.wrapText(translated, LISTWIDTH)
+                        data[idx]["description"] = dazedwrap.wrapLines(
+                            translated, LISTWIDTH, _source_rows(raw_desc)
+                        )
                         _apply_entry_field_original(data[idx], "description", raw_desc)
 
                     j = i
@@ -6212,7 +6223,7 @@ def searchSS(state, pbar):
                 break
             translated = translatedNotesBatch[note_insert_idx]
             if wordwrap:
-                translated = dazedwrap.wrapText(translated, width=NOTEWIDTH)
+                translated = dazedwrap.wrapLines(translated, NOTEWIDTH)
                 translated = translated.replace('"', "")
             # Replace only the matched text in the note using a literal replacement
             # Avoid re.sub here because replacement strings with backslashes (e.g., \I)
@@ -6238,7 +6249,11 @@ def searchSS(state, pbar):
     if "description" in state and descriptionResponse != "":
         # Textwrap
         translatedText = descriptionResponse[0]
-        translatedText = dazedwrap.wrapText(translatedText, width=LISTWIDTH)
+        translatedText = dazedwrap.wrapLines(
+            translatedText,
+            LISTWIDTH,
+            _source_rows(_entry_field_source(state, "description")),
+        )
         state["description"] = translatedText.replace('"', "")
     if "message1" in state and message1Response != "":
         state["message1"] = _strip_taro_placeholder(message1Response[0].replace('"', ""))

@@ -471,6 +471,75 @@ try:
         finally:
             os.chdir(directory)
 
+        # Database text keeps the lines its source draws. The pass ran them
+        # together and rewrapped them by width, losing a weapon's skill line
+        # and the full-width-space rows a detail note draws as blank rows.
+        skill_line = "鋭い刃。\n\\C[24]武器スキル：\\C[0]刺突"
+        detail = "重厚な大斧\n　\n以下の特殊効果を持つ\n・毎ターンTP25増加"
+        answers = {
+            "刺突剣": "Rapier",
+            "短剣": "Dagger",
+            skill_line: "A keen blade.\n\\C[24]Weapon Skill: \\C[0]Thrust",
+            "短い刃。\n予備の武器。": "A short blade.\n"
+            "A spare weapon kept in reserve for when the first breaks.",
+            detail: "A massive greataxe favored by strongmen\n　\n"
+            "Has the following special effects\n・TP +25 every turn",
+        }
+        weapons = [
+            None,
+            {
+                "id": 1,
+                "name": "刺突剣",
+                "description": skill_line,
+                "note": f"<NameColor:23>\n<dPlnText:{detail}>",
+            },
+            {
+                "id": 2,
+                "name": "短剣",
+                "description": "短い刃。\n予備の武器。",
+                "note": "",
+            },
+        ]
+        sent = []
+
+        def database_lines(text, _history, *_args, **_kwargs):
+            sent.extend(text)
+            return [[answers[value] for value in text], [0, 0]]
+
+        os.chdir(harvest)
+        try:
+            with (
+                patch.dict(os.environ, {"DAZED_GAME_ROOT": str(harvest)}),
+                patch.multiple(
+                    parser,
+                    IGNORETLTEXT=True,
+                    LISTWIDTH=40,
+                    NOTEWIDTH=30,
+                    translateAI=extensions.point(database_lines),
+                ),
+            ):
+                parser.searchNames(weapons, None, "Weapons", "Weapons.json")
+                assert skill_line in sent, sent
+                assert weapons[1]["description"] == answers[skill_line], weapons
+                # A line too wide wraps evenly on its own; blank rows stay.
+                assert weapons[1]["note"] == (
+                    "<NameColor:23>\n<dPlnText:A massive greataxe\n"
+                    "favored by strongmen\n　\nHas the following\n"
+                    "special effects\n・TP +25 every turn>"
+                ), weapons[1]["note"]
+                # A help window has the source's rows; text that needs more
+                # of them with its lines kept flows instead.
+                assert weapons[2]["description"] == (
+                    "A short blade. A spare weapon kept in\n"
+                    "reserve for when the first breaks."
+                ), weapons[2]["description"]
+                # Kept full-width-space rows are not Japanese left to translate.
+                sent.clear()
+                parser.searchNames(weapons, None, "Weapons", "Weapons.json")
+                assert sent == [], sent
+        finally:
+            os.chdir(directory)
+
         # MV and Ace print the battler's name right before a particle-first
         # battle message; stripping the space after Taro printed "Arinafell!".
         assert parser._strip_taro_placeholder('"Taro fell!"') == " fell!"
