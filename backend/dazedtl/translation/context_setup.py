@@ -378,6 +378,12 @@ def layout_instructions(value, command, capture):
         "project_id": value["project_id"],
         "layout": None,
     }
+    # A width the game gives no reason to change keeps its current value.
+    current = (
+        f" The project's current limits are {json.dumps(value['widths'])}; report a width you keep at its current value."
+        if value.get("widths")
+        else ""
+    )
     return f"""
 ## Save measured character limits
 
@@ -391,7 +397,7 @@ Replace layout null with the measured values and their evidence:
 {{"widths": {{"width": 60, "faceWidth": 50, "listWidth": 100, "noteWidth": 75, "messageRows": 4}},
 "reason": "Actual measurement method, confidence, font and exceptions.",
 "evidence": [{{"file": "js/rpg_windows.js", "sha256": "FINAL_FILE_HASH", "location": "Inspected window functions"}}]}}.
-Those values are schema examples, not measurements. `messageRows` is the rows one message window
+Those values are schema examples, not measurements.{current} `messageRows` is the rows one message window
 shows before the game starts a new window. Use only measured values with source evidence, confirmed
 on screen as the measurement steps describe, and say in `reason` what the captures showed or what
 could not be seen; otherwise save the report with `layout` null and report the unresolved geometry.

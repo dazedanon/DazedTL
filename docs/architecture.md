@@ -1233,6 +1233,8 @@ The port writes RV2JSON's JSON and Ruby 3.4's Marshal bytes so games and existin
 RGSS3 reads only the archive while `Game.rgss3a` exists, scripts included, and probes on a real game confirmed it ignores loose copies and rejects an archive without its scripts.
 So Set up keeps an encrypted game's archive in `.dazedtl/ace`, where releases and Git never see it, and patches carry it rebuilt with the game's current files; the rebuild keeps the original header, order and keys, so it reproduces an unchanged archive byte for byte.
 Ace Release requires a packing receipt bound to every current JSON input and its corresponding native output; fitting, QA or native edits invalidate it.
+Git holds no original of the converted JSON, so Event text sources reads a translated command's original text from the `_original` the engine keeps, and lists the converted `ace_json/scripts` as dependencies.
+Copied Names & glossary and Line widths tasks tell an Ace assistant where its data and scripts are and that the code-101 nameplate rules, slip check and layout check are MV/MZ only, since VX Ace's Show Text has no nameplate.
 Guided checkpoint manifests derive translation-only additions from the registered original and saved source inventory, retaining previously tracked runtime assets when switching workflows.
 
 ## Backup storage

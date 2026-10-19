@@ -16,6 +16,36 @@ if TYPE_CHECKING:
     from .guided import Guided
 
 
+# The RPG Maker instructions are written for MV/MZ; VX Ace keeps its data,
+# scripts and speaker names elsewhere, and the app's slip and layout checks
+# do not read it.
+ACE_DATA = """DazedTL converted this game's archive to JSON. Read and cite `ace_json/*.json` for maps, common events,
+troops and the database, and the Ruby scripts in `ace_json/scripts/*.rb`, which do what `js/plugins.js`
+and `js/rpg_windows.js` do in MV/MZ. `Data/*.rvdata2` are the packed copies DazedTL rebuilds from that JSON,
+and the original archive is kept in `.dazedtl/ace`.
+"""
+ACE_SPEAKERS = """VX Ace's code 101 has no nameplate: its parameters are the face file, face index, background and position,
+so speaker names are in the message text. The code-101 `param[4]` format, AutoNamePopup and the `param[4]`
+micro-repair below do not apply, and the speaker slip check and `--fix-headers` read only code-101
+nameplates, so report the slips you find instead.
+"""
+ACE_LAYOUT = """DazedTL's layout check plays MV/MZ games only: confirm the widths on screen by running the game yourself.
+"""
+
+
+def ace_note(native, speakers=False):
+    """Where an Ace game differs from the MV/MZ wording of a task."""
+    if native["engine"] != "ACE":
+        return ""
+    return (
+        "\n## RPG Maker VX Ace\n\n"
+        + ACE_DATA
+        + (ACE_SPEAKERS if speakers else "")
+        + ACE_LAYOUT
+        + "\n"
+    )
+
+
 class GuidedContext:
     def __init__(self, guided: Guided):
         self.guided = guided
@@ -117,7 +147,8 @@ class GuidedContext:
                 "finish": guided / "context-findings.json",
             }
             text = (
-                speaker_setup.instructions(request, command)
+                ace_note(native, speakers=True)
+                + speaker_setup.instructions(request, command)
                 + reference_folders.instructions(
                     reference_folders.records(
                         self.guided.path(project_id, "reference-folders")
@@ -142,12 +173,16 @@ class GuidedContext:
             command = helper_command(
                 self.guided.translation.workspace, project_id, "context"
             )
-            text += context_setup.layout_instructions(
-                request,
-                command,
-                helper_command(
-                    self.guided.translation.workspace, project_id, "playtest"
-                ),
+            text = (
+                ace_note(native)
+                + text
+                + context_setup.layout_instructions(
+                    request,
+                    command,
+                    helper_command(
+                        self.guided.translation.workspace, project_id, "playtest"
+                    ),
+                )
             )
             handoff = {
                 "kind": "line_widths",
