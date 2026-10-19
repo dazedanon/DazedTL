@@ -1243,6 +1243,8 @@ A checkout off the translation branch, or with an unfinished Git operation or as
 Reviewed runtime manifests control patch scope; all .dazedtl work stays outside both branches.
 DazedTL's own runtime files a game holds join every manifest that checkpoints, packages and QA records read ([dazedtl_files](../backend/dazedtl/engine/util/len_patch_scope.py)), and Guided proposes the same list: an assistant's manifest of data and `plugins.js` alone gave players a `plugins.js` loading a plugin the patch lacked, so the game stopped at boot.
 Set up's files take the prepared game's copies as their originals, as `plugins.js` does; a game whose prepared backup lacks them, such as one set up after its Git baseline, gets them as translation-only additions instead of a checkpoint that fails.
+[sync_patch_scope](../backend/dazedtl/engine/util/len_patch_scope.py) also refuses a `plugins.js` that switches on a plugin neither the patch nor the original game holds, so a plugin an assistant writes, or Guided's TL Inspector, which DazedTL leaves to the manifest, cannot reach players without its file.
+The checkpoint passes the prepared backup's file list along with the restored originals because Git's ignored-asset inventory leaves out local-looking names such as a `Save…` plugin, and DazedTL's own plugins never count as the original game's because Git set up on a prepared game records them.
 The MV/MZ writer retains source metadata on ordinary corrections.
 The explicit rebase route proves its source matches a reviewed original-branch blob before rebuilding metadata for a new source version.
 Official update operations reuse the existing preview hashes, conflict recovery and native-byte rules.

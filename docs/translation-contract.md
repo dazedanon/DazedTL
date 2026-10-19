@@ -254,6 +254,7 @@ Package requires current reported QA and creates a local patch from reviewed Git
 It does not create remotes, push, or upload.
 A checkpoint commits the game's complete `gameupdate/patch-config.txt` with the patch, so manifests need not list it; the package leaves it out unless the existing GameUpdate checks find the commit is the verified public version, which they then stamp.
 Every checkpoint, package and QA record also carries DazedTL's other files the game holds, so manifests need not list them either: GameUpdate's launchers and scripts, the update check and Forge plugins Set up installs, and the playtest's fixes plugin with the `js/main.js` that loads it.
+A checkpoint refuses a `plugins.js` that switches on a plugin whose file neither the patch nor the original game holds, naming the plugin, since players' game would stop at start; the original game's plugins are those its Git records or prepared backup list, never DazedTL's own, such as TL Inspector.
 
 For an official update, stage_update preserves the new original and creates a separate working copy.
 A folder holding fewer than half of the game's files is staged as a patch unless `patch` says otherwise, and version_preview then compares a staged release only as what it was staged as.

@@ -244,17 +244,16 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
 
     def checkpoint(manifest_path, message):
         manifest = runtime_manifest(source, manifest_path)
-        original = (
-            str(
-                restored(
-                    state["prepared_source"]["id"], engine.runtime_paths(manifest)
-                )[0]
+        original, names = None, ()
+        if state.get("prepared_source"):
+            folder, snapshot = restored(
+                state["prepared_source"]["id"], engine.runtime_paths(manifest)
             )
-            if state.get("prepared_source")
-            else None
-        )
-        engine.git_scope(source, options, manifest, original, True)
-        result = engine.git_scope(source, options, manifest, original, False)
+            # Only the patch's files are restored; the backup's list names the
+            # rest, such as the game's own plugins players keep.
+            original, names = str(folder), list(snapshot["files"])
+        engine.git_scope(source, options, manifest, original, True, names)
+        result = engine.git_scope(source, options, manifest, original, False, names)
         result["commit"] = engine.commit(source, message)
         state["checkpoint"] = {"commit": result["commit"], "manifest": manifest_path}
         state["runtime_manifest"] = manifest_path

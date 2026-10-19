@@ -3,9 +3,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import posixpath
 import re
 import subprocess
 import tempfile
+from collections.abc import Collection, Iterable
+from itertools import chain
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -13,6 +16,7 @@ from util.gameupdate_config import CONFIG, file_values
 from util.len_git import git_status
 from util.len_translation import LenProject, _write_atomic
 from util.paths import PROJECT_ROOT, normalize_game_tool_gitignore_text
+from util.playtest.fixes import NAME as FIXES_PLUGIN
 from util.playtest.fixes import patch_files as fixes_files
 from util.project_preparation import (
     GAMEUPDATE_COPY_SKIP_NAMES, RPG_GAMEUPDATE_COPY_SKIP_NAMES, rpgmaker_layout,
@@ -28,6 +32,7 @@ from util.version_update.git_workflow import (
 _BEGIN = "# BEGIN DazedTL Len patch files"
 _END = "# END DazedTL Len patch files"
 _METADATA = {".gitignore", ".gitattributes", "README.md"}
+_PLUGIN_REGISTRIES = ("js/plugins.js", "www/js/plugins.js")
 
 
 def _path(value: str) -> str:
@@ -105,6 +110,57 @@ def with_dazedtl_files(root: Path, document: Any) -> Any:
     if not isinstance(files, dict):
         return document
     return {**document, "files": {**files, **rows}}
+
+
+def _listed(items: list[str]) -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def _plugin_refusal(root: Path, scope: Collection[str], original: Iterable[str],
+                    original_game: Path | None) -> str | None:
+    """Why a patch's plugins.js may not go to players: it switches on plugins
+    whose file neither the patch nor the original game holds, so their game
+    stops at start. `original` names the original game's files, and
+    `original_game` is a folder of them. Paths match in any letter case, as
+    Windows loads them, and DazedTL's own plugins never count as the original
+    game's: Git set up on a prepared game records them, but no release has
+    them."""
+    from util.forge.config import PLUGIN_BY_ENGINE
+    from util.rpgmaker_plugin_registry import PluginRegistryError, plugin_entries
+    from util.tl_inspector.installer import PLUGIN_NAME as INSPECTOR
+    from util.translation_update_check.installer import PLUGIN_NAME
+
+    registries = [registry for registry in _PLUGIN_REGISTRIES if registry in scope]
+    if not registries:
+        return None
+    own = {name.casefold() for name in (PLUGIN_NAME, INSPECTOR, FIXES_PLUGIN, *PLUGIN_BY_ENGINE.values())}
+    patch = {path.casefold() for path in scope}
+    known = {path.casefold() for path in original}
+    for registry in registries:
+        try:
+            entries = plugin_entries((root / registry).read_text(encoding="utf-8-sig", errors="replace"))
+        except PluginRegistryError:
+            # The playtest reports a list the game can't read as a crash.
+            continue
+        folder = registry.removesuffix("plugins.js") + "plugins/"
+        missing = {}
+        for entry in entries:
+            name = entry.get("name")
+            if not entry.get("status") or not isinstance(name, str) or not name:
+                continue
+            # The game asks for the plugin by URL, which takes either slash.
+            path = posixpath.normpath(folder + name.replace("\\", "/") + ".js")
+            if path.startswith("../") or path.casefold() in patch:
+                continue
+            if name.casefold() in own or not (
+                    path.casefold() in known or (original_game is not None and _held(original_game, path))):
+                missing[name] = path
+        if missing:
+            plural = "s" if len(missing) > 1 else ""
+            return (f"{registry} loads the plugin{plural} {_listed(sorted(missing))}, whose file{plural} "
+                    "neither the patch nor the original game has, so players' game would stop at start. "
+                    f"Add {_listed(sorted(missing.values()))} to the patch manifest.")
+    return None
 
 
 def _file(root: Path, relative: str) -> Path:
@@ -217,11 +273,13 @@ def _tree(repo: Path, entries: dict[str, tuple[str, str]], index: dict[str, str]
 
 
 def sync_patch_scope(project: LenProject, document: object, *, original_game: Path | None = None,
-                     dry_run: bool = False) -> dict:
+                     original_names: Collection[str] = (), dry_run: bool = False) -> dict:
     """Stage only reviewed files; append an original scope commit, retaining all local files.
 
     A list is the COMPLETE patch, not just this batch's changes. Hash-bound release
     manifests also verify that the reviewed English bytes are in the actual game root.
+    `original_names` lists all of the untranslated game's files when
+    `original_game` holds only the patch's, as a restored backup does.
     """
     selected = patch_manifest(document)
     state = git_status(project)
@@ -259,6 +317,12 @@ def sync_patch_scope(project: LenProject, document: object, *, original_game: Pa
     source = original_game.expanduser().resolve() if original_game is not None else None
     if source is not None and (source == repo or not source.is_dir()):
         raise GitWorkflowError("Use a separate, matching untranslated backup as the original")
+    # Players keep the original game's plugins; Git's inventory of them leaves
+    # out names that look local, such as a plugin called Save..., which the
+    # backup's list holds.
+    refusal = _plugin_refusal(repo, selected, chain(originals, assets or (), original_names), source)
+    if refusal:
+        raise GitWorkflowError(refusal)
     # Existing Git originals are authoritative; a supplied backup must match them.
     original_files = {}
     # Set up's files keep the prepared untranslated game's copy as their

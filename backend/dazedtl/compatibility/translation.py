@@ -875,13 +875,17 @@ class TranslationEngine:
             **fit,
         }
 
-    def git_scope(self, source, options, manifest, original, dry_run):
+    def git_scope(self, source, options, manifest, original, dry_run, names=()):
+        """Stages a checkpoint's files. `original` is a folder holding the
+        untranslated game's copies of them, and `names` lists all of that
+        game's files."""
         from util.len_patch_scope import sync_patch_scope
 
         return sync_patch_scope(
             self.project(source, options),
             manifest,
             original_game=Path(original) if original else None,
+            original_names=names,
             dry_run=dry_run,
         )
 

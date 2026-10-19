@@ -155,6 +155,46 @@ def checkpoint():
 
 with engine.context():
     assert updater.CONFIG not in checkpoint()
+    # A patch's plugins.js may not switch on a plugin neither the patch nor
+    # players' game has, which stops their game at start: one the assistant
+    # wrote, or DazedTL's TL Inspector, which no release has even when the
+    # backup lists it. The game's own plugins need not join the patch, in any
+    # letter case, including one with a save-like name that only the
+    # backup's list holds.
+    registry = published / "js/plugins.js"
+    shipped = registry.read_bytes()
+    # The untranslated plugins.js, as a checkpoint restores it from the backup.
+    original = temporary / "published-original"
+    (original / "js").mkdir(parents=True)
+    (original / "js/plugins.js").write_bytes(shipped)
+    added = [published / f"js/plugins/{name}.js" for name in ("Wrap", "TLInspector")]
+    for path in added:
+        path.write_text("// Plugin\n")
+    # The game's own TitleMessage and SaveLayout, and a plugin switched off.
+    loaded = ["TitleMessage", "SaveLayout", "Wrap", "TLInspector"]
+    registry.write_text(
+        "var $plugins = [\n"
+        + "".join(f'{{"name":"{name}","status":true}},\n' for name in loaded)
+        + '{"name":"Old","status":false}\n];\n'
+    )
+    scoped = {"files": {"data/System.json": {}, "js/plugins.js": {}}}
+    backup = ["js/plugins/savelayout.js", "js/plugins/TLInspector.js"]
+    try:
+        engine.git_scope(published, options, scoped, str(original), True, backup)
+    except GitWorkflowError as error:
+        assert str(error).startswith(
+            "js/plugins.js loads the plugins TLInspector and Wrap,"
+        ), error
+    else:
+        raise AssertionError("A patch loaded plugins players lack.")
+    for path in added:
+        scoped["files"][path.relative_to(published).as_posix()] = {
+            "original_sha256": None
+        }
+    engine.git_scope(published, options, scoped, str(original), True, backup)
+    registry.write_bytes(shipped)
+    for path in added:
+        path.unlink()
     git(
         published,
         "remote",

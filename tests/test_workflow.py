@@ -1412,11 +1412,14 @@ class WorkflowTests(unittest.TestCase):
 
         self.engine.git_setup = setup
 
-        def git_scope(_source, _options, manifest, original, _dry_run):
+        def git_scope(_source, _options, manifest, original, _dry_run, names):
             folder = Path(original)
             originals.append(folder)
             self.assertEqual(read_json(folder / "source.json"), {"line": "はい。"})
+            # The rest of the prepared game is named, not restored, so the
+            # plugins players keep count as theirs.
             self.assertFalse((folder / "unchanged-asset.bin").exists())
+            self.assertIn("unchanged-asset.bin", names)
             # DazedTL's own files join a manifest that leaves them out: Set
             # up's with the prepared game's copies as their originals, and the
             # playtest's fixes with the game's own main.js as the original of
