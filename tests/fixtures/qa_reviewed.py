@@ -22,9 +22,15 @@ def line(original, text):
     return {"code": 401, "indent": 0, "parameters": [text], "_original": original}
 
 
+# A third-person line both scenes repeat, which each scene's screen reads as a
+# target of its own.
+PRONOUN = ("彼女はもう帰った", "She already went home.")
+
+
 def write_game(lines):
-    """Two scenes of the given (original, text) lines, three and the rest."""
-    pages = [lines[:3], lines[3:]]
+    """Two scenes of the given (original, text) lines, three and the rest,
+    each ending with the shared line."""
+    pages = [[*lines[:3], PRONOUN], [*lines[3:], PRONOUN]]
     document = {
         "events": [None]
         + [
@@ -162,33 +168,35 @@ def finish(task, flagged, corrections):
 
 
 first = prepare()
-assert targets(first) == sorted(source for source, _text in LINES), targets(first)
+assert targets(first) == sorted(
+    [*(source for source, _text in LINES), PRONOUN[0], PRONOUN[0]]
+), targets(first)
 finish(first, {"扉を開けた"}, {"扉を開けた": "I opened the door."})
 # Nothing changed, so preparing again is the same, finished task.
 assert prepare() == first
 
-# The correction is applied, one line is retranslated, and the glossary entry
-# for 剣 gains a note: the next task screens the retranslated line and the
-# line the changed entry governs, and reads the rest only as context.
+# The correction is applied and the glossary entry for 剣 gains a note: the
+# next task screens only the line the changed entry governs. Neither scene
+# reads the shared line again, since one changed only by a confirmed
+# correction and the other only by guidance for another of its lines.
 LINES[1] = ("扉を開けた", "I opened the door.")
-LINES[4] = ("魔王が来る", "Here comes the Demon King.")
 write_game(LINES)
 glossary("剣 (sword) - The hero's only weapon.\n")
 second = prepare()
 assert second != first
-assert targets(second) == ["剣を抜け", "魔王が来る"], targets(second)
+assert targets(second) == ["剣を抜け"], targets(second)
 assert qa.status(second)["reviewed_before"] == {
-    "lines": 3,
+    "lines": 5,
     "from": [f"task {first.name}"],
 }, qa.status(second)["reviewed_before"]
-# The first scene holds no line to review, so no reviewer reads it again.
-assert "おはよう" not in "".join(
-    qa.render_bundle(second, row["id"])
-    for row in json.loads((second / "checkpoint.json").read_text())["screen"]["bundles"]
-)
+# A retranslated line is screened, and so is the shared line in its scene,
+# whose text changed.
+LINES[2] = ("静かな部屋だ", "It's a quiet room.")
+write_game(LINES)
+assert targets(prepare()) == ["剣を抜け", "彼女はもう帰った", "静かな部屋だ"]
 # The same, reviewing everything, is another task.
 everything = prepare(earlier=False)
-assert len(targets(everything)) == 5 and everything != second
+assert len(targets(everything)) == 7 and everything != second
 
 
 # The user says text from before the 1.10 update was checked elsewhere. The
@@ -227,12 +235,21 @@ LINES[0] = ("おはよう", "Morning!")
 write_game(LINES)
 git("commit", "-q", "-am", "Translate 1.10")
 scoped = prepare(since="1.10")
-assert targets(scoped) == ["おはよう", "新しい台詞"], targets(scoped)
+# Both scenes changed since the baseline, so each reads the shared line again.
+assert targets(scoped) == ["おはよう", PRONOUN[0], PRONOUN[0], "新しい台詞"], targets(
+    scoped
+)
 # The scope stays in effect for the game's later tasks, and naming a version
 # the game was never updated to is refused.
 LINES[3] = ("剣を抜け", "Unsheathe your sword!")
 write_game(LINES)
-assert targets(prepare()) == ["おはよう", "剣を抜け", "新しい台詞"]
+assert targets(prepare()) == [
+    "おはよう",
+    "剣を抜け",
+    PRONOUN[0],
+    PRONOUN[0],
+    "新しい台詞",
+]
 try:
     prepare(since="9.99")
 except ValueError as error:

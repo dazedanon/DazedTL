@@ -1262,7 +1262,10 @@ def _scene_items(
     ).items():
         if earlier(cluster_id) and reviewed.scene(
             "scene-" + signature[:20],
-            (record["source"] for record in groups_by_signature[signature]["records"]),
+            (
+                (record["source"], record["live"])
+                for record in groups_by_signature[signature]["records"]
+            ),
         ):
             continue
         selected = selected_by_signature.get(signature)
@@ -3031,9 +3034,16 @@ class _Reviewed:
         key = _pair_key(source, translation)
         return any(key in sets["pairs"] for _ledger, sets in self._standing(str(source)))
 
-    def scene(self, scene_id: str, sources: Iterable[str]) -> bool:
-        text = "\n".join(map(str, sources))
-        return any(scene_id in sets["scenes"] for _ledger, sets in self._standing(text))
+    def scene(self, scene_id: str, lines: Iterable[tuple[Any, Any]]) -> bool:
+        """Whether a scene with this text was screened, or holds only text
+        reviewed before, such as corrections editorial confirmed; changed
+        guidance reopens the lines it governs, not the scene's other lines."""
+        if any(scene_id in sets["scenes"] for _ledger, sets, _changed in self.ledgers):
+            return True
+        return all(
+            any(_pair_key(source, translation) in sets["pairs"] for _l, sets, _c in self.ledgers)
+            for source, translation in lines
+        )
 
     def cleared(self, source: Any, translation: Any, reasons: Iterable[str]) -> bool:
         """Whether deep review already settled every one of these reasons for
