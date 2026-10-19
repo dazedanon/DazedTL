@@ -392,7 +392,7 @@ class ExistingBackend:
         scope = release_scope(plan["project"]["source"], known)
         plan["release_scope"] = scope
         return {
-            "label": "Build clean game ZIP",
+            "label": plan["label"],
             "files": len(scope["files"]),
             "paths": sorted(scope["files"]),
             "package": {

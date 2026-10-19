@@ -24,7 +24,7 @@ LABELS = {
     "qa_status": "Refresh translation QA", "playtest_status": "Refresh playtest plugins",
     "inspector_install": "Install TL Inspector", "inspector_remove": "Remove TL Inspector", "forge_install": "Install Forge",
     "forge_remove": "Remove Forge", "playtest_install": "Install both playtest plugins", "playtest_apply": "Apply playtest settings",
-    "release": "Build public release ZIP", "editors": "Find code editors",
+    "release": "Build clean game ZIP", "editors": "Find code editors",
     "reference_add": "Add DazedTL reference translation", "reference_pair": "Add Japanese / English reference pair",
     "reference_remove": "Remove reference registration", "reference_build": "Build exact reference matches", "images_status": "Refresh image readiness",
     "release_playtest": "Play the game for the release playtest",
