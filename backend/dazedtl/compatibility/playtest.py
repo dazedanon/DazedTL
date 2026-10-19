@@ -379,7 +379,13 @@ def seen_plugin_text(folder):
             texts[text] = {
                 "text": text,
                 "where": "Seen on "
-                + (seen.get("scene") or seen.get("stop") or "screen"),
+                + (seen.get("scene") or seen.get("stop") or "screen")
+                # A screen the tour opened itself, as players may never.
+                + (
+                    ", which the playtest opened on its own"
+                    if str(seen.get("stop", "")).startswith("screen ")
+                    else ""
+                ),
                 **(
                     {"capture": str(captures / (seen["capture"] + ".jpg"))}
                     if seen.get("capture")

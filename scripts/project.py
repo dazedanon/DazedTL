@@ -347,8 +347,9 @@ def main():
     plugins_step.add_argument(
         "--task",
         action="store_true",
-        help="Start or resume the Plugin files task, as the app's Copy does, and print its "
-        "instructions; the final check uses it for plugin text the playtest saw",
+        help="Start or resume what is left of the Plugin files task and print its "
+        "instructions, or say nothing is; the final check uses it for plugin text the "
+        "playtest saw",
     )
     plugins_step.add_argument(
         "--apply",

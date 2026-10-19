@@ -389,7 +389,14 @@ class PluginTests(unittest.TestCase):
         self.assertIn("drawn on screen", again["text"])
         # Kept again with the evidence, it is not asked a third time.
         _request, _report, task = self.investigation(again, kept=("開始",))
-        self.assertNotEqual(task["stage"], "investigation")
+        self.assertEqual(task["stage"], "translation")
+        request, _report = self.translate(task)
+        self.service.continue_task(self.identity, request["requestId"])
+        # The final check's assistant gets only what is left, never Copy's
+        # recheck of every decision.
+        left = self.service.action(self.identity, "plugin_task", {"recheck": False})
+        self.assertEqual(left["stage"], "complete")
+        self.assertNotIn("request", left)
 
     def test_foreign_duplicate_traversal_and_stale_reports_are_atomic(self):
         # MZ plugin subfolders are valid names; traversal and empty parts are not.

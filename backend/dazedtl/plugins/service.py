@@ -1617,7 +1617,9 @@ class PluginService:
         with self.lock:
             value = self.load(project_id)
             if action == "plugin_task":
-                result = self.copy_task(project_id, value)
+                result = self.copy_task(
+                    project_id, value, recheck=options.get("recheck", True)
+                )
             elif action == "apply":
                 return self.apply(project_id, value)
             elif action == "preview_restore":
@@ -1651,9 +1653,10 @@ class PluginService:
         value.setdefault("kept", {}).update({path: issues[path] for path in paths})
         return {}
 
-    def copy_task(self, project_id, value):
+    def copy_task(self, project_id, value, recheck=True):
         """The request a copied task starts from: whatever is left, or a recheck
-        of every decision once nothing is."""
+        of every decision once nothing is, unless `recheck` is false, as for
+        the final check's assistant, which only finishes what is left."""
         self.scan(project_id, value)
         self.observe(project_id, value)
         self.mark_seen(project_id, value)
@@ -1666,6 +1669,11 @@ class PluginService:
             None,
         )
         result = self.advance(project_id, value, active)
+        if not result and not recheck:
+            return {
+                "stage": "complete",
+                "message": "Plugin files has nothing left: every plugin file is investigated and its player text translated.",
+            }
         if not result:
             scope = self.investigation_scope(value, recheck=True)
             if not scope:

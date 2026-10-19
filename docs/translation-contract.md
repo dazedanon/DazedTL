@@ -37,7 +37,7 @@ The release playtest for RPG Maker MV/MZ runs with `playtest --run --wait MINUTE
 The stops given replace the saved ones, which every later run visits, and `[]` clears them.
 `playtest --fix --wait MINUTES` plays the game with the fixes file, a working copy of the game's `js/plugins/DazedTL_Fixes.js`, in its place and with `js/main.js` loading it after the game's plugins.
 Only when that play still plays, stops nowhere new, reaches as many places and no longer shows something the last playtest found does it write both, as one batch History restores; the play then becomes the latest report, and otherwise its reason is the step's failure.
-Its findings in translated text reach text QA by themselves; plugin text the playtest saw drawn goes back to Plugin files, which `plugins --task` continues as the app's Copy does and `plugins --apply` applies as Apply to game does; the rest name the step that fixes them.
+Its findings in translated text reach text QA by themselves; plugin text the playtest saw drawn goes back to Plugin files, whose remaining work `plugins --task` hands out, never a recheck of every decision as the app's Copy gives once nothing is left, and `plugins --apply` applies as Apply to game does; the rest name the step that fixes them.
 
 ### Sandboxed connections
 

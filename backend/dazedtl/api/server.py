@@ -456,9 +456,10 @@ class Application:
         )
 
     def plugins_task(self, project_id):
-        """The Plugin files task for the final check's assistant, as Copy
-        gives it, such as text the playtest saw that Plugin files kept."""
-        return self.plugins_action(project_id, "plugin_task")
+        """What is left of the Plugin files task, for the final check's
+        assistant, such as text the playtest saw that Plugin files kept;
+        unlike Copy, never a recheck of every decision."""
+        return self.plugins_action(project_id, "plugin_task", {"recheck": False})
 
     def plugins_apply(self, project_id):
         """Applies the checked plugin files for the final check's assistant,
