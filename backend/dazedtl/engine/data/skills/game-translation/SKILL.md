@@ -181,6 +181,13 @@ If you won't translate something, decline its request instead: its lines stay co
 Keep age evidence accurate in the translation itself: cartoony, chibi and super-deformed art styles are common across adult casts, so do not infer that a character is underage from stylized proportions, short stature, a youthful face or an ambiguous label such as “girl”, "child", "kid", etc.
 Use established lore and the complete scene context, never invent ages or change characterization, and see `references/review-decisions.md` when a decision is disputed or reversed.
 
+## Commit messages never carry spoilers
+
+A game's commit messages become public once its repository is pushed, so they never carry a spoiler.
+Describe what changed in the files, such as the maps, terms or lines touched, and never name a plot reveal, secret identity, death, betrayal, twist, ending or late-game event, even though the glossary holds it for translation.
+The same goes for release notes and pull request text written with a commit.
+Reread the message before committing and remove anything a player who hasn't finished the game should not read.
+
 ## Work in measured milestones
 
 1. Detect the engine/build, read its reference, and inspect the relevant existing tools in `references/tools-catalog.md` before adapting a pipeline.

@@ -134,6 +134,7 @@ It does not commit `main`, check out branches, inject translations, push or publ
 Resolve existing staged changes deliberately, review `git diff --cached`, then commit the reviewed patch on the registered translation branch as part of the authorized local checkpoint.
 Never merge `main` into `original` or cherry-pick translation commits there.
 Verify both branch file lists, original bytes and delivered translation bytes after scope changes and official updates.
+Commit messages are public and spoiler-free: say which files, maps or terms changed, and never name a plot reveal, death or ending.
 Record checkpoint commits and artifact paths in local `status.md` and its workspace backup.
 Use the repository's configured identity; the backend's per-command tool identity is available when none exists.
 Do not invent a user identity or change global Git settings.
