@@ -368,6 +368,8 @@ class Workflows:
             advanced_codes = {"CODE122", "CODE357", "CODE355655", "CODE657", "CODE356", "CODE320", "CODE324", "CODE325", "CODE108"}
             profile = {**profile, **{key: value for key, value in settings.items() if key in advanced_codes}}
         settings.update(profile)
+        # The game decides how scripts are written, whatever the options say.
+        settings["VXACE"] = project["engine"] == "ACE"
         if phase == "dialogue":
             settings["CODE408"] = project["phase1_comments"]
         return {"id": project_id, "phase": phase, "engine_options": settings, "widths": project["widths"],

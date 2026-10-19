@@ -214,6 +214,10 @@ def refreshRuntimeConfig():
     return TRANSLATION_CONFIG
 
 # Config (Default)
+# VXACE: The files are a VX Ace game's data converted to JSON, whose event
+# scripts, such as a text variable's (122), run as Ruby instead of JavaScript.
+# Guided runs set it from the project's engine.
+VXACE = False
 # FIRSTLINESPEAKERS: Guess speaker from first line.
 FIRSTLINESPEAKERS = False
 # INLINE401SPEAKERS: Extract speaker from "Name「dialogue」" inline format on 401 lines.
@@ -1431,6 +1435,50 @@ def _122_inner_current(cmd) -> str | None:
     if matched and matched.group(1).strip():
         return matched.group(1)
     return None
+
+
+def _js_122_operand(text: str) -> str:
+    """Code 122's script operand for MV/MZ: a JavaScript template literal."""
+    # Remove characters that may break scripts
+    charList = ['"', "\\n"]
+    for char in charList:
+        text = text.replace(char, "")
+
+    # Force 4 Escapes
+    text = re.sub(r'(?<![\\])([\\]{1})(?=\w)', r'\\\\', text)
+
+    # Textwrap
+    text = rpgmaker_rewrap.wrap_text(text, LISTWIDTH)
+    text = text.replace("\n", "\\n")
+    return f"`{text}`"
+
+
+# In an operand's source a backslash escapes the next character; a lone one
+# before anything else, such as a translated \C[2], stands for itself.
+_RUBY_122_ESCAPE = re.compile(r'\\(n(?!\[)|[\\"#])?')
+# What a Ruby double-quoted string escapes: a backslash, its delimiter, a line
+# break and a "#" that would start interpolation.
+_RUBY_122_SPECIAL = re.compile(r'[\\"\n]|#(?=[{$@])')
+
+
+def _ruby_122_operand(text: str) -> str:
+    """Code 122's script operand for VX Ace: a Ruby double-quoted string.
+
+    Ace evaluates the operand with Ruby, where MV/MZ's backtick literal runs a
+    shell command. *text* is translated from the operand's source, so ``\\\\``
+    stands for one backslash and ``\\n`` for a line break, except in the
+    ``\\n[1]`` name code. The text is rewrapped to the list width, and quote
+    marks are dropped as for MV/MZ, since QA writes a correction between the
+    quotes as it is.
+    """
+    value = _RUBY_122_ESCAPE.sub(
+        lambda match: " " if match[1] == "n" else match[1] or "\\", text
+    )
+    value = rpgmaker_rewrap.wrap_text(value.replace('"', ""), LISTWIDTH)
+    escaped = _RUBY_122_SPECIAL.sub(
+        lambda match: "\\n" if match[0] == "\n" else "\\" + match[0], value
+    )
+    return f'"{escaped}"'
 
 
 def _101_name_source(cmd, is_var: bool) -> str:
@@ -4350,20 +4398,9 @@ def _searchCodes(page, pbar, jobList, filename):
                             translatedText = list122[0]
                             translatedText = jaString.replace(jaString, translatedText)
 
-                            # Remove characters that may break scripts
-                            charList = ['"', "\\n"]
-                            for char in charList:
-                                translatedText = translatedText.replace(char, "")
-
-                            # Force 4 Escapes
-                            translatedText = re.sub(r'(?<![\\])([\\]{1})(?=\w)', r'\\\\', translatedText)
-
-                            # Textwrap
-                            translatedText = rpgmaker_rewrap.wrap_text(translatedText, LISTWIDTH)
-                            translatedText = translatedText.replace("\n", "\\n")
-
                             # Set
-                            codeList[i]["parameters"][4] = f"`{translatedText}`"
+                            operand = _ruby_122_operand if VXACE else _js_122_operand
+                            codeList[i]["parameters"][4] = operand(translatedText)
                             if hadSemicolon:
                                 codeList[i]["parameters"][4] += ';'
 

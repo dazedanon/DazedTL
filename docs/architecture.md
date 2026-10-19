@@ -1275,6 +1275,8 @@ Ace Release requires a packing receipt bound to every current JSON input and its
 The window caption comes from `Game.ini`'s Title, not the data, so packing writes the game title there as the editor does when it saves, and its receipt binds `Game.ini` with the data; older receipts count as outdated, so a game packed before this packs once more.
 Game.exe reads that file with `GetPrivateProfileStringW`, which decodes a file without a byte order mark with the player's ANSI code page: an ASCII title replaces only its line, and any other title turns the file into UTF-16, which probes on English Windows read in full, its RTP line included.
 Git holds no original of the converted JSON, so Event text sources reads a translated command's original text from the `_original` the engine keeps, and lists the converted `ace_json/scripts` as dependencies.
+Ace data is translated by the MV/MZ engine, and an Ace project's runs set its `VXACE` option from the project's engine ([phase_workflow](../backend/dazedtl/engine/desktop/backend/workflow.py)), so the frozen plan and Batch runtime profile carry it.
+With it, a translated text variable (code 122) is written as a Ruby double-quoted string, since Ace evaluates the operand with Ruby, where the template literal MV/MZ reads runs a shell command.
 Copied Names & glossary and Line widths tasks tell an Ace assistant where its data and scripts are and that the code-101 nameplate rules, slip check and layout check are MV/MZ only, since VX Ace's Show Text has no nameplate.
 Guided checkpoint manifests derive translation-only additions from the registered original and saved source inventory, retaining previously tracked runtime assets when switching workflows.
 

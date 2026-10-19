@@ -42,6 +42,7 @@ LABELS = {
     "IGNORETLTEXT": "Skip already translated text", "PRESERVEORIGINAL": "Preserve original source fields",
     "TLSYSTEMVARIABLES": "Translate variable names", "TLSYSTEMSWITCHES": "Translate switch names",
     "JOIN408": "Join comment continuation lines", "SPEAKERS408": "Collect comment speakers",
+    "VXACE": "VX Ace game data (Ruby event scripts)",
     "CODE101": "Speaker names (101)", "CODE401": "Dialogue (401)", "CODE405": "Scrolling text (405)",
     "CODE102": "Choices (102)", "CODE408": "Supported comment continuations (408)",
     "CODE122": "Text variables (122)", "CODE122_VAR_RANGES": "Variable IDs and inclusive ranges",

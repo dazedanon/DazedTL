@@ -126,7 +126,7 @@ class ConfigIntegration:
             bool_pattern = (
                 r'^(FIRSTLINESPEAKERS|INLINE401SPEAKERS|FACENAME101|AUTONAMEPOPUP101|NAMES|'
                 r'BRFLAG|FIXTEXTWRAP|IGNORETLTEXT|PRESERVEORIGINAL|TLSYSTEMVARIABLES|'
-                r'TLSYSTEMSWITCHES|JOIN408|SPEAKERS408|CODE\d+)\s*=\s*(True|False)'
+                r'TLSYSTEMSWITCHES|JOIN408|SPEAKERS408|VXACE|CODE\d+)\s*=\s*(True|False)'
             )
             int_pattern = r'^(CODE122_VAR_MIN|CODE122_VAR_MAX)\s*=\s*(\d+)'
             ranges_pattern = r'^CODE122_VAR_RANGES\s*=\s*(.+?)(?:\s+#.*)?$'

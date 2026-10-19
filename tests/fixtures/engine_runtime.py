@@ -1062,6 +1062,49 @@ try:
                 ["<Label:World map>"],
                 ["QuestLog", "add", "追加", {"title": "Quest log", "id": "q1"}],
             ], result
+            # VX Ace evaluates a text variable's script with Ruby, where the
+            # template literal MV/MZ reads ran a shell command. An Ace
+            # project's runs, Batch's saved profile included, say it is Ace.
+            from desktop.backend.manual import run_plan
+            from desktop.backend.workflow import Workflows
+            from util.game_settings import normalize_wrap_widths
+
+            flows = Workflows(temporary / "workspace", None, None, None)
+            flows.projects["ace"] = {
+                "id": "ace",
+                "engine": "ACE",
+                "source": str(game),
+                "engine_options": {"VXACE": False},
+                "widths": normalize_wrap_widths(None),
+                "phase1_comments": False,
+            }
+            ace = run_plan(
+                temporary / "workspace",
+                {"engine": "RPG Maker MV/MZ", "files": [{"name": "Map001.json"}]},
+                ["Map001.json"],
+                "estimate",
+                workflow=flows.phase_workflow("ace", "advanced"),
+            )
+            assert ace["engines"]["rpgmakermvmz"]["VXACE"], ace["engines"]
+            assert ace["runtime_profile"]["config"]["VXACE"], ace["runtime_profile"]
+            operands = {}
+            reply = r'\C[2]"#{name}"\C[0] says hi'
+            with patch.multiple(
+                parser,
+                CODE122=True,
+                CODE122_VAR_RANGES="1",
+                translateAI=extensions.point(
+                    lambda text, *_: [[reply for _value in text], [0, 0]]
+                ),
+            ):
+                for vxace in (True, False):
+                    with patch.object(parser, "VXACE", vxace):
+                        result = parse([command(122, [1, 1, 0, 4, '"村人";'])])
+                    operands[vxace] = result[0]["parameters"][4]
+            assert operands == {
+                True: r'"\\C[2]\#{name}\\C[0] says hi";',
+                False: r"`\\C[2]#{name}\\C[0] says hi`;",
+            }, operands
             # Batch collection queues a lone label or plugin argument with the
             # file text. It sent each one Live before the Batch cost review.
             payloads = []
