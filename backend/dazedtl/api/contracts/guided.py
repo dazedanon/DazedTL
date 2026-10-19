@@ -615,7 +615,9 @@ class PlaytestFixes(TypedDict):
     """The plugin that carries the assistant's fixes for the game's own code."""
 
     file: Annotated[str, "The working copy the assistant edits."]
-    in_game: Annotated[bool, "The game has the working copy as it is."]
+    in_game: Annotated[
+        bool, "The game has the working copy as it is, and its main.js loads it."
+    ]
     check: NotRequired[PlaytestFixCheck]
     saved: NotRequired[
         Annotated[

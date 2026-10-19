@@ -922,7 +922,7 @@ export type PlaytestFixCheck = {
 export type PlaytestFixes = {
   /** The working copy the assistant edits. */
   file: string;
-  /** The game has the working copy as it is. */
+  /** The game has the working copy as it is, and its main.js loads it. */
   in_game: boolean;
   check?: PlaytestFixCheck;
   /** Assistant-led, once the game has fixes: the latest checkpoint holds them as they are. */

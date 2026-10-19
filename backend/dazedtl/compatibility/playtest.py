@@ -149,7 +149,13 @@ def run_fixes(plan, log):
         for key in (fixes.PLUGIN, fixes.MAIN)
     }
     plugin = web / fixes.PLUGIN
-    if plugin.is_file() and plugin.read_bytes() == raw:
+    # Fixes main.js no longer loads, as a game update can leave it, go in
+    # again with the line that loads them.
+    if (
+        plugin.is_file()
+        and plugin.read_bytes() == raw
+        and fixes.loads_fixes((web / fixes.MAIN).read_bytes())
+    ):
         raise ValueError("The game already has these fixes.")
     storage = folder / FIX_STORAGE
     storage.mkdir(exist_ok=True)
@@ -231,14 +237,18 @@ def fixes_state(folder, root, web):
     """The working copy of the fixes plugin, whether the game has it as it
     is, and the latest check of it: a check of other fixes, such as those of
     an attempt started over, is not of this copy."""
-    from util.playtest.fixes import PLUGIN
+    from util.playtest.fixes import MAIN, PLUGIN, loads_fixes
 
     copy = fixes_copy(root, web)
     raw = copy.read_bytes()
     game = web / PLUGIN
+    main = web / MAIN
     result = {
         "file": str(copy),
-        "in_game": game.is_file() and game.read_bytes() == raw,
+        "in_game": game.is_file()
+        and game.read_bytes() == raw
+        and main.is_file()
+        and loads_fixes(main.read_bytes()),
     }
     pointer = Path(folder) / FIX_POINTER
     try:
