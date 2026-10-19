@@ -665,15 +665,8 @@ export type QaQuestion = {
 export type QaCoverage = {
   /** Translated lines in QA's inventory. */
   lines: number;
-  /** Lines reviewers declined and the user has not read. */
+  /** Lines reviewers declined, which QA set aside. */
   not_reviewed: number;
-};
-
-/** Japanese never translated, outside QA's inventory: no reviewer read it. */
-export type QaNotTranslated = {
-  total: number;
-  /** Of those, text no evidence keeps from players. */
-  may_show: number;
 };
 
 export type QaActivity = {
@@ -698,7 +691,6 @@ export type QaReportLine = {
   file: string;
   source: string;
   current: string;
-  reviewed: boolean;
 };
 
 export type QaUntranslatedText = {
@@ -729,20 +721,7 @@ export type QaInterfaceText = {
   title: string;
 };
 
-/** The game's interface screens QA captured while running a copy of it. */
-export type QaInterface = {
-  captured: number;
-  /** Lines sent to deep review because the game had too little room. */
-  squeezed?: number;
-  /** Squeezed or cut-off text QA can't correct. */
-  outside?: number;
-  /** Lines a capture taken again after QA was complete found squeezed, which no reviewer judged on screen. */
-  unreviewed?: number;
-  /** Why no screen was captured. */
-  error?: string;
-};
-
-/** What QA could not cover, for the coverage sheet. */
+/** What QA could not cover, for the History inspector. */
 export type QaReport = {
   not_reviewed: QaReportLine[];
   not_translated: QaUntranslatedSource[];
@@ -788,8 +767,6 @@ export type QaState = {
   findings: QaFinding[];
   questions: QaQuestion[];
   coverage?: QaCoverage;
-  not_translated?: QaNotTranslated;
-  interface?: QaInterface;
   activity?: QaActivity;
   rules_changed?: boolean;
   unreadable?: QaUnreadable;
@@ -2706,11 +2683,6 @@ export type GlossaryRequest = {
   text?: string;
 };
 
-export type QaReviewedRequest = {
-  project_id: string;
-  identities: string[];
-};
-
 export type TranslationLegacyRequest = {
   project_id: string;
   action: "resume" | "stop" | "answer" | "export";
@@ -3260,7 +3232,6 @@ export type RpcContract = {
   };
   translation_qa: { request: TranslationQaRequest; response: TextQaStatus };
   guided_qa_report: { request: ProjectRequest; response: QaReport };
-  guided_qa_reviewed: { request: QaReviewedRequest; response: QaReport };
   guided_glossary: { request: GlossaryRequest; response: GlossaryReport };
   guided_glossary_report: { request: ProjectRequest; response: GlossaryReport };
   translation_playtest: {

@@ -4,9 +4,8 @@
  * corrected, with Undo.
  */
 
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { QaState } from "../../api/contracts";
-import { api } from "../../api/client";
 import type { useAction } from "../../state/useAction";
 import type { OperationEnd } from "../guided/qaSteps";
 import {
@@ -15,7 +14,7 @@ import {
   type QaStepDetails,
   type QaStepName,
 } from "../guided/qaSteps";
-import { QaCoverage, TextQaWork } from "../guided/TextQa";
+import { TextQaWork } from "../guided/TextQa";
 import { qaPhase, qaUnsaved } from "../guided/qaView";
 import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
@@ -37,7 +36,6 @@ export function TextQaTab({
   /** The page's starting prompt, which runs QA. */
   copy: ReactNode;
 }) {
-  const [coverage, setCoverage] = useState(false);
   const phase = qaPhase(qa);
   const feedback = (key: string, pendingText = "Working…") => ({
     feedbackKey: key,
@@ -69,7 +67,6 @@ export function TextQaTab({
           feedback={feedback}
           applyFailed=""
           run={step}
-          onCoverage={() => setCoverage(true)}
           rerun="Copy the prompt to resume, and your assistant runs QA again."
         />
       </PageBody>
@@ -104,15 +101,6 @@ export function TextQaTab({
         )}
         {copy}
       </ActionBar>
-      {coverage && (
-        <QaCoverage
-          load={() => api.guided.qaReport(projectId)}
-          markReviewed={(identities) =>
-            api.guided.qaReviewed(projectId, identities)
-          }
-          onClose={() => setCoverage(false)}
-        />
-      )}
     </>
   );
 }

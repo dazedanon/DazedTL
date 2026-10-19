@@ -328,11 +328,6 @@ export function useGuidedWorkspace({
           typeof item.result?.handoff === "string",
       )
     : undefined;
-  const qaJob = activity.find(
-    (item) =>
-      ["qa_prepare", "qa_status"].includes(item.action || "") &&
-      item.status === "complete",
-  );
   const qa = state.readiness.qa;
   const qaStatus = qa.status;
   const release = fields.release;
@@ -1612,7 +1607,6 @@ export function useGuidedWorkspace({
     localOperation,
     stopOperation,
     qaTask,
-    qaJob,
     qa,
     qaStatus,
     whenFinished,

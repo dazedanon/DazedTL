@@ -307,15 +307,6 @@ def qa_state(plan):
     ]
     engine_status = qa.status(root)
     stage = engine_status.get("stage", "")
-    untranslated = engine_status.get("not_translated") or {}
-    reviewed = set(
-        _task_record(plan["folder"], "text-qa-reviewed.json", str(root)) or []
-    )
-    unreviewed = [
-        row
-        for row in document.get("not_reviewed", [])
-        if row["identity"] not in reviewed
-    ]
     activity = {}
     if stage in ACTIVITY_STAGES:
         counts = engine_status[stage]
@@ -358,29 +349,10 @@ def qa_state(plan):
             {
                 "coverage": {
                     "lines": int((task.get("counts") or {}).get("records", 0)),
-                    "not_reviewed": len(unreviewed),
+                    "not_reviewed": len(document.get("not_reviewed", [])),
                 }
             }
             if document
-            else {}
-        ),
-        # Known once the task is prepared, before any reviewer starts.
-        **({"not_translated": untranslated} if untranslated.get("total") else {}),
-        **(
-            {
-                "interface": {
-                    key: interface[key]
-                    for key in (
-                        "captured",
-                        "squeezed",
-                        "outside",
-                        "unreviewed",
-                        "error",
-                    )
-                    if key in interface
-                }
-            }
-            if (interface := engine_status.get("interface"))
             else {}
         ),
         **({"activity": activity} if activity else {}),
@@ -458,9 +430,9 @@ def qa_unreviewed(task):
 
 
 def qa_report(plan):
-    """What QA could not cover: lines no reviewer judged, with whether the user
-    reviewed them, Japanese never translated, by file and plugin, and text the
-    game squeezes or cuts off that QA holds no line of."""
+    """What QA could not cover, for the History inspector: lines no reviewer
+    judged, Japanese never translated, by file and plugin, and text the game
+    squeezes or cuts off that QA holds no line of."""
     from util import rpgmaker_qa as qa
     from util.rpgmaker_qa_preflight import read_sources
 
@@ -471,16 +443,10 @@ def qa_report(plan):
     document = (
         read_json(root / "findings.json") if (root / "findings.json").exists() else {}
     )
-    reviewed = set(
-        _task_record(plan["folder"], "text-qa-reviewed.json", str(root)) or []
-    )
     outside = qa_outside(root)
-    interface = state.get("interface") or {}
+    interface = state["status"].get("interface") or {}
     return {
-        "not_reviewed": [
-            {**row, "reviewed": row["identity"] in reviewed}
-            for row in document.get("not_reviewed", [])
-        ],
+        "not_reviewed": document.get("not_reviewed", []),
         "not_translated": read_sources(qa._read_json(root / "preflight.json")),
         "interface_outside": [
             {"text": row["text"], "title": row["title"]} for row in outside

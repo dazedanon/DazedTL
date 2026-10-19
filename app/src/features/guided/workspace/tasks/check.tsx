@@ -322,20 +322,17 @@ export function qaView(w: GuidedWorkspace): TaskView {
     project,
     baseline,
     qa,
-    qaJob,
     action,
     disabled,
     feedback,
     editText,
     copyTask,
-    inspect,
     advance,
     fields,
     handoff,
     operationJob,
     whenFinished,
     save,
-    setPanel,
   } = w;
   const phase = qaPhase(qa);
   // Problems the playtest found in translated text, which QA reviews when
@@ -421,15 +418,7 @@ export function qaView(w: GuidedWorkspace): TaskView {
         feedback={feedback}
         applyFailed={applyFailed}
         run={step}
-        onCoverage={() => setPanel("qa-coverage")}
         restorable
-        report={
-          qaJob && (
-            <Button variant="link" onClick={() => inspect(qaJob)}>
-              Report details
-            </Button>
-          )
-        }
       >
         <FieldRow id="qa-focus" label="QA focus">
           {(props) => (

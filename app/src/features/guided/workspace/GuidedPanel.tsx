@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { PathInput } from "../../../ui/PathInput";
 import { api } from "../../../api/client";
-import { useApplication } from "../../../app/ApplicationProvider";
 import { flushDrafts } from "../../../state/leaveGuards";
 import { ActionBar } from "../../../ui/ActionBar";
 import { ActionControl } from "../../../ui/ActionControl";
@@ -19,7 +18,6 @@ import { SpeakerNames } from "../ContextWorkspace";
 import { EngineOptions } from "../EngineOptions";
 import { FileSelection } from "../FileSelection";
 import { FittingSettings } from "../FittingSettings";
-import { QaCoverage } from "../TextQa";
 import { SpeakerFindings } from "../SpeakerFindings";
 import { TranslationOptions } from "../TranslationOptions";
 import { retainOtherScope } from "../selection";
@@ -72,31 +70,11 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
     fields,
     editText,
     editForm,
-    move,
   } = w;
   const owned = useOwnedFeedback(action.key);
-  const plugins = useApplication().snapshot?.plugins;
   // Only a scan started from this dialog confirms its result here.
   const [scanStarted, setScanStarted] = useState("");
   if (!panel) return null;
-  if (panel === "qa-coverage")
-    return (
-      <QaCoverage
-        load={() => api.guided.qaReport(project.id)}
-        markReviewed={(identities) =>
-          api.guided.qaReviewed(project.id, identities)
-        }
-        onClose={closePanel}
-        plugins={
-          plugins?.projectId === project.id
-            ? {
-                labels: plugins.labels,
-                open: () => void move("translate", "plugins"),
-              }
-            : undefined
-        }
-      />
-    );
   const findingsReady = ["ready", "applied"].includes(findings.status);
   // The editor search reports [name, path] pairs.
   const editorResult = operationJob("editors")?.result?.editors;

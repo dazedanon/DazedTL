@@ -276,27 +276,6 @@ class TextQA:
             folder, "text-qa-choices.json", qa["task"], {**saved, question: choice}
         )
 
-    def reviewed(self, project_id, identities):
-        """Lines the user read themselves from the optional not-reviewed list."""
-        native = self.native(project_id)
-        qa = self.qa(project_id, native)
-        if not qa.get("task"):
-            raise ValueError("Prepare text QA first.")
-        if not isinstance(identities, list) or any(
-            not isinstance(value, str) for value in identities
-        ):
-            raise ValueError("Choose the lines you reviewed.")
-        folder = self.folder(native)
-        path = folder / "text-qa-reviewed.json"
-        saved = (read_json(path) if path.exists() else {}).get(qa["task"]) or []
-        _save_task_record(
-            folder,
-            "text-qa-reviewed.json",
-            qa["task"],
-            sorted(set(saved) | set(identities)),
-        )
-        return self.report(project_id)
-
     def report(self, project_id):
         from dazedtl.compatibility.text import qa_report
 

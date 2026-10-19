@@ -332,8 +332,6 @@ export const api = {
     ) => request("translation_qa", { project_id, step, ...details }),
     qaReport: (project_id: string) =>
       request("guided_qa_report", { project_id }),
-    qaReviewed: (project_id: string, identities: string[]) =>
-      request("guided_qa_reviewed", { project_id, identities }),
     /** Saves a choice for lines the glossary check found, or applies the
      * chosen fixes as one text batch. */
     glossary: (

@@ -1,6 +1,6 @@
 /**
  * Text QA as both methods show it: where it stands, its questions for the
- * user, its audit log and its coverage sheet.
+ * user and its audit log; and what it did not cover, for the inspector.
  */
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -18,9 +18,7 @@ import { ActionControl } from "../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { AssistantTask, type AssistantTaskState } from "../../ui/AssistantTask";
 import { Button } from "../../ui/Button";
-import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { LineChange } from "../../ui/LineChange";
-import { Modal } from "../../ui/Modal";
 import { Notice } from "../../ui/Notice";
 import { StatusMark } from "../../ui/StatusMark";
 import { StepProgress } from "../../ui/StepProgress";
@@ -29,8 +27,6 @@ import {
   qaActivity,
   qaCorrections,
   qaGroups,
-  qaInterface,
-  qaNotTranslated,
   qaOrigin,
   qaPhase,
   qaReach,
@@ -61,8 +57,6 @@ export function TextQaWork({
   feedback,
   applyFailed,
   run,
-  onCoverage,
-  report,
   rerun = "Run QA again to check the text.",
   restorable = false,
   children,
@@ -79,9 +73,6 @@ export function TextQaWork({
     details: QaStepDetails,
     success?: string,
   ) => void;
-  onCoverage: () => void;
-  /** Opens the task's report, where the page has an inspector. */
-  report?: ReactNode;
   /** How the user has an outdated or unreadable task checked again. */
   rerun?: string;
   /** History on the Project page can restore a whole batch. */
@@ -90,9 +81,6 @@ export function TextQaWork({
   children?: ReactNode;
 }) {
   const phase = qaPhase(qa);
-  const coverage = qa.coverage;
-  const notTranslated = qa.not_translated;
-  const interfaceNote = qaInterface(qa.interface);
   // Once applied, only a proposal the user chose went into the game.
   const questions = qa.applied
     ? qa.questions.filter((row) => row.choice === "use")
@@ -153,37 +141,11 @@ export function TextQaWork({
             : ".")
         }
       >
-        {qa.task ? (
-          <div className="text-qa-status">
-            {/* An outdated task's stages and coverage describe old text. */}
-            {phase !== "outdated" && (
-              <StepProgress label="QA stages" steps={qaStages(qa)} />
-            )}
-            <p>
-              {phase !== "outdated" &&
-              (coverage?.not_reviewed || notTranslated || interfaceNote) ? (
-                <>
-                  {[
-                    // The summary that describes finished QA counts them.
-                    coverage &&
-                      !["applied", "clean"].includes(phase) &&
-                      `${(coverage.lines - coverage.not_reviewed).toLocaleString()} lines checked`,
-                    coverage?.not_reviewed &&
-                      `${coverage.not_reviewed.toLocaleString()} not reviewed (declined by the reviewer)`,
-                    notTranslated && qaNotTranslated(notTranslated),
-                    interfaceNote,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}{" "}
-                  <Button variant="link" onClick={onCoverage}>
-                    Review them
-                  </Button>
-                </>
-              ) : null}
-              {report}
-            </p>
-          </div>
-        ) : undefined}
+        {/* The stages show where review is; once it is over, the panel's
+            summary and the rows below say what QA did. */}
+        {phase === "running" && (
+          <StepProgress label="QA stages" steps={qaStages(qa)} />
+        )}
       </AssistantTask>
       {unavailable && (
         <Notice>
@@ -612,33 +574,23 @@ const pluginLabelStates: Record<
  */
 function ScreenLabels({
   rows,
-  plugins,
+  labels,
 }: {
   rows: QaInterfaceText[];
-  plugins?: QaPluginLabels;
+  labels?: PluginLabel[];
 }) {
-  const stands = new Map(plugins?.labels.map((row) => [row.text, row]));
+  const stands = new Map(labels?.map((row) => [row.text, row]));
   const handed = (row: QaInterfaceText) => {
     const state = stands.get(row.text)?.state;
     return state && state !== "elsewhere" ? state : undefined;
   };
-  const open = rows.some((row) =>
-    ["waiting", "ready"].includes(handed(row) || ""),
-  );
   return (
     <section aria-label="Too long for the screen">
-      <div className="check-results-heading">
-        <h3>Too long for the screen · {rows.length.toLocaleString()}</h3>
-        {plugins && open && (
-          <Button variant="link" onClick={plugins.open}>
-            Open Plugin files
-          </Button>
-        )}
-      </div>
+      <h3>Too long for the screen · {rows.length.toLocaleString()}</h3>
       <p className="muted">
         {rows.some(handed)
-          ? "The game squeezes or cuts off this text, which QA doesn't correct. Plugin files' assistant shortens what comes from plugins when you copy that task, and you apply it there."
-          : "The game squeezes or cuts off this text, but it comes from outside the data QA corrects, such as a plugin's menu. Shorten it in its own task, such as Plugin files."}
+          ? "The game squeezes or cuts off this text, which QA holds no line of. Plugin files shortens what comes from plugins."
+          : "The game squeezes or cuts off this text, which QA holds no line of, such as a plugin's menu."}
       </p>
       <ActionList>
         {rows.map((row) => {
@@ -650,7 +602,7 @@ function ScreenLabels({
             label?.state === "kept"
               ? `Kept as it is: ${label.reason || ""}`
               : label?.state === "elsewhere"
-                ? "In no plugin file; shorten it in its own task"
+                ? "In no plugin file"
                 : "";
           return (
             <ActionRow
@@ -667,31 +619,24 @@ function ScreenLabels({
   );
 }
 
-/** Where Guided's Plugin files task stands on each squeezed label. */
-export type QaPluginLabels = { labels: PluginLabel[]; open: () => void };
-
 /**
- * What QA did not cover: lines reviewers declined, which the user may read
- * and mark, Japanese that was never translated, and text too long for the
- * screen that QA holds no line of.
+ * What the current QA task did not cover, for the History inspector: lines
+ * reviewers declined, Japanese never translated and screen text QA can't
+ * correct. Each has its own owner, so the page leaves it out and the
+ * inspector keeps the record.
  */
-export function QaCoverage({
+export function QaCoverageReport({
   load,
-  markReviewed,
-  onClose,
-  plugins,
+  labels,
 }: {
   load: () => Promise<QaReport>;
-  markReviewed: (identities: string[]) => Promise<QaReport>;
-  onClose: () => void;
   /** Guided's Plugin files labels; Assistant-led has no such task. */
-  plugins?: QaPluginLabels;
+  labels?: PluginLabel[];
 }) {
   const [report, setReport] = useState<QaReport | null>(null);
   const [error, setError] = useState("");
-  const [saving, setSaving] = useState(false);
-  // The sheet reads the report once when it opens, however often the page
-  // around it renders.
+  // The report is read once when the inspector opens, however often the
+  // inspector around it renders.
   const first = useRef(load);
   useEffect(() => {
     first
@@ -700,125 +645,86 @@ export function QaCoverage({
         setError(reason instanceof Error ? reason.message : String(reason)),
       );
   }, []);
-  const unreviewed = report?.not_reviewed.filter((row) => !row.reviewed) || [];
+  if (error) return <Notice tone="warning">{error}</Notice>;
+  if (!report) return null;
+  const untranslated = report.not_translated.reduce(
+    (total, source) => total + source.count,
+    0,
+  );
   return (
-    <Modal label="What QA did not cover" onDismiss={onClose} size="lg">
-      <DialogHeader
-        title="What QA did not cover"
-        description="Lines no reviewer judged, Japanese that was never translated, and screen text QA can't correct."
-        onClose={onClose}
-      />
-      <DialogBody className="text-qa-coverage">
-        {error && <Notice tone="warning">{error}</Notice>}
-        {!report && !error && <p className="muted">Loading…</p>}
-        {report && (
-          <>
-            {report.not_reviewed.length > 0 && (
-              <section aria-label="Not reviewed">
-                <div className="check-results-heading">
-                  <h3>
-                    Not reviewed · {report.not_reviewed.length.toLocaleString()}
-                  </h3>
-                  {unreviewed.length > 0 && (
-                    <Button
-                      variant="link"
-                      pending={saving}
-                      onClick={() => {
-                        setSaving(true);
-                        markReviewed(unreviewed.map((row) => row.identity))
-                          .then(setReport, (reason: unknown) =>
-                            setError(
-                              reason instanceof Error
-                                ? reason.message
-                                : String(reason),
-                            ),
-                          )
-                          .finally(() => setSaving(false));
-                      }}
-                    >
-                      I reviewed these
-                    </Button>
-                  )}
-                </div>
-                <p className="muted">
-                  Reviewers declined these lines, so no reviewer judged them.
-                </p>
-                <ActionList>
-                  {report.not_reviewed.map((row) => (
-                    <ActionRow
-                      key={row.identity}
-                      label={
-                        <>
-                          <Change source={row.source} before={row.current} />
-                          <small>{row.file}</small>
-                        </>
-                      }
-                    >
-                      {row.reviewed && <StatusMark state="done" />}
-                    </ActionRow>
-                  ))}
-                </ActionList>
-              </section>
-            )}
-            {report.not_translated.length > 0 && (
-              <section aria-label="Never translated">
-                <h3>
-                  Never translated ·{" "}
-                  {report.not_translated
-                    .reduce((total, source) => total + source.count, 0)
-                    .toLocaleString()}
-                </h3>
-                <p className="muted">
-                  QA reviews translations, so no reviewer read this Japanese and
-                  QA did not correct it. Translate what players can see in its
-                  own task.
-                </p>
-                <ul className="text-qa-untranslated">
-                  {report.not_translated.map((source) => (
-                    <UntranslatedSource
-                      key={source.kind + source.file + (source.plugin || "")}
-                      source={source}
-                    />
-                  ))}
-                </ul>
-              </section>
-            )}
-            {report.interface_error && (
-              <section aria-label="Interface screens">
-                <h3>Interface screens</h3>
-                <p className="muted">
-                  {`DazedTL couldn't run the game to capture its screens, so QA reviewed its text without them. ${report.interface_error}`}
-                </p>
-              </section>
-            )}
-            {report.interface_outside.length > 0 && (
-              <ScreenLabels rows={report.interface_outside} plugins={plugins} />
-            )}
-            {report.interface_unreviewed.length > 0 && (
-              <section aria-label="Squeezed after QA">
-                <h3>
-                  Squeezed after QA ·{" "}
-                  {report.interface_unreviewed.length.toLocaleString()}
-                </h3>
-                <p className="muted">
-                  Plugin files changed after QA finished, and the game now
-                  squeezes or cuts off these lines. QA reviews them when it runs
-                  on changed game text.
-                </p>
-                <ActionList>
-                  {report.interface_unreviewed.map((row) => (
-                    <ActionRow
-                      key={row.text + row.title}
-                      title={row.text}
-                      description={row.title}
-                    />
-                  ))}
-                </ActionList>
-              </section>
-            )}
-          </>
-        )}
-      </DialogBody>
-    </Modal>
+    <>
+      {report.not_reviewed.length > 0 && (
+        <section aria-label="Not reviewed">
+          <h3>Not reviewed · {report.not_reviewed.length.toLocaleString()}</h3>
+          <p className="muted">
+            Reviewers declined these lines and no reviewer on another AI helper
+            took them, so QA set them aside.
+          </p>
+          <ActionList>
+            {report.not_reviewed.map((row) => (
+              <ActionRow
+                key={row.identity}
+                label={
+                  <>
+                    <Change source={row.source} before={row.current} />
+                    <small>{row.file}</small>
+                  </>
+                }
+              />
+            ))}
+          </ActionList>
+        </section>
+      )}
+      {untranslated > 0 && (
+        <section aria-label="Never translated">
+          <h3>Never translated · {untranslated.toLocaleString()}</h3>
+          <p className="muted">
+            QA reviews translations, so it did not read this Japanese. The
+            playtest lists what players can see with the task that translates
+            it.
+          </p>
+          <ul className="text-qa-untranslated">
+            {report.not_translated.map((source) => (
+              <UntranslatedSource
+                key={source.kind + source.file + (source.plugin || "")}
+                source={source}
+              />
+            ))}
+          </ul>
+        </section>
+      )}
+      {report.interface_error && (
+        <section aria-label="Interface screens">
+          <h3>Interface screens</h3>
+          <p className="muted">
+            {`DazedTL couldn't run the game to capture its screens, so QA reviewed its text without them. ${report.interface_error}`}
+          </p>
+        </section>
+      )}
+      {report.interface_outside.length > 0 && (
+        <ScreenLabels rows={report.interface_outside} labels={labels} />
+      )}
+      {report.interface_unreviewed.length > 0 && (
+        <section aria-label="Squeezed after QA">
+          <h3>
+            Squeezed after QA ·{" "}
+            {report.interface_unreviewed.length.toLocaleString()}
+          </h3>
+          <p className="muted">
+            Plugin files changed after QA finished, and the game now squeezes or
+            cuts off these lines, which no reviewer judged on screen.
+          </p>
+          <ActionList>
+            {report.interface_unreviewed.map((row) => (
+              <ActionRow
+                key={row.text + row.title}
+                title={row.text}
+                description={row.title}
+              />
+            ))}
+          </ActionList>
+        </section>
+      )}
+    </>
   );
 }

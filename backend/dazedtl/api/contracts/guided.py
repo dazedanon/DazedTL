@@ -342,14 +342,7 @@ class QaQuestion(TypedDict):
 
 class QaCoverage(TypedDict):
     lines: Annotated[int, "Translated lines in QA's inventory."]
-    not_reviewed: Annotated[int, "Lines reviewers declined and the user has not read."]
-
-
-class QaNotTranslated(TypedDict):
-    """Japanese never translated, outside QA's inventory: no reviewer read it."""
-
-    total: int
-    may_show: Annotated[int, "Of those, text no evidence keeps from players."]
+    not_reviewed: Annotated[int, "Lines reviewers declined, which QA set aside."]
 
 
 class QaActivity(TypedDict):
@@ -374,7 +367,6 @@ class QaReportLine(TypedDict):
     file: str
     source: str
     current: str
-    reviewed: bool
 
 
 class QaUntranslatedText(TypedDict):
@@ -409,28 +401,8 @@ class QaInterfaceText(TypedDict):
     title: Annotated[str, "The captured screen that shows it."]
 
 
-class QaInterface(TypedDict):
-    """The game's interface screens QA captured while running a copy of it."""
-
-    captured: int
-    squeezed: NotRequired[
-        Annotated[
-            int, "Lines sent to deep review because the game had too little room."
-        ]
-    ]
-    outside: NotRequired[Annotated[int, "Squeezed or cut-off text QA can't correct."]]
-    unreviewed: NotRequired[
-        Annotated[
-            int,
-            "Lines a capture taken again after QA was complete found squeezed, "
-            "which no reviewer judged on screen.",
-        ]
-    ]
-    error: NotRequired[Annotated[str, "Why no screen was captured."]]
-
-
 class QaReport(TypedDict):
-    """What QA could not cover, for the coverage sheet."""
+    """What QA could not cover, for the History inspector."""
 
     not_reviewed: list[QaReportLine]
     not_translated: list[QaUntranslatedSource]
@@ -473,8 +445,6 @@ class QaState(TypedDict):
     findings: list[QaFinding]
     questions: list[QaQuestion]
     coverage: NotRequired[QaCoverage]
-    not_translated: NotRequired[QaNotTranslated]
-    interface: NotRequired[QaInterface]
     activity: NotRequired[QaActivity]
     # An update changed QA's rules after this task was prepared: it is
     # outdated, and its applied corrections can no longer be undone here.

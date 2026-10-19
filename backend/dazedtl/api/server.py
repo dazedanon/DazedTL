@@ -810,12 +810,7 @@ def routes(app):
         lambda value, _params: value,
     )
     methods["translation_qa"] = (app.translation_qa, lambda value, _params: value)
-    # Only the user marks lines they read; the helper has no route to it.
     methods["guided_qa_report"] = (app.text_qa.report, lambda value, _params: value)
-    methods["guided_qa_reviewed"] = (
-        app.text_qa.reviewed,
-        lambda value, _params: value,
-    )
     methods["guided_glossary"] = (app.guided.glossary.run, lambda value, _params: value)
     methods["guided_glossary_report"] = (
         app.guided.glossary.report,

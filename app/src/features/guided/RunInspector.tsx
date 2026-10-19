@@ -29,6 +29,7 @@ export function RunInspector({
   history,
   returnFocus,
   actions,
+  details,
   reapply,
   applied,
   disabled,
@@ -41,6 +42,9 @@ export function RunInspector({
   history?: () => void;
   returnFocus?: HTMLElement | null;
   actions?: ReactNode;
+  /** Sections of an activity's own record, such as what QA did not cover,
+   * before its saved result. */
+  details?: ReactNode;
   reapply: (job: Job) => Promise<void>;
   applied?: Job;
   disabled: boolean;
@@ -333,6 +337,7 @@ export function RunInspector({
                     </dl>
                   )}
                 </section>
+                {details}
                 {job.result && (
                   <section>
                     <h3>Saved result</h3>

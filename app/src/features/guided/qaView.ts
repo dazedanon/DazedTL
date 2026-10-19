@@ -2,8 +2,6 @@
 
 import type {
   QaFinding,
-  QaInterface,
-  QaNotTranslated,
   QaState,
   QaUntranslatedSource,
 } from "../../api/contracts";
@@ -181,35 +179,6 @@ export function qaSummary(qa: QaState) {
         : "No corrections needed",
     qa.applied && applied && undone && `${undone.toLocaleString()} undone`,
     lines && `${(lines - missing).toLocaleString()} lines checked`,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-}
-
-/**
- * Japanese never translated, as the coverage line counts it: no reviewer
- * read it, and how much of it players may see.
- */
-export function qaNotTranslated({ total, may_show }: QaNotTranslated) {
-  const count = `${total.toLocaleString()} never translated, so not reviewed`;
-  if (may_show === total) return count;
-  return may_show
-    ? `${count} (${may_show.toLocaleString()} may show to players)`
-    : `${count} (players don't see them now)`;
-}
-
-/**
- * What the game's captured screens leave to the user, as the coverage line
- * counts it: no capture, or squeezed text QA can't correct.
- */
-export function qaInterface(found: QaInterface | undefined) {
-  if (!found) return "";
-  if (found.error) return "Interface screens not captured";
-  return [
-    found.outside &&
-      `${found.outside.toLocaleString()} squeezed ${found.outside === 1 ? "label" : "labels"} QA can't correct`,
-    found.unreviewed &&
-      `${found.unreviewed.toLocaleString()} squeezed after QA`,
   ]
     .filter(Boolean)
     .join(" · ");

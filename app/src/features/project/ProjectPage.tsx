@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { ArrowRight, Check, Folder, FolderOpen, X } from "lucide-react";
+import { api } from "../../api/client";
 import type { AppState, Job, Project } from "../../api/contracts";
 import { useApplication } from "../../app/ApplicationProvider";
 import { ActionBar } from "../../ui/ActionBar";
@@ -22,6 +23,7 @@ import { useAssistantTasks } from "../assistant/useAssistantTasks";
 import { ActivityHistory } from "../guided/ActivityHistory";
 import type { GuidedProgress, projectAmounts } from "../guided/progress";
 import { RunInspector } from "../guided/RunInspector";
+import { QaCoverageReport } from "../guided/TextQa";
 import { canResumeRun, observedRun } from "../guided/translationView";
 import type { GuidedIntent } from "../guided/workspace/model";
 import { BackupsPanel } from "../translation/BackupsPanel";
@@ -525,6 +527,12 @@ function ProjectHistory({
     typeof inspected.result?.publication === "string"
       ? inspected.result.publication
       : "";
+  // Preparing the current QA task records what QA did not cover; the Text
+  // QA page leaves it out, as each part has its own owner.
+  const qaRecord =
+    inspected?.action === "qa_prepare" &&
+    !!guided.readiness.qa.task &&
+    inspected.result?.task === guided.readiness.qa.task;
   const publications = guided.readiness.publications;
   const batch = publications.find((row) => row.id === publication);
   // Restores, and the batches they took out, leave the text as the batch
@@ -562,6 +570,18 @@ function ProjectHistory({
           job={inspected}
           close={() => setInspection(null)}
           disabled={!baseline}
+          details={
+            qaRecord && (
+              <QaCoverageReport
+                load={() => api.guided.qaReport(project.id)}
+                labels={
+                  snapshot?.plugins?.projectId === project.id
+                    ? snapshot.plugins.labels
+                    : undefined
+                }
+              />
+            )
+          }
           reapply={async (job) =>
             openGuided({ kind: "reapply", runId: job.id })
           }

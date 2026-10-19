@@ -282,11 +282,6 @@ class GlossaryRequest(TypedDict):
     text: NotRequired[Annotated[str, "The user's own fix, for one line."]]
 
 
-class QaReviewedRequest(TypedDict):
-    project_id: str
-    identities: list[str]
-
-
 class TranslationLegacyRequest(TypedDict):
     project_id: str
     action: Literal["resume", "stop", "answer", "export"]
@@ -761,7 +756,6 @@ METHODS: dict[str, Method] = {
     "translation_images": Method(TranslationImagesRequest, ImageAssistantStepResult),
     "translation_qa": Method(TranslationQaRequest, TextQaStatus),
     "guided_qa_report": Method(ProjectRequest, QaReport, refresh=False),
-    "guided_qa_reviewed": Method(QaReviewedRequest, QaReport),
     "guided_glossary": Method(GlossaryRequest, GlossaryReport),
     "guided_glossary_report": Method(ProjectRequest, GlossaryReport, refresh=False),
     "translation_playtest": Method(TranslationPlaytestRequest, PlaytestStatus),

@@ -144,14 +144,13 @@ All Check tasks are optional:
   It runs four reviewers at once; when the page says **one reviewer at a time**, your assistant is reviewing alone, which takes several times longer, so ask it to start the reviewers its QA task describes.
   A correction too wide for its box is rewrapped to the Line widths saved when QA started.
   QA also opens the game's screens, such as its menus, item lists and shop, without changing the game, and shortens names and commands the game squeezes or cuts off.
-  **Review them** lists such text QA can't change; what comes from plugins goes to **Plugin files**, where its assistant shortens it, and each label shows where it stands there.
-  Answer the questions it can't settle on the page; each correction is listed with **Undo**, and an undone one with **Apply again**; **Review them** lists the lines QA did not cover.
-  That includes Japanese that was never translated, which QA can't review, with whether players can see it; translate what they can in its own task, such as **Plugin files**.
-  Plugin settings **Plugin files** keeps in Japanese on purpose, such as names a plugin looks up, are not listed.
-  The list follows what **Plugin files** decides, and running QA again after plugin text changes updates it and keeps the review done so far.
-  Running QA again after plugin files change also opens the game's screens again, so labels **Plugin files** shortened drop off the list; game text that is squeezed only now goes to review, or once QA finished, **Review them** lists it as squeezed after QA.
+  Squeezed text QA can't change, such as a plugin's menu command, goes to **Plugin files**, where its assistant shortens it.
+  Answer the questions it can't settle on the page; each correction is listed with **Undo**, and an undone one with **Apply again**.
+  QA reviews translations, so Japanese that was never translated is the playtest's to find, with the task that translates it.
+  Running QA again after plugin files change opens the game's screens again and keeps the review done so far.
   A correction that changes several lines of one scene, such as narration that switches tense, is listed and undone as one.
   To take out every correction at once, inspect **Apply QA corrections** in the Project page's **History** and choose **Review restore**.
+  Inspecting **Prepare or resume translation QA** there shows what QA did not cover: lines its reviewers declined, Japanese never translated and screen text QA can't change.
 - **Playtest** (MV and MZ): **Run playtest** has DazedTL check the game's files and play it in a hidden window for a few minutes, writing nothing into the game.
   It lists crashes, Japanese left in the game, text that doesn't fit and names or codes the translation lost, each with the task that fixes it; **View** shows what the game looked like when it found the problem.
   Problems in translated text go to Text QA, which corrects them when it runs, so after fixing, run the playtest again: it counts what was fixed since the last run.
