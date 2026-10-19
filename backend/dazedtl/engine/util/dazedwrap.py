@@ -151,10 +151,9 @@ def wrapLines(text: str, width: int, rows: int | None = None, measure=None) -> s
     kept = "\n".join(lines)
     if rows is None or kept.count("\n") < rows:
         return kept
-    # A list keeps one item a line, as the source has it; one that needs
-    # more rows than the window shows is shortened instead.
-    if any(_ITEM_START.match(line.lstrip()) for line in text.split("\n")[1:]):
-        return kept
+    # A row past the window's last is cut off in game, so text that needs
+    # more rows than the window shows flows together, a list's items too:
+    # its items still start a line where they can.
     flowed = wrapShaped(text.replace("\n", " "), width, measure=measure)
     return flowed if flowed.count("\n") < kept.count("\n") else kept
 

@@ -614,6 +614,7 @@ try:
                 "note": "<SG説明:A light blade of copper.>\n<SG種別:武器>",
                 "description": "・Light blade\n・Easy to swing in a fight",
             },
+            {"description": "A blade whose tale runs on for more rows than it has"},
         ]
         report = fit_document(
             notes,
@@ -623,12 +624,12 @@ try:
         assert (
             notes[1]["note"] == "<SG説明:A light blade of\ncopper.>\n<SG種別:武器>"
         ), notes
-        # A list keeps one item a line even where its window lacks the rows;
-        # running it together put an item mid-line, and it is shortened instead.
-        assert notes[1]["description"] == (
-            "・Light blade\n・Easy to swing\nin a fight"
-        ), notes
-        assert [row["pointer"] for row in report.misfits] == ["/1/description"], (
+        # A list that needs more rows than its window shows flows together:
+        # kept one item a line, the game cut off its last row.
+        assert notes[1]["description"] == "・Light blade ・Easy\nto swing in a fight", (
+            notes
+        )
+        assert [row["pointer"] for row in report.misfits] == ["/2/description"], (
             report.misfits
         )
         page = {
@@ -756,7 +757,6 @@ try:
                 == 3
             )
             assert game.read_bytes() == before
-
             # Saving narrower widths fits what was written to the old ones:
             # VX Ace text written with MV/MZ's widths ran past its windows.
             from util.len_originals import fit_game
@@ -771,6 +771,7 @@ try:
                 max(widest_line(item["parameters"][0]) for item in refitted[1:5]) <= 24
             )
             game.write_bytes(before)
+
             # Text QA corrects such a message as one text, fitted and spread over
             # its commands, however many rows it needs; undoing finds it there.
             pointers = [f"/list/{index}/parameters/0" for index in range(1, 5)]
