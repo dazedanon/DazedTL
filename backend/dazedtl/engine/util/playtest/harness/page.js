@@ -1435,7 +1435,9 @@
       shown = scene()._messageWindow;
       if (!drawn)
         return { status: "failed", note: "The message did not finish drawing." };
-      left = shown.newLineX.length ? shown.newLineX({ rtl: false }) : shown.newLineX();
+      // MZ reads the text state; MV and plugins that wrap it with
+      // `function () { ... arguments ... }` pass it on or ignore it.
+      left = shown.newLineX({ rtl: false });
     }
     await frames(4);
     const measure = (line) =>
