@@ -54,7 +54,7 @@ Format with `node scripts/format.mjs`; it applies Prettier and Ruff defaults and
 `node scripts/e2e.mjs` installs the checkout the way a user's downloaded ZIP is installed and drives the running app through a translation.
 It copies the files Git would commit, including uncommitted changes, into a doubled `DazedTL-main (1)` folder and runs START with a PATH that has no Node or Python, and on Windows no Git.
 The profile and a copy of the [fixture game](../tests/fixtures/mz-game) sit in folders with spaces and Japanese names.
-Through the window it opens the game, runs Set up, translates and applies the database and the maps with Live translation against a local stand-in provider, stands in for the assistant's Event text sources investigation and translates and applies Other event text, runs the playtest, which checks the files and reports that the fixture game has no engine to play, and builds a patch ZIP.
+Through the window it opens the game, runs Set up, translates and applies the database and the maps with Live translation against a local stand-in provider, stands in for the assistant's Event text sources investigation and translates and applies Other event text, opens Check and runs the Text QA assistant's playtest through the project helper, which checks the files and reports that the fixture game has no engine to play, and builds a patch ZIP.
 It then closes the window and expects every app process to exit with no failures in the app's diagnostics, and starts again to check that setup does not repeat.
 Logs, screenshots and the app's diagnostics land in `logs` inside the work folder; `--work <empty folder>` chooses it.
 On Linux the app needs a display, such as `xvfb-run -a node scripts/e2e.mjs`.

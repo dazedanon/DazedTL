@@ -672,12 +672,13 @@ const eventTexts = () =>
     .map((command) => command.parameters[0]);
 
 /** Runs a project helper command the way an assistant's shell does. */
-const helper = (command) =>
+const helper = (command, timeout) =>
   windows
     ? execFileSync("powershell", ["-NoProfile", "-Command", command], {
         encoding: "utf8",
+        timeout,
       })
-    : execFileSync("sh", ["-c", command], { encoding: "utf8" });
+    : execFileSync("sh", ["-c", command], { encoding: "utf8", timeout });
 
 /** Failures the app recorded for Copy diagnostics; a clean run records none. */
 function diagnostics() {
@@ -734,6 +735,8 @@ const inspect = await freePort();
 const debug = [`--remote-debugging-port=${port}`, `--inspect=${inspect}`];
 let protocol = "";
 let page;
+// The project helper an assistant's copied task runs, without its command.
+let projectHelper = "";
 
 try {
   await step("Copy the checkout into a downloaded-ZIP folder", () => {
@@ -875,6 +878,8 @@ try {
       name: "advanced",
     });
     const command = /Read this request first: `([^`]+)`/.exec(text)[1];
+    // PowerShell's form quotes each argument.
+    projectHelper = command.replace(/ '?event-text'?$/, "");
     const { request } = JSON.parse(helper(command));
     const map = Object.keys(request.dependencies).find((name) =>
       name.endsWith("Map001.json"),
@@ -961,11 +966,19 @@ try {
   });
 
   await step(
-    "The playtest checks the game and says why it can't play it",
+    "The assistant's playtest checks the game and says why it can't play it",
     async () => {
+      // Check's one task is Text QA, whose assistant plays an MV/MZ game.
       await page.click("4Check");
-      await page.click(/^Playtest/);
-      await page.click("Run playtest");
+      await page.waitText(
+        "Your assistant plays the game while QA reviews it, and fixes what it finds.",
+      );
+      // The copied task's first playtest step, as its assistant runs it.
+      const status = JSON.parse(
+        helper(`${projectHelper} playtest --run --wait 20`, 5 * 60_000),
+      );
+      if (status.operation?.status !== "complete")
+        throw new Error(`The playtest ended ${status.operation?.status}.`);
       // The fixture game has no engine scripts, so the playtest checks its
       // files and reports that it could not play it.
       await page.waitText(
