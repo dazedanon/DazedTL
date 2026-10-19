@@ -1044,12 +1044,14 @@ try {
         !(await page.call("workspace_snapshot")).application.running,
       5 * 60_000,
     );
-    const prefix = `${path.basename(game)}/`;
+    // Its one top folder is named after the archive, as players unpack it.
+    const prefix = `${path.basename(archive, ".zip")}/`;
+    const unpacked = [...entries(fs.readFileSync(archive))];
+    const outside = unpacked.find((entry) => !entry.path.startsWith(prefix));
+    if (outside)
+      throw new Error(`The game ZIP holds ${outside.path} outside ${prefix}.`);
     const files = new Map(
-      [...entries(fs.readFileSync(archive))].map((entry) => [
-        entry.path.slice(prefix.length),
-        entry,
-      ]),
+      unpacked.map((entry) => [entry.path.slice(prefix.length), entry]),
     );
     const actors = files.get("data/Actors.json");
     if (
