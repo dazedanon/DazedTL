@@ -448,15 +448,16 @@ class ExistingBackend:
         }
 
     def guided_text_state(self, native, focus="release"):
-        from dazedtl.translation.publication import history
+        from dazedtl.translation.publication import blocker, history
 
         from .playtest import POINTER, playtest_state
         from .text import qa_state, qa_unreadable
 
         folder = self.workflows.folder(native["id"])
+        rows = history(folder)
         recent = [
             row
-            for row in history(folder)
+            for row in rows
             if row["state"] in {"complete", "restored", "publishing", "recovery_needed"}
         ]
         qa = {
@@ -503,6 +504,11 @@ class ExistingBackend:
                     "state": row["state"],
                     "files": [item["path"] for item in row["files"]],
                     "recovery_errors": row.get("recovery_errors", []),
+                    **(
+                        {"blocker": later}
+                        if (later := blocker(rows, row["id"]))
+                        else {}
+                    ),
                 }
                 for row in recent[:10]
             ],

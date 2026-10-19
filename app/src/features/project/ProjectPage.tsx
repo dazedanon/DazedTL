@@ -17,7 +17,7 @@ import { StatusIcon } from "../../ui/StatusIcon";
 import { TabPanel, Tabs } from "../../ui/Tabs";
 import { displayLabels, displayMarks } from "../../ui/displayStatus";
 import { useRefocus } from "../../ui/useRefocus";
-import { engineLabel, sentence } from "../../ui/displayText";
+import { engineLabel, selectionNames, sentence } from "../../ui/displayText";
 import { AssistantTaskList } from "../assistant/AssistantTaskList";
 import { useAssistantTasks } from "../assistant/useAssistantTasks";
 import { ActivityHistory } from "../guided/ActivityHistory";
@@ -493,6 +493,15 @@ function ProjectAmounts({ amounts }: { amounts: Amounts }) {
   );
 }
 
+/** Text batches History restores, by the label it lists them under. */
+const RESTORABLE: Record<string, string> = {
+  qa_apply: "Apply QA corrections",
+  qa_undo: "Undo QA corrections",
+  glossary_apply: "Apply glossary fixes",
+  playtest_fix: "Apply playtest fixes",
+  fit_text: "Fit text to the new Line widths",
+};
+
 function ProjectHistory({
   project,
   query,
@@ -526,16 +535,9 @@ function ProjectHistory({
     !!backup && backup.available !== false && !!translation.git?.configured;
   // A text QA batch, a glossary fix batch from before Text QA took the
   // glossary over, a playtest fix batch or a fit to new Line widths restores
-  // from here, newest first, as each restore needs the game as the batch
-  // left it.
+  // from here, once no later batch in the game changed the same files.
   const publication =
-    [
-      "qa_apply",
-      "qa_undo",
-      "glossary_apply",
-      "playtest_fix",
-      "fit_text",
-    ].includes(inspected?.action || "") &&
+    Object.hasOwn(RESTORABLE, inspected?.action || "") &&
     inspected?.status === "complete" &&
     typeof inspected.result?.publication === "string"
       ? inspected.result.publication
@@ -546,20 +548,22 @@ function ProjectHistory({
     inspected?.action === "qa_prepare" &&
     !!guided.readiness.qa.task &&
     inspected.result?.task === guided.readiness.qa.task;
-  const publications = guided.readiness.publications;
-  const batch = publications.find((row) => row.id === publication);
-  // Restores, and the batches they took out, leave the text as the batch
-  // before them left it.
-  const newest = publications.find(
-    (row) => row.kind !== "runtime_restore" && row.state !== "restored",
+  const batch = guided.readiness.publications.find(
+    (row) => row.id === publication,
   );
+  const blocker = batch?.blocker;
+  const shared =
+    blocker &&
+    selectionNames(blocker.files.map((path) => path.split("/").pop()!));
   const restoreBlocked = !batch
     ? "History restores only its ten newest text batches."
     : batch.state === "restored"
       ? "This batch is already restored."
-      : newest?.id !== batch.id
-        ? "Restore the newer text batch first."
-        : "";
+      : !blocker
+        ? ""
+        : Object.hasOwn(RESTORABLE, blocker.kind)
+          ? `Restore the later “${RESTORABLE[blocker.kind]}” first; it also changed ${shared}.`
+          : `A later Apply replaced ${shared}, so this batch can’t be restored.`;
   return (
     <>
       <PageBody className="history-host-body">

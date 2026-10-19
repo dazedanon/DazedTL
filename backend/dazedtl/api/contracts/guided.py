@@ -281,12 +281,22 @@ class SourceStatus(TypedDict):
     ]
 
 
+class RestoreBlocker(TypedDict):
+    """The newest later batch still in the game that changed some of a
+    batch's files, which must be restored first."""
+
+    id: str
+    kind: str
+    files: Annotated[list[str], "The files both batches changed."]
+
+
 class PublicationStatus(TypedDict):
     id: str
     kind: str
     state: str
     files: list[str]
     recovery_errors: list[str]
+    blocker: NotRequired[RestoreBlocker]
 
 
 class QaLineChange(TypedDict):

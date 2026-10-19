@@ -25,6 +25,7 @@ Optional tasks say so and never hold up the next step.
 **Dismiss** clears a task you gave up on, and copying it again brings it back.
 
 The other tabs are **History** (runs, estimates and other activity), **Versions** and **Backups**.
+In **History**, **Review restore** takes out a batch of QA corrections, playtest fixes or rewrapping; when a later batch changed the same files, the button names it.
 
 Lists everywhere use the same words:
 

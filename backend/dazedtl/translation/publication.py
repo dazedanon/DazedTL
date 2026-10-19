@@ -12,6 +12,11 @@ from .files import digest, project_path, read_json
 
 # How long a frozen review can still be published.
 REVIEW_SECONDS = 1200
+# Batches whose text may be in the game, and so can be restored.
+IN_EFFECT = {"complete", "publishing", "recovery_needed"}
+# The applied-output receipt's entries per file: each Apply's output, and the
+# output as fitted to the Line widths.
+SECTIONS = ("files", "written")
 
 
 def records(folder):
@@ -39,6 +44,49 @@ def history(folder):
     return [
         {**row, "state": "restored"} if row["id"] in restored else row for row in rows
     ]
+
+
+def blocker(rows, identity):
+    """The newest later batch still in the game that changed one of this
+    batch's files, whose text restoring this one would take out too; None
+    when no later batch did, so the batch restores on its own. `rows` is
+    history(), newest first. A restore leaves its files as the batch before
+    it had them, so it never blocks."""
+    index = next(index for index, row in enumerate(rows) if row["id"] == identity)
+    paths = {item["path"] for item in rows[index]["files"]}
+    for row in rows[:index]:
+        shared = paths & {item["path"] for item in row["files"]}
+        if shared and row["kind"] != "runtime_restore" and row["state"] in IN_EFFECT:
+            return {"id": row["id"], "kind": row["kind"], "files": sorted(shared)}
+    return None
+
+
+def _changed(record):
+    """The applied-output entries a batch changed, as (section, name)."""
+    prior, following = record["prior_outputs"], record["next_outputs"]
+    return {
+        (section, name)
+        for section in SECTIONS
+        for name in {*prior.get(section, {}), *following.get(section, {})}
+        if prior.get(section, {}).get(name) != following.get(section, {}).get(name)
+    }
+
+
+def _reverted(current, record):
+    """The applied outputs with only a batch's own entries put back as they
+    were before it, so a later batch's entries for other files stay."""
+    prior = record["prior_outputs"]
+    changes = _changed(record)
+    result = {
+        **current,
+        **{section: dict(current.get(section, {})) for section, _ in changes},
+    }
+    for section, name in changes:
+        if name in prior.get(section, {}):
+            result[section][name] = prior[section][name]
+        else:
+            result[section].pop(name, None)
+    return result
 
 
 def receipt_hash(folder):
@@ -92,7 +140,7 @@ def freeze(
         }
         following["written"] = {**fitted, **(written or {})}
     if restore:
-        following = restore["prior_outputs"]
+        following = _reverted(previous, restore)
     rows = []
     for index, (name, raw) in enumerate(sorted(candidates.items())):
         target = project_path(root, name, exists=False)
@@ -333,19 +381,36 @@ def publish(folder, root, plan, log=lambda _: None):
 
 
 def restore_candidates(folder, root, identity):
-    record = next((row for row in records(folder) if row["id"] == identity), None)
+    rows = history(folder)
+    record = next((row for row in rows if row["id"] == identity), None)
     if (
         not record
         or record["root"] != str(Path(root).resolve())
-        or record["state"] not in {"complete", "publishing", "recovery_needed"}
+        or record["state"] not in IN_EFFECT
     ):
         raise ValueError("Choose an applied or interrupted publication to restore.")
-    if receipt_hash(folder) not in {
-        record["outputs_hash"],
-        json_hash(record["next_outputs"]),
-    }:
+    later = blocker(rows, identity)
+    if later:
         raise ValueError(
-            "A later publication changed the output receipt. Restore the latest batch first."
+            "A later batch also changed "
+            + ", ".join(later["files"])
+            + ". Restore that batch first, where History offers it."
+        )
+    path = Path(folder) / "applied-outputs.json"
+    current = read_json(path) if path.exists() else {}
+    replaced = sorted(
+        name
+        for section, name in _changed(record)
+        if current.get(section, {}).get(name)
+        not in {
+            record["prior_outputs"].get(section, {}).get(name),
+            record["next_outputs"].get(section, {}).get(name),
+        }
+    )
+    if replaced:
+        raise ValueError(
+            "A later Apply replaced " + ", ".join(replaced) + ", so this batch "
+            "can't be restored."
         )
     candidates = {}
     for row in record["files"]:

@@ -882,6 +882,7 @@ The [text publication journal](../backend/dazedtl/translation/publication.py) fr
 The compatibility worker fits the text on the frozen candidates, then preflights and publishes the whole batch with verified backups and rollback attempts.
 Interrupted publication retains exact authorized before/after hashes for another reviewed restore; conflicting newer runtime edits are retained.
 Completed restores retire the recovered batch's notice in history; undoing a restore revives the earlier batch state without changing preserved receipts.
+A batch restores on its own once no later batch still in the game changed the same files, and its restore puts back only that batch's entries in the Apply receipt, so a later Apply of other files stays applied; otherwise History names the later batch, which is restored first or, for an Apply, keeps the batch.
 Reapplying saved translations discloses replacement of later runtime edits, independently of output availability.
 
 Optional text QA retains the engine's project-scoped discovery inventory and findings, bound to current runtime text and original-source context.

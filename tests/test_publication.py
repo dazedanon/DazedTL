@@ -87,6 +87,40 @@ class PublicationTests(unittest.TestCase):
         )
         result = p.publish(self.folder, self.root, plan)
         self.assertEqual((self.root / "js/plugins/Fixes.js").read_bytes(), b"// fix")
+        # A later Apply of another file, which History can't restore, left
+        # the fixes unrestorable; a later batch on the same file must go
+        # first, and says so.
+        p.publish(
+            self.folder,
+            self.root,
+            p.freeze(
+                self.folder,
+                self.root,
+                {"data/B.json": self.after["data/B.json"]},
+                "export_selected",
+                outputs={"B.json": "applied"},
+                overwrite=True,
+            ),
+        )
+        corrected = p.publish(
+            self.folder,
+            self.root,
+            p.freeze(self.folder, self.root, {"data/A.json": b"qa"}, "qa_apply"),
+        )["publication"]
+        self.assertEqual(
+            p.blocker(p.history(self.folder), result["publication"]),
+            {"id": corrected, "kind": "qa_apply", "files": ["data/A.json"]},
+        )
+        with self.assertRaisesRegex(ValueError, "later batch also changed data/A"):
+            p.restore_candidates(self.folder, self.root, result["publication"])
+        restore, record = p.restore_candidates(self.folder, self.root, corrected)
+        p.publish(
+            self.folder,
+            self.root,
+            p.freeze(
+                self.folder, self.root, restore, "runtime_restore", restore=record
+            ),
+        )
         restore, record = p.restore_candidates(
             self.folder, self.root, result["publication"]
         )
@@ -104,6 +138,14 @@ class PublicationTests(unittest.TestCase):
         self.assertFalse((self.root / "js/plugins/Fixes.js").exists())
         self.assertEqual(
             (self.root / "data/A.json").read_bytes(), self.before["data/A.json"]
+        )
+        # The later Apply stays in the game and applied.
+        self.assertEqual(
+            (self.root / "data/B.json").read_bytes(), self.after["data/B.json"]
+        )
+        self.assertEqual(
+            read_json(self.folder / "applied-outputs.json")["files"],
+            {"B.json": "applied"},
         )
 
     def test_write_then_raise_rolls_back_the_attempted_batch_and_retains_backups(self):

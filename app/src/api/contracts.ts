@@ -608,12 +608,22 @@ export type SourceStatus = {
   refusalNotes?: Record<string, number>;
 };
 
+/** The newest later batch still in the game that changed some of a
+batch's files, which must be restored first. */
+export type RestoreBlocker = {
+  id: string;
+  kind: string;
+  /** The files both batches changed. */
+  files: string[];
+};
+
 export type PublicationStatus = {
   id: string;
   kind: string;
   state: string;
   files: string[];
   recovery_errors: string[];
+  blocker?: RestoreBlocker;
 };
 
 /** One line of a scene correction. */
