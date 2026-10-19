@@ -38,6 +38,14 @@ def main() -> int:
         action="store_true",
         help="Skip capturing the game's interface screens.",
     )
+    prepare.add_argument(
+        "--since",
+        help="A version this game was updated to, or a Git revision, whose earlier "
+        "text was checked before; QA reviews only text changed since.",
+    )
+    prepare.add_argument(
+        "--everything", action="store_true", help="Review every line, ignoring earlier reviews."
+    )
 
     skip_declined = "Report declined bundles no other helper took as not reviewed."
     for name in ("status", "advance", "finalize"):
@@ -142,6 +150,8 @@ def run(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
             args.game_root, args.data, args.focus, args.output_root,
             interface=not args.no_interface,
             progress=lambda message: print(message, file=sys.stderr, flush=True),
+            since=args.since,
+            earlier=not args.everything,
         )
         _print({"task": str(task), "status": state})
     elif args.command == "status":

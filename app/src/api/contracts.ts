@@ -2618,6 +2618,8 @@ export type TranslationQaRequest = {
   findings?: string[];
   question?: string;
   choice?: "keep" | "use";
+  since?: string;
+  everything?: boolean;
 };
 
 export type TranslationPlaytestRequest = {

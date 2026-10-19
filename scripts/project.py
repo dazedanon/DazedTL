@@ -279,6 +279,20 @@ def main():
         metavar="MINUTES",
         help="With --apply: wait up to MINUTES for the user's answers to open questions",
     )
+    qa.add_argument(
+        "--since",
+        metavar="VERSION",
+        help=(
+            "With --prepare: the text was checked before as of this version's update "
+            "(or Git revision), so QA reviews only text changed since; it stays in "
+            "effect for later QA of this game"
+        ),
+    )
+    qa.add_argument(
+        "--everything",
+        action="store_true",
+        help="With --prepare: review every line again, ignoring earlier reviews",
+    )
     playtest = commands.add_parser(
         "playtest",
         help="The release playtest for RPG Maker MV/MZ: DazedTL checks the game's files and "
@@ -514,6 +528,12 @@ def main():
                     params["findings"] = args.undo or args.apply_again
                 if args.choose:
                     params.update(question=args.choose[0], choice=args.choose[1])
+                if (args.since or args.everything) and params["step"] != "prepare":
+                    parser.error("--since and --everything go with --prepare")
+                if args.since:
+                    params["since"] = args.since
+                if args.everything:
+                    params["everything"] = True
                 if params["step"] == "apply" and args.wait > 0:
                     awaiting_answers(args.workspace, params, args.wait)
             if args.command == "playtest":

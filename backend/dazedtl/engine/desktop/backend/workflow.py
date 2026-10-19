@@ -221,6 +221,13 @@ class Workflows:
                 raise ValueError("Choose an existing QA focus.")
             selected["focus"] = options["focus"]
         if action == "qa_prepare":
+            # QA reviews only text changed since this version or revision,
+            # or, with everything, ignores earlier reviews.
+            since = str(options.get("since") or "").strip()
+            if since:
+                selected["since"] = since[:200]
+            if options.get("everything") is True:
+                selected["everything"] = True
             # QA's corrections fit to the Line widths as the line width check would.
             from util.rpgmaker_rewrap import SUPPORTED_EVENT_CODES, parse_event_codes
             check = self._check_settings(options.get("check", {}), project)

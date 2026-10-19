@@ -147,6 +147,8 @@ All Check tasks are optional:
   QA reviews translations, so Japanese that was never translated is the playtest's to find, with the task that translates it.
   Running QA again after plugin files change opens the game's screens again and keeps the review done so far.
   A correction that changes several lines of one scene, such as narration that switches tense, is listed and undone as one.
+  QA reviews only text it hasn't reviewed before or that changed since, including lines whose glossary entries changed, and reads the rest only as context.
+  When text was checked before you used DazedTL, such as everything up to an update, tell your assistant which version, and QA skips it from then on.
   To take out every correction at once, inspect **Apply QA corrections** in the Project page's **History** and choose **Review restore**.
   Inspecting **Prepare or resume translation QA** there shows what QA did not cover: lines its reviewers declined, Japanese never translated and screen text QA can't change.
 - **Playtest** (MV and MZ): **Run playtest** has DazedTL check the game's files and play it in a hidden window for a few minutes, writing nothing into the game.

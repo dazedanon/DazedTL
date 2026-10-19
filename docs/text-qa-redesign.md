@@ -28,6 +28,8 @@ The [release playtest](#release-playtest) extends the same goals to what text QA
   A [single session](#parallel-workers) taking turns under two worker names was five times slower, read more per bundle and made every check its own second read.
 - A worker reads only what its bundles need: its brief carries the game's notes, quirks and decisions, each bundle the glossary entries its text uses, and claiming and accepting print the next bundle, so a bundle costs about two turns.
   Every turn rereads the assistant's whole conversation, its own long prompt included, so turns and context, not the text under review, were most of what QA [read](#token-cost).
+- QA reviews a line once: a later task reads text an earlier task reviewed and left standing only as context, until its Japanese, its English or the glossary entries and quirks governing it change, and the user can name a version whose earlier text was checked before DazedTL.
+  Scoping QA by declining lines, as coordinators did for an update, cost a full inventory each time and made screen checks count the declined lines as misses.
 
 ## Why
 

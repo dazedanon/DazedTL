@@ -155,12 +155,21 @@ class TextQA:
             self.outside[task] = saved
         return saved[1]
 
-    def run(self, project_id, step, findings=None, question="", choice=""):
+    def run(
+        self,
+        project_id,
+        step,
+        findings=None,
+        question="",
+        choice="",
+        since="",
+        everything=False,
+    ):
         if step not in STEPS:
             raise ValueError("Choose a text QA step: " + ", ".join(STEPS) + ".")
         native = self.native(project_id)
         if step == "prepare":
-            self.prepare(project_id)
+            self.prepare(project_id, since, everything)
         elif step == "apply":
             self.apply(project_id, native)
         elif step == "checkpoint":
@@ -196,9 +205,19 @@ class TextQA:
             "qa"
         ]
 
-    def prepare(self, project_id):
+    def prepare(self, project_id, since="", everything=False):
+        """Prepare or resume the task; *since* names a version or revision
+        whose text was checked before, which QA then reads only as context,
+        and *everything* reviews all text again."""
         preview = self.guided.preview(
-            project_id, "qa_prepare", None, {"focus": self.focus(project_id)}
+            project_id,
+            "qa_prepare",
+            None,
+            {
+                "focus": self.focus(project_id),
+                **({"since": since} if since else {}),
+                **({"everything": True} if everything else {}),
+            },
         )
         self.started(
             project_id, "prepare", self.guided.execute(project_id, preview["token"])

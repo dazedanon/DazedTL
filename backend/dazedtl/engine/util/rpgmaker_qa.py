@@ -1221,10 +1221,22 @@ def _scene_items(
     manifest: dict[str, Any],
     compact: dict[str, dict[str, Any]],
     lint_fixes: dict[str, dict[str, Any]],
+    reviewed: _Reviewed | None = None,
 ) -> tuple[list[dict[str, Any]], set[str], dict[str, dict[str, str]]]:
-    """Build indivisible scenes that cover each dialogue cluster exactly once."""
+    """Build indivisible scenes that cover each dialogue cluster exactly once;
+    a line reviewed earlier is no target, so only scenes with another line
+    are read, where it shows as context."""
     groups, cluster_ids = _scene_groups(manifest)
-    uncovered = set().union(*(group["clusters"] for group in groups)) if groups else set()
+
+    def earlier(cluster_id: str) -> bool:
+        item = compact[cluster_id]
+        return bool(reviewed) and reviewed.line(item["source"], item["translation"])
+
+    uncovered = {
+        cluster_id
+        for group in groups for cluster_id in group["clusters"]
+        if not earlier(cluster_id)
+    }
     selected_by_signature: dict[str, dict[str, Any]] = {}
     while uncovered:
         candidates = [
@@ -1245,6 +1257,11 @@ def _scene_items(
     for (signature, cluster_id), reasons in _pronoun_context_requirements(
         groups, compact
     ).items():
+        if earlier(cluster_id) and reviewed.scene(
+            "scene-" + signature[:20],
+            (record["source"] for record in groups_by_signature[signature]["records"]),
+        ):
+            continue
         selected = selected_by_signature.get(signature)
         if selected is None:
             selected = dict(groups_by_signature[signature])
@@ -1292,8 +1309,10 @@ def _motif_seeds(quirks_text: str) -> list[dict[str, Any]]:
 
 def _motif_items(
     manifest: dict[str, Any], context: dict[str, Any], compact: dict[str, dict[str, Any]],
-    data_root: Path,
+    data_root: Path, reviewed: _Reviewed | None = None,
 ) -> list[dict[str, Any]]:
+    """Each recurring joke's translations as one family; variants reviewed in
+    the family earlier are listed beside the others instead of read again."""
     records, clusters = _record_maps(manifest)
     document_cache: dict[str, Any] = {}
     items = []
@@ -1304,8 +1323,16 @@ def _motif_items(
         ]
         if len(matching) < 2:
             continue
+        earlier = [
+            cluster for cluster in matching
+            if reviewed and reviewed.variant(seed["id"], cluster["source"], cluster["live"])
+        ]
+        if len(earlier) == len(matching):
+            continue
         variants = []
         for cluster in matching:
+            if cluster in earlier:
+                continue
             cluster_id = cluster["representative"]
             representative = records[cluster["identities"][0]]
             item = compact[cluster_id]
@@ -1330,6 +1357,12 @@ def _motif_items(
             "id": seed["id"],
             "guidance": seed["guidance"],
             "anchors": seed["anchors"],
+            **({"reviewed_variants": [
+                {"source": cluster["source"], "translation": cluster["live"]}
+                for cluster in sorted(
+                    earlier, key=lambda cluster: (cluster["source"], cluster["live"])
+                )
+            ]} if earlier else {}),
             # Each variant is a target, so a declined one moves on its own.
             "target_count": len(variants),
             "variant_count": len(variants),
@@ -1360,14 +1393,18 @@ def _lint_game(root: Path, manifest: dict[str, Any]) -> lint.Game:
 
 
 def _lint_items(
-    manifest: dict[str, Any], layout: dict[str, Any], game: lint.Game
+    manifest: dict[str, Any],
+    layout: dict[str, Any],
+    game: lint.Game,
+    reviewed: _Reviewed | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
     """Each reviewed lint family's proposals as review items, and every line's
     fixes, the automatic families' included.
 
-    A proposal the post-apply regression would reject is left out. Proposals
-    are grouped by scene and split into small items, so a declined item sets
-    aside only that part of a family.
+    A proposal the post-apply regression would reject is left out, and so is
+    one a reviewer rejected earlier for the same text. Proposals are grouped
+    by scene and split into small items, so a declined item sets aside only
+    that part of a family.
     """
     records, _clusters = _record_maps(manifest)
     by_family: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -1381,6 +1418,10 @@ def _lint_items(
             ).items()
             if not any(
                 _record_problems(record, proposed, layout) for record in members
+            ) and not (
+                reviewed and family not in lint.AUTOMATIC and reviewed.lint_rejected(
+                    cluster["source"], cluster["live"], proposed
+                )
             )
         }
         if not found:
@@ -1436,6 +1477,7 @@ def _screen_items(
     context: dict[str, Any],
     data_root: Path,
     lint_fixes: dict[str, dict[str, Any]],
+    reviewed: _Reviewed | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, str]]]:
     compact_items = _compact_items(manifest, context)
     compact = {item["id"]: item for item in compact_items}
@@ -1444,7 +1486,7 @@ def _screen_items(
     screen_index: dict[str, dict[str, str]] = {}
     if manifest["focus"] in {"dialogue", "release"}:
         scenes, covered_dialogue, screen_index = _scene_items(
-            manifest, compact, lint_fixes
+            manifest, compact, lint_fixes, reviewed
         )
         items.extend(scenes)
 
@@ -1455,6 +1497,8 @@ def _screen_items(
         record["identity"]: record for record in manifest["records"]
     }
     for item in compact_items:
+        if reviewed and reviewed.line(item["source"], item["translation"]):
+            continue
         cluster = clusters[item["id"]]
         has_non_scene_member = any(
             member_records[identity].get("classification") != "dialogue"
@@ -1472,7 +1516,7 @@ def _screen_items(
             items.append(item)
 
     if manifest["focus"] in {"dialogue", "release"}:
-        items.extend(_motif_items(manifest, context, compact, data_root))
+        items.extend(_motif_items(manifest, context, compact, data_root, reviewed))
 
     # Preserve deterministic load balancing while assigning exact coverage ordinals.
     items.sort(key=lambda item: _sha256("rpgmaker-qa-screen-v3\0" + item["id"]))
@@ -2642,6 +2686,403 @@ def handoff_text(task_dir: str | Path, helper: str) -> str:
     ) + "\n"
 
 
+# Earlier reviews. A finished task's reviews still stand for text that has not
+# changed since, and a version the user says was checked before DazedTL counts
+# as reviewed as it was then; a new task reads such lines only as context.
+REVIEWED_SCHEMA = "rpgmaker-qa-reviewed-v1"
+REVIEWED_FILE = "reviewed.json"
+BASELINE_FOLDER = "baselines"
+
+
+def _pair_key(source: Any, translation: Any) -> str:
+    return _sha256(f"{source}\0{translation}")[:32]
+
+
+def _guidance_lines(context: dict[str, Any]) -> dict[str, list[str]]:
+    """Each glossary entry and translation quirk, with the Japanese terms it
+    governs; a quirk without Japanese governs no line in particular."""
+    lines = {
+        line: terms
+        for terms, _english, line in _glossary_entries(
+            (context.get("glossary") or {}).get("text")
+        )
+    }
+    for raw in str((context.get("quirks") or {}).get("text") or "").splitlines():
+        line = raw.strip()
+        if terms := _quirk_terms(line):
+            lines[line] = terms
+    return lines
+
+
+_QUOTED_RE = re.compile(r"`([^`\n]+)`")
+_NAMED_JAPANESE_RE = re.compile(r"[一-龠々〆〤ぁ-ゔァ-ヴー]*[一-龠々ァ-ヴ][一-龠々〆〤ぁ-ゔァ-ヴー]*")
+
+
+def _quirk_terms(line: str) -> list[str]:
+    """The Japanese a quirk governs: its quoted Japanese, each alternative
+    apart, or else its words with kanji or katakana, never bare kana that
+    common words share."""
+    quoted = [
+        part.strip()
+        for span in _QUOTED_RE.findall(line)
+        for part in span.split(" / ")
+        if _JAPANESE_ANCHOR_RE.search(part)
+    ]
+    if quoted:
+        return sorted(set(quoted))
+    return sorted({
+        word for word in _NAMED_JAPANESE_RE.findall(line) if len(word) >= 2
+    })
+
+
+def _task_ledger(root: Path) -> dict[str, Any] | None:
+    """What a complete task reviewed and left standing, kept in its folder:
+    lines screened or deep-reviewed, minus any whose finding still waits to be
+    applied or whose review was declined, plus the corrections editorial
+    confirmed."""
+    cached = root / REVIEWED_FILE
+    try:
+        ledger = _read_json(cached)
+        if ledger.get("schema") == REVIEWED_SCHEMA:
+            return ledger
+    except (OSError, ValueError):
+        pass
+    try:
+        _root, _task, checkpoint = _read_task(root)
+        if checkpoint["stage"] != "complete":
+            return None
+        ledger = _derive_ledger(root, checkpoint)
+    except (OSError, ValueError, KeyError, TypeError):
+        # A task whose files moved or broke is no review to build on.
+        return None
+    try:
+        _atomic_write_json(cached, ledger)
+    except OSError:
+        pass
+    return ledger
+
+
+def _derive_ledger(root: Path, checkpoint: dict[str, Any]) -> dict[str, Any]:
+    report = _read_json(root / "findings.json")
+    context = _read_json(root / "context.json")
+    reviewed: set[str] = set()
+    scenes: set[str] = set()
+    variants: set[str] = set()
+    rejected: set[str] = set()
+    cleared: dict[str, set[str]] = defaultdict(set)
+    observed: set[str] = set()
+    unsettled: set[str] = set()
+    for row in checkpoint["screen"]["bundles"]:
+        if row["status"] != "accepted" or row.get("check_of"):
+            continue
+        bundle = _read_json(Path(row["path"]))
+        result = _read_json(Path(row["result_path"]))
+        declined = _result_declines(result)
+        motifs = {review["id"]: review for review in result.get("motif_reviews") or []}
+        lints = {review["id"]: review for review in result.get("lint_reviews") or []}
+        for item in bundle["items"]:
+            if item["id"] in declined:
+                continue
+            kind = item.get("kind")
+            if kind == "scene":
+                scenes.add(item["id"])
+                reviewed.update(
+                    _pair_key(line["source"], line["translation"])
+                    for line in item["lines"] if "id" in line
+                )
+            elif kind == "cluster":
+                reviewed.add(_pair_key(item["source"], item["translation"]))
+            elif kind == "motif-family" and (
+                motifs.get(item["id"]) or {}
+            ).get("disposition") == "preserved":
+                variants.update(
+                    _pair_key(item["id"], _pair_key(variant["source"], variant["translation"]))
+                    for variant in item["variants"] if variant["id"] not in declined
+                )
+            elif kind == "lint-family" and item["id"] in lints:
+                rejected.update(
+                    _sha256(
+                        f"{proposal['source']}\0{proposal['current']}\0{proposal['proposed']}"
+                    )[:32]
+                    for proposal in item["proposals"]
+                    if proposal["id"] in set(lints[item["id"]]["rejected"]) - declined
+                )
+    for row in checkpoint["deep"]["bundles"]:
+        if row["status"] != "accepted":
+            continue
+        items = {item["id"]: item for item in _read_json(Path(row["path"]))["items"]}
+        for review in _read_json(Path(row["result_path"]))["reviews"]:
+            item = items[review["id"]]
+            pair = _pair_key(item["source"], item["translation"])
+            if review["disposition"] == "declined":
+                unsettled.add(pair)
+                continue
+            if review["disposition"] == "clean":
+                reviewed.add(pair)
+                cleared[pair].update(item.get("deep_reasons") or [])
+            observed.update(
+                _sha256(f"{pair}\0{evidence['note']}")[:32]
+                for evidence in item.get("screen_evidence") or []
+                if evidence.get("verdict") == "observation"
+            )
+    for finding in report.get("findings") or []:
+        for change in _changes(finding):
+            unsettled.add(_pair_key(change["source"], change["current"]))
+            # Editorial confirmed the correction, which passed every check.
+            corrected = _pair_key(change["source"], change["correction"])
+            reviewed.add(corrected)
+            cleared[corrected].add("*")
+    for row in [
+        *(report.get("uncertain_playtests") or []), *(report.get("not_reviewed") or []),
+    ]:
+        unsettled.add(_pair_key(row.get("source"), row.get("current")))
+    return {
+        "schema": REVIEWED_SCHEMA,
+        "origin": f"task {root.name}",
+        "pairs": sorted(reviewed - unsettled),
+        "scenes": sorted(scenes),
+        "variants": sorted(variants),
+        "lint_rejected": sorted(rejected),
+        "cleared": {
+            pair: sorted(reasons) for pair, reasons in sorted(cleared.items())
+            if pair not in unsettled
+        },
+        "observed": sorted(observed),
+        "guidance": _guidance_lines(context),
+    }
+
+
+def _baseline_commit(game: Path, since: str) -> tuple[Path, str, str]:
+    """The repository and commit whose translation a since-scope treats as
+    reviewed: before the update that brought version *since*, or *since* as
+    a Git revision; and how to name it."""
+    from util.version_update.git_workflow import (
+        _VERSION_LINE, GitWorkflowError, _run_git,
+    )
+
+    try:
+        repo = Path(
+            _run_git(game, "rev-parse", "--show-toplevel").stdout.strip()
+        ).resolve()
+        log = _run_git(
+            repo, "log", "--first-parent", "--format=%H%x00%B%x1e", "HEAD"
+        ).stdout
+    except GitWorkflowError as exc:
+        raise ValueError(
+            "QA can take earlier text as checked only in a game saved in Git: "
+            f"{exc}"
+        ) from exc
+    for entry in log.split("\x1e"):
+        commit, _, message = entry.strip("\n").partition("\x00")
+        version = _VERSION_LINE.search(message)
+        if (
+            message.strip().startswith("patch:")
+            and version and version.group(1).strip() == since.strip()
+        ):
+            parent = _run_git(repo, "rev-parse", f"{commit}^").stdout.strip()
+            return repo, parent, f"before the {since.strip()} update"
+    resolved = _run_git(
+        repo, "rev-parse", "--verify", "--quiet", f"{since}^{{commit}}", check=False
+    )
+    if resolved.returncode != 0 or not resolved.stdout.strip():
+        raise ValueError(
+            f"{since} is neither a version this game was updated to nor a Git revision"
+        )
+    commit = resolved.stdout.strip()
+    return repo, commit, f"as of {commit[:12]}"
+
+
+def _baseline_ledger(
+    storage: Path, game: Path, data: Path, focus: str, since: str
+) -> dict[str, Any]:
+    """Every line of the game as it was translated at the baseline, which the
+    user says was reviewed before, as a ledger kept with the game's tasks."""
+    import io
+    import subprocess
+    import tarfile
+
+    from util.version_update.git_workflow import _run_git
+
+    repo, commit, label = _baseline_commit(game, since)
+    path = storage / BASELINE_FOLDER / f"{commit}.json"
+    try:
+        ledger = _read_json(path)
+        if ledger.get("schema") == REVIEWED_SCHEMA:
+            return ledger
+    except (OSError, ValueError):
+        pass
+    relative = data.relative_to(repo).as_posix()
+    archive = subprocess.run(
+        ["git", "-C", str(repo), "archive", "--format=tar", commit, "--", relative],
+        capture_output=True, check=False,
+    )
+    if archive.returncode != 0:
+        raise ValueError(
+            f"Git could not read the game's data at {commit[:12]}: "
+            + archive.stderr.decode("utf-8", "replace").strip()
+        )
+    with tempfile.TemporaryDirectory(prefix="dazedtl-qa-baseline-") as temporary:
+        with tarfile.open(fileobj=io.BytesIO(archive.stdout)) as tar:
+            tar.extractall(temporary, filter="data")
+        manifest = build_manifest(Path(temporary) / relative, focus)
+    guidance = {}
+    for name, relative_path in (
+        ("glossary", GAME_GLOSSARY_RELATIVE), ("quirks", GAME_QUIRKS_RELATIVE),
+    ):
+        pointer = (game / relative_path).relative_to(repo).as_posix()
+        shown = _run_git(repo, "show", f"{commit}:{pointer}", check=False)
+        guidance[name] = {"text": shown.stdout if shown.returncode == 0 else ""}
+    groups, _cluster_ids = _scene_groups(manifest)
+    ledger = {
+        "schema": REVIEWED_SCHEMA,
+        "origin": f"since {since.strip()}",
+        "commit": commit,
+        "label": label,
+        "everything": True,
+        "pairs": sorted({
+            _pair_key(cluster["source"], cluster["live"])
+            for cluster in manifest["clusters"]
+        }),
+        "scenes": sorted("scene-" + group["signature"][:20] for group in groups),
+        "guidance": _guidance_lines(guidance),
+    }
+    _atomic_write_json(path, ledger)
+    return ledger
+
+
+_KANA_RE = re.compile(r"[ぁ-ゔァ-ヴー]+")
+_LINE_PUNCTUATION_RE = re.compile(r"[\s。、！？!?…‥―〜~・「」『』]+")
+
+
+class _Terms:
+    """Changed guidance terms found in a line's Japanese. A word of two kana
+    or fewer, such as a pun on なる, governs only a line that is that word, or
+    it would reopen every line sharing common kana."""
+
+    def __init__(self, terms: set[str]):
+        whole = {
+            bare for term in terms
+            if _KANA_RE.fullmatch(bare := _LINE_PUNCTUATION_RE.sub("", term))
+            and len(bare) <= 2
+        }
+        inside = sorted(
+            (term for term in terms if _LINE_PUNCTUATION_RE.sub("", term) not in whole),
+            key=lambda term: (-len(term), term),
+        )
+        self.whole = whole
+        self.inside = re.compile("|".join(map(re.escape, inside))) if inside else None
+
+    def search(self, source: str) -> bool:
+        return bool(self.inside and self.inside.search(source)) or (
+            _LINE_PUNCTUATION_RE.sub("", source) in self.whole
+        )
+
+
+def _terms_pattern(terms: set[str]) -> _Terms | None:
+    return _Terms(terms) if terms else None
+
+
+class _Reviewed:
+    """What earlier tasks and baselines reviewed that still stands for this
+    task's guidance: a ledger's line no longer counts once a glossary entry
+    or quirk whose Japanese it holds changed since that review."""
+
+    def __init__(self, ledgers: list[dict[str, Any]], context: dict[str, Any]):
+        guidance = _guidance_lines(context)
+        self.ledgers = []
+        for ledger in ledgers:
+            before = ledger.get("guidance") or {}
+            changed = {
+                term for line in before.keys() ^ guidance.keys()
+                for term in before.get(line) or guidance.get(line) or []
+            }
+            self.ledgers.append((
+                ledger,
+                {key: set(ledger.get(key) or []) for key in (
+                    "pairs", "scenes", "variants", "lint_rejected", "observed",
+                )},
+                _terms_pattern(changed),
+            ))
+        self.origins = [ledger["origin"] for ledger in ledgers]
+
+    def __bool__(self) -> bool:
+        return bool(self.ledgers)
+
+    def _standing(self, source: str) -> list[tuple[dict, dict[str, set[str]]]]:
+        return [
+            (ledger, sets) for ledger, sets, changed in self.ledgers
+            if changed is None or not changed.search(source)
+        ]
+
+    def line(self, source: Any, translation: Any) -> bool:
+        key = _pair_key(source, translation)
+        return any(key in sets["pairs"] for _ledger, sets in self._standing(str(source)))
+
+    def scene(self, scene_id: str, sources: Iterable[str]) -> bool:
+        text = "\n".join(map(str, sources))
+        return any(scene_id in sets["scenes"] for _ledger, sets in self._standing(text))
+
+    def cleared(self, source: Any, translation: Any, reasons: Iterable[str]) -> bool:
+        """Whether deep review already settled every one of these reasons for
+        the line, so they send it to deep review no more. Squeezed text is
+        always looked at again, since a capture can change what fits."""
+        reasons = set(reasons)
+        if "interface-fit" in reasons:
+            return False
+        key = _pair_key(source, translation)
+        settled: set[str] = set()
+        for ledger, sets in self._standing(str(source)):
+            if ledger.get("everything") and key in sets["pairs"]:
+                return True
+            settled.update((ledger.get("cleared") or {}).get(key) or [])
+        return bool(reasons) and ("*" in settled or reasons <= settled)
+
+    def variant(self, family: str, source: Any, translation: Any) -> bool:
+        pair = _pair_key(source, translation)
+        key = _pair_key(family, pair)
+        return any(
+            key in sets["variants"] or ledger.get("everything") and pair in sets["pairs"]
+            for ledger, sets in self._standing(str(source))
+        )
+
+    def lint_rejected(self, source: Any, current: Any, proposed: Any) -> bool:
+        pair = _pair_key(source, current)
+        key = _sha256(f"{source}\0{current}\0{proposed}")[:32]
+        return any(
+            key in sets["lint_rejected"]
+            or ledger.get("everything") and pair in sets["pairs"]
+            for ledger, sets in self._standing(str(source))
+        )
+
+    def observed(self, source: Any, translation: Any, note: str) -> bool:
+        key = _sha256(f"{_pair_key(source, translation)}\0{note}")[:32]
+        return any(key in sets["observed"] for _ledger, sets in self._standing(str(source)))
+
+
+def _earlier_reviews(games: Path, context: dict[str, Any]) -> _Reviewed:
+    """The reviews a new task builds on: every complete task of this game and
+    every baseline the user named."""
+    ledgers = [
+        ledger
+        for path in sorted(games.glob(f"*/*/{REVIEWED_FILE}"))
+        if (ledger := _task_ledger(path.parent))
+    ]
+    seen = {path.parent for path in games.glob(f"*/*/{REVIEWED_FILE}")}
+    ledgers += [
+        ledger
+        for task in sorted(games.glob("*/*/task.json"))
+        if task.parent not in seen and (ledger := _task_ledger(task.parent))
+    ]
+    for path in sorted((games / BASELINE_FOLDER).glob("*.json")):
+        try:
+            ledger = _read_json(path)
+        except (OSError, ValueError):
+            continue
+        if ledger.get("schema") == REVIEWED_SCHEMA:
+            ledgers.append(ledger)
+    return _Reviewed(ledgers, context)
+
+
 def prepare_task(
     game_root: str | Path,
     data_root: str | Path,
@@ -2656,8 +3097,18 @@ def prepare_task(
     observations: Iterable[dict[str, Any]] = (),
     observer: str = "playtest",
     kept: Iterable[dict[str, Any]] = (),
+    since: str | None = None,
+    earlier: bool = True,
 ) -> tuple[Path, dict[str, Any]]:
     """Create or reuse one immutable QA task and its exhaustive screen bundles.
+
+    A new task builds on [earlier reviews](#earlier-reviews): lines a complete
+    task of this game reviewed, unchanged since and with the same glossary
+    entries and quirks, are read only as context, and so are lines unchanged
+    since a baseline the user named once with *since*, a version this game was
+    updated to or a Git revision, whose earlier text was checked before. A
+    baseline stays in effect for the game's later tasks. *earlier* False
+    reviews everything.
 
     *fit* holds the Line widths and line width check settings the task fits
     corrections to; a task already prepared keeps the ones it was made with.
@@ -2704,13 +3155,23 @@ def prepare_task(
             continue
         if all(row["identity"] != observation["identity"] for row in observed):
             observed.append(observation)
+    games = storage / _slug(game.name)
+    if since and earlier:
+        _baseline_ledger(games, game, data, focus, since)
+    baselines = sorted(
+        path.stem for path in (games / BASELINE_FOLDER).glob("*.json")
+    ) if earlier else []
+    # A baseline is the user's scope, so a task under another is another task;
+    # tasks finished since leave a prepared task as it is.
     task_key = _sha256(
         f"{TASK_SCHEMA}\0{engine_fingerprint}\0{focus}\0"
         f"{manifest['content_sha256']}\0{context['content_sha256']}\0"
         f"{_sha256(_canonical_bytes(screen_configuration))}"
         + (f"\0{_sha256(_canonical_bytes(observed))}" if observed else "")
+        + (f"\0baselines:{','.join(baselines)}" if baselines else "")
+        + ("" if earlier else "\0everything")
     )[:16]
-    task_parent = storage / _slug(game.name) / focus
+    task_parent = games / focus
     task_parent.mkdir(parents=True, exist_ok=True)
     task_dir = task_parent / task_key
     with _task_lock(task_parent):
@@ -2733,16 +3194,28 @@ def prepare_task(
             # Japanese never translated is reported, never silently skipped.
             _atomic_write_json(staging / "preflight.json", preflight(data, manifest, kept))
             _atomic_write_json(staging / "context.json", context)
+            reviewed = (
+                _earlier_reviews(games, context) if earlier else _Reviewed([], context)
+            )
+            _records, clusters_by_id = _record_maps(manifest)
+
+            def settled(cluster_id: str, reasons: list[str]) -> bool:
+                cluster = clusters_by_id[cluster_id]
+                return bool(reviewed) and reviewed.cleared(
+                    cluster["source"], cluster["live"], reasons
+                )
+
             compact_items = _compact_items(manifest, context)
             forced_candidates = {
                 item["id"]: _candidate(forced_reasons)
                 for item in compact_items
                 if (forced_reasons := _forced_deep_reasons(item))
+                and not settled(item["id"], forced_reasons)
             }
             for cluster_id, failed in _database_checks(manifest, data).items():
-                _merge_candidate(
-                    forced_candidates, cluster_id, [entry["check"] for entry in failed]
-                )
+                reasons = [entry["check"] for entry in failed]
+                if not settled(cluster_id, reasons):
+                    _merge_candidate(forced_candidates, cluster_id, reasons)
             if interface:
                 (staging / INTERFACE_FOLDER).mkdir()
                 capture, places = _capture_round(data, staging, 1, manifest, progress)
@@ -2755,13 +3228,19 @@ def prepare_task(
             _atomic_write_json(staging / "header-check.json", headers)
             clusters = _cluster_by_identity(manifest)
             for flag in headers["flags"]:
-                if flag["identity"]:
+                if flag["identity"] and not settled(
+                    clusters[flag["identity"]], ["show-text-header"]
+                ):
                     _merge_candidate(
                         forced_candidates, clusters[flag["identity"]],
                         ["show-text-header"], [flag["identity"]],
                     )
-            lint_items, lint_fixes = _lint_items(manifest, layout, _game(manifest, context))
-            items, screen_index = _screen_items(manifest, context, data, lint_fixes)
+            lint_items, lint_fixes = _lint_items(
+                manifest, layout, _game(manifest, context), reviewed
+            )
+            items, screen_index = _screen_items(
+                manifest, context, data, lint_fixes, reviewed
+            )
             screen_index_document = {
                 "schema": "rpgmaker-qa-screen-index-v1",
                 "targets": screen_index,
@@ -2815,6 +3294,14 @@ def prepare_task(
                 "screen_index_sha256": screen_index_document["content_sha256"],
                 "counts": manifest["counts"],
             }
+            if reviewed:
+                task["reviewed_before"] = {
+                    "lines": sum(
+                        reviewed.line(cluster["source"], cluster["live"])
+                        for cluster in manifest["clusters"]
+                    ),
+                    "from": reviewed.origins,
+                }
             checkpoint = {
                 "schema": CHECKPOINT_SCHEMA,
                 "task_sha256": _sha256(_canonical_bytes(task)),
@@ -2849,7 +3336,16 @@ def prepare_task(
                 },
                 "findings_file": "",
             }
-            _note_observations(checkpoint, observed, "screen", observer)
+            # An observation deep review already judged for the same text is
+            # not asked again.
+            _note_observations(checkpoint, [
+                observation for observation in observed
+                if not (reviewed and reviewed.observed(
+                    clusters_by_id[observation["cluster_id"]]["source"],
+                    clusters_by_id[observation["cluster_id"]]["live"],
+                    observation["note"],
+                ))
+            ], "screen", observer)
             _atomic_write_json(staging / "task.json", task)
             _atomic_write_json(staging / "checkpoint.json", checkpoint)
             _atomic_write_text(
@@ -3078,6 +3574,12 @@ def status(task_dir: str | Path) -> dict[str, Any]:
             "unresolved": task["counts"]["unresolved"],
         },
         "not_translated": _not_translated(root),
+        # Lines earlier QA reviewed, unchanged since, which this task reads
+        # only as context.
+        **(
+            {"reviewed_before": task["reviewed_before"]}
+            if task.get("reviewed_before") else {}
+        ),
         **(
             {"interface": captured["summary"]}
             if (captured := interface_capture(root))
@@ -4815,6 +5317,13 @@ def _render_screen_item(
                 "    JP: " + _context_text(variant["source"]),
                 "    EN: " + _context_text(variant["translation"]),
             ] + _render_commands(variant.get("nearby_commands"), "      ")
+        if item.get("reviewed_variants"):
+            out.append("  reviewed in this family before, for comparison:")
+            out += [
+                "  - " + _context_text(variant["source"])
+                + " || " + _context_text(variant["translation"])
+                for variant in item["reviewed_variants"]
+            ]
         return out
     if kind == "lint-family":
         out = [f"### LINT {item['id']} {item['family']}: {item['description']}"]

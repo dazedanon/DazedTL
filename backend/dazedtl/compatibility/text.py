@@ -483,6 +483,8 @@ def run_qa(plan, log):
             progress=log,
             observations=observations,
             kept=kept_settings(plan["project"]["source"]),
+            since=plan["options"].get("since") or None,
+            earlier=not plan["options"].get("everything"),
         )
         if observations:
             log(f"QA reviews {len(observations)} line(s) the playtest found")

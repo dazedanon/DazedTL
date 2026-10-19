@@ -426,10 +426,21 @@ class Application:
             result["problems"].append("Progress was not updated: " + str(exc))
         return result
 
-    def translation_qa(self, project_id, step, findings=None, question="", choice=""):
+    def translation_qa(
+        self,
+        project_id,
+        step,
+        findings=None,
+        question="",
+        choice="",
+        since="",
+        everything=False,
+    ):
         """One text QA step for the project's assistant or the Text QA task;
         apply and undo go through the app's publication, never a direct write."""
-        return self.text_qa.run(project_id, step, findings, question, choice)
+        return self.text_qa.run(
+            project_id, step, findings, question, choice, since, everything
+        )
 
     def translation_playtest(self, project_id, step, stops=None, widths=None):
         """The release playtest for the Playtest task or the project's

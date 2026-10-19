@@ -16,6 +16,7 @@ declines = Probe("qa_declines.py")
 scenes = Probe("qa_scene.py")
 interface = Probe("qa_interface.py")
 glossary = Probe("qa_glossary.py")
+reviewed = Probe("qa_reviewed.py")
 manifest = engine_module("util/rpgmaker_qa_manifest.py")
 verify = engine_module("util/rpgmaker_qa_verify.py")
 lint = engine_module("util/rpgmaker_qa_lint.py")
@@ -142,6 +143,10 @@ class QAEngineTests(unittest.TestCase):
 
     def test_glossary_fixes_only_renderings_and_applies_accepted_ones(self):
         returncode, output = glossary.result()
+        self.assertEqual(returncode, 0, output)
+
+    def test_earlier_reviews_leave_only_changed_text(self):
+        returncode, output = reviewed.result()
         self.assertEqual(returncode, 0, output)
 
     def test_numbers_beside_stat_letters_count(self):

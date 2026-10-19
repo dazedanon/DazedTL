@@ -7,7 +7,7 @@ scene-affine-screen sampled-screen-checks lint-group-review glossary-lint declin
 helper-scoped-declines unit-declines coordinator-declines evidence-preserving-deep
 scene-correction family-sweep decision-log consistency-check editorial-stage regression-simulation
 app-publication-apply checkpoint-commit no-provider-api interface-captures
-bundle-glossary worker-guidance accept-next
+bundle-glossary worker-guidance accept-next earlier-reviews since-scope
 -->
 
 This one policy governs text QA: the task README and the copied handoff are made from it. DazedTL
@@ -50,6 +50,11 @@ do not call a model-provider API.
 
 You run the task; four workers review it at the same time.
 Run `{{CLI}} status --task {{TASK}}`; read the task's context, {{CONTEXT}}, only when a choice you must settle needs its glossary or guidance, since each worker's brief and bundles carry what reviewing needs.
+
+A task builds on earlier reviews: lines an earlier QA of this game reviewed, unchanged since and with the same glossary entries and quirks, are only context, and `status` counts them under `reviewed_before`.
+When the user says the text up to an update was checked before, such as everything but version 1.10's new text, prepare QA again with the project helper's `qa --prepare --since 1.10` from your handoff, or a Git revision instead of the version, and follow the README of the task it names; the scope stays in effect for the game's later QA.
+`qa --prepare --everything` reviews every line again.
+Never decline lines to narrow QA's scope.
 
 1. Start four workers that run at the same time, such as background sub-agents, each a fresh session with a name of its own, such as `rev-1` to `rev-4`.
    Give each only this prompt: `You are text QA worker <name>. Run {{CLI}} brief --task {{TASK}} --role worker and follow it.`

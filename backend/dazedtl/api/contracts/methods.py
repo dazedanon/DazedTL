@@ -249,6 +249,8 @@ class TranslationQaRequest(TypedDict):
     findings: NotRequired[list[str]]
     question: NotRequired[str]
     choice: NotRequired[Literal["keep", "use"]]
+    since: NotRequired[str]
+    everything: NotRequired[bool]
 
 
 class TranslationPlaytestRequest(TypedDict):
