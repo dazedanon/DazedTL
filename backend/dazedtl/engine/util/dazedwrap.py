@@ -119,7 +119,7 @@ def wrapText(text: str, width: int) -> str:
     return "\n\n".join(wrapped_segments)
 
 
-def wrapLines(text: str, width: int, rows: int | None = None) -> str:
+def wrapLines(text: str, width: int, rows: int | None = None, measure=None) -> str:
     """
     Wrap text whose line breaks are authored, such as a database note or
     description, keeping every line break.
@@ -130,39 +130,302 @@ def wrapLines(text: str, width: int, rows: int | None = None) -> str:
 
     *rows* is the number of lines the source spends on a window of fixed
     height, such as a help window. When kept lines would need more rows than
-    that and running them together as :func:`wrapText` does needs fewer, the
-    text flows instead.
+    that and running them together needs fewer, the text flows instead.
+    *measure* gives a word's visible width, as for :func:`wrapShaped`.
     """
     if not text:
         return ""
+    measure = measure or _get_visible_length
 
     lines = []
     for line in text.split("\n"):
-        if not line.strip() or _get_visible_length(line) <= width:
+        if not line.strip() or _line_width(line, measure) <= width:
             lines.append(line)
         else:
-            lines.append(_wrapLine(line, width))
+            lines.append(_wrapLine(line, width, measure))
     kept = "\n".join(lines)
     if rows is None or kept.count("\n") < rows:
         return kept
-    flowed = wrapText(text, width)
+    flowed = wrapShaped(text.replace("\n", " "), width, measure=measure)
     return flowed if flowed.count("\n") < kept.count("\n") else kept
 
 
-def _wrapLine(line: str, width: int) -> str:
-    """One authored line too wide for *width*, wrapped onto as many lines as
-    :func:`wrapText` needs but evened out, so its last line is not a stray
-    word. The line's indent stays on its first line."""
+def _line_width(line: str, measure) -> int:
+    words = line.split()
+    return sum(measure(word) for word in words) + max(0, len(words) - 1)
+
+
+# Inline codes that may trail a word, such as a wait (\.) or a colour reset
+# (\C[0]), and the closing marks that may follow its punctuation.
+_TRAILING_CODES = re.compile(r"(?:\\+[A-Za-z]+\[[^\]]*\]|\\+[.|!^<>{}$])+$")
+_LEADING_CODES = re.compile(r"^(?:\\+[A-Za-z]+\[[^\]]*\]|\\+[.|!^<>{}$])+")
+_CLOSERS = "\"'”’)]）」』】＞*"
+# A translated word that ends a sentence, and one that ends a clause.
+_SENTENCE_END = re.compile(r"(?:[.!?…♪♥♡～~！？]|―)[" + re.escape(_CLOSERS) + r"]*$")
+_CLAUSE_END = re.compile(r"(?:[,;:、，]|—|–|--)[" + re.escape(_CLOSERS) + r"]*$")
+# A line that starts a list item or a note starts on a line of its own.
+_ITEM_START = re.compile(r"^[・●◆◇■□※★☆•]")
+# A source line that ends a sentence, and one that ends a clause: where the
+# writer broke the line on purpose rather than to fit the window.
+_SOURCE_SENTENCE_END = re.compile(r"[。！？!?…‥.♪♥♡～〜ー―」』）)】]$")
+_SOURCE_CLAUSE_END = re.compile(r"[、，,]$")
+_SOURCE_BLANK = " \t　"
+
+
+def _word_end(word: str) -> str:
+    return _TRAILING_CODES.sub("", word)
+
+
+def _break_kind(words: list[str], end: int) -> str:
+    """How a line break after ``words[end - 1]`` reads: after a sentence or
+    before a list item, after a clause, or inside a sentence."""
+    if end < len(words) and _ITEM_START.match(_LEADING_CODES.sub("", words[end])):
+        return "sentence"
+    tail = _word_end(words[end - 1])
+    if _SENTENCE_END.search(tail):
+        return "sentence"
+    if _CLAUSE_END.search(tail):
+        return "clause"
+    return "word"
+
+
+def _source_segments(lines: list[str]) -> tuple[list[int], bool]:
+    """The sizes of the source's deliberate lines, joining lines it broke
+    only to fit the window, and whether it breaks after a clause."""
+    sizes: list[int] = []
+    clauses = False
+    joined = False
+    for index, line in enumerate(lines):
+        text = line.strip(_SOURCE_BLANK)
+        size = len(_LEADING_CODES.sub("", text))
+        if joined:
+            sizes[-1] += size
+        else:
+            sizes.append(size)
+        following = lines[index + 1].strip(_SOURCE_BLANK) if index + 1 < len(lines) else ""
+        end = _word_end(text)
+        if _SOURCE_SENTENCE_END.search(end) or _ITEM_START.match(_LEADING_CODES.sub("", following)):
+            joined = False
+        elif _SOURCE_CLAUSE_END.search(end):
+            joined, clauses = False, True
+        else:
+            joined = True
+    return sizes, clauses
+
+
+_BREAK_COST = {"sentence": 0.0, "clause": 0.12, "word": 0.3}
+# How much uneven lines cost against a break that reads worse.
+EVEN_WEIGHT = 4.0
+
+
+def _rows_needed(sizes: list[int], width: int) -> int:
+    rows, line = 1, -1
+    for size in sizes:
+        if line >= 0 and line + 1 + size > width:
+            rows, line = rows + 1, size
+        else:
+            line += 1 + size
+    return rows
+
+
+def _split(words: list[str], back: list[list[int]], rows: int) -> list[str]:
+    lines, end = [], len(words)
+    for row in range(rows, 0, -1):
+        start = back[row][end]
+        lines.append(" ".join(words[start:end]))
+        end = start
+    return lines[::-1]
+
+
+def _even_lines(words: list[str], sizes: list[int], width: int, rows: int) -> list[str]:
+    """*words* on exactly *rows* lines within *width*, as even in length as
+    possible, breaking after sentences and clauses where that costs little."""
+    count = len(words)
+    infinite = float("inf")
+    best = [[infinite] * (count + 1) for _ in range(rows + 1)]
+    back = [[0] * (count + 1) for _ in range(rows + 1)]
+    best[0][0] = 0.0
+    even = (sum(sizes) + count - rows) / rows
+    for row in range(1, rows + 1):
+        for end in range(1, count + 1):
+            length = -1
+            for start in range(end, 0, -1):
+                length += sizes[start - 1] + 1
+                if length > width and start < end:
+                    break
+                if best[row - 1][start - 1] == infinite:
+                    continue
+                cost = ((even - length) / width) ** 2 * EVEN_WEIGHT
+                if end < count:
+                    cost += _BREAK_COST[_break_kind(words, end)]
+                total = best[row - 1][start - 1] + cost
+                if total < best[row][end]:
+                    best[row][end] = total
+                    back[row][end] = start - 1
+    return _split(words, back, rows)
+
+
+def _sentence_lines(
+    words: list[str],
+    sizes: list[int],
+    width: int,
+    rows: int,
+    clauses: bool,
+    shares: list[float] | None = None,
+) -> list[str] | None:
+    """*words* on exactly *rows* lines within *width*, every break after a
+    sentence (or a clause, when *clauses*) or before a list item. With
+    *shares*, each line's share of the text as close to the source line's
+    share as it can be; otherwise the widest line as narrow as it can be.
+    None when the text has no such breaks."""
+    count = len(words)
+    total = sum(sizes) + count - 1
+    infinite = (float("inf"), float("inf"))
+    best = [[infinite] * (count + 1) for _ in range(rows + 1)]
+    back = [[0] * (count + 1) for _ in range(rows + 1)]
+    best[0][0] = (0.0, 0)
+    allowed = {"sentence", "clause"} if clauses else {"sentence"}
+    for row in range(1, rows + 1):
+        for end in range(1, count + 1):
+            if end < count and _break_kind(words, end) not in allowed:
+                continue
+            length = -1
+            for start in range(end, 0, -1):
+                length += sizes[start - 1] + 1
+                if length > width:
+                    break
+                previous = best[row - 1][start - 1]
+                if previous == infinite:
+                    continue
+                drift = (length / total - shares[row - 1]) ** 2 if shares else 0.0
+                score = (previous[0] + drift, max(previous[1], length))
+                if score < best[row][end]:
+                    best[row][end] = score
+                    back[row][end] = start - 1
+    if best[rows][count] == infinite:
+        return None
+    return _split(words, back, rows)
+
+
+def _paged(
+    words: list[str], sizes: list[int], width: int, page_rows: int
+) -> list[list[str]] | None:
+    """*words* split into pages of at most *page_rows* rows, each page ending
+    on a sentence: as few pages as possible, then as even as possible. None
+    when the sentences do not allow it."""
+    count = len(words)
+    infinite = (float("inf"), float("inf"))
+    best = [infinite] * (count + 1)
+    back = [0] * (count + 1)
+    best[0] = (0, 0)
+    for end in range(1, count + 1):
+        if end < count and _break_kind(words, end) != "sentence":
+            continue
+        for start in range(end - 1, -1, -1):
+            if best[start] == infinite:
+                continue
+            rows = _rows_needed(sizes[start:end], width)
+            if rows > page_rows:
+                break
+            pages, spare = best[start]
+            score = (pages + 1, spare + (page_rows - rows) ** 2)
+            if score < best[end]:
+                best[end] = score
+                back[end] = start
+    if best[count] == infinite:
+        return None
+    pages, end = [], count
+    while end:
+        start = back[end]
+        pages.append(
+            _even_lines(
+                words[start:end], sizes[start:end], width,
+                _rows_needed(sizes[start:end], width),
+            )
+        )
+        end = start
+    return pages[::-1]
+
+
+def wrapShaped(
+    text: str,
+    width: int,
+    source: str | None = None,
+    rows: int | None = None,
+    measure=None,
+) -> str:
+    """Wrap translated *text* to *width*, laid out like its *source* where the
+    translation allows.
+
+    The source's blank first rows stay. Where the source breaks its lines
+    after sentences, before list items or after clauses, the text breaks
+    after its own sentences (and clauses, where the source breaks after one)
+    on as many lines as the source has deliberate lines, each line's share of
+    the text close to the source line's, when every line fits. Otherwise the
+    text takes the fewest lines it needs, as even as possible, preferring
+    breaks after sentences and clauses.
+
+    *rows* is the rows one page of the window shows. Text that needs more
+    starts each new page after a sentence where it can, filling the page
+    before with empty rows, rather than wherever the window runs out.
+    Paragraphs split by a blank line wrap separately. *measure* gives a
+    word's visible width; it defaults to :func:`_get_visible_length`.
+    """
+    measure = measure or _get_visible_length
+    width = int(width)
+    if not text or not text.strip():
+        return text or ""
+    source_lines = (source or "").replace("\r\n", "\n").split("\n")
+    lead = 0
+    if not text.startswith("\n"):
+        while lead < len(source_lines) - 1 and not source_lines[lead].strip(_SOURCE_BLANK):
+            lead += 1
+    segments, clauses = _source_segments(
+        [line for line in source_lines[lead:] if line.strip(_SOURCE_BLANK)]
+    )
+    page = None if rows is None else max(1, int(rows) - lead)
+    paragraphs = re.split(r"\n[ \t]*\n|\\n\\n", text.strip("\n"))
+    out: list[str] = []
+    for index, paragraph in enumerate(paragraphs):
+        words = paragraph.split()
+        if not words:
+            continue
+        sizes = [measure(word) for word in words]
+        needed = _rows_needed(sizes, width)
+        lines = None
+        if len(paragraphs) == 1 and len(segments) > 1:
+            shares = [size / sum(segments) for size in segments] if sum(segments) else None
+            most = len(segments) if page is None else min(len(segments), page)
+            for count in range(most, needed - 1, -1):
+                lines = _sentence_lines(
+                    words, sizes, width, count, clauses,
+                    shares if count == len(segments) else None,
+                )
+                if lines:
+                    break
+        lines = lines or _even_lines(words, sizes, width, needed)
+        if page is not None and len(lines) > page:
+            pages = _paged(words, sizes, width, page)
+            if pages:
+                lines = []
+                for number, part in enumerate(pages):
+                    if number:
+                        lines += [""] * lead
+                    lines += part
+                    if number < len(pages) - 1:
+                        lines += [""] * (page - len(part))
+        if index:
+            out.append("")
+        out += lines
+    return "\n" * lead + "\n".join(out)
+
+
+def _wrapLine(line: str, width: int, measure=None) -> str:
+    """One authored line too wide for *width*, on as few lines as it needs,
+    evened out so its last line is not a stray word. The line's indent stays
+    on its first line."""
     body = line.lstrip()
-    wrapped = wrapText(body, width)
-    rows = wrapped.count("\n") + 1
-    # The narrowest width that still fits the same rows evens them out.
-    for narrower in range(-(-_get_visible_length(body) // rows), width):
-        even = wrapText(body, narrower)
-        if even.count("\n") + 1 == rows:
-            wrapped = even
-            break
-    return line[: len(line) - len(body)] + wrapped
+    return line[: len(line) - len(body)] + wrapShaped(body, width, measure=measure)
 
 
 def wrapSGDesc(text: str, width: int) -> str:

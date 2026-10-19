@@ -4,26 +4,20 @@ import { Notice } from "../../ui/Notice";
 import { PathText } from "../../ui/PathText";
 import { TextDiff } from "../../ui/TextDiff";
 import { VirtualList } from "../../ui/VirtualList";
-import { textLocation } from "./textLocation";
 import { fileCount, pathKey } from "./workspace/model";
 
 /** The Guided actions that write reviewed text into the game. */
 export const publicationActions = [
   "export_selected",
-  "rewrap_apply",
   "qa_apply",
   "runtime_restore",
 ];
 
 /**
- * What a text publication will change: the files an Apply overwrites, the
- * lines a rewrap changes, or the file diffs of QA fixes and restores. The
- * Apply review and the pending changes review share it.
+ * What a text publication will change: the files an Apply overwrites, or
+ * the file diffs of QA fixes and restores.
  */
 export function PublicationContent({ preview }: { preview: Preview }) {
-  const applying = preview.rewrap
-    ? preview.rewrap.changes_found - preview.rewrap.overflow_skipped
-    : 0;
   // Files changed in the game since their last Apply, such as hand fixes,
   // which a full overwrite replaces.
   const edited = (preview.publication || [])
@@ -38,8 +32,9 @@ export function PublicationContent({ preview }: { preview: Preview }) {
         <>
           <p>
             Fully overwrite these game files with the selected saved
-            translations. Existing game edits will be replaced. Working copies
-            and saved runs are retained.
+            translations, wrapping any line too wide for the Line widths.
+            Existing game edits will be replaced. Working copies and saved runs
+            are retained.
           </p>
           {!!preview.options.run_id && (
             <p>
@@ -102,37 +97,9 @@ export function PublicationContent({ preview }: { preview: Preview }) {
               recovery.
             </p>
           )}
-          {/* Fitting lists each change below; the file diff repeats it. */}
-          {!preview.rewrap &&
-            preview.publication.map((row) => (
-              <PublicationFile key={row.path} row={row} />
-            ))}
-        </>
-      )}
-      {preview.rewrap && (
-        <>
-          {/* Protected overflows are found but not written, so the review
-              counts and lists only the changes this apply makes. */}
-          <p>
-            {applying} {applying === 1 ? "change" : "changes"}
-            {!!preview.rewrap.overflow_skipped &&
-              ` · ${preview.rewrap.overflow_skipped} protected ${preview.rewrap.overflow_skipped === 1 ? "overflow" : "overflows"} skipped`}
-          </p>
-          {preview.rewrap.previews
-            .filter(
-              (row) => !(row.overflow && preview.rewrap!.overflow_skipped),
-            )
-            .map((row, index) => (
-              <details key={index}>
-                <summary>
-                  {row.file_name} · {textLocation(row.locator)}
-                </summary>
-                <strong>Before</strong>
-                <pre>{row.before}</pre>
-                <strong>After</strong>
-                <pre>{row.after}</pre>
-              </details>
-            ))}
+          {preview.publication.map((row) => (
+            <PublicationFile key={row.path} row={row} />
+          ))}
         </>
       )}
     </>

@@ -253,9 +253,6 @@ export function useGuidedWorkspace({
   const databaseFiles = state.files.filter(
     (file) => file.group === "database" && selectedFiles.has(file.name),
   );
-  const layoutFiles = state.files
-    .filter((file) => selectedFiles.has(file.name))
-    .map((file) => file.name);
   const enabledCodes = advancedCodes.filter(
     (key) => values.engine_options[key] === true,
   );
@@ -603,6 +600,21 @@ export function useGuidedWorkspace({
       recorded.push(acknowledged);
     return recorded.sort((a, b) => jobTime(b) - jobTime(a))[0];
   };
+  // When this visit last saved Line widths: a fit of the applied text to
+  // them that started since then reports beside the Save control, and so
+  // does one that runs or failed after measured widths saved themselves.
+  const [widthsSavedAt, setWidthsSavedAt] = useState(0);
+  const fitJob = operationJob("fit_text");
+  const textFit = {
+    pending: state.readiness.text_fit.pending,
+    job:
+      fitJob &&
+      ((widthsSavedAt && jobTime(fitJob) >= widthsSavedAt) ||
+        fitJob.status !== "complete")
+        ? fitJob
+        : undefined,
+    saving: () => setWidthsSavedAt(Date.now()),
+  };
   // The Project tab that asked for a checkpoint, to return to afterwards.
   const checkpointReturn = useRef<"versions" | null>(null);
   const leaveCheckpoint = (action: string) => {
@@ -832,11 +844,7 @@ export function useGuidedWorkspace({
         : recorded;
     const active =
       current && ["ready", "running", "waiting"].includes(current.status);
-    const publicationReview = [
-      "export_selected",
-      "rewrap_apply",
-      "qa_apply",
-    ].includes(name);
+    const publicationReview = ["export_selected", "qa_apply"].includes(name);
     const finishedHere =
       current?.status === "complete" &&
       current.id === started[actionKey(name, options)]?.id;
@@ -845,14 +853,6 @@ export function useGuidedWorkspace({
       finishedHere &&
       !!files &&
       appliedFiles[current.id] === [phase, ...files].join("\n");
-    // Applying fitting closes its review and the page returns to scanning,
-    // so the scan control confirms an apply from this visit.
-    const fittingApplied = operationJob("rewrap_apply");
-    const fittedHere =
-      name === "rewrap_preview" &&
-      fittingApplied?.status === "complete" &&
-      fittingApplied.id === started["rewrap_apply"]?.id &&
-      jobTime(fittingApplied) >= jobTime(current || {});
     const qaOperation = ["qa_prepare", "qa_status"].includes(name);
     // Release reports a finished build in its saved archive panel; only a
     // build from this visit also confirms beside its button.
@@ -865,8 +865,8 @@ export function useGuidedWorkspace({
       "gameupdate",
     ].includes(name);
     // A tool row's own status says whether the tool is installed, the
-    // editor search lists what it found, and fitting and QA rows state the
-    // result of their scan or preparation.
+    // editor search lists what it found, and the glossary and QA rows state
+    // the result of their scan or preparation.
     const toolChange =
       preparationTool ||
       [
@@ -875,7 +875,6 @@ export function useGuidedWorkspace({
         "forge_install",
         "forge_remove",
         "editors",
-        "rewrap_preview",
         "qa_prepare",
       ].includes(name);
     // A tool row reports only its latest change, so installing again
@@ -958,33 +957,29 @@ export function useGuidedWorkspace({
         )}
         {...(appliedHere
           ? { notice: "Saved translations applied." }
-          : fittedHere
+          : toolDoneHere
             ? {
-                notice: "Rewrapped lines applied.",
+                // Short, so the row's buttons stay side by side.
+                notice: name.endsWith("_remove")
+                  ? "Removed."
+                  : clickedLabels[name] === "Update"
+                    ? "Updated."
+                    : "Installed.",
               }
-            : toolDoneHere
-              ? {
-                  // Short, so the row's buttons stay side by side.
-                  notice: name.endsWith("_remove")
-                    ? "Removed."
-                    : clickedLabels[name] === "Update"
-                      ? "Updated."
-                      : "Installed.",
-                }
-              : packedHere
-                ? { notice: "Native data packed." }
-                : builtHere
+            : packedHere
+              ? { notice: "Native data packed." }
+              : builtHere
+                ? {
+                    notice: `${name === "release" ? "Game" : "Patch"} ZIP saved.`,
+                  }
+                : preparationTool && finishedHere
                   ? {
-                      notice: `${name === "release" ? "Game" : "Patch"} ZIP saved.`,
+                      notice:
+                        name === "gameupdate"
+                          ? "GameUpdate files created."
+                          : "Formatted.",
                     }
-                  : preparationTool && finishedHere
-                    ? {
-                        notice:
-                          name === "gameupdate"
-                            ? "GameUpdate files created."
-                            : "Formatted.",
-                      }
-                    : {})}
+                  : {})}
         pending={
           (action.busy && action.key === actionKey(name, options)) || !!active
         }
@@ -1123,34 +1118,6 @@ export function useGuidedWorkspace({
         : "Guidance is already saved.",
       "context:save",
     );
-  const layoutOptions = {
-    files: layoutFiles,
-    widths: values.widths,
-    categories: fields.text.categories,
-    codes: fields.text.codes,
-    max_rows: fields.text.max_rows,
-    protect_rows: fields.text.protect_rows,
-    over_limit: fields.only_overflow,
-  };
-  const fitting = activity.find(
-    (item) => item.id === state.readiness.layout_scan,
-  )?.result as Preview["rewrap"] | undefined;
-  const fittingSettingsSaved =
-    fields.only_overflow === state.form.only_overflow &&
-    ["categories", "codes", "max_rows", "protect_rows"].every(
-      (key) =>
-        JSON.stringify(fields.text[key as keyof GuidedForm["text"]]) ===
-        JSON.stringify(state.form.text[key as keyof GuidedForm["text"]]),
-    );
-  // A check is current while its widths and options are the saved ones.
-  const fittingCurrent =
-    !!state.readiness.layout_scan &&
-    !draft.dirty &&
-    fittingSettingsSaved &&
-    !!fitting;
-  const fittingEligible = fitting
-    ? fitting.changes_found - fitting.overflow_skipped
-    : 0;
   const widths = (
     <fieldset disabled={disabled} className="guided-widths">
       {/* Four character limits, then the rows one message window shows. */}
@@ -1321,16 +1288,10 @@ export function useGuidedWorkspace({
   // What each task has reviewed and ready to go into the game.
   const pendingInput = {
     images: ownState(application.snapshot?.images)?.counts.selectedReady || 0,
-    rewraps: fittingCurrent ? fittingEligible : 0,
   };
   const pending = usePendingChanges({
     projectId: project.id,
     observer: application,
-    guided: () => ({ name: "rewrap_apply", options: layoutOptions }),
-    preparePreview,
-    execute,
-    lastExecuted,
-    whenFinished,
   });
   /**
    * Opens the review of one task's ready work; Images passes its count of
@@ -1592,7 +1553,6 @@ export function useGuidedWorkspace({
     widthsDirty,
     changed,
     eventFiles,
-    layoutFiles,
     enabledCodes,
     advancedReady,
     mode,
@@ -1654,10 +1614,8 @@ export function useGuidedWorkspace({
     chooseFolder,
     savedNames,
     saveDocuments,
-    layoutOptions,
-    fitting,
-    fittingSettingsSaved,
     widths,
+    textFit,
     fileSummary,
     fileRow,
     formatActions,
@@ -1674,8 +1632,6 @@ export function useGuidedWorkspace({
     pending,
     openPending,
     reviewPending,
-    fittingCurrent,
-    fittingEligible,
     applyRun,
     nextRun,
     completed,

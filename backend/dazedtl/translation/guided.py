@@ -17,6 +17,7 @@ from .guided_inspection import RunInspection
 from .guided_release import GuidedRelease
 from .guided_runs import GuidedRuns
 from .operations import lifecycle, require_source_backup
+from .text_fit import TextFit
 
 STEPS = {"setup", "context", "translate", "check", "release"}
 PHASES = {"database", "dialogue", "variables", "advanced", "speakers"}
@@ -38,10 +39,12 @@ LEGACY_TASKS = {
     "baseline": "setup",
     "image-text": "images",
     "image-manager": "images",
-    "playtest": "fitting",
-    "tools": "fitting",
-    # Check's Pending changes task was removed; its stage opens on fitting.
-    "apply": "fitting",
+    "playtest": "qa",
+    "tools": "qa",
+    # Check's Pending changes and Line width check tasks were removed; their
+    # stage opens on Text QA.
+    "apply": "qa",
+    "fitting": "qa",
 }
 
 
@@ -55,7 +58,7 @@ def retained_position(value):
         value["step"] = LEGACY_STEPS.get(value["step"], value["step"])
     if value.get("task") in {"plugins", "images"}:
         value["step"] = "translate"
-    elif value.get("task") in {"fitting", "qa"}:
+    elif value.get("task") == "qa":
         value["step"] = "check"
     saved = value.get("positions")
     positions = {}
@@ -82,6 +85,7 @@ class Guided:
         self.observations = RunObservations()
         self.runs = GuidedRuns(self)
         self.event_text = EventText(self)
+        self.text_fit = TextFit(self)
         self.full_estimate = FullEstimate(self)
         from .batch_monitor import BatchMonitor
 
@@ -449,6 +453,25 @@ class Guided:
         with self.observations.read():
             return self.observations.once(("applied", native["id"]), read)
 
+    def fitted_outputs(self, native):
+        """The outputs the latest Apply fitted to the Line widths on the way:
+        each file's output hash and the hash of what went into the game."""
+
+        def read():
+            receipt = (
+                self.backend.workflows.folder(native["id"]) / "applied-outputs.json"
+            )
+            record = read_json(receipt) if receipt.exists() else {}
+            outputs = record.get("files", {})
+            return {
+                name: (outputs[name], value)
+                for name, value in record.get("written", {}).items()
+                if name in outputs
+            }
+
+        with self.observations.read():
+            return self.observations.once(("fitted", native["id"]), read)
+
     def readiness(self, project_id, native, value, source_status=None):
         folder = self.backend.workflows.folder(native["id"])
         inputs = self.inputs(native)
@@ -460,13 +483,20 @@ class Guided:
         applied = []
         edited = []
         versions = self.applied_versions(native)
+        written = self.fitted_outputs(native)
         for name in outputs:
             source = self.observed_path(
                 native["source"],
                 (Path(native["data"]) / name).relative_to(native["source"]).as_posix(),
             )
             output_hash = self.observed_digest(folder / "translated" / name)
-            matches = self.observed_digest(source) == output_hash
+            game_hash = self.observed_digest(source)
+            # Apply may have fitted the output to the Line widths on the way.
+            matches = game_hash == output_hash or (
+                name in written
+                and game_hash == written[name][1]
+                and written[name][0] == output_hash
+            )
             if matches or output_hash in versions.get(name, ()):
                 applied.append(name)
                 if not matches:
@@ -497,44 +527,9 @@ class Guided:
             )
         except OSError, ValueError, KeyError:
             pass
-        scan = next(
-            (
-                job
-                for job in value["jobs"]
-                if job["action"] == "rewrap_preview" and job["status"] == "complete"
-            ),
-            None,
-        )
-        if scan:
-            try:
-                plan = read_json(
-                    self.backend.operations.root / scan["id"] / "plan.json"
-                )
-            except OSError, ValueError:
-                plan = {}
-            configured = plan.get("options", {})
-            form = self.saved_form(project_id)
-            only_overflow = form["only_overflow"]
-            selected_layout = [
-                row["name"]
-                for row in native["files"]
-                if row["name"] in native["selected"]
-            ]
-            if (
-                configured.get("files") != selected_layout
-                or configured.get("widths") != native["widths"]
-                or configured.get("over_limit") != only_overflow
-                or any(
-                    configured.get(key) != form["text"][key]
-                    for key in ("categories", "codes", "max_rows", "protect_rows")
-                )
-                or any(
-                    self.observed_digest(Path(native["data"]) / name)
-                    != plan.get("guard", {}).get("data", {}).get(name)
-                    for name in selected_layout
-                )
-            ):
-                scan = None
+        # New Line widths fit the applied text again once nothing else runs.
+        fit = self.text_fit.advance(project_id, native, applied)
+        latest = fit or self.text_fit.latest(native)
         return {
             **self.backend.guided_text_state(
                 native, self.saved_form(project_id)["text"]["focus"]
@@ -546,7 +541,10 @@ class Guided:
             ),
             "runtime_edited": edited,
             "review_current": current,
-            "layout_scan": scan["id"] if scan else None,
+            "text_fit": {
+                "pending": self.text_fit.pending(project_id),
+                "job": latest["id"] if latest else None,
+            },
             "delivery_available": bool(
                 state.get("delivery") and Path(state["delivery"]["path"]).is_file()
             ),
@@ -607,6 +605,9 @@ class Guided:
                 "Select files supported by this game's translation phases."
             )
         result = self.backend.workflows.update(native["id"], revision, values)
+        self.text_fit.request(
+            project_id, native, native["widths"], result["project"]["widths"]
+        )
         self.options_draft(project_id, None)
         return self.preferences(result["project"])
 

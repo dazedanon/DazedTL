@@ -38,8 +38,6 @@ NATIVE_ACTIONS = {
     "ace_decrypt",
     "ace_extract",
     "ace_pack",
-    "rewrap_preview",
-    "rewrap_apply",
     "qa_prepare",
     "qa_status",
     "qa_apply",
@@ -88,7 +86,6 @@ MANIFEST = ".dazedtl/guided/runtime-manifest.json"
 READY_ACTIONS = {
     "start",
     "export_selected",
-    "rewrap_apply",
     "qa_apply",
     "qa_undo",
     "runtime_restore",
@@ -100,7 +97,6 @@ READY_ACTIONS = {
     "guided_package",
 } | TOOL_ACTIONS
 PUBLICATION_ACTIONS = {
-    "rewrap_apply",
     "qa_apply",
     "qa_undo",
     "runtime_restore",
@@ -584,16 +580,6 @@ class GuidedActions:
                     "No saved translation output is available for these files yet."
                 )
             options = {"files": paths}
-        if action == "qa_prepare":
-            # QA fits its corrections with the line width check's settings.
-            text = self.guided.saved_form(project_id)["text"]
-            options = {
-                **options,
-                "check": {
-                    key: text[key]
-                    for key in ("categories", "codes", "max_rows", "protect_rows")
-                },
-            }
         if action == "release":
             from .release import destination
 
@@ -637,11 +623,7 @@ class GuidedActions:
                     token, self.guided.release_known(project_id, project["source"])
                 )
             )
-        if action == "rewrap_apply":
-            result["rewrap"] = self.guided.backend.guided_rewrap_review(
-                native["id"], token
-            )
-        if action in {"export_selected", "rewrap_apply"}:
+        if action == "export_selected":
             result.update(self.guided.backend.guided_text_publication(token))
         reviewed_paths = (
             paths or result.get("paths") or result["options"].get("files", [])

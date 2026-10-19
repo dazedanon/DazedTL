@@ -423,11 +423,6 @@ class ExistingBackend:
                 "The archive contents or public version changed. Inspect and build again."
             )
 
-    def guided_rewrap_review(self, native_id, token):
-        from .guided import rewrap_review
-
-        return rewrap_review(self, native_id, token)
-
     def guided_text_publication(self, token):
         from .text import prepare_publication
 

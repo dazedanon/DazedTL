@@ -111,7 +111,8 @@ def run_plan(workspace, inventory, files, mode, context_source="", *, workflow=N
         from util.engine_options import validate_engine_options
         if engine == "RPG Maker MV/MZ":
             described["engines"]["rpgmakermvmz"] = validate_engine_options({"rpgmakermvmz": workflow["engine_options"]})["rpgmakermvmz"]
-        # The engine wraps to the four widths; QA alone reads the message rows.
+        # The engine wraps to the four widths; the message rows reach it with
+        # the workflow's widths (manual_environment.prepare).
         values.update({key: workflow["widths"][key] for key in WRAP_WIDTH_KEYS})
     active_key = described["active_key"]
     environment = settings.runtime(values, active_key) if active_key else None

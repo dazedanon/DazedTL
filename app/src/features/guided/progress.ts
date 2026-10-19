@@ -112,19 +112,7 @@ export function completedTasks(
     ...(state.artifacts.some((artifact) => artifact.current)
       ? ["package"]
       : []),
-    ...(lineWidthsChecked(state) ? ["fitting"] : []),
   ]);
-}
-
-/** The current line width check found nothing left to rewrap. */
-function lineWidthsChecked(state: GuidedState) {
-  const scan = state.operations.find(
-    (item) => item.id === state.readiness.layout_scan,
-  )?.result as
-    { changes_found?: number; overflow_skipped?: number } | undefined;
-  return (
-    !!scan && (scan.changes_found ?? 0) - (scan.overflow_skipped ?? 0) <= 0
-  );
 }
 
 export type GuidedProgress = {

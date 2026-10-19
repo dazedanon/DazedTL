@@ -61,7 +61,6 @@ export type Panel =
   | "tools"
   | "preparation"
   | "release-assets"
-  | "fitting"
   | null;
 export const panelTitles: Record<Exclude<Panel, null>, string> = {
   files: "Choose files for this pass",
@@ -72,7 +71,6 @@ export const panelTitles: Record<Exclude<Panel, null>, string> = {
   tools: "Playtest tools",
   preparation: "Preparation tools",
   "release-assets": "Additional runtime assets",
-  fitting: "Line width check settings",
 };
 /** A review the Project page asks the Translation workspace to open. */
 export type GuidedIntent =

@@ -1,12 +1,12 @@
 # RPG Maker text QA
 
-<!-- qa-contract:rpgmaker-qa-v19
+<!-- qa-contract:rpgmaker-qa-v20
 single-policy role-briefs parallel-workers worker-brief app-owned-inventory immutable-review-bundles database-checks
 battler-name-source-fix
 scene-affine-screen sampled-screen-checks lint-group-review glossary-lint declined-disposition
 helper-scoped-declines unit-declines coordinator-declines evidence-preserving-deep
 scene-correction family-sweep decision-log consistency-check editorial-stage regression-simulation
-app-publication-apply checkpoint-commit no-provider-api interface-captures
+app-publication-apply checkpoint-commit no-provider-api interface-captures text-fit
 bundle-glossary worker-guidance accept-next earlier-reviews since-scope
 -->
 
@@ -177,6 +177,9 @@ that `prior_review`, and your review replaces it.
   cut off or hard to read, give a shorter `correction` with the same meaning, category `ui`; when
   it reads in full, review it `clean` and say what the capture shows. Text the capture shows cut
   off outside your items gets an observation.
+- A `text-fit` check means the text needs more rows than its window shows even wrapped to the
+  game's Line widths, so its last lines are cut off: give a shorter `correction` with the same
+  meaning, category `ui`, that fits the target's `box`.
 - `screen_evidence` keeps the screening reviewer's reason and `scenes` every scene used to
   reach it; an `observation` is the reason a reviewer gave for a line outside its own items,
   and the `observation` deep reason marks an item it escalated. A `clean` review of such an
@@ -194,7 +197,7 @@ that `prior_review`, and your review replaces it.
   stand for a source number.
 - A target's `box` is the text box it shows in, from the game's Line widths: `width`
   characters per line, `rows` it shows, and `wraps` when DazedTL rewraps a correction that has a
-  line wider than the box, as the line width check does. Where it does not rewrap, keep each line
+  line wider than the box, as it wraps translated text. Where it does not rewrap, keep each line
   within `width`. A longer wording that needs more rows than the box and the current text is
   refused, so shorten it instead.
 - Actionable `fluency`, `voice` and `wordplay` reviews carry `editorial_basis`: the concrete

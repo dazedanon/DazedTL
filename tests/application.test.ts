@@ -280,7 +280,7 @@ test("workflow views persist per project and storage failures leave the previous
   store.navigateGuided("one", { step: "translate", task: "dialogue" });
   fail = true;
   assert.throws(
-    () => store.navigateGuided("one", { step: "check", task: "fitting" }),
+    () => store.navigateGuided("one", { step: "check", task: "qa" }),
     /Storage unavailable/,
   );
   assert.equal(store.getSnapshot().snapshot?.guided?.task, "dialogue");
@@ -290,7 +290,7 @@ test("workflow views persist per project and storage failures leave the previous
   assert.equal(store.getSnapshot().snapshot?.application.screen, "project");
   assert.equal(store.getSnapshot().snapshot?.guided?.task, "guidance");
   assert.throws(
-    () => store.navigateGuided("one", { task: "fitting" }),
+    () => store.navigateGuided("one", { task: "qa" }),
     /workspace first/,
   );
   store.stop();
@@ -304,15 +304,20 @@ test("workflow views persist per project and storage failures leave the previous
     translate: "dialogue",
   });
   assert.ok([...records.values()].every((raw) => !raw.includes('"documents"')));
-  // Views saved by the seven-stage layout reopen on the task holding their
-  // work: Apply & Fitting's last view becomes its Check task.
+  // Views saved by earlier layouts reopen on the task holding their work:
+  // Apply & Fitting's last view and the retired Line width check open Text QA.
   records.set(
     "dazedtl:guided-navigation:v1:legacy",
     JSON.stringify({
       step: "apply",
       task: "apply",
       textView: "fitting",
-      positions: { prepare: "baseline", images: "images", apply: "apply" },
+      positions: {
+        prepare: "baseline",
+        images: "images",
+        apply: "apply",
+        check: "fitting",
+      },
     }),
   );
   const legacy = setup(async () => projectSnapshot("legacy"), storage).store;
@@ -320,12 +325,12 @@ test("workflow views persist per project and storage failures leave the previous
   legacy.start();
   await legacy.refresh();
   const migrated = legacy.getSnapshot().snapshot?.guided;
-  assert.deepEqual([migrated?.step, migrated?.task], ["check", "fitting"]);
+  assert.deepEqual([migrated?.step, migrated?.task], ["check", "qa"]);
   assert.deepEqual(migrated?.positions, {
     context: "guidance",
     setup: "setup",
     translate: "images",
-    check: "fitting",
+    check: "qa",
   });
 });
 

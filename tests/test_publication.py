@@ -156,7 +156,7 @@ class PublicationTests(unittest.TestCase):
     def test_failed_rollback_and_interrupted_publication_offer_only_exact_authorized_restore(
         self,
     ):
-        plan = p.freeze(self.folder, self.root, self.after, "rewrap_apply")
+        plan = p.freeze(self.folder, self.root, self.after, "fit_text")
 
         def failing(path, raw):
             if path == self.root / "data/A.json" and raw == self.before["data/A.json"]:

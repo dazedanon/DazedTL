@@ -851,28 +851,29 @@ count.**
 
 Scope the traversal to a fixed allowlist rather than everything that looks like
 text: display fields `Actors.profile` and `{Armors,Items,Skills,States,Weapons}
-.description`, event codes `{122, 324, 325, 357, 401, 405}`, and skip `_original`
-keys. `DAZEDTL_ROOT/util/rpgmaker_rewrap.py:30`
+.description`, event codes `{122, 324, 325, 401, 405}`, 357 only for plugins whose
+text shows in a message window (a text picture has no box to fit), and skip
+`_original` keys. `_slots` in `DAZEDTL_ROOT/util/rpgmaker_rewrap.py`
 
 ### Rewrap traps
 
 - **`\n` is a line break only when not followed by `[`.** Expand with
   `re.sub(r"\\n(?!\[)", "\n", rendered)` before measuring. Without the negative
   lookahead, `\n[3]` (the actor-name control code) is read as a break and the width
-  measurement is nonsense. `DAZEDTL_ROOT/util/rpgmaker_rewrap.py:689`
+  measurement is nonsense. `_rendered_lines` in `DAZEDTL_ROOT/util/rpgmaker_rewrap.py`
 - **`<br>` must round-trip.** If the body contains `<br>` and no real newline,
   replace `<br>` with a space, wrap, then convert the resulting `\n` back to `<br>`.
   Wrapping a `<br>` string with a newline wrapper produces something the plugin
-  renders as one long line. `DAZEDTL_ROOT/util/rpgmaker_rewrap.py:661`
+  renders as one long line. `wrap_message` in `DAZEDTL_ROOT/util/rpgmaker_rewrap.py`
 - **A name-window control does not consume a body row, a literal speaker line
   does.** Counting rows for the row-overflow veto means splitting on `\n|<br>` and
   stripping a leading speaker line *only* when it is a name-window control
   (`\n<Name>` / `\k<Name>`), not when it is a literal `[Speaker]` line.
-  `DAZEDTL_ROOT/util/rpgmaker_rewrap.py:693`
-- **Row protection is right everywhere except 401.** Skipping text that would
-  overflow the visible row count applies to code 405 scrolling text, database list
-  and help fields, and notetag bodies. A message box pages rather than clipping, so
-  code 401 is explicitly exempt.
+  `rendered_rows` in `DAZEDTL_ROOT/util/rpgmaker_rewrap.py`
+- **Only a fixed window has a row limit.** A message box pages rather than clipping,
+  and code 405 scrolling text scrolls, so neither is limited; a help or status
+  window (descriptions, profiles, nicknames) shows a fixed number of rows, and text
+  that needs more even rewrapped must be shortened. `misfit` in the same file.
 
 ### Preserve the container, rewrap only the body
 
@@ -882,10 +883,10 @@ Notetag bodies keep their delimiters (`<infowindow:…>`, `<dPlnText:…>`,
 captures **only the body group** so plugin tags stay byte-exact, track an `occupied`
 span list so two patterns cannot claim overlapping text, and splice edits back in
 **reverse offset order** so earlier replacements do not invalidate later offsets.
-`DAZEDTL_ROOT/util/rpgmaker_rewrap.py:610`
+`_note_bodies` in `DAZEDTL_ROOT/util/rpgmaker_rewrap.py`
 
 Bullet-led bodies wrap differently: keep `◆ ・ • ●` header lines on their own line
-and word-wrap the body under them. `DAZEDTL_ROOT/util/dazedwrap.py:126`
+and word-wrap the body under them. `wrapSGDesc` in `DAZEDTL_ROOT/util/dazedwrap.py`
 
 A code-122 backtick expression takes the *literal two-character* `\n` and keeps its
 `` ` `` open and `` `.`` close. A real newline there is a JavaScript syntax error.

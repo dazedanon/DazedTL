@@ -245,6 +245,7 @@ export function layoutView(w: GuidedWorkspace): TaskView {
     feedback,
     copyTask,
     widths,
+    textFit,
     handoff,
   } = w;
   const measuring = handoff("line_widths");
@@ -330,7 +331,9 @@ export function layoutView(w: GuidedWorkspace): TaskView {
       </div>
     </>
   );
-  const saveLayout = () =>
+  const saveLayout = () => {
+    // New widths fit the applied text again; that fit reports here.
+    textFit.saving();
     void action.run(
       async () => {
         await save();
@@ -346,7 +349,13 @@ export function layoutView(w: GuidedWorkspace): TaskView {
       "Line widths saved.",
       "save-options",
     );
+  };
   const pending = widthsDirty || !!discovery.layoutMessage;
+  const saved = feedback("save-options", "Saving line widths…");
+  // A fit that finished says what it rewrapped; one running or failed shows
+  // as its job.
+  const fit = textFit.job;
+  const fitted = fit?.status === "complete" ? fit.message : "";
   const saveControl = (
     <ActionControl
       label={
@@ -358,7 +367,14 @@ export function layoutView(w: GuidedWorkspace): TaskView {
       title={`Save line widths (${shortcutLabel.save})`}
       aria-keyshortcuts={shortcutKeys.save}
       disabled={disabled}
-      {...feedback("save-options", "Saving line widths…")}
+      {...saved}
+      job={fitted ? undefined : fit}
+      notice={
+        fitted ||
+        (saved.notice && textFit.pending
+          ? "Line widths saved. Applied text is rewrapped to them once the current work finishes."
+          : saved.notice)
+      }
       onClick={saveLayout}
     />
   );

@@ -55,10 +55,6 @@ class GuidedPreferences(TypedDict):
 
 class TextToolsForm(TypedDict):
     view: Literal["apply", "fitting", "qa", "tools"]
-    categories: list[str]
-    codes: str
-    max_rows: int
-    protect_rows: bool
     focus: str
     findings_task: str
     findings: list[str]
@@ -82,7 +78,6 @@ class GuidedForm(TypedDict):
     version: str
     original: str
     untranslated: bool | None
-    only_overflow: bool
     thorough_investigation: bool
     text: TextToolsForm
     release: ReleaseForm
@@ -640,6 +635,13 @@ class PlaytestCapture(TypedDict):
     url: Annotated[str, "A data URL of the JPEG."]
 
 
+class TextFitState(TypedDict):
+    # New Line widths wait to fit the applied text until nothing else runs;
+    # the job is the newest fit of it.
+    pending: bool
+    job: str | None
+
+
 class Readiness(TypedDict):
     publications: list[PublicationStatus]
     qa: QaState
@@ -649,7 +651,7 @@ class Readiness(TypedDict):
     unapplied: list[str]
     runtime_edited: list[str]
     review_current: bool
-    layout_scan: str | None
+    text_fit: TextFitState
     delivery_available: bool
 
 
@@ -885,21 +887,6 @@ class PackageSummary(TypedDict):
     generated: NotRequired[list[str]]
 
 
-class RewrapChange(TypedDict):
-    file_name: str
-    locator: str
-    before: str
-    after: str
-    rows: NotRequired[int]
-    overflow: NotRequired[bool]
-
-
-class RewrapSummary(TypedDict):
-    changes_found: int
-    overflow_skipped: int
-    previews: list[RewrapChange]
-
-
 class Preview(TypedDict):
     publication: NotRequired[list[PublicationChange]]
     run: NotRequired[PreviewRun | None]
@@ -916,7 +903,6 @@ class Preview(TypedDict):
     paths: list[str]
     confirmation: bool
     options: dict[str, object]
-    rewrap: NotRequired[RewrapSummary]
 
 
 class EventTextRequest(TypedDict):

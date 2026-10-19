@@ -1,5 +1,5 @@
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
-import { fittingView, qaView } from "./check";
+import { qaView } from "./check";
 import { estimateView, guidanceView, layoutView, namesView } from "./context";
 import { imagesView } from "./images";
 import { pluginsView } from "./plugins";
@@ -24,7 +24,6 @@ const views: Record<string, (w: GuidedWorkspace) => TaskView> = {
   sources: sourcesView,
   plugins: pluginsView,
   images: imagesView,
-  fitting: fittingView,
   qa: qaView,
   package: packageView,
 };

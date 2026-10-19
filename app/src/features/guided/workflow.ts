@@ -109,13 +109,6 @@ export const workflow: WorkflowStage[] = [
     short: "Check",
     tasks: [
       {
-        id: "fitting",
-        optional: true,
-        title: "Line width check",
-        description:
-          "Rewrap applied text that is wider than the saved line widths.",
-      },
-      {
         id: "qa",
         optional: true,
         title: "Text QA",

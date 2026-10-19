@@ -65,6 +65,7 @@ def freeze(
     findings=None,
     sources=None,
     created=(),
+    written=None,
 ):
     """Freeze both sides before the user reviews an exact destination batch.
     `task` names the QA task whose corrections the batch applies or undoes,
@@ -72,7 +73,9 @@ def freeze(
     candidates, such as a run's outputs, which publishing reads again and
     checks by hash instead of copies. `created` names files the batch may add
     to the game; a restore takes an added file out again, its candidate None,
-    and puts back one a batch took out."""
+    and puts back one a batch took out. `written` names the hashes of applied
+    outputs that were fitted to the Line widths on the way, which the game
+    then holds in place of the output's own."""
     if not candidates:
         raise ValueError("Select at least one file or correction to apply.")
     _discard_unused(folder)
@@ -81,6 +84,13 @@ def freeze(
     prior = Path(folder) / "applied-outputs.json"
     previous = read_json(prior) if prior.exists() else {"version": 1, "files": {}}
     following = {**previous, "files": {**previous.get("files", {}), **(outputs or {})}}
+    if outputs or written:
+        fitted = {
+            name: value
+            for name, value in previous.get("written", {}).items()
+            if name not in (outputs or {})
+        }
+        following["written"] = {**fitted, **(written or {})}
     if restore:
         following = restore["prior_outputs"]
     rows = []

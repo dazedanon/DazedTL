@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type {
   GuidedState,
-  Preview,
   ImageManagerState,
   TranslationState,
 } from "../app/src/api/contracts.ts";
@@ -16,7 +15,6 @@ import {
   unfinishedRun,
 } from "../app/src/features/guided/workflow.ts";
 import { guidedProgress } from "../app/src/features/guided/progress.ts";
-import { reviewSignature } from "../app/src/features/guided/pending.ts";
 
 test("saved runs choose their owning task instead of native progress labels", () => {
   const translation = {
@@ -122,14 +120,12 @@ test("saved runs choose their owning task instead of native progress labels", ()
       task,
     });
   }
-  for (const task of ["fitting", "qa"]) {
-    state.step = "check";
-    state.task = task;
-    assert.deepEqual(initialPosition(state, translation), {
-      step: "check",
-      task,
-    });
-  }
+  state.step = "check";
+  state.task = "qa";
+  assert.deepEqual(initialPosition(state, translation), {
+    step: "check",
+    task: "qa",
+  });
   for (const status of [
     "failed",
     "stopped",
@@ -214,7 +210,7 @@ test("the Project page continues with the next step and keeps a later saved posi
     readiness: {
       outputs: [],
       applied: [],
-      layout_scan: null,
+      text_fit: { pending: false, job: null },
       playtest: { current: false, problems: [], gaps: [] },
     },
     comparisons: { status: "not_needed" },
@@ -245,10 +241,10 @@ test("the Project page continues with the next step and keeps a later saved posi
   assert.equal(progress.last, null);
   // A later saved position stays reachable beside the next step.
   state.step = "check";
-  state.task = "fitting";
+  state.task = "qa";
   progress = guidedProgress(state, translation);
   assert.equal(progress.next?.task, "names");
-  assert.equal(progress.last?.task, "fitting");
+  assert.equal(progress.last?.task, "qa");
   // Opening Check completes it, since all of its tasks are optional, but only
   // once the required tasks before it are done; Release waits to be opened.
   assert.deepEqual(
@@ -332,25 +328,4 @@ test("the Project page continues with the next step and keeps a later saved posi
     "images",
     "package",
   ]);
-});
-
-test("a text review re-checked before Apply notices changes past the visible diff", () => {
-  const preview = (after: string) =>
-    ({
-      action: "export_selected",
-      paths: ["Map038.json"],
-      // A large file's diff is cut off, so both reviews show the same text.
-      publication: [
-        {
-          path: "data/Map038.json",
-          before: "b",
-          after,
-          diff: "@@ first 16,000 characters",
-        },
-      ],
-    }) as unknown as Preview;
-  assert.notEqual(
-    reviewSignature(preview("reviewed")),
-    reviewSignature(preview("changed later")),
-  );
 });

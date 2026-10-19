@@ -4,6 +4,7 @@ import json
 import os
 import re
 import util.dazedwrap as dazedwrap
+from util import rpgmaker_rewrap
 import threading
 import time
 import traceback
@@ -63,6 +64,8 @@ FACEWIDTH = max(
 )
 LISTWIDTH = int(os.getenv("listWidth"))
 NOTEWIDTH = int(os.getenv("noteWidth"))
+# The rows a message window shows; a longer message goes on to a new page.
+MESSAGEROWS = int(os.getenv("messageRows") or 4)
 MAXHISTORY = 10
 ESTIMATE = ""
 TOKENS = [0, 0]
@@ -980,11 +983,6 @@ def _has_japanese_text(text) -> bool:
     # A full-width space is layout, such as the blank row a translated note
     # keeps from its source, not Japanese still to translate.
     return bool(re.search(LANGREGEX, sample.replace("\u3000", " ")))
-
-
-def _source_rows(source) -> int:
-    """The lines database text spends on its window in the source."""
-    return str(source or "").count("\n") + 1
 
 
 def _text_needs_translation(current) -> bool:
@@ -3088,7 +3086,7 @@ def searchNames(data, pbar, context, filename, saved=None):
             if regex.startswith(r"<SG説明:"):
                 translated = dazedwrap.wrapSGDesc(translated, width=NOTEWIDTH)
             else:
-                translated = dazedwrap.wrapLines(translated, NOTEWIDTH)
+                translated = rpgmaker_rewrap.wrap_lines(translated, NOTEWIDTH)
             translated = translated.replace('"', "")
         # Use a safe literal match for the replacement (no re.escape, just str.replace)
         data[idx]["note"] = data[idx]["note"].replace(match_text, translated, 1)
@@ -3287,8 +3285,8 @@ def searchNames(data, pbar, context, filename, saved=None):
                     for idx, raw_prof, translated in zip(
                         profileIndexList, profileSourceList, translatedProfileBatch
                     ):
-                        data[idx]["profile"] = dazedwrap.wrapLines(
-                            translated, LISTWIDTH, _source_rows(raw_prof)
+                        data[idx]["profile"] = rpgmaker_rewrap.wrap_lines(
+                            translated, LISTWIDTH, rpgmaker_rewrap.help_rows(raw_prof)
                         )
                         _apply_entry_field_original(data[idx], "profile", raw_prof)
 
@@ -3359,8 +3357,8 @@ def searchNames(data, pbar, context, filename, saved=None):
                         descriptionSourceList,
                         translatedDescriptionBatch,
                     ):
-                        data[idx]["description"] = dazedwrap.wrapLines(
-                            translated, LISTWIDTH, _source_rows(raw_desc)
+                        data[idx]["description"] = rpgmaker_rewrap.wrap_lines(
+                            translated, LISTWIDTH, rpgmaker_rewrap.help_rows(raw_desc)
                         )
                         _apply_entry_field_original(data[idx], "description", raw_desc)
 
@@ -4206,10 +4204,15 @@ def _searchCodes(page, pbar, jobList, filename):
                             # Determine width based on reduceWidthFlag
                             currentWidth = FACEWIDTH if reduceWidthFlag else WIDTH
 
-                            if FIXTEXTWRAP is True and "_ABL" in nametag:
-                                translatedText = dazedwrap.wrapText(translatedText, width=100)
-                            elif FIXTEXTWRAP is True:
-                                translatedText = dazedwrap.wrapText(translatedText, width=currentWidth)
+                            # Laid out like the Japanese where the English
+                            # allows, as every later fit of this text is.
+                            if FIXTEXTWRAP is True:
+                                translatedText = rpgmaker_rewrap.wrap_message(
+                                    translatedText,
+                                    rpgmaker_rewrap.MARKED_WIDTH if "_ABL" in nametag else currentWidth,
+                                    source=rawSource,
+                                    rows=MESSAGEROWS if code == 401 else None,
+                                )
 
                             # Reset the flag after using it
                             reduceWidthFlag = False
@@ -4356,7 +4359,7 @@ def _searchCodes(page, pbar, jobList, filename):
                             translatedText = re.sub(r'(?<![\\])([\\]{1})(?=\w)', r'\\\\', translatedText)
 
                             # Textwrap
-                            translatedText = dazedwrap.wrapText(translatedText, width=LISTWIDTH)
+                            translatedText = rpgmaker_rewrap.wrap_text(translatedText, LISTWIDTH)
                             translatedText = translatedText.replace("\n", "\\n")
 
                             # Set
@@ -4549,7 +4552,12 @@ def _searchCodes(page, pbar, jobList, filename):
                                         translatedText = strip_speaker_prefix(translatedText)
 
                                         if FIXTEXTWRAP:
-                                            translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
+                                            translatedText = rpgmaker_rewrap.wrap_message(
+                                                translatedText,
+                                                WIDTH,
+                                                source=params_obj.get(chosen_key),
+                                                rows=MESSAGEROWS,
+                                            )
 
                                         params_obj[chosen_key] = translatedText
 
@@ -4607,7 +4615,12 @@ def _searchCodes(page, pbar, jobList, filename):
                     totalTokens[1] += response[1][1]
 
                     # Textwrap & Set
-                    translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
+                    translatedText = rpgmaker_rewrap.wrap_message(
+                        translatedText,
+                        WIDTH,
+                        source=codeList[i]["parameters"][3]["messageText"],
+                        rows=MESSAGEROWS,
+                    )
                     codeList[i]["parameters"][3]["messageText"] = translatedText
 
                     ### Choices
@@ -5196,7 +5209,7 @@ def _searchCodes(page, pbar, jobList, filename):
                             if translatedLines:
                                 # Join all lines and re-wrap to WIDTH
                                 combined = " ".join(translatedLines)
-                                wrapped = dazedwrap.wrapText(combined, width=WIDTH)
+                                wrapped = rpgmaker_rewrap.wrap_text(combined, WIDTH)
                                 wrappedLines = [l for l in wrapped.split("\n") if l.strip()]
 
                                 # Distribute wrapped lines across existing 355/655 slots
@@ -5647,7 +5660,9 @@ def _searchCodes(page, pbar, jobList, filename):
                         totalTokens[1] += response[1][1]
 
                         # Textwrap & Replace Whitespace
-                        translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
+                        translatedText = rpgmaker_rewrap.wrap_message(
+                            translatedText, WIDTH, source=match.group(1), rows=MESSAGEROWS
+                        )
                         translatedText = _join_words(
                             translatedText,
                             "LL_GalgeChoiceWindowMV setMessageText",
@@ -5806,7 +5821,9 @@ def _searchCodes(page, pbar, jobList, filename):
                         list325.pop(0)
 
                         # Textwrap
-                        translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
+                        translatedText = rpgmaker_rewrap.wrap_lines(
+                            translatedText, WIDTH, rpgmaker_rewrap.help_rows(jaString)
+                        )
 
                         # Set translated value back into parameters[1]
                         codeList[i]["parameters"][1] = "\\}\\}" + translatedText
@@ -5846,7 +5863,7 @@ def _searchCodes(page, pbar, jobList, filename):
                             translatedText = translatedText.replace(ch, "")
 
                         # Textwrap to reasonable width
-                        translatedText = dazedwrap.wrapText(translatedText, width=LISTWIDTH)
+                        translatedText = rpgmaker_rewrap.wrap_lines(translatedText, LISTWIDTH, 1)
 
                         # Set translated value back into parameters[1]
                         codeList[i]["parameters"][1] = translatedText
@@ -6229,7 +6246,7 @@ def searchSS(state, pbar):
                 break
             translated = translatedNotesBatch[note_insert_idx]
             if wordwrap:
-                translated = dazedwrap.wrapLines(translated, NOTEWIDTH)
+                translated = rpgmaker_rewrap.wrap_lines(translated, NOTEWIDTH)
                 translated = translated.replace('"', "")
             # Replace only the matched text in the note using a literal replacement
             # Avoid re.sub here because replacement strings with backslashes (e.g., \I)
@@ -6255,10 +6272,10 @@ def searchSS(state, pbar):
     if "description" in state and descriptionResponse != "":
         # Textwrap
         translatedText = descriptionResponse[0]
-        translatedText = dazedwrap.wrapLines(
+        translatedText = rpgmaker_rewrap.wrap_lines(
             translatedText,
             LISTWIDTH,
-            _source_rows(_entry_field_source(state, "description")),
+            rpgmaker_rewrap.help_rows(_entry_field_source(state, "description")),
         )
         state["description"] = translatedText.replace('"', "")
     if "message1" in state and message1Response != "":

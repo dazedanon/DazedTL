@@ -15,7 +15,6 @@ from unittest.mock import Mock, patch
 from dazedtl.compatibility.guided import (
     apply_selected,
     phased_workflows,
-    rewrap_review,
     run_ace,
     runtime_files,
 )
@@ -1248,38 +1247,6 @@ class ManualJobs:
             current["translated"] = "different output"
             with self.assertRaises(ValueError):
                 validate_publication(plan)
-
-    def test_rewrap_apply_requires_the_same_completed_scan_and_settings(self):
-        with TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            plan = {"options": {"width": 50}, "guard": {"data": "reviewed"}}
-            path = root / "scan/plan.json"
-            write_json(path, plan)
-            job = {
-                "id": "scan",
-                "project_id": "game",
-                "action": "rewrap_preview",
-                "status": "complete",
-                "created": "today",
-                "result": {"changes_found": 1},
-                "plan_hash": digest(path.read_bytes()),
-            }
-            backend = SimpleNamespace(
-                operations=SimpleNamespace(root=root, jobs={"scan": job}),
-                workflows=SimpleNamespace(previews={"token": plan}),
-            )
-            self.assertEqual(
-                rewrap_review(backend, "game", "token"), {"changes_found": 1}
-            )
-            for current in (
-                {**plan, "options": {"width": 60}},
-                {**plan, "guard": {"data": "changed"}},
-            ):
-                backend.workflows.previews["token"] = current
-                with self.assertRaises(ValueError):
-                    rewrap_review(backend, "game", "token")
-            with self.assertRaises(ValueError):
-                rewrap_review(backend, "other-game", "token")
 
     def test_line_metadata_reaches_both_provider_payloads_without_changing_the_legacy_batch_contract(
         self,

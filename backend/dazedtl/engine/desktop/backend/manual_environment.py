@@ -47,6 +47,10 @@ def prepare(root):
         socket.create_connection = socket.socket.connect = socket.socket.connect_ex = blocked
     if plan.get("workflow"):
         os.environ.update(plan["workflow"].get("environment", {}))
+        # Messages go on to a new page after the rows their window shows.
+        rows = plan["workflow"].get("widths", {}).get("messageRows")
+        if rows:
+            os.environ["messageRows"] = str(rows)
     import util.speakers as speakers
     if (root / "context/wolf_speakers.json").is_file():
         speakers.CONFIG_PATH = root / "context/wolf_speakers.json"

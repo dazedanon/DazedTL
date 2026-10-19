@@ -20,7 +20,7 @@ LABELS = {
     "gameupdate": "Install GameUpdate", "prepare": "Prepare game files", "git_status": "Inspect Git version tracking",
     "git_setup": "Set up Git version tracking", "ace_decrypt": "Decrypt Ace archive", "ace_extract": "Convert Ace data to JSON",
     "ace_pack": "Pack translated Ace data", "export_selected": "Export selected files to game", "export_all": "Export all translated files to game",
-    "rewrap_preview": "Scan text fitting", "rewrap_apply": "Apply text fitting", "qa_prepare": "Prepare or resume translation QA",
+    "qa_prepare": "Prepare or resume translation QA",
     "qa_status": "Refresh translation QA", "playtest_status": "Refresh playtest plugins",
     "inspector_install": "Install TL Inspector", "inspector_remove": "Remove TL Inspector", "forge_install": "Install Forge",
     "forge_remove": "Remove Forge", "playtest_install": "Install both playtest plugins", "playtest_apply": "Apply playtest settings",
@@ -34,7 +34,7 @@ LABELS = {
 }
 # The release playtest and the layout and label checks write only their
 # reports, never the game.
-READ_ONLY = {"git_status", "rewrap_preview", "qa_status", "playtest_status", "editors", "images_status", "release_playtest",
+READ_ONLY = {"git_status", "qa_status", "playtest_status", "editors", "images_status", "release_playtest",
              "layout_capture", "label_capture"}
 LABELS.update(wolf.LABELS)
 READ_ONLY.update(wolf.READ_ONLY)
@@ -256,18 +256,6 @@ def run_action(plan, log):
         if errors:
             raise ValueError("; ".join(errors))
         return {"files": count, "destination": str(data), "ace_packing_required": project["engine"] == "ACE"}
-    if action.startswith("rewrap_"):
-        from util.rpgmaker_rewrap import RewrapOptions, parse_event_codes, rewrap_directory
-        widths = options["widths"]
-        settings = RewrapOptions(widths["width"], widths["faceWidth"], widths["listWidth"], widths["noteWidth"],
-                                 categories=frozenset(options["categories"]), event_codes=parse_event_codes(options["codes"]),
-                                 max_protected_rows=options["max_rows"] if options["protect_rows"] else 0,
-                                 skip_protected_overflow=options["protect_rows"], only_over_limit=options["over_limit"])
-        report = rewrap_directory(data, settings, file_names=options["files"], apply=action == "rewrap_apply")
-        log(report.headline(apply=action == "rewrap_apply"))
-        if report.errors:
-            raise ValueError("; ".join(report.errors))
-        return json_value(report)
     if action.startswith("qa_"):
         from util.rpgmaker_qa import prepare_task, find_latest_task, status
         storage = folder.parent.parent / "qa"

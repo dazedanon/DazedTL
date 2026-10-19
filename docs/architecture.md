@@ -386,6 +386,7 @@ Needs review also covers partial, rejected or unsaved results and never establis
 Ready to apply requires verified full output or explicit evidence that no requests were needed for a file an earlier run translated.
 Applied means the game matches the saved output, or the latest Apply receipt holds it or an output a later run built from it, through [applied_versions](../backend/dazedtl/translation/guided.py).
 Hand fixes, Line widths and QA fixes in the game therefore leave it Applied, as does a later phase's Apply; another Apply or a restore replaces the receipt, and Reload from game retires the file's runs.
+An Apply that fitted an output to the Line widths records the bytes it wrote beside the output's hash, so the file reads as Applied and not edited, and the next Apply warns of no later edits.
 Recorded output that is missing or changed shows Blocked, and a file changed in the game since its working copy was made shows Outdated.
 Detailed states and request counts belong in Inspect and the approval dialog.
 The latest run's failure, or a Batch that could not be confirmed as sent, shows on its task with the reason instead of a finished notice; collection errors and rejection details remain in the inspector and run views.
@@ -445,10 +446,18 @@ Its review names the files edited in the game since their last Apply, whose edit
 Its one-use confirmation retains the reviewed file list for execution guards.
 A failed confirmation keeps its error visible and offers Refresh preview; it cannot resend the consumed token or automatically execute the replacement review.
 Apply captures the actual overwritten bytes for rollback at execution, backing up every file before its first write so its receipt is saved once.
-An Apply binds the saved outputs it publishes by hash instead of copying them for its review; other batches freeze copies of what they write.
+An Apply binds the saved outputs it publishes by hash instead of copying them for its review, unless it fitted one to the Line widths; other batches freeze copies of what they write.
 A finished batch keeps only its backups, and the next review discards reviews older than their 20 minutes with the copies they froze.
 An Apply review lists the files it overwrites without comparing their text, which took minutes on a large game; a restore's review shows the start of each file's [diff](../backend/dazedtl/compatibility/text.py), matched window by window after each change.
-Fitting, QA and restore keep their existing exact-before checks; no background synchronization is performed.
+QA and restore keep their existing exact-before checks; no background synchronization is performed.
+
+Translation, Apply, Text QA and new Line widths fit text with one [fitter](../backend/dazedtl/engine/util/rpgmaker_rewrap.py), so text written by one never needs fitting by the next, and Check has no line width task.
+It measures a line by what the game draws in its box: name-window and alignment codes take no room, while names, icons and variables take a generous fixed room, since their values vary.
+It wraps like the Japanese where the English allows, through [wrapShaped](../backend/dazedtl/engine/util/dazedwrap.py): blank first rows stay, lines break after the sentences the Japanese breaks after (and its clauses) and before list items, and otherwise lines are as few and as even as they can be; a message longer than its window starts each page after a sentence.
+Measured on six translated games against filling each line in turn, it matched the Japanese row count for 51-93% of messages (33-87%), broke after a sentence or clause at 42-77% of line breaks (9-14%), and left a short stray last line in 0-2% of multi-line messages (18-32%).
+Apply fits each translated value wider than its box in the output before freezing it; Japanese left untranslated and text with no box, such as a text picture, are never rewrapped.
+New Line widths, saved by hand or measured, queue a `fit_text` publication of the areas whose width changed, which [starts](../backend/dazedtl/translation/text_fit.py) once nothing else runs and reports beside Save line widths; it rewraps only lines that no longer fit, so hand layout that fits stays.
+Character counts only choose what to look at: text a fixed window cuts off even fitted goes to Text QA as a `text-fit` check, and QA's captures and the playtest confirm what the game shows.
 Reviewed Apply accepts saved partial output regardless of earlier Batch status, unresolved requests, provider work or collection.
 It validates and freezes the saved JSON without requiring translation completion; untranslated content stays as saved.
 Isolated translation workers do not veto Apply, while runtime operations, source/output checks and one-use publication guards still apply.
@@ -584,7 +593,7 @@ Import revalidates the exported source scope and copies targets only; rendering 
 Strive for [Nielsen's ten usability heuristics](https://www.nngroup.com/articles/ten-usability-heuristics/) when designing and reviewing this tool.
 Make current state and the next useful action visible; use translation tasks and familiar language; offer clear exits and recovery; keep shared controls consistent; prevent scope and spending mistakes; make prerequisites visible instead of requiring memory; support both guided and experienced use; prioritize relevant actions; give errors a practical recovery path; and put concise help beside the task that needs it.
 Use these principles to evaluate real workflows, rather than adding extra panels or confirmation steps to satisfy a checklist.
-Give each idea one name and keep it everywhere: Apply only means writing into the game (settings are saved or used); Backups are copies you can restore and Versions are the Git history used to merge game updates; Line widths are the per-line character limits that the line width check enforces, with the rows a message window shows.
+Give each idea one name and keep it everywhere: Apply only means writing into the game (settings are saved or used); Backups are copies you can restore and Versions are the Git history used to merge game updates; Line widths are the per-line character limits DazedTL wraps translated text to, with the rows a message window shows.
 Assistant-led is the UI name of the method built on Len's game-translation skills, and code and records keep the `len` identifier.
 Its starting prompt runs the whole method without the user: it asks only for spending approval, a missing API connection, denied access or a decision no source evidence settles, and a check it cannot make, such as a screenshot, stays pending instead of stopping the run.
 Progress counts the assistant's first helper call as the run starting, because an assistant can work through a whole phase before its first report.
@@ -720,7 +729,7 @@ Replacement backups, paid work, runtime replacement, and file resync retain thei
 
 Translation follows the working Qt GUI's task order through the tasks in [workflow.ts](../app/src/features/guided/workflow.ts), grouped into five stages: Set up, Context, Translate, Check and Release.
 A stage holds the tasks that share its purpose, so no stage exists only to host one optional workspace.
-Saved positions use the stage ids `setup`, `context`, `translate`, `check` and `release`; the backend's [retained_position](../backend/dazedtl/translation/guided.py) and the [navigation preferences](../app/src/app/navigation.ts) map the seven-stage ids and retired tasks to the task that holds their work, and Apply & Fitting's last view becomes its Check task.
+Saved positions use the stage ids `setup`, `context`, `translate`, `check` and `release`; the backend's [retained_position](../backend/dazedtl/translation/guided.py) and the [navigation preferences](../app/src/app/navigation.ts) map the seven-stage ids and retired tasks to the task that holds their work, and Apply & Fitting's last view and the retired Line width check open Text QA.
 Required and optional tasks are marked in workflow.ts; optional work never holds up the next step.
 The app sidebar stays global; every phase uses the same one-row stage strip, which compacts when narrow.
 The Translation screen has no header row; the top bar holds only the project switcher and app status.
@@ -843,18 +852,16 @@ Execution rechecks source, scope, destination, and ownership evidence.
 Application receipts distinguish later fitting or QA edits from new outputs that have not been applied.
 Release plans bind the profile's working-source index and original blobs; refreshing or expanding a source pass invalidates pending package plans without rewriting old runs.
 
-Check's Line width check and Text QA tasks share retained file choices and check settings.
 Each task applies its own work and shows what it has not applied; no cross-task list reminds the user of skipped work, because the stages and tasks already show it.
 Text tasks and Release apply saved output through the Guided action review.
-Line width check's Apply and Images' Apply to game open one [PendingReview](../app/src/features/guided/workspace/PendingReview.tsx) of their part, whose content reuses that part's own review; Assistant-led's Image Manager keeps its own review, and Plugin files and Text QA apply their checked work in one click.
-Its [hook](../app/src/features/guided/workspace/usePendingChanges.ts) prepares the part's preview from observed state through [pending.ts](../app/src/features/guided/pending.ts) and applies it under one action key, so a repeated click cannot start it twice.
-Image parts execute their own one-use tokens; the Guided review keeps one preview at a time, so rewraps and QA fixes are previewed again just before they execute and refuse to run if the bytes they would write, compared by hash, differ from what was reviewed.
+Images' Apply to game opens a [PendingReview](../app/src/features/guided/workspace/PendingReview.tsx) whose content reuses Images' own review; Assistant-led's Image Manager keeps its own review, and Plugin files and Text QA apply their checked work in one click.
+Its [hook](../app/src/features/guided/workspace/usePendingChanges.ts) prepares the preview from observed state through [pending.ts](../app/src/features/guided/pending.ts) and applies it under one action key with the preview's own one-use token, so a repeated click cannot start it twice.
 Images restore in the Image Manager and plugin files in their workspace; applied text batches have no restore of their own, since Git version tracking and Backups undo them.
 A text batch whose publication was interrupted or could not roll back raises a notice on every Guided task with its Review restore, because part of it may be in the game.
 TL Inspector and Forge install from a Playtest tools sheet in Check's task header, where applied text is playtested, and an Ace game's native packing sits in the same header; both reuse the Guided action reviews and operation tracking, and the Project page stays about status, history, updates and backups.
 The player walkthrough task sits with Release, since it produces player documentation.
 The [text publication journal](../backend/dazedtl/translation/publication.py) freezes reviewed destinations and both byte versions before any runtime replacement.
-The compatibility worker reuses the engine fitter on disposable copies, then preflights and publishes the whole batch with verified backups and rollback attempts.
+The compatibility worker fits the text on the frozen candidates, then preflights and publishes the whole batch with verified backups and rollback attempts.
 Interrupted publication retains exact authorized before/after hashes for another reviewed restore; conflicting newer runtime edits are retained.
 Completed restores retire the recovered batch's notice in history; undoing a restore revives the earlier batch state without changing preserved receipts.
 Reapplying saved translations discloses replacement of later runtime edits, independently of output availability.
@@ -878,8 +885,9 @@ For each custom file and plugin, [reach](../backend/dazedtl/engine/util/rpgmaker
 Copied tasks do not imply completed work, and a saved discovery stage does not certify current QA passed.
 Applied corrections bind to the specific task and pass the engine's correction and regression checks on disposable copies before they are published.
 The [engine](../backend/dazedtl/engine/util/rpgmaker_qa.py) checks each correction when a reviewer submits it, and every finding again when findings are made, against what the post-apply regression rejects: a mechanical flag the correction adds, a line count its pointers can't hold, or more rows than its box shows.
-A task keeps the Line widths and line width check settings it was prepared with, and each place a correction reaches gets a box from them: the width the check wraps that text area to, the message rows for a message, and the check's row limit for other fixed-size text the check reads.
-A correction with a line wider than both its box and the current text is rewrapped as the check would, and findings store that rewrapped text, so the page shows what the game gets; text over several commands can't be rewrapped, so such a line is refused instead, and a line that was already too wide is the line width check's to fix.
+A task keeps the Line widths it was prepared with, and each place a correction reaches gets the box the [fitter](../backend/dazedtl/engine/util/rpgmaker_rewrap.py) gives that text: its width, the message rows for a message, and the rows of a fixed window such as a help window.
+A correction with a line wider than its box is fitted as translation fits text, and findings store the fitted text, so the page shows what the game gets; text over several commands can't be rewrapped, so a line wider than both its box and the current text is refused instead.
+Text a fixed window cuts off even fitted gets a `text-fit` check, so a reviewer shortens it.
 So no finding can roll an apply back; an English number word or ordinal may stand for the source's number, as in "First Stratum" for 第1層, plus signs and thousands separators don't count, and a stat or gold abbreviation such as TP24 or 100G doesn't hide its number.
 A mechanical flag forces deep review only when it can be a defect: a number the English adds or changes, a number above ten it drops outside ordinals, kanji numerals and idioms such as 1番, or a control code it lost, RPG Maker's %1 placeholders included.
 Preparing QA from the app or the engine's command also captures the game's interface screens: the [capture](../backend/dazedtl/engine/util/rpgmaker_screens/capture.cjs) runs the game in a hidden game window, and its [harness](../backend/dazedtl/engine/util/rpgmaker_screens/harness.js) opens the title, menu, item, skill, equipment, status, shop, options and battle screens with the starting party holding everything, measuring every label with the game's fonts.

@@ -395,10 +395,6 @@ export type GuidedPreferences = {
 
 export type TextToolsForm = {
   view: "apply" | "fitting" | "qa" | "tools";
-  categories: string[];
-  codes: string;
-  max_rows: number;
-  protect_rows: boolean;
   focus: string;
   findings_task: string;
   findings: string[];
@@ -422,7 +418,6 @@ export type GuidedForm = {
   version: string;
   original: string;
   untranslated: boolean | null;
-  only_overflow: boolean;
   thorough_investigation: boolean;
   text: TextToolsForm;
   release: ReleaseForm;
@@ -958,6 +953,11 @@ export type PlaytestCapture = {
   url: string;
 };
 
+export type TextFitState = {
+  pending: boolean;
+  job: string | null;
+};
+
 export type Readiness = {
   publications: PublicationStatus[];
   qa: QaState;
@@ -967,7 +967,7 @@ export type Readiness = {
   unapplied: string[];
   runtime_edited: string[];
   review_current: boolean;
-  layout_scan: string | null;
+  text_fit: TextFitState;
   delivery_available: boolean;
 };
 
@@ -1185,21 +1185,6 @@ export type PackageSummary = {
   generated?: string[];
 };
 
-export type RewrapChange = {
-  file_name: string;
-  locator: string;
-  before: string;
-  after: string;
-  rows?: number;
-  overflow?: boolean;
-};
-
-export type RewrapSummary = {
-  changes_found: number;
-  overflow_skipped: number;
-  previews: RewrapChange[];
-};
-
 export type Preview = {
   publication?: PublicationChange[];
   run?: PreviewRun | null;
@@ -1216,7 +1201,6 @@ export type Preview = {
   paths: string[];
   confirmation: boolean;
   options: Record<string, unknown>;
-  rewrap?: RewrapSummary;
 };
 
 export type EventTextRequest = {

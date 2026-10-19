@@ -1,18 +1,14 @@
-import type { ImagePreview, Preview } from "../../../api/contracts";
 import { ActionBar } from "../../../ui/ActionBar";
 import { Button } from "../../../ui/Button";
 import { DialogBody, DialogHeader } from "../../../ui/Dialog";
 import { Message } from "../../../ui/Feedback";
 import { Modal } from "../../../ui/Modal";
 import { ImageApplyContent } from "../../images/ImageApply";
-import { PublicationContent } from "../PublicationContent";
 import type { PartReview, PendingChanges } from "./usePendingChanges";
 
 /** A part's review content: the same as its own task's review. */
 function PartContent({ part }: { part: PartReview }) {
-  if (part.id === "images")
-    return <ImageApplyContent preview={part.preview as ImagePreview} />;
-  return <PublicationContent preview={part.preview as Preview} />;
+  return <ImageApplyContent preview={part.preview} />;
 }
 
 /** The review and Apply of what a task has ready to go into the game. */

@@ -339,8 +339,12 @@ class GuidedContext:
             and not self.guided.translation.jobs.running()
         ):
             try:
+                before = native["widths"]
                 native = self.guided.backend.workflows.apply_layout_settings(
                     native["id"], native["revision"], update
+                )
+                self.guided.text_fit.request(
+                    project_id, native, before, native["widths"]
                 )
                 self.guided.layout_failures.pop(project_id, None)
                 setup = inspect()

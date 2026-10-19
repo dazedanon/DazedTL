@@ -546,21 +546,67 @@ try:
                 assert infos["1"]["name"] == "Village", infos
         finally:
             os.chdir(directory)
-        # Rewrap and the line width check keep those lines too.
-        from util.rpgmaker_rewrap import RewrapOptions, rewrap_directory
+        # Fitting the text again, as Apply and new Line widths do, keeps them.
+        from util.rpgmaker_rewrap import Layout, fit_document
 
-        rewrapped = temporary / "rewrapped"
-        rewrapped.mkdir()
-        (rewrapped / "Weapons.json").write_text(json.dumps(weapons), encoding="utf-8")
-        report = rewrap_directory(
-            rewrapped,
-            RewrapOptions(55, 55, 40, 30, max_protected_rows=0),
-            file_names=["Weapons.json"],
-            apply=True,
+        fitted = json.loads(json.dumps(weapons))
+        widths = {"width": 55, "faceWidth": 55, "listWidth": 40, "noteWidth": 30}
+        report = fit_document(fitted, "Weapons.json", Layout.from_widths(widths))
+        assert not report.changes and fitted == weapons, report.changes
+        # A list keeps one item a line, as in Japanese, and a message too
+        # long for its window starts each page after a sentence.
+        from util.dazedwrap import wrapShaped
+
+        items = wrapShaped(
+            r"・Possess \C[24]Red Wine\C[0] ・Scene completed ・Rest in your room",
+            30,
+            "・\\C[24]赤い酒\\C[0]を所持\n・シーンが発生済み\n・自室で休息",
         )
-        assert not report.errors, report.errors
-        written = json.loads((rewrapped / "Weapons.json").read_text(encoding="utf-8"))
-        assert written == weapons, written
+        assert items == (
+            r"・Possess \C[24]Red Wine\C[0]" "\n・Scene completed\n・Rest in your room"
+        ), items
+        paged = wrapShaped(
+            "The gate opens at dawn. Bring the lantern and the key. "
+            "We leave before the guards wake up.",
+            24,
+            rows=2,
+        )
+        assert paged == (
+            "The gate opens at dawn.\n\nBring the lantern\nand the key.\n"
+            "We leave before the\nguards wake up."
+        ), paged
+        # Only translated text is fitted: Japanese and a text picture, which
+        # has no window, stay exact. New widths fit only their own area.
+        line = "The old road bends toward a quiet village."
+        page = {
+            "list": [
+                {
+                    "code": 401,
+                    "parameters": [line],
+                    "_original": "古い道は静かな村へと曲がっていく。",
+                },
+                {
+                    "code": 401,
+                    "parameters": [
+                        "古い道は静かな村へと曲がっていく、そして長い夜が来る。"
+                    ],
+                },
+                {
+                    "code": 357,
+                    "parameters": ["DTextPicture", "dText", "", {"text": line * 2}],
+                },
+            ]
+        }
+        narrow = Layout.from_widths({**widths, "width": 30, "faceWidth": 30})
+        untouched = json.loads(json.dumps(page))
+        assert not fit_document(
+            page, "Map001.json", narrow, areas={"noteWidth"}
+        ).changes
+        report = fit_document(page, "Map001.json", narrow)
+        assert [row["after"] for row in report.changes] == [
+            "The old road bends\ntoward a quiet village."
+        ], report.changes
+        assert page["list"][1:] == untouched["list"][1:], page
 
         # MV and Ace print the battler's name right before a particle-first
         # battle message; stripping the space after Taro printed "Arinafell!".
@@ -723,6 +769,62 @@ try:
             with patch.object(parser, "CODE101", False):
                 parse([name("Hana"), command(401, ["こんにちは"])])
                 assert calls == [(["こんにちは"], "")] and not names, calls
+            # Messages come out laid out like the Japanese where the English
+            # allows, and already fitted: a name window and centring take no
+            # room on the line, so fitting them again changes nothing.
+            english = {
+                "村の状態": "The village's status will change as people move in "
+                "and buildings are constructed.",
+                "今日はもう遅い": "It's already late today... Let's play tomorrow.",
+                "それでも": "And yet... To me, he looked like nothing but a monster.",
+            }
+
+            def wrapped_messages(text, *_args, **_kwargs):
+                found = [
+                    next(value for key, value in english.items() if key in line)
+                    for line in text
+                ]
+                return [found, [0, 0]]
+
+            with patch.multiple(
+                parser,
+                FIXTEXTWRAP=True,
+                WIDTH=55,
+                FACEWIDTH=45,
+                MESSAGEROWS=4,
+                translateAI=extensions.point(wrapped_messages),
+            ):
+                result = parse(
+                    [
+                        name(""),
+                        command(401, [r"\n<システム>村の状態は人が移住したり"]),
+                        command(401, ["建物が建設されたりすると変化します。"]),
+                        name(""),
+                        command(401, [""]),
+                        command(401, ["今日はもう遅い…。"]),
+                        command(401, ["遊ぶのは明日にしよう。"]),
+                        name(""),
+                        command(401, [r"\ac それでも……私には、"]),
+                        command(401, [r"\ac 彼は怪物にしか見えなかった。"]),
+                    ]
+                )
+            texts = [row["parameters"][0] for row in result if row["code"] == 401]
+            assert texts == [
+                (
+                    "\\n<Hana>The village's status will change as people\n"
+                    "move in and buildings are constructed."
+                ),
+                # The blank first row and one sentence a line, as in Japanese.
+                "\nIt's already late today...\nLet's play tomorrow.",
+                "\\ac And yet... To me,\n\\ac he looked like nothing but a monster.",
+            ], texts
+            from util.rpgmaker_rewrap import Layout, fit_document
+
+            widths = {"width": 55, "faceWidth": 45, "listWidth": 74, "noteWidth": 45}
+            report = fit_document(
+                {"list": result}, "Map001.json", Layout.from_widths(widths)
+            )
+            assert not report.changes, report.changes
             # Plugins split 356 commands on spaces, so each handler joins a
             # translation's words its own way. A kept placeholder stays, and
             # must not shift the next translation onto the wrong command.

@@ -26,6 +26,10 @@ original = workflow_actions.run_action
 
 
 def run_action(plan, log):
+    if plan["action"] == "fit_text":
+        from dazedtl.compatibility.text import run_fit
+
+        return run_fit(plan, log)
     if plan.get("publication"):
         from dazedtl.compatibility.text import run_publication
 

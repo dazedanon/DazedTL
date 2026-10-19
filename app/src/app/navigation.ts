@@ -32,38 +32,34 @@ const legacyTasks: Record<string, string> = {
   baseline: "setup",
   "image-text": "images",
   "image-manager": "images",
-  playtest: "fitting",
-  tools: "fitting",
-  // Check's Pending changes task was removed; its stage opens on fitting.
-  apply: "fitting",
+  playtest: "qa",
+  tools: "qa",
+  // Check's Pending changes and Line width check tasks were removed; their
+  // stage opens on Text QA.
+  apply: "qa",
+  fitting: "qa",
 };
 /**
  * Preferences saved by earlier stage layouts, in the current stages. Apply &
- * Fitting kept its view separately; its Check task replaces it.
+ * Fitting kept a view of its own, which Text QA replaces.
  */
 function migrate(value: unknown): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
-  const { textView, ...saved } = value as Record<string, unknown>;
-  const view = ["fitting", "qa"].includes(String(textView))
-    ? String(textView)
-    : "fitting";
-  const task = (step: unknown, name: unknown) =>
-    step === "apply" && name === "apply"
-      ? view
-      : typeof name === "string"
-        ? legacyTasks[name] || name
-        : name;
+  const saved = { ...(value as Record<string, unknown>) };
+  delete saved.textView;
+  const task = (name: unknown) =>
+    typeof name === "string" ? legacyTasks[name] || name : name;
   const result: Record<string, unknown> = { ...saved };
   if (typeof saved.step === "string" && saved.step in legacySteps)
     result.step = legacySteps[saved.step];
-  if ("task" in saved) result.task = task(saved.step, saved.task);
+  if ("task" in saved) result.task = task(saved.task);
   if (saved.positions && typeof saved.positions === "object") {
     const positions: Record<string, unknown> = {};
     for (const [step, name] of Object.entries(saved.positions)) {
       const current = legacySteps[step] || step;
       // A stage's own saved task wins over one moved in from a retired stage.
       if (step === current || !(current in positions))
-        positions[current] = task(step, name);
+        positions[current] = task(name);
     }
     result.positions = positions;
   }

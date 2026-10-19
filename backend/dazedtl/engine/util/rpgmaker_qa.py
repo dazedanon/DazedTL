@@ -52,25 +52,12 @@ from util.rpgmaker_qa_preflight import (
     read_sources,
     with_kept,
 )
-from util.game_settings import (
-    MESSAGE_ROWS_KEY,
-    load_game_wrap_widths,
-    normalize_wrap_widths,
-)
+from util.game_settings import load_game_wrap_widths, normalize_wrap_widths
 from util.reference_games import reference_context
 from util import rpgmaker_screens
 from util.rpgmaker_screens import screen_of, shown_text
-from util.rpgmaker_rewrap import (
-    DIALOGUE,
-    FACE_DIALOGUE,
-    LIST_FIELDS_BY_FILE,
-    LIST_HELP,
-    NOTES,
-    RewrapOptions,
-    rendered_rows,
-    rewrap_value,
-    widest_line,
-)
+from util import rpgmaker_rewrap as rewrap
+from util.rpgmaker_rewrap import rendered_rows, widest_line
 from util.skills import rpgmaker_qa_skill_file, rpgmaker_qa_skill_parts
 
 
@@ -173,7 +160,7 @@ _ENGINE_SOURCES = (
     "rpgmaker_qa.py", "rpgmaker_qa_manifest.py", "rpgmaker_qa_lint.py",
     "rpgmaker_qa_preflight.py", "rpgmaker_qa_reach.py", "rpgmaker_qa_checks.py",
     "rpgmaker_qa_glossary.py",
-    "rpgmaker_header_check.py", "rpgmaker_rewrap.py",
+    "rpgmaker_header_check.py", "rpgmaker_rewrap.py", "dazedwrap.py",
     "rpgmaker_screens/__init__.py", "rpgmaker_screens/capture.cjs",
     "rpgmaker_screens/harness.js", "rpgmaker_window/__init__.py",
     "rpgmaker_window/launcher.cjs", "rpgmaker_window/bridge.cjs",
@@ -490,110 +477,105 @@ def _validate_editorial_basis(review: dict[str, Any], identity: str) -> None:
         raise QAResultError(f"Editorial basis is only a preference for {identity}")
 
 
-# The text area each event command's text shows in, as the line width check
-# reads it; a message under a face graphic has the portrait width.
-_COMMAND_AREAS = {
-    401: DIALOGUE, 405: DIALOGUE, 324: LIST_HELP, 325: DIALOGUE, 357: DIALOGUE,
-}
-_AREA_WIDTHS = {
-    DIALOGUE: "width", FACE_DIALOGUE: "faceWidth", LIST_HELP: "listWidth",
-    NOTES: "noteWidth",
-}
-# The plugin command fields the line width check rewraps.
-_PLUGIN_TEXT_KEYS = frozenset({"comment", "text", "messageText"})
-
-
 def task_layout(
     game_root: str | Path, fit: dict[str, Any] | None = None
 ) -> dict[str, Any]:
-    """The Line widths and line width check settings a task fits corrections
-    to: the text areas and event codes the check reads, and its row limit for
-    fixed-size text, 0 for none. The app passes its own; without them a task
-    reads the game's saved widths and the check's defaults."""
+    """The Line widths a task fits corrections to. The app passes its own;
+    without them a task reads the game's saved widths."""
     fit = fit or {}
-    defaults = RewrapOptions(1, 1, 1, 1)
     return {
         "widths": normalize_wrap_widths(
             fit.get("widths") or load_game_wrap_widths(game_root)
         ),
-        "categories": sorted(fit.get("categories", defaults.categories)),
-        "codes": sorted(fit.get("codes", defaults.event_codes)),
-        "row_limit": int(fit.get("row_limit", defaults.max_protected_rows)),
     }
 
 
-def _box(record: dict[str, Any], layout: dict[str, Any]) -> dict[str, Any] | None:
-    """The box a record's text shows in, by the task's layout: its width where
-    the line width check reads it, whether DazedTL rewraps a correction to it,
-    and the rows it shows. None when nothing limits the text."""
+def _window(record: dict[str, Any], layout: dict[str, Any]) -> rewrap.Box | None:
+    """The window a record's text shows in, as DazedTL fits text to it, or
+    None when nothing known limits the text."""
+    widths = rewrap.Layout.from_widths(layout["widths"])
     code = record.get("event_code")
     field = (record.get("database_entity") or {}).get("field")
-    if code in _COMMAND_AREAS:
-        area = _COMMAND_AREAS[code]
-        if code == 401 and str(
-            (record.get("speaker") or {}).get("face_name") or ""
-        ).strip():
-            area = FACE_DIALOGUE
-        # A DTextPicture caption keeps per-line centering QA does not rebuild.
-        if code == 357 and (
-            (record.get("risky_context") or {}).get("plugin_header") == "DTextPicture"
-            or record["live_pointers"][0].rsplit("/", 1)[-1] not in _PLUGIN_TEXT_KEYS
-        ):
-            return None
-    elif code is None and field in LIST_FIELDS_BY_FILE.get(record["file"], ()):
-        area = LIST_HELP
-    elif code is None and field == "note":
-        area = NOTES
-    else:
+    source = str(record.get("source") or "")
+    if code == 401:
+        face = str((record.get("speaker") or {}).get("face_name") or "").strip()
+        return rewrap.message_box(widths, face=bool(face))
+    if code == 405:
+        return rewrap.scrolling_box(widths)
+    if code == 324:
+        return rewrap.nickname_box(widths)
+    if code == 325:
+        return rewrap.help_box(widths, source, dialogue=True)
+    if code == 357:
+        plugin = (record.get("risky_context") or {}).get("plugin_header")
+        key = record["live_pointers"][0].rsplit("/", 1)[-1]
+        if key in rewrap.MESSAGE_PLUGIN_TEXT.get(plugin, ()):
+            return rewrap.message_box(widths)
         return None
-    checked = area in layout["categories"] and (code is None or code in layout["codes"])
-    # A message continues in a new window after its rows; other text shows in
-    # a window of fixed height, limited where the check limits it.
-    rows = (
-        layout["widths"][MESSAGE_ROWS_KEY]
-        if code == 401
-        else layout["row_limit"] if checked else 0
+    if code is None and field in rewrap.LIST_FIELDS_BY_FILE.get(record["file"], ()):
+        return rewrap.help_box(widths, source)
+    if code is None and field == "note":
+        return rewrap.note_box(widths)
+    return None
+
+
+def _box(record: dict[str, Any], layout: dict[str, Any]) -> dict[str, Any] | None:
+    """The box a record's text shows in, by the task's Line widths: its width,
+    the rows it shows, whether a message goes on to a new page after them, and
+    whether DazedTL rewraps a correction to it. None when nothing limits the
+    text."""
+    window = _window(record, layout)
+    if window is None:
+        return None
+    box: dict[str, Any] = {"width": window.width, "kind": window.kind}
+    if window.rows:
+        box["rows"] = window.rows
+    if window.paged:
+        box["pages"] = True
+    # Text spread over several commands keeps its line structure.
+    box["wraps"] = (
+        len(record["live_pointers"]) == 1 and record["live_transform"] == "identity"
     )
-    box: dict[str, Any] = {"rows": rows} if rows else {}
-    if checked:
-        box["width"] = layout["widths"][_AREA_WIDTHS[area]]
-        # Text spread over several commands keeps its line structure.
-        box["wraps"] = (
-            len(record["live_pointers"]) == 1 and record["live_transform"] == "identity"
-        )
-        if area == NOTES:
-            box["note"] = True
-        elif code is None:
-            # Database help text keeps its lines within the source's rows.
-            box["source_rows"] = str(record.get("source") or "").count("\n") + 1
-    return box or None
+    return box
+
+
+def _fit_window(box: dict[str, Any]) -> rewrap.Box:
+    """The fitter's window for a box. A correction is never paged: one taller
+    than its message window is refused instead."""
+    rows = None if box.get("pages") else box.get("rows")
+    return rewrap.Box(box["width"], rows, False, box.get("kind", "message"))
 
 
 def _widens(correction: str, live: str, width: int) -> bool:
     """Whether a correction has a line wider than both its box and the current
-    text; a line that was already wider is the line width check's to fix."""
+    text."""
     return widest_line(correction) > max(width, widest_line(live))
 
 
-def _fit(correction: str, live: str, box: dict[str, Any] | None) -> str:
-    """A correction as DazedTL writes it: rewrapped to its box's width, as the
-    line width check would, when it widens a line past the box."""
-    if not box or not box.get("wraps") or not _widens(correction, live, box["width"]):
+def _fit(
+    correction: str,
+    live: str,
+    box: dict[str, Any] | None,
+    source: str | None = None,
+) -> str:
+    """A correction as DazedTL writes it: wrapped again, as translation wraps
+    it, when a line does not fit its box."""
+    if not box or not box.get("wraps"):
         return correction
-    return rewrap_value(
-        correction,
-        box["width"],
-        note=bool(box.get("note")),
-        rows=box.get("source_rows"),
-    )
+    return rewrap.fit_value(correction, _fit_window(box), source=source)
 
 
-def _fitted(correction: str, live: str, boxes: list[dict[str, Any] | None]) -> str:
-    """One correction for every target it reaches, rewrapped to the narrowest
+def _fitted(
+    correction: str,
+    live: str,
+    boxes: list[dict[str, Any] | None],
+    source: str | None = None,
+) -> str:
+    """One correction for every target it reaches, fitted to the narrowest
     box when each target takes a rewrapped value."""
     if not boxes or not all(box and box.get("wraps") for box in boxes):
         return correction
-    return _fit(correction, live, min(boxes, key=lambda box: box["width"]))
+    return _fit(correction, live, min(boxes, key=lambda box: box["width"]), source)
 
 
 def _fit_corrections(
@@ -615,16 +597,16 @@ def _fit_corrections(
                 change["correction"],
                 change["current"],
                 [_box(records[identity], layout) for identity in identities],
+                records[identities[0]].get("source"),
             )
     for question in questions:
         if question.get("correction"):
+            identities = clusters[question["id"]]["identities"]
             question["correction"] = _fitted(
                 question["correction"],
                 question["current"],
-                [
-                    _box(records[identity], layout)
-                    for identity in clusters[question["id"]]["identities"]
-                ],
+                [_box(records[identity], layout) for identity in identities],
+                records[identities[0]].get("source"),
             )
 
 
@@ -657,13 +639,13 @@ def correction_problems(
 
     This simulates the apply step for one target: the line structure its
     pointers need, the rows its box shows, and the mechanical flags the
-    regression treats as blocking. DazedTL writes the correction rewrapped to
+    regression treats as blocking. DazedTL writes the correction fitted to
     the box, which may not need more rows than the box shows or the current
     text uses; a correction it cannot rewrap may not have a line wider than
     both the box and the current text.
     """
     problems = []
-    written = _fit(correction, live, box)
+    written = _fit(correction, live, box, source)
     if written == live:
         problems.append("the correction matches the current text")
     lines = correction.split("\n")
@@ -1851,6 +1833,39 @@ def _place_text(place: dict[str, Any]) -> str:
         else f"squeezed to {round(place['squeezed'] * 100)}% of the width it needs"
     )
     return f"{place['title']}: {how}, {place['capture']}"
+
+
+def _fit_checks(
+    manifest: dict[str, Any], layout: dict[str, Any]
+) -> dict[str, list[dict[str, str]]]:
+    """Text in a window of fixed height, such as a help window, that needs
+    more rows than the window shows even wrapped to the Line widths, by
+    cluster; DazedTL cannot fit it, so a reviewer shortens it."""
+    cluster_of = {
+        identity: cluster["representative"]
+        for cluster in manifest["clusters"]
+        for identity in cluster["identities"]
+    }
+    found: dict[str, list[dict[str, str]]] = defaultdict(list)
+    for record in manifest["records"]:
+        window = _window(record, layout)
+        live = str(record.get("live") or "")
+        if (
+            window is None or window.paged or not window.rows or window.kind == "note"
+            or not live.strip() or rewrap.untranslated(live)
+        ):
+            continue
+        box = _box(record, layout)
+        written = _fit(live, live, box, str(record.get("source") or ""))
+        reason = rewrap.misfit(written, window)
+        if reason:
+            entry = {
+                "check": "text-fit",
+                "note": f"Wrapped to the game's Line widths, this text {reason}.",
+            }
+            if entry not in found[cluster_of[record["identity"]]]:
+                found[cluster_of[record["identity"]]].append(entry)
+    return dict(found)
 
 
 def _interface_checks(
@@ -3047,10 +3062,11 @@ class _Reviewed:
 
     def cleared(self, source: Any, translation: Any, reasons: Iterable[str]) -> bool:
         """Whether deep review already settled every one of these reasons for
-        the line, so they send it to deep review no more. Squeezed text is
-        always looked at again, since a capture can change what fits."""
+        the line, so they send it to deep review no more. Squeezed text and
+        text too long for its window are always looked at again, since a
+        capture or new Line widths can change what fits."""
         reasons = set(reasons)
-        if "interface-fit" in reasons:
+        if reasons & {"interface-fit", "text-fit"}:
             return False
         key = _pair_key(source, translation)
         settled: set[str] = set()
@@ -3133,8 +3149,8 @@ def prepare_task(
     baseline stays in effect for the game's later tasks. *earlier* False
     reviews everything.
 
-    *fit* holds the Line widths and line width check settings the task fits
-    corrections to; a task already prepared keeps the ones it was made with.
+    *fit* holds the Line widths the task fits corrections to; a task already
+    prepared keeps the ones it was made with.
     With *interface*, the game's interface screens are captured, and text the
     game squeezes or cuts off on them goes to deep review with its captures;
     *progress* hears which screen the capture is on. A task prepared again
@@ -3239,6 +3255,11 @@ def prepare_task(
                 reasons = [entry["check"] for entry in failed]
                 if not settled(cluster_id, reasons):
                     _merge_candidate(forced_candidates, cluster_id, reasons)
+            # Text too long for its window even wrapped goes to a reviewer to
+            # shorten.
+            for cluster_id in _fit_checks(manifest, layout):
+                if not settled(cluster_id, ["text-fit"]):
+                    _merge_candidate(forced_candidates, cluster_id, ["text-fit"])
             if interface:
                 (staging / INTERFACE_FOLDER).mkdir()
                 capture, places = _capture_round(data, staging, 1, manifest, progress)
@@ -6394,7 +6415,10 @@ def _deep_items(
         by_source[cluster["source"]].append(cluster)
     data_root = Path(task["data_root"])
     failed_checks = _database_checks(manifest, data_root)
-    for cluster_id, found in _interface_checks(_capture_folder(root), manifest).items():
+    for cluster_id, found in [
+        *_fit_checks(manifest, task["layout"]).items(),
+        *_interface_checks(_capture_folder(root), manifest).items(),
+    ]:
         failed_checks[cluster_id] = [*failed_checks.get(cluster_id, []), *found]
     document_cache: dict[str, Any] = {}
     candidate_reasons = basis["candidates"]

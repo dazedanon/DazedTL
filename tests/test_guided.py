@@ -55,15 +55,16 @@ class RetainedPositionTests(unittest.TestCase):
             {
                 "setup": "setup",
                 "translate": "dialogue",
-                "check": "fitting",
+                "check": "qa",
                 "release": "package",
             },
         )
         value = retained_position({"step": "images", "task": "image-manager"})
         self.assertEqual((value["step"], value["task"]), ("translate", "images"))
-        # The removed Pending changes task opens its stage's first task.
-        value = retained_position({"step": "check", "task": "apply"})
-        self.assertEqual((value["step"], value["task"]), ("check", "fitting"))
+        # The removed Pending changes and Line width check tasks open Text QA.
+        for task in ("apply", "fitting"):
+            value = retained_position({"step": "check", "task": task})
+            self.assertEqual((value["step"], value["task"]), ("check", "qa"))
         self.assertNotIn("step", retained_position({"positions": {}}))
 
 
@@ -2461,13 +2462,31 @@ class GuidedTests(unittest.TestCase):
             "version": "1.00",
             "original": "/original",
             "untranslated": False,
-            "only_overflow": False,
         }
         path = self.guided.path(self.identity, "form")
-        write_json(path, previous)
+        # A form from before fitting became automatic still holds the line
+        # width check's settings, which load without them.
+        write_json(
+            path,
+            {
+                **previous,
+                "only_overflow": False,
+                "text": {
+                    "view": "fitting",
+                    "categories": ["dialogue"],
+                    "codes": "401",
+                    "max_rows": 4,
+                    "protect_rows": True,
+                    "focus": "release",
+                    "findings": [],
+                },
+            },
+        )
         raw = path.read_bytes()
         value = self.guided.saved_form(self.identity)
         self.assertEqual({key: value[key] for key in previous}, previous)
+        self.assertNotIn("only_overflow", value)
+        self.assertNotIn("categories", value["text"])
         self.assertEqual(value["release"]["kind"], "game")
         self.assertEqual(path.read_bytes(), raw)
         value["release"]["tools"]["forgeHotkey"] = "F8"
@@ -3953,7 +3972,111 @@ class GuidedTests(unittest.TestCase):
             "new-native-original",
         )
 
-    def test_fitting_does_not_request_reapplication_and_changed_review_or_missing_output_is_pending(
+    def test_apply_and_new_line_widths_fit_translated_text(self):
+        import sys
+        from types import ModuleType
+
+        from dazedtl.compatibility.text import (
+            prepare_publication,
+            run_fit,
+            run_publication,
+        )
+
+        # An output translated before narrower Line widths holds a description
+        # too wide for its help window; Apply writes it fitted, and Japanese
+        # left untranslated stays as it is.
+        output = [
+            None,
+            {
+                "id": 1,
+                "name": "Potion",
+                "description": "Restores a little health to every ally.",
+                "_original": {"description": "体力を少し回復する"},
+            },
+            {
+                "id": 2,
+                "name": "薬草",
+                "description": "体力をとても少しだけ回復する草です",
+            },
+        ]
+        write_json(self.folder / "translated/Items.json", output)
+        self.native["widths"] = {**self.native["widths"], "listWidth": 24}
+        actions = ModuleType("desktop.backend.workflow_actions")
+        actions.validate_plan = lambda _: None
+        actions.action_guard = lambda *_: {}
+
+        def plan(action, options):
+            return {
+                "project_id": "native",
+                "project": self.native,
+                "folder": str(self.folder),
+                "action": action,
+                "label": action,
+                "options": options,
+                "guard": {},
+            }
+
+        with patch.dict(sys.modules, {"desktop.backend.workflow_actions": actions}):
+            apply = plan("export_selected", {"files": ["Items.json"]})
+            prepare_publication(apply)
+            run_publication(apply, lambda _: None)
+            applied = read_json(self.source / "Items.json")
+            self.assertEqual(
+                applied[1]["description"], "Restores a little\nhealth to every ally."
+            )
+            self.assertEqual(applied[2], output[2])
+            # The bytes Apply fitted are no later edit for the next Apply.
+            again = plan("export_selected", {"files": ["Items.json"]})
+            rows = prepare_publication(again)["publication"]
+            self.assertFalse(rows[0]["later_edits"])
+            # New widths fit the applied text again in their own area only.
+            self.assertEqual(
+                run_fit(plan("fit_text", {"areas": ["width"]}), lambda _: None)[
+                    "lines"
+                ],
+                0,
+            )
+            self.native["widths"] = {**self.native["widths"], "listWidth": 20}
+            result = run_fit(plan("fit_text", {"areas": ["listWidth"]}), lambda _: None)
+            self.assertEqual(result["lines"], 1)
+            refitted = read_json(self.source / "Items.json")[1]["description"]
+            self.assertLessEqual(max(map(len, refitted.split("\n"))), 20)
+        # Saving new widths queues the fit, which starts once nothing runs
+        # and the game holds applied text.
+        self.guided.text_fit.request(
+            self.identity, self.native, {"listWidth": 20}, {"listWidth": 30}
+        )
+        self.assertTrue(self.guided.text_fit.pending(self.identity))
+        self.backend.running = lambda: True
+        self.assertIsNone(
+            self.guided.text_fit.advance(self.identity, self.native, ["Items.json"])
+        )
+        self.backend.running = lambda: False
+        self.guided.text_fit.advance(self.identity, self.native, ["Items.json"])
+        started = self.backend.operations.start.call_args.args[0]
+        self.assertEqual(
+            (started["action"], started["options"]),
+            ("fit_text", {"areas": ["listWidth"]}),
+        )
+        self.assertFalse(self.guided.text_fit.pending(self.identity))
+        # Saving the same widths again retries a fit that failed.
+        operations = self.root / "operations"
+        write_json(operations / "fit/plan.json", {"options": {"areas": ["listWidth"]}})
+        self.backend.operations.root = operations
+        self.backend.operations.jobs = {
+            "fit": {
+                "id": "fit",
+                "project_id": "native",
+                "action": "fit_text",
+                "status": "failed",
+                "created": 1,
+            }
+        }
+        same = {"listWidth": 30}
+        self.guided.text_fit.request(self.identity, self.native, same, same)
+        self.assertTrue(self.guided.text_fit.pending(self.identity))
+
+    def test_edits_after_apply_do_not_request_reapplication_and_changed_review_or_missing_output_is_pending(
         self,
     ):
         self.native["files"] = [{"name": "Items.json"}]
@@ -3969,7 +4092,24 @@ class GuidedTests(unittest.TestCase):
         write_json(lifecycle_path(self.translation.workspace, self.identity), state)
         first = self.guided.readiness(self.identity, self.native, {"jobs": []})
         self.assertTrue(first["review_current"])
+        # An Apply that fitted the output to the Line widths on the way wrote
+        # those bytes, which are no later edit.
         write_json(self.source / "Items.json", [{"name": "Fitted\nEnglish"}])
+        output = (self.folder / "translated/Items.json").read_bytes()
+        write_json(
+            self.folder / "applied-outputs.json",
+            {
+                "version": 1,
+                "files": {"Items.json": digest(output)},
+                "written": {
+                    "Items.json": digest((self.source / "Items.json").read_bytes())
+                },
+            },
+        )
+        fitted = self.guided.readiness(self.identity, self.native, {"jobs": []})
+        self.assertEqual(fitted["applied"], ["Items.json"])
+        self.assertEqual(fitted["runtime_edited"], [])
+        write_json(self.source / "Items.json", [{"name": "Edited\nEnglish"}])
         changed = self.guided.readiness(self.identity, self.native, {"jobs": []})
         self.assertEqual(changed["applied"], ["Items.json"])
         self.assertEqual(changed["runtime_edited"], ["Items.json"])

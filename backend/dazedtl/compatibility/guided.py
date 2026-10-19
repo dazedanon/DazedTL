@@ -427,34 +427,6 @@ def apply_selected(plan, log):
     }
 
 
-def rewrap_review(backend, native_id, token):
-    current = backend.workflows.previews[token]
-    jobs = sorted(
-        (
-            job
-            for job in backend.operations.jobs.values()
-            if job["project_id"] == native_id
-            and job["action"] == "rewrap_preview"
-            and job["status"] == "complete"
-        ),
-        key=lambda job: job["created"],
-        reverse=True,
-    )
-    if jobs:
-        job = jobs[0]
-        path = backend.operations.root / job["id"] / "plan.json"
-        previous = read_json(path)
-        if (
-            digest(path.read_bytes()) == job["plan_hash"]
-            and previous["options"] == current["options"]
-            and previous["guard"] == current["guard"]
-        ):
-            return job["result"]
-    raise ValueError(
-        "Scan text fitting with these files and settings before applying it. Scan again after any game changes."
-    )
-
-
 def runtime_files(source):
     """Propose the standard RPG Maker patch; the user reviews the complete list."""
     from util.len_patch_scope import CONFIG, patch_manifest, updater_config

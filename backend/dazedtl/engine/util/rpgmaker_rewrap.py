@@ -1,33 +1,24 @@
-"""Deterministically rewrap existing RPG Maker MV/MZ/Ace translations.
+"""Fit RPG Maker MV/MZ/Ace text to the game's windows.
 
-This module operates on an RPG Maker JSON data directory without calling a
-translation provider.  It only touches known display fields and never edits
-``_original``.
+Translation wraps the text it writes with these functions, and every later
+write of translated text (Apply, QA corrections, new Line widths) fits again
+the lines that no longer fit, so the game's text is measured and wrapped one
+way throughout. Line widths count characters; on-screen checks, such as QA's
+captures and the playtest, confirm what a count cannot see.
+
+Only known display fields are touched, and ``_original`` never is.
 """
 
 from __future__ import annotations
 
 import copy
-import json
-import os
 import re
-import tempfile
-from collections import Counter
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Callable, Iterable
+from typing import Any, Iterator
 
 from util import dazedwrap
+from util.game_settings import MESSAGE_ROWS_KEY, normalize_wrap_widths
 
-
-DIALOGUE = "dialogue"
-FACE_DIALOGUE = "face_dialogue"
-LIST_HELP = "list"
-NOTES = "notes"
-
-ALL_CATEGORIES = frozenset({DIALOGUE, FACE_DIALOGUE, LIST_HELP, NOTES})
-SUPPORTED_EVENT_CODES = frozenset({122, 324, 325, 357, 401, 405})
-STANDARD_MESSAGE_CODES = frozenset({401, 405})
 
 LIST_FIELDS_BY_FILE = {
     "Actors.json": ("profile",),
@@ -37,15 +28,15 @@ LIST_FIELDS_BY_FILE = {
     "States.json": ("description",),
     "Weapons.json": ("description",),
 }
+# Help and status windows show two rows unless the source spends more.
+HELP_ROWS = 2
 
-# These are the note bodies the translation module itself treats as wrapped
-# player-facing prose.  Match only the captured body so plugin tags stay exact.
+# The note bodies the translation module wraps as player-facing prose; True
+# marks the SG info box, whose bullet lines stay headers. Only the captured
+# body is touched, so plugin tags stay exact.
 _NOTE_BODY_PATTERNS: tuple[tuple[re.Pattern[str], bool], ...] = (
     (re.compile(r"<SG説明:\n?(.*?)>", re.DOTALL), True),
-    (
-        re.compile(r"<SG説明:.+?Client\s?:.+?\n\n(.*?)>", re.DOTALL),
-        True,
-    ),
+    (re.compile(r"<SG説明:.+?Client\s?:.+?\n\n(.*?)>", re.DOTALL), True),
     (re.compile(r"<sub_[123]:([^>]+)", re.DOTALL), False),
     (re.compile(r"<infowindow:(.*?)>", re.DOTALL), False),
     (re.compile(r"<dPlnText:(.*?)>", re.DOTALL), False),
@@ -66,602 +57,207 @@ WRAPPED_NOTE_TAGS = (
     "<ClassMessage>...</ClassMessage>",
     "<コメント:...>",
 )
+# Plugin commands (357) whose text shows in a message window, and the fields
+# translation wraps there. Text pictures and other free-floating text have
+# no box to fit; on-screen checks see them.
+MESSAGE_PLUGIN_TEXT = {
+    "AdvExtentionllk": ("comment", "text"),
+    "LL_GalgeChoiceWindow": ("messageText",),
+}
+
+
+# ---------------------------------------------------------------- measuring
+
+# A name window code (\n<Name>, \nc<Name>, \k<Name>): the name shows in its
+# own window, not on the message's line.
+_NAME_WINDOW = re.compile(r"\\+[nNkK][a-zA-Z]?<[^<>\n]*>")
+# Alignment codes (\ac, \ar, \al) draw nothing. A letter right after one makes
+# a different code, as RPG Maker reads every letter of an escape.
+_ALIGNMENT = re.compile(r"\\+a[clr](?![A-Za-z])", re.IGNORECASE)
+# Codes that draw text or an icon in their place, and the characters each
+# takes: an actor's name (\N[n], \P[n]), an icon (\I[n]), a variable (\V[n])
+# and the currency unit (\G). Names and numbers vary, so these are generous;
+# translation and every later fit count them the same way.
+_EXPANDING = {
+    re.compile(r"\\+[NnPp]\[\d+\]"): 8,
+    re.compile(r"\\+[Ii]\[\d+\]"): 2,
+    re.compile(r"\\+[Vv]\[\d+\]"): 3,
+    re.compile(r"\\+[Gg](?![A-Za-z])"): 2,
+}
+# A marker some games put before a message for a plugin, not drawn.
+_MARKER = re.compile(r"^_ABL")
+# The line width such a message wraps to.
+MARKED_WIDTH = 100
+
+
+def visible_width(text: str) -> int:
+    """The characters *text* takes on one line of a window: name windows,
+    alignment and other codes draw nothing there, while names, icons and
+    variables take their room."""
+    text = _MARKER.sub("", _ALIGNMENT.sub("", _NAME_WINDOW.sub("", text)))
+    for pattern, size in _EXPANDING.items():
+        text = pattern.sub("x" * size, text)
+    return dazedwrap._get_visible_length(text)
+
+
+def _rendered_lines(text: str) -> list[str]:
+    """The lines *text* draws: stored ``\\n`` escapes and ``<br>`` break lines
+    as newlines do."""
+    rendered = str(text).replace("\r\n", "\n").replace("<br>", "\n")
+    return re.sub(r"\\n(?![\[<])", "\n", rendered).split("\n")
+
+
+def widest_line(text: str) -> int:
+    """The visible width of *text*'s widest line."""
+    return max(visible_width(line) for line in _rendered_lines(text))
+
+
+def over_width(text: str, width: int) -> bool:
+    return widest_line(text) > int(width)
+
 
 _SPEAKER_LINE = re.compile(
     r"^(?P<prefix>(?:\[[^\]\n]{1,100}\]|"
-    r"(?:[\\]+[kKnN][wWcCrReE]?[\[<][^\]>\n]+[\]>]))\n)"
+    r"(?:\\+[kKnN][wWcCrReE]?[\[<][^\]>\n]+[\]>]))\n)"
 )
 
-_DTEXT_PICTURE_PLUGIN = "DTextPicture"
-_DTEXT_PICTURE_COMMAND = "dText"
-_DTEXT_CENTER_CODE = re.compile(r"(?P<code>\\+ac)\s*")
 
-
-@dataclass(frozen=True)
-class RewrapOptions:
-    dialogue_width: int
-    face_dialogue_width: int
-    list_width: int
-    note_width: int
-    categories: frozenset[str] = ALL_CATEGORIES
-    event_codes: frozenset[int] | None = STANDARD_MESSAGE_CODES
-    max_protected_rows: int = 4
-    skip_protected_overflow: bool = True
-    only_over_limit: bool = False
-
-    def __post_init__(self) -> None:
-        for label, value in (
-            ("dialogue_width", self.dialogue_width),
-            ("face_dialogue_width", self.face_dialogue_width),
-            ("list_width", self.list_width),
-            ("note_width", self.note_width),
-        ):
-            if int(value) <= 0:
-                raise ValueError(f"{label} must be positive")
-        unknown = set(self.categories) - set(ALL_CATEGORIES)
-        if unknown:
-            raise ValueError(f"Unknown rewrap categories: {sorted(unknown)}")
-        unsupported_codes = set(self.event_codes or ()) - set(SUPPORTED_EVENT_CODES)
-        if unsupported_codes:
-            supported = ", ".join(str(code) for code in sorted(SUPPORTED_EVENT_CODES))
-            raise ValueError(
-                f"Unsupported event code(s): {sorted(unsupported_codes)}. "
-                f"Supported display codes: {supported}"
-            )
-        if self.max_protected_rows < 0:
-            raise ValueError("max_protected_rows cannot be negative")
-
-    def width_for(self, category: str) -> int:
-        return {
-            DIALOGUE: self.dialogue_width,
-            FACE_DIALOGUE: self.face_dialogue_width,
-            LIST_HELP: self.list_width,
-            NOTES: self.note_width,
-        }[category]
-
-
-@dataclass(frozen=True)
-class RewrapPreview:
-    file_name: str
-    category: str
-    locator: str
-    code: int | None
-    before: str
-    after: str
-    rows: int
-    overflow: bool = False
-
-    def summary(self, limit: int = 150) -> str:
-        code = f"code {self.code}" if self.code is not None else "database"
-        text = re.sub(r"\s+", " ", self.after).strip()
-        if len(text) > limit:
-            text = text[: limit - 1] + "…"
-        warning = " · exceeds row limit" if self.overflow else ""
-        return (
-            f"{self.file_name} · {self.category} · {code} · {self.rows} row(s)"
-            f"{warning}\n{self.locator} — {text}"
-        )
-
-
-@dataclass
-class RewrapReport:
-    files_scanned: int = 0
-    files_with_changes: int = 0
-    files_written: int = 0
-    changes_found: int = 0
-    changes_applied: int = 0
-    overflow_skipped: int = 0
-    previews: list[RewrapPreview] = field(default_factory=list)
-    errors: list[str] = field(default_factory=list)
-    by_category: Counter[str] = field(default_factory=Counter)
-    by_code: Counter[int] = field(default_factory=Counter)
-
-    def headline(self, *, apply: bool) -> str:
-        action = (
-            f"Applied {self.changes_applied} change(s) in {self.files_written} file(s)"
-            if apply
-            else f"Found {self.changes_found} change(s) in {self.files_with_changes} file(s)"
-        )
-        suffix = f"; skipped {self.overflow_skipped} row overflow(s)" if self.overflow_skipped else ""
-        return f"{action}; scanned {self.files_scanned} file(s){suffix}."
-
-
-class _Collector:
-    def __init__(
-        self,
-        report: RewrapReport,
-        file_name: str,
-        *,
-        apply: bool,
-        preview_limit: int,
-        options: RewrapOptions,
-    ) -> None:
-        self.report = report
-        self.file_name = file_name
-        self.apply = apply
-        self.preview_limit = preview_limit
-        self.options = options
-        self.file_has_change = False
-        self.file_dirty = False
-
-    def offer(
-        self,
-        *,
-        category: str,
-        locator: str,
-        code: int | None,
-        before: str,
-        after: str,
-        row_limited: bool = False,
-    ) -> bool:
-        if before == after:
-            return False
-        rows = rendered_rows(after)
-        overflow = bool(
-            row_limited
-            and self.options.max_protected_rows
-            and rows > self.options.max_protected_rows
-        )
-        self.file_has_change = True
-        self.report.changes_found += 1
-        self.report.by_category[category] += 1
-        if code is not None:
-            self.report.by_code[code] += 1
-        if len(self.report.previews) < self.preview_limit:
-            self.report.previews.append(
-                RewrapPreview(
-                    file_name=self.file_name,
-                    category=category,
-                    locator=locator,
-                    code=code,
-                    before=before,
-                    after=after,
-                    rows=rows,
-                    overflow=overflow,
-                )
-            )
-        if overflow and self.options.skip_protected_overflow:
-            self.report.overflow_skipped += 1
-            return False
-        if not self.apply:
-            return False
-        self.file_dirty = True
-        self.report.changes_applied += 1
-        return True
-
-
-def parse_event_codes(value: str) -> frozenset[int] | None:
-    """Parse a comma/space separated event-code filter; blank means all supported."""
-    text = str(value or "").strip()
+def rendered_rows(text: str) -> int:
+    """The rows *text* takes in its window. A name window on a line of its
+    own takes no row; a literal [Speaker] line does."""
     if not text:
+        return 0
+    body = text
+    prefix = _SPEAKER_LINE.match(body)
+    if prefix and not prefix.group("prefix").lstrip().startswith("["):
+        body = body[len(prefix.group("prefix")) :]
+    return len(re.split(r"\n|<br>", body))
+
+
+# ------------------------------------------------------------------ wrapping
+
+# Codes translation repeats on every line of a message: centring, instant
+# lines and an indent.
+_PER_LINE = re.compile(r"^(?:\\+a[clr](?![A-Za-z])|\\+>|\\+px\[\d+\])+ ?", re.IGNORECASE)
+_LEADING_CODES = re.compile(r"^(?:\\+[A-Za-z]+\[[^\]\n]*\]|\\+[{}<>|.!^$])+")
+
+
+def _source_body(source: str | None) -> str | None:
+    """The part of a Japanese source that lays out a message's body: without
+    a name window or a speaker line, and without codes in front."""
+    if source is None:
         return None
-    parts = [part for part in re.split(r"[\s,;]+", text) if part]
-    try:
-        codes = frozenset(int(part) for part in parts)
-    except ValueError as exc:
-        raise ValueError("Event codes must be integers separated by commas or spaces") from exc
-    unsupported = set(codes) - set(SUPPORTED_EVENT_CODES)
-    if unsupported:
-        supported = ", ".join(str(code) for code in sorted(SUPPORTED_EVENT_CODES))
-        raise ValueError(
-            f"Unsupported event code(s): {sorted(unsupported)}. "
-            f"Supported display codes: {supported}"
-        )
-    return codes
+    body = _NAME_WINDOW.sub("", str(source).replace("\r\n", "\n"))
+    prefix = _SPEAKER_LINE.match(body)
+    if prefix:
+        body = body[len(prefix.group("prefix")) :]
+    return "\n".join(_LEADING_CODES.sub("", line) for line in body.split("\n"))
 
 
-def rewrap_directory(
-    directory: str | Path,
-    options: RewrapOptions,
-    *,
-    file_names: Iterable[str] | None = None,
-    apply: bool = False,
-    preview_limit: int = 500,
-) -> RewrapReport:
-    """Scan or rewrap selected JSON files under *directory*.
-
-    ``apply=False`` is a read-only preview.  Writes are atomic and only occur for
-    files with accepted changes.
-    """
-    root = Path(directory)
-    report = RewrapReport()
-    if not root.is_dir():
-        report.errors.append(f"Directory not found: {root}")
-        return report
-
-    if file_names is None:
-        paths = sorted(root.glob("*.json"), key=lambda p: p.name.casefold())
-    else:
-        paths = []
-        for name in sorted(set(file_names), key=str.casefold):
-            candidate = Path(name)
-            if candidate.name != str(name) or candidate.suffix.casefold() != ".json":
-                report.errors.append(f"Invalid JSON filename: {name}")
-                continue
-            paths.append(root / candidate.name)
-
-    for path in paths:
-        if not path.is_file():
-            report.errors.append(f"File not found: {path.name}")
-            continue
-        report.files_scanned += 1
-        collector = _Collector(
-            report,
-            path.name,
-            apply=apply,
-            preview_limit=max(0, int(preview_limit)),
-            options=options,
-        )
-        try:
-            document = json.loads(path.read_text(encoding="utf-8-sig"))
-            _rewrap_document(document, path.name, options, collector)
-            if collector.file_has_change:
-                report.files_with_changes += 1
-            if apply and collector.file_dirty:
-                _write_json_atomic(path, document)
-                report.files_written += 1
-        except Exception as exc:  # noqa: BLE001 - isolate malformed project files
-            report.errors.append(f"{path.name}: {exc}")
-    return report
-
-
-def _rewrap_document(
-    document,
-    file_name: str,
-    options: RewrapOptions,
-    collector: _Collector,
-) -> None:
-    if LIST_HELP in options.categories:
-        _rewrap_database_lists(document, file_name, options, collector)
-    if NOTES in options.categories:
-        _rewrap_note_bodies(document, options, collector)
-    if DIALOGUE in options.categories or FACE_DIALOGUE in options.categories or LIST_HELP in options.categories:
-        for commands, locator in _iter_command_lists(document):
-            _rewrap_command_list(commands, locator, options, collector)
-
-
-def _rewrap_database_lists(
-    document,
-    file_name: str,
-    options: RewrapOptions,
-    collector: _Collector,
-) -> None:
-    fields = LIST_FIELDS_BY_FILE.get(file_name, ())
-    if not fields or not isinstance(document, list):
-        return
-    for index, entry in enumerate(document):
-        if not isinstance(entry, dict):
-            continue
-        for field_name in fields:
-            before = entry.get(field_name)
-            if not isinstance(before, str) or not before.strip():
-                continue
-            if not _should_rewrap(before, options.list_width, options):
-                continue
-            after = _rewrap_lines(
-                before, options.list_width, _source_rows(entry, field_name, before)
-            )
-            if collector.offer(
-                category=LIST_HELP,
-                locator=f"/{index}/{field_name}",
-                code=None,
-                before=before,
-                after=after,
-                row_limited=True,
-            ):
-                entry[field_name] = after
-
-
-def _iter_command_lists(node, locator: str = ""):
-    if isinstance(node, dict):
-        commands = node.get("list")
-        if _looks_like_command_list(commands):
-            yield commands, f"{locator}/list"
-        for key, value in node.items():
-            if key == "_original" or (key == "list" and commands is value):
-                continue
-            yield from _iter_command_lists(value, f"{locator}/{_pointer_part(key)}")
-    elif isinstance(node, list):
-        for index, value in enumerate(node):
-            yield from _iter_command_lists(value, f"{locator}/{index}")
-
-
-def _looks_like_command_list(value) -> bool:
-    return isinstance(value, list) and any(
-        isinstance(item, dict) and isinstance(item.get("code"), int)
-        for item in value
-    )
-
-
-def _rewrap_command_list(
-    commands: list,
-    locator: str,
-    options: RewrapOptions,
-    collector: _Collector,
-) -> None:
-    i = 0
-    face_pending = False
-    while i < len(commands):
-        command = commands[i]
-        if not isinstance(command, dict):
-            face_pending = False
-            i += 1
-            continue
-        code = command.get("code")
-        if code == 101:
-            face_pending = _code101_has_face(command)
-            i += 1
-            continue
-        if code in (401, 405):
-            end = i + 1
-            while end < len(commands):
-                next_command = commands[end]
-                if not isinstance(next_command, dict) or next_command.get("code") != code:
-                    break
-                end += 1
-            category = FACE_DIALOGUE if code == 401 and face_pending else DIALOGUE
-            face_pending = False
-            if category in options.categories and _event_code_enabled(options, code):
-                entries = [
-                    (index, item["parameters"][0])
-                    for index, item in enumerate(commands[i:end], start=i)
-                    if isinstance(item.get("parameters"), list)
-                    and item.get("parameters")
-                    and isinstance(item["parameters"][0], str)
-                ]
-                if entries:
-                    before_parts = [text for _index, text in entries]
-                    if code == 401:
-                        # A 401 is an RPG Maker command boundary, not a rendered row.
-                        # Preserve every command and wrap only inside its text value.
-                        after_parts = [
-                            (
-                                _rewrap_text(text, options.width_for(category))
-                                if _should_rewrap(
-                                    text, options.width_for(category), options
-                                )
-                                else text
-                            )
-                            for text in before_parts
-                        ]
-                    else:
-                        combined = "\n".join(before_parts)
-                        after_parts = [
-                            (
-                                _rewrap_text(combined, options.width_for(category))
-                                if _should_rewrap(
-                                    combined, options.width_for(category), options
-                                )
-                                else combined
-                            )
-                        ]
-                    before = "\n".join(before_parts)
-                    after = "\n".join(after_parts)
-                    accepted = collector.offer(
-                        category=category,
-                        locator=f"{locator}/{i}/parameters/0",
-                        code=code,
-                        before=before,
-                        after=after,
-                        row_limited=(code != 401),
-                    )
-                    if accepted:
-                        if code == 401:
-                            for (index, _text), wrapped in zip(entries, after_parts):
-                                commands[index]["parameters"][0] = wrapped
-                        else:
-                            end = _assign_scrolling_text_lines(
-                                commands, i, end, after
-                            )
-            i = end
-            continue
-
-        if code not in (-1, 0):
-            face_pending = False
-
-        if _event_code_enabled(options, code):
-            if code == 122 and LIST_HELP in options.categories:
-                _rewrap_code122(command, f"{locator}/{i}", options, collector)
-            elif code == 324 and LIST_HELP in options.categories:
-                _rewrap_string_parameter(
-                    command,
-                    1,
-                    LIST_HELP,
-                    f"{locator}/{i}",
-                    options.list_width,
-                    collector,
-                )
-            elif code == 325 and DIALOGUE in options.categories:
-                _rewrap_string_parameter(
-                    command,
-                    1,
-                    DIALOGUE,
-                    f"{locator}/{i}",
-                    options.dialogue_width,
-                    collector,
-                )
-            elif code == 357 and DIALOGUE in options.categories:
-                _rewrap_code357(command, f"{locator}/{i}", options, collector)
-        i += 1
-
-
-def _assign_scrolling_text_lines(
-    commands: list,
-    start: int,
-    end: int,
+def wrap_message(
     text: str,
-) -> int:
-    """Store wrapped scrolling-text rows as native 405 continuation commands."""
-    lines = text.split("\n")
-    existing = end - start
-    for offset, line in enumerate(lines):
-        target = start + offset
-        if offset >= existing:
-            template = copy.deepcopy(commands[end - 1])
-            template.pop("_original", None)
-            template["code"] = 405
-            template["parameters"] = [line]
-            commands.insert(target, template)
-            end += 1
-        else:
-            commands[target]["code"] = 405
-            commands[target]["parameters"] = [line]
-    for target in range(start + len(lines), end):
-        commands[target]["code"] = -1
-        commands[target]["parameters"] = []
-    return end
-
-
-def _rewrap_string_parameter(
-    command: dict,
-    parameter_index: int,
-    category: str,
-    locator: str,
     width: int,
-    collector: _Collector,
-) -> None:
-    params = command.get("parameters")
-    if not isinstance(params, list) or parameter_index >= len(params):
-        return
-    before = params[parameter_index]
-    if not isinstance(before, str) or not before.strip():
-        return
-    if not _should_rewrap(before, width, collector.options):
-        return
-    after = _rewrap_text(before, width)
-    if collector.offer(
-        category=category,
-        locator=f"{locator}/parameters/{parameter_index}",
-        code=command.get("code"),
-        before=before,
-        after=after,
-        row_limited=True,
-    ):
-        params[parameter_index] = after
-
-
-def _rewrap_code122(
-    command: dict,
-    locator: str,
-    options: RewrapOptions,
-    collector: _Collector,
-) -> None:
-    params = command.get("parameters")
-    if not isinstance(params, list) or len(params) <= 4 or not isinstance(params[4], str):
-        return
-    before = params[4]
-    first_tick = before.find("`")
-    last_tick = before.rfind("`")
-    if first_tick < 0 or last_tick <= first_tick:
-        return
-    body = before[first_tick + 1 : last_tick]
-    if not _should_rewrap(body, options.list_width, options):
-        return
-    # Reflow only line breaks previously inserted by list wrapping.  Keep RPG
-    # Maker name codes such as \n[1] intact.
-    normalized = re.sub(r"\\n(?!\[)", " ", body)
-    wrapped = _rewrap_text(normalized, options.list_width).replace("\n", r"\n")
-    after = before[: first_tick + 1] + wrapped + before[last_tick:]
-    if collector.offer(
-        category=LIST_HELP,
-        locator=f"{locator}/parameters/4",
-        code=122,
-        before=before,
-        after=after,
-        row_limited=True,
-    ):
-        params[4] = after
-
-
-def _rewrap_code357(
-    command: dict,
-    locator: str,
-    options: RewrapOptions,
-    collector: _Collector,
-) -> None:
-    params = command.get("parameters")
-    if not isinstance(params, list) or len(params) <= 3 or not isinstance(params[3], dict):
-        return
-    payload = params[3]
-    is_dtext_picture = params[0] == _DTEXT_PICTURE_PLUGIN
-    if is_dtext_picture and (len(params) <= 1 or params[1] != _DTEXT_PICTURE_COMMAND):
-        return
-    for key in ("comment", "text", "messageText"):
-        before = payload.get(key)
-        if not isinstance(before, str) or not before.strip():
-            continue
-        if not _should_rewrap(before, options.dialogue_width, options):
-            continue
-        after = (
-            _rewrap_dtext_picture(before, options.dialogue_width)
-            if is_dtext_picture and key == "text"
-            else _rewrap_text(before, options.dialogue_width)
+    *,
+    source: str | None = None,
+    rows: int | None = None,
+) -> str:
+    """A message laid out for its window: the body wrapped to *width* like
+    its Japanese *source* (see :func:`dazedwrap.wrapShaped`), paging after a
+    sentence where it needs more than *rows*. A speaker line stays first,
+    ``<br>`` breaks stay ``<br>``, and codes translation repeats on each
+    line, such as centring, are repeated on each new line."""
+    if not text or not text.strip():
+        return text
+    prefix = ""
+    body = text
+    speaker = _SPEAKER_LINE.match(body)
+    if speaker:
+        prefix = speaker.group("prefix")
+        body = body[len(prefix) :]
+        if rows is not None and prefix.lstrip().startswith("["):
+            rows = max(1, rows - 1)
+    uses_br = "<br>" in body and "\n" not in body
+    if uses_br:
+        body = body.replace("<br>", "\n")
+    lines = body.split("\n")
+    per_line = ""
+    if all(_PER_LINE.match(line) for line in lines if line.strip()):
+        per_line = _PER_LINE.match(next(line for line in lines if line.strip())).group(0)
+        body = "\n".join(_PER_LINE.sub("", line) for line in lines)
+    wrapped = dazedwrap.wrapShaped(
+        body,
+        int(width),
+        _source_body(source),
+        rows,
+        measure=visible_width,
+    )
+    if per_line:
+        wrapped = "\n".join(
+            per_line + line if line.strip() else line for line in wrapped.split("\n")
         )
-        if collector.offer(
-            category=DIALOGUE,
-            locator=f"{locator}/parameters/3/{_pointer_part(key)}",
-            code=357,
-            before=before,
-            after=after,
-            row_limited=True,
-        ):
-            payload[key] = after
+    if uses_br:
+        wrapped = wrapped.replace("\n", "<br>")
+    return prefix + wrapped
 
 
-def _rewrap_dtext_picture(text: str, width: int) -> str:
-    """Rewrap a DTextPicture payload while retaining per-line centering."""
-    center_match = _DTEXT_CENTER_CODE.search(text)
-    if center_match is None:
-        return _rewrap_text(text, width)
-    body = _DTEXT_CENTER_CODE.sub("", text)
-    wrapped = _rewrap_text(body, width)
-    center_code = center_match.group("code")
-    return "\n".join(
-        f"{center_code} {line}" if line else center_code
-        for line in wrapped.split("\n")
+def wrap_text(text: str, width: int) -> str:
+    """Text with no source layout to follow, such as a script's message,
+    wrapped to *width* in even lines."""
+    return dazedwrap.wrapShaped(text, int(width), measure=visible_width)
+
+
+def help_rows(source: str | None) -> int:
+    """The rows a help or status window shows: two, or as many as the
+    source spends there."""
+    return max(HELP_ROWS, str(source or "").count("\n") + 1)
+
+
+def wrap_lines(
+    text: str,
+    width: int,
+    rows: int | None = None,
+) -> str:
+    """Database text, whose line breaks are authored, fitted as the database
+    pass fits it (see :func:`dazedwrap.wrapLines`): ``\\n`` breaks, or
+    ``<br>`` in text without one."""
+    if "<br>" in text and "\n" not in text:
+        return dazedwrap.wrapLines(
+            text.replace("<br>", "\n"), width, rows, measure=visible_width
+        ).replace("\n", "<br>")
+    return dazedwrap.wrapLines(text, width, rows, measure=visible_width)
+
+
+def wrap_note(note: str, width: int) -> str:
+    """A database note with each known prose tag body wider than *width*
+    fitted to it; the rest of the note stays exact."""
+    return _replace_spans(
+        note,
+        [
+            (start, end, _fit_note_body(body, width, structured))
+            for start, end, body, structured in _note_bodies(note)
+            if over_width(body, width)
+        ],
     )
 
 
-def _rewrap_note_bodies(document, options: RewrapOptions, collector: _Collector) -> None:
-    for owner, locator in _iter_note_owners(document):
-        note = owner.get("note")
-        if not isinstance(note, str) or not note.strip():
-            continue
-        edits: list[tuple[int, int, str]] = []
-        for start, end, before, after in _note_bodies(
-            note, options.note_width, options.only_over_limit
-        ):
-            if collector.offer(
-                category=NOTES,
-                locator=f"{locator}/note[{start}:{end}]",
-                code=None,
-                before=before,
-                after=after,
-                row_limited=True,
-            ):
-                edits.append((start, end, after))
-        if edits:
-            owner["note"] = _replace_spans(note, edits)
+def _fit_note_body(body: str, width: int, structured: bool) -> str:
+    if structured:
+        return dazedwrap.wrapSGDesc(body, width)
+    return wrap_lines(body, width)
 
 
-def _note_bodies(note: str, width: int, only_over_limit: bool):
-    """Each known tag body in *note* to rewrap: its span, text and rewrapped text."""
+def _note_bodies(note: str) -> Iterator[tuple[int, int, str, bool]]:
+    """Each known prose tag body in *note*: its span, text and whether it is
+    an SG info box."""
     occupied: list[tuple[int, int]] = []
     for pattern, structured in _NOTE_BODY_PATTERNS:
         for match in pattern.finditer(note):
             start, end = match.span(1)
             if any(start < used_end and end > used_start for used_start, used_end in occupied):
                 continue
-            before = match.group(1)
-            if not before.strip() or only_over_limit and not over_width(before, width):
-                continue
-            after = (
-                dazedwrap.wrapSGDesc(before, width)
-                if structured
-                else _rewrap_lines(before, width)
-            )
-            yield start, end, before, after
             occupied.append((start, end))
+            if match.group(1).strip():
+                yield start, end, match.group(1), structured
 
 
 def _replace_spans(text: str, edits: list[tuple[int, int, str]]) -> str:
@@ -670,142 +266,336 @@ def _replace_spans(text: str, edits: list[tuple[int, int, str]]) -> str:
     return text
 
 
-def rewrap_value(
-    text: str, width: int, *, note: bool = False, rows: int | None = None
-) -> str:
-    """One value as the line width check rewraps it when a line is wider than
-    *width*: text keeps a leading speaker line and ``<br>`` breaks, a note
-    rewraps only its known tag bodies, and database text whose source spends
-    *rows* lines on its window keeps its line breaks."""
-    if note:
-        return _replace_spans(
-            text,
-            [(start, end, after) for start, end, _before, after in _note_bodies(text, width, True)],
+def wrap_backtick(value: str, width: int) -> str:
+    """A text variable's script value (122), `text` with ``\\n`` escapes as
+    its line breaks, wrapped to *width*; name codes such as ``\\n[1]`` stay."""
+    first, last = value.find("`"), value.rfind("`")
+    if first < 0 or last <= first:
+        return value
+    body = re.sub(r"\\n(?![\[<])", " ", value[first + 1 : last])
+    wrapped = wrap_text(body, width).replace("\n", r"\n")
+    return value[: first + 1] + wrapped + value[last:]
+
+
+# --------------------------------------------------------------------- boxes
+
+
+@dataclass(frozen=True)
+class Layout:
+    """A game's Line widths."""
+
+    width: int
+    face_width: int
+    list_width: int
+    note_width: int
+    message_rows: int
+
+    @classmethod
+    def from_widths(cls, widths: dict[str, Any] | None) -> Layout:
+        values = normalize_wrap_widths(widths or {})
+        return cls(
+            values["width"],
+            values["faceWidth"],
+            values["listWidth"],
+            values["noteWidth"],
+            values[MESSAGE_ROWS_KEY],
         )
-    if not text.strip() or not over_width(text, width):
+
+
+@dataclass(frozen=True)
+class Box:
+    """The window a value shows in: its line width, the rows it shows, and
+    whether text that needs more rows goes on to a new page (a message) or
+    is cut off (a window of fixed height). ``rows`` None is unlimited, as in
+    scrolling text. ``kind`` names how the value wraps, and ``area`` the Line
+    widths entry its width comes from."""
+
+    width: int
+    rows: int | None
+    paged: bool
+    kind: str  # "message", "lines", "note" or "variable"
+    area: str | None = None
+
+
+def message_box(layout: Layout, *, face: bool = False) -> Box:
+    if face:
+        return Box(layout.face_width, layout.message_rows, True, "message", "faceWidth")
+    return Box(layout.width, layout.message_rows, True, "message", "width")
+
+
+def scrolling_box(layout: Layout) -> Box:
+    return Box(layout.width, None, False, "message", "width")
+
+
+def help_box(layout: Layout, source: str | None, *, dialogue: bool = False) -> Box:
+    """A help or status window: two rows, or as many as the source spends.
+    A profile change (325) wraps to the dialogue width, as translation does."""
+    if dialogue:
+        return Box(layout.width, help_rows(source), False, "lines", "width")
+    return Box(layout.list_width, help_rows(source), False, "lines", "listWidth")
+
+
+def nickname_box(layout: Layout) -> Box:
+    return Box(layout.list_width, 1, False, "lines", "listWidth")
+
+
+def note_box(layout: Layout) -> Box:
+    """The plugin windows that draw a note's prose tags. Their heights vary,
+    so only their width is known."""
+    return Box(layout.note_width, None, False, "note", "noteWidth")
+
+
+def fit_value(
+    text: str,
+    box: Box,
+    *,
+    source: str | None = None,
+) -> str:
+    """*text* as DazedTL writes it to *box*: unchanged when every line fits,
+    otherwise wrapped again as translation wraps it there."""
+    if not isinstance(text, str) or not text.strip():
         return text
-    if rows is not None:
-        return _rewrap_lines(text, width, rows)
-    return _rewrap_text(text, width)
+    if box.kind == "note":
+        return wrap_note(text, box.width)
+    if not over_width(text, box.width):
+        return text
+    if box.kind == "variable":
+        return wrap_backtick(text, box.width)
+    if box.kind == "lines":
+        return wrap_lines(text, box.width, box.rows)
+    return wrap_message(
+        text, box.width, source=source, rows=box.rows if box.paged else None
+    )
 
 
-def _iter_note_owners(node, locator: str = ""):
+def misfit(text: str, box: Box) -> str | None:
+    """Why *text*, as written, still does not fit *box*, or None."""
+    if not isinstance(text, str) or not text.strip():
+        return None
+    if box.kind == "note":
+        bodies = [body for _start, _end, body, _structured in _note_bodies(text)]
+    else:
+        bodies = [text]
+    for body in bodies:
+        widest = widest_line(body)
+        if widest > box.width:
+            return f"has a line {widest} characters wide; its line width is {box.width}"
+        if box.rows and not box.paged and box.kind != "note":
+            rows = rendered_rows(body)
+            if rows > box.rows:
+                return f"needs {rows} rows; its window shows {box.rows}"
+    return None
+
+
+# ------------------------------------------------------------ whole documents
+
+
+@dataclass
+class FitReport:
+    """What fitting a file changed, and what it could not fit."""
+
+    changes: list[dict[str, Any]] = field(default_factory=list)
+    misfits: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class _Slot:
+    """One display value in a document: where it is, its box, its source and
+    how to read and write it."""
+
+    pointer: str
+    box: Box
+    source: str | None
+    owner: Any
+    key: Any
+
+    def read(self):
+        return self.owner[self.key]
+
+    def write(self, value) -> None:
+        self.owner[self.key] = value
+
+
+def _original(node: dict, key: str | None = None) -> str | None:
+    original = node.get("_original")
+    if key is None:
+        return original if isinstance(original, str) else None
+    return original.get(key) if isinstance(original, dict) and isinstance(original.get(key), str) else None
+
+
+def _slots(document, file_name: str, layout: Layout) -> Iterator[_Slot]:
+    """Every display value DazedTL fits in *document*."""
+    fields = LIST_FIELDS_BY_FILE.get(file_name, ())
+    if fields and isinstance(document, list):
+        for index, entry in enumerate(document):
+            if not isinstance(entry, dict):
+                continue
+            for name in fields:
+                if isinstance(entry.get(name), str):
+                    source = _original(entry, name) or entry[name]
+                    yield _Slot(f"/{index}/{name}", help_box(layout, source), source, entry, name)
+    for owner, pointer in _note_owners(document):
+        yield _Slot(f"{pointer}/note", note_box(layout), None, owner, "note")
+    for commands, pointer in _command_lists(document):
+        yield from _command_slots(commands, pointer, layout)
+
+
+def _note_owners(node, pointer: str = ""):
     if isinstance(node, dict):
         if isinstance(node.get("note"), str):
-            yield node, locator
+            yield node, pointer
         for key, value in node.items():
-            if key == "_original":
-                continue
-            yield from _iter_note_owners(value, f"{locator}/{_pointer_part(key)}")
+            if key != "_original":
+                yield from _note_owners(value, f"{pointer}/{_pointer_part(key)}")
     elif isinstance(node, list):
         for index, value in enumerate(node):
-            yield from _iter_note_owners(value, f"{locator}/{index}")
+            yield from _note_owners(value, f"{pointer}/{index}")
 
 
-def _rewrap_text(text: str, width: int) -> str:
-    if not text:
-        return text
-    prefix = ""
-    body = text
-    prefix_match = _SPEAKER_LINE.match(body)
-    if prefix_match:
-        prefix = prefix_match.group("prefix")
-        body = body[len(prefix) :]
-    uses_br = "<br>" in body and "\n" not in body
-    if uses_br:
-        body = body.replace("<br>", " ")
-    wrapped = dazedwrap.wrapText(body, int(width))
-    if uses_br:
-        wrapped = wrapped.replace("\n", "<br>")
-    return prefix + wrapped
+def _command_lists(node, pointer: str = ""):
+    if isinstance(node, dict):
+        commands = node.get("list")
+        if isinstance(commands, list) and any(
+            isinstance(item, dict) and isinstance(item.get("code"), int) for item in commands
+        ):
+            yield commands, f"{pointer}/list"
+        for key, value in node.items():
+            if key == "_original" or (key == "list" and commands is value):
+                continue
+            yield from _command_lists(value, f"{pointer}/{_pointer_part(key)}")
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            yield from _command_lists(value, f"{pointer}/{index}")
 
 
-def _rewrap_lines(text: str, width: int, rows: int | None = None) -> str:
-    """Database text rewrapped as the database pass wraps it, keeping its
-    line breaks: ``\\n``, or ``<br>`` in text without one."""
-    if "<br>" in text and "\n" not in text:
-        return dazedwrap.wrapLines(text.replace("<br>", "\n"), width, rows).replace(
-            "\n", "<br>"
-        )
-    return dazedwrap.wrapLines(text, width, rows)
-
-
-def _source_rows(entry: dict, field_name: str, text: str) -> int:
-    """The lines a database field's source spends on its window: its
-    ``_original`` text when DazedTL kept one, else the text itself."""
-    original = entry.get("_original")
-    source = original.get(field_name) if isinstance(original, dict) else None
-    if not isinstance(source, str) or not source.strip():
-        source = text
-    return source.count("\n") + 1
-
-
-def _should_rewrap(text: str, width: int, options: RewrapOptions) -> bool:
-    """Return whether *text* belongs in the selected rewrap mode."""
-    return not options.only_over_limit or over_width(text, width)
-
-
-def widest_line(text: str) -> int:
-    """The visible length of *text*'s widest rendered line.
-
-    Escaped newlines used by stored RPG Maker strings and ``<br>`` plugin
-    breaks are rendered line boundaries.  Measure each rendered line with the
-    same control-code-aware character count used by ``wrapText``.
-    """
-    rendered = str(text).replace("<br>", "\n")
-    rendered = re.sub(r"\\n(?!\[)", "\n", rendered)
-    return dazedwrap.max_line_visible_length(rendered)
-
-
-def over_width(text: str, width: int) -> bool:
-    return widest_line(text) > int(width)
-
-
-def rendered_rows(text: str) -> int:
-    if not text:
-        return 0
-    body = text
-    prefix_match = _SPEAKER_LINE.match(body)
-    if prefix_match and not prefix_match.group("prefix").lstrip().startswith("["):
-        # Name-window controls do not consume a message-body row.  A literal
-        # [Speaker] first line does, so keep that line in the count.
-        body = body[len(prefix_match.group("prefix")) :]
-    return len(re.split(r"\n|<br>", body))
-
-
-def _event_code_enabled(options: RewrapOptions, code) -> bool:
-    if not isinstance(code, int) or code not in SUPPORTED_EVENT_CODES:
-        return False
-    return options.event_codes is None or code in options.event_codes
-
-
-def _code101_has_face(command: dict) -> bool:
+def _has_face(command: dict) -> bool:
     params = command.get("parameters") or []
-    return (
-        len(params) >= 4
-        and isinstance(params[0], str)
-        and bool(params[0].strip())
+    return len(params) >= 4 and isinstance(params[0], str) and bool(params[0].strip())
+
+
+def _command_slots(commands: list, pointer: str, layout: Layout) -> Iterator[_Slot]:
+    face = False
+    for index, command in enumerate(commands):
+        if not isinstance(command, dict):
+            continue
+        code = command.get("code")
+        params = command.get("parameters")
+        # A Show Text with a face graphic narrows the lines that follow it.
+        if code == 101:
+            face = _has_face(command)
+        elif code not in (401, 405, 0, -1):
+            face = False
+        if not isinstance(params, list) or not params:
+            continue
+        at = f"{pointer}/{index}/parameters"
+        if code == 401 and isinstance(params[0], str):
+            # Each 401 is wrapped on its own, as translation joins and wraps
+            # the lines of a message up to a command it keeps separate.
+            box = message_box(layout, face=face)
+            if _MARKER.match(params[0]):
+                box = Box(MARKED_WIDTH, box.rows, True, "message")
+            yield _Slot(f"{at}/0", box, _original(command), params, 0)
+        elif code == 405 and isinstance(params[0], str):
+            yield _Slot(f"{at}/0", scrolling_box(layout), _original(command), params, 0)
+        elif code == 122 and len(params) > 4 and isinstance(params[4], str) and "`" in params[4]:
+            box = Box(layout.list_width, None, False, "variable", "listWidth")
+            yield _Slot(f"{at}/4", box, None, params, 4)
+        elif code == 324 and len(params) > 1 and isinstance(params[1], str):
+            yield _Slot(f"{at}/1", nickname_box(layout), None, params, 1)
+        elif code == 325 and len(params) > 1 and isinstance(params[1], str):
+            source = _original(command) or params[1]
+            yield _Slot(f"{at}/1", help_box(layout, source, dialogue=True), source, params, 1)
+        elif code == 357 and len(params) > 3 and isinstance(params[3], dict):
+            for key in MESSAGE_PLUGIN_TEXT.get(params[0], ()):
+                if isinstance(params[3].get(key), str):
+                    yield _Slot(f"{at}/3/{key}", message_box(layout), None, params[3], key)
+
+
+# Japanese the translation left as it is, which is never rewrapped.
+_JAPANESE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff]")
+
+
+def untranslated(text: str) -> bool:
+    """Whether *text* still holds Japanese, which DazedTL never rewraps."""
+    return bool(_JAPANESE.search(text))
+
+
+def _fitted_slots(document, file_name: str, layout: Layout, areas):
+    """The translated values in *document* DazedTL fits, limited to boxes
+    measured by the Line widths entries in *areas* when given."""
+    for slot in _slots(document, file_name, layout):
+        value = slot.read()
+        if not isinstance(value, str) or untranslated(value):
+            continue
+        if areas is not None and slot.box.area not in areas:
+            continue
+        yield slot, value
+
+
+def needs_fit(
+    document, file_name: str, layout: Layout, *, areas: set[str] | None = None
+) -> bool:
+    """Whether any translated value in *document* does not fit its box."""
+    return any(
+        fit_value(value, slot.box, source=slot.source) != value
+        for slot, value in _fitted_slots(document, file_name, layout, areas)
     )
+
+
+def fit_document(
+    document,
+    file_name: str,
+    layout: Layout,
+    *,
+    areas: set[str] | None = None,
+) -> FitReport:
+    """Fit *document* in place: each translated value that does not fit its
+    box is wrapped again, as translation wraps it. *areas* limits fitting to
+    boxes measured by those Line widths entries, such as the ones a change of
+    widths moved. Japanese left untranslated is never rewrapped. Scrolling
+    text (405) that wraps onto more lines is split into commands of its own,
+    as translation writes it."""
+    report = FitReport()
+    scrolling = False
+    for slot, value in list(_fitted_slots(document, file_name, layout, areas)):
+        fitted = fit_value(value, slot.box, source=slot.source)
+        if fitted != value:
+            report.changes.append(
+                {"file": file_name, "pointer": slot.pointer, "before": value, "after": fitted}
+            )
+            scrolling |= slot.box.kind == "message" and slot.box.rows is None
+            slot.write(fitted)
+        reason = misfit(fitted, slot.box)
+        if reason:
+            report.misfits.append({"file": file_name, "pointer": slot.pointer, "reason": reason})
+    if scrolling:
+        _split_scrolling(document)
+    return report
+
+
+def _split_scrolling(document) -> None:
+    """Scrolling text keeps one line per 405 command, as translation writes it."""
+    for commands, _pointer in _command_lists(document):
+        index = 0
+        while index < len(commands):
+            command = commands[index]
+            if (
+                isinstance(command, dict)
+                and command.get("code") == 405
+                and isinstance((command.get("parameters") or [None])[0], str)
+                and "\n" in command["parameters"][0]
+            ):
+                lines = command["parameters"][0].split("\n")
+                command["parameters"][0] = lines[0]
+                for offset, line in enumerate(lines[1:], start=1):
+                    added = copy.deepcopy(command)
+                    added.pop("_original", None)
+                    added["parameters"] = [line]
+                    commands.insert(index + offset, added)
+                index += len(lines)
+            else:
+                index += 1
 
 
 def _pointer_part(value) -> str:
     return str(value).replace("~", "~0").replace("/", "~1")
-
-
-def _write_json_atomic(path: Path, document) -> None:
-    fd, temp_name = tempfile.mkstemp(
-        prefix=f".{path.name}.rewrap-",
-        suffix=".tmp",
-        dir=path.parent,
-    )
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-            json.dump(document, handle, ensure_ascii=False, indent=4)
-            handle.write("\n")
-        os.replace(temp_name, path)
-    finally:
-        try:
-            if os.path.exists(temp_name):
-                os.unlink(temp_name)
-        except OSError:
-            pass

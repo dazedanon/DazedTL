@@ -1,6 +1,7 @@
 """Preserved fitting and QA validators, with app-owned runtime publication."""
 
 import difflib
+import json
 import shutil
 import tempfile
 import traceback
@@ -676,6 +677,31 @@ def _diff_start(before, after):
     return "\n".join(lines), False
 
 
+def fitting_layout(plan):
+    """The Line widths an RPG Maker game's applied text is fitted to, or None
+    for a game DazedTL does not fit."""
+    from util.rpgmaker_rewrap import Layout
+
+    project = plan["project"]
+    if project.get("engine") not in {"MVMZ", "ACE"}:
+        return None
+    return Layout.from_widths(project.get("widths"))
+
+
+def fit_output(document, name, layout, areas=None, *, newline=False):
+    """A translated file's bytes with every translated line that does not
+    fit the Line widths wrapped again, and how many values that changed; no
+    bytes when nothing needs it."""
+    from util.rpgmaker_rewrap import fit_document, needs_fit
+
+    if not needs_fit(document, name, layout, areas=areas):
+        return None, 0
+    changes = len(fit_document(document, name, layout, areas=areas).changes)
+    # The engine's own formatting, so only the fitted lines differ.
+    text = json.dumps(document, ensure_ascii=False, indent=4)
+    return (text + "\n" if newline else text).encode("utf-8"), changes
+
+
 def prepare_publication(plan):
     from desktop.backend.workflow_actions import validate_plan
 
@@ -687,10 +713,11 @@ def prepare_publication(plan):
     )
     action, options = plan["action"], plan["options"]
     prefix = data.relative_to(root)
-    candidates, outputs, restored, sources = {}, {}, None, {}
+    candidates, outputs, restored, sources, written = {}, {}, None, {}, {}
     if action == "export_selected":
         saved = plan.get("run_output")
         output_folder = Path(saved["folder"]) if saved else folder
+        layout = fitting_layout(plan)
         for name in options["files"]:
             path = project_path(output_folder, "translated/" + name)
             output = path.read_bytes()
@@ -701,53 +728,39 @@ def prepare_publication(plan):
                 raise ValueError(
                     "Choose a JSON output within the supported size limit."
                 )
-            decode_json(output)
+            document = decode_json(output)
+            outputs[name] = digest(output)
+            fitted = fit_output(document, name, layout)[0] if layout else None
+            if fitted is not None:
+                candidates[(prefix / name).as_posix()] = fitted
+                written[name] = digest(fitted)
+                continue
             candidates[(prefix / name).as_posix()] = output
             # Apply publishes the saved output itself, checked by hash.
             sources[(prefix / name).as_posix()] = path
-            outputs[name] = digest(output)
     elif action == "runtime_restore":
         candidates, restored = publication.restore_candidates(
             folder, root, options["publication"]
         )
-    elif action == "rewrap_apply":
-        from util.rpgmaker_rewrap import (
-            RewrapOptions,
-            parse_event_codes,
-            rewrap_directory,
-        )
-
-        widths = options["widths"]
-        settings = RewrapOptions(
-            widths["width"],
-            widths["faceWidth"],
-            widths["listWidth"],
-            widths["noteWidth"],
-            categories=frozenset(options["categories"]),
-            event_codes=parse_event_codes(options["codes"]),
-            max_protected_rows=options["max_rows"] if options["protect_rows"] else 0,
-            skip_protected_overflow=options["protect_rows"],
-            only_over_limit=options["over_limit"],
-        )
-        with tempfile.TemporaryDirectory(dir=folder, prefix="fitting-") as temporary:
-            staging = Path(temporary)
-            for name in options["files"]:
-                shutil.copyfile(
-                    project_path(root, (prefix / name).as_posix()), staging / name
-                )
-            report = rewrap_directory(
-                staging, settings, file_names=options["files"], apply=True
+    elif action == "fit_text":
+        # New Line widths: the game's translated text in the areas they
+        # changed, wherever a line no longer fits.
+        layout = fitting_layout(plan)
+        plan["fitted_lines"] = 0
+        for path in sorted(data.glob("*.json"), key=lambda item: item.name.casefold()):
+            raw = project_path(root, path.relative_to(root).as_posix()).read_bytes()
+            fitted, changes = fit_output(
+                decode_json(raw),
+                path.name,
+                layout,
+                set(options["areas"]),
+                newline=raw.endswith(b"\n"),
             )
-            if report.errors:
-                raise ValueError("; ".join(report.errors))
-            for name in options["files"]:
-                raw = (staging / name).read_bytes()
-                if raw != (data / name).read_bytes():
-                    candidates[(prefix / name).as_posix()] = raw
+            if fitted is not None:
+                candidates[(prefix / path.name).as_posix()] = fitted
+                plan["fitted_lines"] += changes
         if not candidates:
-            raise ValueError(
-                "No fitting edits are eligible. Protected row overflows were skipped; review the text or fitting settings and scan again."
-            )
+            return {"publication": [], "paths": [], "files": 0}
     elif action in {"qa_apply", "qa_undo"}:
         from util import rpgmaker_qa as qa
 
@@ -827,6 +840,7 @@ def prepare_publication(plan):
         restore=restored,
         overwrite=action == "export_selected",
         sources=sources,
+        written=written,
         task=options["task"] if action in {"qa_apply", "qa_undo"} else None,
         findings=options.get("findings", []) + options.get("proposals", [])
         if action in {"qa_apply", "qa_undo"}
@@ -835,11 +849,12 @@ def prepare_publication(plan):
     if action == "export_selected":
         plan["overwrite_runtime"] = True
     plan["publication"] = frozen
-    previous = (
-        read_json(folder / "applied-outputs.json").get("files", {})
+    receipt = (
+        read_json(folder / "applied-outputs.json")
         if (folder / "applied-outputs.json").exists()
         else {}
     )
+    previous = receipt.get("files", {})
     rows = []
     for row in frozen["files"]:
         name = Path(row["path"]).name
@@ -847,9 +862,12 @@ def prepare_publication(plan):
         change = {
             **{key: row[key] for key in ("path", "before", "after", "size")},
             "destination": str(root / row["path"]),
+            # What the last Apply wrote: its output, or the output fitted to
+            # the Line widths.
             "later_edits": action == "export_selected"
             and name in previous
-            and row["before"] != previous[name],
+            and row["before"]
+            not in {previous[name], receipt.get("written", {}).get(name)},
         }
         if action in COMPARED:
             # A file a batch added compares with none.
@@ -865,6 +883,23 @@ def prepare_publication(plan):
         "publication": rows,
         "paths": [row["path"] for row in rows],
         "files": len(rows),
+    }
+
+
+def run_fit(plan, log):
+    """Fit the game's translated text to new Line widths in one backed-up
+    publication."""
+    log(plan["label"])
+    if not prepare_publication(plan)["files"]:
+        message = "Every line already fits the new Line widths."
+        return {"files": 0, "lines": 0, "message": message}
+    lines = plan["fitted_lines"]
+    counted = f"{lines:,} {'line' if lines == 1 else 'lines'}"
+    log(f"Rewrapping {counted}.")
+    return {
+        **run_publication(plan, log),
+        "lines": lines,
+        "message": f"Rewrapped {counted} to the new Line widths.",
     }
 
 

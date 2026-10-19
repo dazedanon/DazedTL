@@ -1,46 +1,26 @@
 import { useState } from "react";
 import { messageOf } from "../../../api/errors";
 import { imagesApi } from "../../../api/images";
-import type { ImagePreview, Job, Preview } from "../../../api/contracts";
+import type { ImagePreview } from "../../../api/contracts";
 import { type Observer, useAction } from "../../../state/useAction";
-import { type PendingPart, reviewSignature } from "../pending";
+import type { PendingPart } from "../pending";
 
 /** The part an open review applies, and why its last Apply failed. */
 export type PartReview = PendingPart & {
-  preview: Preview | ImagePreview;
+  preview: ImagePreview;
   failure: string;
 };
 
-/** What a Guided part previews: its action and options. */
-export type GuidedRequest = {
-  name: string;
-  options: Record<string, unknown>;
-};
-
 /**
- * One task's review and Apply of the work it has ready. Each part keeps its
- * own preview, validation and receipts.
+ * One task's review and Apply of the work it has ready, with its own
+ * preview, validation and receipts.
  */
 export function usePendingChanges({
   projectId,
   observer,
-  guided,
-  preparePreview,
-  execute,
-  lastExecuted,
-  whenFinished,
 }: {
   projectId: string;
   observer: Observer;
-  /** The Guided preview a rewrap or QA part makes. */
-  guided: (part: PendingPart) => GuidedRequest;
-  preparePreview: (
-    name: string,
-    options: Record<string, unknown>,
-  ) => Promise<Preview>;
-  execute: (preview: Preview) => Promise<void>;
-  lastExecuted: () => { token: string; job: Job } | null;
-  whenFinished: (id: string) => Promise<{ status: string; message: string }>;
 }) {
   const action = useAction({ observer });
   const [review, setReview] = useState<PartReview | null>(null);
@@ -63,37 +43,15 @@ export function usePendingChanges({
     }
     return ids;
   };
-  const prepare = async (part: PendingPart) => {
-    if (part.id === "images")
-      return (
-        await imagesApi.action(projectId, "preview_apply", {
-          asset_ids: await readyImages(),
-        })
-      ).preview;
-    const request = guided(part);
-    return preparePreview(request.name, request.options);
-  };
-  const applyPart = async (part: PartReview) => {
-    if (part.id === "images") {
-      await imagesApi.action(projectId, "apply", {
-        token: (part.preview as ImagePreview).token,
-      });
-      return;
-    }
-    const request = guided(part);
-    // Rewraps and QA fixes share the Guided review, which keeps one preview
-    // at a time, so each is previewed again just before it runs and must
-    // match what was reviewed. Images keep their own one-use tokens.
-    const fresh = await preparePreview(request.name, request.options);
-    if (reviewSignature(fresh) !== reviewSignature(part.preview as Preview))
-      throw new Error(
-        `${part.title} changed since you reviewed it. Review it again.`,
-      );
-    await execute(fresh);
-    const ended = await whenFinished(lastExecuted()!.job.id);
-    if (ended.status !== "complete")
-      throw new Error(ended.message || `${part.title} did not finish.`);
-  };
+  const prepare = async () =>
+    (
+      await imagesApi.action(projectId, "preview_apply", {
+        asset_ids: await readyImages(),
+      })
+    ).preview;
+  // Images keep their own one-use tokens.
+  const applyPart = (part: PartReview) =>
+    imagesApi.action(projectId, "apply", { token: part.preview.token });
   /**
    * Prepares the part's review; a failure reports beside the control that
    * asked. The review opens once the action and its refresh settle, so Apply
@@ -105,7 +63,7 @@ export function usePendingChanges({
     return action
       .run(
         async (): Promise<PartReview> => {
-          const preview = await prepare(part);
+          const preview = await prepare();
           if (!preview) throw new Error(`${part.title} has nothing to apply.`);
           return { ...part, preview, failure: "" };
         },

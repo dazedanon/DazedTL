@@ -983,7 +983,7 @@ assert sorted(row["correction"] for row in findings["findings"]) == [
     "Ah…♥ Amazing",
     "Let's leave the forest.",
     # Wider than Arina's portrait message, so it is rewrapped there.
-    "My power, at a full 100%, is more than enough to\nbeat anyone!",
+    "My power, at a full 100%,\nis more than enough to beat anyone!",
     "Owner · owner 0",
     "Rest on the first stratum",
     "The arousal is building…",
@@ -1146,9 +1146,11 @@ else:
     raise AssertionError("Corrections from older rules were applied.")
 
 # Database checks send what reviewers read apart to deep review with their
-# evidence: two skills that show one name, and an MZ state message that prints
-# without its subject.
+# evidence: two skills that show one name, an MZ state message that prints
+# without its subject, and a description its help window cuts off even
+# wrapped to the Line widths.
 checks_game = temporary / "checks-game"
+FIRE = "敵全体に大きな火属性ダメージを与え、3ターン燃焼させる。"
 (checks_game / "data").mkdir(parents=True)
 (checks_game / "js").mkdir()
 (checks_game / "js/rmmz_core.js").write_text("")
@@ -1157,6 +1159,13 @@ for name, value in {
         None,
         {"id": 1, "name": "Sweeping Slash", "_original": {"name": "払い斬り"}},
         {"id": 2, "name": "Sweeping Slash", "_original": {"name": "薙ぎ払い"}},
+        {
+            "id": 3,
+            "name": "Inferno",
+            "description": "Deals heavy fire damage to every enemy and burns "
+            "them for three turns.",
+            "_original": {"name": "業火", "description": FIRE},
+        },
     ],
     "States.json": [
         None,
@@ -1172,7 +1181,11 @@ for name, value in {
         json.dumps(value, ensure_ascii=False), encoding="utf-8"
     )
 checked, _state = qa.prepare_task(
-    checks_game, checks_game / "data", "release", temporary / "checks-storage"
+    checks_game,
+    checks_game / "data",
+    "release",
+    temporary / "checks-storage",
+    fit={"widths": {"width": 60, "faceWidth": 50, "listWidth": 30, "noteWidth": 30}},
 )
 sources = {
     cluster["representative"]: cluster["source"]
@@ -1188,6 +1201,7 @@ assert reasons == {
     "払い斬り": ["name-collision"],
     "薙ぎ払い": ["name-collision"],
     "の幻惑が解けた": ["battler-name"],
+    FIRE: ["text-fit"],
 }, reasons
 for worker in ("screen-a", "screen-b"):
     row = qa.next_bundle(checked, worker)
@@ -1195,7 +1209,14 @@ for worker in ("screen-a", "screen-b"):
     qa.accept_result(checked, screen(row, set()))
 row = qa.next_bundle(checked, "deep-a")
 items = {item["source"]: item for item in bundle_of(row)["items"]}
-assert set(items) == {"払い斬り", "薙ぎ払い", "の幻惑が解けた"}, items
+assert set(items) == {"払い斬り", "薙ぎ払い", "の幻惑が解けた", FIRE}, items
+assert items[FIRE]["checks"] == [
+    {
+        "check": "text-fit",
+        "note": "Wrapped to the game's Line widths, this text needs 3 rows; "
+        "its window shows 2.",
+    }
+], items
 assert items["払い斬り"]["deep_reasons"] == ["name-collision"], items
 assert "Skills.json 2 薙ぎ払い" in items["払い斬り"]["checks"][0]["note"], items
 assert items["の幻惑が解けた"]["checks"][0]["check"] == "battler-name", items

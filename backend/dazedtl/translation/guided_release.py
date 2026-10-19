@@ -16,6 +16,11 @@ if TYPE_CHECKING:
     from .guided import Guided
 
 
+# The line width check's settings, which forms saved before fitting became
+# automatic still hold.
+LINE_WIDTH_CHECK_KEYS = frozenset({"categories", "codes", "max_rows", "protect_rows"})
+
+
 class GuidedRelease:
     def __init__(self, guided: Guided):
         self.guided = guided
@@ -30,6 +35,15 @@ class GuidedRelease:
         if isinstance(value, dict):
             # Forms saved before the investigation choice existed run one pass.
             value = {"thorough_investigation": False, **value}
+            # The line width check's settings went with the check: text is
+            # fitted as it is written.
+            value.pop("only_overflow", None)
+            if isinstance(value.get("text"), dict):
+                value["text"] = {
+                    key: item
+                    for key, item in value["text"].items()
+                    if key not in LINE_WIDTH_CHECK_KEYS
+                }
         if (
             not isinstance(value, dict)
             or set(value)
@@ -37,12 +51,11 @@ class GuidedRelease:
                 "version",
                 "original",
                 "untranslated",
-                "only_overflow",
                 "thorough_investigation",
                 "release",
                 "text",
             }
-            or {"version", "original", "untranslated", "only_overflow"} - set(value)
+            or {"version", "original", "untranslated"} - set(value)
             or any(
                 not isinstance(value[key], str)
                 or len(value[key]) > 10000
@@ -51,48 +64,19 @@ class GuidedRelease:
             )
             or value.get("untranslated") is not None
             and type(value["untranslated"]) is not bool
-            or type(value.get("only_overflow")) is not bool
             or type(value["thorough_investigation"]) is not bool
         ):
             raise ValueError("Invalid guided form values.")
         text = value.get(
             "text",
-            {
-                "view": "apply",
-                "categories": ["dialogue", "face_dialogue", "list", "notes"],
-                "codes": "401,405",
-                "max_rows": 4,
-                "protect_rows": True,
-                "focus": "release",
-                "findings": [],
-            },
+            {"view": "apply", "focus": "release", "findings": []},
         )
         if isinstance(text, dict):
             text = {"findings_task": "", **text}
         if (
             not isinstance(text, dict)
-            or set(text)
-            != {
-                "view",
-                "categories",
-                "codes",
-                "max_rows",
-                "protect_rows",
-                "focus",
-                "findings_task",
-                "findings",
-            }
+            or set(text) != {"view", "focus", "findings_task", "findings"}
             or text["view"] not in {"apply", "fitting", "qa", "tools"}
-            or not isinstance(text["categories"], list)
-            or any(
-                item not in {"dialogue", "face_dialogue", "list", "notes"}
-                for item in text["categories"]
-            )
-            or not isinstance(text["codes"], str)
-            or len(text["codes"]) > 100
-            or type(text["max_rows"]) is not int
-            or not 1 <= text["max_rows"] <= 100
-            or type(text["protect_rows"]) is not bool
             or text["focus"] not in {"release", "database", "dialogue", "risky-codes"}
             or not isinstance(text["findings_task"], str)
             or len(text["findings_task"]) > 10000
@@ -102,7 +86,7 @@ class GuidedRelease:
                 for item in text["findings"]
             )
         ):
-            raise ValueError("Invalid fitting or optional QA choices.")
+            raise ValueError("Invalid optional QA choices.")
         return {
             **value,
             "text": deepcopy(text),
@@ -219,7 +203,6 @@ class GuidedRelease:
                 "version": "",
                 "original": "",
                 "untranslated": None,
-                "only_overflow": True,
                 "thorough_investigation": False,
                 **saved,
             },

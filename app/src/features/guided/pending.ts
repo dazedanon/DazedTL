@@ -1,13 +1,11 @@
 /** What a task has reviewed and ready to go into the game, from observed state. */
 
-import type { Preview } from "../../api/contracts.ts";
-
-export type PendingPartId = "images" | "rewraps";
+export type PendingPartId = "images";
 
 export interface PendingPart {
   id: PendingPartId;
   title: string;
-  /** The amount in words, such as "12 line rewraps". */
+  /** The amount in words, such as "12 images". */
   summary: string;
 }
 
@@ -15,8 +13,6 @@ export interface PendingPart {
 export type PendingInput = {
   /** Images reviewed and ready to apply. */
   images: number;
-  /** Line rewraps a current line width check would write. */
-  rewraps: number;
 };
 
 const parts: Record<
@@ -24,7 +20,6 @@ const parts: Record<
   { title: string; one: string; many?: string }
 > = {
   images: { title: "Images", one: "image" },
-  rewraps: { title: "Rewrapped lines", one: "rewrap" },
 };
 
 /** The part a task applies, or null while it has nothing ready. */
@@ -41,16 +36,3 @@ export function pendingPart(
     summary: `${count.toLocaleString()} ${count === 1 ? one : many}`,
   };
 }
-
-/**
- * What a rewrap review would write, so a fresh preview taken just
- * before Apply can be compared with the reviewed one. It binds the exact
- * bytes by hash: the visible diff is cut off on large files.
- */
-export const reviewSignature = (preview: Preview) =>
-  JSON.stringify([
-    preview.action,
-    [...preview.paths].sort(),
-    preview.rewrap?.previews.map((row) => [row.file_name, row.after]),
-    preview.publication?.map((row) => [row.path, row.before, row.after]),
-  ]);
