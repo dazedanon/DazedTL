@@ -8,7 +8,7 @@ import shutil
 import uuid
 
 from util.engine_options import validate_engine_options, engine_options
-from util.game_settings import load_game_wrap_widths, normalize_wrap_widths, save_game_wrap_widths, valid_line_widths
+from util.game_settings import GameSettingsError, load_game_wrap_widths, normalize_wrap_widths, save_game_wrap_widths, valid_line_widths
 from util.rpgmaker_profiles import DB_FILES, EVENT_FILES_EXACT, PHASE0_CONFIG, PHASE1_CONFIG, PHASE1B_CONFIG, PHASE2_CONFIG
 from .project import atomic_json, digest
 from .settings import SettingsStore
@@ -209,8 +209,12 @@ class Workflows:
                 selected["everything"] = True
             # QA's corrections are fitted to the Line widths as text is: the
             # game's saved ones, which an Assistant-led assistant saves
-            # without this workspace.
-            widths = load_game_wrap_widths(project["source"]) or project["widths"]
+            # without this workspace, or this project's when the game's
+            # settings can't be read.
+            try:
+                widths = load_game_wrap_widths(project["source"]) or project["widths"]
+            except GameSettingsError:
+                widths = project["widths"]
             selected["fit"] = {"widths": normalize_wrap_widths(widths)}
         if action in {"release_playtest", "playtest_fix"}:
             from util.playtest.run import read_stops
