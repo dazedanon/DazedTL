@@ -15,6 +15,7 @@ probe = Probe("qa_engine.py")
 declines = Probe("qa_declines.py")
 scenes = Probe("qa_scene.py")
 interface = Probe("qa_interface.py")
+glossary = Probe("qa_glossary.py")
 manifest = engine_module("util/rpgmaker_qa_manifest.py")
 verify = engine_module("util/rpgmaker_qa_verify.py")
 lint = engine_module("util/rpgmaker_qa_lint.py")
@@ -139,6 +140,10 @@ class QAEngineTests(unittest.TestCase):
         returncode, output = interface.result()
         self.assertEqual(returncode, 0, output)
 
+    def test_glossary_fixes_only_renderings_and_applies_accepted_ones(self):
+        returncode, output = glossary.result()
+        self.assertEqual(returncode, 0, output)
+
     def test_numbers_beside_stat_letters_count(self):
         # Skill descriptions from a release, where English moves the stat away
         # from its number.
@@ -210,21 +215,23 @@ class QAEngineTests(unittest.TestCase):
             ("頭がぐるぐるしゅる゛…", "My head'sh shpinning"),
             ("うおぉ゛…お゛ぉ", "Whoa'…o'oh"),
         ):
-            self.assertEqual(lint.proposals(source, live, {}), {}, live)
+            self.assertEqual(lint.proposals(source, live, lint.Game()), {}, live)
         # An apostrophe inside or after an ordinary word is still a leftover.
         self.assertEqual(
-            lint.proposals("な゛んで…や゛めて", "Wh'y… Sto'p it'…", {}),
+            lint.proposals("な゛んで…や゛めて", "Wh'y… Sto'p it'…", lint.Game()),
             {"lint:dakuten-apostrophe": "Why… Stop it…"},
         )
 
     def test_quoted_titles_spare_lines_that_are_speech(self):
         # Released lines: speech in 「」 that another line's translation of a
         # shorter source would have overwritten.
-        titles = {
-            "神！": {"God!!"},
-            "トレイタースライム！": {"The Traitor Slime!!"},
-            "魔法の書": {"Book of Magic"},
-        }
+        titles = lint.Game(
+            titles={
+                "神！": {"God!!"},
+                "トレイタースライム！": {"The Traitor Slime!!"},
+                "魔法の書": {"Book of Magic"},
+            }
+        )
         for source, live in (
             ("「神！」", '"God!"'),
             (
@@ -243,29 +250,26 @@ class QAEngineTests(unittest.TestCase):
         # Released lines put a color or plugin code right before a number,
         # and lint used to space every one of them.
         self.assertEqual(
-            lint.proposals("_PUM[0]1\\G 手に入れた！", "_PUM[0]1\\G obtained!", {}), {}
+            lint.proposals(
+                "_PUM[0]1\\G 手に入れた！", "_PUM[0]1\\G obtained!", lint.Game()
+            ),
+            {},
         )
         self.assertEqual(
             lint.proposals(
-                "【噂Lv】3で\\c[14]25000G", "[Rumor Lv.]3 for \\c[14]25000G", {}
+                "【噂Lv】3で\\c[14]25000G",
+                "[Rumor Lv.]3 for \\c[14]25000G",
+                lint.Game(),
             ),
             {"lint:level-tag-spacing": "[Rumor Lv.] 3 for \\c[14]25000G"},
         )
 
     def test_database_checks_find_what_reviewers_read_apart(self):
         # Defects a release's reviewers found only by luck: a skill named like
-        # another, a dropped glossary word and an MZ message without its subject.
+        # another and an MZ message without its subject.
         rows = [
             ("Skills.json", 42, "name", "払い斬り", "Sweeping Slash"),
             ("Skills.json", 173, "name", "薙ぎ払い", "Sweeping Slash"),
-            (
-                "Skills.json",
-                338,
-                "description",
-                "敵全体へ大なぎ払い。",
-                "A sweeping strike.",
-            ),
-            ("Skills.json", 2, "name", "手当て", "Tend Wounds"),
             (
                 "States.json",
                 42,
@@ -277,11 +281,10 @@ class QAEngineTests(unittest.TestCase):
             # starts with a particle.
             ("Skills.json", 341, "message1", "は仲間を呼んだ！", "Called for allies!"),
             ("Skills.json", 342, "message1", "仲間を呼んだ！", "Called for allies!"),
-            # Map names players never see, a short term inside another word,
-            # a complete sentence and a message with its %1 all pass.
+            # Map names players never see, a complete sentence and a message
+            # with its %1 all pass.
             ("MapInfos.json", 1, "name", "森", "Sweeping Slash"),
             ("MapInfos.json", 2, "name", "林", "Sweeping Slash"),
-            ("Armors.json", 1, "name", "疾風の足環", "Gale Anklet"),
             ("States.json", 43, "message4", "の毒が消えた", "The poison wore off."),
             ("States.json", 44, "message1", "%1は倒れた！", "%1 fell!"),
         ]
@@ -306,14 +309,7 @@ class QAEngineTests(unittest.TestCase):
                 for record in records
             ],
         }
-        glossary = [
-            ("薙ぎ払い", "Sweeping Strike"),
-            ("大なぎ払い", "Grand Sweeping Strike"),
-            ("なぎ払い", "Sweeping Strike"),
-            ("手当て", "First Aid"),
-            ("風", "Wind"),
-        ]
-        found = checks.database_checks(manifest, glossary, "MZ")
+        found = checks.database_checks(manifest, "MZ")
         self.assertEqual(
             {
                 identity: [entry["check"] for entry in entries]
@@ -321,9 +317,7 @@ class QAEngineTests(unittest.TestCase):
             },
             {
                 "Skills.json#42/name": ["name-collision"],
-                "Skills.json#173/name": ["name-collision", "glossary-missing"],
-                "Skills.json#338/description": ["glossary-missing"],
-                "Skills.json#2/name": ["glossary-missing"],
+                "Skills.json#173/name": ["name-collision"],
                 "States.json#42/message4": ["battler-name"],
                 "Skills.json#341/message1": ["battler-name"],
             },
@@ -331,9 +325,8 @@ class QAEngineTests(unittest.TestCase):
         self.assertIn(
             "Skills.json 173 薙ぎ払い", found["Skills.json#42/name"][0]["note"]
         )
-        self.assertIn("大なぎ払い", found["Skills.json#338/description"][0]["note"])
         # MV writes the name right before the message, so only a glued one fails.
         for live, failing in (("collapsed!", True), (" collapsed!", False)):
-            records[4]["live"] = live
-            found = checks.database_checks(manifest, [], "MV")
+            records[2]["live"] = live
+            found = checks.database_checks(manifest, "MV")
             self.assertEqual("States.json#42/message4" in found, failing, live)

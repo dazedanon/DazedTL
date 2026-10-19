@@ -139,6 +139,8 @@ All Check tasks are optional:
 - **Text QA**: **Start text QA** copies the task, and your assistant reviews the translated text and applies the corrections it verifies.
   It runs four reviewers at once; when the page says **one reviewer at a time**, your assistant is reviewing alone, which takes several times longer, so ask it to start the reviewers its QA task describes.
   A correction too wide for its box is rewrapped to the Line widths saved when QA started.
+  QA also keeps the glossary: where a line writes a glossary term another way, such as a place name translated before its glossary row existed, your assistant puts in the glossary's English unless the line means an ordinary word.
+  When the game's wording is the one you want, change the glossary row before running QA.
   QA also opens the game's screens, such as its menus, item lists and shop, without changing the game, and shortens names and commands the game squeezes or cuts off.
   Squeezed text QA can't change, such as a plugin's menu command, goes to **Plugin files**, where its assistant shortens it.
   Answer the questions it can't settle on the page; each correction is listed with **Undo**, and an undone one with **Apply again**.

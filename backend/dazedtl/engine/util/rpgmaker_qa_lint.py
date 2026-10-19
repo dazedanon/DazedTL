@@ -6,7 +6,8 @@ applies the automatic families to each new line and QA accepts them without
 review; QA proposes the other families' fixes, reviewed as a group. Fixers are
 idempotent and run in a fixed order, so accepted fixes also apply on top of a
 deep correction. Text identical to its source was never translated and gets
-no fixes.
+no fixes. Some families read the whole game, such as its quoted titles and
+its glossary, from a `Game` made once per inventory.
 """
 
 from __future__ import annotations
@@ -14,8 +15,8 @@ from __future__ import annotations
 import difflib
 import re
 from collections import defaultdict
-from collections.abc import Collection
-from typing import Any
+from collections.abc import Collection, Mapping
+from typing import Any, NamedTuple
 
 FAMILIES: dict[str, dict[str, str]] = {
     "lint:heart-spacing": {
@@ -45,6 +46,10 @@ FAMILIES: dict[str, dict[str, str]] = {
     "lint:level-tag-spacing": {
         "category": "formatting",
         "description": "A level tag or bracketed label touches the word or number beside it.",
+    },
+    "lint:glossary-term": {
+        "category": "terminology",
+        "description": "A glossary term is rendered another way than the glossary gives it.",
     },
 }
 ORDER = tuple(FAMILIES)
@@ -87,7 +92,17 @@ _SOURCE_LABEL_RE = re.compile(r"【[^】\n]{1,40}】|\[[^\]\n]{1,40}\]")
 _DUPLICATED_LABEL_RE = re.compile(r"(\[[^\]\n]{1,40}\])\s*\1")
 
 
-def _heart_spacing(source: str, text: str, titles: dict) -> str:
+class Game(NamedTuple):
+    """What families read from the whole game: each single-line Japanese
+    text's English forms, which quoted titles must match, and its glossary
+    with the renderings its English holds."""
+
+    titles: Mapping[str, set[str]] = {}
+    # An rpgmaker_qa_glossary.Glossary, or None for a text checked alone.
+    glossary: Any = None
+
+
+def _heart_spacing(source: str, text: str, game: Game) -> str:
     quotes = 0
     out = []
     for index, char in enumerate(text):
@@ -103,7 +118,7 @@ def _heart_spacing(source: str, text: str, titles: dict) -> str:
     return "".join(out)
 
 
-def _stray_sokuon(source: str, text: str, titles: dict) -> str:
+def _stray_sokuon(source: str, text: str, game: Game) -> str:
     if not _SOKUON_SOURCE_RE.search(source):
         return text
     return _STRAY_SOKUON_RE.sub(r"\1", text)
@@ -132,7 +147,7 @@ def _split_word(prefix: str, suffix: str) -> bool:
     return True
 
 
-def _dakuten_apostrophe(source: str, text: str, titles: dict) -> str:
+def _dakuten_apostrophe(source: str, text: str, game: Game) -> str:
     if not _DAKUTEN_SOURCE_RE.search(source):
         return text
 
@@ -150,7 +165,7 @@ def _dakuten_apostrophe(source: str, text: str, titles: dict) -> str:
     return text
 
 
-def _merged_list(source: str, text: str, titles: dict) -> str:
+def _merged_list(source: str, text: str, game: Game) -> str:
     source_items = [
         line for line in source.split("\n") if line.strip(" \u3000").startswith(_BULLET)
     ]
@@ -169,7 +184,7 @@ def _merged_list(source: str, text: str, titles: dict) -> str:
     return (head + "\n" + body) if head else body
 
 
-def _quoted_title(source: str, text: str, titles: dict) -> str:
+def _quoted_title(source: str, text: str, game: Game) -> str:
     spans = list(_QUOTED_RE.finditer(text))
     if len(spans) != 1:
         return text
@@ -186,7 +201,7 @@ def _quoted_title(source: str, text: str, titles: dict) -> str:
         key = piece.strip(" \u3000「」『』")
         # The line's own source is not a title it names.
         if key != whole:
-            named |= titles.get(key, set())
+            named |= game.titles.get(key, set())
     if quoted in named:
         return text
     # The source line the quote stands for is the title it resembles.
@@ -202,18 +217,26 @@ def _quoted_title(source: str, text: str, titles: dict) -> str:
     return text[: match.start(group)] + title + text[end:]
 
 
-def _duplicated_label(source: str, text: str, titles: dict) -> str:
+def _duplicated_label(source: str, text: str, game: Game) -> str:
     if len(_ENGLISH_LABEL_RE.findall(text)) <= len(_SOURCE_LABEL_RE.findall(source)):
         return text
     return _DUPLICATED_LABEL_RE.sub(r"\1", text)
 
 
-def _level_tag_spacing(source: str, text: str, titles: dict) -> str:
+def _level_tag_spacing(source: str, text: str, game: Game) -> str:
     text = _LEVEL_TAG_RE.sub(" ", text)
     # A label followed by its number, as in 【噂Lv】3, reads "[Rumor Lv.] 3".
     if _SOURCE_LABEL_NUMBER_RE.search(source):
         return _LABEL_NUMBER_RE.sub(r"\1 ", text)
     return text
+
+
+def _glossary_term(source: str, text: str, game: Game) -> str:
+    if game.glossary is None:
+        return text
+    from util import rpgmaker_qa_glossary as glossary
+
+    return glossary.fix(source, text, game.glossary)
 
 
 FIXERS = {
@@ -224,6 +247,7 @@ FIXERS = {
     "lint:quoted-title": _quoted_title,
     "lint:duplicated-label": _duplicated_label,
     "lint:level-tag-spacing": _level_tag_spacing,
+    "lint:glossary-term": _glossary_term,
 }
 
 
@@ -249,28 +273,51 @@ def title_map(clusters: list[dict[str, Any]]) -> dict[str, set[str]]:
     return titles
 
 
-def compose(source: str, text: str, families: Collection[str], titles: dict) -> str:
+def game(manifest: dict[str, Any], glossary_text: str) -> Game:
+    """What the families read from a whole inventory and its glossary."""
+    from util import rpgmaker_qa_glossary as glossary
+
+    return Game(
+        title_map(manifest["clusters"]),
+        glossary.build(glossary_text, manifest["records"]),
+    )
+
+
+def note(family: str, source: str, live: str, game: Game) -> str:
+    """Why one text's fix is right, for a family that says so line by line,
+    as the glossary family names the terms it writes; otherwise ""."""
+    if family != "lint:glossary-term" or game.glossary is None:
+        return ""
+    from util import rpgmaker_qa_glossary as glossary
+
+    return " ".join(
+        f'The glossary gives {term.source} as "{term.english}".'
+        for term in glossary.fixed_terms(source, live, game.glossary)
+    )
+
+
+def compose(source: str, text: str, families: Collection[str], game: Game) -> str:
     """Apply the named families' fixes to a text, in the fixed family order."""
     if text == source:
         return text
     for family in ORDER:
         if family in families:
-            text = FIXERS[family](source, text, titles)
+            text = FIXERS[family](source, text, game)
     return text
 
 
 def normalize(source: str, text: str) -> str:
     """A new translation of a source line, with the automatic families' fixes."""
-    return compose(source, text, AUTOMATIC, {})
+    return compose(source, text, AUTOMATIC, Game())
 
 
-def proposals(source: str, live: str, titles: dict) -> dict[str, str]:
+def proposals(source: str, live: str, game: Game) -> dict[str, str]:
     """Each family's own fix of one text, for the families that change it."""
     found = {}
     if live == source:
         return found
     for family in ORDER:
-        fixed = FIXERS[family](source, live, titles)
+        fixed = FIXERS[family](source, live, game)
         if fixed != live:
             found[family] = fixed
     return found

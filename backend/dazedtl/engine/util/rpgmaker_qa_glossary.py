@@ -5,34 +5,31 @@ before a row was added or changed can render the term differently, as
 "Kelsar Fort" for the glossary's Kelser Fortress. Text QA's inventory pairs
 each translated line's Japanese, which the engine keeps in `_original`, with
 the English the game shows, and a line whose Japanese holds a term its
-English lacks is flagged.
+English lacks misses it.
 
-Some terms are also ordinary words, such as 回復 for a skill named Heal, so
-every flag is the user's to review. A proposal writes the term in place of
-the words that render it, and nothing reaches the game without a choice.
-
-This module is not one of Text QA's rule files, so changing it never makes a
-prepared QA task outdated.
+A missed term is fixed only where its rendering is found: the whole English
+of a name that is only the term, the words most like the term, or a
+rendering another line of the term was found with. A line that names the
+term another way, such as "you" for a character, or that means an ordinary
+word written like a term, such as 回復 beside a skill named Heal, has no
+rendering to replace. Text QA proposes each fix as its glossary lint family,
+which a reviewer checks, so a term used as an ordinary word stays as it is.
 """
 
 from __future__ import annotations
 
 import difflib
-import hashlib
-import json
 import re
 import unicodedata
 from collections import defaultdict
-from dataclasses import dataclass, replace
-from pathlib import Path
-from typing import Any, Callable, Iterable
+from dataclasses import dataclass, field, replace
+from functools import lru_cache
+from typing import Any, Iterable
 
 # Players never read MapInfos.json names; a map shows its own display name.
 UNSEEN_FILES = frozenset({"MapInfos.json"})
 # A one-character term is too often part of other words.
 TERM_MIN = 2
-# Lines a scan keeps; a glossary row that matches more is better narrowed.
-LINE_LIMIT = 1000
 # Event commands whose text is a name: Show Text's nameplate and the Change
 # Name and Change Nickname commands.
 NAME_CODES = frozenset({101, 320, 324})
@@ -48,10 +45,20 @@ SIMILAR = 0.6
 # At least one word of a rendering is this alike, unless every word of it
 # is written like a name.
 ANCHOR = 0.8
+# Texts and words whose matching a scan remembers: a large game's English
+# repeats the same words across tens of thousands of lines.
+MEMORY = 1 << 16
+# Endings that make a word's people, adjective or noun, as "Shikinowan" and
+# "villager" do of Shikinowa and Village; such a word uses the term.
+DERIVED = ("n", "an", "ian", "ese", "ish", "ic", "r", "er", "ment", "ness")
+# Words naming a person or people, so "Military Police" uses the glossary's
+# Military Policeman and "townspeople" its Townsman.
+PEOPLE = ("man", "men", "woman", "women", "person", "people", "folk", "folks")
 
 _KANJI = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff々〆ヶ]")
 # Katakana and its long vowel mark, without the middle dot that joins names.
 _KATAKANA = re.compile(r"[\u30a1-\u30fa\u30fc-\u30ff\uff66-\uff9f]")
+_KATAKANA_NAME = re.compile(r"[\u30a1-\u30fa\u30fc-\u30ff\uff66-\uff9f]+")
 _JAPANESE = re.compile(
     r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]"
 )
@@ -71,16 +78,30 @@ _OPENING = frozenset(" \t\"'“‘「『(（【［[《〈―─—-▼■●◆�
 _FRAME = re.compile(rf"{_CODE}|[\s【】「」『』（）()［］\[\]〈〉《》・:：!！?？…～。、.,]")
 _QUALIFIER = re.compile(r"\s*\([^()]*\)\s*$")
 _ALIASES = re.compile(r"\s*[,、/／]\s*")
+# What separates a glossary English's alternatives, as in "Lulu / Lulu-chan".
+_ALTERNATIVES = re.compile(r"\s*[/;]\s*")
+# A word of romanized Japanese, syllable by syllable, as "Wakachi" or
+# "Ishihiroi".
+_ROMAJI = re.compile(
+    r"(?:(?:[kgsztdnhbpmyrwfj]|sh|ch|ts|[kgnhbpmr]y)?[aiueo]|n(?![aiueoy])"
+    r"|([kgstdpc])(?=\1))+"
+)
+# Letters and digits that continue a term written with them, as the Ａ of
+# コア1Ａ does コア1.
+_ALNUM = re.compile(r"[0-9A-Za-z０-９Ａ-Ｚａ-ｚ]")
 # A word ending, and the endings the word may have without it, so
 # "Warriors", "Accessories" and "blessed" meet Warrior, Accessory and Blessing.
 _ENDINGS = (
     ("ies", ("y",)),
+    ("ves", ("f", "fe")),
     ("ied", ("y",)),
     ("men", ("man",)),
     ("es", ("", "e")),
     ("ing", ("", "e")),
     ("ed", ("", "e")),
     ("s", ("",)),
+    # Succubi, incubi.
+    ("i", ("us",)),
 )
 
 
@@ -94,8 +115,8 @@ class Term:
     order: int
     # The English word sequences that count as using the term.
     forms: tuple[tuple[str, ...], ...]
-    # What a proposal writes in place of a rendering; "" when the glossary
-    # gives the Japanese more than one English.
+    # What a fix writes in place of a rendering; "" when the glossary gives
+    # the Japanese more than one English.
     replacement: str
     # Base glossary rows only claim their span; their English is a hint.
     checked: bool
@@ -131,15 +152,16 @@ def _fold(word: str) -> str:
     return unicodedata.normalize("NFKC", word).casefold().replace("’", "'")
 
 
-def _words(text: str) -> list[tuple[str, int, int]]:
+@lru_cache(maxsize=MEMORY)
+def _words(text: str) -> tuple[tuple[str, int, int], ...]:
     """Each English word's folded form and span, skipping control codes and
     choice conditions."""
     masked = _CONDITION.sub(lambda match: " " * len(match.group()), text)
-    return [
+    return tuple(
         (_fold(match.group("word")), match.start(), match.end())
         for match in _TOKEN.finditer(masked)
         if match.group("word")
-    ]
+    )
 
 
 def _initial(text: str, index: int) -> bool:
@@ -160,13 +182,15 @@ def _undecorated(text: str) -> str:
     return text[index:].strip()
 
 
-def _forms(english: str) -> list[tuple[str, ...]]:
+def _forms(english: str, source: str) -> list[tuple[str, ...]]:
     """The word sequences that count as using a glossary English: each of
     its "/" alternatives and the parts of one that pairs a name with a
     title, as "Scissor, Bandit Leader", each also without a trailing "(…)"
-    qualifier and a leading article."""
+    qualifier and a leading article. A katakana name the glossary gives a
+    full English name, as ニーナ (Nena Evans), is also used by either name
+    alone, since the Japanese says only one of them."""
     texts = []
-    for alternative in english.split("/"):
+    for alternative in _ALTERNATIVES.split(english):
         texts.append(alternative)
         if "," in alternative:
             texts.extend(alternative.split(","))
@@ -178,17 +202,27 @@ def _forms(english: str) -> list[tuple[str, ...]]:
                 words = words[1:]
             if words and tuple(words) not in forms:
                 forms.append(tuple(words))
+    if _KATAKANA_NAME.fullmatch(source):
+        for text in texts:
+            spans = _words(_QUALIFIER.sub("", text))
+            if len(spans) in (2, 3) and all(
+                _QUALIFIER.sub("", text)[start].isupper() and word not in STOPWORDS
+                for word, start, _end in spans
+            ):
+                for name in (spans[0][0], spans[-1][0]):
+                    if (name,) not in forms:
+                        forms.append((name,))
     return forms
 
 
 def terms(rows: Iterable[tuple[str, str, str, bool]]) -> list[Term]:
     """Every row's Japanese forms, longest first, so each claims its span
     before a shorter term inside it. A Japanese the game's glossary gives
-    two English accepts either and has no proposal."""
+    two English accepts either and has no fix."""
     found: dict[str, Term] = {}
     for order, (source, english, section, is_base) in enumerate(rows):
         english = _undecorated(english)
-        first = english.split("/")[0].strip()
+        first = _ALTERNATIVES.split(english)[0].strip()
         for alias in _ALIASES.split(source):
             alias = _undecorated(alias)
             if not alias:
@@ -199,11 +233,13 @@ def terms(rows: Iterable[tuple[str, str, str, bool]]) -> list[Term]:
                     found[alias] = replace(
                         earlier,
                         english=f"{earlier.english} / {english}",
-                        forms=tuple(dict.fromkeys(earlier.forms + tuple(_forms(english)))),
+                        forms=tuple(
+                            dict.fromkeys(earlier.forms + tuple(_forms(english, alias)))
+                        ),
                         replacement="",
                     )
                 continue
-            forms = tuple(_forms(english))
+            forms = tuple(_forms(english, alias))
             found[alias] = Term(
                 source=alias,
                 english=english,
@@ -237,13 +273,16 @@ def _script(char: str) -> str:
 
 def _inside_word(text: str, start: int, end: int) -> bool:
     """Whether a term found at text[start:end] continues a longer word of
-    its own script, as パン does in パンツ or 呪術 in 呪術師."""
+    its own script, as パン does in パンツ or 呪術 in 呪術師, or a longer
+    name written with letters and digits, as コア1 does in コア1Ａ."""
     first, last = _script(text[start]), _script(text[end - 1])
-    before = _script(text[start - 1]) if start else ""
+    before = text[start - 1] if start else ""
     after = text[end] if end < len(text) else ""
     return bool(
-        (first and before == first)
+        (first and _script(before) == first)
         or (last and after and _script(after) == last and after not in SUFFIXES)
+        or (_ALNUM.match(text[end - 1]) and _ALNUM.match(after))
+        or (_ALNUM.match(text[start]) and _ALNUM.match(before))
     )
 
 
@@ -253,7 +292,7 @@ def _by_first(ordered: list[Term]) -> dict[str, list[tuple[int, Term]]]:
     index: dict[str, list[tuple[int, Term]]] = defaultdict(list)
     for rank, term in enumerate(ordered):
         index[term.source[0]].append((rank, term))
-    return index
+    return dict(index)
 
 
 def _hits(
@@ -287,7 +326,8 @@ def _possessive(word: str) -> tuple[str, bool]:
     return word, False
 
 
-def _bases(word: str) -> set[str]:
+@lru_cache(maxsize=MEMORY)
+def _bases(word: str) -> frozenset[str]:
     """A word and the words it may be a plural or verb form of."""
     forms = {word}
     for ending, replacements in _ENDINGS:
@@ -300,19 +340,49 @@ def _bases(word: str) -> set[str]:
         # "stopped" and "stopping" come from stop.
         if ending in {"ed", "ing"} and len(stem) > 3 and stem[-1] == stem[-2]:
             forms.add(stem[:-1])
-    return forms
+    return frozenset(forms)
 
 
+def _derived(term: str, live: str) -> bool:
+    """Whether a live word is a term word's people, adjective or noun, as
+    "Shikinowans" is of Shikinowa."""
+    return len(term) >= 4 and any(
+        base.startswith(term) and base[len(term) :] in DERIVED for base in _bases(live)
+    )
+
+
+def _people(term: str, live: str) -> bool:
+    """Whether a live word names the people a term's word names a person of,
+    or one of them, as "police" or "policemen" does of Policeman."""
+    for ending in PEOPLE:
+        stem = term[: -len(ending)]
+        if not term.endswith(ending) or len(stem) < 3:
+            continue
+        stems = {stem, stem[:-1] if stem.endswith("s") else stem + "s"}
+        return any(
+            base in stems or base[: len(stem)] in stems and base[len(stem) :] in PEOPLE
+            for base in _bases(live)
+        )
+    return False
+
+
+@lru_cache(maxsize=MEMORY)
 def _meets(term_word: str, live_word: str, last: bool) -> bool:
-    """Whether a live word is a term's word, in any number or tense or held
-    long; a possessive counts only at the term's end, since Tarna's Academy
-    is not the glossary's Tarna Academy."""
+    """Whether a live word is a term's word, in any number or tense, held
+    long, or as its people or adjective; a possessive counts only at the
+    term's end, since Tarna's Academy is not the glossary's Tarna Academy."""
     term, term_owns = _possessive(term_word)
     live, live_owns = _possessive(live_word)
     if live_owns and not (term_owns or last):
         return False
     live = _HELD.sub(r"\1", live)
-    return term == live or bool(_bases(term) & _bases(live))
+    return (
+        term == live
+        or bool(_bases(term) & _bases(live))
+        or _derived(term, live)
+        or _people(term, live)
+        or _people(live, term)
+    )
 
 
 def _content(words: Iterable[str]) -> list[str]:
@@ -322,6 +392,24 @@ def _content(words: Iterable[str]) -> list[str]:
     return content or words
 
 
+def _reordered(form_words: list[str], window: list[str]) -> bool:
+    """Whether a run of words holds a term's words in another order, as
+    "Lilith's Tower" does Tower of Lilith."""
+    remaining = list(window)
+    order = []
+    for word in form_words:
+        match = next(
+            (index for index, live in enumerate(remaining)
+             if live is not None and _meets(word, live, True)),
+            None,
+        )
+        if match is None:
+            return False
+        order.append(match)
+        remaining[match] = None
+    return len(form_words) > 1 and order != sorted(order)
+
+
 def _uses(words: list[str], form: tuple[str, ...]) -> bool:
     """Whether a line's words hold a term form's words in order, with its
     words joined or split as in "break through" for Breakthrough, and any
@@ -329,10 +417,11 @@ def _uses(words: list[str], form: tuple[str, ...]) -> bool:
     form_words, words = _content(form), _content(words)
     count = len(form_words)
     for index in range(len(words) - count + 1):
+        window = words[index : index + count]
         if all(
-            _meets(form_words[offset], words[index + offset], offset == count - 1)
+            _meets(form_words[offset], window[offset], offset == count - 1)
             for offset in range(count)
-        ):
+        ) or _reordered(form_words, window):
             return True
     target = "".join(_possessive(word)[0] for word in form_words)
     for index in range(len(words)):
@@ -346,6 +435,7 @@ def _uses(words: list[str], form: tuple[str, ...]) -> bool:
     return False
 
 
+@lru_cache(maxsize=MEMORY)
 def uses_term(live: str, term: Term) -> bool:
     words = [word for word, _start, _end in _words(live)]
     return any(_uses(words, form) for form in term.forms)
@@ -358,6 +448,10 @@ def _likeness(term_word: str, live_word: str) -> float:
     if term == live:
         # Only a possessive differs, as in Tarna's Academy.
         return 0.9
+    # A rendering keeps a name's first sound, as "Kelsar" does Kelser's, so
+    # "Riyuuya" never renders Yuuyami however many letters they share.
+    if term[:1] != live[:1]:
+        return 0.0
     ratio = difflib.SequenceMatcher(None, term, live).ratio()
     # A shortened word, as "Fort" for Fortress.
     short, long = sorted((term, live), key=len)
@@ -416,15 +510,9 @@ def corpus(texts: Iterable[str]) -> Corpus:
     return Corpus(frozenset(ordinary), frozenset(names))
 
 
-@dataclass(frozen=True)
-class _Line:
-    live: str
-    words: list[tuple[str, int, int]]
-    # A rendering may cross a line break only where the fix is rewrapped.
-    wraps: bool
-
-
-def _rendering(line: _Line, term: Term, words_of: Corpus) -> tuple[int, int] | None:
+def _rendering(
+    live: str, words: list[tuple[str, int, int]], term: Term, words_of: Corpus
+) -> tuple[int, int] | None:
     """The span of the words that most resemble the term, or None when no
     run of words resembles each of the term's words without adding others.
 
@@ -435,9 +523,15 @@ def _rendering(line: _Line, term: Term, words_of: Corpus) -> tuple[int, int] | N
     lower case, the ordinary word the term shares its writing with, as "pray"
     for Prayer.
     """
-    live, words = line.live, line.words
     content = _content(term.forms[0])
     capitalized = term.replacement[:1].isupper()
+    # A term written as a title, every word capitalized, is rendered as
+    # one too, so "the Fjall warriors'" is a phrase, not Warrior of Fjall.
+    title = all(
+        term.replacement[start].isupper()
+        for word, start, _end in _words(term.replacement)
+        if word not in STOPWORDS
+    )
     best: tuple[float, int, int] | None = None
     for first in range(len(words)):
         for last in range(first, min(len(words), first + len(term.forms[0]) + 2)):
@@ -445,14 +539,14 @@ def _rendering(line: _Line, term: Term, words_of: Corpus) -> tuple[int, int] | N
             if window[0][0] in STOPWORDS or window[-1][0] in STOPWORDS:
                 continue
             start, end = window[0][1], window[-1][2]
-            if re.search(_CODE, live[start:end]) or (
-                "\n" in live[start:end] and not line.wraps
-            ):
+            if re.search(_CODE, live[start:end]) or live[start:end].count("\n") > 1:
                 continue
             if capitalized and not live[start].isupper():
                 continue
             found = [word for word in window if word[0] not in STOPWORDS]
-            if len(found) != len(content):
+            if len(found) != len(content) or (
+                title and not all(live[start].isupper() for _word, start, _end in found)
+            ):
                 continue
             # Each of the term's words takes the window word most like it.
             matched = []
@@ -462,6 +556,18 @@ def _rendering(line: _Line, term: Term, words_of: Corpus) -> tuple[int, int] | N
                 matched.append((match, _likeness(word, match[0])))
                 remaining.remove(match)
             scores = [score for _match, score in matched]
+            # A word that only resembles the term's is no rendering when it
+            # is an abbreviation, as "MN" beside Mana, or part of a
+            # hyphenated word, as "Succu-Room" beside Succubus.
+            if min(scores) < 1 and (
+                any(
+                    score < 1 and live[position:end].isupper() and end - position <= 3
+                    for (_word, position, end), score in matched
+                )
+                or live[start - 1 : start] == "-"
+                or live[end : end + 1] == "-"
+            ):
+                continue
             names = all(
                 words_of.named(live, word, position)
                 for (word, position, _end), _score in matched
@@ -476,7 +582,53 @@ def _rendering(line: _Line, term: Term, words_of: Corpus) -> tuple[int, int] | N
     return (_with_article(live, best[1], term), best[2]) if best else None
 
 
-def _is_name(record: dict[str, Any]) -> bool:
+def _romanized(
+    live: str, words: list[tuple[str, int, int]], term: Term, glossary: Glossary
+) -> tuple[int, int] | None:
+    """The span of a name that keeps a word of the term and writes the rest
+    in romanized Japanese, as "Wakachi Valley" does Dividing Valley or
+    "Crag of Yomi" Underworld Crag; a romanized word the glossary gives as
+    another term's English, as a character's name, is that term's."""
+    content = _content(term.forms[0])
+    if len(content) < 2:
+        return None
+    for first in range(len(words)):
+        for last in range(first + 1, min(len(words), first + len(term.forms[0]) + 1)):
+            window = words[first : last + 1]
+            if window[0][0] in STOPWORDS or window[-1][0] in STOPWORDS:
+                continue
+            start, end = window[0][1], window[-1][2]
+            if re.search(_CODE, live[start:end]) or live[start:end].count("\n") > 1:
+                continue
+            found = [word for word in window if word[0] not in STOPWORDS]
+            kept = [
+                word for word in found
+                if any(_meets(own, word[0], True) for own in content)
+            ]
+            others = [word for word in found if word not in kept]
+            # The name ends where the term's words do, so "Yotetsu in an
+            # Oni's" is not taken without its "Hands".
+            beside = [words[index][0] for index in (first - 1, last + 1) if 0 <= index < len(words)]
+            if (
+                any(_meets(own, word, True) for own in content for word in beside)
+                or not 2 <= len(found) <= len(content)
+                or not kept
+                or not others
+                or not all(live[position].isupper() for _word, position, _end in found)
+            ):
+                continue
+            if all(
+                len(word) >= 3
+                and _ROMAJI.fullmatch(_possessive(word)[0])
+                and _possessive(word)[0] not in glossary.known
+                and glossary.corpus.named(live, word, position)
+                for word, position, _end in others
+            ):
+                return _with_article(live, start, term), end
+    return None
+
+
+def is_name(record: dict[str, Any]) -> bool:
     """Whether a text names something, as a nameplate, an actor name or a
     database entry's name does, rather than saying something."""
     field = str((record.get("database_entity") or {}).get("field") or "")
@@ -487,39 +639,75 @@ def _is_name(record: dict[str, Any]) -> bool:
     )
 
 
-def _whole(record: dict[str, Any], line: _Line, term: Term) -> tuple[int, int] | None:
+def _whole(
+    source: str, live: str, words: list[tuple[str, int, int]], term: Term
+) -> tuple[int, int] | None:
     """The span of every word when a name's Japanese is the term and nothing
-    else, so its English is only the term's rendering. A message that says
-    only the term, as 興奮…… does, may mean the ordinary word."""
-    source = str(record["source"])
-    if not _is_name(record) or _FRAME.sub("", source) != term.source or not line.words:
+    else, so its English is only the term's rendering, with any mark the
+    term's English starts or ends with, as the + of "Mark+"."""
+    if not words or _FRAME.sub("", source) != _FRAME.sub("", term.source):
         return None
-    start, end = line.words[0][1], line.words[-1][2]
-    if "\n" in line.live[start:end] and not line.wraps:
+    start, end = words[0][1], words[-1][2]
+    if live[start:end].count("\n") > 1:
         return None
+    head = re.match(r"[^\w\s]*", term.replacement).group()
+    if head and live[:start].endswith(head):
+        start -= len(head)
+    tail = re.search(r"[^\w\s]*$", term.replacement).group()
+    if tail and live[end:].startswith(tail):
+        end += len(tail)
     return start, end
 
 
-def _learned(
-    line: _Line, renderings: Iterable[str], taken: list[tuple[int, int, Term]]
-) -> tuple[int, int] | None:
-    """Where the line holds a rendering another line of the term was found
-    with, such as a nameplate's "Sonko" in dialogue."""
-    for rendering in sorted(renderings, key=len, reverse=True):
-        pattern = r"(?<!\w)" + r"\s+".join(map(re.escape, rendering.split())) + r"(?!\w)"
-        for match in re.finditer(pattern, line.live):
+def _pattern(rendering: str) -> re.Pattern[str]:
+    return re.compile(
+        r"(?<!\w)" + r"\s+".join(map(re.escape, rendering.split())) + r"(?!\w)"
+    )
+
+
+def _occurrences(
+    live: str, renderings: Iterable[str], taken: list[tuple[int, int, Term]]
+) -> list[tuple[int, int]]:
+    """Every place the line holds one of the renderings outside the spans
+    taken, longest rendering first."""
+    found: list[tuple[int, int]] = []
+    for rendering in sorted(renderings, key=lambda text: (-len(text), text)):
+        for match in _pattern(rendering).finditer(live):
             span = match.span()
-            if ("\n" in match.group() and not line.wraps) or any(
-                span[0] < end and start < span[1] for start, end, _term in taken
+            if match.group().count("\n") > 1 or any(
+                span[0] < end and start < span[1]
+                for start, end in [*found, *((s, e) for s, e, _t in taken)]
             ):
                 continue
-            return span
-    return None
+            found.append(span)
+    return found
 
 
-def _written(line: _Line, spans: list[tuple[int, int, Term]]) -> str | None:
+def _replaced(text: str, start: int, end: int, replacement: str) -> str:
+    """The text with a rendering replaced, keeping a line break it crossed
+    between the same words where the replacement has as many, or before the
+    replacement otherwise, so a line spread over several commands keeps its
+    lines."""
+    rendered = text[start:end]
+    if "\n" not in rendered:
+        return text[:start] + replacement + text[end:]
+    before = len(rendered[: rendered.index("\n")].split())
+    words = replacement.split(" ")
+    if len(words) > 1:
+        cut = min(max(before, 1), len(words) - 1)
+        return (
+            text[:start] + " ".join(words[:cut]) + "\n" + " ".join(words[cut:])
+            + text[end:]
+        )
+    head = text[:start].rstrip(" ")
+    if not head or head.endswith("\n"):
+        return head + replacement + "\n" + text[end:].lstrip(" ")
+    return head + "\n" + replacement + text[end:]
+
+
+def _written(live: str, spans: list[tuple[int, int, Term]]) -> str:
     """The line with each term written over its rendering."""
-    text = line.live
+    text = live
     for start, end, term in sorted(spans, key=lambda item: item[0], reverse=True):
         replacement = term.replacement
         # A name keeps its capital; a leading article or an ordinary word
@@ -532,192 +720,144 @@ def _written(line: _Line, spans: list[tuple[int, int, Term]]) -> str | None:
         rendered = text[start:end]
         if _possessive(_fold(rendered))[1] and not _possessive(_fold(replacement))[1]:
             replacement += "'" if rendered.endswith("'") else rendered[-2:]
-        text = text[:start] + replacement + text[end:]
-    return text if text != line.live else None
+        text = _replaced(text, start, end, replacement)
+    return text
 
 
-def line_key(identity: str, live: str) -> str:
-    """A flagged line's key: its inventory identity and the English it holds,
-    so a choice made for one text never applies to another."""
-    return hashlib.sha256(f"{identity}\0{live}".encode("utf-8")).hexdigest()[:16]
+@dataclass(frozen=True)
+class Glossary:
+    """A game's glossary terms with what its English says of them: the
+    words it writes as names, the Japanese of its names, and each term's
+    renderings found on its lines."""
+
+    index: dict[str, list[tuple[int, Term]]] = field(default_factory=dict)
+    corpus: Corpus = Corpus()
+    # The Japanese and English of each nameplate, actor name and database
+    # name, so a message with a name's Japanese is not taken for one.
+    names: frozenset[tuple[str, str]] = frozenset()
+    # Japanese texts only files players never read show.
+    unseen: frozenset[str] = frozenset()
+    renderings: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    # Every word of the glossary's English.
+    known: frozenset[str] = frozenset()
+    # Each of the game's own texts that misses a term, fixed, so Text QA
+    # reads its proposals without finding them again.
+    fixed: dict[tuple[str, str], str] = field(default_factory=dict)
 
 
-def check_records(
-    records: Iterable[dict[str, Any]],
-    ordered: list[Term],
-    skip: Callable[[str, str], bool] = lambda _live, _source: False,
-) -> tuple[int, list[dict[str, Any]]]:
-    """How many translated lines were checked, and each one whose Japanese
-    holds a term its English lacks, with the terms and a proposal.
-
-    A proposal writes each term over its rendering: the whole English of a
-    name that is only the term, the words most like the term, or a
-    rendering another line of the term was found with. `skip` leaves out
-    lines that hold no translation, given their English and Japanese.
-    """
-    records = [
-        record
-        for record in records
-        if record["file"] not in UNSEEN_FILES
+def _seen(record: dict[str, Any]) -> bool:
+    return (
+        record["file"] not in UNSEEN_FILES
         and str(record["source"]) != str(record["live"])
-        and str(record["live"]).strip()
-        and not skip(str(record["live"]), str(record["source"]))
-    ]
-    words_of = corpus(str(record["live"]) for record in records)
-    index = _by_first(ordered)
-    found = []
-    for record in records:
-        source, live = str(record["source"]), str(record["live"])
-        missing: list[tuple[Term, int, int]] = []
-        for term, start, end in _hits(source, index):
-            # A term the English still holds in Japanese is kept on purpose,
-            # such as a plugin key in a note.
-            if live.count(term.source) >= source.count(term.source):
-                continue
-            if not uses_term(live, term) and all(term != hit[0] for hit in missing):
-                missing.append((term, start, end))
-        if missing:
-            line = _Line(
-                live,
-                _words(live),
-                len(record["live_pointers"]) == 1
-                and record["live_transform"] == "identity",
-            )
-            found.append((record, line, missing))
-    renderings: dict[str, set[str]] = defaultdict(set)
-    spans_by_line = []
-    for record, line, missing in found:
-        spans: list[tuple[int, int, Term]] = []
-        for term, _start, _end in missing:
-            if not term.replacement:
-                continue
-            span = _whole(record, line, term) or _rendering(
-                line, term, words_of
-            )
-            if span and not any(span[0] < end and start < span[1] for start, end, _t in spans):
-                spans.append((*span, term))
-                rendering = line.live[span[0] : span[1]]
-                if rendering[:1].isupper():
-                    renderings[term.source].add(" ".join(rendering.split()))
-        spans_by_line.append(spans)
-    flagged = []
-    for (record, line, missing), spans in zip(found, spans_by_line):
-        for term, _start, _end in missing:
-            if term.replacement and all(term != span[2] for span in spans):
-                span = _learned(line, renderings[term.source], spans)
-                if span:
-                    spans.append((*span, term))
-        flagged.append(
-            {
-                "key": line_key(record["identity"], line.live),
-                "identity": record["identity"],
-                "file": record["file"],
-                "pointer": record["live_pointers"][0],
-                "source": str(record["source"]),
-                "live": line.live,
-                "terms": [
-                    {
-                        "source": term.source,
-                        "english": term.english,
-                        "section": term.section,
-                        "order": term.order,
-                        "start": start,
-                        "end": end,
-                    }
-                    for term, start, end in missing
-                ],
-                "proposal": _written(line, spans) if spans else None,
-                # What fitting and checking a fix to its box needs.
-                "record": {
-                    key: record[key]
-                    for key in (
-                        "identity", "file", "source", "live", "event_code",
-                        "live_pointers", "live_transform", "speaker",
-                        "database_entity", "risky_context",
-                    )
-                    if key in record
-                },
-            }
+        and bool(str(record["live"]).strip())
+    )
+
+
+def missing(source: str, text: str, glossary: Glossary) -> list[tuple[Term, int, int]]:
+    """Each glossary term a Japanese text holds that its English lacks, with
+    its span in the Japanese. A term the English still holds in Japanese is
+    kept on purpose, such as a plugin key in a note."""
+    found: list[tuple[Term, int, int]] = []
+    for term, start, end in _hits(source, glossary.index):
+        if text.count(term.source) >= source.count(term.source):
+            continue
+        if not uses_term(text, term) and all(term != hit[0] for hit in found):
+            found.append((term, start, end))
+    return found
+
+
+def _spans(
+    source: str, text: str, glossary: Glossary, learned: bool = True
+) -> list[tuple[int, int, Term]]:
+    """Where a text renders each glossary term it misses, every place it
+    writes that rendering included."""
+    if text == source or source in glossary.unseen:
+        return []
+    terms = [term for term, _start, _end in missing(source, text, glossary)]
+    words = _words(text)
+    spans: list[tuple[int, int, Term]] = []
+    for term in terms:
+        if not term.replacement:
+            continue
+        span = (
+            ((source, text) in glossary.names and _whole(source, text, words, term))
+            or _rendering(text, words, term, glossary.corpus)
+            or _romanized(text, words, term, glossary)
         )
-    return len(records), flagged
+        if span and not any(span[0] < end and start < span[1] for start, end, _t in spans):
+            spans.append((*span, term))
+    for term in terms:
+        if not term.replacement:
+            continue
+        own = {" ".join(text[start:end].split()) for start, end, t in spans if t == term}
+        if not own and learned:
+            own = set(glossary.renderings.get(term.source, ()))
+        spans += [(*span, term) for span in _occurrences(text, own, spans)]
+    return spans
 
 
-def fix_problems(
-    record: dict[str, Any], text: str, layout: dict[str, Any]
-) -> tuple[str, list[str]]:
-    """A fix as DazedTL writes it, rewrapped to its box like a QA correction,
-    and why it would fail to apply or break the line."""
-    from util.rpgmaker_qa import _box, _fit, correction_problems
-
-    box = _box(record, layout)
-    problems = correction_problems(
-        record["source"], record["live"], text, record.get("event_code"),
-        record["live_pointers"], record["live_transform"], box=box,
+def build(glossary_text: str, records: Iterable[dict[str, Any]]) -> Glossary:
+    """A game's glossary context from its glossary file and the inventory
+    records Text QA reads: the game's English words, the Japanese of its
+    names, and the renderings each term was found with, so a nameplate's
+    "Sonko" fixes dialogue too."""
+    ordered = terms(glossary_rows(glossary_text))
+    if not any(term.checked for term in ordered):
+        return Glossary()
+    records = list(records)
+    seen = [record for record in records if _seen(record)]
+    names = frozenset(
+        (str(record["source"]), str(record["live"])) for record in seen if is_name(record)
     )
-    return _fit(text, record["live"], box), problems
-
-
-def scan(
-    data_root: str | Path,
-    glossary_text: str,
-    layout: dict[str, Any],
-    skip: Callable[[str, str], bool] = lambda _live, _source: False,
-) -> dict[str, Any]:
-    """Every translated line in the game's data whose Japanese holds a
-    glossary term its English lacks, with a proposal that applies cleanly."""
-    from util.rpgmaker_qa_manifest import build_manifest
-
-    manifest = build_manifest(data_root, "release")
-    checked, flagged = check_records(
-        manifest["records"], terms(glossary_rows(glossary_text)), skip
+    shown = {str(record["source"]) for record in seen}
+    unseen = frozenset(
+        str(record["source"]) for record in records
+        if record["file"] in UNSEEN_FILES and str(record["source"]) not in shown
     )
-    for line in flagged:
-        if line["proposal"]:
-            fitted, problems = fix_problems(line["record"], line["proposal"], layout)
-            line["proposal"] = None if problems else fitted
-    return {
-        "lines": checked,
-        "flagged": len(flagged),
-        "found": flagged[:LINE_LIMIT],
-        "layout": layout,
-    }
+    context = Glossary(
+        index=_by_first(ordered),
+        corpus=corpus(str(record["live"]) for record in seen),
+        names=names,
+        unseen=unseen,
+        known=frozenset(
+            word for term in ordered for form in term.forms for word in form
+        ),
+    )
+    renderings: dict[str, set[str]] = defaultdict(set)
+    lacking = []
+    for source, live in sorted({(str(r["source"]), str(r["live"])) for r in seen}):
+        if not missing(source, live, context):
+            continue
+        lacking.append((source, live))
+        for start, end, term in _spans(source, live, context, learned=False):
+            rendering = live[start:end]
+            if rendering[:1].isupper():
+                renderings[term.source].add(" ".join(rendering.split()))
+    context = replace(
+        context,
+        renderings={
+            source: tuple(sorted(found, key=lambda text: (-len(text), text)))
+            for source, found in sorted(renderings.items())
+        },
+    )
+    return replace(
+        context,
+        fixed={(source, live): _fixed(source, live, context) for source, live in lacking},
+    )
 
 
-def apply_fixes(data_root: str | Path, fixes: list[dict[str, Any]]) -> list[str]:
-    """Writes each fix's text over the English it was chosen for, in the
-    data folder given, and returns the files it changed. A line that changed
-    since stops the whole write."""
-    from util.rpgmaker_qa import _operation_writes, _render_json_like, _set_pointer
+def fixed_terms(source: str, text: str, glossary: Glossary) -> list[Term]:
+    """The terms `fix` writes into a text, in the order it finds them."""
+    return list(dict.fromkeys(term for _start, _end, term in _spans(source, text, glossary)))
 
-    root = Path(data_root).resolve()
-    by_file: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for fix in fixes:
-        by_file[fix["record"]["file"]].append(fix)
-    rendered = {}
-    for name, rows in sorted(by_file.items()):
-        path = (root / name).resolve()
-        if root not in path.parents or not path.is_file() or path.is_symlink():
-            raise ValueError(f"Unsafe glossary fix target: {name}")
-        raw = path.read_bytes()
-        document = json.loads(raw.decode("utf-8-sig"))
-        for fix in rows:
-            record = fix["record"]
-            operation = {
-                "identity": record["identity"],
-                "live_pointers": record["live_pointers"],
-                "live_transform": record["live_transform"],
-                "expected": record["live"],
-                "replacement": fix["text"],
-            }
-            try:
-                writes = _operation_writes(document, operation)
-            except (KeyError, IndexError, TypeError, ValueError) as exc:
-                raise ValueError(
-                    f"A line in {name} changed since the glossary check; check again."
-                ) from exc
-            for pointer, value in writes:
-                _set_pointer(document, pointer, value)
-        rendered[path] = _render_json_like(raw, document)
-    for path, raw in rendered.items():
-        path.write_bytes(raw)
-    return sorted(by_file)
+
+def _fixed(source: str, text: str, glossary: Glossary) -> str:
+    spans = _spans(source, text, glossary)
+    return _written(text, spans) if spans else text
+
+
+def fix(source: str, text: str, glossary: Glossary) -> str:
+    """The text with each glossary term it misses written over its
+    rendering, or the text itself when no rendering is found."""
+    known = glossary.fixed.get((source, text))
+    return _fixed(source, text, glossary) if known is None else known

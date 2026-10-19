@@ -1,9 +1,9 @@
 # RPG Maker text QA
 
-<!-- qa-contract:rpgmaker-qa-v17
+<!-- qa-contract:rpgmaker-qa-v18
 single-policy role-briefs parallel-workers worker-brief app-owned-inventory immutable-review-bundles database-checks
 battler-name-source-fix
-scene-affine-screen sampled-screen-checks lint-group-review declined-disposition
+scene-affine-screen sampled-screen-checks lint-group-review glossary-lint declined-disposition
 helper-scoped-declines unit-declines coordinator-declines evidence-preserving-deep
 scene-correction family-sweep decision-log consistency-check editorial-stage regression-simulation
 app-publication-apply checkpoint-commit no-provider-api interface-captures
@@ -147,11 +147,10 @@ screening continues; an item whose screen evidence grew after its deep review co
 that `prior_review`, and your review replaces it.
 
 - `checks` are deterministic findings that escalated the item, each with its evidence:
-  `name-collision` (another entry of the same database shows the same English name),
-  `glossary-missing` (the source holds a glossary term whose English this text lacks) and
+  `name-collision` (another entry of the same database shows the same English name) and
   `battler-name` (the way RPG Maker adds the battler's name leaves this battle message without
   a subject, or runs the name into it). Correct it, or review it `clean` with `evidence` that
-  says why it stands, such as a glossary term used as an ordinary word. An MZ message whose
+  says why it stands. An MZ message whose
   check offers the `battler-name` source fix gets the `%1` its source forgot where the name
   belongs ("%1 was freed from the Illusion."); no other correction adds a code, and an MV
   message keeps a leading space. A `show-text-header` check means the Show Text header of the line's box
@@ -214,6 +213,8 @@ that `prior_review`, and your review replaces it.
 
 A `lint-family` item lists one mechanical family's exact fixes, and a `sweep-family` item lists every other line an accepted correction's sweep rule changes, beside that correction.
 Check them as a group and reject only the proposals that would harm their line, such as a sentence start, a system label or a style this game deliberately keeps, with a note.
+A `lint:glossary-term` proposal writes the glossary's English over another rendering of a term, and its `WHY` names the term.
+The glossary is authoritative, so accept it where the line names the glossary's character, place or thing; reject it where the Japanese there is an ordinary word, or the proposal replaced other words or reads wrong, and add an observation when the line still names the term another way.
 Every proposal you neither reject nor decline becomes a finding.
 
 ## Editorial reviewer

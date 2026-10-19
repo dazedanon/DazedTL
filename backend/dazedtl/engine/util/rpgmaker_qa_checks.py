@@ -1,10 +1,10 @@
 """Deterministic checks that send database text to deep review.
 
 Each check finds a defect that sits between texts a reviewer reads apart: two
-entries of one database that show the same English name, a glossary term whose
-English a database text lacks, and a battle message that RPG Maker's battler
-name leaves without a subject or runs into. A check only escalates; a deep
-reviewer judges the text and writes any correction.
+entries of one database that show the same English name, and a battle message
+that RPG Maker's battler name leaves without a subject or runs into. A check
+only escalates; a deep reviewer judges the text and writes any correction. A
+glossary term rendered another way is the glossary lint family's.
 """
 
 from __future__ import annotations
@@ -17,9 +17,6 @@ from typing import Any
 
 # Players never read MapInfos.json names; a map shows its own display name.
 UNSEEN_NAMES = frozenset({"MapInfos.json"})
-# A shorter glossary term inside a longer text is too often an ordinary word,
-# such as 風 in 疾風; it still counts when it is the whole text.
-GLOSSARY_TERM_MIN = 3
 # Battle messages RPG Maker joins to the battler's name: MZ formats the name
 # into %1, and MV writes the name directly before the message.
 BATTLE_MESSAGES = {
@@ -99,34 +96,6 @@ def _collisions(records: list[dict[str, Any]]) -> dict[str, list[str]]:
     return notes
 
 
-def _glossary_misses(
-    records: list[dict[str, Any]], glossary: list[tuple[str, str]]
-) -> dict[str, list[str]]:
-    terms = [(_term(source), source, english) for source, english in glossary]
-    notes: dict[str, list[str]] = defaultdict(list)
-    for record in records:
-        source = _term(str(record["source"]))
-        hits = [
-            (term, original, english) for term, original, english in terms
-            if term and (
-                term == source or len(term) >= GLOSSARY_TERM_MIN and term in source
-            )
-        ]
-        # A term inside a longer matched term, such as なぎ払い inside
-        # 大なぎ払い, is that longer term's word.
-        hits = [
-            hit for hit in hits
-            if not any(hit[0] != other[0] and hit[0] in other[0] for other in hits)
-        ]
-        live = _key(str(record["live"]))
-        for _term_key, original, english in hits:
-            if not any(_key(form) in live for form in english.split("/")):
-                notes[record["identity"]].append(
-                    f'The glossary gives {original} as "{english}", which this text lacks.'
-                )
-    return notes
-
-
 def battler_name_note(engine: str, live: str, source: str = "") -> str:
     """Why a battle message reads wrong once RPG Maker adds the battler's
     name, or "" when it reads right."""
@@ -168,7 +137,7 @@ def _battler_names(records: list[dict[str, Any]], engine: str) -> dict[str, list
 
 
 def database_checks(
-    manifest: dict[str, Any], glossary: list[tuple[str, str]], engine: str
+    manifest: dict[str, Any], engine: str
 ) -> dict[str, list[dict[str, str]]]:
     """Each cluster's failed checks, by its representative identity, with the
     evidence a reviewer needs and the source fix a check allows."""
@@ -184,7 +153,6 @@ def database_checks(
     found: dict[str, list[dict[str, str]]] = defaultdict(list)
     for check, notes in (
         ("name-collision", _collisions(records)),
-        ("glossary-missing", _glossary_misses(records, glossary)),
         ("battler-name", _battler_names(records, engine)),
     ):
         for identity in sorted(notes):

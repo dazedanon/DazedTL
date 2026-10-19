@@ -168,6 +168,7 @@ SOURCE_FIX_ALLOWED_FLAGS = {
 _ENGINE_SOURCES = (
     "rpgmaker_qa.py", "rpgmaker_qa_manifest.py", "rpgmaker_qa_lint.py",
     "rpgmaker_qa_preflight.py", "rpgmaker_qa_reach.py", "rpgmaker_qa_checks.py",
+    "rpgmaker_qa_glossary.py",
     "rpgmaker_header_check.py", "rpgmaker_rewrap.py",
     "rpgmaker_screens/__init__.py", "rpgmaker_screens/capture.cjs",
     "rpgmaker_screens/harness.js", "rpgmaker_window/__init__.py",
@@ -1347,8 +1348,24 @@ def _motif_items(
     return items
 
 
+# The lint families' reading of the last task's game, which one command may
+# need several times: a large game's glossary takes a second or two to read.
+_LINT_GAMES: dict[tuple[str, str], lint.Game] = {}
+
+
+def _lint_game(root: Path, manifest: dict[str, Any]) -> lint.Game:
+    """What the lint families read from the whole game: the task's inventory
+    and the glossary its context holds, as the task was prepared with."""
+    context = _read_json(root / "context.json")
+    key = (manifest["content_sha256"], context["content_sha256"])
+    if key not in _LINT_GAMES:
+        _LINT_GAMES.clear()
+        _LINT_GAMES[key] = lint.game(manifest, context["glossary"]["text"])
+    return _LINT_GAMES[key]
+
+
 def _lint_items(
-    manifest: dict[str, Any], layout: dict[str, Any]
+    manifest: dict[str, Any], layout: dict[str, Any], game: lint.Game
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
     """Each reviewed lint family's proposals as review items, and every line's
     fixes, the automatic families' included.
@@ -1358,7 +1375,6 @@ def _lint_items(
     aside only that part of a family.
     """
     records, _clusters = _record_maps(manifest)
-    titles = lint.title_map(manifest["clusters"])
     by_family: dict[str, list[dict[str, Any]]] = defaultdict(list)
     fixes: dict[str, dict[str, Any]] = {}
     for cluster in manifest["clusters"]:
@@ -1366,7 +1382,7 @@ def _lint_items(
         found = {
             family: proposed
             for family, proposed in lint.proposals(
-                cluster["source"], cluster["live"], titles
+                cluster["source"], cluster["live"], game
             ).items()
             if not any(
                 _record_problems(record, proposed, layout) for record in members
@@ -1377,7 +1393,7 @@ def _lint_items(
         cluster_id = cluster["representative"]
         fixes[cluster_id] = {
             "families": sorted(found, key=lint.ORDER.index),
-            "proposed": lint.compose(cluster["source"], cluster["live"], found, titles),
+            "proposed": lint.compose(cluster["source"], cluster["live"], found, game),
         }
         position = _scene_position(members[0])
         speaker = str((members[0].get("speaker") or {}).get("display_name") or "")
@@ -1393,6 +1409,11 @@ def _lint_items(
                 "source": cluster["source"],
                 "current": cluster["live"],
                 "proposed": proposed,
+                **(
+                    {"note": note}
+                    if (note := lint.note(family, cluster["source"], cluster["live"], game))
+                    else {}
+                ),
             })
     items = []
     for family in lint.ORDER:
@@ -1554,14 +1575,10 @@ def _forced_deep_reasons(item: dict[str, Any]) -> list[str]:
 
 
 def _database_checks(
-    manifest: dict[str, Any], context: dict[str, Any], data_root: Path
+    manifest: dict[str, Any], data_root: Path
 ) -> dict[str, list[dict[str, str]]]:
     """Database text that deterministic checks send to deep review, by cluster."""
-    return checks.database_checks(
-        manifest,
-        _glossary_pairs(context["glossary"]["text"]),
-        checks.runtime(data_root),
-    )
+    return checks.database_checks(manifest, checks.runtime(data_root))
 
 
 # Captures of the game's interface screens, and those taken again with a
@@ -2692,7 +2709,7 @@ def prepare_task(
                 for item in compact_items
                 if (forced_reasons := _forced_deep_reasons(item))
             }
-            for cluster_id, failed in _database_checks(manifest, context, data).items():
+            for cluster_id, failed in _database_checks(manifest, data).items():
                 _merge_candidate(
                     forced_candidates, cluster_id, [entry["check"] for entry in failed]
                 )
@@ -2713,7 +2730,9 @@ def prepare_task(
                         forced_candidates, clusters[flag["identity"]],
                         ["show-text-header"], [flag["identity"]],
                     )
-            lint_items, lint_fixes = _lint_items(manifest, layout)
+            lint_items, lint_fixes = _lint_items(
+                manifest, layout, lint.game(manifest, context["glossary"]["text"])
+            )
             items, screen_index = _screen_items(manifest, context, data, lint_fixes)
             screen_index_document = {
                 "schema": "rpgmaker-qa-screen-index-v1",
@@ -4705,12 +4724,14 @@ def _render_screen_item(
         out = [f"### LINT {item['id']} {item['family']}: {item['description']}"]
         for proposal in item["proposals"]:
             speaker = f" <{proposal['speaker']}>" if proposal.get("speaker") else ""
+            # The line, which an observation may name, in its scene.
+            line = proposal["cluster_id"].split("@", 1)[0]
             out += [
-                f"  {proposal['id']} {proposal['scene']}{speaker}",
+                f"  {proposal['id']} {line}{speaker}",
                 "    JP:  " + _context_text(proposal["source"]),
                 "    EN:  " + _context_text(proposal["current"]),
                 "    FIX: " + _context_text(proposal["proposed"]),
-            ]
+            ] + (["    WHY: " + proposal["note"]] if proposal.get("note") else [])
         return out
     return ["### " + json.dumps(item, ensure_ascii=False)]
 
@@ -5380,7 +5401,7 @@ def _open_follow_ups(
         item["id"]: item
         for item in _compact_items(manifest, _read_json(root / "context.json"))
     }
-    _lint, lint_fixes = _lint_items(manifest, task["layout"])
+    _lint, lint_fixes = _lint_items(manifest, task["layout"], _lint_game(root, manifest))
     screen = checkpoint["screen"]
     # Ordinals continue past every target the task has offered.
     ordinal = int(screen["total_items"])
@@ -5425,12 +5446,13 @@ def _lint_decisions(
     declined: dict[str, Any],
     manifest: dict[str, Any],
     layout: dict[str, Any],
+    game: lint.Game,
 ) -> dict[str, dict[str, Any]]:
     """The lint families accepted for each cluster, with reviewers' notes:
     the automatic families wherever they fix a line, which needs no reviewer,
     and the others where reviewers accepted them."""
     accepted: dict[str, dict[str, Any]] = {}
-    for cluster_id, fixes in _lint_items(manifest, layout)[1].items():
+    for cluster_id, fixes in _lint_items(manifest, layout, game)[1].items():
         automatic = {family for family in fixes["families"] if family in lint.AUTOMATIC}
         if automatic:
             accepted[cluster_id] = {"families": automatic, "notes": []}
@@ -5547,6 +5569,7 @@ def _add_lint_findings(
     manifest: dict[str, Any],
     declined: dict[str, Any],
     layout: dict[str, Any],
+    game: lint.Game,
 ) -> list[dict[str, Any]]:
     """Mark reviewer corrections with their lines' accepted lint fixes, which
     compose after the editorial pass, and add the rest as findings.
@@ -5556,7 +5579,6 @@ def _add_lint_findings(
     Returns the fixes left out because the fixed text would block apply.
     """
     records, clusters = _record_maps(manifest)
-    titles = lint.title_map(manifest["clusters"])
     by_cluster = {
         finding["cluster_id"]: finding for finding in findings
         if finding.get("kind") not in {"show-text", "scene"}
@@ -5594,7 +5616,7 @@ def _add_lint_findings(
         for part, targets in parts:
             if not part or not targets:
                 continue
-            composed = lint.compose(cluster["source"], cluster["live"], part, titles)
+            composed = lint.compose(cluster["source"], cluster["live"], part, game)
             if composed == cluster["live"]:
                 continue
             problems = [
@@ -5614,10 +5636,18 @@ def _add_lint_findings(
                 "id": "",
                 "cluster_id": cluster_id,
                 "severity": "medium",
-                "category": "ui" if part == ["lint:quoted-title"] else "formatting",
+                "category": next(
+                    (
+                        lint.FAMILIES[family]["category"] for family in part
+                        if lint.FAMILIES[family]["category"] != "formatting"
+                    ),
+                    "formatting",
+                ),
                 "family_key": part[0],
                 "evidence": " ".join(
-                    lint.FAMILIES[family]["description"] for family in part
+                    lint.note(family, cluster["source"], cluster["live"], game)
+                    or lint.FAMILIES[family]["description"]
+                    for family in part
                 ) + "".join(
                     " Reviewer: " + note for note in decision["notes"][:2] if reviewed
                 ),
@@ -5660,14 +5690,14 @@ def _deep_items(
     context = _read_json(root / "context.json")
     task = _read_json(root / "task.json")
     records, clusters = _record_maps(manifest)
-    lint_accepted = _lint_decisions(checkpoint, declined, manifest, task["layout"])
-    titles = lint.title_map(manifest["clusters"])
+    game = _lint_game(root, manifest)
+    lint_accepted = _lint_decisions(checkpoint, declined, manifest, task["layout"], game)
     compact = {item["id"]: item for item in _compact_items(manifest, context)}
     by_source: dict[str, list[dict]] = defaultdict(list)
     for cluster in manifest["clusters"]:
         by_source[cluster["source"]].append(cluster)
     data_root = Path(task["data_root"])
-    failed_checks = _database_checks(manifest, context, data_root)
+    failed_checks = _database_checks(manifest, data_root)
     for cluster_id, found in _interface_checks(_capture_folder(root), manifest).items():
         failed_checks[cluster_id] = [*failed_checks.get(cluster_id, []), *found]
     document_cache: dict[str, Any] = {}
@@ -5758,7 +5788,7 @@ def _deep_items(
             item["lint"] = {
                 "families": families,
                 "proposed": lint.compose(
-                    cluster["source"], cluster["live"], families, titles
+                    cluster["source"], cluster["live"], families, game
                 ),
             }
         scenes = [
@@ -6347,12 +6377,14 @@ def _draft_document(
             })
     layout = task["layout"]
     sweep_dropped = _add_sweep_findings(findings, checkpoint, records, layout)
+    game = _lint_game(root, manifest)
     _add_lint_findings(
         findings,
-        _lint_decisions(checkpoint, declined, manifest, layout),
+        _lint_decisions(checkpoint, declined, manifest, layout, game),
         manifest,
         declined,
         layout,
+        game,
     )
     findings.sort(key=lambda item: (
         {"critical": 0, "high": 1, "medium": 2}[item["severity"]],
@@ -7004,7 +7036,7 @@ def _validate_editorial_result(bundle: dict, result: dict, worker: str) -> None:
 def _compose_lint(
     findings: list[dict[str, Any]],
     records: dict[str, dict[str, Any]],
-    titles: dict,
+    game: lint.Game,
     layout: dict[str, Any],
 ) -> list[dict[str, Any]]:
     """Apply accepted lint fixes on top of final corrections, a scene
@@ -7020,7 +7052,7 @@ def _compose_lint(
             if not families:
                 continue
             composed = lint.compose(
-                change["source"], change["correction"], families, titles
+                change["source"], change["correction"], families, game
             )
             problems = sorted({
                 problem
@@ -7089,7 +7121,7 @@ def _complete_editorial(
     manifest = _read_json(root / "inventory.json")
     records, clusters = _record_maps(manifest)
     layout = task["layout"]
-    titles = lint.title_map(manifest["clusters"])
+    game = _lint_game(root, manifest)
     editorial = checkpoint.setdefault(
         "editorial", {"total_items": 0, "accepted_items": 0, "bundles": [], "round": 0}
     )
@@ -7177,7 +7209,7 @@ def _complete_editorial(
     lint_dropped = []
     for finding in remnants:
         composed = lint.compose(
-            finding["source"], finding["current"], finding["lint_families"], titles
+            finding["source"], finding["current"], finding["lint_families"], game
         )
         problems = sorted({
             problem
@@ -7191,7 +7223,7 @@ def _complete_editorial(
             })
         else:
             finding["correction"] = composed
-    lint_dropped += _compose_lint(final, records, titles, layout)
+    lint_dropped += _compose_lint(final, records, game, layout)
     final = [
         finding for finding in final
         if any(change["correction"] != change["current"] for change in _changes(finding))
