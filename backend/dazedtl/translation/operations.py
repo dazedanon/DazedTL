@@ -335,6 +335,10 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         }
         if arguments.get("manifest"):
             state["runtime_manifest"] = arguments["manifest"]
+    elif action == "line_widths":
+        # RPG Maker text is fitted to them as write_rpgmaker writes it.
+        widths = read_json(project_path(source, arguments["widths"]))
+        result = {"widths": engine.save_line_widths(source, widths)}
     elif action in {"write_rpgmaker", "rebase_rpgmaker"}:
         require_baseline(engine, source, options, state)
         output = project_path(source, arguments["output"], exists=False)
@@ -359,7 +363,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
                 arguments.get("expected_original_commit"),
             )
         else:
-            result = {"path": engine.write_rpgmaker(original, staged, output)}
+            result = engine.write_rpgmaker(source, original, staged, output)
         state.pop("delivery", None)
     elif action == "checkpoint":
         require_baseline(engine, source, options, state)

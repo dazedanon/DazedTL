@@ -199,6 +199,7 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
 4. Keep DazedTL open while it works.
    **Progress** shows its phases, anything it needs from you and any API run.
    With **Image text** on, it also finds the images with text, translates them and puts them in the game; **Images** shows where that stands and lets you change the list.
+   For RPG Maker MV and MZ games it measures the game's text boxes and checks them in the running game, and DazedTL wraps the text it writes to them, as Guided does, without changing the game's events, so saved games still load.
    For RPG Maker games it also runs text QA: **Text QA** appears once it starts, lists each correction with **Undo** and asks you only what it can't settle, which **Progress** points out.
    It also shortens plugin text the game squeezes or cuts off on its screens, such as a menu command.
    For MV and MZ games it runs the playtest too, which **Playtest** shows once it has.

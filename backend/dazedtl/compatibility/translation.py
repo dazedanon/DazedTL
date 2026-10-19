@@ -720,19 +720,50 @@ class TranslationEngine:
             current_is_untranslated=untranslated,
         )
 
-    def write_rpgmaker(self, source, translated, output):
+    def line_layout(self, root):
+        """The Line widths a game's RPG Maker text is fitted to: the ones
+        saved for it, or DazedTL's defaults, as text QA reads them."""
+        from util.game_settings import load_game_wrap_widths
+        from util.rpgmaker_rewrap import Layout
+
+        return Layout.from_widths(load_game_wrap_widths(root))
+
+    def save_line_widths(self, root, widths):
+        """Saves the Line widths an assistant measured for a game, where
+        Guided keeps them too, and returns them as saved."""
+        from util.game_settings import (
+            load_game_wrap_widths,
+            save_game_wrap_widths,
+            valid_line_widths,
+        )
+
+        if not valid_line_widths(widths) or widths["faceWidth"] > widths["width"]:
+            raise ValueError(
+                "Give the Line widths as whole numbers: width, faceWidth (at most "
+                "width), listWidth and noteWidth from 20 to 300, and messageRows "
+                "from 1 to 20."
+            )
+        save_game_wrap_widths(root, widths)
+        return load_game_wrap_widths(root)
+
+    def write_rpgmaker(self, root, source, translated, output):
+        """Writes staged game JSON with its sources kept, fitted to the
+        game's Line widths."""
         from util.len_originals import write_rpgmaker_json
 
         from dazedtl.translation.files import read_json
 
         read_json(source)
         read_json(translated)
-        return str(write_rpgmaker_json(Path(source), Path(translated), Path(output)))
+        result = write_rpgmaker_json(
+            Path(source), Path(translated), Path(output), self.line_layout(root)
+        )
+        return {**result, "path": str(result["path"])}
 
     def rebase_rpgmaker(
         self, root, source, translated, output, expected_original_commit
     ):
-        from util.len_originals import preserve_originals
+        from util.len_originals import fit_written, preserve_originals
         from util.version_update.git_workflow import _run_git
 
         from dazedtl.translation.files import read_json
@@ -777,6 +808,7 @@ class TranslationEngine:
             without_metadata(read_json(translated)),
             filename=output.name,
         )
+        fit = fit_written(result, output.name, self.line_layout(root))
         if _run_git(root, "rev-parse", "original").stdout.strip() != commit:
             raise ValueError("The original branch changed during source rebasing.")
         write_json(output, result)
@@ -784,6 +816,7 @@ class TranslationEngine:
             "path": str(output),
             "original_commit": commit,
             "original_blob": original_blob,
+            **fit,
         }
 
     def git_scope(self, source, options, manifest, original, dry_run):

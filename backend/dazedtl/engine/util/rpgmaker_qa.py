@@ -533,11 +533,19 @@ def _box(record: dict[str, Any], layout: dict[str, Any]) -> dict[str, Any] | Non
         box["rows"] = window.rows
     if window.paged:
         box["pages"] = True
-    # Text spread over several commands keeps its line structure.
-    box["wraps"] = (
-        len(record["live_pointers"]) == 1 and record["live_transform"] == "identity"
+    # A message spread over several commands is fitted and spread over them
+    # again (rpgmaker_rewrap.spread); other text spread over several commands,
+    # such as a comment or a script, keeps its line structure.
+    box["wraps"] = record["live_transform"] == "identity" and (
+        len(record["live_pointers"]) == 1 or _message_code(record.get("event_code"))
     )
     return box
+
+
+def _message_code(code: int | None) -> bool:
+    """Whether a command holds a row of a message, which DazedTL fits as a
+    whole however many commands hold its rows."""
+    return code in (401, 405)
 
 
 def _fit_window(box: dict[str, Any]) -> rewrap.Box:
@@ -558,12 +566,15 @@ def _fit(
     live: str,
     box: dict[str, Any] | None,
     source: str | None = None,
+    commands: int = 1,
 ) -> str:
     """A correction as DazedTL writes it: wrapped again, as translation wraps
-    it, when a line does not fit its box."""
+    it, when a line does not fit its box, and as it reads once spread over
+    the *commands* that hold the text."""
     if not box or not box.get("wraps"):
         return correction
-    return rewrap.fit_value(correction, _fit_window(box), source=source)
+    fitted = rewrap.fit_value(correction, _fit_window(box), source=source)
+    return "\n".join(rewrap.spread(fitted, commands))
 
 
 def _fitted(
@@ -646,7 +657,7 @@ def correction_problems(
     both the box and the current text.
     """
     problems = []
-    written = _fit(correction, live, box, source)
+    written = _fit(correction, live, box, source, len(live_pointers))
     if written == live:
         problems.append("the correction matches the current text")
     lines = correction.split("\n")
@@ -655,7 +666,10 @@ def correction_problems(
         # kind of quote mark could end the string early.
         if any(mark in correction and mark not in live for mark in "'\"`"):
             problems.append("adds a quote mark to a script string")
-    elif len(live_pointers) > 1 and len(lines) != len(live_pointers):
+    elif (
+        len(live_pointers) > 1 and not (box and box.get("wraps"))
+        and len(lines) != len(live_pointers)
+    ):
         problems.append(
             f"needs {len(live_pointers)} lines like the current text, "
             f"not {len(lines)}"
@@ -8201,6 +8215,17 @@ def correction_map(
                 if previous is not None:
                     continue
                 targets[target] = change["correction"]
+                replacement = change["correction"]
+                # A message's rows are spread over the commands that hold
+                # them; the replacement reads as it will once written, so
+                # undoing it finds it there.
+                message = len(record["live_pointers"]) > 1 and _message_code(
+                    record.get("event_code")
+                )
+                if message:
+                    replacement = "\n".join(
+                        rewrap.spread(replacement, len(record["live_pointers"]))
+                    )
                 operations.append({
                     "finding_id": finding["id"],
                     "identity": identity,
@@ -8208,8 +8233,9 @@ def correction_map(
                     "live_pointers": record["live_pointers"],
                     "live_transform": record["live_transform"],
                     "expected": record["live"],
-                    "replacement": change["correction"],
+                    "replacement": replacement,
                     "allowed_flags": list(finding.get("allowed_flags") or []),
+                    **({"message": True} if message else {}),
                 })
     if undo:
         # Each operation puts back the text it replaced.
@@ -8267,6 +8293,8 @@ def _operation_replacements(values: list[str], operation: dict) -> list[str]:
         return [values[0][: match.start(2)] + replacement + values[0][match.end(2) :]]
     if len(values) == 1:
         return [replacement]
+    if operation.get("message"):
+        return rewrap.spread(replacement, len(values))
     lines = replacement.split("\n")
     if len(lines) != len(values):
         raise ValueError(

@@ -607,11 +607,150 @@ try:
         assert not fit_document(
             page, "Map001.json", narrow, areas={"noteWidth"}
         ).changes
-        report = fit_document(page, "Map001.json", narrow)
-        assert [row["after"] for row in report.changes] == [
+        assert fit_document(page, "Map001.json", narrow).changes
+        assert page["list"][0]["parameters"] == [
             "The old road bends\ntoward a quiet village."
-        ], report.changes
+        ], page
         assert page["list"][1:] == untouched["list"][1:], page
+
+        # Assistant-led writes a message one row per command, as its Japanese
+        # was. Its writes fit a message again over the same commands, so a
+        # saved game's place in the event and each command's source stay: a
+        # blank first row stays, a centring code is repeated before a word
+        # with a space between (\acThe hides "The"), and a Scroll Text row
+        # wraps in its own command, keeping a list's rows.
+        def assistant_led_writes():
+            from util import rpgmaker_qa as qa
+            from util.len_originals import write_rpgmaker_json
+            from util.rpgmaker_rewrap import spread
+
+            def command(code, parameters, **extra):
+                return {"code": code, "indent": 0, "parameters": parameters, **extra}
+
+            gate = "\n塔の門は封印を持つ者にだけ開く。\n持っているか？\n"
+            source = [
+                command(101, ["", 0, 0, 2, "リリス"]),
+                *(command(401, [row]) for row in gate.split("\n")),
+                command(101, ["", 0, 0, 2, ""]),
+                command(401, [r"\ac\C[2]第一章　リリスの塔\C[0]"]),
+                command(105, [2, False]),
+                *(
+                    command(405, [row])
+                    for row in (
+                        "スタッフ",
+                        "",
+                        "ツクールMV素材集 和風",
+                        "(C) Gotcha Gotcha Games",
+                    )
+                ),
+                command(0, []),
+            ]
+            staged = deepcopy(source)
+            for item, row in zip(
+                staged,
+                [
+                    ["", 0, 0, 2, "Lilith"],
+                    "",
+                    "The tower's gate opens only for those who carry the seal.",
+                    "Do you have it?",
+                    "",
+                    None,
+                    r"\ac\C[2]Chapter One: The Tower of Lilith\C[0]",
+                    None,
+                    "Credits",
+                    "",
+                    "RPG Maker MV Official Asset Collection Japanese Style",
+                    "(C) Gotcha Gotcha Games Inc.",
+                ],
+            ):
+                if isinstance(row, list):
+                    item["parameters"] = row
+                elif row is not None:
+                    item["parameters"] = [row]
+            files = {}
+            for name, value in (
+                ("source", source),
+                ("staged", staged),
+                ("game", source),
+            ):
+                files[name] = temporary / f"{name}-Map001.json"
+                files[name].write_text(json.dumps({"list": value}, ensure_ascii=False))
+            game = files["game"].with_name("Map001.json")
+            files["game"].replace(game)
+            tight = {**widths, "width": 30, "faceWidth": 30, "messageRows": 4}
+            written = write_rpgmaker_json(
+                files["source"], files["staged"], game, Layout.from_widths(tight)
+            )
+            assert written["fitted"] == 3 and not written["misfits"], written
+            fitted = json.loads(game.read_text(encoding="utf-8"))["list"]
+            assert [item["parameters"][0] for item in fitted[1:5]] == [
+                "",
+                "The tower's gate opens",
+                "only for those who carry",
+                "the seal. Do you have it?",
+            ], fitted
+            assert fitted[1]["_original"] == gate, fitted[1]
+            assert fitted[6]["parameters"] == [
+                "\\ac\\C[2]Chapter One:\n\\ac The Tower of Lilith\\C[0]"
+            ], fitted[6]
+            assert [item["parameters"][0] for item in fitted[8:12]] == [
+                "Credits",
+                "",
+                "RPG Maker MV Official Asset\nCollection Japanese Style",
+                "(C) Gotcha Gotcha Games Inc.",
+            ], fitted
+            # Writing again lines up with the source and changes nothing.
+            before = game.read_bytes()
+            assert (
+                write_rpgmaker_json(
+                    files["source"], files["staged"], game, Layout.from_widths(tight)
+                )["fitted"]
+                == 3
+            )
+            assert game.read_bytes() == before
+
+            # Text QA corrects such a message as one text, fitted and spread over
+            # its commands, however many rows it needs; undoing finds it there.
+            pointers = [f"/list/{index}/parameters/0" for index in range(1, 5)]
+            live = "\n".join(item["parameters"][0] for item in fitted[1:5])
+            record = {
+                "event_code": 401,
+                "live_pointers": pointers,
+                "live_transform": "identity",
+                "speaker": {},
+            }
+            box = qa._box(record, {"widths": tight})
+            assert box["wraps"], box
+            correction = (
+                "\nOnly a bearer of the seal may pass the gate. Do you carry it?"
+            )
+            problems = qa.correction_problems(
+                gate, live, correction, 401, pointers, "identity", box=box
+            )
+            assert not problems, problems
+            replacement = qa._fit(correction, live, box, gate, len(pointers))
+            assert replacement == (
+                "\nOnly a bearer of the\nseal may pass the gate.\nDo you carry it?"
+            ), replacement
+            operation = {
+                "live_pointers": pointers,
+                "live_transform": "identity",
+                "expected": live,
+                "replacement": replacement,
+                "message": True,
+            }
+            document = {"list": deepcopy(fitted)}
+            for pointer, value in qa._operation_writes(document, operation):
+                qa._set_pointer(document, pointer, value)
+            assert [item["parameters"][0] for item in document["list"][1:5]] == spread(
+                replacement, 4
+            ), document
+            undo = {**operation, "expected": replacement, "replacement": live}
+            for pointer, value in qa._operation_writes(document, undo):
+                qa._set_pointer(document, pointer, value)
+            assert document["list"][1:5] == fitted[1:5], document
+
+        assistant_led_writes()
 
         # MV and Ace print the battler's name right before a particle-first
         # battle message; stripping the space after Taro printed "Arinafell!".

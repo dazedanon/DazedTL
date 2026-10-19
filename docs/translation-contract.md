@@ -231,7 +231,7 @@ Counts describe saved units; extraction coverage, review, images, injection, run
 Report declined lines, set-aside counts and unresolved extraction explicitly.
 A complete text count cannot complete QA.
 
-Stage MV/MZ JSON and use write_rpgmaker so the existing writer preserves _original.
+Save the measured Line widths with line_widths, then stage MV/MZ JSON and use write_rpgmaker so the existing writer preserves _original and fits the text to them.
 When an official source version changes, rebase_rpgmaker additionally requires the expected original commit and source bytes identical to that original-branch file.
 It rebuilds metadata from that trusted source and retains Git history.
 Native formats use their existing source/injection sidecars and verified native reconstruction.

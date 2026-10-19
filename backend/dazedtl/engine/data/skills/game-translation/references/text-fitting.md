@@ -837,13 +837,15 @@ WIDTH-TRIGGERED"). Bakin's is, so pre-wrapping there is safe and worthwhile.
 
 ## Rewrapping an already-translated patch
 
-**Rewrap by inserting `\n` inside the existing `parameters[0]` of each 401. Never
-split, merge, or re-index commands.** A save file stores a command index, so any
-added or dropped command moves it. A page of `[101, 401, 401, 0]` stays
-`[101, 401, 401, 0]`, each 401 keeps its own stored source, and
-`parameters[0].replace("\n", " ")` must reproduce the pre-wrap text exactly. That
-makes the pass lossless and repeatable at any width: wrap to 12, then widen to 40,
-and `" ".join(rows) == text`.
+**Rewrap inside the existing `parameters[0]`s. Never split, merge, or re-index
+commands.** A save file stores a command index, so any added or dropped command
+moves it. A page of `[101, 401, 401, 0]` stays `[101, 401, 401, 0]` and its first
+401 keeps the message's stored source. In DazedTL, operation `write_rpgmaker` does
+this for MV/MZ as it writes: it lays each message out as one text at the game's
+saved Line widths and puts its rows back over the same 401s, a row each, the rest
+in the last and empty ones when it has fewer (`fit_run` and `spread` in
+`DAZEDTL_ROOT/util/rpgmaker_rewrap.py`). Joining the rows with spaces gives back the
+message, so the pass is repeatable at any width: wrap to 12, then widen to 40.
 
 This is also the binding constraint on the "join consecutive 401s for translation,
 re-split on inject" rule - **the re-split must yield exactly the source command

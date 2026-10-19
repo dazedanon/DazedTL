@@ -81,7 +81,7 @@ def main(argv=None) -> int:
         if args.command == "write-rpgmaker-json":
             from util.len_originals import write_rpgmaker_json
 
-            print(write_rpgmaker_json(args.source, args.translated, args.output))
+            print(write_rpgmaker_json(args.source, args.translated, args.output)["path"])
             return 0
         project = load_project(args.game_root)
         if args.command == "prepare":

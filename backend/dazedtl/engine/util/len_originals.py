@@ -196,8 +196,29 @@ def preserve_originals(source, translated, *, filename: str):
     return result
 
 
-def write_rpgmaker_json(source: Path, translated: Path, output: Path) -> Path:
-    """Validate staged text and atomically write one file with preserved sources."""
+# The text a write lists that still does not fit its window.
+LISTED_MISFITS = 20
+
+
+def fit_written(document, filename: str, layout) -> dict:
+    """Fit a document about to be written to the game's Line widths, in
+    place, and say what changed and what still does not fit. Commands are
+    never added or removed, so later writes still line up with the source."""
+    from util.rpgmaker_rewrap import fit_document
+
+    report = fit_document(document, filename, layout)
+    return {
+        "fitted": len(report.changes),
+        "misfits": report.misfits[:LISTED_MISFITS],
+        "misfit_count": len(report.misfits),
+    }
+
+
+def write_rpgmaker_json(source: Path, translated: Path, output: Path, layout=None) -> dict:
+    """Validate staged text and atomically write one file with preserved sources.
+
+    With *layout*, the game's Line widths (util.rpgmaker_rewrap.Layout), the
+    text is fitted to them as it is written (see fit_written)."""
     from util.len_translation import _write_atomic
 
     if output.suffix.lower() != ".json":
@@ -217,6 +238,7 @@ def write_rpgmaker_json(source: Path, translated: Path, output: Path) -> Path:
         # from a clean Japanese baseline rather than the previous translated file.
         _inherit(previous, source_doc)
     result = preserve_originals(source_doc, staged_doc, filename=output.name)
+    fit = fit_written(result, output.name, layout) if layout is not None else {}
     text = staged_bytes.decode("utf-8-sig")
     indentation = re.search(r"\n([ \t]+)\"", text)
     indent = indentation.group(1) if indentation else None
@@ -232,4 +254,4 @@ def write_rpgmaker_json(source: Path, translated: Path, output: Path) -> Path:
         raise ValueError("Output changed while preparing the write; rerun against the current game file.")
     output.parent.mkdir(parents=True, exist_ok=True)
     _write_atomic(output, rendered)
-    return output
+    return {"path": output, **fit}

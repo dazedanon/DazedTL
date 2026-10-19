@@ -11,7 +11,6 @@ Only known display fields are touched, and ``_original`` never is.
 
 from __future__ import annotations
 
-import copy
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -122,6 +121,21 @@ def over_width(text: str, width: int) -> bool:
     return widest_line(text) > int(width)
 
 
+# Japanese the translation left as it is, which is never rewrapped.
+_JAPANESE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff]")
+
+
+def untranslated(text: str) -> bool:
+    """Whether *text* still holds Japanese, which DazedTL never rewraps."""
+    return bool(_JAPANESE.search(text))
+
+
+def _translated(text: str) -> str:
+    """A message's rows without the ones left in Japanese, which keep their
+    rows (see wrap_message)."""
+    return "\n".join(row for row in _rendered_lines(text) if not untranslated(row))
+
+
 _SPEAKER_LINE = re.compile(
     r"^(?P<prefix>(?:\[[^\]\n]{1,100}\]|"
     r"(?:\\+[kKnN][wWcCrReE]?[\[<][^\]>\n]+[\]>]))\n)"
@@ -160,6 +174,108 @@ def _source_body(source: str | None) -> str | None:
     return "\n".join(_LEADING_CODES.sub("", line) for line in body.split("\n"))
 
 
+# A row that starts a font size of its own (\{, \}, \FS[n]) starts new text,
+# and a label row, such as 【Name】, stands alone.
+_SIZE_START = re.compile(r"^\\+(?:[{}]|FS\[\d+\])", re.IGNORECASE)
+_LABEL_ROW = re.compile(r"^\s*(?:【[^】\n]*】|\[[^\]\n]*\])\s*$")
+
+
+@dataclass
+class _Span:
+    """Rows, or the commands that hold them, laid out together: text that
+    flows, with the code it repeats on each row, or ones kept as they are."""
+
+    start: int
+    end: int
+    flows: bool
+    per_line: str = ""
+
+
+def _row_kind(row: str):
+    """How a row groups (see :func:`_spans`): None when blank, False when it
+    is kept as it is, otherwise the code it repeats on each row and whether
+    it sets the font size."""
+    if not row.strip():
+        return None
+    if untranslated(row) or _LABEL_ROW.match(row):
+        return False
+    match = _PER_LINE.match(row)
+    return (match.group(0) if match else "", bool(_SIZE_START.match(row)))
+
+
+def _command_kind(text: str):
+    """How a command holding some of a message's rows groups: as its first
+    row that flows, or kept as it is when none does."""
+    kinds = [_row_kind(row) for row in text.split("\n") if row.strip()]
+    if not kinds:
+        return None
+    return next((kind for kind in kinds if kind), False)
+
+
+def _spans(kinds: list) -> list[_Span]:
+    """A message's rows, or commands, by their kind (see :func:`_row_kind`),
+    in the spans wrapping keeps apart. Japanese left untranslated and labels
+    keep their rows, and a row that changes the code repeated on each row,
+    such as centring, or sets the font size starts a span of its own; blank
+    rows go with the text around them."""
+    spans: list[_Span] = []
+    for index, kind in enumerate(kinds):
+        current = spans[-1] if spans and spans[-1].flows else None
+        if kind is False:
+            spans.append(_Span(index, index + 1, False))
+        elif kind is None:
+            if current:
+                current.end = index + 1
+            else:
+                spans.append(_Span(index, index + 1, True))
+        else:
+            per_line, sized = kind
+            started = current is not None and any(kinds[current.start : current.end])
+            if (
+                current is None
+                or (index and sized)
+                or (started and per_line.strip() != current.per_line.strip())
+            ):
+                spans.append(_Span(index, index + 1, True, per_line))
+            else:
+                current.end = index + 1
+                current.per_line = current.per_line or per_line
+    return spans
+
+
+def _flow(
+    lines: list[str], per_line: str, width: int, source: str | None, rows: int | None
+) -> list[str]:
+    """Rows of text wrapped to *width* (see :func:`dazedwrap.wrapShaped`),
+    keeping their blank rows before and after, with the code they repeat on
+    each row on each new row."""
+    if per_line:
+        lines = [_PER_LINE.sub("", line) for line in lines]
+    content = [index for index, line in enumerate(lines) if line.strip()]
+    if not content:
+        return lines
+    first, last = content[0], content[-1]
+    wrapped = dazedwrap.wrapShaped(
+        "\n" * first + "\n".join(lines[first : last + 1]),
+        int(width),
+        source,
+        rows,
+        measure=visible_width,
+    ).split("\n") + [""] * (len(lines) - last - 1)
+    if per_line:
+        return [_repeated(per_line, line) if line.strip() else line for line in wrapped]
+    return wrapped
+
+
+def _repeated(code: str, line: str) -> str:
+    """*line* after the code its message repeats on each row. RPG Maker reads
+    every letter after an escape as part of it, so a letter after a code such
+    as ``\\ac`` takes a space between (``\\acWhat`` hides "What")."""
+    if line[:1].isascii() and line[:1].isalpha() and re.search(r"\\[A-Za-z]+$", code):
+        return code + " " + line
+    return code + line
+
+
 def wrap_message(
     text: str,
     width: int,
@@ -171,7 +287,14 @@ def wrap_message(
     its Japanese *source* (see :func:`dazedwrap.wrapShaped`), paging after a
     sentence where it needs more than *rows*. A speaker line stays first,
     ``<br>`` breaks stay ``<br>``, and codes translation repeats on each
-    line, such as centring, are repeated on each new line."""
+    line, such as centring, are repeated on each new line. Blank rows at the
+    end go: a message spread over several commands gets them back from
+    :func:`spread`.
+
+    Rows that keep a layout of their own (see :func:`_spans`) split the
+    message: then each part wraps on its own, only where a row is wider
+    than *width*, and without the source's layout, which no longer lines up
+    with the rows."""
     if not text or not text.strip():
         return text
     prefix = ""
@@ -186,24 +309,23 @@ def wrap_message(
     if uses_br:
         body = body.replace("<br>", "\n")
     lines = body.split("\n")
-    per_line = ""
-    if all(_PER_LINE.match(line) for line in lines if line.strip()):
-        per_line = _PER_LINE.match(next(line for line in lines if line.strip())).group(0)
-        body = "\n".join(_PER_LINE.sub("", line) for line in lines)
-    wrapped = dazedwrap.wrapShaped(
-        body,
-        int(width),
-        _source_body(source),
-        rows,
-        measure=visible_width,
-    )
-    if per_line:
-        wrapped = "\n".join(
-            per_line + line if line.strip() else line for line in wrapped.split("\n")
-        )
+    while lines and not lines[-1].strip():
+        lines.pop()
+    spans = _spans([_row_kind(line) for line in lines])
+    if len(spans) == 1 and spans[0].flows:
+        wrapped = _flow(lines, spans[0].per_line, width, _source_body(source), rows)
+    else:
+        wrapped = []
+        for span in spans:
+            part = lines[span.start : span.end]
+            if span.flows and any(visible_width(row) > width for row in part):
+                wrapped += _flow(part, span.per_line, width, None, rows)
+            else:
+                wrapped += part
+    result = "\n".join(wrapped)
     if uses_br:
-        wrapped = wrapped.replace("\n", "<br>")
-    return prefix + wrapped
+        result = result.replace("\n", "<br>")
+    return prefix + result
 
 
 def wrap_text(text: str, width: int) -> str:
@@ -319,7 +441,7 @@ class Box:
     width: int
     rows: int | None
     paged: bool
-    kind: str  # "message", "lines", "note" or "variable"
+    kind: str  # "message", "scroll", "lines", "note" or "variable"
     area: str | None = None
 
 
@@ -330,7 +452,9 @@ def message_box(layout: Layout, *, face: bool = False) -> Box:
 
 
 def scrolling_box(layout: Layout) -> Box:
-    return Box(layout.width, None, False, "message", "width")
+    """Scroll Text, whose rows the author lays out, often as a list such as
+    credits: a row too wide wraps onto rows of its own."""
+    return Box(layout.width, None, False, "scroll", "width")
 
 
 def help_box(layout: Layout, source: str | None, *, dialogue: bool = False) -> Box:
@@ -363,8 +487,14 @@ def fit_value(
         return text
     if box.kind == "note":
         return wrap_note(text, box.width)
-    if not over_width(text, box.width):
+    rows_apart = box.kind in ("message", "scroll")
+    if not over_width(_translated(text) if rows_apart else text, box.width):
         return text
+    if box.kind == "scroll":
+        return "\n".join(
+            row if untranslated(row) else wrap_lines(row, box.width)
+            for row in text.split("\n")
+        )
     if box.kind == "variable":
         return wrap_backtick(text, box.width)
     if box.kind == "lines":
@@ -380,6 +510,8 @@ def misfit(text: str, box: Box) -> str | None:
         return None
     if box.kind == "note":
         bodies = [body for _start, _end, body, _structured in _note_bodies(text)]
+    elif box.kind in ("message", "scroll"):
+        bodies = [_translated(text)]
     else:
         bodies = [text]
     for body in bodies:
@@ -404,22 +536,73 @@ class FitReport:
     misfits: list[dict[str, Any]] = field(default_factory=list)
 
 
+def spread(text: str, count: int) -> list[str]:
+    """A message's rows laid over the *count* commands that hold it, which
+    the game shows one after another: a row each, the rows left over in the
+    last command and empty commands when the text has fewer rows. No command
+    is added or removed, so a saved game's place in an event stays valid and
+    each command keeps its source."""
+    rows = text.split("\n")
+    rows += [""] * (count - len(rows))
+    return rows[: count - 1] + ["\n".join(rows[count - 1 :])]
+
+
+def fit_run(texts: list[str], box: Box, source: str | None = None) -> list[str]:
+    """A message whose rows are stored in several commands, one text per
+    command as Assistant-led writes them, fitted to *box* over the same
+    commands. Text between commands kept as they are, such as Japanese left
+    untranslated (see :func:`_spans`), is laid out as one text over its own
+    commands (see :func:`spread`); Scroll Text rows wrap in their own
+    command. *source* is the Japanese of the whole message."""
+    if box.kind == "scroll" or len(texts) == 1:
+        return [
+            fit_value(text, box, source=source if len(texts) == 1 else None)
+            for text in texts
+        ]
+    spans = _spans([_command_kind(text) for text in texts])
+    fitted = list(texts)
+    for span in spans:
+        if not span.flows:
+            continue
+        joined = "\n".join(texts[span.start : span.end])
+        text = fit_value(joined, box, source=source if len(spans) == 1 else None)
+        if text != joined:
+            fitted[span.start : span.end] = spread(text, span.end - span.start)
+    return fitted
+
+
 @dataclass(frozen=True)
 class _Slot:
     """One display value in a document: where it is, its box, its source and
-    how to read and write it."""
+    how to read and write it. A message (*run*, the parameters of the
+    commands that hold its rows) reads as one text and is fitted over the
+    same commands (see :func:`fit_run`)."""
 
     pointer: str
     box: Box
     source: str | None
     owner: Any
     key: Any
+    run: tuple[list, ...] = ()
 
     def read(self):
+        if self.run:
+            return "\n".join(parameters[0] for parameters in self.run)
         return self.owner[self.key]
 
-    def write(self, value) -> None:
-        self.owner[self.key] = value
+    def fitted(self) -> list[str]:
+        """The value fitted to its box: a text for each command of a message,
+        otherwise the one text."""
+        if self.run:
+            return fit_run([parameters[0] for parameters in self.run], self.box, self.source)
+        return [fit_value(self.owner[self.key], self.box, source=self.source)]
+
+    def write(self, texts: list[str]) -> None:
+        if self.run:
+            for parameters, value in zip(self.run, texts):
+                parameters[0] = value
+        else:
+            self.owner[self.key] = texts[0]
 
 
 def _original(node: dict, key: str | None = None) -> str | None:
@@ -479,10 +662,37 @@ def _has_face(command: dict) -> bool:
     return len(params) >= 4 and isinstance(params[0], str) and bool(params[0].strip())
 
 
+def _text_command(command, code: int) -> bool:
+    return (
+        isinstance(command, dict)
+        and command.get("code") == code
+        and isinstance(command.get("parameters"), list)
+        and bool(command["parameters"])
+        and isinstance(command["parameters"][0], str)
+    )
+
+
+def _run_end(commands: list, start: int) -> int:
+    """Where the message starting at *start* ends: the Show Text (401) or
+    Scroll Text (405) commands after it that carry no source of their own,
+    as translation, Len's writer and QA group them."""
+    code = commands[start]["code"]
+    end = start + 1
+    while (
+        end < len(commands)
+        and _text_command(commands[end], code)
+        and "_original" not in commands[end]
+    ):
+        end += 1
+    return end
+
+
 def _command_slots(commands: list, pointer: str, layout: Layout) -> Iterator[_Slot]:
     face = False
+    # The end of the last message, whose commands it fitted.
+    end = 0
     for index, command in enumerate(commands):
-        if not isinstance(command, dict):
+        if index < end or not isinstance(command, dict):
             continue
         code = command.get("code")
         params = command.get("parameters")
@@ -494,15 +704,18 @@ def _command_slots(commands: list, pointer: str, layout: Layout) -> Iterator[_Sl
         if not isinstance(params, list) or not params:
             continue
         at = f"{pointer}/{index}/parameters"
-        if code == 401 and isinstance(params[0], str):
-            # Each 401 is wrapped on its own, as translation joins and wraps
-            # the lines of a message up to a command it keeps separate.
-            box = message_box(layout, face=face)
-            if _MARKER.match(params[0]):
-                box = Box(MARKED_WIDTH, box.rows, True, "message")
-            yield _Slot(f"{at}/0", box, _original(command), params, 0)
-        elif code == 405 and isinstance(params[0], str):
-            yield _Slot(f"{at}/0", scrolling_box(layout), _original(command), params, 0)
+        if code in (401, 405) and _text_command(command, code):
+            # A message is fitted as a whole, even when its rows are stored
+            # one command each, as Assistant-led writes them.
+            end = _run_end(commands, index)
+            run = tuple(item["parameters"] for item in commands[index:end])
+            if code == 405:
+                box = scrolling_box(layout)
+            else:
+                box = message_box(layout, face=face)
+                if _MARKER.match(params[0]):
+                    box = Box(MARKED_WIDTH, box.rows, True, "message")
+            yield _Slot(f"{at}/0", box, _original(command), params, 0, run)
         elif code == 122 and len(params) > 4 and isinstance(params[4], str) and "`" in params[4]:
             box = Box(layout.list_width, None, False, "variable", "listWidth")
             yield _Slot(f"{at}/4", box, None, params, 4)
@@ -517,21 +730,19 @@ def _command_slots(commands: list, pointer: str, layout: Layout) -> Iterator[_Sl
                     yield _Slot(f"{at}/3/{key}", message_box(layout), None, params[3], key)
 
 
-# Japanese the translation left as it is, which is never rewrapped.
-_JAPANESE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff]")
-
-
-def untranslated(text: str) -> bool:
-    """Whether *text* still holds Japanese, which DazedTL never rewraps."""
-    return bool(_JAPANESE.search(text))
-
-
 def _fitted_slots(document, file_name: str, layout: Layout, areas):
     """The translated values in *document* DazedTL fits, limited to boxes
     measured by the Line widths entries in *areas* when given."""
     for slot in _slots(document, file_name, layout):
         value = slot.read()
-        if not isinstance(value, str) or untranslated(value):
+        if not isinstance(value, str):
+            continue
+        # A message keeps untranslated rows as they are (see wrap_message).
+        if (
+            all(untranslated(row) for row in value.split("\n") if row.strip())
+            if slot.box.kind in ("message", "scroll")
+            else untranslated(value)
+        ):
             continue
         if areas is not None and slot.box.area not in areas:
             continue
@@ -543,7 +754,7 @@ def needs_fit(
 ) -> bool:
     """Whether any translated value in *document* does not fit its box."""
     return any(
-        fit_value(value, slot.box, source=slot.source) != value
+        "\n".join(slot.fitted()) != value
         for slot, value in _fitted_slots(document, file_name, layout, areas)
     )
 
@@ -558,49 +769,21 @@ def fit_document(
     """Fit *document* in place: each translated value that does not fit its
     box is wrapped again, as translation wraps it. *areas* limits fitting to
     boxes measured by those Line widths entries, such as the ones a change of
-    widths moved. Japanese left untranslated is never rewrapped. Scrolling
-    text (405) that wraps onto more lines is split into commands of its own,
-    as translation writes it."""
+    widths moved. Japanese left untranslated is never rewrapped. A message
+    keeps its commands (see :func:`fit_run`)."""
     report = FitReport()
-    scrolling = False
     for slot, value in list(_fitted_slots(document, file_name, layout, areas)):
-        fitted = fit_value(value, slot.box, source=slot.source)
-        if fitted != value:
+        texts = slot.fitted()
+        written = "\n".join(texts)
+        if written != value:
+            slot.write(texts)
             report.changes.append(
-                {"file": file_name, "pointer": slot.pointer, "before": value, "after": fitted}
+                {"file": file_name, "pointer": slot.pointer, "before": value, "after": written}
             )
-            scrolling |= slot.box.kind == "message" and slot.box.rows is None
-            slot.write(fitted)
-        reason = misfit(fitted, slot.box)
+        reason = misfit(written, slot.box)
         if reason:
             report.misfits.append({"file": file_name, "pointer": slot.pointer, "reason": reason})
-    if scrolling:
-        _split_scrolling(document)
     return report
-
-
-def _split_scrolling(document) -> None:
-    """Scrolling text keeps one line per 405 command, as translation writes it."""
-    for commands, _pointer in _command_lists(document):
-        index = 0
-        while index < len(commands):
-            command = commands[index]
-            if (
-                isinstance(command, dict)
-                and command.get("code") == 405
-                and isinstance((command.get("parameters") or [None])[0], str)
-                and "\n" in command["parameters"][0]
-            ):
-                lines = command["parameters"][0].split("\n")
-                command["parameters"][0] = lines[0]
-                for offset, line in enumerate(lines[1:], start=1):
-                    added = copy.deepcopy(command)
-                    added.pop("_original", None)
-                    added["parameters"] = [line]
-                    commands.insert(index + offset, added)
-                index += len(lines)
-            else:
-                index += 1
 
 
 def _pointer_part(value) -> str:
