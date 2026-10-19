@@ -3586,6 +3586,25 @@ class GuidedTests(unittest.TestCase):
             row for row in applied["findings"]["rows"] if row["key"] == "CODE355655"
         )
         self.assertTrue(any(notice["regex"] in note for note in row["observations"]))
+        # A file Git holds no original of, such as VX Ace's converted data,
+        # reads a translated command's original text from its _original.
+        _, report = self.event_report(
+            [
+                {
+                    "code": 355,
+                    "parameters": ["Notice.show('A chest!');"],
+                    "_original": "Notice.show('宝箱だ');",
+                },
+                {"code": 357, "parameters": ["QuestLog", "add", "", quest]},
+            ]
+        )
+        report["sources"]["CODE355655"].update(
+            decision="enable", coverage="safe", custom=[notice]
+        )
+        report["sources"]["CODE357"]["custom"] = [handler]
+        write_json(self.source / event_text.REPORT, report)
+        applied = self.guided.event_text_request(self.identity, apply=True)
+        self.assertEqual(applied["findings"]["enabled"], ["CODE357", "CODE355655"])
 
     def test_empty_registry_selection_needs_effective_builtin_coverage_and_picker_is_project_owned(
         self,

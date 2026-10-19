@@ -80,6 +80,18 @@ def commands(value):
                 yield from commands(item)
 
 
+def original_commands(value):
+    """A file's event commands as the original game had them: a translated
+    command reads the `_original` the engine kept, for a file whose original
+    bytes Git does not hold, such as VX Ace's converted data."""
+    for command in commands(value):
+        original = command.get("_original")
+        if isinstance(original, str) and command["parameters"]:
+            yield {**command, "parameters": [original, *command["parameters"][1:]]}
+        else:
+            yield command
+
+
 def custom_note(entry):
     """How Source choices describe one of the game's own patterns or handlers."""
     if "plugin" in entry:
@@ -142,7 +154,8 @@ class EventText:
             path
             for directory, pattern in (
                 (root / "js/plugins", "*.js"),
-                (root / "Scripts", "*.rb"),
+                # VX Ace's Ruby scripts, which Set up converts beside its data.
+                (Path(native["data"]) / "scripts", "*.rb"),
             )
             if directory.is_dir()
             for path in directory.rglob(pattern)
@@ -665,7 +678,8 @@ After saving, run `{command} --apply`. It validates the report and saves its rec
             for _blob, raw in self.guided.translation.engine.original_blobs(root, blobs)
         )
         documents = [
-            list(commands(json.loads(raw.decode("utf-8-sig")))) for raw in documents
+            list(original_commands(json.loads(raw.decode("utf-8-sig"))))
+            for raw in documents
         ]
         for command in (command for listing in documents for command in listing):
             values = wanted.get(str(command["code"]))
