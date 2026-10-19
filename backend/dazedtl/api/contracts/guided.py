@@ -612,6 +612,12 @@ class PlaytestFixes(TypedDict):
     file: Annotated[str, "The working copy the assistant edits."]
     in_game: Annotated[bool, "The game has the working copy as it is."]
     check: NotRequired[PlaytestFixCheck]
+    saved: NotRequired[
+        Annotated[
+            bool,
+            "Assistant-led, once the game has fixes: the latest checkpoint holds them as they are.",
+        ]
+    ]
 
 
 class PlaytestStatus(TypedDict):
@@ -627,6 +633,12 @@ class PlaytestStatus(TypedDict):
     stops: Annotated[int, "Saved stops every run visits after the standard tour."]
     fixes: PlaytestFixes
     operation: NotRequired[PlaytestOperation]
+    checkpoint: NotRequired[
+        Annotated[
+            PlaytestOperation,
+            "Assistant-led: the last checkpoint saving the fixes the helper started.",
+        ]
+    ]
     report: NotRequired[Annotated[str, "The saved report file."]]
     layout: NotRequired[LayoutCheck]
 

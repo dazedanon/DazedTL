@@ -923,6 +923,8 @@ export type PlaytestFixes = {
   /** The game has the working copy as it is. */
   in_game: boolean;
   check?: PlaytestFixCheck;
+  /** Assistant-led, once the game has fixes: the latest checkpoint holds them as they are. */
+  saved?: boolean;
 };
 
 /** Where the release playtest stands, for the assistant's project helper. */
@@ -942,6 +944,8 @@ export type PlaytestStatus = {
   stops: number;
   fixes: PlaytestFixes;
   operation?: PlaytestOperation;
+  /** Assistant-led: the last checkpoint saving the fixes the helper started. */
+  checkpoint?: PlaytestOperation;
   /** The saved report file. */
   report?: string;
   layout?: LayoutCheck;
@@ -2632,7 +2636,7 @@ export type TranslationQaRequest = {
 
 export type TranslationPlaytestRequest = {
   project_id: string;
-  step: "status" | "report" | "run" | "fix" | "layout";
+  step: "status" | "report" | "run" | "fix" | "checkpoint" | "layout";
   /** Places only the game's events reach, played after the standard tour; they replace the saved stops every later run visits. */
   stops?: Record<string, unknown>[];
   /** With layout: characters per line as width, faceWidth and listWidth, and messageRows. */

@@ -133,6 +133,15 @@ def reconcile_missing_backups(workspace, project_id, source, state):
     return tuple(retired)
 
 
+def runtime_manifest(source, relative):
+    """A saved runtime patch manifest with the fixes the release playtest
+    wrote into the game, which every checkpoint and patch carries, whichever
+    method wrote the manifest."""
+    from dazedtl.compatibility.playtest import with_fixes
+
+    return with_fixes(source, read_json(project_path(source, relative)))
+
+
 @contextmanager
 def backup_files(
     workspace, project_id, source, identity, *, files=None, stopped=lambda: False
@@ -234,7 +243,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         )
 
     def checkpoint(manifest_path, message):
-        manifest = read_json(project_path(source, manifest_path))
+        manifest = runtime_manifest(source, manifest_path)
         original = (
             str(
                 restored(
@@ -423,7 +432,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             )
         output.parent.mkdir(parents=True, exist_ok=True)
         with staging_folder(output.parent, ".dazedtl-patch-") as temporary:
-            manifest = read_json(project_path(source, payload["manifest"]))
+            manifest = runtime_manifest(source, payload["manifest"])
             # The translation version keeps GameUpdate's config for publishing;
             # a local patch leaves it out.
             packaged = engine.package(
@@ -450,7 +459,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         state["guided_release"] = result
     elif action == "guided_review":
         require_baseline(engine, source, options, state)
-        manifest = read_json(project_path(source, arguments["manifest"]))
+        manifest = runtime_manifest(source, arguments["manifest"])
         state["guided_review"] = {
             "manifest": arguments["manifest"],
             "evidence": evidence(
@@ -506,7 +515,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
                 raise ValueError(
                     "Record QA for the current checkpoint scope before packaging with Assistant-led."
                 )
-        manifest = read_json(project_path(source, state["checkpoint"]["manifest"]))
+        manifest = runtime_manifest(source, state["checkpoint"]["manifest"])
         result = engine.package(
             source,
             options,

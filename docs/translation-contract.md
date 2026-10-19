@@ -36,7 +36,8 @@ The release playtest for RPG Maker MV/MZ runs with `playtest --run --wait MINUTE
 `--stops FILE` adds places after the standard tour, a JSON list of `{"title", "do"}` objects: `map` with `map`, `x` and `y`, `event` with `event` (and `map`), `common-event` with `id`, `battle` with `troop`, `scene` with `scene`, or `script` with `script`, each optionally with `switches`, `variables` and the `seconds` to play after it.
 The stops given replace the saved ones, which every later run visits, and `[]` clears them.
 `playtest --fix --wait MINUTES` plays the game with the fixes file, a working copy of the game's `js/plugins/DazedTL_Fixes.js`, in its place and with `js/main.js` loading it after the game's plugins.
-Only when that play still plays, stops nowhere new, reaches as many places and no longer shows something the last playtest found does it write both, as one batch History restores; the play then becomes the latest report, and otherwise its reason is the step's failure.
+Only when that play still plays, stops nowhere new, reaches as many places and no longer shows something the last playtest found does it write both, as one batch, which Guided's History restores; the play then becomes the latest report, and otherwise its reason is the step's failure.
+In an Assistant-led game, `--fix` with `--wait` then saves the fixes in a checkpoint with the runtime manifest of the assistant's checkpoints, as `playtest --checkpoint` does, and `fixes.saved` says whether the latest checkpoint holds them as they are.
 Its findings in translated text reach text QA by themselves; plugin text the playtest saw drawn goes back to Plugin files, whose remaining work `plugins --task` hands out, never a recheck of every decision as the app's Copy gives once nothing is left, and `plugins --apply` applies as Apply to game does; the rest name the step that fixes them.
 
 ### Sandboxed connections
@@ -252,6 +253,7 @@ Standalone recovery without an app profile is documented in the [user guide](use
 Package requires current reported QA and creates a local patch from reviewed Git files.
 It does not create remotes, push, or upload.
 A checkpoint commits the game's complete `gameupdate/patch-config.txt` with the patch, so manifests need not list it; the package leaves it out unless the existing GameUpdate checks find the commit is the verified public version, which they then stamp.
+Once the game has the playtest's fixes plugin, every checkpoint, package and QA record also carries it and the `js/main.js` that loads it, so manifests need not list them either.
 
 For an official update, stage_update preserves the new original and creates a separate working copy.
 A folder holding fewer than half of the game's files is staged as a patch unless `patch` says otherwise, and version_preview then compares a staged release only as what it was staged as.

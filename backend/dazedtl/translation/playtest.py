@@ -5,7 +5,8 @@ The app plays the game in a hidden window and keeps one report; it writes
 nothing into the game. Findings in text QA's lines go to QA's review, and
 the rest name the task that fixes them. The assistant's fixes for the game's
 own code, such as a crash or a window sized for the Japanese, go in through
-one plugin once a play with it in place breaks nothing new.
+one plugin once a play with it in place breaks nothing new; in an
+Assistant-led game, a checkpoint then saves them in its history.
 """
 
 from __future__ import annotations
@@ -17,12 +18,35 @@ from typing import TYPE_CHECKING, Any
 from dazedtl.storage import write_json
 
 from .files import digest, read_json
+from .operations import lifecycle
 
 if TYPE_CHECKING:
     from .guided import Guided
     from .text_qa import TextQA
 
-STEPS = ("status", "report", "run", "fix", "layout")
+STEPS = ("status", "report", "run", "fix", "checkpoint", "layout")
+CHECKPOINT_MESSAGE = "playtest: apply the playtest's fixes"
+
+
+def game_fixes(playtest, kept):
+    """What a `game` problem is and how the assistant fixes it, in both
+    methods' prompts: `playtest` is the helper's playtest command and `kept`
+    says how the fixes are kept once they are in the game."""
+    return (
+        "a crash, a script that fails, Japanese the game's own code draws, or "
+        "text running past a window sized for the Japanese. Fix it in the fixes "
+        f"plugin, the working copy `fixes.file` names in what {playtest} prints: "
+        "plain JavaScript that js/main.js loads after the game's plugins. Give "
+        "each fix its own block, starting with a comment naming the problem, and "
+        "override the plugin's or engine's functions there, such as a window's "
+        "width or its scene's layout, rather than changing other files. Then run "
+        f"`{playtest} --fix --wait 20`: DazedTL plays the game with the plugin in "
+        "place and writes it into the game only when nothing new breaks and "
+        "something the last playtest found is gone; otherwise it says why and "
+        "writes nothing, so revise and run it again. That play becomes the latest "
+        f"report, and {kept} Fix crashes the translation causes; one the original "
+        "game's own code causes stays as it is, in your report."
+    )
 
 
 def final_check(playtest, plugins, qa):
@@ -40,7 +64,7 @@ Below, PLAYTEST stands for `{playtest}`, PLUGINS for `{plugins}` and QA for `{qa
    - `text-qa`: text QA corrects it, since the playtest hands it to this task's review; nothing more to do.
    - `plugin-files`: Japanese in a plugin, which Plugin files decides. Run `PLUGINS --task`: it hands out only what is left, such as text Plugin files kept in Japanese that the playtest saw drawn, which it decides again with that evidence, or says nothing is. Follow the task it prints until it reports complete, then run `PLUGINS --apply` to put the checked files into the game. Text Plugin files kept on purpose that the playtest did not see stays as it decided.
    - `translate`: game data that was never translated; translating it is a Translate run the user starts, so report it.
-   - `game`: a crash, a script that fails, Japanese the game's own code draws, or text running past a window sized for the Japanese. Fix it in the fixes plugin, the working copy `fixes.file` names in what PLAYTEST prints: plain JavaScript that js/main.js loads after the game's plugins. Give each fix its own block, starting with a comment naming the problem, and override the plugin's or engine's functions there, such as a window's width or its scene's layout, rather than changing other files. Then run `PLAYTEST --fix --wait 20`: DazedTL plays the game with the plugin in place and writes it into the game only when nothing new breaks and something the last playtest found is gone; otherwise it says why and writes nothing, so revise and run it again. That play becomes the latest report, and History can restore the fixes. Fix crashes the translation causes; one the original game's own code causes stays as it is, in your report. Text too long for its window may instead be shortened: record a translated line as an observation for QA's review, as the README's coordinator steps describe, and send plugin text to Plugin files.
+   - `game`: {game_fixes("PLAYTEST", "History can restore the fixes.")} Text too long for its window may instead be shortened: record a translated line as an observation for QA's review, as the README's coordinator steps describe, and send plugin text to Plugin files.
 3. The report's gaps and stops not reached name what the tour could not reach. For places only the game's events lead to, such as story scenes, other maps or a recollection room, find the map, event or common event in the game's data and add stops: write a JSON list such as `[{{"title": "Recollection room", "do": "map", "map": 12, "x": 8, "y": 6}}]` and run `PLAYTEST --run --stops FILE --wait 20`. A stop does `map` (map, x, y), `event` (event, with map, x and y to go there first), `common-event` (id), `battle` (troop), `scene` (scene) or `script` (script), and may set `switches` and `variables` ({{"id": value}}) first. DazedTL saves the stops, and every later run visits them; give `[]` to clear them.
 4. A fix or a Plugin files apply changes the game's plugins, so text QA reads outdated until it captures the game's screens again: run `QA --prepare`, which resumes the same task with its review, before `QA --apply`.
 5. After `QA --apply` puts QA's corrections into the game, run `PLAYTEST --run --wait 20` again and repeat steps 2 to 4 for what it finds. Text problems found after QA is complete wait for QA's next run.
@@ -64,6 +88,8 @@ class Playtest:
             self.start(project_id, stops)
         if step == "fix":
             self.fix(project_id, native)
+        if step == "checkpoint":
+            self.checkpoint(project_id)
         if step == "layout":
             self.check_layout(project_id, widths)
         return self.status(project_id, native, report=step == "report")
@@ -132,6 +158,43 @@ class Playtest:
         write_json(
             self.guided.path(project_id, "playtest-operation"), {"id": job["id"]}
         )
+
+    def checkpoint(self, project_id):
+        """Saves the fixes in an Assistant-led game in a checkpoint, with the
+        runtime manifest of the assistant's own checkpoints, which carries
+        them; Guided saves them with its own versions."""
+        if self.guided.projects.get(project_id).get("method") != "len":
+            raise ValueError("Guided saves the playtest's fixes with its versions.")
+        manifest = lifecycle(self.guided.translation.workspace, project_id).get(
+            "runtime_manifest"
+        )
+        if not manifest:
+            raise ValueError(
+                "Save a checkpoint with the patch's runtime manifest first; the "
+                "playtest's fixes are saved with the same manifest."
+            )
+        job = self.guided.translation.operation(
+            project_id,
+            "checkpoint",
+            {"manifest": manifest, "message": CHECKPOINT_MESSAGE},
+        )
+        write_json(
+            self.guided.path(project_id, "playtest-checkpoint"), {"id": job["id"]}
+        )
+
+    def saving(self, project_id):
+        """The last checkpoint of the fixes the helper started, with its
+        current state."""
+        path = self.guided.path(project_id, "playtest-checkpoint")
+        if not path.exists():
+            return None
+        identity = read_json(path)["id"]
+        job = self.guided.translation.run(project_id, identity)
+        return {
+            "id": identity,
+            "status": job["status"],
+            "message": str(job.get("message") or ""),
+        }
 
     def check_layout(self, project_id, widths):
         """Shows English at the given widths in the game's own windows; it
@@ -261,8 +324,18 @@ class Playtest:
         operation = self.operation(project_id)
         problems = state["problems"]
         stops = (state.get("coverage") or {}).get("stops", [])
+        assistant = self.guided.projects.get(project_id).get("method") == "len"
+        fixes = self.fixes(native, assistant)
+        saving = self.saving(project_id) if assistant else None
         if operation and operation["status"] == "running":
             following = "The playtest is running; wait with playtest --wait MINUTES or check again."
+        elif saving and saving["status"] == "running":
+            following = "DazedTL is saving the fixes in a checkpoint; wait with playtest --wait MINUTES."
+        elif fixes.get("saved") is False:
+            following = (
+                "The fixes are in the game but in no checkpoint; save them with "
+                "playtest --checkpoint."
+            )
         elif not state.get("report"):
             following = "Run playtest --run."
         elif not state["current"]:
@@ -270,9 +343,15 @@ class Playtest:
         elif problems or state["gaps"]:
             following = (
                 "Read the report: write fixes for crashes and windows sized for the "
-                "Japanese in the fixes file and run playtest --fix, send plugin text "
-                "to Plugin files, let text QA correct its lines, and add stops for "
-                "what the tour could not reach with playtest --run --stops FILE."
+                "Japanese in the fixes file and run playtest --fix, "
+                + (
+                    "translate plugin text through your extraction and injection "
+                    "steps, "
+                    if assistant
+                    else "send plugin text to Plugin files, "
+                )
+                + "let text QA correct its lines, and add stops for what the tour "
+                "could not reach with playtest --run --stops FILE."
             )
         else:
             following = (
@@ -287,8 +366,9 @@ class Playtest:
             "reached": f"{sum(stop['status'] == 'done' for stop in stops)} of {len(stops)}",
             "next": following,
             "stops": len(self.stops(project_id)),
-            "fixes": self.fixes(native),
+            "fixes": fixes,
             **({"operation": operation} if operation else {}),
+            **({"checkpoint": saving} if saving else {}),
         }
         layout = self.layout(project_id, native)
         if layout:
@@ -304,14 +384,18 @@ class Playtest:
             )
         return result
 
-    def fixes(self, native):
-        from dazedtl.compatibility.playtest import fixes_state
+    def fixes(self, native, assistant=False):
+        """The fixes plugin's working copy and latest check; for an
+        Assistant-led game, also whether a checkpoint saved the game's fixes."""
+        from dazedtl.compatibility.playtest import fixes_saved, fixes_state
 
-        return fixes_state(
+        state = fixes_state(
             self.guided.backend.workflows.folder(native["id"]),
             Path(native["source"]),
             Path(native["data"]).parent,
         )
+        saved = fixes_saved(native["source"]) if assistant else None
+        return state if saved is None else {**state, "saved": saved}
 
     def capture(self, project_id, name):
         from dazedtl.compatibility.playtest import capture

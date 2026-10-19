@@ -255,7 +255,7 @@ class TranslationQaRequest(TypedDict):
 
 class TranslationPlaytestRequest(TypedDict):
     project_id: str
-    step: Literal["status", "report", "run", "fix", "layout"]
+    step: Literal["status", "report", "run", "fix", "checkpoint", "layout"]
     stops: NotRequired[
         Annotated[
             list[dict[str, object]],

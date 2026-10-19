@@ -9,6 +9,7 @@
 
 - **Text QA:** for MV and MZ games the Text QA task is now also the final check: your assistant plays the game while QA reviews it, fixes what the playtest finds and plays it again after QA's corrections, so you copy one task instead of running the playtest yourself; the separate **Playtest** task is gone, and its panel shows under Text QA's.
 - **Playtest:** places your assistant adds, such as a recollection room, are kept, and every later playtest visits them.
+- **Assistant-led:** your assistant fixes crashes and windows too small for English that the playtest finds in the same fixes plugin instead of editing the game's code; DazedTL puts each fix into the game only after playing it with the fix breaks nothing new, then saves it as a version, so the patch always carries it.
 
 ### Fixed
 

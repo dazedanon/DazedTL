@@ -120,6 +120,8 @@ Its behavior is in [architecture](architecture.md#workflow-and-shared-presentati
 - In Guided it is part of Text QA's copied task for MV/MZ games: the assistant plays the game while QA's workers review, fixes what it finds, and plays it again after QA's apply; Release never waits for it.
   Inside the task, its findings in translated text join a review in progress, while a separate task after QA would need QA to run again; and the user hands over the whole final check once.
 - In Assistant-led the starting prompt runs it through the project helper's `playtest` before text QA and again after QA's apply, and a Playtest tab shows its report once one exists.
+  Its assistant fixes the game's own code through the same fixes plugin and play as Guided's, never by editing the game's files, and DazedTL then saves the fixes in a checkpoint, since Assistant-led has no History restore and its Git history is how it takes changes out.
+  Every checkpoint and patch carries the plugin and the `js/main.js` that loads it, whichever method wrote the patch's manifest, because a manifest without them would leave the fixes out of the patch without an error.
 
 ### Decisions
 
@@ -131,7 +133,7 @@ Its behavior is in [architecture](architecture.md#workflow-and-shared-presentati
   Plugin text goes to Plugin files, text never translated to Translate, and crashes and window sizes to a fixes plugin of DazedTL's own, which the assistant writes.
   The playtest's checks find where a problem is, not the wording or code that fixes it.
 - Fixes for the game's own code go in only after the playtest plays the game with them in place, as fit checks confirm on screen: the play must still play, stop nowhere new, reach as many places and no longer show something the last playtest found.
-  They live in one plugin that `js/main.js` loads after the game's plugins, so the game's plugin files and plugin list stay as Plugin files applied them, one file says what changed, and History takes them out like any applied batch.
+  They live in one plugin that `js/main.js` loads after the game's plugins, so the game's plugin files and plugin list stay as Plugin files applied them, one file says what changed, and Guided's History takes them out like any applied batch.
 - Running it again is how kinks are ironed out, so every run is idempotent: QA prepared with the same findings is the same task, a running task records each finding once, and each report counts what was fixed since the last one and marks what is new.
 - Only what the tour drew on screen counts as seen; a static reach or line count says where to look, because fonts, plugins and custom windows decide what fits and what shows.
   On 2026-10-19 descriptions still went to QA by line count alone: Slime Hunter Nena's engine gives its help window three lines, and Arina's gear help draws a description's first sentence beside a stats line of its own, so 23 descriptions reached review as cut off when none was.

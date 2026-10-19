@@ -61,6 +61,33 @@ def with_loader(raw: bytes) -> bytes:
     return bom + loaded.encode("utf-8")
 
 
+def patch_files(root: Path) -> dict[str, dict[str, Any]]:
+    """The patch-manifest rows of the fixes a game holds, which every patch
+    carries, whichever method wrote its manifest: the plugin, which only the
+    translation adds, and main.js, which loads it."""
+    for web in ("www/", ""):
+        if (root / (web + PLUGIN)).is_file():
+            return {web + MAIN: {}, web + PLUGIN: {"original_sha256": None}}
+    return {}
+
+
+def with_patch_files(root: Path, document: Any) -> Any:
+    """A runtime patch manifest, a list of paths or an object with `files`,
+    with the game's fixes in it; their rows are DazedTL's, since DazedTL
+    writes both files."""
+    rows = patch_files(root)
+    if not rows:
+        return document
+    if isinstance(document, list):
+        return {"files": {**{path: {} for path in document}, **rows}}
+    files = document.get("files") if isinstance(document, dict) else None
+    if isinstance(files, list):
+        files = {path: {} for path in files}
+    if not isinstance(files, dict):
+        return document
+    return {**document, "files": {**files, **rows}}
+
+
 def check(source: bytes) -> str:
     """The fixes as text, once they compile as a browser script."""
     if len(source) > LIMIT:

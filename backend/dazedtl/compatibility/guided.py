@@ -431,6 +431,7 @@ def runtime_files(source):
     """Propose the standard RPG Maker patch; the user reviews the complete list."""
     from util.len_patch_scope import CONFIG, patch_manifest, updater_config
     from util.paths import PROJECT_ROOT
+    from util.playtest.fixes import patch_files
     from util.project_preparation import RPG_GAMEUPDATE_COPY_SKIP_NAMES, rpgmaker_layout
     from util.version_update.git_workflow import _run_git
 
@@ -465,6 +466,8 @@ def runtime_files(source):
     # The published patch tells players' GameUpdate where to download it from.
     if updater_config(root):
         paths.append(root / CONFIG)
+    # The playtest's fixes plugin works only with the main.js line loading it.
+    paths.extend(root / name for name in patch_files(root))
     # Keep an existing reviewed patch's images, fonts and other runtime assets
     # when the user changes workflow. Repository metadata is handled by Git.
     tracked = _run_git(root, "ls-files", "-z", check=False)

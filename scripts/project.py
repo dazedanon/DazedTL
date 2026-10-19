@@ -160,19 +160,35 @@ def settle_qa(workspace, params, result):
 
 def wait_playtest(workspace, params, result, minutes):
     """Waits while the playtest plays, then returns its status with the
-    report file."""
+    report file. Fixes it writes into an Assistant-led game go on to their
+    checkpoint, so one command writes and records them."""
     deadline = time.monotonic() + minutes * 60
     status = {"project_id": params["project_id"], "step": "report"}
-    while "running" in {
-        (result.get("operation") or {}).get("status"),
-        ((result.get("layout") or {}).get("operation") or {}).get("status"),
-    }:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            return result
-        time.sleep(min(10, remaining))
-        result = call(workspace, "translation_playtest", status)
-    return call(workspace, "translation_playtest", status)
+
+    def settle(result):
+        while "running" in {
+            (result.get("operation") or {}).get("status"),
+            ((result.get("layout") or {}).get("operation") or {}).get("status"),
+            (result.get("checkpoint") or {}).get("status"),
+        }:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return result, False
+            time.sleep(min(10, remaining))
+            result = call(workspace, "translation_playtest", status)
+        return result, True
+
+    result, settled = settle(result)
+    if (
+        settled
+        and params["step"] == "fix"
+        and (result.get("operation") or {}).get("status") == "complete"
+        and (result.get("fixes") or {}).get("saved") is False
+    ):
+        result, settled = settle(
+            call(workspace, "translation_playtest", {**status, "step": "checkpoint"})
+        )
+    return call(workspace, "translation_playtest", status) if settled else result
 
 
 def wait_capture(workspace, params, result, minutes):
@@ -311,7 +327,14 @@ def main():
         action="store_true",
         help="Play the game with the fixes file the status names in place of the game's "
         "fixes plugin, and write it into the game once nothing new breaks and something "
-        "the last playtest found is gone; History restores it",
+        "the last playtest found is gone; History restores it in Guided, and with --wait "
+        "an Assistant-led game saves it in a checkpoint",
+    )
+    playtest_step.add_argument(
+        "--checkpoint",
+        action="store_true",
+        help="Assistant-led: save the fixes in the game in a checkpoint with the runtime "
+        "manifest of your checkpoints, which carries them",
     )
     playtest_step.add_argument(
         "--layout",
@@ -562,6 +585,8 @@ def main():
                     if args.run
                     else "fix"
                     if args.fix
+                    else "checkpoint"
+                    if args.checkpoint
                     else "report"
                     if args.report
                     else "layout"

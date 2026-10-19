@@ -1384,6 +1384,9 @@ class WorkflowTests(unittest.TestCase):
         write_json(self.game / manifest_path, ["source.json"])
         asset = self.game / "unchanged-asset.bin"
         asset.write_bytes(b"original asset")
+        main = self.game / "js/main.js"
+        main.parent.mkdir()
+        main.write_bytes(b"PluginManager.setup($plugins);\n")
         configured = [False]
         original_status = self.engine.git_status
         self.engine.git_status = lambda source, *args: {
@@ -1392,7 +1395,7 @@ class WorkflowTests(unittest.TestCase):
             "translation_commit": "checkpoint",
         }
         self.engine.audit_scope = lambda *_args: None
-        self.engine.runtime_paths = lambda manifest: list(manifest)
+        self.engine.runtime_paths = lambda manifest: list(manifest["files"])
         originals = []
 
         def setup(_source, _options, _version, original, untranslated):
@@ -1403,11 +1406,25 @@ class WorkflowTests(unittest.TestCase):
 
         self.engine.git_setup = setup
 
-        def git_scope(_source, _options, _manifest, original, _dry_run):
+        def git_scope(_source, _options, manifest, original, _dry_run):
             folder = Path(original)
             originals.append(folder)
             self.assertEqual(read_json(folder / "source.json"), {"line": "はい。"})
             self.assertFalse((folder / "unchanged-asset.bin").exists())
+            # The playtest's fixes join a manifest that leaves them out, with
+            # the game's own main.js as the original of the one loading them.
+            self.assertEqual(
+                manifest["files"],
+                {
+                    "source.json": {},
+                    "js/main.js": {},
+                    "js/plugins/DazedTL_Fixes.js": {"original_sha256": None},
+                },
+            )
+            self.assertEqual(
+                (folder / "js/main.js").read_bytes(),
+                b"PluginManager.setup($plugins);\n",
+            )
             return {"staged": 1}
 
         self.engine.git_scope = git_scope
@@ -1433,6 +1450,9 @@ class WorkflowTests(unittest.TestCase):
         operation("git_setup", version="1.0", untranslated=True, manifest=manifest_path)
         self.assertTrue(all(not path.exists() for path in originals))
         write_json(self.game / "source.json", {"line": "Yes."})
+        (self.game / "js/plugins").mkdir()
+        (self.game / "js/plugins/DazedTL_Fixes.js").write_text("// Fix\n")
+        main.write_bytes(b"$plugins.push({});\n" + main.read_bytes())
         delivery.record(self.game, manifest_path, ["source.json"])
         first = operation("checkpoint", manifest=manifest_path)
         second = operation("checkpoint", manifest=manifest_path)

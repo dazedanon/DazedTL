@@ -203,6 +203,7 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
    For RPG Maker games it also runs text QA: **Text QA** appears once it starts, lists each correction with **Undo** and asks you only what it can't settle, which **Progress** points out.
    It also shortens plugin text the game squeezes or cuts off on its screens, such as a menu command.
    For MV and MZ games it runs the playtest too, which **Playtest** shows once it has.
+   It fixes crashes and windows too small for English in a fixes plugin of DazedTL's own, which DazedTL puts into the game only after playing it with the fix breaks nothing new, and then saves as a version.
    Approve your assistant's API estimate with the button on **Progress**; your assistant can't start a run you haven't approved there.
    A newer estimate replaces the one waiting.
    Choosing another model of the same connection, or switching between **API Batch** and **Live API**, shows the waiting estimate at the new prices at once when its requests stay the same; approving then sends them with your new choice.
