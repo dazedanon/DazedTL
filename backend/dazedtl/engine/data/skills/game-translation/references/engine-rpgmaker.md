@@ -1320,7 +1320,9 @@ saved GameUpdate defaults and its repository, and installs the MV/MZ
 TranslationUpdateCheck. It preserves existing project configuration and excludes
 WOLF-only binaries and updater state. Checkpoints commit a complete
 `gameupdate/patch-config.txt` with the patch, so manifests need not list it;
-DazedTL keeps its values, so do not edit it.
+DazedTL keeps its values, so do not edit it. DazedTL's checkpoints and packages
+also carry the GameUpdate files and the TranslationUpdateCheck and Forge plugins
+this preparation installs, so manifests need not list those either.
 
 For Ace, perform the existing Workflow extraction/RV2JSON prerequisite first. The
 formatter targets its JSON export (`ace_json` or `--data-path <export>`), never the

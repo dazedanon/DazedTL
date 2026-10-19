@@ -134,12 +134,12 @@ def reconcile_missing_backups(workspace, project_id, source, state):
 
 
 def runtime_manifest(source, relative):
-    """A saved runtime patch manifest with the fixes the release playtest
-    wrote into the game, which every checkpoint and patch carries, whichever
-    method wrote the manifest."""
-    from dazedtl.compatibility.playtest import with_fixes
+    """A saved runtime patch manifest with DazedTL's own files the game holds,
+    GameUpdate's, the plugins Set up installs and the playtest's fixes, which
+    every checkpoint and patch carries, whichever method wrote the manifest."""
+    from dazedtl.compatibility.translation import with_dazedtl_files
 
-    return with_fixes(source, read_json(project_path(source, relative)))
+    return with_dazedtl_files(source, read_json(project_path(source, relative)))
 
 
 @contextmanager

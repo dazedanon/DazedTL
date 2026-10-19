@@ -92,14 +92,6 @@ def fixes_copy(root, web):
     return path
 
 
-def with_fixes(source, manifest):
-    """A runtime patch manifest with the fixes the playtest wrote into the
-    game, which every checkpoint and patch carries."""
-    from util.playtest.fixes import with_patch_files
-
-    return with_patch_files(Path(source), manifest)
-
-
 def fixes_saved(source):
     """Whether the translation branch's latest commit holds the game's fixes
     as they are, or None for a game without fixes."""

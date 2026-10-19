@@ -429,10 +429,13 @@ def apply_selected(plan, log):
 
 def runtime_files(source):
     """Propose the standard RPG Maker patch; the user reviews the complete list."""
-    from util.len_patch_scope import CONFIG, patch_manifest, updater_config
-    from util.paths import PROJECT_ROOT
-    from util.playtest.fixes import patch_files
-    from util.project_preparation import RPG_GAMEUPDATE_COPY_SKIP_NAMES, rpgmaker_layout
+    from util.len_patch_scope import (
+        CONFIG,
+        dazedtl_files,
+        patch_manifest,
+        updater_config,
+    )
+    from util.project_preparation import rpgmaker_layout
     from util.version_update.git_workflow import _run_git
 
     from dazedtl.translation.release import applied_assets, exclusion
@@ -449,25 +452,12 @@ def runtime_files(source):
     if layout["plugins_js"]:
         paths.append(layout["plugins_js"])
         paths.extend((layout["plugins_js"].parent / "plugins").glob("*.js"))
-    template = PROJECT_ROOT / "gameupdate"
-    for path in template.rglob("*"):
-        relative = path.relative_to(template)
-        if path.is_file() and not any(
-            part in RPG_GAMEUPDATE_COPY_SKIP_NAMES for part in relative.parts
-        ):
-            target = root / relative
-            if target.is_file() and relative.as_posix() not in {
-                ".gitignore",
-                ".gitattributes",
-                "README.md",
-                "gameupdate/previous_patch_sha.txt",
-            }:
-                paths.append(target)
     # The published patch tells players' GameUpdate where to download it from.
     if updater_config(root):
         paths.append(root / CONFIG)
-    # The playtest's fixes plugin works only with the main.js line loading it.
-    paths.extend(root / name for name in patch_files(root))
+    # GameUpdate's files, the plugins Set up installs and the playtest's fixes
+    # with the main.js line loading them.
+    paths.extend(root / name for name in dazedtl_files(root))
     # Keep an existing reviewed patch's images, fonts and other runtime assets
     # when the user changes workflow. Repository metadata is handled by Git.
     tracked = _run_git(root, "ls-files", "-z", check=False)

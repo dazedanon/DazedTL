@@ -913,23 +913,18 @@ def parse(codeList, i, headerString, jaString):
                 "data_path": game / "data",
                 "plugins_js": None,
             }
-            preparation.RPG_GAMEUPDATE_COPY_SKIP_NAMES = set()
-            paths = ModuleType("util.paths")
-            paths.PROJECT_ROOT = root / "engine"
             scope = ModuleType("util.len_patch_scope")
             scope.patch_manifest = lambda value: value
             scope.CONFIG = "gameupdate/patch-config.txt"
             scope.updater_config = lambda root: (root / scope.CONFIG).is_file()
+            scope.dazedtl_files = lambda _root: {}
             git = ModuleType("util.version_update.git_workflow")
             git._run_git = lambda *_args, **_kwargs: SimpleNamespace(
                 returncode=0, stdout="img/title.png\0README.md\0"
             )
             with patch.dict(
                 sys.modules,
-                {
-                    module.__name__: module
-                    for module in (preparation, paths, scope, git)
-                },
+                {module.__name__: module for module in (preparation, scope, git)},
             ):
                 self.assertEqual(
                     runtime_files(game),

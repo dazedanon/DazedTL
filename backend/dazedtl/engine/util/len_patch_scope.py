@@ -7,11 +7,16 @@ import re
 import subprocess
 import tempfile
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 from util.gameupdate_config import CONFIG, file_values
 from util.len_git import git_status
 from util.len_translation import LenProject, _write_atomic
-from util.paths import normalize_game_tool_gitignore_text
+from util.paths import PROJECT_ROOT, normalize_game_tool_gitignore_text
+from util.playtest.fixes import patch_files as fixes_files
+from util.project_preparation import (
+    GAMEUPDATE_COPY_SKIP_NAMES, RPG_GAMEUPDATE_COPY_SKIP_NAMES, rpgmaker_layout,
+)
 from util.version_update import GitWorkflowError
 from util.version_update.git_workflow import (
     _AssetManifestEntry, _asset_state_path, _commit_tree, _hash_file,
@@ -47,6 +52,59 @@ def updater_config(root: Path) -> bool:
         and path.is_file()
         and file_values(path.read_text(encoding="utf-8", errors="replace")) is not None
     )
+
+
+def _held(root: Path, relative: str) -> bool:
+    path = root
+    for part in relative.split("/"):
+        path = path / part
+        if path.is_symlink():
+            return False
+    return path.is_file()
+
+
+def setup_files(root: Path) -> list[str]:
+    """The runtime files of DazedTL's own that Set up installed in the game:
+    GameUpdate's launchers and scripts, and the MV/MZ plugins for the update
+    check and Forge, which the game stops at boot without once its plugins.js
+    loads them."""
+    from util.forge.config import PLUGIN_BY_ENGINE
+    from util.translation_update_check.installer import PLUGIN_NAME
+
+    template = PROJECT_ROOT / "gameupdate"
+    skip = RPG_GAMEUPDATE_COPY_SKIP_NAMES if rpgmaker_layout(root) else GAMEUPDATE_COPY_SKIP_NAMES
+    names = [f"{web}js/plugins/{name}.js" for web in ("www/", "")
+             for name in (PLUGIN_NAME, *PLUGIN_BY_ENGINE.values())]
+    for path in template.rglob("*"):
+        relative = path.relative_to(template)
+        # The installation README is repository metadata, handled separately.
+        if path.is_file() and not skip & set(relative.parts) and relative.as_posix() not in _METADATA:
+            names.append(relative.as_posix())
+    return sorted(name for name in names if _held(root, name))
+
+
+def dazedtl_files(root: Path) -> dict[str, dict]:
+    """The patch-manifest rows of DazedTL's own runtime files the game holds,
+    which every patch carries whichever method wrote its manifest: Set up's
+    files and the playtest's fixes with the main.js that loads them."""
+    return {**{name: {} for name in setup_files(root)}, **fixes_files(root)}
+
+
+def with_dazedtl_files(root: Path, document: Any) -> Any:
+    """A runtime patch manifest, a list of paths or an object with `files`,
+    with DazedTL's own files in it; their rows are DazedTL's, since DazedTL
+    writes those files."""
+    rows = dazedtl_files(root)
+    if not rows:
+        return document
+    if isinstance(document, list):
+        return {"files": {**{path: {} for path in document}, **rows}}
+    files = document.get("files") if isinstance(document, dict) else None
+    if isinstance(files, list):
+        files = {path: {} for path in files}
+    if not isinstance(files, dict):
+        return document
+    return {**document, "files": {**files, **rows}}
 
 
 def _file(root: Path, relative: str) -> Path:
@@ -203,12 +261,18 @@ def sync_patch_scope(project: LenProject, document: object, *, original_game: Pa
         raise GitWorkflowError("Use a separate, matching untranslated backup as the original")
     # Existing Git originals are authoritative; a supplied backup must match them.
     original_files = {}
+    # Set up's files keep the prepared untranslated game's copy as their
+    # original, like the plugins.js loading them; a game set up after its Git
+    # baseline, or one without a prepared backup, has none, and only the
+    # translation adds them.
+    installed = set(setup_files(repo))
     for relative, row in selected.items():
         if "sha256" in row and _hash_file(files[relative]) != row["sha256"]:
             raise GitWorkflowError(f"Reviewed patch bytes are not installed in the game root: {relative}")
         if source is not None and ((source / relative).exists() or (source / relative).is_symlink()):
             original_files[relative] = _file(source, relative)
-        elif relative not in originals and not ("original_sha256" in row and row["original_sha256"] is None):
+        elif (relative not in originals and relative not in installed
+              and not ("original_sha256" in row and row["original_sha256"] is None)):
             raise GitWorkflowError(f"Supply the matching untranslated original, or declare a translation-only addition with original_sha256: null: {relative}")
     source_entries = _hash_paths(repo, original_files, write=not dry_run)
     payload_entries = _hash_paths(repo, files, write=not dry_run)
@@ -227,7 +291,11 @@ def sync_patch_scope(project: LenProject, document: object, *, original_game: Pa
                          else digests[old[1]][0] if old else None)
         if "original_sha256" in row and source_digest != row["original_sha256"]:
             raise GitWorkflowError(f"Original source hash disagrees with the reviewed manifest: {name}")
-        if name not in originals and assets is not None and name in assets and source_digest != assets[name].sha256:
+        # The ignored-asset backup lists Set up's files when Git was set up
+        # on the prepared game, but they were never the release's.
+        added = source_digest is None and name in installed
+        if (not added and name not in originals and assets is not None and name in assets
+                and source_digest != assets[name].sha256):
             raise GitWorkflowError(f"Original source disagrees with the registered ignored-asset backup: {name}")
     old_tracked = set(_tree_files(repo, head, ""))
     result = {"dry_run": dry_run, "translation_branch": state["translation_branch"],

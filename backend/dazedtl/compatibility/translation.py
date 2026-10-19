@@ -60,6 +60,15 @@ def provider_errors(function):
     return call
 
 
+def with_dazedtl_files(source, manifest):
+    """A runtime patch manifest with DazedTL's own files the game holds, such
+    as GameUpdate's and the playtest's fixes, which every checkpoint and patch
+    carries."""
+    from util.len_patch_scope import with_dazedtl_files as added
+
+    return added(Path(source), manifest)
+
+
 class TranslationEngine:
     def __init__(self, profile):
         from .runtime import activate

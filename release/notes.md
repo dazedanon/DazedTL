@@ -13,6 +13,7 @@
 
 ### Fixed
 
+- **Assistant-led:** patches always carry the update check and Forge plugins and the GameUpdate files Set up installs; a patch whose file list left them out made players' game stop at start with "Failed to load".
 - **Playtest:** a place your assistant added that the playtest could not play no longer shows as "A script failed" in the game's code; it is listed with what the playtest did not reach.
 - **Playtest:** item and skill descriptions longer than two lines no longer go to Text QA as cut off unless the playtest saw them cut off, as in games whose help window shows three lines or draws its own text; text a plugin adds beside a description, such as a line of stats, no longer counts as the description's.
 - **Text QA:** running QA again while its review is still going, such as after a plugin change, continues the same review instead of starting a new one when the playtest found something since.

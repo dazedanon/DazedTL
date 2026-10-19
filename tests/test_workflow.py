@@ -1387,6 +1387,12 @@ class WorkflowTests(unittest.TestCase):
         main = self.game / "js/main.js"
         main.parent.mkdir()
         main.write_bytes(b"PluginManager.setup($plugins);\n")
+        # Set up's update check, which plugins.js loads, and GameUpdate's
+        # launcher; a patch without them stops the game at boot.
+        check = self.game / "js/plugins/TranslationUpdateCheck.js"
+        check.parent.mkdir()
+        check.write_text("// Update check\n")
+        (self.game / "GameUpdate.bat").write_text("@echo off\n")
         configured = [False]
         original_status = self.engine.git_status
         self.engine.git_status = lambda source, *args: {
@@ -1411,12 +1417,16 @@ class WorkflowTests(unittest.TestCase):
             originals.append(folder)
             self.assertEqual(read_json(folder / "source.json"), {"line": "はい。"})
             self.assertFalse((folder / "unchanged-asset.bin").exists())
-            # The playtest's fixes join a manifest that leaves them out, with
-            # the game's own main.js as the original of the one loading them.
+            # DazedTL's own files join a manifest that leaves them out: Set
+            # up's with the prepared game's copies as their originals, and the
+            # playtest's fixes with the game's own main.js as the original of
+            # the one loading them.
             self.assertEqual(
                 manifest["files"],
                 {
                     "source.json": {},
+                    "GameUpdate.bat": {},
+                    "js/plugins/TranslationUpdateCheck.js": {},
                     "js/main.js": {},
                     "js/plugins/DazedTL_Fixes.js": {"original_sha256": None},
                 },
@@ -1424,6 +1434,10 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(
                 (folder / "js/main.js").read_bytes(),
                 b"PluginManager.setup($plugins);\n",
+            )
+            self.assertEqual(
+                (folder / "js/plugins/TranslationUpdateCheck.js").read_text(),
+                "// Update check\n",
             )
             return {"staged": 1}
 
@@ -1450,7 +1464,6 @@ class WorkflowTests(unittest.TestCase):
         operation("git_setup", version="1.0", untranslated=True, manifest=manifest_path)
         self.assertTrue(all(not path.exists() for path in originals))
         write_json(self.game / "source.json", {"line": "Yes."})
-        (self.game / "js/plugins").mkdir()
         (self.game / "js/plugins/DazedTL_Fixes.js").write_text("// Fix\n")
         main.write_bytes(b"$plugins.push({});\n" + main.read_bytes())
         delivery.record(self.game, manifest_path, ["source.json"])

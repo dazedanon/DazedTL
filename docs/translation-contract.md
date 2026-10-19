@@ -253,7 +253,7 @@ Standalone recovery without an app profile is documented in the [user guide](use
 Package requires current reported QA and creates a local patch from reviewed Git files.
 It does not create remotes, push, or upload.
 A checkpoint commits the game's complete `gameupdate/patch-config.txt` with the patch, so manifests need not list it; the package leaves it out unless the existing GameUpdate checks find the commit is the verified public version, which they then stamp.
-Once the game has the playtest's fixes plugin, every checkpoint, package and QA record also carries it and the `js/main.js` that loads it, so manifests need not list them either.
+Every checkpoint, package and QA record also carries DazedTL's other files the game holds, so manifests need not list them either: GameUpdate's launchers and scripts, the update check and Forge plugins Set up installs, and the playtest's fixes plugin with the `js/main.js` that loads it.
 
 For an official update, stage_update preserves the new original and creates a separate working copy.
 A folder holding fewer than half of the game's files is staged as a patch unless `patch` says otherwise, and version_preview then compares a staged release only as what it was staged as.
