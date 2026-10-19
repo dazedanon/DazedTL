@@ -207,8 +207,11 @@ class Workflows:
                 selected["since"] = since[:200]
             if options.get("everything") is True:
                 selected["everything"] = True
-            # QA's corrections are fitted to the Line widths as text is.
-            selected["fit"] = {"widths": normalize_wrap_widths(project["widths"])}
+            # QA's corrections are fitted to the Line widths as text is: the
+            # game's saved ones, which an Assistant-led assistant saves
+            # without this workspace.
+            widths = load_game_wrap_widths(project["source"]) or project["widths"]
+            selected["fit"] = {"widths": normalize_wrap_widths(widths)}
         if action in {"release_playtest", "playtest_fix"}:
             from util.playtest.run import read_stops
             from util.skills import RPGMAKER_QA_FOCUSES
