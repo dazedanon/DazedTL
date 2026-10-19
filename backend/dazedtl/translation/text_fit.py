@@ -2,8 +2,9 @@
 
 Translation and Apply fit text to the Line widths as they write it. New
 widths, set by hand or measured in the game, leave text written earlier
-fitted to the old ones, so the areas whose width changed are fitted again in
-one backed-up publication, which History can restore.
+fitted to the old ones, so the areas whose width changed are fitted again,
+in the files DazedTL applied, in one backed-up publication, which History
+can restore.
 """
 
 from copy import deepcopy
@@ -44,8 +45,9 @@ class TextFit:
         return path.exists()
 
     def advance(self, project_id, native, applied):
-        """Start a queued fit once nothing else runs. Text applied later is
-        fitted as it is written, so with nothing applied the request ends."""
+        """Start a queued fit of the files DazedTL *applied* once nothing
+        else runs. Text applied later is fitted as it is written, so with
+        nothing applied the request ends."""
         path = self._path(project_id)
         if not path.exists():
             return None
@@ -66,7 +68,7 @@ class TextFit:
                     "action": ACTION,
                     "label": LABEL,
                     "guard": backend.guided_guard(native, folder),
-                    "options": {"areas": areas},
+                    "options": {"areas": areas, "files": sorted(applied)},
                 }
             )
         except OSError, ValueError:

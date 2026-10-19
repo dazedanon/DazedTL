@@ -4030,17 +4030,35 @@ class GuidedTests(unittest.TestCase):
             rows = prepare_publication(again)["publication"]
             self.assertFalse(rows[0]["later_edits"])
             # New widths fit the applied text again in their own area only.
+            # Weapons.json counts as applied where its bytes equal a run's
+            # output, but no Apply wrote it.
+            fit = {"files": ["Items.json", "Weapons.json"]}
             self.assertEqual(
-                run_fit(plan("fit_text", {"areas": ["width"]}), lambda _: None)[
+                run_fit(plan("fit_text", {"areas": ["width"], **fit}), lambda _: None)[
                     "lines"
                 ],
                 0,
             )
             self.native["widths"] = {**self.native["widths"], "listWidth": 20}
-            result = run_fit(plan("fit_text", {"areas": ["listWidth"]}), lambda _: None)
+            # A file DazedTL never applied, such as one translated by hand,
+            # stays as it is.
+            hand = [
+                None,
+                {"id": 1, "description": "Written by hand, wider than any window."},
+            ]
+            write_json(self.source / "Weapons.json", hand)
+            result = run_fit(
+                plan("fit_text", {"areas": ["listWidth"], **fit}), lambda _: None
+            )
             self.assertEqual(result["lines"], 1)
             refitted = read_json(self.source / "Items.json")[1]["description"]
             self.assertLessEqual(max(map(len, refitted.split("\n"))), 20)
+            self.assertEqual(read_json(self.source / "Weapons.json"), hand)
+            # The fit is the last Apply's text fitted again, not a later edit.
+            again = plan("export_selected", {"files": ["Items.json"]})
+            self.assertFalse(
+                prepare_publication(again)["publication"][0]["later_edits"]
+            )
         # Saving new widths queues the fit, which starts once nothing runs
         # and the game holds applied text.
         self.guided.text_fit.request(
@@ -4056,7 +4074,7 @@ class GuidedTests(unittest.TestCase):
         started = self.backend.operations.start.call_args.args[0]
         self.assertEqual(
             (started["action"], started["options"]),
-            ("fit_text", {"areas": ["listWidth"]}),
+            ("fit_text", {"areas": ["listWidth"], "files": ["Items.json"]}),
         )
         self.assertFalse(self.guided.text_fit.pending(self.identity))
         # Saving the same widths again retries a fit that failed.

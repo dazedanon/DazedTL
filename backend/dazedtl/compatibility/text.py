@@ -744,22 +744,40 @@ def prepare_publication(plan):
             folder, root, options["publication"]
         )
     elif action == "fit_text":
-        # New Line widths: the game's translated text in the areas they
-        # changed, wherever a line no longer fits.
+        # New Line widths: the translated text of the files DazedTL applied,
+        # in the areas the widths changed, wherever a line no longer fits.
+        # Files it never applied, such as ones translated by hand, stay.
         layout = fitting_layout(plan)
         plan["fitted_lines"] = 0
-        for path in sorted(data.glob("*.json"), key=lambda item: item.name.casefold()):
-            raw = project_path(root, path.relative_to(root).as_posix()).read_bytes()
+        receipt = (
+            read_json(folder / "applied-outputs.json")
+            if (folder / "applied-outputs.json").exists()
+            else {}
+        )
+        applied = receipt.get("files", {})
+        # Only files an Apply published: one whose bytes merely equal a run's
+        # output, such as a map with nothing to translate, is the game's own.
+        for name in sorted(set(options["files"]) & set(applied), key=str.casefold):
+            relative = (prefix / name).as_posix()
+            raw = project_path(root, relative).read_bytes()
             fitted, changes = fit_output(
                 decode_json(raw),
-                path.name,
+                name,
                 layout,
                 set(options["areas"]),
                 newline=raw.endswith(b"\n"),
             )
-            if fitted is not None:
-                candidates[(prefix / path.name).as_posix()] = fitted
-                plan["fitted_lines"] += changes
+            if fitted is None:
+                continue
+            candidates[relative] = fitted
+            plan["fitted_lines"] += changes
+            # A file as the last Apply wrote it is still that Apply's, now
+            # fitted to the new widths, so the next Apply reads no edits.
+            if digest(raw) in {
+                applied.get(name),
+                receipt.get("written", {}).get(name),
+            }:
+                written[name] = digest(fitted)
         if not candidates:
             return {"publication": [], "paths": [], "files": 0}
     elif action in {"qa_apply", "qa_undo"}:

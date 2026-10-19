@@ -525,12 +525,17 @@ function ProjectHistory({
   const baseline =
     !!backup && backup.available !== false && !!translation.git?.configured;
   // A text QA batch, a glossary fix batch from before Text QA took the
-  // glossary over, or a playtest fix batch restores from here, newest first,
-  // as each restore needs the game as the batch left it.
+  // glossary over, a playtest fix batch or a fit to new Line widths restores
+  // from here, newest first, as each restore needs the game as the batch
+  // left it.
   const publication =
-    ["qa_apply", "qa_undo", "glossary_apply", "playtest_fix"].includes(
-      inspected?.action || "",
-    ) &&
+    [
+      "qa_apply",
+      "qa_undo",
+      "glossary_apply",
+      "playtest_fix",
+      "fit_text",
+    ].includes(inspected?.action || "") &&
     inspected?.status === "complete" &&
     typeof inspected.result?.publication === "string"
       ? inspected.result.publication
@@ -605,7 +610,9 @@ function ProjectHistory({
                           ? "Put back the text these glossary fixes replaced."
                           : inspected?.action === "playtest_fix"
                             ? "Put back the game's fixes plugin and main.js as they were before these fixes."
-                            : "Apply the corrections this batch undid again."}
+                            : inspected?.action === "fit_text"
+                              ? "Put back the text as it was wrapped before these Line widths."
+                              : "Apply the corrections this batch undid again."}
                     </small>
                   }
                 >
