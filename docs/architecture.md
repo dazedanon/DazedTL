@@ -1160,6 +1160,7 @@ Its token is never embedded in a handoff.
 Agent operations use the same locked dispatch and project/run ownership checks as Electron; the helper has no settings or general shell endpoint.
 The app controls its workers.
 External assistant activity is reported from saved artifacts and must not be represented as an app-owned process.
+On Windows every copied task opens with a [note](../backend/dazedtl/translation/helper_command.py) naming DazedTL's own Python with `-X utf8` and its bundled Git, because a fresh Windows has neither on `PATH`, only the Microsoft Store placeholder for Python, and Python writes pipes in the ANSI code page, which cannot hold the Japanese an assistant's own scripts print.
 
 An assistant may run elevated, for example from an administrator PowerShell, and on Windows the files it writes then belong to Administrators.
 The app's normal session can still open them where the folder grants the user access, but not where it grants access only to each file's owner.

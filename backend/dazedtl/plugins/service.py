@@ -14,7 +14,7 @@ from dazedtl.foreign_work import ForeignWorkError
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation import backups, reference_folders
 from dazedtl.translation.files import decode_json, digest, project_path, read_json
-from dazedtl.translation.helper_command import helper_command
+from dazedtl.translation.helper_command import helper_command, windows_note
 from dazedtl.translation.operations import (
     lifecycle,
     lifecycle_path,
@@ -1787,7 +1787,7 @@ class PluginService:
             "binding": value["binding"],
             "complete": False,
         }
-        text = (
+        text = windows_note() + (
             "Translate the text this game's plugins show to players. This is one DazedTL Plugin files task; copying it did not start an assistant. Keep DazedTL open.\n"
             "Work through it in this conversation: after each report, the helper below checks it and returns the next request, until every plugin file is investigated and its player text translated, and every plugin label Text QA found too long for the screen is shortened. "
             "Do not ask the user to copy another prompt or approve routine steps; ask only about choices the evidence cannot settle, after finishing the independent work.\n\n"

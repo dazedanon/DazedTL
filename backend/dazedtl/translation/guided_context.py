@@ -10,7 +10,7 @@ from dazedtl.storage import write_json
 
 from . import context_setup, header_review, reference_folders, speaker_setup
 from .files import digest, project_path, read_json
-from .helper_command import helper_command
+from .helper_command import helper_command, windows_note
 
 if TYPE_CHECKING:
     from .guided import Guided
@@ -21,6 +21,11 @@ class GuidedContext:
         self.guided = guided
 
     def skill(self, project_id, name):
+        """One copied Guided task, opening with the note for Windows tools."""
+        task = self._task(project_id, name)
+        return {**task, "text": windows_note() + task["text"]}
+
+    def _task(self, project_id, name):
         self.guided.clean(project_id)
         project, native = self.guided.record(project_id)
         if name not in {

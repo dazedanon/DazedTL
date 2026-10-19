@@ -18,6 +18,7 @@ from dazedtl.compatibility.images import ImageCompatibility
 from dazedtl.foreign_work import ForeignWorkError
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import decode_json, digest, project_path, read_json
+from dazedtl.translation.helper_command import windows_note
 from dazedtl.translation.operations import lifecycle, require_source_backup
 
 from . import recipes
@@ -1638,7 +1639,10 @@ class ImageService:
 
     def _task_text(self, project_id, request, request_path, own=False):
         root = self.record(project_id)[1]
-        contract = self._contract(request, request_path, own)
+        # Assistant-led's own assistant read the note in its starting prompt.
+        contract = ("" if own else windows_note()) + self._contract(
+            request, request_path, own
+        )
         if request["kind"] == "editing":
             skill = self.adapter.skill(root, self._profile(project_id))
             # The Qt template assumes every PNG is scoped. Replace that statement before delegation.

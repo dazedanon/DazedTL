@@ -19,7 +19,7 @@ from . import backups, delivery, organize, progress_report, repricing, run_compi
 from .compilation import verify_compilation
 from .files import digest, evidence, project_path, read_json, verify_evidence
 from .game_update import GameUpdate
-from .helper_command import LOOPBACK_NOTE, git_note, helper_command
+from .helper_command import LOOPBACK_NOTE, helper_command, windows_note
 from .jobs import Jobs, declined_message, now
 from .operations import (
     checkout_issue,
@@ -519,7 +519,7 @@ This project uses the new DazedTL app as its state and execution owner. Keep the
 {command} state
 {command} --help
 
-{git_note()}{LOOPBACK_NOTE} If permission is denied or unavailable, report that restriction as the blocker.
+{LOOPBACK_NOTE} If permission is denied or unavailable, report that restriction as the blocker.
 
 After a connection failure, inspect state and the relevant run before retrying any state-changing command; a lost response does not prove the action failed. Never blindly repeat a paid submission or project operation. The helper prints structured JSON; never copy API keys or the local connection token into game files, prompts, or arguments. If the app remains unreachable with permitted access, save local work and resume with the same prompt once the app is available. The app does not run the coding assistant itself.
 
@@ -543,6 +543,7 @@ Finish the local delivery. Stop early only for a question from the list above, r
 Additional project instructions:
 {instructions}
 """
+        handoff = windows_note() + handoff
         write_bytes(
             handoff_path := project_path(
                 project.root, WORK + "/handoff.md", exists=False
@@ -706,7 +707,8 @@ Additional project instructions:
     def update_task(self, project_id):
         """The assistant's task for an applied update's new and changed text."""
         _record, project = self.project(project_id)
-        return self.engine.version(project.root, "handoff", {})
+        task = self.engine.version(project.root, "handoff", {})
+        return {**task, "prompt": windows_note() + task["prompt"]}
 
     def versions(self, project_id):
         """The game versions its version history recorded, newest first."""
@@ -1226,6 +1228,7 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
 
 {LOOPBACK_NOTE}
 """
+        handoff = windows_note() + handoff
         path = project_path(project.root, WORK + "/translator-handoff.md", exists=False)
         write_bytes(path, handoff.encode("utf-8"))
         return {"handoff": handoff, "path": str(path)}

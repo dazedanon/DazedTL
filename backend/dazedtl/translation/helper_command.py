@@ -51,18 +51,32 @@ def helper_command(workspace, project_id, *operation):
     )
 
 
-def git_note():
-    """Names DazedTL's bundled Git, which a fresh Windows has on no other PATH.
+def windows_note():
+    """How an assistant on Windows runs the Python and Git its task needs.
 
-    The engine's version_update.handoff adds the same note to its prompt.
+    A fresh Windows has only the Microsoft Store placeholder for Python and no
+    Git but DazedTL's bundled copy, and Python prints to pipes and reads files
+    in the ANSI code page, which cannot hold Japanese, so an assistant's own
+    script over game text fails with UnicodeEncodeError unless UTF-8 mode is
+    on. PowerShell decodes captured output in the console code page, so the
+    example sets UTF-8 as shell_command's form does. Every copied task starts
+    with this note.
     """
-    git = shutil.which("git")
-    if os.name != "nt" or not git:
+    if os.name != "nt":
         return ""
-    if not any(part.startswith("mingit-") for part in Path(git).parts):
-        return ""
-    path = str(Path(git)).replace("'", "''")
-    return (
-        "Git here is DazedTL's bundled copy and may not be on your PATH;"
-        f" in PowerShell run it as `& '{path}'`.\n"
+    python = str(Path(sys.executable)).replace("'", "''")
+    note = (
+        "On Windows, run Python you write with DazedTL's own Python in UTF-8 mode, in PowerShell"
+        f" `[Console]::OutputEncoding = [Text.Encoding]::UTF8; & '{python}' -X utf8 script.py`,"
+        " and install nothing into it:"
+        " `python` on PATH may be missing or the Microsoft Store placeholder, and without"
+        " -X utf8 printing or reading Japanese text fails with UnicodeEncodeError."
     )
+    git = shutil.which("git")
+    if git and any(part.startswith("mingit-") for part in Path(git).parts):
+        path = str(Path(git)).replace("'", "''")
+        note += (
+            " Git here is DazedTL's bundled copy and may not be on your PATH;"
+            f" in PowerShell run it as `& '{path}'`."
+        )
+    return note + "\n\n"
