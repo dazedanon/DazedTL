@@ -357,13 +357,13 @@ def wrapShaped(
     """Wrap translated *text* to *width*, laid out like its *source* where the
     translation allows.
 
-    The source's blank first rows stay. Where the source breaks its lines
-    after sentences, before list items or after clauses, the text breaks
-    after its own sentences (and clauses, where the source breaks after one)
-    on as many lines as the source has deliberate lines, each line's share of
-    the text close to the source line's, when every line fits. Otherwise the
-    text takes the fewest lines it needs, as even as possible, preferring
-    breaks after sentences and clauses.
+    Blank first rows stay: the text's own, or else the source's. Where the
+    source breaks its lines after sentences, before list items or after
+    clauses, the text breaks after its own sentences (and clauses, where the
+    source breaks after one) on as many lines as the source has deliberate
+    lines, each line's share of the text close to the source line's, when
+    every line fits. Otherwise the text takes the fewest lines it needs, as
+    even as possible, preferring breaks after sentences and clauses.
 
     *rows* is the rows one page of the window shows. Text that needs more
     starts each new page after a sentence where it can, filling the page
@@ -376,8 +376,9 @@ def wrapShaped(
     if not text or not text.strip():
         return text or ""
     source_lines = (source or "").replace("\r\n", "\n").split("\n")
-    lead = 0
-    if not text.startswith("\n"):
+    # Text fitted again keeps the blank rows it starts with.
+    lead = len(text) - len(text.lstrip("\n"))
+    if not lead:
         while lead < len(source_lines) - 1 and not source_lines[lead].strip(_SOURCE_BLANK):
             lead += 1
     segments, clauses = _source_segments(
