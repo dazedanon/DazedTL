@@ -150,3 +150,69 @@ class TextQATests(unittest.TestCase):
                 with self.assertRaises(ValueError) as refused:
                     service.run("project", step_name, findings=["QA-0001"])
                 self.assertEqual(str(refused.exception), step)
+
+    def test_assistant_led_status_lists_labels_qa_cannot_correct(self):
+        # Once the Text QA page stopped listing them, nothing told an
+        # Assistant-led assistant about plugin labels the capture found
+        # squeezed, and no task of its own shortens them.
+        with TemporaryDirectory() as folder:
+            task = Path(folder) / "task"
+            screens = task / "interface" / "round-1"
+            screens.mkdir(parents=True)
+            (task / "interface" / "capture.json").write_text(
+                json.dumps({"round": 1, "folder": "round-1", "summary": {}})
+            )
+            (screens / "screens.json").write_text(
+                json.dumps(
+                    {
+                        "screens": [
+                            {
+                                "title": "Menu",
+                                "file": "menu.png",
+                                "labels": [
+                                    {"text": "Adventure Records", "squeezed": 0.8},
+                                    {"text": "Items"},
+                                ],
+                            }
+                        ]
+                    }
+                )
+            )
+            (task / "inventory.json").write_text(
+                json.dumps({"records": [], "clusters": []})
+            )
+            qa = {
+                "task": str(task),
+                "current": True,
+                "applied": False,
+                "message": "",
+                "findings": [],
+                "questions": [],
+                "status": {"stage": "screen"},
+            }
+            guided, _calls = fake_guided(folder, qa, method="len")
+            state = TextQA(guided).run("project", "status")  # type: ignore[arg-type]
+            _close_contracts()
+            TypeAdapter(TextQaStatus).validate_json(json.dumps(state), strict=True)
+            self.assertEqual(
+                state["labels"],
+                [
+                    {
+                        "text": "Adventure Records",
+                        "title": "Menu",
+                        "capture": str(screens / "menu.png"),
+                        "squeezed": 0.8,
+                    }
+                ],
+            )
+            self.assertIn("Before qa --apply", state["next"])
+            # A capture taken again after the corrections change the game's
+            # text needs a fresh task, so applied QA lists none; Guided's
+            # Plugin files shortens them itself.
+            qa["applied"] = True
+            self.assertNotIn("labels", TextQA(guided).run("project", "status"))  # type: ignore[arg-type]
+            qa["applied"] = False
+            guided, _calls = fake_guided(folder, qa)
+            state = TextQA(guided).run("project", "status")  # type: ignore[arg-type]
+            self.assertNotIn("labels", state)
+            self.assertNotIn("Before qa --apply", state["next"])

@@ -418,6 +418,19 @@ class TextQaOperation(TypedDict):
     message: str
 
 
+class QaLabel(TypedDict):
+    """Text the game squeezes or cuts off on a screen QA captured that QA
+    holds no line of, for an Assistant-led assistant to shorten."""
+
+    text: str
+    title: Annotated[str, "The captured screen that shows it."]
+    capture: Annotated[str, "The screen's capture file."]
+    squeezed: NotRequired[
+        Annotated[float, "The share of the width it needs the game drew it in."]
+    ]
+    clipped: NotRequired[Annotated[bool, "Its end is cut off at its window's edge."]]
+
+
 class TextQaStatus(TypedDict):
     """Where the game's text QA stands, for the assistant's project helper."""
 
@@ -431,6 +444,12 @@ class TextQaStatus(TypedDict):
     message: str
     next: Annotated[str, "The step to run next."]
     progress: Annotated[dict[str, object], "The engine's checkpoint status."]
+    labels: NotRequired[
+        Annotated[
+            list[QaLabel],
+            "Assistant-led only: squeezed labels the assistant shortens before apply.",
+        ]
+    ]
     operation: NotRequired[TextQaOperation]
     report: NotRequired[Annotated[str, "The saved findings file."]]
 

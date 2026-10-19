@@ -34,6 +34,18 @@ STEPS = (
 CHOICES = ("keep", "use")
 CHECKPOINT_MESSAGE = "qa: apply text QA corrections"
 UNDO_MESSAGE = "qa: undo text QA corrections"
+# What an Assistant-led assistant does about labels QA can't correct. A
+# capture taken again keeps the review only until the corrections change the
+# game's text, so it comes before qa --apply.
+LABELS_STEP = (
+    "labels lists text the game squeezes or cuts off on QA's captures of its "
+    "screens that QA holds no line of, such as a plugin's menu command. Before "
+    "qa --apply, shorten each where its plugin file, js/plugins.js or a file in "
+    "js/plugins, holds it, keeping its meaning; save a checkpoint with that file "
+    "in the runtime manifest, then run qa --prepare, which keeps QA's review and "
+    "captures the screens again. Keep a label only when no shorter English keeps "
+    "its meaning or no plugin file holds it, and note why in status.md."
+)
 
 
 def _unreadable_step(qa) -> str:
@@ -57,8 +69,10 @@ def _save_task_record(folder: Path, name: str, task: str, value) -> None:
 class TextQA:
     def __init__(self, guided: Guided):
         self.guided = guided
-        # Each game's latest capture labels, by the files they come from.
-        self.outside: dict[str, tuple[Any, dict[str, Any]]] = {}
+        # Each Guided game's latest QA task, by the pointer file naming it.
+        self.pointed: dict[str, tuple[Any, Path]] = {}
+        # Each task's latest capture labels, by the capture they come from.
+        self.outside: dict[Path, tuple[Any, tuple[int, list[dict[str, Any]]]]] = {}
 
     def plugin_labels(self, project_id):
         """Labels the latest QA task of a Guided game, whatever its focus,
@@ -66,12 +80,7 @@ class TextQA:
         of, such as a plugin's menu command, for Plugin files to shorten.
         Read on every observation, so the task's files are read again only
         when they change."""
-        from dazedtl.compatibility.text import (
-            qa_capture,
-            qa_outside,
-            qa_pointed_task,
-            qa_pointers,
-        )
+        from dazedtl.compatibility.text import qa_pointed_task, qa_pointers
 
         none: dict[str, Any] = {"task": "", "labels": []}
         project = self.guided.projects.get(project_id)
@@ -88,52 +97,63 @@ class TextQA:
             if not signed:
                 return none
             pointer = max(signed)
-            saved = self.outside.get(project_id)
-            if saved and saved[0][0] == pointer:
-                task = saved[0][1]
+            saved = self.pointed.get(project_id)
+            if saved and saved[0] == pointer:
+                task = saved[1]
             else:
                 task = qa_pointed_task(folder, pointer[2])
-            captured = qa_capture(task)
-            stat = (
-                captured["listing"].stat()
-                if captured and captured["listing"].is_file()
-                else None
-            )
-            key = (
-                pointer,
-                task,
-                captured and captured["round"],
-                stat and (stat.st_mtime_ns, stat.st_size),
-            )
-            if not saved or saved[0] != key:
-                saved = (
-                    key,
-                    {
-                        # A capture taken again is another capture, whose
-                        # labels Plugin files hands out again.
-                        "task": task.name
-                        if not captured or captured["round"] == 1
-                        else f"{task.name}/{captured['round']}",
-                        "labels": [
-                            {
-                                field: row[field]
-                                for field in (
-                                    "text",
-                                    "title",
-                                    "capture",
-                                    "squeezed",
-                                    "clipped",
-                                )
-                                if field in row
-                            }
-                            for row in qa_outside(task)
-                        ],
-                    },
-                )
-                self.outside[project_id] = saved
-            return saved[1]
+                self.pointed[project_id] = (pointer, task)
+            number, labels = self.labels(task)
+            return {
+                # A capture taken again is another capture, whose labels
+                # Plugin files hands out again.
+                "task": task.name if number == 1 else f"{task.name}/{number}",
+                "labels": labels,
+            }
         except OSError, ValueError, KeyError, TypeError:
             return none
+
+    def labels(self, task: Path) -> tuple[int, list[dict[str, Any]]]:
+        """The round of a prepared task's latest capture and the labels it
+        found squeezed or cut off that QA holds no line of, each with its
+        screen, capture and how short of room it is; the task's files are
+        read again only when that capture changes."""
+        from dazedtl.compatibility.text import qa_capture, qa_outside
+
+        captured = qa_capture(task)
+        stat = (
+            captured["listing"].stat()
+            if captured and captured["listing"].is_file()
+            else None
+        )
+        key = (
+            captured and captured["round"],
+            stat and (stat.st_mtime_ns, stat.st_size),
+        )
+        saved = self.outside.get(task)
+        if not saved or saved[0] != key:
+            saved = (
+                key,
+                (
+                    captured["round"] if captured else 1,
+                    [
+                        {
+                            field: row[field]
+                            for field in (
+                                "text",
+                                "title",
+                                "capture",
+                                "squeezed",
+                                "clipped",
+                            )
+                            if field in row
+                        }
+                        for row in qa_outside(task)
+                    ],
+                ),
+            )
+            self.outside[task] = saved
+        return saved[1]
 
     def run(self, project_id, step, findings=None, question="", choice=""):
         if step not in STEPS:
@@ -398,6 +418,18 @@ class TextQA:
             following = (
                 "Review with the task README's commands until status reports complete."
             )
+        # Guided's Plugin files shortens these; an Assistant-led assistant
+        # writes the game's plugin files itself.
+        labels = (
+            self.labels(Path(qa["task"]))[1]
+            if qa.get("task")
+            and qa["current"]
+            and not qa["applied"]
+            and self.guided.translation.project(project_id)[0].get("method") == "len"
+            else []
+        )
+        if labels:
+            following = LABELS_STEP + " " + following
         state = {
             "focus": self.focus(project_id),
             "task": qa.get("task", ""),
@@ -409,6 +441,7 @@ class TextQA:
             "message": qa["message"],
             "next": following,
             "progress": qa["status"],
+            **({"labels": labels} if labels else {}),
             **({"operation": operation} if operation else {}),
         }
         if report and qa.get("task"):

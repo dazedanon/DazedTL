@@ -737,6 +737,20 @@ export type TextQaOperation = {
   message: string;
 };
 
+/** Text the game squeezes or cuts off on a screen QA captured that QA
+holds no line of, for an Assistant-led assistant to shorten. */
+export type QaLabel = {
+  text: string;
+  /** The captured screen that shows it. */
+  title: string;
+  /** The screen's capture file. */
+  capture: string;
+  /** The share of the width it needs the game drew it in. */
+  squeezed?: number;
+  /** Its end is cut off at its window's edge. */
+  clipped?: boolean;
+};
+
 /** Where the game's text QA stands, for the assistant's project helper. */
 export type TextQaStatus = {
   focus: string;
@@ -753,6 +767,8 @@ export type TextQaStatus = {
   next: string;
   /** The engine's checkpoint status. */
   progress: Record<string, unknown>;
+  /** Assistant-led only: squeezed labels the assistant shortens before apply. */
+  labels?: QaLabel[];
   operation?: TextQaOperation;
   /** The saved findings file. */
   report?: string;

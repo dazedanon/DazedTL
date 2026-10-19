@@ -196,6 +196,7 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
    **Progress** shows its phases, anything it needs from you and any API run.
    With **Image text** on, it also finds the images with text, translates them and puts them in the game; **Images** shows where that stands and lets you change the list.
    For RPG Maker games it also runs text QA: **Text QA** appears once it starts, lists each correction with **Undo** and asks you only what it can't settle, which **Progress** points out.
+   It also shortens plugin text the game squeezes or cuts off on its screens, such as a menu command.
    For MV and MZ games it runs the playtest too, which **Playtest** shows once it has.
    Approve your assistant's API estimate with the button on **Progress**; your assistant can't start a run you haven't approved there.
    A newer estimate replaces the one waiting.
