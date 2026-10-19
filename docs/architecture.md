@@ -654,6 +654,7 @@ Each game has one translation method, chosen in [MethodDialog](../app/src/featur
 The one Translation entry opens that method's workspace.
 The Project page's Status, History, Versions and Backups tabs serve both methods.
 Status shows where a Guided project stands from the observed snapshot through [guidedProgress](../app/src/features/guided/progress.ts): the next unfinished required task, every stage's tasks with their completion and the last activity.
+For other methods the Status card is the latest operation itself, shown through the shared [JobStatus](../app/src/ui/JobStatus.tsx), so no separate activity line repeats it.
 Its one Continue opens the next required task, and the saved workspace position appears beside it as a smaller Last opened link unless it is a finished task before the next one; with every required task done, Continue resumes that position.
 A one-task stage shows no done count, and an optional task not yet done says Optional instead of showing an empty mark.
 Plugin files and Images say Needs review instead, on the Project page and their tabs, while work another project saved waits for the user's choice.

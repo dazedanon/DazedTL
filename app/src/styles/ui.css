@@ -1082,16 +1082,25 @@ pre {
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
-/* Row titles read as content: body size, medium weight. */
-.action-row-label > strong {
+/* Row titles read as content: body size, medium weight. A job's status as
+   the label reads the same: its name as the title, its detail as the
+   description. */
+.action-row-label > strong,
+.action-row-label > .job-status-status strong {
   font-size: var(--font-body);
   font-weight: var(--weight-medium);
 }
-.action-row-label > small {
+.action-row-label > small,
+.action-row-label > .job-status-status p {
   display: block;
   margin-top: var(--space-1);
   font-size: var(--font-control);
   line-height: 1.5;
+}
+/* Like other row labels, the detail keeps the row's width. */
+.action-row-label > .job-status-status p {
+  max-width: none;
+  color: var(--color-muted);
 }
 /* Buttons share a top edge and stay side by side; a control's feedback
    takes its own line below them, so a long result never splits the buttons

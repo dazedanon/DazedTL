@@ -213,6 +213,9 @@ function ProjectStatus({
   const active =
     !!operation && ["ready", "running", "waiting"].includes(operation.status);
   const guided = project.method === "guided" && progress;
+  // The latest operation shows once. Guided's card names the next task, so
+  // the operation sits beside it; every other card is the operation itself.
+  const beside = guided && operation;
   // One Continue: the next required task, or the last opened task once every
   // required task is done.
   const target = guided ? progress.next || progress.last : null;
@@ -261,8 +264,7 @@ function ProjectStatus({
   return (
     <>
       <PageBody className="project-status">
-        {/* Other methods' status card already names the operation. */}
-        {active && guided && <JobStatus job={operation} />}
+        {beside && active && <JobStatus job={beside} />}
         {!project.available || !project.method ? (
           <ActionList>
             <ActionRow
@@ -404,19 +406,24 @@ function ProjectStatus({
                   <span className="project-next-stage">
                     {methodLabels[project.method]}
                   </span>
-                  <strong>{project.status}</strong>
-                  {project.detail && <small>{project.detail}</small>}
+                  {operation ? (
+                    <JobStatus job={operation} />
+                  ) : (
+                    <>
+                      <strong>{project.status}</strong>
+                      {project.detail && <small>{project.detail}</small>}
+                    </>
+                  )}
                 </>
               }
             />
           </ActionList>
         )}
         {project.method && project.method !== "guided" && assistantList}
-        {!active && operation && (
+        {beside && !active && (
           <p className="project-activity">
-            Last activity: {operation.label}
-            {operation.status !== "complete" &&
-              ` · ${sentence(operation.status)}`}
+            Last activity: {beside.label}
+            {beside.status !== "complete" && ` · ${sentence(beside.status)}`}
           </p>
         )}
         {!state.provider_ready && (
