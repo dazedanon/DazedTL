@@ -612,7 +612,7 @@ try:
             None,
             {
                 "note": "<SG説明:A light blade of copper.>\n<SG種別:武器>",
-                "description": "・A light blade of copper\n・Easy to swing",
+                "description": "・Light blade\n・Easy to swing in a fight",
             },
         ]
         report = fit_document(
@@ -622,6 +622,11 @@ try:
         )
         assert (
             notes[1]["note"] == "<SG説明:A light blade of\ncopper.>\n<SG種別:武器>"
+        ), notes
+        # A list keeps one item a line even where its window lacks the rows;
+        # running it together put an item mid-line, and it is shortened instead.
+        assert notes[1]["description"] == (
+            "・Light blade\n・Easy to swing\nin a fight"
         ), notes
         assert [row["pointer"] for row in report.misfits] == ["/1/description"], (
             report.misfits
