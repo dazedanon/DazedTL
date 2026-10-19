@@ -133,7 +133,9 @@ def run(
             archive / "game-files",
             keep=lambda name: save_game(name) or name in kept,
             stopped=stopped,
-            progress=lambda count, path: progress(f"Put back {count:,} files · {path}"),
+            progress=lambda count, path: progress(
+                f"Put back {count:,} file{'' if count == 1 else 's'} · {path}"
+            ),
         )
     git = root / ".git"
     if git.exists() or git.is_symlink():

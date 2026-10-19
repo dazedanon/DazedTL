@@ -599,7 +599,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             target,
             stopped=stopped,
             progress=lambda count, name: progress(
-                f"Verified {count:,} restored files · {name}"
+                f"Verified {count:,} restored file{'' if count == 1 else 's'} · {name}"
             ),
         )
     elif action.startswith("version_"):
