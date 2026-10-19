@@ -21,6 +21,7 @@ from dazedtl.translation.release import (
     current,
     destination,
     exclusion,
+    game_folder,
     git_identity,
     inventory,
     output_hash,
@@ -73,14 +74,26 @@ class ReleaseTests(unittest.TestCase):
             (root / "www/data/Items.json").chmod(0o600)
             scope = inventory(root)
             self.assertEqual(set(scope["files"]), included)
-            output = Path(folder) / "clean.zip"
-            write_archive(root, output, scope, lambda _: None)
+            # Players get the archive's name as the game's folder, not the
+            # source folder's: an Ace game won't start on English Windows from
+            # a Japanese one, and extracting in Explorer adds a folder of the
+            # archive's name.
+            output = Path(folder) / "Orc's Revenge-game.zip"
+            top = game_folder(output, "ACE")
+            self.assertEqual(top, "Orc's Revenge-game")
+            self.assertEqual(
+                game_folder(Path("逆襲のオーク.zip"), "MVMZ"), "逆襲のオーク"
+            )
+            for name, engine in (("逆襲のオーク.zip", "ACE"), ("game..zip", "MVMZ")):
+                with self.assertRaises(ValueError):
+                    game_folder(Path(folder) / name, engine)
+            write_archive(root, output, scope, lambda _: None, folder=top)
             with zipfile.ZipFile(output) as archive:
                 self.assertEqual(
                     set(archive.namelist()),
-                    {"generated-game/" + name for name in included},
+                    {top + "/" + name for name in included},
                 )
-                items = archive.getinfo("generated-game/www/data/Items.json")
+                items = archive.getinfo(top + "/www/data/Items.json")
                 self.assertEqual(items.external_attr >> 16, 0o100644)
             # Stopping after the first entry never publishes a partial replacement.
             previous = output.read_bytes()
@@ -88,24 +101,20 @@ class ReleaseTests(unittest.TestCase):
             log = Mock()
             log.stopped.side_effect = [False, True]
             with self.assertRaises(InterruptedError):
-                write_archive(root, staged, scope, log)
+                write_archive(root, staged, scope, log, folder=top)
             self.assertEqual(log.call_count, 1)
             self.assertEqual(output.read_bytes(), previous)
             # A reviewed public stamp retains its config and generates only the matching state.
             stamped = inventory(root, "a" * 40)
-            write_archive(root, output, stamped, lambda _: None)
+            write_archive(root, output, stamped, lambda _: None, folder=top)
             with zipfile.ZipFile(output) as archive:
-                self.assertIn(
-                    "generated-game/gameupdate/patch-config.txt", archive.namelist()
-                )
-                stamp = archive.getinfo(
-                    "generated-game/gameupdate/previous_patch_sha.txt"
-                )
+                self.assertIn(top + "/gameupdate/patch-config.txt", archive.namelist())
+                stamp = archive.getinfo(top + "/gameupdate/previous_patch_sha.txt")
                 self.assertEqual(archive.read(stamp), ("a" * 40 + "\n").encode())
                 self.assertEqual(stamp.external_attr >> 16, 0o100644)
             (root / "www/data/Items.json").write_text("changed after inspection")
             with self.assertRaises(ValueError):
-                write_archive(root, output, scope, lambda _: None)
+                write_archive(root, output, scope, lambda _: None, folder=top)
             # Only the game, as its snapshots have it, and the translation's
             # files ship; files added while working stay out, and a folder of
             # only such files is one entry. A spelling's case doesn't matter.
@@ -123,14 +132,11 @@ class ReleaseTests(unittest.TestCase):
                 {"ci.html", "Dictionaries/", "www/data/notes.txt"},
                 {row["path"] for row in scope["exclusions"]},
             )
-            write_archive(root, output, scope, lambda _: None)
+            write_archive(root, output, scope, lambda _: None, folder=top)
             with zipfile.ZipFile(output) as archive:
                 self.assertEqual(
                     set(archive.namelist()),
-                    {
-                        "generated-game/" + name
-                        for name in included | {"www/data/Map001.json"}
-                    },
+                    {top + "/" + name for name in included | {"www/data/Map001.json"}},
                 )
             # Windows can't extract these names, such as a pager's stray
             # "\x1bq" file, so they never ship; they can't be made on Windows.
@@ -211,6 +217,11 @@ class ReleaseTests(unittest.TestCase):
                     root, ["Data/Items.rvdata2", "Data/Scripts.rvdata2"]
                 ),
             }
+            # A receipt from before packing wrote Game.ini's title would ship
+            # the original caption.
+            write_json(work / "ace-packing.json", receipt)
+            self.assertFalse(packing_state(native, work)["current"])
+            receipt["version"] = 2
             write_json(work / "ace-packing.json", receipt)
             self.assertTrue(packing_state(native, work)["current"])
             # A script translated after packing needs packing again too.

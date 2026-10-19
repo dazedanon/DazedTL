@@ -10,6 +10,7 @@ import type {
   Job,
   Phase,
   Preview,
+  ReleaseDestination,
   TranslationState,
 } from "../../../api/contracts";
 import { useApplication } from "../../../app/ApplicationProvider";
@@ -341,11 +342,15 @@ export function useGuidedWorkspace({
       !nameError &&
       release.directory.trim() &&
       release.name.trim()
-      ? `${project.id}\n${releasePath}`
+      ? `${project.id}\n${release.kind}\n${releasePath}`
       : null,
-    () => api.guided.releaseDestination(project.id, releasePath),
+    () => api.guided.releaseDestination(project.id, releasePath, release.kind),
   );
   const destinationError = nameError || destination.value?.error || "";
+  // A name error leaves the folder it would be saved in unmarked.
+  const destinationField: ReleaseDestination["field"] = nameError
+    ? "name"
+    : destination.value?.field || "";
 
   const edit = <K extends keyof GuidedOptions>(
     key: K,
@@ -1573,6 +1578,7 @@ export function useGuidedWorkspace({
     releaseAction,
     releasePath,
     destinationError,
+    destinationField,
     destinationPending: destination.pending,
     artifact,
     edit,

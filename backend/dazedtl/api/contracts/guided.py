@@ -931,6 +931,8 @@ class OutputFolder(TypedDict):
 
 
 class ReleaseDestination(TypedDict):
-    """Why a release ZIP cannot be written to the chosen path, or empty."""
+    """Why a release ZIP cannot be written to the chosen path, or empty, and
+    whether the archive name alone or the whole path is at fault."""
 
     error: str
+    field: Literal["", "name", "path"]

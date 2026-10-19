@@ -169,6 +169,7 @@ If applying stops midway, **Review restore** puts the files back.
 
 **Release** builds a clean game ZIP or a patch ZIP with only the changed files.
 The clean game ZIP holds the game and its translation; files added to the game folder while you worked, such as notes or downloads, stay out; **View files & exclusions** lists them.
+Inside the ZIP, the game's folder takes the archive name, without `.zip`.
 Save it outside the game folder.
 Translations that aren't in the game yet need **Apply** first.
 The ZIP shows **Outdated** once the game changes; build it again to include the changes.
@@ -181,6 +182,8 @@ For an RPG Maker MV/MZ game it reads **Done** once your assistant's validation o
 Set up's **Convert Ace data** unpacks an encrypted `Game.rgss3a` and converts the game data so it can be translated.
 VX Ace keeps menu commands, battle messages and other interface text in its Ruby scripts instead of plugins, so **Plugin files** has your assistant translate the text the scripts show.
 **Review native Ace packing**, in Check or Release, writes the translations back, applied scripts included.
+It also puts the translated game title into `Game.ini`, which is the title the game window shows.
+Name a clean game ZIP with English letters, numbers and symbols only: the name becomes the game's folder, and a VX Ace game doesn't start on English Windows from a folder named in Japanese.
 A patch ZIP for an encrypted game carries a rebuilt `Game.rgss3a`, so players replace one file.
 GameUpdate can't update an encrypted game, so share a new patch for each update instead.
 

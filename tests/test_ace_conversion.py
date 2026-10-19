@@ -133,6 +133,48 @@ class AceConversionTests(unittest.TestCase):
             )
             self.assertEqual(data, packed)
 
+    def test_packing_writes_the_game_title_into_game_ini_as_english_windows_reads_it(
+        self,
+    ):
+        # Game.exe decodes an ini without a byte order mark with the player's
+        # code page, so the Japanese editor's Shift-JIS caption was mojibake
+        # on English Windows even after translation.
+        with TemporaryDirectory() as temporary:
+            game = Path(temporary)
+            shutil.copytree(FIXTURE / "Data", game / "Data")
+            rv2json.create(game, log=lambda _line: None)
+            ini = game / "Game.ini"
+            original = "[Game]\r\nLibrary=System\\RGSS301.dll\r\nTitle=テストゲーム\r\nRTP=RPGVXAce\r\n"
+            ini.write_bytes(original.encode("cp932"))
+            # An untranslated title leaves the file as the editor wrote it.
+            actions.run(game, "ace_pack", log=lambda _line: None)
+            self.assertEqual(ini.read_bytes(), original.encode("cp932"))
+
+            shutil.copytree(
+                FIXTURE / "translated", game / "ace_json", dirs_exist_ok=True
+            )
+            # The receipt binds Game.ini with the data.
+            self.assertIn(ini, actions.run(game, "ace_pack", log=lambda _line: None))
+            self.assertEqual(
+                ini.read_bytes(),
+                original.replace("テストゲーム", "Test Game").encode("cp932"),
+            )
+
+            system = game / "ace_json/System.json"
+            system.write_text(
+                system.read_text(encoding="utf-8").replace(
+                    '"Test Game"', '"Orc ♥ Revenge"'
+                ),
+                encoding="utf-8",
+            )
+            actions.run(game, "ace_pack", log=lambda _line: None)
+            data = ini.read_bytes()
+            self.assertTrue(data.startswith(b"\xff\xfe"))
+            self.assertEqual(
+                data[2:].decode("utf-16-le"),
+                original.replace("テストゲーム", "Orc ♥ Revenge"),
+            )
+
     def test_archives_extract_their_files_inside_the_game_and_keep_existing_ones(self):
         long = bytes(range(256)) * 5 + b"tail"
         entries = [

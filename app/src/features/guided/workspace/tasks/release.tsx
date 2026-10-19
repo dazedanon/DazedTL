@@ -27,6 +27,7 @@ export function packageView(w: GuidedWorkspace): TaskView {
     releaseAction,
     releasePath,
     destinationError,
+    destinationField,
     destinationPending,
     artifact,
     save,
@@ -53,6 +54,7 @@ export function packageView(w: GuidedWorkspace): TaskView {
       <ReleaseContent
         value={release}
         destinationError={destinationError}
+        destinationField={destinationField}
         disabled={disabled}
         artifact={artifact}
         unapplied={state.readiness.unapplied}
@@ -181,9 +183,11 @@ export function packageView(w: GuidedWorkspace): TaskView {
       ? "Build clean game ZIP"
       : "Review & build patch ZIP",
     { output: releasePath },
-    destinationError
-      ? "Choose a destination the archive can be saved to."
-      : updaterBlocked ||
+    destinationField === "name"
+      ? "Choose another archive name."
+      : destinationError
+        ? "Choose a destination the archive can be saved to."
+        : updaterBlocked ||
           !baseline ||
           !release.directory.trim() ||
           !release.name.trim() ||

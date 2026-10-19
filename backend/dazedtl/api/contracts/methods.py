@@ -471,6 +471,7 @@ class GuidedFormRequest(TypedDict):
 class GuidedReleaseDestinationRequest(TypedDict):
     project_id: str
     output: str
+    kind: Literal["game", "patch"]
 
 
 class GuidedSaveOptionsRequest(TypedDict):

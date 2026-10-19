@@ -581,18 +581,18 @@ class GuidedActions:
                 )
             options = {"files": paths}
         if action == "release":
-            from .release import destination
+            from .release import destination, game_folder
 
             if set(options) != {"output"}:
                 raise ValueError("Choose the release destination.")
-            options["output"] = str(
-                destination(
-                    project["source"],
-                    self.guided.translation.workspace,
-                    self.guided.backend.source,
-                    options["output"],
-                )
+            output = destination(
+                project["source"],
+                self.guided.translation.workspace,
+                self.guided.backend.source,
+                options["output"],
             )
+            game_folder(output, native["engine"])
+            options["output"] = str(output)
         result = (
             self.guided.backend.guided_text_preview(native["id"], action, options)
             if action in {"runtime_restore", "qa_apply", "qa_undo"}

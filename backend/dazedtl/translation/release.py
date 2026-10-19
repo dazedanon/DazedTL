@@ -88,6 +88,9 @@ _UPDATER_CONFIG = "gameupdate/patch-config.txt"
 _UPDATER_STATE = "gameupdate/previous_patch_sha.txt"
 # Windows refuses these names, so extracting a ZIP that holds one fails there.
 _WINDOWS_DEVICE = re.compile(r"(?:con|prn|aux|nul|(?:com|lpt)[0-9¹²³])(?:\..*)?")
+# Ace packing receipts from version 2 bind Game.ini, whose title packing
+# writes; earlier receipts packed only the data, so they need packing again.
+PACKING_VERSION = 2
 
 
 def _windows_unsafe(name):
@@ -210,7 +213,28 @@ def player_permissions(info):
     )
 
 
-def write_archive(source, target, scope, log, *, prefix=True):
+def game_folder(output, engine):
+    """The folder a clean game ZIP holds the game in: the archive's own name,
+    so players get the name the translator chose, not the source folder's.
+
+    RGSS3's Game.exe finds its library through the ANSI code page, so on
+    English Windows a VX Ace game won't start from a folder named in
+    Japanese. Extracting the ZIP in Explorer makes a folder of the archive's
+    name too, so an Ace archive's whole name must be ASCII.
+    """
+    name = Path(output).stem
+    if _windows_unsafe(name):
+        raise ValueError(
+            "Windows can't use this archive name, and it becomes the game's folder in the ZIP."
+        )
+    if engine == "ACE" and not name.isascii():
+        raise ValueError(
+            "Use only English letters, numbers and symbols. This name becomes the game's folder, and a VX Ace game won't start on English Windows from a folder named in other characters."
+        )
+    return name
+
+
+def write_archive(source, target, scope, log, *, folder):
     if inventory(source, scope["updater_stamp"], scope["known"]) != scope:
         raise ValueError("The archive contents changed. Inspect and build again.")
     if not scope["files"]:
@@ -225,11 +249,11 @@ def write_archive(source, target, scope, log, *, prefix=True):
                     "Package creation stopped. The previous ZIP is unchanged."
                 )
             log(f"{index}/{len(scope['files'])} · {relative}")
-            name = (Path(source).name + "/" if prefix else "") + relative
+            name = folder + "/" + relative
             archive.write(project_path(source, relative), name)
             player_permissions(archive.getinfo(name))
         if scope["updater_stamp"]:
-            name = (Path(source).name + "/" if prefix else "") + _UPDATER_STATE
+            name = folder + "/" + _UPDATER_STATE
             archive.writestr(name, scope["updater_stamp"] + "\n")
             player_permissions(archive.getinfo(name))
     if inventory(source, scope["updater_stamp"], scope["known"]) != scope:
@@ -318,7 +342,8 @@ def packing_state(native, folder):
         receipt = read_json(Path(folder) / "ace-packing.json")
         inputs = packing_inputs(native)
         current = (
-            receipt.get("source") == native["source"]
+            receipt.get("version") == PACKING_VERSION
+            and receipt.get("source") == native["source"]
             and not unpacked(inputs, receipt["outputs"])
             and receipt.get("inputs") == inputs
             and receipt.get("outputs")

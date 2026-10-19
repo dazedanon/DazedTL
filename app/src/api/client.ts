@@ -218,8 +218,11 @@ export const api = {
   guided: {
     outputFolder: (project_id: string) =>
       request("guided_output_folder", { project_id }),
-    releaseDestination: (project_id: string, output: string) =>
-      request("guided_release_destination", { project_id, output }),
+    releaseDestination: (
+      project_id: string,
+      output: string,
+      kind: GuidedForm["release"]["kind"],
+    ) => request("guided_release_destination", { project_id, output, kind }),
     eventTextApply: (project_id: string, revision: number, report_id: string) =>
       request("guided_event_text_apply", { project_id, revision, report_id }),
     eventTextView: (

@@ -2,7 +2,12 @@ import { PathText } from "../../ui/PathText";
 import { StatusHeading } from "../../ui/StatusMark";
 import { PathInput } from "../../ui/PathInput";
 import type { ReactNode } from "react";
-import type { GuidedForm, Preview, ReleaseArtifact } from "../../api/contracts";
+import type {
+  GuidedForm,
+  Preview,
+  ReleaseArtifact,
+  ReleaseDestination,
+} from "../../api/contracts";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { Button } from "../../ui/Button";
 import { Section } from "../../ui/Section";
@@ -20,6 +25,7 @@ const size = (bytes: number) =>
 export function ReleaseContent({
   value,
   destinationError,
+  destinationField,
   edit,
   disabled,
   chooseFolder,
@@ -35,6 +41,8 @@ export function ReleaseContent({
   value: Options;
   /** Why the archive cannot be saved at the chosen name and folder. */
   destinationError: string;
+  /** Whether the name alone or the whole destination is at fault. */
+  destinationField: ReleaseDestination["field"];
   edit: (change: Partial<Options>) => void;
   disabled: boolean;
   chooseFolder: () => void;
@@ -98,9 +106,11 @@ export function ReleaseContent({
               <PathInput
                 aria-label="Save in"
                 value={value.directory}
-                aria-invalid={destinationError ? true : undefined}
+                aria-invalid={destinationField === "path" ? true : undefined}
                 aria-describedby={
-                  destinationError ? "release-destination-error" : undefined
+                  destinationField === "path"
+                    ? "release-destination-error"
+                    : undefined
                 }
                 onChange={(event) => edit({ directory: event.target.value })}
               />

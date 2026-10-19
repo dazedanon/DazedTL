@@ -1219,9 +1219,11 @@ export type OutputFolder = {
   path: string;
 };
 
-/** Why a release ZIP cannot be written to the chosen path, or empty. */
+/** Why a release ZIP cannot be written to the chosen path, or empty, and
+whether the archive name alone or the whole path is at fault. */
 export type ReleaseDestination = {
   error: string;
+  field: "" | "name" | "path";
 };
 
 export type TranslationOptions = {
@@ -2841,6 +2843,7 @@ export type GuidedFormRequest = {
 export type GuidedReleaseDestinationRequest = {
   project_id: string;
   output: string;
+  kind: "game" | "patch";
 };
 
 export type GuidedSaveOptionsRequest = {

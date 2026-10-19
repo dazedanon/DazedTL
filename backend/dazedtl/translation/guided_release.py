@@ -114,21 +114,27 @@ class GuidedRelease:
             },
         }
 
-    def release_destination(self, project_id, output):
+    def release_destination(self, project_id, output, kind):
         """Reads whether a release ZIP may be written there, without writing."""
-        from .release import destination
+        from .release import destination, game_folder
 
-        project, _ = self.guided.record(project_id)
+        project, native = self.guided.record(project_id)
         try:
-            destination(
+            path = destination(
                 project["source"],
                 self.guided.translation.workspace,
                 self.guided.backend.source,
                 output,
             )
         except ValueError as exc:
-            return {"error": str(exc)}
-        return {"error": ""}
+            return {"error": str(exc), "field": "path"}
+        if kind == "game":
+            # The archive's name becomes the game's folder inside it.
+            try:
+                game_folder(path, native["engine"])
+            except ValueError as exc:
+                return {"error": str(exc), "field": "name"}
+        return {"error": "", "field": ""}
 
     @staticmethod
     def validate_release_form(value):

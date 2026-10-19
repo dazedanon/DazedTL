@@ -85,6 +85,7 @@ def run_release(plan, log):
 
     from dazedtl.translation.release import (
         destination,
+        game_folder,
         input_stamps,
         packing_state,
         publish,
@@ -97,6 +98,7 @@ def run_release(plan, log):
     from .runtime import ENGINE_ROOT
 
     output = destination(source, workspace, ENGINE_ROOT, plan["options"]["output"])
+    folder = game_folder(output, plan["project"]["engine"])
     expected = plan["release_scope"]
     if not packing_state(plan["project"], plan["folder"])["current"]:
         raise ValueError("Pack and verify current Ace data before packaging.")
@@ -107,7 +109,7 @@ def run_release(plan, log):
     output.parent.mkdir(parents=True, exist_ok=True)
     with staging_folder(output.parent, ".dazedtl-release-") as temporary:
         staged = temporary / output.name
-        write_archive(source, staged, expected, log)
+        write_archive(source, staged, expected, log, folder=folder)
         validate_plan(plan)
         if not packing_state(plan["project"], plan["folder"])["current"]:
             raise ValueError(
@@ -444,11 +446,16 @@ def runtime_files(source):
     layout = rpgmaker_layout(root)
     if not layout or layout["engine"] not in {"MVMZ", "ACE"}:
         raise ValueError("Guided translation supports RPG Maker MV/MZ and VX Ace.")
-    paths = (
-        list((root / "Data").glob("*.rvdata2"))
-        if layout["engine"] == "ACE"
-        else list(layout["data_path"].glob("*.json"))
-    )
+    if layout["engine"] == "ACE":
+        from util.ace import game_ini
+
+        # Packing writes the translated window title into Game.ini.
+        paths = [
+            *(root / "Data").glob("*.rvdata2"),
+            *filter(None, [game_ini.find(root)]),
+        ]
+    else:
+        paths = list(layout["data_path"].glob("*.json"))
     if layout["plugins_js"]:
         paths.append(layout["plugins_js"])
         paths.extend((layout["plugins_js"].parent / "plugins").glob("*.js"))
@@ -501,7 +508,7 @@ def run_ace(plan, log):
     action = plan["action"]
     root = Path(plan["project"]["source"])
     from dazedtl.translation.files import evidence
-    from dazedtl.translation.release import packing_inputs, unpacked
+    from dazedtl.translation.release import PACKING_VERSION, packing_inputs, unpacked
 
     inputs = packing_inputs(plan["project"]) if action == "ace_pack" else None
     written = actions.run(root, action, log)
@@ -517,6 +524,7 @@ def run_ace(plan, log):
                 "Ace packing found no native data for: " + ", ".join(missing)
             )
         receipt = {
+            "version": PACKING_VERSION,
             "source": str(root),
             "inputs": inputs,
             "outputs": evidence(root, outputs),

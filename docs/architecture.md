@@ -489,6 +489,8 @@ Local patches omit the config unless their commit is the verified public version
 Player updater scripts remain included but cannot update an unstamped local build without configuration.
 Archive availability describes the saved ZIP on disk, never freshness against later game edits.
 Archive names and additional asset choices are retained per project, with separate game and patch names.
+A clean game ZIP holds the game in a folder of the archive's name rather than the source folder's, so players get the name the translator chose.
+RGSS3's Game.exe reaches its library through the ANSI code page and fails as "RGSS301.dll File corrupted" from a Japanese-named folder on English Windows, and Explorer's Extract All adds a folder of the archive's name, so a VX Ace game ZIP's name must be ASCII.
 Neither operation manufactures a user-review record or completes Len's report-based QA.
 The project helper cannot invoke Guided packaging; its separate QA requirements remain in force.
 Legacy Guided review receipts remain readable for existing records.
@@ -1270,6 +1272,8 @@ The port writes RV2JSON's JSON and Ruby 3.4's Marshal bytes so games and existin
 RGSS3 reads only the archive while `Game.rgss3a` exists, scripts included, and probes on a real game confirmed it ignores loose copies and rejects an archive without its scripts.
 So Set up keeps an encrypted game's archive in `.dazedtl/ace`, where releases and Git never see it, and patches carry it rebuilt with the game's current files; the rebuild keeps the original header, order and keys, so it reproduces an unchanged archive byte for byte.
 Ace Release requires a packing receipt bound to every current JSON input and its corresponding native output; fitting, QA or native edits invalidate it.
+The window caption comes from `Game.ini`'s Title, not the data, so packing writes the game title there as the editor does when it saves, and its receipt binds `Game.ini` with the data; older receipts count as outdated, so a game packed before this packs once more.
+Game.exe reads that file with `GetPrivateProfileStringW`, which decodes a file without a byte order mark with the player's ANSI code page: an ASCII title replaces only its line, and any other title turns the file into UTF-16, which probes on English Windows read in full, its RTP line included.
 Git holds no original of the converted JSON, so Event text sources reads a translated command's original text from the `_original` the engine keeps, and lists the converted `ace_json/scripts` as dependencies.
 Copied Names & glossary and Line widths tasks tell an Ace assistant where its data and scripts are and that the code-101 nameplate rules, slip check and layout check are MV/MZ only, since VX Ace's Show Text has no nameplate.
 Guided checkpoint manifests derive translation-only additions from the registered original and saved source inventory, retaining previously tracked runtime assets when switching workflows.

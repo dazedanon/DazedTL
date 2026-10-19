@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
-from . import rgssad, rv2json
+from . import game_ini, rgssad, rv2json
 
 ACTIONS = ("ace_decrypt", "ace_extract", "ace_pack")
 # Where Set up keeps an encrypted game's original archive. The game reads
@@ -25,11 +26,13 @@ def run(root: Path, action: str, log: Callable[[str], None] = print) -> list[Pat
     """Extracts the encrypted archive (ace_decrypt), converts Data to ace_json
     (ace_extract, extracting an encrypted game first and setting its archive
     aside) or packs ace_json back into Data (ace_pack), and returns the native
-    data files packing wrote.
+    files packing wrote.
 
     Packing updates Data in place without RV2JSON's Data/backups copies: the
     workflow already keeps the original, and a copy inside Data would ship
-    with the game.
+    with the game. Like the editor, it also writes the game title into
+    Game.ini, which the window caption shows, and returns Game.ini whether or
+    not its title changed.
     """
     root = Path(root)
     if action == "ace_decrypt":
@@ -55,7 +58,15 @@ def run(root: Path, action: str, log: Callable[[str], None] = print) -> list[Pat
             )
     elif action == "ace_pack":
         log("Packing ace_json into Data")
-        return rv2json.update(root, skip_backup=True, log=log)
+        written = rv2json.update(root, skip_backup=True, log=log)
+        ini = game_ini.find(root)
+        system = root / "ace_json/System.json"
+        if ini is None:
+            return written
+        if system.is_file():
+            title = json.loads(system.read_text(encoding="utf-8-sig")).get("gameTitle")
+            game_ini.write_title(ini, title, log)
+        return [*written, ini]
     else:
         raise ValueError("Unknown Ace action: " + action)
     return []
