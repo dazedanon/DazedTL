@@ -275,9 +275,10 @@ assert [
         "observations"
     ]
 ] == [found[1]["note"]]
-# Lines count every place a text shows, so the shared line counts twice.
+# Lines count every place a text shows, so the shared line counts twice; the
+# corrected line the playtest still flags is this round's to check.
 assert qa.status(second)["reviewed_before"] == {
-    "lines": 5,
+    "lines": 4,
     "from": [f"task {first.name}"],
 }, qa.status(second)["reviewed_before"]
 # A retranslated line is screened, and so is the shared line in its scene,

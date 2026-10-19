@@ -3537,6 +3537,21 @@ def prepare_task(
             bundle_summaries = _write_bundles(
                 staging, bundles, recorded_root=task_dir
             )
+            # An observation deep review already judged for the same text is
+            # not asked again; the task keeps it apart, so it reads as
+            # reviewed and preparing again does not take it either.
+            judged = [
+                observation for observation in observed
+                if reviewed and reviewed.observed(
+                    clusters_by_id[observation["cluster_id"]]["source"],
+                    clusters_by_id[observation["cluster_id"]]["live"],
+                    observation["note"],
+                )
+            ]
+            asked = {
+                observation["cluster_id"] for observation in observed
+                if observation not in judged
+            }
             task = {
                 "schema": TASK_SCHEMA,
                 "created_at": _utc_now(),
@@ -3552,12 +3567,15 @@ def prepare_task(
                 "counts": manifest["counts"],
             }
             if reviewed:
-                # Lines as the task counts them: every place a text shows.
+                # Lines as the task counts them: every place a text shows. A
+                # line an observation sends to deep review is this task's to
+                # check.
                 task["reviewed_before"] = {
                     "lines": sum(
                         len(cluster["identities"])
                         for cluster in manifest["clusters"]
                         if reviewed.line(cluster["source"], cluster["live"])
+                        and cluster["representative"] not in asked
                     ),
                     "from": reviewed.origins,
                 }
@@ -3595,17 +3613,6 @@ def prepare_task(
                 },
                 "findings_file": "",
             }
-            # An observation deep review already judged for the same text is
-            # not asked again; the task keeps it apart, so it reads as
-            # reviewed and preparing again does not take it either.
-            judged = [
-                observation for observation in observed
-                if reviewed and reviewed.observed(
-                    clusters_by_id[observation["cluster_id"]]["source"],
-                    clusters_by_id[observation["cluster_id"]]["live"],
-                    observation["note"],
-                )
-            ]
             _note_observations(checkpoint, [
                 observation for observation in observed if observation not in judged
             ], "screen", observer)
