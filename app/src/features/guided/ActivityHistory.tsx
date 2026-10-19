@@ -38,6 +38,10 @@ import { sentence } from "../../ui/displayText";
 export function operationSummary(job: Job): string {
   const result = job.result;
   if (!result) return "";
+  // An operation's own sentence, such as a fit's rewrapped lines, says more
+  // than its count of files.
+  if (typeof result.message === "string" && result.message)
+    return result.message;
   if (typeof result.archive === "string")
     return `${Number(result.files || 0)} ${result.files === 1 ? "file" : "files"} reloaded from the game. Previous copies and outputs archived.`;
   if (typeof result.files === "number")
