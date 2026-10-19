@@ -243,8 +243,11 @@ def runtime_asset(source, relative):
     path = project_path(source, relative)
     lowered = relative.casefold().split("/")
     area = lowered[1:] if lowered[0] == "www" else lowered
+    images = {".png", ".jpg", ".jpeg", ".webp", ".rpgmvp", ".png_", ".bmp"}
     extensions = {
-        "img": {".png", ".jpg", ".jpeg", ".webp", ".rpgmvp", ".png_", ".bmp"},
+        "img": images,
+        # VX Ace keeps its images in Graphics and fonts in Fonts.
+        "graphics": images,
         "fonts": {".ttf", ".otf", ".woff", ".woff2"},
     }
     if (
@@ -254,7 +257,7 @@ def runtime_asset(source, relative):
         or path.suffix.casefold() not in extensions[area[0]]
     ):
         raise ValueError(
-            "Add exact player image or font paths under img/ or fonts/ (including www/ layouts)."
+            "Add exact player image or font paths under img/, Graphics/ or fonts/ (including www/ layouts)."
         )
     return relative
 

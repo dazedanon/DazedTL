@@ -164,6 +164,15 @@ class ReleaseTests(unittest.TestCase):
                 runtime_asset(root, "www/fonts/Translation.woff2"),
                 "www/fonts/Translation.woff2",
             )
+            # A VX Ace game's images are in Graphics, which refused its
+            # applied images and so the whole patch.
+            title = root / "Graphics/Titles1/title.png"
+            title.parent.mkdir(parents=True)
+            title.write_bytes(b"generated title")
+            self.assertEqual(
+                runtime_asset(root, "Graphics/Titles1/title.png"),
+                "Graphics/Titles1/title.png",
+            )
             for name in (
                 ".dazedtl/image_manager/guided/inventory.sqlite3",
                 "www/fonts/../fonts/Translation.woff2",

@@ -643,7 +643,7 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
               <FieldRow
                 id="release-assets"
                 label="Image and font paths"
-                help="Use img/ or fonts/, including www/ layouts. Private files, missing files and symbolic links are rejected. Build reviews the exact current bytes."
+                help="Use img/, Graphics/ or fonts/, including www/ layouts. Private files, missing files and symbolic links are rejected. Build reviews the exact current bytes."
                 wide
               >
                 {(props) => (
