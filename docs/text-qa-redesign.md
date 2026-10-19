@@ -91,6 +91,24 @@ The release QA of Fuuma Chronicle: Tower of Lilith ran for more than twelve hour
   A worker brief DazedTL writes gives every coordinator the same loop and leaves nothing to add but decisions every reviewer follows.
 - The time left divided the work by the worker names seen in the last half hour, so the session taking turns under two names showed half its real time left.
 
+### Token cost
+
+The release QA of HOLLOWWALD's 1.10 update, run by four Sonnet 5.5 workers, took three hours and about $128 at API prices; the workers' transcripts show where the tokens went:
+
+- A worker took four to six turns a bundle, and every turn reread its whole conversation, whose fixed part, the assistant's own prompt, was about 50,000 tokens.
+  That prompt was 41% of what workers read, and the text under review 17%.
+- Workers read the 82 KB task context in pieces (9%), game and task files (7.5%) and their brief (7%), so looking things up cost more than the text they reviewed.
+- The user wanted only the update's text reviewed, so the coordinator declined about 3,400 screen items in each of the seven tasks prepared in eight hours.
+  Checkers told to leave older lines alone counted as missing what the first screen had flagged, so every reviewer was checked in full: a quarter of all tokens, for 19 more exceptions.
+- Prepared on the three earlier tasks' reviews and the text from before 1.10, the same game screens 1,312 targets in 76 bundles instead of 20,191 in 206, and prints 2.0 of 6.65 million characters.
+
+Four of its maps, about 450 lines with 20 seeded defects of meaning, negation, names, pronouns, numbers, terminology, voice and an omission, were reviewed by four Sonnet workers under each version of the engine:
+
+- Before the change, the workers corrected all 20 and 11 other lines, in 225 turns that read 23.4 million tokens, $7.86 at API prices, in 16 minutes.
+- With bundles printed by `next` and `accept --next`, glossary entries in the bundle and guidance in the brief, they corrected all 20 and 10 other lines in 160 turns, 16.9 million tokens and $6.45, in 15 minutes.
+  They still redirected `next` to files and read them back, opened the engine's code to learn result formats and searched the task's files.
+- With a brief that says every turn rereads the conversation and forbids those lookups, they corrected all 20 and 18 other lines, most of them glossary terms the bundle's notes showed, in 90 turns, 8.4 million tokens and $4.66, in 10 minutes.
+
 ## Release playtest
 
 Text QA reads text; it cannot tell whether the game starts, which text reaches the screen or whether it fits there.
