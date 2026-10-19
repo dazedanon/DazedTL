@@ -1152,10 +1152,10 @@ else:
 checks_game = temporary / "checks-game"
 FIRE = "敵全体に大きな火属性ダメージを与え、3ターン燃焼させる。"
 # Text variables as translation writes them: MV/MZ's template literal and VX
-# Ace's Ruby string.
-NICKNAME, GREETING = "村人の名前", "\\\\C[2]村人\\\\C[0]の挨拶"
+# Ace's Ruby string. The nickname's source interpolates the hero's name.
+NICKNAME, GREETING = "${hero}と村人の名前", "\\\\C[2]村人\\\\C[0]の挨拶"
 VARIABLES = [
-    "`The villager's \\`nickname\\``",
+    "`${hero} and the villager's \\`nickname\\``",
     '"\\\\C[2]Villager\\\\C[0]\'s greeting"',
 ]
 (checks_game / "data").mkdir(parents=True)
@@ -1312,11 +1312,14 @@ fix = {
 variable_fixes = {
     source: {**fix, "category": "meaning", "source_fix": None, "correction": text}
     for source, text in (
-        (NICKNAME, "The villager's `nickname` is ${name}"),
+        (NICKNAME, "${hero}'s `nickname` is ${name}"),
         (GREETING, '\\C[2]Villager\\C[0] says "hi" #{name}'),
     )
 }
-unescaped = {**variable_fixes[NICKNAME], "correction": "The villager's `nickname`"}
+unescaped = {
+    **variable_fixes[NICKNAME],
+    "correction": "${hero} and the villager's `nickname`",
+}
 for name, fixes, refusal in (
     # A correction that differs only by escapes changes nothing.
     ("unescaped", {NICKNAME: unescaped}, "matches the current text"),
@@ -1359,9 +1362,10 @@ findings = json.loads((checked / "findings.json").read_text())["findings"]
 (finding,) = [row for row in findings if row["source"] == "の幻惑が解けた"]
 assert finding["source_fix"] == "battler-name", finding
 # The text variables' corrections are stored as the game gets them, escaped
-# as translation writes each string, so none ends early or interpolates.
+# as translation writes each string, so none ends early or interpolates
+# except where the game's own text does: the hero's name still shows.
 WRITTEN = {
-    NICKNAME: "The villager's \\`nickname\\` is \\${name}",
+    NICKNAME: "${hero}'s \\`nickname\\` is \\${name}",
     GREETING: '\\\\C[2]Villager\\\\C[0] says \\"hi\\" \\#{name}',
 }
 corrections = {row["source"]: row["correction"] for row in findings}

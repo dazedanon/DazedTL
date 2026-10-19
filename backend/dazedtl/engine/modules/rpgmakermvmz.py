@@ -1438,8 +1438,17 @@ def _122_inner_current(cmd) -> str | None:
     return None
 
 
-def _js_122_operand(text: str) -> str:
-    """Code 122's script operand for MV/MZ: a JavaScript template literal."""
+def _js_122_operand(text: str, source: str = "") -> str:
+    """Code 122's script operand for MV/MZ: a JavaScript template literal.
+
+    An interpolation the operand's *source* runs, such as
+    ``${$gameActors.actor(1).name()}`` for the hero's name, is the game's own
+    and keeps running where the translation keeps it; any other ``${`` is
+    text."""
+    text, kept = script_strings.hold(
+        text, "`", script_strings.interpolated("`", source)
+    )
+
     # Remove characters that may break scripts
     text = script_strings.BREAK.sub(" ", text.replace('"', ""))
 
@@ -1447,21 +1456,25 @@ def _js_122_operand(text: str) -> str:
     text = script_strings.keep_backslashes(text)
 
     # Textwrap
-    text = rpgmaker_rewrap.wrap_text(text, LISTWIDTH)
-    return f"`{script_strings.template_text(text)}`"
+    text = rpgmaker_rewrap.wrap_script(text, LISTWIDTH)
+    return f"`{script_strings.release(script_strings.template_text(text), kept)}`"
 
 
-def _ruby_122_operand(text: str) -> str:
+def _ruby_122_operand(text: str, source: str = "") -> str:
     """Code 122's script operand for VX Ace: a Ruby double-quoted string.
 
     Ace evaluates the operand with Ruby, where MV/MZ's backtick literal runs a
-    shell command. *text* is translated from the operand's source, as
-    rpgmaker_script_strings reads a string's text. The text is rewrapped to
-    the list width, and quote marks are dropped as for MV/MZ.
+    shell command. *text* is translated from the operand's *source*, as
+    rpgmaker_script_strings reads a string's text, and an interpolation the
+    source runs keeps running. The text is rewrapped to the list width, and
+    quote marks are dropped as for MV/MZ.
     """
+    text, kept = script_strings.hold(
+        text, '"', script_strings.interpolated('"', source)
+    )
     value = script_strings.ruby_value(text, " ")
-    value = rpgmaker_rewrap.wrap_text(value.replace('"', ""), LISTWIDTH)
-    return f'"{script_strings.ruby_text(value)}"'
+    value = rpgmaker_rewrap.wrap_script(value.replace('"', ""), LISTWIDTH)
+    return f'"{script_strings.release(script_strings.ruby_text(value), kept)}"'
 
 
 def _101_name_source(cmd, is_var: bool) -> str:
@@ -4383,7 +4396,7 @@ def _searchCodes(page, pbar, jobList, filename):
 
                             # Set
                             operand = _ruby_122_operand if VXACE else _js_122_operand
-                            codeList[i]["parameters"][4] = operand(translatedText)
+                            codeList[i]["parameters"][4] = operand(translatedText, rawInner)
                             if hadSemicolon:
                                 codeList[i]["parameters"][4] += ';'
 

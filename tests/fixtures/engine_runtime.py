@@ -1143,15 +1143,24 @@ try:
             (native / "Data").mkdir(parents=True)
             (native / "Data/Map001.rvdata2").write_bytes(b"")
             assert game_wrap_widths(native) == ACE_WRAP_WIDTHS, game_wrap_widths(native)
-            # The source keeps its \n[1] name code, which once went out as
-            # "\ [1]", and MV/MZ's template literal escapes a translated
-            # backtick and ${, which ended it early or interpolated.
+            # The source keeps its \n[1] and \nc<name> name codes, which once
+            # went out as "\ [1]" and "\ c<name>", and MV/MZ's template literal
+            # escapes a translated backtick and ${, which ended it early or
+            # interpolated. An interpolation the source runs, such as the
+            # hero's name, keeps running.
             operands, requests = {}, []
-            reply = r'\C[2]"#{name}"\C[0] `says` ${hi} to \\n[1]'
+            replies = {
+                r"\\nc<村長>村人と\\n[1]": (
+                    r'\\nc<Chief>\C[2]"#{name}"\C[0] `says` ${hi} to \\n[1]'
+                ),
+                "${name}の部屋": "${name}'s room, not ${hers}",
+                "#{name}の部屋": "#{name}'s room, not #{hers}",
+            }
+            sources = {True: '"#{name}の部屋";', False: "`${name}の部屋`;"}
 
             def variable(text, *_):
                 requests.extend(text)
-                return [[reply for _value in text], [0, 0]]
+                return [[replies[value] for value in text], [0, 0]]
 
             with patch.multiple(
                 parser,
@@ -1161,12 +1170,30 @@ try:
             ):
                 for vxace in (True, False):
                     with patch.object(parser, "VXACE", vxace):
-                        result = parse([command(122, [1, 1, 0, 4, r'"村人と\\n[1]";'])])
-                    operands[vxace] = result[0]["parameters"][4]
-            assert requests == [r"村人と\\n[1]"] * 2, requests
+                        result = parse(
+                            [
+                                command(
+                                    122, [1, 1, 0, 4, r'"\\nc<村長>村人と\\n[1]";']
+                                ),
+                                command(122, [1, 1, 0, 4, sources[vxace]]),
+                            ]
+                        )
+                    operands[vxace] = [item["parameters"][4] for item in result[:2]]
+            assert requests == [
+                r"\\nc<村長>村人と\\n[1]",
+                "#{name}の部屋",
+                r"\\nc<村長>村人と\\n[1]",
+                "${name}の部屋",
+            ], requests
             assert operands == {
-                True: r'"\\C[2]\#{name}\\C[0] `says` ${hi} to \\n[1]";',
-                False: r"`\\C[2]#{name}\\C[0] \`says\` \${hi} to \\n[1]`;",
+                True: [
+                    r'"\\nc<Chief>\\C[2]\#{name}\\C[0] `says` ${hi} to \\n[1]";',
+                    '"#{name}\'s room, not \\#{hers}";',
+                ],
+                False: [
+                    r"`\\nc<Chief>\\C[2]#{name}\\C[0] \`says\` \${hi} to \\n[1]`;",
+                    r"`${name}'s room, not \${hers}`;",
+                ],
             }, operands
             # Batch collection queues a lone label or plugin argument with the
             # file text. It sent each one Live before the Batch cost review.

@@ -18,6 +18,7 @@ from typing import Any, Iterator
 
 from util import dazedwrap
 from util.game_settings import MESSAGE_ROWS_KEY, normalize_wrap_widths
+from util import rpgmaker_script_strings as script_strings
 from util.rpgmaker_script_strings import BREAK
 
 
@@ -119,7 +120,7 @@ def _rendered_lines(text: str) -> list[str]:
     """The lines *text* draws: stored ``\\n`` escapes and ``<br>`` break lines
     as newlines do."""
     rendered = str(text).replace("\r\n", "\n").replace("<br>", "\n")
-    return re.sub(r"\\n(?![\[<])", "\n", rendered).split("\n")
+    return BREAK.sub("\n", rendered).split("\n")
 
 
 def widest_line(text: str) -> int:
@@ -407,51 +408,21 @@ def _replace_spans(text: str, edits: list[tuple[int, int, str]]) -> str:
     return text
 
 
-# The quote marks translation writes a text variable's operand (122) in, and
-# what starts an interpolation there: MV/MZ's template literal and VX Ace's
-# Ruby string (see rpgmaker_script_strings).
-_SCRIPT_QUOTES = {"`": "${", '"': "#{"}
-# An interpolation kept whole while its text wraps, and how wide its value
-# is counted, as a variable's (\V[n]).
-_HELD = re.compile("[-]")
+# An interpolation in a text variable's text is counted as wide as a
+# variable's value (\V[n]).
 _HELD_WIDTH = 3
 
 
 def _script_string(value: str) -> tuple[int, int] | None:
     """Where the text of a text variable's operand starts and ends: an
-    operand that opens with one of the quote marks translation writes, up
-    to the last one of that kind."""
+    operand that opens with one of the quote marks translation writes it in
+    (MV/MZ's template literal or VX Ace's Ruby string), up to the last one
+    of that kind."""
     first = len(value) - len(value.lstrip())
-    if value[first : first + 1] not in _SCRIPT_QUOTES:
+    if value[first : first + 1] not in script_strings.OPENERS:
         return None
     last = value.rfind(value[first])
     return (first + 1, last) if last > first else None
-
-
-def _interpolations(body: str, opener: str) -> list[tuple[int, int]]:
-    """The spans of *body*'s interpolations, each from *opener* to its
-    closing brace. An escaped opener, such as ``\\${``, is text."""
-    spans, index = [], 0
-    while index < len(body):
-        if body[index] == "\\":
-            index += 2
-        elif body.startswith(opener, index):
-            depth, end = 0, index + len(opener) - 1
-            while end < len(body):
-                if body[end] == "\\":
-                    end += 1
-                elif body[end] == "{":
-                    depth += 1
-                elif body[end] == "}":
-                    depth -= 1
-                    if not depth:
-                        break
-                end += 1
-            spans.append((index, min(end + 1, len(body))))
-            index = end + 1
-        else:
-            index += 1
-    return spans
 
 
 def _held(value: str) -> tuple[str, list[str], tuple[int, int]] | None:
@@ -462,25 +433,30 @@ def _held(value: str) -> tuple[str, list[str], tuple[int, int]] | None:
     if span is None:
         return None
     body = value[span[0] : span[1]]
-    spans = _interpolations(body, _SCRIPT_QUOTES[value[span[0] - 1]])
-    if _HELD.search(body) or len(spans) > 0xF8FF - 0xE000:
+    if script_strings.HELD.search(body):
         return None
-    kept = [body[start:end] for start, end in spans]
-    for number, (start, end) in reversed(list(enumerate(spans))):
-        body = body[:start] + chr(0xE000 + number) + body[end:]
+    body, kept = script_strings.hold(body, value[span[0] - 1])
     return BREAK.sub("\n", body), kept, span
 
 
 def _script_width(text: str) -> int:
     """The width of a text variable's line, each interpolation as wide as a
     variable's value."""
-    return visible_width(_HELD.sub("x" * _HELD_WIDTH, text))
+    return visible_width(script_strings.HELD.sub("x" * _HELD_WIDTH, text))
+
+
+def wrap_script(text: str, width: int) -> str:
+    """A text variable's text with its interpolations held (see
+    rpgmaker_script_strings.hold), wrapped to *width* in even lines as
+    :func:`wrap_text` wraps text, each interpolation as wide as a
+    variable's value, as later fits count it."""
+    return dazedwrap.wrapShaped(text, int(width), measure=_script_width)
 
 
 def _script_text(value: str) -> str | None:
     """The lines a text variable's operand shows, or None (see _held)."""
     held = _held(value)
-    return None if held is None else _HELD.sub("x" * _HELD_WIDTH, held[0])
+    return None if held is None else script_strings.HELD.sub("x" * _HELD_WIDTH, held[0])
 
 
 def wrap_variable(value: str, width: int) -> str:
@@ -495,7 +471,7 @@ def wrap_variable(value: str, width: int) -> str:
     wrapped = dazedwrap.wrapShaped(
         body.replace("\n", " "), int(width), measure=_script_width
     )
-    wrapped = _HELD.sub(lambda mark: kept[ord(mark.group(0)) - 0xE000], wrapped)
+    wrapped = script_strings.release(wrapped, kept)
     return value[:start] + wrapped.replace("\n", r"\n") + value[end:]
 
 

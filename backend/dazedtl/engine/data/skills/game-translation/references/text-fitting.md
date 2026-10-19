@@ -859,10 +859,12 @@ text shows in a message window (a text picture has no box to fit), and skip
 
 ### Rewrap traps
 
-- **`\n` is a line break only when not followed by `[`.** Expand with
-  `re.sub(r"\\n(?!\[)", "\n", rendered)` before measuring. Without the negative
-  lookahead, `\n[3]` (the actor-name control code) is read as a break and the width
-  measurement is nonsense. `_rendered_lines` in `DAZEDTL_ROOT/util/rpgmaker_rewrap.py`
+- **`\n` is a line break only when it starts no name code.** Expand with
+  `BREAK.sub("\n", rendered)` from `DAZEDTL_ROOT/util/rpgmaker_script_strings.py`
+  before measuring: `\n[3]` (the actor-name control code) and name windows such as
+  `\n<Name>` or YEP's `\nc<Name>` are not breaks, and reading them as breaks makes
+  the width measurement nonsense. `_rendered_lines` in
+  `DAZEDTL_ROOT/util/rpgmaker_rewrap.py`
 - **`<br>` must round-trip.** If the body contains `<br>` and no real newline,
   replace `<br>` with a space, wrap, then convert the resulting `\n` back to `<br>`.
   Wrapping a `<br>` string with a newline wrapper produces something the plugin

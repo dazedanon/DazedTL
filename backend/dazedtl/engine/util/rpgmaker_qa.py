@@ -585,12 +585,24 @@ def _fit(
 _SCRIPT_QUOTES = {transform: quote for quote, transform in SCRIPT_STRINGS.items()}
 
 
-def _script_text(correction: str, transform: str) -> str:
+def _script_text(correction: str, transform: str, *own: str) -> str:
     """A correction as DazedTL writes it into a script string: with the
     escapes translation writes there, so it can't end the string early or
-    interpolate in it; other text as it is."""
+    interpolate in it, except in an interpolation the target already runs
+    in *own*, its current text or source, such as the hero's name; other
+    text as it is."""
     quote = _SCRIPT_QUOTES.get(transform)
-    return script_strings.escape(correction, quote) if quote else correction
+    if not quote:
+        return correction
+    return script_strings.escape(
+        correction, quote, script_strings.interpolated(quote, *own)
+    )
+
+
+def _own(record: dict[str, Any]) -> tuple[str, str]:
+    """The texts whose interpolations a record's script string runs: its
+    current text and its source."""
+    return str(record.get("live") or ""), str(record.get("source") or "")
 
 
 def _fitted(
@@ -605,7 +617,11 @@ def _fitted(
     value."""
     transforms = {target["live_transform"] for target in targets}
     if len(transforms) == 1 and transforms <= _SCRIPT_QUOTES.keys():
-        return _script_text(correction, *transforms)
+        return _script_text(
+            correction,
+            *transforms,
+            *(text for target in targets for text in _own(target)),
+        )
     boxes = [_box(target, layout) for target in targets]
     if not boxes or not all(box and box.get("wraps") for box in boxes):
         return correction
@@ -682,7 +698,10 @@ def correction_problems(
     """
     problems = []
     written = _script_text(
-        _fit(correction, live, box, source, len(live_pointers)), live_transform
+        _fit(correction, live, box, source, len(live_pointers)),
+        live_transform,
+        live,
+        source,
     )
     if written == live:
         problems.append("the correction matches the current text")
@@ -1992,7 +2011,7 @@ def _interface_after(
                     "live_transform": record["live_transform"],
                     "expected": record["live"],
                     "replacement": _script_text(
-                        change["correction"], record["live_transform"]
+                        change["correction"], record["live_transform"], *_own(record)
                     ),
                 }
                 try:
@@ -2875,7 +2894,7 @@ def _written(record: dict[str, Any], text: str) -> str:
     A correction that reaches only one kind of script string is stored
     escaped, which escaping again keeps; one that reaches other text too is
     escaped here for each script string."""
-    text = _script_text(text, record["live_transform"])
+    text = _script_text(text, record["live_transform"], *_own(record))
     if len(record["live_pointers"]) > 1 and _message_code(record.get("event_code")):
         return "\n".join(rewrap.spread(text, len(record["live_pointers"])))
     return text
