@@ -211,6 +211,7 @@ test("the Project page continues with the next step and keeps a later saved posi
       outputs: [],
       applied: [],
       text_fit: { pending: false, job: null },
+      qa: { current: false, applied: false, findings: [], questions: [] },
       playtest: { current: false, problems: [], gaps: [] },
     },
     comparisons: { status: "not_needed" },
@@ -328,4 +329,29 @@ test("the Project page continues with the next step and keeps a later saved posi
     "images",
     "package",
   ]);
+  // Text QA is done once its corrections are in the game and, for MV/MZ, a
+  // playtest of the game as it is settled after them, with none running.
+  const done = () => finished().includes("qa");
+  state.readiness.qa = {
+    ...state.readiness.qa,
+    task: "/qa/release/task",
+    applied: true,
+    status: { stage: "complete" },
+  };
+  assert.equal(done(), false);
+  state.readiness.playtest = {
+    report: "r",
+    current: true,
+    played: true,
+    problems: [],
+    gaps: [],
+  };
+  assert.equal(done(), true);
+  state.operations = [
+    { id: "p", action: "release_playtest", status: "running", log: [] },
+  ] as GuidedState["operations"];
+  assert.equal(done(), false);
+  state.operations = [];
+  state.readiness.playtest.current = false;
+  assert.equal(done(), false);
 });

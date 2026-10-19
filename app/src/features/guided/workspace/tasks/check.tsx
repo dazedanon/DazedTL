@@ -37,6 +37,8 @@ export function qaView(w: GuidedWorkspace): TaskView {
     save,
   } = w;
   const phase = qaPhase(qa);
+  // The copied task's assistant is still at work, and runs QA again itself.
+  const assisted = handoff("qa").waiting;
   // For MV/MZ the assistant also plays the game in this task.
   const playtest = state.engine === "MVMZ" ? state.readiness.playtest : null;
   // Problems the playtest found in translated text after QA finished, which
@@ -118,13 +120,15 @@ export function qaView(w: GuidedWorkspace): TaskView {
       {again && (
         <Notice>
           The playtest found {found.toLocaleString()}{" "}
-          {found === 1 ? "problem" : "problems"} in translated text; QA reviews{" "}
-          {found === 1 ? "it" : "them"} when it runs again.
+          {found === 1 ? "problem" : "problems"} in translated text;{" "}
+          {assisted ? "your assistant runs QA again for " : "QA reviews "}
+          {found === 1 ? "it" : "them"}
+          {assisted ? "." : " when it runs again."}
         </Notice>
       )}
       <TextQaWork
         qa={qa}
-        waiting={handoff("qa").waiting}
+        waiting={assisted}
         disabled={disabled}
         feedback={feedback}
         applyFailed={applyFailed}
@@ -209,12 +213,18 @@ export function qaView(w: GuidedWorkspace): TaskView {
   ) : phase === "not_started" ? (
     start("Start text QA")
   ) : phase === "outdated" || phase === "blocked" ? (
-    // Preparing again sets aside a task the app can't read.
-    start("Run QA again")
+    // Preparing again sets aside a task the app can't read. The assistant
+    // prepares again itself once its own fixes change the game's plugins.
+    start(
+      "Run QA again",
+      assisted && qa.plugins_changed && phase === "outdated"
+        ? "default"
+        : "primary",
+    )
   ) : phase === "applied" || phase === "clean" ? (
     // Text edited since, such as new translation, or the playtest's
-    // findings can take another pass.
-    start("Run QA again", again ? "primary" : "default")
+    // findings can take another pass, which the assistant takes itself.
+    start("Run QA again", again && !assisted ? "primary" : "default")
   ) : phase === "ready" ? (
     <ActionControl
       label={applyFailed ? "Try again" : "Apply corrections"}
@@ -234,11 +244,14 @@ export function qaView(w: GuidedWorkspace): TaskView {
   return {
     content,
     action: footer,
+    // Next leads once QA is done and its assistant is no longer at work,
+    // such as playing the game again after QA's apply.
     next: advance(
       undefined,
       undefined,
       ["applied", "clean"].includes(phase) &&
         !again &&
+        !assisted &&
         (!unsaved || (action.key === "qa-save" && !!action.notice))
         ? "primary"
         : "quiet",

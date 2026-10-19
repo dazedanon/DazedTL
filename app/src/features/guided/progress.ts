@@ -14,6 +14,7 @@ import { nothingToTranslate } from "./eventTextSelection.ts";
 import { guidanceAvailability } from "./guidanceReview.ts";
 import { pluginsComplete } from "../plugins/pluginTask.ts";
 import { imageFlow } from "../images/imageFlow.ts";
+import { qaTaskDone } from "./qaView.ts";
 import {
   eventTaskFiles,
   fileLines,
@@ -80,7 +81,9 @@ export function completedTasks(
   // Plugin files is done once every plugin's player text is translated with
   // nothing waiting to go into the game, and Images once every image in its
   // list is in the game or a finished investigation found no image text.
-  // Release is done while a saved ZIP still matches the game.
+  // Text QA is done with its corrections in the game, or none to make, and
+  // for MV/MZ its playtest settled; Release is done while a saved ZIP still
+  // matches the game.
   const ownPlugins =
     plugins && plugins.projectId === state.projectId ? plugins : null;
   const ownImages =
@@ -109,6 +112,7 @@ export function completedTasks(
     ...(discovery.layoutStatus === "saved" && !widthsDirty ? ["speakers"] : []),
     ...(ownPlugins && pluginsComplete(ownPlugins) ? ["plugins"] : []),
     ...(ownImages && imageFlow(ownImages).step === "done" ? ["images"] : []),
+    ...(qaTaskDone(state) ? ["qa"] : []),
     ...(state.artifacts.some((artifact) => artifact.current)
       ? ["package"]
       : []),

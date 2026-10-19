@@ -437,35 +437,52 @@ def pending(folder, guard):
 
 
 def reviewing(folder, focus):
-    """The focus's QA task, and every name of the lines it already takes
-    from observations, or None."""
+    """The focus's QA task, every name of the lines it already takes from
+    observations, whether it is complete, and the playtest's lines it can't
+    hold, outside its focus; or None."""
     from util import rpgmaker_qa as qa
 
     pointer = Path(folder) / ("text-qa-" + focus + ".json")
     if not pointer.exists():
         return None
-    task = str(read_json(pointer)["task"])
+    saved = read_json(pointer)
+    task = str(saved["task"])
+    outside = {value for value in saved.get("outside") or [] if isinstance(value, str)}
     try:
         complete = qa.status(task).get("stage") == "complete"
-        return task, qa.observed_names(task), complete
+        return task, qa.observed_names(task), complete, outside
     except ValueError, OSError, KeyError, TypeError:
         return None
+
+
+def note_outside(folder, focus, found, add=False):
+    """Saves which of the playtest's findings the focus's QA task can't hold,
+    such as dialogue for a database focus, so they read as outside it rather
+    than waiting for a round that could never take them: once QA prepared
+    with `found`, those it does not observe, or with `add`, `found` itself."""
+    pointer = Path(folder) / ("text-qa-" + focus + ".json")
+    review = reviewing(folder, focus)
+    if not review:
+        return
+    identities = {row["identity"] for row in found}
+    outside = review[3] | identities if add else identities - review[1]
+    write_json(pointer, {**read_json(pointer), "outside": sorted(outside)})
 
 
 def observe(folder, focus, report):
     """Records the report's findings in translated text in the focus's QA
     task while it still reviews, each once; a line the task does not hold
-    stays in the report, and a task already complete takes them when QA runs
-    again."""
+    stays in the report, outside the task, and a task already complete takes
+    them when QA runs again."""
     from util import rpgmaker_qa as qa
 
     found = reviewing(folder, focus)
     if not report.get("observations") or not found:
         return 0
-    task, known, complete = found
+    task, known, complete, _outside = found
     if complete:
         return 0
-    count = 0
+    count, outside = 0, []
     for row in report["observations"]:
         if row["identity"] in known:
             continue
@@ -473,11 +490,17 @@ def observe(folder, focus, report):
             qa.record_observation(
                 task, "playtest", row["identity"], row["categories"], row["note"]
             )
-        except ValueError:
+        except qa.QAResultError:
             # The task's inventory does not hold this line.
+            outside.append(row)
             continue
+        except ValueError:
+            # QA completed meanwhile; its next run takes the rest.
+            break
         known.add(row["identity"])
         count += 1
+    if outside:
+        note_outside(folder, focus, outside, add=True)
     return count
 
 
@@ -513,13 +536,14 @@ def _seen(value):
 def _problem(row, review):
     problem = {key: row[key] for key in PROBLEM_KEYS if key in row}
     if row.get("fix") == "text-qa" and row.get("identity"):
-        task = review or (None, set(), False)
+        _task, known, complete, outside = review or (None, set(), False, set())
+        identity = row["identity"]
         problem["review"] = (
-            "waiting"
-            if row["identity"] not in task[1]
-            else "reviewed"
-            if task[2]
-            else "reviewing"
+            ("reviewed" if complete else "reviewing")
+            if identity in known
+            else "outside"
+            if identity in outside
+            else "waiting"
         )
     if row.get("seen"):
         problem["seen"] = _seen(row["seen"])

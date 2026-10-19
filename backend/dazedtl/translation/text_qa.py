@@ -411,6 +411,12 @@ class TextQA:
         qa = self.qa(project_id, native)
         stage = str(qa["status"].get("stage") or "")
         waiting = [row for row in qa["questions"] if "choice" not in row]
+        # What apply would put in, as apply chooses it.
+        unapplied = [row for row in qa["findings"] if not row.get("state")] + [
+            row
+            for row in qa["questions"]
+            if row.get("choice") == "use" and not row.get("state")
+        ]
         operation = self.operation(project_id)
         if qa.get("unreadable"):
             following = _unreadable_step(qa)
@@ -432,8 +438,10 @@ class TextQA:
                 "The user answers the open questions in DazedTL; run qa --apply "
                 "--wait <minutes>, which applies once they have."
             )
-        elif stage == "complete":
+        elif stage == "complete" and unapplied:
             following = "Run qa --apply."
+        elif stage == "complete":
+            following = "Nothing waits to be applied; report the qa phase complete."
         elif (qa.get("activity") or {}).get("one_at_a_time"):
             following = (
                 "Bundles wait while QA reviews one at a time; start four workers as "

@@ -81,9 +81,14 @@ test("copied tasks wait for a newer result, and dismissed ones read Not started"
     ["waiting"],
   );
 
-  // Preparing QA again makes a new task; a copy of the earlier one does not
-  // wait on it.
-  const qa = (requestId: string) => ({
+  // Preparing QA from the page copies the new task; a copy of an earlier one
+  // waits only on a task its assistant prepared since, such as QA's next
+  // round after an apply.
+  const qa = (
+    requestId: string,
+    task: Partial<GuidedState["readiness"]["qa"]> = {},
+    finishedAt?: string | null,
+  ) => ({
     records: [
       {
         kind: "qa",
@@ -91,13 +96,16 @@ test("copied tasks wait for a newer result, and dismissed ones read Not started"
         copiedAt: "2026-10-07T10:00:00.000+00:00",
         resultAt: null,
         dismissed: false,
+        ...(finishedAt !== undefined && { finishedAt }),
       } as AssistantTaskRecord,
     ],
     guided: {
+      engine: "MVMZ",
       speakerSetup: {},
       speakerScan: {},
       contextSetup: { documents: {} },
       eventText: { status: "missing" },
+      operations: [],
       readiness: {
         qa: {
           task: "/qa/release/new",
@@ -105,16 +113,54 @@ test("copied tasks wait for a newer result, and dismissed ones read Not started"
           findings: [],
           questions: [],
           status: { stage: "screen" },
+          prepared_at: "2026-10-07T09:00:00.000000+00:00",
+          ...task,
         },
+        playtest: { current: false, problems: [], gaps: [] },
         publications: [],
       },
     } as unknown as GuidedState,
   });
-  assert.deepEqual(assistantTasks(qa("old")), []);
-  assert.deepEqual(
-    assistantTasks(qa("new")).map((task) => task.state),
-    ["waiting"],
-  );
+  const states = (sources: ReturnType<typeof qa>) =>
+    assistantTasks(sources).map((task) => [task.state, task.detail]);
+  assert.deepEqual(states(qa("old")), []);
+  assert.deepEqual(states(qa("new")), [["waiting", ""]]);
+  const nextRound = { prepared_at: "2026-10-07T11:00:00.000000+00:00" };
+  assert.deepEqual(states(qa("old", nextRound)), [["waiting", ""]]);
+  // The assistant's own playtest fix changes the game's plugins; it prepares
+  // QA again, keeping the review, so the task still waits rather than reading
+  // Outdated, which other changes still do.
+  const stale = { current: false, message: "Changed." };
+  assert.deepEqual(states(qa("new", { ...stale, plugins_changed: true })), [
+    ["waiting", ""],
+  ]);
+  assert.deepEqual(states(qa("new", stale)), [["outdated", "Changed."]]);
+  // A copy for MV/MZ names the playtest's report: after QA's apply its
+  // assistant plays the game again, so the task waits until a playtest of the
+  // game as it is settles, and reads Blocked when the game can't be played.
+  // A copy made before the playtest joined the task finishes with QA.
+  const applied = { applied: true, status: { stage: "complete" } };
+  const copy = qa("new", applied, null);
+  assert.deepEqual(states(copy), [["waiting", ""]]);
+  assert.deepEqual(states(qa("new", applied)), []);
+  copy.guided.readiness.playtest = {
+    report: "r",
+    current: true,
+    played: false,
+    problems: [],
+    gaps: [],
+  };
+  assert.deepEqual(states(copy), [
+    ["blocked", "The playtest could not play the game"],
+  ]);
+  // A play running, such as a check of the assistant's fixes, is still work.
+  copy.guided.readiness.playtest.played = true;
+  copy.guided.operations = [
+    { id: "p", action: "playtest_fix", status: "running", log: [] },
+  ];
+  assert.deepEqual(states(copy), [["waiting", ""]]);
+  copy.guided.operations = [];
+  assert.deepEqual(states(copy), []);
 
   // A finished plugin task reads Outdated once a plugin changes, and Blocked
   // while a file cannot be read; its panel shares this state.

@@ -61,14 +61,14 @@ Below, PLAYTEST stands for `{playtest}`, PLUGINS for `{plugins}` and QA for `{qa
 
 1. Run `PLAYTEST --run --wait 20`. DazedTL checks the game's files and plays it in a hidden window for a few minutes, up to ten on a system without a GPU, and writes nothing into the game. `PLAYTEST --report` names the report file; read its problems, and look at the capture each problem the tour saw names, an image in the report folder's captures.
 2. Each problem names its fix:
-   - `text-qa`: text QA corrects it, since the playtest hands it to this task's review; nothing more to do.
+   - `text-qa`: text QA corrects it, since the playtest hands it to this task's review; nothing more to do while QA reviews.
    - `plugin-files`: Japanese in a plugin, which Plugin files decides. Run `PLUGINS --task`: it hands out only what is left, such as text Plugin files kept in Japanese that the playtest saw drawn, which it decides again with that evidence, or says nothing is. Follow the task it prints until it reports complete, then run `PLUGINS --apply` to put the checked files into the game. Text Plugin files kept on purpose that the playtest did not see stays as it decided.
    - `translate`: game data that was never translated; translating it is a Translate run the user starts, so report it.
    - `game`: {game_fixes("PLAYTEST", "History can restore the fixes.")} Text too long for its window may instead be shortened: record a translated line as an observation for QA's review, as the README's coordinator steps describe, and send plugin text to Plugin files.
 3. The report's gaps and stops not reached name what the tour could not reach. For places only the game's events lead to, such as story scenes, other maps or a recollection room, find the map, event or common event in the game's data and add stops: write a JSON list such as `[{{"title": "Recollection room", "do": "map", "map": 12, "x": 8, "y": 6}}]` and run `PLAYTEST --run --stops FILE --wait 20`. A stop does `map` (map, x, y), `event` (event, with map, x and y to go there first), `common-event` (id), `battle` (troop), `scene` (scene) or `script` (script), and may set `switches` and `variables` ({{"id": value}}) first. DazedTL saves the stops, and every later run visits them; give `[]` to clear them.
 4. A fix or a Plugin files apply changes the game's plugins, so text QA reads outdated until it captures the game's screens again: run `QA --prepare`, which resumes the same task with its review, before `QA --apply`.
-5. After `QA --apply` puts QA's corrections into the game, run `PLAYTEST --run --wait 20` again and repeat steps 2 to 4 for what it finds. Text problems found after QA is complete wait for QA's next run.
-6. Finish when the report holds only gaps nothing in the game's data leads to and problems you can't fix here. End with a short report: what the playtest reached, what you fixed in the fixes plugin and through Plugin files, and what stays, each with why.
+5. After `QA --apply` puts QA's corrections into the game, run `PLAYTEST --run --wait 20` again and repeat steps 2 to 4 for what it finds. QA is complete by then, so `PLAYTEST` counts its text problems as `waiting`: run `QA --prepare`, which starts QA's next round with them and reviews only text not reviewed before or changed since, review that round as before, run `QA --apply`, and play the game again.
+6. Finish when no playtest is running, the latest report played the game as it now is, and it holds only gaps nothing in the game's data leads to and problems you can't fix here; DazedTL shows the task as finished then. End with a short report: what the playtest reached, what you fixed in the fixes plugin and through Plugin files, and what stays, each with why.
 """
 
 
@@ -323,6 +323,8 @@ class Playtest:
         )["playtest"]
         operation = self.operation(project_id)
         problems = state["problems"]
+        # Text problems a complete QA task does not hold, for its next round.
+        waiting = sum(problem.get("review") == "waiting" for problem in problems)
         stops = (state.get("coverage") or {}).get("stops", [])
         assistant = self.guided.projects.get(project_id).get("method") == "len"
         fixes = self.fixes(native, assistant)
@@ -340,6 +342,12 @@ class Playtest:
             following = "Run playtest --run."
         elif not state["current"]:
             following = "The game changed after the last playtest; run playtest --run."
+        elif waiting and not assistant:
+            following = (
+                f"QA is complete, so {waiting} text problem(s) wait for its next "
+                "round: run qa --prepare, review it and run qa --apply, then run "
+                "playtest --run again."
+            )
         elif problems or state["gaps"]:
             following = (
                 "Read the report: write fixes for crashes and windows sized for the "
@@ -361,6 +369,7 @@ class Playtest:
             "current": state["current"],
             "finished_at": state.get("finished_at", ""),
             "problems": dict(Counter(problem["fix"] for problem in problems)),
+            "waiting": waiting,
             "seen": sum(bool(problem.get("seen")) for problem in problems),
             "gaps": len(state["gaps"]),
             "reached": f"{sum(stop['status'] == 'done' for stop in stops)} of {len(stops)}",

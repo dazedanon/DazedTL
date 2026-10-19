@@ -485,6 +485,33 @@ assert [(row["worker"], row["note"]) for row in rows] == [
     ("playtest", "Cut off in the item screen.")
 ], rows
 assert "Items.json#/1/description" in qa.observed_names(noted)
+# A finding the task can't hold, when QA prepared with it or while it
+# reviews, is outside its focus rather than waiting for QA's next round,
+# which could never take it.
+from dazedtl.compatibility.playtest import _problem, note_outside, observe, reviewing
+
+workflow = temporary / "workflow"
+workflow.mkdir()
+write(workflow / "text-qa-database.json", {"task": str(noted)})
+note_outside(workflow, "database", found)
+unheld = {
+    "identity": "Items.json#/8/name",
+    "categories": ["ui"],
+    "note": "Not in the database.",
+}
+assert observe(workflow, "database", {"observations": [unheld]}) == 0
+reviews = {
+    row["identity"]: _problem(
+        {"fix": "text-qa", **row}, reviewing(workflow, "database")
+    )["review"]
+    for row in [*found, unheld, {**unheld, "identity": "Map001.json#/events/1"}]
+}
+assert reviews == {
+    "Items.json#/1/description": "reviewing",
+    "Items.json#/9/description": "outside",
+    "Items.json#/8/name": "outside",
+    "Map001.json#/events/1": "waiting",
+}, reviews
 
 # A layout check proves a width only with lines exactly that wide, in as
 # many rows as one message shows, under the face the game's actors use.

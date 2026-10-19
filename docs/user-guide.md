@@ -135,9 +135,9 @@ Lines the AI got wrong keep their original text until you translate again.
 
 ### 4. Check
 
-All Check tasks are optional:
+Check has one task, **Text QA**, and it is optional.
 
-- **Text QA**: **Start text QA** copies the task, and your assistant reviews the translated text and applies the corrections it verifies.
+- **Start text QA** copies the task, and your assistant reviews the translated text and applies the corrections it verifies.
   It runs four reviewers at once; when the page says **one reviewer at a time**, your assistant is reviewing alone, which takes several times longer, so ask it to start the reviewers its QA task describes.
   A correction too wide for its box is rewrapped to the Line widths saved when QA started, and text a window cuts off even rewrapped, such as a long item description, goes to its reviewers to shorten.
   Where a line writes a glossary term another way, such as a place name translated before its glossary row existed, your assistant puts in the glossary's English unless the line means an ordinary word; those corrections read **Glossary term**.
@@ -145,17 +145,19 @@ All Check tasks are optional:
   QA also opens the game's screens, such as its menus, item lists and shop, without changing the game, and shortens names and commands the game squeezes or cuts off.
   Squeezed text QA can't change, such as a plugin's menu command, goes to **Plugin files**, where its assistant shortens it.
   Answer the questions it can't settle on the page; each correction is listed with **Undo**, and an undone one with **Apply again**.
-  QA reviews translations, so Japanese that was never translated is the playtest's to find, with the task that translates it.
+  QA reviews translations, not Japanese that was never translated; in MV and MZ the playtest below finds that, with the task that translates it.
   Running QA again after plugin files change opens the game's screens again and keeps the review done so far; text the game squeezes only now goes to review, even once QA finished.
   A correction that changes several lines of one scene, such as narration that switches tense, is listed and undone as one.
   QA reviews only text it hasn't reviewed before or that changed since, including lines whose glossary entries changed, and reads the rest only as context.
   When text was checked before you used DazedTL, such as everything up to an update, tell your assistant which version, and QA skips it from then on.
   To take out every correction at once, inspect **Apply QA corrections** in the Project page's **History** and choose **Review restore**.
   Inspecting **Prepare or resume translation QA** there shows what QA did not cover: lines its reviewers declined, Japanese never translated and screen text QA can't change.
-- **Playtest** (MV and MZ) is part of the Text QA task, so one copy hands your assistant the whole final check.
+- For MV and MZ games the same task is also the final check with a playtest, so you copy it once.
   While QA reviews, DazedTL plays the game in a hidden window, writing nothing into it, and your assistant fixes what it finds: translated text through QA's review, Japanese a plugin shows through **Plugin files**, and crashes or windows too small for English in a fixes plugin of DazedTL's own.
   DazedTL puts those fixes into the game only after playing it with them in place breaks nothing new; to take them out, inspect **Apply playtest fixes** in the Project page's **History** and choose **Review restore**.
-  Your assistant adds places the tour can't reach by itself, such as story scenes or a recollection room, and plays the game again after QA's corrections.
+  Its fixes change the game's plugins, so your assistant prepares QA again itself, keeping the review done so far.
+  Your assistant adds places the tour can't reach by itself, such as story scenes or a recollection room, and plays the game again after QA's corrections; text problems that play finds go to another round of QA, which your assistant runs too.
+  **Assistant tasks** shows Text QA as **Waiting** until a playtest of the game as it now is leaves nothing more for your assistant; then the Project page marks it done.
   The **Playtest** panel shows how far it got; **Problems** lists what is left, each with the task that fixes it, and **View** shows what the game looked like.
 
 **Playtest tools** at the top installs TL Inspector and Forge to help you playtest MV and MZ games.

@@ -779,6 +779,8 @@ export type QaState = {
   coverage?: QaCoverage;
   activity?: QaActivity;
   rules_changed?: boolean;
+  plugins_changed?: boolean;
+  prepared_at?: string;
   unreadable?: QaUnreadable;
 };
 
@@ -830,8 +832,8 @@ export type PlaytestProblem = {
   seen?: PlaytestSeen;
   /** The previous playtest did not find it. */
   new?: boolean;
-  /** Where text QA stands on a problem it corrects: in its review now, reviewed, or waiting for QA to run again. */
-  review?: "reviewing" | "reviewed" | "waiting";
+  /** Where text QA stands on a problem it corrects: in its review now, reviewed, waiting for QA to run again, or outside the lines its focus holds. */
+  review?: "reviewing" | "reviewed" | "waiting" | "outside";
 };
 
 export type PlaytestStop = {
@@ -933,6 +935,8 @@ export type PlaytestStatus = {
   finished_at: string;
   /** Problems by the task that fixes them. */
   problems: Record<string, number>;
+  /** Problems in translated text a complete QA task does not hold, for QA's next round. */
+  waiting: number;
   /** Problems the tour saw on screen. */
   seen: number;
   gaps: number;

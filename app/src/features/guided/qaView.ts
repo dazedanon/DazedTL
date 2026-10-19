@@ -1,12 +1,14 @@
 /** Text QA as the page shows it, from the observed QA state. */
 
 import type {
+  GuidedState,
   QaFinding,
   QaState,
   QaUntranslatedSource,
 } from "../../api/contracts";
 import type { StepState } from "../../ui/StepProgress";
 import { sentence } from "../../ui/displayText.ts";
+import { playtestSettled } from "./playtestView.ts";
 
 /** Where text QA stands on the page. */
 export type QaPhase =
@@ -31,6 +33,19 @@ export function qaPhase(qa: QaState): QaPhase {
   return qa.findings.length || qa.questions.some((row) => row.choice === "use")
     ? "ready"
     : "clean";
+}
+
+/**
+ * Guided's Text QA task is done: QA's corrections are in the game or it
+ * found none, and for MV/MZ, whose task is also the final check, the
+ * assistant's playtest settled after them.
+ */
+export function qaTaskDone(state: GuidedState) {
+  const { qa, playtest } = state.readiness;
+  return (
+    ["applied", "clean"].includes(qaPhase(qa)) &&
+    (state.engine !== "MVMZ" || playtestSettled(playtest, state.operations))
+  );
 }
 
 const stageNames = {

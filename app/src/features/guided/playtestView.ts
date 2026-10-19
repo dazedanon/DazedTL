@@ -1,6 +1,7 @@
 /** How the release playtest's report reads on the page. */
 
 import type {
+  Job,
   PlaytestProblem,
   PlaytestState,
   PlaytestFix,
@@ -39,6 +40,27 @@ export function playtestPhase(
   if (playtest.unreadable || !playtest.played) return "blocked";
   return playtest.current ? "done" : "outdated";
 }
+
+/** The operations that play the game: a playtest, and a check of the
+ * assistant's fixes. */
+export const playtestActions = ["release_playtest", "playtest_fix"];
+
+/** Whether a playtest plays the game now, from the project's operations. */
+export const playtestRunning = (operations: Job[]) =>
+  operations.some(
+    (job) =>
+      playtestActions.includes(job.action || "") && job.status === "running",
+  );
+
+/**
+ * The playtest's half of an MV/MZ final check is done: nothing plays the
+ * game now, the latest report played the game as it is, and no problem in
+ * translated text waits for QA's next round. QA's apply changes the game's
+ * data, so a current report played it with QA's corrections.
+ */
+export const playtestSettled = (playtest: PlaytestState, operations: Job[]) =>
+  playtestPhase(playtest, playtestRunning(operations)) === "done" &&
+  !playtestWaiting(playtest);
 
 export const playtestDisplay: Record<PlaytestPhase, DisplayState> = {
   not_started: "not_started",
@@ -108,6 +130,7 @@ const reviews = {
   reviewing: "In Text QA's review",
   reviewed: "Text QA reviewed it",
   waiting: "Text QA corrects it when QA runs again",
+  outside: "Outside the QA focus",
 };
 
 /** The task that fixes a problem, and for Text QA where it stands. */

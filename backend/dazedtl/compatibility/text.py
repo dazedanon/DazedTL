@@ -218,7 +218,16 @@ def qa_state(plan):
         }
     saved, root, task, document = _prepared(plan)
     rules_changed = task["engine_fingerprint"] != qa._engine_fingerprint()
-    current = saved["binding"] == binding(plan) and not rules_changed
+    now = binding(plan)
+    current = saved["binding"] == now and not rules_changed
+    # Only the game's plugins changed, as after a playtest fix or a Plugin
+    # files apply: preparing again captures the screens again and keeps the
+    # review, which the copied task's assistant does after its own fixes.
+    plugins_changed = (
+        not current
+        and not rules_changed
+        and _beside_plugins(saved["binding"]) == _beside_plugins(now)
+    )
     if current:
         # Plugin files decides what it keeps in Japanese without changing the
         # game's files; the never-translated report follows its decisions.
@@ -366,11 +375,28 @@ def qa_state(plan):
         ),
         **({"activity": activity} if activity else {}),
         **({"rules_changed": True} if rules_changed else {}),
+        **({"plugins_changed": True} if plugins_changed else {}),
+        "prepared_at": task["created_at"],
         "message": "Saved results match current project text."
         if current
         else "An update changed QA's rules after this task was prepared."
         if rules_changed
+        else "The game's plugins changed since this QA task was prepared; "
+        "preparing it again keeps its review."
+        if plugins_changed
         else "The game text changed since this QA task was prepared.",
+    }
+
+
+def _beside_plugins(value):
+    """A QA binding without the game's plugin list and plugin files."""
+    return {
+        **value,
+        "guard": {
+            key: item
+            for key, item in value["guard"].items()
+            if key not in {"plugins", "plugin_files"}
+        },
     }
 
 
@@ -453,7 +479,7 @@ def run_qa(plan, log):
         _set_aside(plan, log)
         # What the release playtest found in the same text goes to review; a
         # task prepared again keeps its own and takes the ones it lacks.
-        from .playtest import pending
+        from .playtest import note_outside, pending
 
         focus = plan["options"]["focus"]
         observations = pending(folder, plan["guard"])
@@ -494,6 +520,7 @@ def run_qa(plan, log):
             folder / ("text-qa-" + focus + ".json"),
             {"task": str(task), "binding": binding(plan), "immutable": immutable},
         )
+        note_outside(folder, focus, observations)
         handoff = qa_handoff(task)
     else:
         handoff = None

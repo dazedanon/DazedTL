@@ -463,6 +463,11 @@ class QaState(TypedDict):
     # An update changed QA's rules after this task was prepared: it is
     # outdated, and its applied corrections can no longer be undone here.
     rules_changed: NotRequired[bool]
+    # Only the game's plugins changed since this task was prepared, as after
+    # a playtest fix: it is not current, and preparing again keeps its review.
+    plugins_changed: NotRequired[bool]
+    # When this task was prepared; preparing again resumes a task, keeping it.
+    prepared_at: NotRequired[str]
     # The prepared task can't be read or trusted, so QA is blocked; message
     # says why, and preparing again sets it aside.
     unreadable: NotRequired[QaUnreadable]
@@ -520,8 +525,8 @@ class PlaytestProblem(TypedDict):
     new: NotRequired[Annotated[bool, "The previous playtest did not find it."]]
     review: NotRequired[
         Annotated[
-            Literal["reviewing", "reviewed", "waiting"],
-            "Where text QA stands on a problem it corrects: in its review now, reviewed, or waiting for QA to run again.",
+            Literal["reviewing", "reviewed", "waiting", "outside"],
+            "Where text QA stands on a problem it corrects: in its review now, reviewed, waiting for QA to run again, or outside the lines its focus holds.",
         ]
     ]
 
@@ -626,6 +631,10 @@ class PlaytestStatus(TypedDict):
     current: bool
     finished_at: str
     problems: Annotated[dict[str, int], "Problems by the task that fixes them."]
+    waiting: Annotated[
+        int,
+        "Problems in translated text a complete QA task does not hold, for QA's next round.",
+    ]
     seen: Annotated[int, "Problems the tour saw on screen."]
     gaps: int
     reached: Annotated[str, "Stops reached, as 'done of total'."]

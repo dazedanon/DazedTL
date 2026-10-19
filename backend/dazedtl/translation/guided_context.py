@@ -197,6 +197,7 @@ class GuidedContext:
 
     def qa_task(self, project_id, native):
         """The prepared Text QA task for the saved focus, while it is current."""
+        from dazedtl.compatibility.playtest import POINTER
         from dazedtl.compatibility.text import qa_handoff
 
         qa = self.guided.backend.guided_text_state(
@@ -210,21 +211,23 @@ class GuidedContext:
         workspace = self.guided.translation.workspace
         helper = helper_command(workspace, project_id, "qa")
         text = qa_handoff(task, helper)
-        # For MV/MZ the task is also the final check, with the playtest.
+        handoff = {
+            "kind": "qa",
+            "requestId": task.name,
+            "expects": [task / "findings.json"],
+        }
+        # For MV/MZ the task is also the final check, with the playtest, whose
+        # report it saves last.
         if native["engine"] == "MVMZ":
             text += final_check(
                 helper_command(workspace, project_id, "playtest"),
                 helper_command(workspace, project_id, "plugins"),
                 helper,
             )
-        return {
-            "text": text,
-            "handoff": {
-                "kind": "qa",
-                "requestId": task.name,
-                "expects": [task / "findings.json"],
-            },
-        }
+            handoff["finish"] = (
+                Path(self.guided.backend.workflows.folder(native["id"])) / POINTER
+            )
+        return {"text": text, "handoff": handoff}
 
     def event_text_request(self, project_id, apply=False):
         """The assistant's view of its request; `apply` saves its findings."""

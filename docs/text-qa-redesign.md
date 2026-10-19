@@ -119,6 +119,7 @@ Its behavior is in [architecture](architecture.md#workflow-and-shared-presentati
 
 - In Guided it is part of Text QA's copied task for MV/MZ games: the assistant plays the game while QA's workers review, fixes what it finds, and plays it again after QA's apply; Release never waits for it.
   Inside the task, its findings in translated text join a review in progress, while a separate task after QA would need QA to run again; and the user hands over the whole final check once.
+  Text problems the play after QA's apply finds need QA's next round, which the assistant prepares and reviews itself, so the user still copies once; the task is finished only once a play of the game as it is leaves nothing for QA.
 - In Assistant-led the starting prompt runs it through the project helper's `playtest` before text QA and again after QA's apply, and a Playtest tab shows its report once one exists.
   Its assistant fixes the game's own code through the same fixes plugin and play as Guided's, never by editing the game's files, and DazedTL then saves the fixes in a checkpoint, since Assistant-led has no History restore and its Git history is how it takes changes out.
 

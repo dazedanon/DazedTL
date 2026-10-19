@@ -11,6 +11,8 @@ import type {
 } from "../../api/contracts.ts";
 import type { DisplayState } from "../../ui/displayStatus.ts";
 import { investigationResults } from "../guided/contextView.ts";
+import { playtestPhase, playtestRunning } from "../guided/playtestView.ts";
+import { qaPhase, qaTaskDone } from "../guided/qaView.ts";
 import {
   pluginFilesBlocked,
   pluginFilesLeft,
@@ -233,25 +235,44 @@ function standing(
   if (kind === "qa") {
     if (!guided || !copied) return { state: "idle" };
     const qa = guided.readiness.qa;
-    if (qa.unreadable) return { state: "blocked", detail: qa.message };
-    if (!qa.task) return { state: "idle" };
+    const phase = qaPhase(qa);
+    if (phase === "blocked") return { state: "blocked", detail: qa.message };
+    if (phase === "not_started") return { state: "idle" };
+    // The copy holds the task it handed out and any its assistant prepared
+    // since, such as QA's next round after an apply; preparing from the page
+    // copies again.
+    const own =
+      record.requestId === qa.task!.split(/[\\/]/).pop() ||
+      Date.parse(qa.prepared_at || "") >= Date.parse(record.copiedAt);
     // Applied corrections change the text the task checked, and later edits
-    // are expected; only findings not applied yet go out of date.
-    if (qa.applied) return { state: "finished" };
-    if (!qa.current) return { state: "outdated", detail: qa.message };
+    // are expected. A copy for MV/MZ names the playtest's report, which it
+    // saves last: its assistant then plays the game again and fixes what it
+    // finds, until a play of the game as it is settles it.
+    if (phase === "applied" || phase === "clean") {
+      if (!own || record.finishedAt === undefined || qaTaskDone(guided))
+        return { state: "finished" };
+      const playtest = guided.readiness.playtest;
+      return !playtestRunning(guided.operations) &&
+        playtest.current &&
+        playtestPhase(playtest, false) === "blocked"
+        ? { state: "blocked", detail: "The playtest could not play the game" }
+        : waiting();
+    }
+    // The assistant's own fixes change the game's plugins, and it prepares QA
+    // again, keeping its review; other changes outdate the findings.
+    if (phase === "outdated")
+      return own && qa.plugins_changed
+        ? waiting()
+        : { state: "outdated", detail: qa.message };
     // Only the user's answers hold QA up; the assistant applies the rest.
-    const questions = qa.questions.filter((row) => !row.choice).length;
-    if (questions)
+    if (phase === "questions") {
+      const questions = qa.questions.filter((row) => !row.choice).length;
       return {
         state: "needs_review",
         detail: `${questions.toLocaleString()} ${questions === 1 ? "question" : "questions"} for you`,
       };
-    if (qa.status.stage === "complete" && !qa.findings.length)
-      return { state: "finished" };
-    // Preparing again makes a new task; only a copy of that one waits on it.
-    return record.requestId === qa.task.split(/[\\/]/).pop()
-      ? waiting()
-      : { state: "idle" };
+    }
+    return own ? waiting() : { state: "idle" };
   }
   // The walkthrough is finished once its page is saved. An MV/MZ page is
   // validated only after it is published and republished until its report
