@@ -122,30 +122,62 @@ class Term:
     checked: bool
 
 
-def glossary_rows(text: str) -> list[tuple[str, str, str, bool]]:
-    """The glossary's rows as (Japanese, English, section, is_base), with
-    each `source (translation)` pair of a line that lists several."""
+def glossary_lines(
+    text: str,
+) -> list[tuple[tuple[tuple[str, str], ...], str, str, bool]]:
+    """The glossary's lines as (pairs, line, section, is_base): each
+    `source (translation)` pair of a line that lists several, and the whole
+    line, which keeps the notes after them, such as a character's gender."""
     from util.vocab import BASE_SEPARATOR, split_glossary_row
 
-    rows = []
+    lines = []
     game, _separator, base = str(text or "").partition(BASE_SEPARATOR)
     for part, is_base in ((game, False), (base, True)):
         section = ""
         for raw in part.splitlines():
-            line = raw.strip()
+            whole = line = raw.strip()
             if line.startswith("#"):
                 section = line.lstrip("#").strip()
                 continue
+            pairs = []
             while line:
                 row = split_glossary_row(line)
                 if row is None:
                     break
                 source, english, rest = row
-                rows.append((source, english, section, is_base))
+                pairs.append((source, english))
                 # "分身小町 (Komachi's Clone) / 小町２ (Komachi 2) - …"
                 rest = rest.lstrip()
                 line = rest[1:].strip() if rest[:1] in "/／" else ""
-    return rows
+            if pairs:
+                lines.append((tuple(pairs), whole, section, is_base))
+    return lines
+
+
+def glossary_rows(text: str) -> list[tuple[str, str, str, bool]]:
+    """The glossary's rows as (Japanese, English, section, is_base), with
+    each `source (translation)` pair of a line that lists several."""
+    return [
+        (source, english, section, is_base)
+        for pairs, _line, section, is_base in glossary_lines(text)
+        for source, english in pairs
+    ]
+
+
+def aliases(source: str) -> list[str]:
+    """The Japanese forms a glossary row's source lists, such as 様 and さま."""
+    return [alias for part in _ALIASES.split(source) if (alias := _undecorated(part))]
+
+
+def mentions(text: str, source: str) -> bool:
+    """Whether a Japanese text holds a glossary form as a word of its own,
+    not inside a longer word of its script, as パン is in パンツ."""
+    start = text.find(source)
+    while start != -1:
+        if not _inside_word(text, start, start + len(source)):
+            return True
+        start = text.find(source, start + 1)
+    return False
 
 
 def _fold(word: str) -> str:

@@ -1,6 +1,6 @@
 # RPG Maker text QA
 
-<!-- qa-contract:rpgmaker-qa-v18
+<!-- qa-contract:rpgmaker-qa-v19
 single-policy role-briefs parallel-workers worker-brief app-owned-inventory immutable-review-bundles database-checks
 battler-name-source-fix
 scene-affine-screen sampled-screen-checks lint-group-review glossary-lint declined-disposition

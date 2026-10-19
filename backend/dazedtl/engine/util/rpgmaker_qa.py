@@ -5573,21 +5573,17 @@ def render_bundle(task_dir: str | Path, bundle_id: str) -> str:
     return "\n".join(out) + "\n"
 
 
-_GLOSSARY_ENTRY_RE = re.compile(r"^(.+?)\s+\((.+?)\)")
-
-
-def _glossary_entries(text: str) -> list[tuple[list[str], str, str]]:
-    """Each glossary line's Japanese terms, its English and the whole line,
+def _glossary_entries(text: str) -> list[tuple[list[str], list[str], str]]:
+    """Each glossary line's Japanese forms, its English and the whole line,
     whose notes, such as a character's gender, stay with it."""
-    entries = []
-    for raw in str(text or "").splitlines():
-        line = raw.strip()
-        if line and not line.startswith("#") and (
-            match := _GLOSSARY_ENTRY_RE.match(line)
-        ):
-            terms = [term for term in re.split(r"[,、]\s*", match.group(1)) if term]
-            entries.append((terms, match.group(2).strip(), line))
-    return entries
+    return [
+        (
+            [alias for source, _english in pairs for alias in glossary_rules.aliases(source)],
+            [english for _source, english in pairs],
+            line,
+        )
+        for pairs, line, _section, _is_base in glossary_rules.glossary_lines(text)
+    ]
 
 
 def _bundle_wording(value: Any, japanese: list[str], names: set[str]) -> None:
@@ -5622,7 +5618,8 @@ def _glossary_section(root: Path, bundle: dict[str, Any]) -> list[str]:
     glossary = (_read_json(root / "context.json").get("glossary") or {}).get("text")
     used = [
         line for terms, english, line in _glossary_entries(glossary)
-        if english in names or any(term in text for term in terms)
+        if names.intersection(english)
+        or any(glossary_rules.mentions(text, term) for term in terms)
     ]
     return ["", "## GLOSSARY entries for this bundle's text", *used] if used else []
 
