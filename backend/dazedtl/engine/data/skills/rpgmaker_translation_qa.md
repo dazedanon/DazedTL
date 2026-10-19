@@ -103,10 +103,12 @@ Never decline lines to narrow QA's scope.
 You are one reviewer, named in your prompt: give that name as `--worker` in every command, and never another.
 Run each command below with `{{CLI}}` before it and `--task {{TASK}}`, as Commands lists them.
 
-This brief holds the game's notes, translation quirks and the decisions every reviewer follows, and each bundle ends with the glossary entries its text uses, so read no other copy of the task's context and none of the game's files; `context --at` shows more of a scene when a line depends on text outside your bundle.
+Every turn you take rereads your whole conversation, so take as few as the review needs.
+This brief holds the game's notes, translation quirks and the decisions every reviewer follows, each bundle ends with the glossary entries its text uses, and `context --at` shows more of a scene when a line depends on text outside your bundle.
+Never open the task's files, the game's files or DazedTL's code to learn more: they cost far more than they tell you, the result formats below are complete, and a refused result's message names what to fix.
 
 1. Claim a bundle with `next --worker <name>`, which prints all of it, followed by any decision recorded since your last bundle.
-   Read all of it; when your tool cuts a long output, read the rest where the tool saved it, or print the bundle again with `show --bundle <id>`.
+   Run it and `accept` as they are, without redirecting their output, which is the bundle you review; only when your tool saves a long output, read the rest where it says.
    Copy item IDs exactly as the bundle prints them.
 2. Review it under its role's brief below: `screen-` bundles, checks ending in `-c1` included, as the screen reviewer, with their lint families as the group reviewer; `deep-` bundles as the deep reviewer; `sweep-` bundles as the group reviewer; and `editorial-` bundles as the editorial reviewer.
 3. Write the result to `{{RECEIPTS}}` as `<bundle id>.json`, the only place you write results, and submit it with `accept --worker <name> --result <file> --next`, which accepts it and prints your next bundle.
