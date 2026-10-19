@@ -1,1 +1,16 @@
 <!-- The next release's notes; see docs/development.md#release-notes. -->
+
+### Added
+
+- **Text QA:** your assistant can now fix crashes and windows too small for English that the playtest finds, in a fixes plugin of DazedTL's own; DazedTL puts it into the game only after playing the game with it breaks nothing new, and **History** on the Project page takes it out again with **Review restore**.
+- **Plugin files:** Japanese plugin text the playtest saw on screen goes back to your assistant to decide again, with where it showed.
+
+### Changed
+
+- **Text QA:** for MV and MZ games the Text QA task is now also the final check: your assistant plays the game while QA reviews it, fixes what the playtest finds and plays it again after QA's corrections, so you copy one task instead of running the playtest yourself; the separate **Playtest** task is gone, and its panel shows under Text QA's.
+- **Playtest:** places your assistant adds, such as a recollection room, are kept, and every later playtest visits them.
+
+### Fixed
+
+- **Playtest:** a place your assistant added that the playtest could not play no longer shows as "A script failed" in the game's code; it is listed with what the playtest did not reach.
+- **Text QA:** running QA again while its review is still going, such as after a plugin change, continues the same review instead of starting a new one when the playtest found something since.
