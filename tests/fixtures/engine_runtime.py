@@ -1087,23 +1087,30 @@ try:
             )
             assert ace["engines"]["rpgmakermvmz"]["VXACE"], ace["engines"]
             assert ace["runtime_profile"]["config"]["VXACE"], ace["runtime_profile"]
-            operands = {}
-            reply = r'\C[2]"#{name}"\C[0] says hi'
+            # The source keeps its \n[1] name code, which once went out as
+            # "\ [1]", and MV/MZ's template literal escapes a translated
+            # backtick and ${, which ended it early or interpolated.
+            operands, requests = {}, []
+            reply = r'\C[2]"#{name}"\C[0] `says` ${hi} to \\n[1]'
+
+            def variable(text, *_):
+                requests.extend(text)
+                return [[reply for _value in text], [0, 0]]
+
             with patch.multiple(
                 parser,
                 CODE122=True,
                 CODE122_VAR_RANGES="1",
-                translateAI=extensions.point(
-                    lambda text, *_: [[reply for _value in text], [0, 0]]
-                ),
+                translateAI=extensions.point(variable),
             ):
                 for vxace in (True, False):
                     with patch.object(parser, "VXACE", vxace):
-                        result = parse([command(122, [1, 1, 0, 4, '"村人";'])])
+                        result = parse([command(122, [1, 1, 0, 4, r'"村人と\\n[1]";'])])
                     operands[vxace] = result[0]["parameters"][4]
+            assert requests == [r"村人と\\n[1]"] * 2, requests
             assert operands == {
-                True: r'"\\C[2]\#{name}\\C[0] says hi";',
-                False: r"`\\C[2]#{name}\\C[0] says hi`;",
+                True: r'"\\C[2]\#{name}\\C[0] `says` ${hi} to \\n[1]";',
+                False: r"`\\C[2]#{name}\\C[0] \`says\` \${hi} to \\n[1]`;",
             }, operands
             # Batch collection queues a lone label or plugin argument with the
             # file text. It sent each one Live before the Batch cost review.

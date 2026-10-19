@@ -1437,12 +1437,20 @@ def _122_inner_current(cmd) -> str | None:
     return None
 
 
+# A line break in an operand's source, which is rewrapped: "\n", except where
+# it starts a \n[1] actor name or \n<name> name window code, as
+# rpgmaker_rewrap reads it.
+_122_BREAK = re.compile(r"\\n(?![\[<])")
+# What would end MV/MZ's template literal early or interpolate in it: a
+# backtick, "${" and a backslash ending the text. An escape the text already
+# has, such as \\ or \`, stays as it is.
+_JS_122_SPECIAL = re.compile(r"(\\.)|\\|`|\$\{", re.S)
+
+
 def _js_122_operand(text: str) -> str:
     """Code 122's script operand for MV/MZ: a JavaScript template literal."""
     # Remove characters that may break scripts
-    charList = ['"', "\\n"]
-    for char in charList:
-        text = text.replace(char, "")
+    text = _122_BREAK.sub(" ", text.replace('"', ""))
 
     # Force 4 Escapes
     text = re.sub(r'(?<![\\])([\\]{1})(?=\w)', r'\\\\', text)
@@ -1450,12 +1458,14 @@ def _js_122_operand(text: str) -> str:
     # Textwrap
     text = rpgmaker_rewrap.wrap_text(text, LISTWIDTH)
     text = text.replace("\n", "\\n")
+    text = _JS_122_SPECIAL.sub(lambda match: match[1] or "\\" + match[0], text)
     return f"`{text}`"
 
 
 # In an operand's source a backslash escapes the next character; a lone one
-# before anything else, such as a translated \C[2], stands for itself.
-_RUBY_122_ESCAPE = re.compile(r'\\(n(?!\[)|[\\"#])?')
+# before anything else, such as a translated \C[2], stands for itself. "\n"
+# breaks the line as _122_BREAK reads it.
+_RUBY_122_ESCAPE = re.compile(r'\\(n(?![\[<])|[\\"#])?')
 # What a Ruby double-quoted string escapes: a backslash, its delimiter, a line
 # break and a "#" that would start interpolation.
 _RUBY_122_SPECIAL = re.compile(r'[\\"\n]|#(?=[{$@])')
@@ -1467,9 +1477,9 @@ def _ruby_122_operand(text: str) -> str:
     Ace evaluates the operand with Ruby, where MV/MZ's backtick literal runs a
     shell command. *text* is translated from the operand's source, so ``\\\\``
     stands for one backslash and ``\\n`` for a line break, except in the
-    ``\\n[1]`` name code. The text is rewrapped to the list width, and quote
-    marks are dropped as for MV/MZ, since QA writes a correction between the
-    quotes as it is.
+    ``\\n[1]`` and ``\\n<name>`` name codes. The text is rewrapped to the list
+    width, and quote marks are dropped as for MV/MZ, since QA writes a
+    correction between the quotes as it is.
     """
     value = _RUBY_122_ESCAPE.sub(
         lambda match: " " if match[1] == "n" else match[1] or "\\", text
@@ -4382,7 +4392,7 @@ def _searchCodes(page, pbar, jobList, filename):
                         continue
 
                     # Remove Textwrap
-                    finalJAString = innerSource.replace("\\n", " ")
+                    finalJAString = _122_BREAK.sub(" ", innerSource)
 
                     # Pass 1
                     if setData:
