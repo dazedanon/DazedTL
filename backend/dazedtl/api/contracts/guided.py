@@ -311,8 +311,8 @@ class QaFinding(TypedDict):
     severity: str
     family: Annotated[str, "The family a reviewer or lint named, or empty."]
     kind: Annotated[
-        Literal["review", "lint", "sweep", "source", "scene"],
-        "How the finding came to be: a reviewer, lint, the family sweep, a source fix, or a reviewer's correction of several lines of one scene.",
+        Literal["review", "lint", "glossary", "sweep", "source", "scene"],
+        "How the finding came to be: a reviewer, lint, the glossary's term for another rendering, the family sweep, a source fix, or a reviewer's correction of several lines of one scene.",
     ]
     places: Annotated[int, "Lines the correction changes."]
     files: list[str]

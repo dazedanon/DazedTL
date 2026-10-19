@@ -22,6 +22,9 @@ def _finding_kind(row):
     if row.get("kind") == "scene":
         return "scene"
     if row.get("lint_only"):
+        # A glossary term reads as the glossary's, not as a mechanical fix.
+        if "lint:glossary-term" in (row.get("lint_families") or []):
+            return "glossary"
         return "lint"
     if row.get("sweep_families"):
         return "sweep"

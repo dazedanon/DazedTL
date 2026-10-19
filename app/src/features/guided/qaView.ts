@@ -252,6 +252,7 @@ export function qaOrigin(row: QaFinding) {
   return {
     review: "",
     lint: "Mechanical fix",
+    glossary: "Glossary term",
     sweep: "Same problem as an accepted correction",
     source: "Fix for a slip in the Japanese source",
     scene: "One correction across a scene",

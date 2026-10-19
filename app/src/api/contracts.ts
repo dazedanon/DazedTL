@@ -637,8 +637,8 @@ export type QaFinding = {
   severity: string;
   /** The family a reviewer or lint named, or empty. */
   family: string;
-  /** How the finding came to be: a reviewer, lint, the family sweep, a source fix, or a reviewer's correction of several lines of one scene. */
-  kind: "review" | "lint" | "sweep" | "source" | "scene";
+  /** How the finding came to be: a reviewer, lint, the glossary's term for another rendering, the family sweep, a source fix, or a reviewer's correction of several lines of one scene. */
+  kind: "review" | "lint" | "glossary" | "sweep" | "source" | "scene";
   /** Lines the correction changes. */
   places: number;
   files: string[];
