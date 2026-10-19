@@ -15,22 +15,27 @@ _WOLF_INLINE_VISIBLE_STRIP = re.compile(
 _WOLF_CODE_PLACEHOLDER = re.compile(r"__WOLF_CODE_\d+__")
 
 
-def _get_visible_length(text: str) -> int:
+def visible_text(text: str) -> str:
     """
-    Calculate the visible length of text, ignoring inline control codes.
+    The characters of *text* a window draws, without inline control codes.
 
     Handles Wolf ``\\f[N]``, ``\\c[N]``, ruby ``\\r[...]``, and legacy RPG Maker
     color codes so wrap-width checks match in-game bulletin / message boxes.
     """
     if not text:
-        return 0
+        return ""
     cleaned = _WOLF_INLINE_VISIBLE_STRIP.sub("", text)
     cleaned = _WOLF_CODE_PLACEHOLDER.sub("", cleaned)
     cleaned = re.sub(r"[\\]+[cC]\[\d+\]", "", cleaned)
     cleaned = re.sub(r"[\\]+[fF](?:\[\d+\])?", "", cleaned)
     cleaned = re.sub(r"[\\]+.", "", cleaned)
-    cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    return len(cleaned)
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def _get_visible_length(text: str) -> int:
+    """The visible length of text, ignoring inline control codes (see
+    :func:`visible_text`)."""
+    return len(visible_text(text))
 
 
 def visible_word_wrap_end_index(text: str, width: int) -> int:

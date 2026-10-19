@@ -452,7 +452,7 @@ An Apply review lists the files it overwrites without comparing their text, whic
 QA and restore keep their existing exact-before checks; no background synchronization is performed.
 
 Translation, Apply, Text QA and new Line widths fit text with one [fitter](../backend/dazedtl/engine/util/rpgmaker_rewrap.py), so text written by one never needs fitting by the next, and Check has no line width task.
-It measures a line by what the game draws in its box: name-window and alignment codes take no room, while names, icons and variables take a generous fixed room, since their values vary.
+It measures a line by what the game draws in its box: name-window and alignment codes take no room, names, icons and variables take a generous fixed room, since their values vary, and a full-width character, or one the Japanese fonts RPG Maker games use draw full width such as ♥ or …, takes two, which captures of Fuuma Chronicle confirmed.
 It wraps like the Japanese where the English allows, through [wrapShaped](../backend/dazedtl/engine/util/dazedwrap.py): blank first rows stay, lines break after the sentences the Japanese breaks after (and its clauses) and before list items, and otherwise lines are as few and as even as they can be; a message longer than its window starts each page after a sentence.
 Measured on six translated games against filling each line in turn, it matched the Japanese row count for 51-93% of messages (33-87%), broke after a sentence or clause at 42-77% of line breaks (9-14%), and left a short stray last line in 0-2% of multi-line messages (18-32%).
 Apply fits each translated value wider than its box in the output before freezing it; Japanese left untranslated and text with no box, such as a text picture, are never rewrapped.

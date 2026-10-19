@@ -575,6 +575,11 @@ try:
             "The gate opens at dawn.\n\nBring the lantern\nand the key.\n"
             "We leave before the\nguards wake up."
         ), paged
+        # The Japanese fonts RPG Maker games draw text in give ♥, … and
+        # full-width marks two cells; counted as one, a row of them is cut off.
+        from util.rpgmaker_rewrap import visible_width
+
+        assert visible_width("Fufu…♥ See you～") == 18
         # Only translated text is fitted: Japanese and a text picture, which
         # has no window, stay exact. New widths fit only their own area.
         line = "The old road bends toward a quiet village."

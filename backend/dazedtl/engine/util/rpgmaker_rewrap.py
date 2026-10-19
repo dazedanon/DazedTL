@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import copy
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Iterator
 
@@ -93,11 +94,16 @@ MARKED_WIDTH = 100
 def visible_width(text: str) -> int:
     """The characters *text* takes on one line of a window: name windows,
     alignment and other codes draw nothing there, while names, icons and
-    variables take their room."""
+    variables take their room. A full-width character, and one East Asian
+    fonts draw full width such as ♥ or …, takes two: RPG Maker games draw
+    text in Japanese fonts."""
     text = _MARKER.sub("", _ALIGNMENT.sub("", _NAME_WINDOW.sub("", text)))
     for pattern, size in _EXPANDING.items():
         text = pattern.sub("x" * size, text)
-    return dazedwrap._get_visible_length(text)
+    drawn = dazedwrap.visible_text(text)
+    return len(drawn) + sum(
+        1 for character in drawn if unicodedata.east_asian_width(character) in "FWA"
+    )
 
 
 def _rendered_lines(text: str) -> list[str]:
