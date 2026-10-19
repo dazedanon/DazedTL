@@ -161,7 +161,9 @@ Check has one task, **Text QA**, and it is optional.
   Its fixes change the game's plugins, so your assistant prepares QA again itself, keeping the review done so far.
   Your assistant adds places the tour can't reach by itself, such as story scenes or a recollection room, and plays the game again after QA's corrections; text problems that play finds go to another round of QA, which your assistant runs too.
   **Assistant tasks** shows Text QA as **Waiting** until a playtest of the game as it now is leaves nothing more for your assistant; then the Project page marks it done.
+  If DazedTL can't play the game at all, such as a game without its engine's scripts, the **Playtest** panel reads **Blocked** with the reason, and Text QA finishes without a play once nothing in its report is your assistant's to fix; a crash that stops the game is, so your assistant fixes it first.
   The **Playtest** panel shows how far it got; **Problems** lists what is left, each with the task that fixes it, and **View** shows what the game looked like.
+  If no assistant will play the game, as for a QA task copied before an update added the playtest, **Run QA again** copies a task that does.
 
 **Playtest tools** at the top installs TL Inspector and Forge to help you playtest MV and MZ games.
 Apply and playtest an early scene before translating everything.

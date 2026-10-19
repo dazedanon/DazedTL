@@ -11,7 +11,6 @@ import type {
 } from "../../api/contracts.ts";
 import type { DisplayState } from "../../ui/displayStatus.ts";
 import { investigationResults } from "../guided/contextView.ts";
-import { playtestPhase, playtestRunning } from "../guided/playtestView.ts";
 import { qaPhase, qaTaskDone } from "../guided/qaView.ts";
 import {
   pluginFilesBlocked,
@@ -247,17 +246,12 @@ function standing(
     // Applied corrections change the text the task checked, and later edits
     // are expected. A copy for MV/MZ names the playtest's report, which it
     // saves last: its assistant then plays the game again and fixes what it
-    // finds, until a play of the game as it is settles it.
-    if (phase === "applied" || phase === "clean") {
-      if (!own || record.finishedAt === undefined || qaTaskDone(guided))
-        return { state: "finished" };
-      const playtest = guided.readiness.playtest;
-      return !playtestRunning(guided.operations) &&
-        playtest.current &&
-        playtestPhase(playtest, false) === "blocked"
-        ? { state: "blocked", detail: "The playtest could not play the game" }
+    // finds, crashes that stop the game included, until a report of the game
+    // as it is settles it.
+    if (phase === "applied" || phase === "clean")
+      return !own || record.finishedAt === undefined || qaTaskDone(guided)
+        ? { state: "finished" }
         : waiting();
-    }
     // The assistant's own fixes change the game's plugins, and it prepares QA
     // again, keeping its review; other changes outdate the findings.
     if (phase === "outdated")

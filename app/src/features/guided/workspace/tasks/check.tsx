@@ -14,7 +14,7 @@ import {
   type QaStepDetails,
   type QaStepName,
 } from "../../qaSteps";
-import { qaPhase, qaUnsaved } from "../../qaView";
+import { qaPhase, qaTaskDone, qaUnsaved } from "../../qaView";
 import { PlaytestWork } from "../../Playtest";
 import { playtestFailure, playtestWaiting } from "../../playtestView";
 
@@ -44,7 +44,13 @@ export function qaView(w: GuidedWorkspace): TaskView {
   // Problems the playtest found in translated text after QA finished, which
   // QA reviews when it runs again.
   const found = playtest ? playtestWaiting(playtest) : 0;
-  const again = found > 0 && ["applied", "clean"].includes(phase);
+  // QA's corrections are in the game, or it found none.
+  const done = ["applied", "clean"].includes(phase);
+  const again = found > 0 && done;
+  // QA is in the game but the final check is not settled, and no copy is at
+  // work to play the game again, as for a copy made before the playtest
+  // joined the task: running QA again copies one that does.
+  const unsettled = done && !assisted && !qaTaskDone(state);
   // The latest play: a playtest, or one with the assistant's fixes in place.
   const playing = [
     operationJob("release_playtest"),
@@ -93,8 +99,7 @@ export function qaView(w: GuidedWorkspace): TaskView {
     (preparing.result?.status as { stage?: string } | undefined)?.stage ===
       "complete";
   const staleCopy =
-    ["outdated", "blocked"].includes(phase) ||
-    (["applied", "clean"].includes(phase) && !copiedFinished);
+    ["outdated", "blocked"].includes(phase) || (done && !copiedFinished);
   const start = (label: string, variant: "primary" | "default" = "primary") => (
     <ActionControl
       label={label}
@@ -149,8 +154,24 @@ export function qaView(w: GuidedWorkspace): TaskView {
                 playtest,
                 operationJob("release_playtest"),
               )}
-              idle="Your assistant plays the game while QA reviews it, and fixes what it finds."
-              rerun="Your assistant plays it again before it finishes."
+              idle={
+                !done
+                  ? "Your assistant plays the game while QA reviews it, and fixes what it finds."
+                  : assisted
+                    ? "Your assistant plays the game and fixes what it finds."
+                    : "Run QA again so your assistant plays the game and fixes what it finds."
+              }
+              rerun={
+                assisted
+                  ? "Your assistant plays it again before it finishes."
+                  : "Run QA again so your assistant plays it again."
+              }
+              waiting={assisted}
+              focus={
+                typeof qa.status.focus === "string"
+                  ? qa.status.focus
+                  : undefined
+              }
               compact
               stop={
                 <ActionControl
@@ -224,7 +245,7 @@ export function qaView(w: GuidedWorkspace): TaskView {
   ) : phase === "applied" || phase === "clean" ? (
     // Text edited since, such as new translation, or the playtest's
     // findings can take another pass, which the assistant takes itself.
-    start("Run QA again", again && !assisted ? "primary" : "default")
+    start("Run QA again", unsettled ? "primary" : "default")
   ) : phase === "ready" ? (
     <ActionControl
       label={applyFailed ? "Try again" : "Apply corrections"}
@@ -249,8 +270,7 @@ export function qaView(w: GuidedWorkspace): TaskView {
     next: advance(
       undefined,
       undefined,
-      ["applied", "clean"].includes(phase) &&
-        !again &&
+      qaTaskDone(state) &&
         !assisted &&
         (!unsaved || (action.key === "qa-save" && !!action.notice))
         ? "primary"

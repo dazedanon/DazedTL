@@ -68,8 +68,18 @@ Below, PLAYTEST stands for `{playtest}`, PLUGINS for `{plugins}` and QA for `{qa
 3. The report's gaps and stops not reached name what the tour could not reach. For places only the game's events lead to, such as story scenes, other maps or a recollection room, find the map, event or common event in the game's data and add stops: write a JSON list such as `[{{"title": "Recollection room", "do": "map", "map": 12, "x": 8, "y": 6}}]` and run `PLAYTEST --run --stops FILE --wait 20`. A stop does `map` (map, x, y), `event` (event, with map, x and y to go there first), `common-event` (id), `battle` (troop), `scene` (scene) or `script` (script), and may set `switches` and `variables` ({{"id": value}}) first. DazedTL saves the stops, and every later run visits them; give `[]` to clear them.
 4. A fix or a Plugin files apply changes the game's plugins, so text QA reads outdated until it captures the game's screens again: run `QA --prepare`, which resumes the same task with its review, before `QA --apply`.
 5. After `QA --apply` puts QA's corrections into the game, run `PLAYTEST --run --wait 20` again and repeat steps 2 to 4 for what it finds. QA is complete by then, so `PLAYTEST` counts its text problems as `waiting`: run `QA --prepare`, which starts QA's next round with them and reviews only text not reviewed before or changed since, review that round as before, run `QA --apply`, and play the game again.
-6. Finish when no playtest is running, the latest report played the game as it now is, and it holds only gaps nothing in the game's data leads to and problems you can't fix here; DazedTL shows the task as finished then. End with a short report: what the playtest reached, what you fixed in the fixes plugin and through Plugin files, and what stays, each with why.
+6. Finish when no playtest is running, the latest report played the game as it now is, and it holds only gaps nothing in the game's data leads to and problems you can't fix here; DazedTL shows the task as finished then. A latest report of the game as it now is that could not play it, such as for a game without its engine's scripts, ends the check too once it names no crash for you to fix and no text problem waits for QA; say why it could not play. End with a short report: what the playtest reached, what you fixed in the fixes plugin and through Plugin files, and what stays, each with why.
 """
+
+
+def stopping(problems):
+    """The report's crashes, which the assistant fixes, so a game the
+    playtest could not play is not done with until they are."""
+    return [
+        problem
+        for problem in problems
+        if problem["kind"] == "crash" and problem["fix"] == "game"
+    ]
 
 
 class Playtest:
@@ -347,6 +357,19 @@ class Playtest:
                 f"QA is complete, so {waiting} text problem(s) wait for its next "
                 "round: run qa --prepare, review it and run qa --apply, then run "
                 "playtest --run again."
+            )
+        elif not state.get("played") and stopping(problems):
+            following = (
+                "The game stops before the playtest can play it: fix that crash in "
+                "the fixes file and run playtest --fix."
+            )
+        elif not state.get("played"):
+            following = (
+                "The playtest could not play the game, and its report names no "
+                "crash for you to fix"
+                + (f" ({state['gaps'][0].rstrip('.')})" if state["gaps"] else "")
+                + ", so it ends without a play: handle the report's other "
+                "problems, then report why it could not play."
             )
         elif problems or state["gaps"]:
             following = (

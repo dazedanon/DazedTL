@@ -52,15 +52,27 @@ export const playtestRunning = (operations: Job[]) =>
       playtestActions.includes(job.action || "") && job.status === "running",
   );
 
+/** Crashes, which stop the game and which the assistant fixes. */
+export const playtestStopping = (playtest: PlaytestState) =>
+  playtest.problems.filter(
+    (problem) => problem.kind === "crash" && problem.fix === "game",
+  );
+
 /**
  * The playtest's half of an MV/MZ final check is done: nothing plays the
- * game now, the latest report played the game as it is, and no problem in
+ * game now, the latest report is of the game as it is, and no problem in
  * translated text waits for QA's next round. QA's apply changes the game's
- * data, so a current report played it with QA's corrections.
+ * data, so a current report played it with QA's corrections. A report that
+ * could not play the game settles it too once it names no crash for the
+ * assistant to fix, as for a game without its engine's scripts.
  */
 export const playtestSettled = (playtest: PlaytestState, operations: Job[]) =>
-  playtestPhase(playtest, playtestRunning(operations)) === "done" &&
-  !playtestWaiting(playtest);
+  !playtestRunning(operations) &&
+  !!playtest.report &&
+  playtest.current &&
+  !playtest.unreadable &&
+  !playtestWaiting(playtest) &&
+  (!!playtest.played || !playtestStopping(playtest).length);
 
 export const playtestDisplay: Record<PlaytestPhase, DisplayState> = {
   not_started: "not_started",
@@ -130,12 +142,19 @@ const reviews = {
   reviewing: "In Text QA's review",
   reviewed: "Text QA reviewed it",
   waiting: "Text QA corrects it when QA runs again",
-  outside: "Outside the QA focus",
+  outside: "Not in QA's review",
 };
 
-/** The task that fixes a problem, and for Text QA where it stands. */
-export const playtestFix = (problem: PlaytestProblem) =>
-  problem.review ? reviews[problem.review] : fixes[problem.fix];
+/**
+ * The task that fixes a problem, and for Text QA where it stands. A line
+ * QA can't take is outside a narrower focus than the full game text.
+ */
+export const playtestFix = (problem: PlaytestProblem, focus = "release") =>
+  problem.review === "outside" && focus !== "release"
+    ? "Outside the QA focus"
+    : problem.review
+      ? reviews[problem.review]
+      : fixes[problem.fix];
 
 /** Problems text QA has yet to take, which running QA again reviews. */
 export const playtestWaiting = (playtest: PlaytestState) =>

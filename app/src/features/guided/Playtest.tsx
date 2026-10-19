@@ -23,6 +23,7 @@ import {
   playtestGroups,
   playtestPhase,
   playtestReach,
+  playtestStopping,
   playtestSummary,
   playtestTitle,
   playtestWhere,
@@ -41,6 +42,8 @@ export function PlaytestWork({
   idle = "DazedTL plays the game in a hidden window and writes nothing into it.",
   compact = false,
   stop,
+  waiting = false,
+  focus,
 }: {
   projectId: string;
   playtest: PlaytestState;
@@ -59,8 +62,22 @@ export function PlaytestWork({
   compact?: boolean;
   /** Stops the running playtest, beside its progress. */
   stop?: ReactNode;
+  /** A copied task's assistant plays the game again before it finishes. */
+  waiting?: boolean;
+  /** Text QA's focus, which a line QA can't take is outside of. */
+  focus?: string;
 }) {
   const phase = playtestPhase(playtest, running);
+  // A report the game outgrew, or one stopped by a crash the assistant
+  // fixes, waits for its next play.
+  const stopped =
+    phase === "blocked" &&
+    !playtest.unreadable &&
+    playtestStopping(playtest).length > 0;
+  const state: DisplayState =
+    waiting && (phase === "outdated" || stopped)
+      ? "waiting"
+      : playtestDisplay[phase];
   const [capture, setCapture] = useState<PlaytestProblem | null>(null);
   const [strings, setStrings] = useState<PlaytestProblem | null>(null);
   const [coverage, setCoverage] = useState(false);
@@ -73,6 +90,7 @@ export function PlaytestWork({
     <PlaytestProblems
       groups={groups}
       since={!!playtest.since}
+      focus={focus}
       onCapture={setCapture}
       onStrings={setStrings}
     />
@@ -81,36 +99,44 @@ export function PlaytestWork({
     <>
       <StatusPanel
         title="Playtest"
-        state={playtestDisplay[phase]}
+        state={state}
         progress={phase === "running" ? progress : undefined}
         description={
           phase === "not_started"
             ? idle
             : phase === "running"
               ? "DazedTL is playing the game; this takes a few minutes."
-              : phase === "blocked"
-                ? playtest.unreadable ||
-                  `The playtest could not play the game. ${playtest.gaps[0] || ""}`.trim()
-                : phase === "outdated"
-                  ? `The game changed after this playtest. ${rerun}`
-                  : playtestSummary(playtest)
+              : stopped && waiting
+                ? "The game stops before the playtest can play it; your assistant fixes that and plays it again."
+                : phase === "blocked"
+                  ? playtest.unreadable ||
+                    `The playtest could not play the game. ${playtest.gaps[0] || ""}`.trim()
+                  : phase === "outdated"
+                    ? `The game changed after this playtest. ${rerun}`
+                    : playtestSummary(playtest)
         }
         help="It checks the game's files, then plays the title, New Game, every menu screen, a save and a load, a shop, a battle and the screens plugins add, with every item and skill on hand. Problems the tour saw come with a capture; the rest were found in the files. Problems in translated text go to Text QA's review."
       >
         {phase === "running" && stop && (
           <p className="playtest-coverage">{stop}</p>
         )}
+        {/* A report that could not play the game reached no stops, and
+            its problems found in the files still open. */}
         {phase !== "not_started" &&
           phase !== "running" &&
           !playtest.unreadable &&
-          reached && (
+          (reached || (compact && groups.length > 0)) && (
             <p className="playtest-coverage">
-              <span>{reached}</span>
-              <Button variant="link" onClick={() => setCoverage(true)}>
-                {playtest.gaps.length
-                  ? `${playtest.gaps.length.toLocaleString()} not reached`
-                  : "Coverage"}
-              </Button>
+              {reached && (
+                <>
+                  <span>{reached}</span>
+                  <Button variant="link" onClick={() => setCoverage(true)}>
+                    {playtest.gaps.length
+                      ? `${playtest.gaps.length.toLocaleString()} not reached`
+                      : "Coverage"}
+                  </Button>
+                </>
+              )}
               {compact && groups.length > 0 && (
                 <Button variant="link" onClick={() => setReport(true)}>
                   Problems
@@ -161,12 +187,14 @@ export function PlaytestWork({
 function PlaytestProblems({
   groups,
   since,
+  focus,
   onCapture,
   onStrings,
 }: {
   groups: ReturnType<typeof playtestGroups>;
   /** The report compares with the playtest before it. */
   since: boolean;
+  focus?: string;
   onCapture: (problem: PlaytestProblem) => void;
   onStrings: (problem: PlaytestProblem) => void;
 }) {
@@ -196,7 +224,7 @@ function PlaytestProblems({
                     </strong>
                     <small>{problem.note}</small>
                     <small>
-                      {[playtestWhere(problem), playtestFix(problem)]
+                      {[playtestWhere(problem), playtestFix(problem, focus)]
                         .filter(Boolean)
                         .join(" · ")}
                     </small>
