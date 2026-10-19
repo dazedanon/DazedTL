@@ -55,9 +55,10 @@ Format with `node scripts/format.mjs`; it applies Prettier and Ruff defaults and
 It copies the files Git would commit, including uncommitted changes, into a doubled `DazedTL-main (1)` folder and runs START with a PATH that has no Node or Python, and on Windows no Git.
 The profile and a copy of the [fixture game](../tests/fixtures/mz-game) sit in folders with spaces and Japanese names.
 Through the window it opens the game, runs Set up, translates and applies the database and the maps with Live translation against a local stand-in provider, stands in for the assistant's Event text sources investigation and translates and applies Other event text, opens Check and runs the Text QA assistant's playtest through the project helper, which checks the files and reports that the fixture game has no engine to play, and builds a patch ZIP.
-It then closes the window and expects every app process to exit with no failures in the app's diagnostics, and starts again to check that setup does not repeat.
+It then builds a clean game ZIP and checks that its one top folder takes the archive's name, that it holds the translated game and that notes and a spellcheck folder added beside the game stay out.
+Finally it closes the window and expects every app process to exit with no failures in the app's diagnostics, and starts again to check that setup does not repeat.
 Logs, screenshots and the app's diagnostics land in `logs` inside the work folder; `--work <empty folder>` chooses it.
-On Linux the app needs a display, such as `xvfb-run -a node scripts/e2e.mjs`.
+On Linux the app needs a display: CI runs it under `xvfb-run`, and on a desktop a private virtual compositor keeps its window off yours, such as `dbus-run-session -- kwin_wayland --virtual --xwayland --socket e2e` with `WAYLAND_DISPLAY=e2e` and `DISPLAY` set to the X display it adds.
 
 [CI](../.github/workflows/ci.yml) runs the build checks, the behavior tests and the live test on Windows and Linux for every pushed branch, every pull request and once a week, and attaches each live test's logs to the run.
 GitHub's Windows images include the Visual C++ runtime and other tools a fresh Windows lacks, so a change to what setup downloads or unpacks still needs a check on a fresh Windows.
