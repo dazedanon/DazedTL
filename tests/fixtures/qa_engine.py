@@ -346,12 +346,18 @@ def claimed(text):
 
 
 # It works the brief's loop: next prints a bundle with the glossary entries
-# its text uses, and accept --next accepts it and prints the following one.
+# its text uses, and accept --next accepts it and prints the following one,
+# until the run has reviewed its share and a fresh run continues; runs of two
+# bundles take this reviewer's four in two runs.
+qa.RUN_BUNDLES = 2
+qa.brief(task, "worker", "screen-a")
 text = qa.claim(task, "screen-a")
 printed = []
+runs = [0]
 while row := claimed(text):
     assert row["id"].startswith("screen"), row
     printed.append(text)
+    runs[-1] += 1
     lint_only = all(item["kind"] == "lint-family" for item in bundle_of(row)["items"])
     text = qa.accept_text(
         task,
@@ -362,8 +368,17 @@ while row := claimed(text):
         ),
         then_next=True,
     )
-    assert text.startswith(f"Accepted {row['id']}.\n\n"), text
-    text = text.split("\n", 2)[2]
+    if "stop now" in text:
+        assert (
+            runs[-1] == qa.RUN_BUNDLES
+            and qa.status(task)["screen"]["assigned_workers"] == []
+        ), text
+        qa.brief(task, "worker", "screen-a")
+        runs.append(0)
+        text = "\n\n" + qa.claim(task, "screen-a")
+    assert text.startswith((f"Accepted {row['id']}.\n\n", "\n\n")), text
+    text = text.split("\n\n", 1)[1]
+assert runs == [2, 2, 0], runs
 assert text.startswith("No bundle for screen-a now: the screen stage has "), text
 owner = [shown for shown in printed if "店長" in shown.split("## GLOSSARY")[0]]
 assert owner and all(OWNER_ENTRY in shown for shown in owner), owner

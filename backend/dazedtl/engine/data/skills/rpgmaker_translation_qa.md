@@ -57,7 +57,7 @@ When the user says the text up to an update was checked before, such as everythi
 Never decline lines to narrow QA's scope.
 
 1. Start four workers that run at the same time, such as background sub-agents, each a fresh session with a name of its own, such as `rev-1` to `rev-4`.
-   Give each only this prompt: `You are text QA worker <name>. Run {{CLI}} brief --task {{TASK}} --role worker and follow it.`
+   Give each only this prompt: `You are text QA worker <name>. Run {{CLI}} brief --task {{TASK}} --role worker --worker <name> and follow it.`
    A worker's run ends after a few bundles, which keeps its reviews sharp and its cost low, with one line saying how far it got; start its next run under the same name with the same prompt until `status` reports `complete`.
    Restart a worker that `next` gave no bundle once `status` shows `bundles_pending` again or no worker is running, since accepted bundles open new ones and `next` opens the next stage.
    Choices every reviewer must follow go through `decide` (step 6), never into a worker's prompt.
@@ -112,7 +112,7 @@ This brief holds the game's notes, translation quirks and the decisions every re
 3. Write the result to `{{RECEIPTS}}` as `<bundle id>.json`, the only place you write results, and submit it with `accept --worker <name> --result <file> --next`, which accepts it and prints your next bundle.
    When accept refuses it, fix what it names and submit again; release a bundle you cannot finish with `release --bundle <id>`.
 4. Review each bundle `accept` prints the same way.
-   Submit your sixth without `--next` and stop, or stop when no bundle is left for you, and never while you hold one: the coordinator starts your next run, and a fresh run keeps your reviews sharp and their cost low.
+   Stop when `accept` says your run is done, after a few bundles, or when no bundle is left for you, and never while you hold one: the coordinator starts your next run, and a fresh run keeps your reviews sharp and their cost low.
 
 End with one line: how many bundles you accepted, then the last line `accept` or `next` printed or an error you could not resolve.
 Your results already hold your findings, so do not repeat them.
@@ -255,7 +255,7 @@ line's current text as its replacement leaves that line as it is.
 
 Prefix every command with `{{CLI}}`:
 
-- `status --task {{TASK}}`, `brief --task {{TASK}} --role <screen|deep|group|editorial|worker>`
+- `status --task {{TASK}}`, `brief --task {{TASK}} --role <screen|deep|group|editorial|worker> [--worker <name>]`, which with a worker's name starts its run
 - `next --task {{TASK}} --worker <name> [--helper <name>] [--bundle <id>] [--skip-declined]` claims a bundle and prints it compactly; `show --task {{TASK}} --bundle <id>` prints it again
 - `accept --task {{TASK}} --worker <name> --result <result.json> [--next]`, `release --task {{TASK}} --bundle <id>`
 - `decline --task {{TASK}} --worker <name> [--helper <name>] --bundle <id> --item <id> --reason "<one line>"`, repeating `--item` and `--reason` together, for items of a bundle no other worker holds

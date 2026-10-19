@@ -105,6 +105,9 @@ STALL_MINIMUM_SECONDS = 20 * 60
 # Workers seen this recently are active, and reviews in this much of QA's
 # latest work measure how many bundles it reviews at once.
 ACTIVE_WORKER_SECONDS = 30 * 60
+# A worker's run reviews this many bundles, then a fresh run of it continues,
+# which keeps each review's context small.
+RUN_BUNDLES = 6
 # QA's latest work reviews one bundle at a time while others wait when it held
 # this many bundles and fewer than this many were in review at once.
 ONE_AT_A_TIME_BUNDLES = 3
@@ -2624,11 +2627,21 @@ def _task_instructions(task_dir: Path, task: dict[str, Any]) -> str:
     )
 
 
-def brief(task_dir: str | Path, role: str) -> str:
+def brief(task_dir: str | Path, role: str, worker: str = "") -> str:
     """One reviewer's brief: the policy, its role, the commands, and the
-    game's guidance and decisions, so a reviewer reads no other context."""
+    game's guidance and decisions, so a reviewer reads no other context.
+
+    A named *worker* starts a run with it, whose bundles `accept_text` counts.
+    """
     if role not in QA_ROLES:
         raise ValueError("Choose a role: " + ", ".join(QA_ROLES))
+    if worker:
+        root = Path(task_dir).expanduser().resolve()
+        with _task_lock(root):
+            _root, _task, checkpoint = _load_task(root)
+            _register_worker(checkpoint, worker, None)
+            checkpoint["workers"][worker]["run_started"] = _utc_now()
+            _atomic_write_json(root / "checkpoint.json", checkpoint)
     root, task, _checkpoint = _load_task(task_dir)
     _intro, sections, focus = _skill_sections(task["focus"])
     parts = [focus] + [
@@ -3880,6 +3893,17 @@ def accept_text(
     worker = worker or str(_bundle_row(checkpoint, bundle_id)[1].get("assigned_to") or "")
     if not worker:
         return text + "Name your worker to claim the next bundle.\n"
+    started = str((checkpoint.get("workers") or {}).get(worker, {}).get("run_started") or "")
+    reviewed = sum(
+        row["status"] == "accepted" and row.get("assigned_to") == worker
+        and str(row.get("accepted_at") or "") >= started
+        for stage in REVIEW_STAGES for row in checkpoint[stage]["bundles"]
+    )
+    if started and reviewed >= RUN_BUNDLES:
+        return text + (
+            f"This run has reviewed {reviewed} bundles: stop now and end with your "
+            "one-line report; a fresh run continues.\n"
+        )
     return text + "\n" + claim(root, worker)
 
 

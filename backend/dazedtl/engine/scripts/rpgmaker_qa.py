@@ -96,6 +96,7 @@ def main() -> int:
     )
     brief.add_argument("--task", required=True, type=Path)
     brief.add_argument("--role", required=True, choices=rpgmaker_qa.QA_ROLES)
+    brief.add_argument("--worker", default="", help="The worker whose run this starts.")
     context = sub.add_parser(
         "context", help="Print read-only game text around an identity or command list."
     )
@@ -188,7 +189,7 @@ def run(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     elif args.command == "show":
         print(rpgmaker_qa.render_bundle(args.task, args.bundle), end="")
     elif args.command == "brief":
-        print(rpgmaker_qa.brief(args.task, args.role))
+        print(rpgmaker_qa.brief(args.task, args.role, args.worker))
     elif args.command == "context":
         print(rpgmaker_qa.context_view(args.task, args.at, args.radius, args.worker))
     elif args.command == "rebuild-deep":
