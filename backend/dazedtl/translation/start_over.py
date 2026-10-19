@@ -100,7 +100,7 @@ def run(
             source_game=True,
             stopped=stopped,
             progress=lambda count, path: progress(
-                f"Backed up {count:,} game files · {path}"
+                f"Backed up {count:,} game file{'' if count == 1 else 's'} · {path}"
             ),
         )
     if (root / ".dazedtl").is_dir():

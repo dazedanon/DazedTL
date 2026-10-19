@@ -275,7 +275,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             source_game=action == "backup_source",
             stopped=stopped,
             progress=lambda count, path: progress(
-                f"Backed up {count:,} files · {path}"
+                f"Backed up {count:,} file{'' if count == 1 else 's'} · {path}"
             ),
         )
         if action == "backup_workspace":
@@ -541,7 +541,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             source_game=True,
             stopped=stopped,
             progress=lambda count, path: progress(
-                f"Backed up {count:,} new-original files · {path}"
+                f"Backed up {count:,} new-original file{'' if count == 1 else 's'} · {path}"
             ),
         )
         staged = (
