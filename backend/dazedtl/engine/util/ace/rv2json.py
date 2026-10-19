@@ -1505,6 +1505,21 @@ def load_data(path: Path) -> Any:
         raise ConversionError(path.name + ": " + str(exc)) from None
 
 
+def script_names(root: Path, *, data: str | None = None) -> list[str]:
+    """The file names ``create`` writes the scripts to, in the order the game
+    runs them; none when the game has no script data."""
+    scripts = load_data(data_path(data_dir(root, data), "Scripts"))
+    if not isinstance(scripts, list):
+        return []
+    return [
+        _script_file(Path(), script).name
+        for script in scripts
+        if isinstance(script, list)
+        and len(script) >= 3
+        and isinstance(script[2], RString)
+    ]
+
+
 def _script_file(scripts: Path, script: list) -> Path:
     index, name = script[0], script[1]
     if isinstance(name, RString):

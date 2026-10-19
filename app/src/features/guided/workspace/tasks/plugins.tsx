@@ -6,7 +6,8 @@ import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
 
 export function pluginsView(w: GuidedWorkspace): TaskView {
-  const { project, application, taskFooter, disabled, advance, back } = w;
+  const { project, application, taskFooter, disabled, advance, back, state } =
+    w;
   let content: ReactNode;
   content = (
     <PluginWorkspace
@@ -25,7 +26,11 @@ export function pluginsView(w: GuidedWorkspace): TaskView {
   return {
     content,
     heading: {
-      description: "Translate the text plugins show to players.",
+      // VX Ace keeps this text in its Ruby scripts.
+      description:
+        state.engine === "ACE"
+          ? "Translate the text the game's scripts show to players."
+          : "Translate the text plugins show to players.",
     },
   };
 }

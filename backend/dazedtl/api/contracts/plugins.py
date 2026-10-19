@@ -89,6 +89,8 @@ class PluginState(TypedDict):
     projectId: str
     supported: bool
     limitation: str
+    # A VX Ace game, whose player text is in Ruby scripts, not plugins.
+    scripts: bool
     # Whether the game's plugins were read; counts start then.
     scanned: bool
     counts: PluginCounts

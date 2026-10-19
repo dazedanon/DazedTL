@@ -54,6 +54,12 @@ const receiptTitle = ({ mode, status, files }: PluginReceipt) => {
           : `${done} ${count}`;
 };
 const fileName = (path: string) => path.split("/").pop() || path;
+/** What holds the game's text: VX Ace's Ruby scripts or MV/MZ plugins. */
+const nouns = (scripts = false) =>
+  scripts
+    ? { one: "script", file: "script", title: "Script" }
+    : { one: "plugin", file: "plugin file", title: "Plugin" };
+type Nouns = ReturnType<typeof nouns>;
 /** Actions whose own control shows their result. */
 const controlled = (key: string) =>
   [
@@ -91,12 +97,15 @@ const unreadableDetail = (rows: PluginState["unreadable"], kept: boolean) =>
     kept,
   );
 /** What an apply that left checked files unchanged wrote, and why it left them. */
-const partlyApplied = ({ completed = 0, blocked = [] }: PluginActionResult) =>
-  `${fileCount(completed, "plugin file")} applied. ${unchangedDetail(blocked)}`;
+const partlyApplied = (
+  { completed = 0, blocked = [] }: PluginActionResult,
+  words: Nouns,
+) => `${fileCount(completed, words.file)} applied. ${unchangedDetail(blocked)}`;
 
 /** Where the assistant's task stands and each result it returns. */
 function pluginTask(state: PluginState, handoff: Handoff, keep: ReactNode) {
   const { counts } = state;
+  const words = nouns(state.scripts);
   const { waiting } = handoff;
   const left = pluginFilesLeft(state);
   const investigating = !state.scanned || counts.investigated < counts.files;
@@ -126,23 +135,23 @@ function pluginTask(state: PluginState, handoff: Handoff, keep: ReactNode) {
         : ` Text QA found ${labelCount(labelsLeft)} too long for the screen; copy the task so your assistant shortens ${labelsLeft === 1 ? "it" : "them"}.`);
   const description =
     taskState === "waiting"
-      ? "Results appear here as your assistant saves them. It continues through every plugin file on its own."
+      ? `Results appear here as your assistant saves them. It continues through every ${words.file} on its own.`
       : taskState === "ready"
         ? `${fileCount(counts.ready)} checked and ready to apply.${unfinished}`
         : taskState === "outdated"
           ? `${fileCount(left)} changed since your assistant finished. Copy the task again to update ${left === 1 ? "it" : "them"}.`
           : taskState === "blocked"
-            ? `Every readable plugin file is done. Fix the unreadable ${blocked.length === 1 ? "file, or keep it" : "files, or keep them"} unchanged.`
+            ? `Every readable ${words.file} is done. Fix the unreadable ${blocked.length === 1 ? "file, or keep it" : "files, or keep them"} unchanged.`
             : taskState === "applied"
               ? `${fileCount(counts.applied)} applied to the game.`
               : taskState === "done"
                 ? counts.textFiles
-                  ? "Plugin text is checked; nothing needed changing."
+                  ? `${words.title} text is checked; nothing needed changing.`
                   : counts.files
-                    ? `No ${readable}plugin shows its Japanese text to players.`
-                    : `No ${readable}plugin holds Japanese text.`
+                    ? `No ${readable}${words.one} shows its Japanese text to players.`
+                    : `No ${readable}${words.one} holds Japanese text.`
                 : unfinished.trim() ||
-                  "Your assistant finds the text plugins show to players and translates it with the game's glossary, translated text and reference games. The app checks every change before you apply it.";
+                  `Your assistant finds the text ${words.one}s show to players and translates it with the game's glossary, translated text and reference games. The app checks every change before you apply it.`;
   const findings: DisplayState = !investigating
     ? "done"
     : waiting
@@ -170,7 +179,7 @@ function pluginTask(state: PluginState, handoff: Handoff, keep: ReactNode) {
       title: "Text players see",
       state: findings,
       detail: !state.scanned
-        ? "Which plugin text players see."
+        ? `Which ${words.one} text players see.`
         : investigating
           ? `${counts.investigated} of ${fileCount(counts.files)} checked`
           : counts.textFiles
@@ -179,7 +188,7 @@ function pluginTask(state: PluginState, handoff: Handoff, keep: ReactNode) {
     },
     {
       id: "translation",
-      title: "Translated plugin text",
+      title: `Translated ${words.one} text`,
       state: translation,
       // Files with text are still being found while the assistant investigates.
       detail:
@@ -234,7 +243,7 @@ function pluginTask(state: PluginState, handoff: Handoff, keep: ReactNode) {
       state: "skipped",
       detail: unreadableDetail(kept, true),
     });
-  return { taskState, description, results };
+  return { taskState, description, results, words };
 }
 
 export function PluginWorkspace({
@@ -328,7 +337,10 @@ export function PluginWorkspace({
   const apply = async () => {
     const result = await run("apply");
     if (result.ok && result.value.blocked?.length)
-      action.report(partlyApplied(result.value), "apply");
+      action.report(
+        partlyApplied(result.value, nouns(state?.scripts)),
+        "apply",
+      );
   };
   const feedback = (key: string) => ({
     pending: action.busy && action.key === key,
@@ -372,7 +384,7 @@ export function PluginWorkspace({
     return (
       <section className="plugin-workspace" aria-label="Plugin files workspace">
         <ForeignWork
-          title="Plugin work from another project"
+          title={`${nouns(state?.scripts).title} work from another project`}
           work={foreignWork}
           counts={[
             [foreignWork.investigated, "files investigated"],
@@ -381,10 +393,10 @@ export function PluginWorkspace({
           ]}
           kept={["findings", "working copies"]}
           noun="files"
-          next="Copy the plugin task again before applying more: tasks copied in the other project aren't accepted here."
+          next={`Copy the ${nouns(state?.scripts).one} task again before applying more: tasks copied in the other project aren't accepted here.`}
           left={
             foreignWork.applied
-              ? "Applied plugin files stay in the game but can't be restored here."
+              ? `Applied ${nouns(state?.scripts).file}s stay in the game but can't be restored here.`
               : ""
           }
           adopt={
@@ -412,7 +424,7 @@ export function PluginWorkspace({
   if (!state)
     return (
       <>
-        <Message message={error || "Loading saved plugin work…"} />
+        <Message message={error || "Loading saved work…"} />
         {footer(null, next("quiet"))}
       </>
     );
@@ -420,11 +432,6 @@ export function PluginWorkspace({
     return (
       <section className="plugin-workspace">
         <Message message={state.limitation} />
-        <p className="muted">
-          Existing Ruby sources and native packing remain in the preserved
-          workflow. This guarded workspace does not claim Ruby publication
-          support.
-        </p>
         {footer(null, next("primary"))}
       </section>
     );
@@ -443,6 +450,7 @@ export function PluginWorkspace({
     />
   );
   const task = pluginTask(state, handoff, keep);
+  const { words } = task;
   const copied = feedback("plugin_task");
   // Nothing is left for the assistant; an unreadable file needs a fix
   // outside the app.
@@ -454,7 +462,11 @@ export function PluginWorkspace({
         progress={
           task.taskState === "waiting" ? sinceLabel(handoff.since) : undefined
         }
-        help="Keep DazedTL open while your assistant works. It investigates every plugin file, translates the text players see, shortens plugin labels Text QA found too long for the screen and asks only about choices it can't settle. Copying the task again once it is done has your assistant recheck its decisions, for example after you find untranslated plugin text in the game."
+        help={
+          state.scripts
+            ? "Keep DazedTL open while your assistant works. It investigates every script, translates the text players see and asks only about choices it can't settle. Copying the task again once it is done has your assistant recheck its decisions, for example after you find untranslated script text in the game."
+            : "Keep DazedTL open while your assistant works. It investigates every plugin file, translates the text players see, shortens plugin labels Text QA found too long for the screen and asks only about choices it can't settle. Copying the task again once it is done has your assistant recheck its decisions, for example after you find untranslated plugin text in the game."
+        }
         description={task.description}
         results={task.results}
       />
@@ -481,7 +493,7 @@ export function PluginWorkspace({
             </Button>
           )}
           <ActionControl
-            label="Copy plugin task"
+            label={`Copy ${words.one} task`}
             variant={counts.ready || finished ? "default" : "primary"}
             disabled={busy}
             {...copied}
@@ -508,14 +520,14 @@ export function PluginWorkspace({
       )}
       {recovery && (
         <Modal
-          label="Plugin recovery"
+          label={`${words.title} recovery`}
           size="md"
           className="plugin-review-modal"
           onDismiss={() => setRecovery(false)}
         >
           <DialogHeader
-            title="Plugin recovery"
-            description="Restore plugin files from the backups saved when they were applied."
+            title={`${words.title} recovery`}
+            description={`Restore ${words.file}s from the backups saved when they were applied.`}
             onClose={() => setRecovery(false)}
           />
           <DialogBody className="plugin-review-body">
@@ -580,14 +592,14 @@ export function PluginWorkspace({
       )}
       {preview && (
         <Modal
-          label="Restore plugin files"
+          label={`Restore ${words.file}s`}
           size="md"
           className="plugin-review-modal"
           dismissible={!action.busy}
           onDismiss={() => setPreview(null)}
         >
           <DialogHeader
-            title={`Restore ${fileCount(preview.files.length, "plugin file")}`}
+            title={`Restore ${fileCount(preview.files.length, words.file)}`}
             description="Each file is checked again before its saved backup replaces it."
           />
           <DialogBody className="plugin-review-body">
@@ -627,14 +639,14 @@ export function PluginWorkspace({
             </Button>
             <ActionControl
               variant="primary"
-              label={`Restore ${fileCount(preview.files.length, "plugin file")}`}
+              label={`Restore ${fileCount(preview.files.length, words.file)}`}
               disabled={busy || !preview.files.length}
               {...feedback("restore")}
               onClick={async () => {
                 const result = await run(
                   "restore",
                   { token: preview.token },
-                  "Reviewed plugin files restored.",
+                  `Reviewed ${words.file}s restored.`,
                 );
                 if (result.ok) setPreview(null);
               }}

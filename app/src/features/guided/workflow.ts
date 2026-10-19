@@ -92,9 +92,16 @@ export const workflow: WorkflowStage[] = [
       },
       {
         id: "plugins",
+        engine: "MVMZ",
         title: "Plugin files",
-        description:
-          "Inspect player-visible text in plugin files and retain any excluded scope.",
+        description: "Translate the text plugins show to players.",
+      },
+      {
+        // VX Ace keeps this text in its Ruby scripts.
+        id: "plugins",
+        engine: "ACE",
+        title: "Plugin files",
+        description: "Translate the text the game's scripts show to players.",
       },
       {
         id: "images",

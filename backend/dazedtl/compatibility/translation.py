@@ -663,6 +663,53 @@ class TranslationEngine:
 
         return Decoders()
 
+    @staticmethod
+    def ace_data(folder, names):
+        """A VX Ace original's data files in `folder` as plain data, by name:
+        each loose Data/*.rvdata2 among `names`, or each inside the RGSS
+        archive among them, without decrypting the archive's graphics and
+        sound. Scripts are left out."""
+        from util.ace import rgssad, ruby_marshal
+
+        from dazedtl.translation.census import marshal_tree
+
+        def wanted(name):
+            folder_name, _, file_name = name.casefold().partition("/")
+            return (
+                folder_name == "data"
+                and "/" not in file_name
+                and file_name.endswith(".rvdata2")
+                and file_name != "scripts.rvdata2"
+            )
+
+        raws = {}
+        for name in names:
+            path = Path(folder) / name
+            if wanted(name):
+                raws[name] = path.read_bytes()
+            elif name.casefold().endswith((".rgss3a", ".rgss2a", ".rgssad")):
+                data = path.read_bytes()
+                for member, offset, size, key in rgssad.entries(data):
+                    member = rgssad.safe_path(member).as_posix()
+                    if not wanted(member):
+                        continue
+                    if offset + size > len(data):
+                        raise ValueError(
+                            "An archived file runs past the archive's end."
+                        )
+                    raws[member] = rgssad.decrypt(data[offset : offset + size], key)
+        return {
+            name: marshal_tree(ruby_marshal.load(raw)) for name, raw in raws.items()
+        }
+
+    @staticmethod
+    def ace_script_order(root):
+        """A VX Ace game's script files in ace_json/scripts, in the order the
+        game runs them."""
+        from util.ace import rv2json
+
+        return rv2json.script_names(Path(root))
+
     def rpgmaker_prepare(self, source, options, data_path=None, log=None):
         from desktop.backend.cli_environment import public_values
         from util.len_translation import setup_forge

@@ -496,14 +496,18 @@ Legacy Guided review receipts remain readable for existing records.
 ## Plugins and images
 
 Guided Plugin files and Images are Translate tasks; positions saved by earlier stage layouts open them without rewriting saved run records.
-The [plugin service](../backend/dazedtl/plugins/service.py) owns retained investigation, working copies and checked publication for MV/MZ root and `www` layouts.
+The [plugin service](../backend/dazedtl/plugins/service.py) owns retained investigation, working copies and checked publication for MV/MZ root and `www` layouts, and for VX Ace's Ruby scripts in `ace_json/scripts`.
 The assistant decides which plugin text players see, and the user reviews neither files nor strings.
 Apply to game writes every checked file in one click, because a list of files could not show what changed; it checks each file again and backs it up first, and Recovery restores an application after a review of its own.
 An Acorn AST inventory and recursive decoded parameter paths bind reports to exact source bytes without evaluating plugin code.
 Original Japanese database fields, notetags, command arguments and parameter evidence come from a verified source backup even after runtime JSON has been translated, so a task cannot start without it.
 Known lookup values, code keys, embedded expressions, serialization structure and control tokens remain protected by the app and are never asked about; a file with nothing else, and no JSON it loads, needs no investigation.
 A translated line may keep only a leading Japanese tag that unchanged code in its file matches with `startsWith` or `indexOf`, such as a script parser's `ア:` speaker tag; any other Japanese left in a target fails the check.
-Dynamic configuration, malformed data, unreadable sources and unsupported Ace publication remain explicit blockers.
+VX Ace has no plugins: its menus, battle messages and other interface text are string literals in the Ruby scripts Set up extracts, and the task covers those.
+The [Ruby reader](../backend/dazedtl/plugins/ruby.py) gives them the inventory Acorn gives JavaScript, in Python so no Ruby ships: exact byte spans and the text Ruby makes of each literal, deciding from the code before it, as Ruby's lexer does, whether `/`, `%`, `?` and `<<` start a literal.
+It skips comments, regular expressions and plain symbols, protects hash keys, index lookups, compared values and `when` clauses, and treats a translation that adds a literal, such as an unescaped quote or a new `#{`, as changed code.
+A VX Ace game's originals are its database names, note tags and the strings its event scripts compare, read through the compatibility boundary from the preserved archive's or Data files' Marshal data; Release packs the applied scripts into `Data/Scripts.rvdata2`, and labels too long for the screen come only from MV/MZ captures.
+Dynamic configuration, malformed data and unreadable sources remain explicit blockers.
 A parameter value that looks like JSON but does not decode, such as a script, stays one leaf the app protects and does not block the rest of its file; saved scans are redone once when these scanning rules change.
 The user can keep an unreadable file unchanged so the required task can finish; the choice lapses when the file fails for a different reason, and a listed plugin whose file is gone has nothing to translate.
 Only independently investigated static plugin-loaded JSON dependencies enter this scope; ordinary event and database files retain their existing text phase.

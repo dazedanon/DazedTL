@@ -179,7 +179,8 @@ For an RPG Maker MV/MZ game it reads **Done** once your assistant's validation o
 ### RPG Maker VX Ace
 
 Set up's **Convert Ace data** unpacks an encrypted `Game.rgss3a` and converts the game data so it can be translated.
-**Review native Ace packing**, in Check or Release, writes the translations back.
+VX Ace keeps menu commands, battle messages and other interface text in its Ruby scripts instead of plugins, so **Plugin files** has your assistant translate the text the scripts show.
+**Review native Ace packing**, in Check or Release, writes the translations back, applied scripts included.
 A patch ZIP for an encrypted game carries a rebuilt `Game.rgss3a`, so players replace one file.
 GameUpdate can't update an encrypted game, so share a new patch for each update instead.
 

@@ -10,6 +10,8 @@ from pathlib import Path
 
 from dazedtl.translation.files import digest, unique_object
 
+from . import ruby
+
 JAPANESE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff]")
 # The start of a JSON object or array, for values that fail to decode.
 OPAQUE = re.compile(r'^\s*(?:\{\s*"|\[\s*["\[{])')
@@ -23,6 +25,9 @@ DRAW_CODES = re.compile(r"\\+[A-Za-z]+\[[^\]]*\]|\\+[A-Za-z{}|.!><^$]")
 LIST_SEPARATORS = re.compile(r"[,;|]")
 # A list item is a short label, unlike a clause of a sentence.
 LIST_ITEM = re.compile(r"[^.!?]{1,40}")
+# Literals whose span holds only their text, a Ruby heredoc's body or a word
+# of a %w list: the delimiters around them stay outside every span.
+BARE = {"heredoc", "word"}
 
 
 def decode(value):
@@ -134,8 +139,8 @@ def same_tree(before, after, changes, path=(), depth=0):
 
 class Documents:
     """Parses each exact version of a script once. A review reads the same
-    unchanged files several times, and every parse starts Node, which costs
-    most on Windows."""
+    unchanged files several times, and every JavaScript parse starts Node,
+    which costs most on Windows; VX Ace's Ruby scripts are read in Python."""
 
     def __init__(self, budget=32_000_000):
         # Parsed versions as JSON text, least recently used first, within
@@ -145,9 +150,9 @@ class Documents:
         self.lock = threading.Lock()
 
     def parse(self, files):
-        js = [row for row in files if row["kind"] != "json"]
+        code = [row for row in files if row["kind"] != "json"]
         keys = [
-            (row["path"], row["kind"], digest(row["source"].encode())) for row in js
+            (row["path"], row["kind"], digest(row["source"].encode())) for row in code
         ]
         known = {}
         with self.lock:
@@ -155,14 +160,22 @@ class Documents:
                 if key in self.parsed:
                     self.parsed.move_to_end(key)
                     known[key] = self.parsed[key]
-        fresh = [row for row, key in zip(js, keys) if key not in known]
+        fresh = [
+            row
+            for row, key in zip(code, keys)
+            if key not in known and row["kind"] != "ruby"
+        ]
         parsed = iter(syntax(fresh) if fresh else ())
         result = {}
-        for row, key in zip(js, keys):
+        for row, key in zip(code, keys):
             if key in known:
                 result[row["path"]] = json.loads(known[key])
             else:
-                result[row["path"]] = next(parsed)
+                result[row["path"]] = (
+                    ruby.parse(row["path"], row["source"])
+                    if row["kind"] == "ruby"
+                    else next(parsed)
+                )
                 self.keep(key, json.dumps(result[row["path"]], ensure_ascii=False))
         for row in files:
             if row["kind"] == "json":
@@ -380,6 +393,11 @@ def validate(raw, candidate, original, current, approved, targets):
     if len(left) != len(right):
         raise ValueError(
             "Literal inventory changed; unrelated code or new literals are not allowed."
+            + (
+                " In Ruby, escape quotes and backslashes inside a string, write #{ only where it was, and escape each space in a %w word as \\ ."
+                if original.get("language") == "ruby"
+                else ""
+            )
         )
     changed = {row["token"] for row in approved if row["id"] in targets}
     # Japanese tags that unchanged code in this file still matches; longest first.
@@ -432,7 +450,9 @@ def validate(raw, candidate, original, current, approved, targets):
                     )
                 same_tree(a["value"], b["value"], by_token[index])
             else:
-                if a["raw"][0] != b["raw"][0] or a["raw"][-1] != b["raw"][-1]:
+                if a["kind"] not in BARE and (
+                    a["raw"][0] != b["raw"][0] or a["raw"][-1] != b["raw"][-1]
+                ):
                     raise ValueError("Literal quote style changed.")
                 same_tree(a["value"], b["value"], by_token[index])
             before.append(b"<approved-text>")

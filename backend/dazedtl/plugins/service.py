@@ -21,6 +21,7 @@ from dazedtl.translation.operations import (
     require_source_backup,
 )
 
+from . import ruby
 from .documents import (
     Documents,
     decode,
@@ -49,6 +50,20 @@ KEPT = DECIDED - {"visible"}
 # File states with nothing left to apply: the game holds the translation, or
 # the file has nothing to translate.
 SETTLED = {"applied", "translated", "none"}
+# Where a VX Ace game's Ruby scripts are, one file per script: Set up
+# extracts them from Data/Scripts.rvdata2 and Release packs them back.
+ACE_SCRIPTS = "ace_json/scripts"
+# Database files whose names the game looks up.
+DATABASE = {
+    "Actors",
+    "Classes",
+    "Skills",
+    "Items",
+    "Weapons",
+    "Armors",
+    "Enemies",
+    "States",
+}
 DATABASE_JSON = {
     "Actors.json",
     "Classes.json",
@@ -69,6 +84,97 @@ DATABASE_JSON = {
 
 def now():
     return datetime.now(UTC).isoformat()
+
+
+def nested_keys(value, keys):
+    """Every string and object key of a value, through each JSON layer."""
+    if isinstance(value, str):
+        keys.add(value)
+        try:
+            inner = decode(value)
+        except ValueError:
+            return
+        if isinstance(inner, (dict, list, str)):
+            nested_keys(inner, keys)
+    elif isinstance(value, dict):
+        keys.update(value)
+        for inner in value.values():
+            nested_keys(inner, keys)
+    elif isinstance(value, list):
+        for inner in value:
+            nested_keys(inner, keys)
+
+
+def data_keys(value, database, keys):
+    """Text the game's data looks up: note tag names, the names of a
+    `database` file's entries and MV/MZ plugin command words."""
+    if isinstance(value, dict):
+        note = value.get("note")
+        if isinstance(note, str):
+            keys.update(
+                match.group(1).strip()
+                for match in re.finditer(r"<([^<>:]+)(?::[^<>]*)?>", note)
+            )
+        if database and isinstance(value.get("name"), str):
+            keys.add(value["name"])
+        if value.get("code") in {356, 357} and isinstance(
+            value.get("parameters"), list
+        ):
+            for item in value["parameters"]:
+                if isinstance(item, str) and value["code"] == 356:
+                    keys.update(item.split())
+                nested_keys(item, keys)
+        for item in value.values():
+            data_keys(item, database, keys)
+    elif isinstance(value, list):
+        for item in value:
+            data_keys(item, database, keys)
+
+
+def event_script_keys(value, keys):
+    """Strings VX Ace event scripts compare or use as keys: a script that
+    shows the same text has to keep it for the event to match it. Script
+    calls are code 355 with 655 lines; a conditional branch (111) of type 12
+    holds one line."""
+    if isinstance(value, dict):
+        for item in value.values():
+            event_script_keys(item, keys)
+        return
+    if not isinstance(value, list):
+        return
+    scripts, lines = [], None
+    for item in value:
+        code = item.get("code") if isinstance(item, dict) else None
+        parameters = item.get("parameters") if isinstance(item, dict) else None
+        text = parameters[0] if isinstance(parameters, list) and parameters else None
+        if code == 655 and lines is not None and isinstance(text, str):
+            lines.append(text)
+            continue
+        lines = [text] if code == 355 and isinstance(text, str) else None
+        if lines is not None:
+            scripts.append(lines)
+        if (
+            code == 111
+            and isinstance(parameters, list)
+            and len(parameters) > 1
+            and parameters[0] == 12
+            and isinstance(parameters[1], str)
+        ):
+            scripts.append([parameters[1]])
+        event_script_keys(item, keys)
+    for lines in scripts:
+        keys.update(
+            literal["value"]
+            for literal in ruby.parse("", "\n".join(lines))["literals"]
+            if literal["protected"]
+        )
+
+
+def prefix_of(layout):
+    """The game's web folder for MV/MZ, or the root for VX Ace."""
+    return (
+        layout.removesuffix("js/plugins.js") if layout.endswith("js/plugins.js") else ""
+    )
 
 
 def bounded(value, label, limit=4000):
@@ -129,6 +235,9 @@ def kept_settings(root):
             return list(cached[3])
         value = read_json(path, limit=64_000_000)
     except OSError, ValueError:
+        return []
+    if not str(value.get("layout", "")).endswith("js/plugins.js"):
+        # VX Ace scripts have no settings.
         return []
     layout, saved, kept = None, None, []
     try:
@@ -303,6 +412,11 @@ class PluginService:
         self.lock = threading.RLock()
         self.previews, self.cache, self.observed, self.foreign = {}, {}, {}, {}
         self.located = {}
+        # A VX Ace original's lookup keys by the files they come from;
+        # reading them decodes the game's whole database.
+        self.ace_keys = {}
+        # Each VX Ace game's script order, while its Scripts data is unchanged.
+        self.script_order = {}
         # The app's own folders, which a game must stay apart from; resolving
         # a path costs a file open on Windows, and every plugin call checks.
         self.protected = [
@@ -541,11 +655,11 @@ class PluginService:
     def inventory(self, project_id):
         project, root = self.record(project_id)
         if project["engine"] == "ACE":
-            raise ValueError(
-                "Ace scripts require a Ruby parser and native packing integration. Existing extracted scripts remain untouched; use the preserved Ruby assistant workflow separately."
-            )
+            return "", self.ace_scripts(root), {"plugins": []}
         if project["engine"] != "MVMZ":
-            raise ValueError("Plugin files support RPG Maker MV/MZ.")
+            raise ValueError(
+                "Plugin files works with RPG Maker MV, MZ and VX Ace games."
+            )
         prefix = web_prefix(root)
         config = prefix + "js/plugins.js"
         parsed = self.documents.parse(
@@ -620,8 +734,46 @@ class PluginService:
             )
         return prefix, rows, parsed
 
+    def ace_scripts(self, root):
+        """A VX Ace game's scripts in the order RGSS3 runs them, each named as
+        in the script editor and with its place in that order, since a later
+        script can redefine an earlier one's methods. RGSS3 runs every one,
+        so all are enabled."""
+        folder = Path(root) / ACE_SCRIPTS
+        if not folder.is_dir():
+            # Without it the task would find no text and read done.
+            raise ValueError(
+                "The game's scripts are not extracted yet. Run Convert Ace data in Set up first."
+            )
+        data = Path(root) / "Data"
+        try:
+            signature = (data / "Scripts.rvdata2").stat()
+            signature = signature.st_mtime_ns, signature.st_size
+        except OSError:
+            signature = None
+        saved = self.script_order.get(str(root))
+        if not saved or saved[0] != signature:
+            saved = (signature, self.translation.engine.ace_script_order(root))
+            self.script_order[str(root)] = saved
+        order = {name: index for index, name in enumerate(saved[1], 1)}
+        rows = {}
+        for path in sorted(
+            folder.glob("*.rb"), key=lambda path: (order.get(path.name, 1e9), path.name)
+        ):
+            relative = path.relative_to(root).as_posix()
+            rows[relative] = {
+                "path": relative,
+                "kind": "ruby",
+                "plugin": path.stem.partition("_")[2] or path.stem,
+                "enabled": True,
+                **({"order": order[path.name]} if path.name in order else {}),
+            }
+        return rows
+
     def original_context(self, project_id, prefix):
-        _, root = self.record(project_id)
+        project, root = self.record(project_id)
+        if project["engine"] == "ACE":
+            return self.ace_original_context(project_id)
         state = lifecycle(self.translation.workspace, project_id)
         require_source_backup(root, state)
         record = state["source_backup"]
@@ -640,61 +792,11 @@ class PluginService:
         with backups.materialized(
             location, files=[*names, prefix + "js/plugins.js"]
         ) as (original, _):
-
-            def nested(value):
-                if isinstance(value, str):
-                    keys.add(value)
-                    try:
-                        inner = decode(value)
-                    except ValueError:
-                        return
-                    if isinstance(inner, (dict, list, str)):
-                        nested(inner)
-                elif isinstance(value, dict):
-                    keys.update(value)
-                    for inner in value.values():
-                        nested(inner)
-                elif isinstance(value, list):
-                    for inner in value:
-                        nested(inner)
-
-            def fields(value, database):
-                if isinstance(value, dict):
-                    note = value.get("note")
-                    if isinstance(note, str):
-                        keys.update(
-                            match.group(1).strip()
-                            for match in re.finditer(r"<([^<>:]+)(?::[^<>]*)?>", note)
-                        )
-                    if database and isinstance(value.get("name"), str):
-                        keys.add(value["name"])
-                    if value.get("code") in {356, 357} and isinstance(
-                        value.get("parameters"), list
-                    ):
-                        for item in value["parameters"]:
-                            if isinstance(item, str) and value["code"] == 356:
-                                keys.update(item.split())
-                            nested(item)
-                    for item in value.values():
-                        fields(item, database)
-                elif isinstance(value, list):
-                    for item in value:
-                        fields(item, database)
-
             for name in names:
-                fields(
+                data_keys(
                     read_json(original / name),
-                    Path(name).name
-                    in {
-                        "Actors.json",
-                        "Classes.json",
-                        "Skills.json",
-                        "Items.json",
-                        "Weapons.json",
-                        "Armors.json",
-                        "Enemies.json",
-                        "States.json",
-                    },
+                    Path(name).name.removesuffix(".json") in DATABASE,
+                    keys,
                 )
             raw = (original / (prefix + "js/plugins.js")).read_bytes()
             parsed = self.documents.parse(
@@ -712,7 +814,7 @@ class PluginService:
                 )
             structural_keys = sorted(keys)
             for entry in parsed["plugins"]:
-                nested(entry["parameters"])
+                nested_keys(entry["parameters"], keys)
         hashes[prefix + "js/plugins.js"] = manifest["files"][prefix + "js/plugins.js"]
         return {
             "backupId": record["id"],
@@ -722,8 +824,58 @@ class PluginService:
             "binding": digest(hashes),
         }
 
-    def scan(self, project_id, value):
+    def ace_original_context(self, project_id):
+        """A VX Ace game's original lookup keys: its database names, note tag
+        names and the strings its event scripts compare, from the preserved
+        original's RGSS archive or, for a game that came unencrypted, its
+        Data files. RGSS3 reads only the archive while one exists."""
         _, root = self.record(project_id)
+        state = lifecycle(self.translation.workspace, project_id)
+        require_source_backup(root, state)
+        record = state["source_backup"]
+        location = backups.lookup(root, Path(record["path"]).parent, record["id"])
+        files = backups.manifest(location, root)["files"]
+        archives = [
+            name
+            for name in files
+            if "/" not in name
+            and name.casefold().endswith((".rgss3a", ".rgss2a", ".rgssad"))
+        ]
+        names = archives[:1] or [
+            name
+            for name in files
+            if name.casefold().startswith("data/")
+            and name.casefold().endswith(".rvdata2")
+            and name.casefold() != "data/scripts.rvdata2"
+        ]
+        missing = ValueError(
+            "The preserved original lacks the Japanese database. Recover the matching original source before editing."
+        )
+        if not names:
+            raise missing
+        hashes = {name: files[name] for name in names}
+        binding = digest(hashes)
+        keys = self.ace_keys.get(binding)
+        if keys is None:
+            with backups.materialized(location, files=names) as (original, _):
+                data = self.translation.engine.ace_data(original, names)
+            if not data:
+                raise missing
+            found = set()
+            for name, value in data.items():
+                data_keys(value, PurePosixPath(name).stem in DATABASE, found)
+                event_script_keys(value, found)
+            keys = self.ace_keys[binding] = sorted(found)
+        return {
+            "backupId": record["id"],
+            "hashes": hashes,
+            "keys": keys,
+            "structuralKeys": [],
+            "binding": binding,
+        }
+
+    def scan(self, project_id, value):
+        project, root = self.record(project_id)
         prefix, rows, config = self.inventory(project_id)
         # Explicit JSON dependencies discovered in a previous request remain addressable.
         for path, row in value["files"].items():
@@ -777,7 +929,10 @@ class PluginService:
                     "line": item["line"],
                 }
                 for item in parsed.get(path, {}).get("literals", [])
-                if isinstance(item["value"], str) and item["value"].endswith(".json")
+                if isinstance(item["value"], str)
+                and item["value"].endswith(".json")
+                # RGSS3 loads no JSON.
+                and row["kind"] != "ruby"
             ]
             code_keys = {
                 item["value"]
@@ -856,7 +1011,9 @@ class PluginService:
             rows[path] = row
         value.update(
             files=rows,
-            layout=prefix + "js/plugins.js",
+            layout=ACE_SCRIPTS
+            if project["engine"] == "ACE"
+            else prefix + "js/plugins.js",
             originals=originals,
             originalIssue=original_issue,
         )
@@ -1088,7 +1245,8 @@ class PluginService:
         no plugin file; and the waiting ones with the text they could come
         from."""
         handed = self.labels(project_id)
-        if not handed["labels"]:
+        # DazedTL captures MV/MZ screens only.
+        if not handed["labels"] or value.get("layout") == ACE_SCRIPTS:
             return {"task": handed["task"], "rows": [], "waiting": []}
         texts = sorted({label["text"] for label in handed["labels"]})
         # Before the task first reads the plugins, or while it can't, every
@@ -1549,10 +1707,12 @@ class PluginService:
             )
             return {
                 "projectId": project_id,
-                "supported": project["engine"] == "MVMZ",
-                "limitation": "Ace Ruby scripts need parser and native packing support; this workspace cannot publish them."
-                if project["engine"] == "ACE"
-                else "",
+                "supported": project["engine"] in {"MVMZ", "ACE"},
+                "limitation": ""
+                if project["engine"] in {"MVMZ", "ACE"}
+                else "Plugin files works with RPG Maker MV, MZ and VX Ace games.",
+                # VX Ace keeps its player text in Ruby scripts, not plugins.
+                "scripts": project["engine"] == "ACE",
                 # Whether the game's plugins were read; counts start then.
                 "scanned": bool(value["binding"]),
                 "counts": {
@@ -1672,13 +1832,19 @@ class PluginService:
         if not result and not recheck:
             return {
                 "stage": "complete",
-                "message": "Plugin files has nothing left: every plugin file is investigated and its player text translated.",
+                "message": "Plugin files has nothing left: every "
+                + ("script" if value["layout"] == ACE_SCRIPTS else "plugin file")
+                + " is investigated and its player text translated.",
             }
         if not result:
             scope = self.investigation_scope(value, recheck=True)
             if not scope:
                 # The scan is the whole answer: nothing is handed out.
-                return {"message": "No plugin holds Japanese text to translate."}
+                return {
+                    "message": "No "
+                    + ("script" if value["layout"] == ACE_SCRIPTS else "plugin")
+                    + " holds Japanese text to translate."
+                }
             result = self.request(
                 project_id, value, "investigation", scope, recheck=True
             )
@@ -1766,6 +1932,7 @@ class PluginService:
                     "sourceHash": row["sourceHash"],
                     "kind": row["kind"],
                     "enabled": row["enabled"],
+                    **({"order": row["order"]} if "order" in row else {}),
                     "occurrences": items,
                     "loaderLiterals": row.get("loaderLiterals", [])
                     if kind == "investigation"
@@ -1782,7 +1949,8 @@ class PluginService:
         # Translation follows prepare(), which checked the originals.
         self.current_sources(project_id, value, files)
         context = self.context(project_id)
-        game_data = root / value["layout"].removesuffix("js/plugins.js") / "data"
+        ace = value["layout"] == ACE_SCRIPTS
+        game_data = root / ("ace_json" if ace else prefix_of(value["layout"]) + "data")
         # Requests never alias mutable findings, choices or results.
         request = deepcopy(
             {
@@ -1839,13 +2007,22 @@ class PluginService:
             "complete": False,
         }
         text = windows_note() + (
-            "Translate the text this game's plugins show to players. This is one DazedTL Plugin files task; copying it did not start an assistant. Keep DazedTL open.\n"
-            "Work through it in this conversation: after each report, the helper below checks it and returns the next request, until every plugin file is investigated and its player text translated, and every plugin label Text QA found too long for the screen is shortened. "
-            "Do not ask the user to copy another prompt or approve routine steps; ask only about choices the evidence cannot settle, after finishing the independent work.\n\n"
+            (
+                "Translate the text this VX Ace game's Ruby scripts show to players. This is one DazedTL Plugin files task, which covers the scripts of VX Ace games; copying it did not start an assistant. Keep DazedTL open.\n"
+                "Work through it in this conversation: after each report, the helper below checks it and returns the next request, until every script is investigated and its player text translated. "
+                if ace
+                else "Translate the text this game's plugins show to players. This is one DazedTL Plugin files task; copying it did not start an assistant. Keep DazedTL open.\n"
+                "Work through it in this conversation: after each report, the helper below checks it and returns the next request, until every plugin file is investigated and its player text translated, and every plugin label Text QA found too long for the screen is shortened. "
+            )
+            + "Do not ask the user to copy another prompt or approve routine steps; ask only about choices the evidence cannot settle, after finishing the independent work.\n\n"
             "Read the request JSON: " + str(request_path) + "\n"
             "Save a structured report at: " + str(report_path) + "\n"
             "Bind version, kind, projectId, requestId and binding exactly, and use only the requested files, occurrence IDs and SHA-256 hashes. "
-            "Never run plugin or game code, providers or translation APIs. Event plugin commands belong to Other event text; do not edit event or database JSON or images.\n\n"
+            + (
+                "Never run scripts or the game, providers or translation APIs. Event script calls belong to Other event text; do not edit event or database JSON, Data files or images.\n\n"
+                if ace
+                else "Never run plugin or game code, providers or translation APIs. Event plugin commands belong to Other event text; do not edit event or database JSON or images.\n\n"
+            )
         )
         if kind == "investigation":
             schema = {
@@ -1855,36 +2032,63 @@ class PluginService:
                         "path": "exact requested path",
                         "sourceHash": "request hash",
                         "examined": True,
-                        "evidence": "complete source and recursive-parameter coverage",
+                        "evidence": "complete script coverage"
+                        if ace
+                        else "complete source and recursive-parameter coverage",
                         "occurrences": [
                             {
                                 "id": "requested occurrence ID",
                                 "disposition": "visible|latent|protected|editor_only|non_visible",
                                 "safe": True,
-                                "evidence": "where the plugin uses it, with readback checks",
+                                "evidence": "where the "
+                                + ("scripts use" if ace else "plugin uses")
+                                + " it, with readback checks",
                                 "reason": "why players see it, or why they do not",
                             }
                         ],
                     }
                 ],
-                "dependencies": [
-                    {
-                        "path": "exact plugin-loaded JSON path",
-                        "sourceFile": "requested loader file",
-                        "literalId": "requested literal ID containing the exact path",
-                        "evidence": "static loader use",
+                # RGSS3 scripts load no JSON of their own.
+                **(
+                    {}
+                    if ace
+                    else {
+                        "dependencies": [
+                            {
+                                "path": "exact plugin-loaded JSON path",
+                                "sourceFile": "requested loader file",
+                                "literalId": "requested literal ID containing the exact path",
+                                "evidence": "static loader use",
+                            }
+                        ]
                     }
-                ],
+                ),
             }
             text += (
-                "INVESTIGATE. Decide whether players see each listed occurrence. Do not edit runtime files, working copies, settings or source backups in this stage.\n"
-                "Read each listed source and its configuration in js/plugins.js. Recursively decode every parameter layer and follow each string to where the plugin uses it: drawing, messages, menus and help text, but also comparisons, lookups, keys and file names. "
-                "Check defaults and fallbacks; comments and editor metadata are not player text.\n"
-                "Dispositions: visible (an enabled plugin shows it to players), latent (display text players never see because its plugin is disabled or it is only a default), protected (compared, looked up, or used as a key or file name), editor_only, non_visible. "
-                "Set safe to true only when changing the text cannot change behavior. The app already protects original database names, notetag names and plugin command arguments, so those occurrences are not listed.\n"
-                "Give every listed occurrence a disposition, evidence and a reason. A file is done once its entry has examined true, file-level evidence and every listed occurrence decided. "
-                "You may report some files, run the helper and continue with the request it returns for the rest.\n"
-                "A plugin that loads its own JSON through an exact path literal listed in loaderLiterals can add that file under dependencies; a later request lists its text.\n"
+                (
+                    "INVESTIGATE. Decide whether players see each listed occurrence. Do not edit scripts, working copies or source backups in this stage.\n"
+                    "Each file is one script of "
+                    + ACE_SCRIPTS
+                    + ", the paths relative to the game folder "
+                    + str(root)
+                    + "; its order is its place in the order RGSS3 runs the scripts, and a later script can redefine an earlier one's methods. "
+                    "Follow each string to where the scripts use it: drawing (draw_text, add_command, set_text, $game_message), Vocab constants, menus and help text, but also comparisons, hash keys, case/when, lookups, note tag patterns and file names (Cache, Audio, Bitmap, Font). "
+                    "Check the event scripts in ace_json/*.json too (codes 355, 655 and conditional branches 111): text an event compares, or stores in a variable a script or event compares later, keeps its Japanese. "
+                    "Comments and =begin blocks are not player text.\n"
+                    "Dispositions: visible (players see it), latent (display text players never see because nothing uses it), protected (compared, looked up, or used as a key or file name), editor_only, non_visible. Only visible text that is safe to change is translated; the rest keeps its Japanese. "
+                    "Set safe to true only when changing the text cannot change behavior. The app already protects original database and note tag names, and strings the code compares, uses as hash or index keys or lists in a when clause, so those occurrences are not listed.\n"
+                    "Give every listed occurrence a disposition, evidence and a reason. A file is done once its entry has examined true, file-level evidence and every listed occurrence decided. "
+                    "You may report some files, run the helper and continue with the request it returns for the rest.\n"
+                    if ace
+                    else "INVESTIGATE. Decide whether players see each listed occurrence. Do not edit runtime files, working copies, settings or source backups in this stage.\n"
+                    "Read each listed source and its configuration in js/plugins.js. Recursively decode every parameter layer and follow each string to where the plugin uses it: drawing, messages, menus and help text, but also comparisons, lookups, keys and file names. "
+                    "Check defaults and fallbacks; comments and editor metadata are not player text.\n"
+                    "Dispositions: visible (an enabled plugin shows it to players), latent (display text players never see because its plugin is disabled or it is only a default), protected (compared, looked up, or used as a key or file name), editor_only, non_visible. Only visible text that is safe to change is translated; the rest keeps its Japanese. "
+                    "Set safe to true only when changing the text cannot change behavior. The app already protects original database names, notetag names and plugin command arguments, so those occurrences are not listed.\n"
+                    "Give every listed occurrence a disposition, evidence and a reason. A file is done once its entry has examined true, file-level evidence and every listed occurrence decided. "
+                    "You may report some files, run the helper and continue with the request it returns for the rest.\n"
+                    "A plugin that loads its own JSON through an exact path literal listed in loaderLiterals can add that file under dependencies; a later request lists its text.\n"
+                )
                 + (
                     "An occurrence with seen was drawn on screen when DazedTL played the game: seen says where, with a capture to look at. Text a screen of the game draws is player text, so decide it visible unless the plugin also uses it as a key; a screen the playtest opened on its own may be one players never reach, so check what opens it first. Say why in the reason.\n"
                     if any(item.get("seen") for _, items in scope for item in items)
@@ -1934,12 +2138,24 @@ class PluginService:
                 + ", ".join(sources[:-1])
                 + " and "
                 + sources[-1]
-                + ". Fit the space where the plugin draws the text.\n"
-                'Change only the listed literal spans or decoded parameter paths. Preserve quote style, parameter keys, ordering, types and serialization depth, identifiers, interpolation and control codes; keep a leading tag that the file\'s code matches with startsWith or indexOf, such as ア: in line.startsWith("ア:"), exactly as written. '
-                "Report every translated occurrence with its exact decoded target.\n"
-                "The app rejects bytes outside the listed spans, unlisted decoded leaves and stale hashes, and syntax alone does not verify meaning. "
-                "When a check fails, the helper returns a request for the files still needing work, with each failedCheck: repair the same working copies and report them under that request. "
-                "Applying to the game is a separate step in the app; do not claim rendered fit without testing it.\n"
+                + (
+                    ". Fit the space where the script draws the text: RGSS3 draws with Font.default_name and Font.default_size, VL Gothic at 24 px unless a script sets them.\n"
+                    "Each occurrence gives its line and the UTF-8 byte span of its literal in the original, quotes included; a heredoc's span is its body and a %w word's is the word. "
+                    "Change only the listed string literals, writing Ruby that reads back as your exact target: keep each literal's quotes or delimiters. "
+                    "In double-quoted strings, %Q() and heredocs escape \" as \\\" and \\ as \\\\, and write #{ only where it was; in single-quoted strings escape ' as \\' and \\ as \\\\; in a %w list write each space inside a word as \\ followed by the space. "
+                    "Keep #{...} interpolation, format sequences such as %s and %d (a literal percent sign in a format string is %%), and control codes such as \\C[2], \\V[1] and \\G exactly, and keep a leading tag that the script matches with start_with? or index exactly as written. "
+                    'Report every translated occurrence with its exact decoded target: the text Ruby makes of the literal, so "Gold\\\\G" in the source is Gold\\G in the target.\n'
+                    "The app rejects bytes outside the listed spans, any change to the script's other strings and stale hashes, and syntax alone does not verify meaning. "
+                    "When a check fails, the helper returns a request for the files still needing work, with each failedCheck: repair the same working copies and report them under that request. "
+                    "Applying to the game is a separate step in the app, and Release packs the applied scripts into Data/Scripts.rvdata2; do not claim rendered fit without testing it.\n"
+                    if ace
+                    else ". Fit the space where the plugin draws the text.\n"
+                    'Change only the listed literal spans or decoded parameter paths. Preserve quote style, parameter keys, ordering, types and serialization depth, identifiers, interpolation and control codes; keep a leading tag that the file\'s code matches with startsWith or indexOf, such as ア: in line.startsWith("ア:"), exactly as written. '
+                    "Report every translated occurrence with its exact decoded target.\n"
+                    "The app rejects bytes outside the listed spans, unlisted decoded leaves and stale hashes, and syntax alone does not verify meaning. "
+                    "When a check fails, the helper returns a request for the files still needing work, with each failedCheck: repair the same working copies and report them under that request. "
+                    "Applying to the game is a separate step in the app; do not claim rendered fit without testing it.\n"
+                )
             )
         else:
             schema = {
@@ -2102,7 +2318,9 @@ class PluginService:
                 labels = self.label_rows(project_id, value)["rows"]
                 result = {
                     "stage": "complete",
-                    "message": "Every plugin file is investigated and its player text translated"
+                    "message": "Every "
+                    + ("script" if value["layout"] == ACE_SCRIPTS else "plugin file")
+                    + " is investigated and its player text translated"
                     + (
                         ", and every plugin label Text QA found too long for the screen is shortened or kept"
                         if any(row["state"] != "elsewhere" for row in labels)
@@ -2135,8 +2353,7 @@ class PluginService:
                 )
 
     def current_originals(self, project_id, value):
-        prefix = value["layout"].removesuffix("js/plugins.js")
-        current = self.original_context(project_id, prefix)
+        current = self.original_context(project_id, prefix_of(value["layout"]))
         if (
             not value["originals"]
             or current["binding"] != value["originals"]["binding"]
@@ -2474,7 +2691,7 @@ class PluginService:
                 path = dependency.get("path")
                 source = dependency.get("sourceFile")
                 literal = dependency.get("literalId")
-                if source not in allowed:
+                if source not in allowed or allowed[source]["kind"] == "ruby":
                     raise ValueError(
                         "JSON dependency loader must belong to this investigation."
                     )
@@ -2507,7 +2724,7 @@ class PluginService:
                     raise ValueError(
                         "Loaded JSON needs an exact static loader-path literal from the request."
                     )
-                prefix = value["layout"].removesuffix("js/plugins.js")
+                prefix = prefix_of(value["layout"])
                 actual = (
                     prefix + path if prefix and not path.startswith(prefix) else path
                 )

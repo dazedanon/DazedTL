@@ -2354,6 +2354,7 @@ export type PluginState = {
   projectId: string;
   supported: boolean;
   limitation: string;
+  scripts: boolean;
   scanned: boolean;
   counts: PluginCounts;
   unreadable: PluginUnreadable[];

@@ -1,6 +1,7 @@
 """Protect exact edit scope, pristine lookup evidence and reviewed publication recovery."""
 
 import json
+import shutil
 import unittest
 from copy import deepcopy
 from pathlib import Path
@@ -9,10 +10,11 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from dazedtl.api.contracts.validation import check_response
+from dazedtl.compatibility.translation import TranslationEngine
 from dazedtl.foreign_work import ForeignWorkError
-from dazedtl.plugins import PluginService
+from dazedtl.plugins import PluginService, ruby
 from dazedtl.plugins.documents import Documents, occurrences, replace_leaf, validate
-from dazedtl.plugins.service import kept_settings, safe_name
+from dazedtl.plugins.service import event_script_keys, kept_settings, safe_name
 from dazedtl.projects.store import Projects
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.backups import snapshot, store_path
@@ -1154,3 +1156,228 @@ class PluginTests(unittest.TestCase):
         )["preview"]
         restarted.action(self.identity, "restore", {"token": restore["token"]})
         self.assertEqual(restarted.state(self.identity)["counts"]["applied"], 0)
+
+
+class AceScriptTests(unittest.TestCase):
+    """VX Ace keeps its player text in Ruby scripts, which Plugin files reads
+    without running Ruby."""
+
+    def test_ruby_literals_follow_rubys_own_reading(self):
+        # Comments, =begin blocks, regular expressions and __END__ hold no
+        # text; `/`, `%` and `?` after a value are operators; a lookup key,
+        # compared value or when clause keeps its Japanese.
+        source = (
+            '# 説明 "コメント"\r\n'
+            "=begin\r\n'ブロック'\r\n=end\r\n"
+            "x = a / 2 # 'まだ'\r\n"
+            'RE = /"(名前)"/i\r\n'
+            'TITLE = "音量 \\"設定\\"\\\\G\\e"\r\n'
+            "PAGES = %w(前の\\ ページ 次)\r\n"
+            'label = cond ? "はい" : "いいえ"\r\n'
+            'room = "#{name}の部屋"\r\n'
+            "said = 'It\\'s 文字'\r\n"
+            'show(<<-EOS, "後")\r\n  本文\r\n  EOS\r\n'
+            "class <<self; end\r\n"
+            "y = 10 % 3; quote = %Q(引用)\r\n"
+            'case x\r\nwhen "選択",\r\n  "次も"\r\nend\r\n'
+            'same = x == "比較"\r\n'
+            'KEYS = { "鍵" => 1 }; h["索引"] = "値"\r\n'
+            "inner = \"#{'内側'}\"\r\n"
+            'line.start_with?("ア:")\r\n'
+            "__END__\r\n'無視'\r\n"
+        )
+        parsed = ruby.parse("Menu.rb", source)
+        self.assertEqual(parsed["issues"], [])
+        raw = source.encode()
+        for literal in parsed["literals"]:
+            self.assertEqual(
+                raw[literal["start"] : literal["end"]].decode(), literal["raw"]
+            )
+        self.assertEqual(
+            [
+                (item["value"], item["kind"], item["protected"], item["matcher"])
+                for item in parsed["literals"]
+            ],
+            [
+                ('音量 "設定"\\G\x1b', "literal", False, False),
+                ("前の ページ", "word", False, False),
+                ("次", "word", False, False),
+                ("はい", "literal", False, False),
+                ("いいえ", "literal", False, False),
+                ("#{name}の部屋", "template", False, False),
+                ("It's 文字", "literal", False, False),
+                ("後", "literal", False, False),
+                ("  本文\n", "heredoc", False, False),
+                ("引用", "literal", False, False),
+                ("選択", "literal", True, False),
+                ("次も", "literal", True, False),
+                ("比較", "literal", True, False),
+                ("鍵", "literal", True, False),
+                ("索引", "literal", True, False),
+                ("値", "literal", False, False),
+                ("#{'内側'}", "template", True, False),
+                ("ア:", "literal", False, True),
+            ],
+        )
+        # Text an event script compares keeps its Japanese in the scripts.
+        keys = set()
+        event_script_keys(
+            {
+                "list": [
+                    {"code": 355, "parameters": ["if $game_variables[1] =="]},
+                    {"code": 655, "parameters": ["  '満月'"]},
+                    {"code": 355, "parameters": ["$game_message.add('表示')"]},
+                    {"code": 111, "parameters": [12, "$game_variables[2] == '新月'"]},
+                ]
+            },
+            keys,
+        )
+        self.assertEqual(keys, {"満月", "新月"})
+
+    def test_scripts_are_investigated_translated_checked_and_applied(self):
+        temporary = TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        game, profile = root / "game", root / "profile"
+        fixture = Path(__file__).resolve().parent / "fixtures/ace"
+        shutil.copytree(fixture / "Data", game / "Data")
+        shutil.copytree(
+            fixture / "ace_json",
+            game / "ace_json",
+            ignore=shutil.ignore_patterns("*Vocab*"),
+        )
+        script = "ace_json/scripts/200_メニュー.rb"
+        write_bytes(
+            game / script,
+            (
+                "module Menu\r\n"
+                '  TITLE = "音量設定"\r\n'
+                "  PAGES = ['前のページ', '次のページ']\r\n"
+                '  GOLD = "お金を %s\\\\G 手に入れた！"\r\n'
+                '  ROOM = "#{name}の部屋"\r\n'
+                # An item's original name is a lookup key.
+                '  SHOP = "ポーション"\r\n'
+                "  HELP = <<-EOS\r\n    音量を調整します\r\n  EOS\r\n"
+                "end\r\n"
+            ).encode(),
+        )
+        write_bytes(game / ".dazedtl/glossary.txt", b"Terms\n")
+        projects = Projects(profile)
+        project = projects.open({"source": str(game), "engine": "ACE"})
+        identity = project["id"]
+        service = PluginService(
+            projects,
+            SimpleNamespace(
+                workspace=profile,
+                idle=lambda _: None,
+                clean_drafts=lambda _: None,
+                engine=SimpleNamespace(
+                    ace_data=TranslationEngine.ace_data,
+                    ace_script_order=TranslationEngine.ace_script_order,
+                ),
+            ),
+            SimpleNamespace(source=root / "engine"),
+        )
+        write_json(
+            lifecycle_path(profile, identity),
+            {
+                "version": 1,
+                "source_backup": snapshot(game, store_path(game), source_game=True),
+            },
+        )
+        task = service.action(identity, "plugin_task")
+        self.assertIn("Ruby scripts", task["text"])
+        request = read_json(task["request"])
+        self.assertEqual(request["gameData"], str(game / "ace_json"))
+        # Each script with Japanese text is asked about, apart from lookup keys.
+        [asked] = request["files"]
+        self.assertEqual(asked["plugin"], "メニュー")
+        self.assertEqual(
+            [item["value"] for item in asked["occurrences"]],
+            [
+                "音量設定",
+                "前のページ",
+                "次のページ",
+                "お金を %s\\G 手に入れた！",
+                "#{name}の部屋",
+                "    音量を調整します\n",
+            ],
+        )
+        report = {key: request[key] for key in PluginTests.identity_keys}
+        report.update(
+            complete=True,
+            dependencies=[],
+            files=[
+                {
+                    "path": row["path"],
+                    "sourceHash": row["sourceHash"],
+                    "examined": True,
+                    "evidence": "Drawn by the menu scene",
+                    "occurrences": [
+                        {
+                            "id": item["id"],
+                            "disposition": "visible",
+                            "safe": True,
+                            "evidence": "draw_text",
+                            "reason": "Menu text",
+                        }
+                        for item in row["occurrences"]
+                    ],
+                }
+                for row in request["files"]
+            ],
+        )
+        write_json(request["report"], report)
+        task = service.continue_task(identity, request["requestId"])
+        request = read_json(task["request"])
+        self.assertEqual(request["kind"], "translation")
+        [asked] = request["files"]
+        targets = dict(
+            zip(
+                [item["id"] for item in asked["occurrences"]],
+                [
+                    'Volume "Settings"',
+                    "Previous Page",
+                    "Next's Page",
+                    "Got %s\\G gold!",
+                    "#{name}'s Room",
+                    "    Adjust the volume\n",
+                ],
+            )
+        )
+        candidate = game / asked["candidate"]
+        good = (
+            "module Menu\r\n"
+            '  TITLE = "Volume \\"Settings\\""\r\n'
+            "  PAGES = ['Previous Page', 'Next\\'s Page']\r\n"
+            '  GOLD = "Got %s\\\\G gold!"\r\n'
+            '  ROOM = "#{name}\'s Room"\r\n'
+            '  SHOP = "ポーション"\r\n'
+            "  HELP = <<-EOS\r\n    Adjust the volume\r\n  EOS\r\n"
+            "end\r\n"
+        ).encode()
+        answer = {
+            "path": script,
+            "sourceHash": asked["sourceHash"],
+            "evidence": "Reviewed",
+            "targets": targets,
+        }
+        # Quotes left unescaped end the string early, which the check catches
+        # and hands back with Ruby's escaping rules.
+        for raw in (good.replace(b'\\"Settings\\"', b'"Settings"'), good):
+            write_bytes(candidate, raw)
+            report = {key: request[key] for key in PluginTests.identity_keys}
+            report.update(
+                complete=True, files=[{**answer, "candidateHash": digest(raw)}]
+            )
+            write_json(request["report"], report)
+            task = service.continue_task(identity, request["requestId"])
+            if raw != good:
+                self.assertIn("escape quotes", task["message"])
+        self.assertEqual(task["stage"], "complete")
+        applied = service.action(identity, "apply")
+        self.assertFalse(applied["blocked"])
+        self.assertEqual((game / script).read_bytes(), good)
+        state = service.state(identity)
+        self.assertTrue(state["scripts"])
+        self.assertEqual(state["counts"]["applied"], 1)
