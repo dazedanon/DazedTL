@@ -160,11 +160,21 @@ export function qaCorrections(qa: QaState) {
   };
 }
 
+/**
+ * Lines an earlier QA reviewed, or the user said were checked before,
+ * unchanged since: this task reads them only as context.
+ */
+export function qaReviewedBefore(qa: QaState) {
+  const earlier = qa.status.reviewed_before as { lines?: number } | undefined;
+  return earlier?.lines || 0;
+}
+
 /** The summary line once QA is done: corrections and what it covered. */
 export function qaSummary(qa: QaState) {
   const { total, applied, undone } = qaCorrections(qa);
   const lines = qa.coverage?.lines || 0;
   const missing = qa.coverage?.not_reviewed || 0;
+  const earlier = qaReviewedBefore(qa);
   const corrections = (count: number) =>
     `${count.toLocaleString()} ${count === 1 ? "correction" : "corrections"}`;
   return [
@@ -178,7 +188,8 @@ export function qaSummary(qa: QaState) {
         ? `${corrections(total)} to apply`
         : "No corrections needed",
     qa.applied && applied && undone && `${undone.toLocaleString()} undone`,
-    lines && `${(lines - missing).toLocaleString()} lines checked`,
+    lines && `${(lines - missing - earlier).toLocaleString()} lines checked`,
+    earlier && `${earlier.toLocaleString()} unchanged since earlier QA`,
   ]
     .filter(Boolean)
     .join(" · ");

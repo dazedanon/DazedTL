@@ -4,6 +4,7 @@ import {
   qaActivity,
   qaPhase,
   qaStages,
+  qaSummary,
   qaUnsaved,
 } from "../app/src/features/guided/qaView.ts";
 import { changedWords } from "../app/src/ui/changedWords.ts";
@@ -76,6 +77,20 @@ test("the QA strip marks one current stage and the activity line reads the engin
     { applied: true, findings: [{ id: "QA-0001", state: "applied" }] },
   );
   assert.ok(qaUnsaved(applied, { key: "qa-reapply:QA-0001", error: "failed" }));
+  // Lines an earlier QA reviewed, unchanged since, were context, not checked.
+  assert.equal(
+    qaSummary(
+      qa(
+        { stage: "complete", reviewed_before: { lines: 790 } },
+        {
+          applied: true,
+          findings: [{ id: "QA-0001", state: "applied" }],
+          coverage: { lines: 816, not_reviewed: 6 },
+        },
+      ),
+    ),
+    "1 correction applied · 20 lines checked · 790 unchanged since earlier QA",
+  );
   assert.ok(!qaUnsaved(applied, { key: "qa-undo:QA-0001", error: "failed" }));
 });
 

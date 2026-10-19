@@ -30,6 +30,7 @@ import {
   qaOrigin,
   qaPhase,
   qaReach,
+  qaReviewedBefore,
   qaSource,
   qaStages,
   qaSummary,
@@ -127,7 +128,10 @@ export function TextQaWork({
               : phase === "blocked"
                 ? `${qa.message} ${rerun}`
                 : phase === "running"
-                  ? "Your assistant is reviewing. Corrections apply on their own once they pass the editorial pass."
+                  ? (qaReviewedBefore(qa)
+                      ? "Your assistant is reviewing the text changed since earlier QA. "
+                      : "Your assistant is reviewing. ") +
+                    "Corrections apply on their own once they pass the editorial pass."
                   : phase === "questions"
                     ? "QA applies its corrections once you answer the questions below."
                     : phase === "ready"

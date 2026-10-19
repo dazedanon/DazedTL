@@ -185,8 +185,9 @@ glossary("剣 (sword) - The hero's only weapon.\n")
 second = prepare()
 assert second != first
 assert targets(second) == ["剣を抜け"], targets(second)
+# Lines count every place a text shows, so the shared line counts twice.
 assert qa.status(second)["reviewed_before"] == {
-    "lines": 5,
+    "lines": 6,
     "from": [f"task {first.name}"],
 }, qa.status(second)["reviewed_before"]
 # A retranslated line is screened, and so is the shared line in its scene,

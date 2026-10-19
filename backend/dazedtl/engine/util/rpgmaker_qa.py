@@ -3318,10 +3318,12 @@ def prepare_task(
                 "counts": manifest["counts"],
             }
             if reviewed:
+                # Lines as the task counts them: every place a text shows.
                 task["reviewed_before"] = {
                     "lines": sum(
-                        reviewed.line(cluster["source"], cluster["live"])
+                        len(cluster["identities"])
                         for cluster in manifest["clusters"]
+                        if reviewed.line(cluster["source"], cluster["live"])
                     ),
                     "from": reviewed.origins,
                 }
