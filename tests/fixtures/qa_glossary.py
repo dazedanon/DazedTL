@@ -216,9 +216,8 @@ assert [(row["current"], row["correction"], row["category"]) for row in findings
     ("Sonko", "Aruko", "terminology"),
     ("It's east of Wakachi Valley.", "It's east of Dividing Valley.", "terminology"),
 ], findings
-assert findings[0]["evidence"].startswith('The glossary gives 存子 as "Aruko".'), (
-    findings
-)
+# The note explains the rejected proposal, so the accepted one goes without it.
+assert findings[0]["evidence"] == 'The glossary gives 存子 as "Aruko".', findings
 inventory = json.loads((task / "inventory.json").read_text(encoding="utf-8"))
 assert qa._apply_loaded_correction_map(
     task,

@@ -5470,6 +5470,9 @@ def _lint_decisions(
             if item.get("kind") != "lint-family" or review is None:
                 continue
             left_out = set(review["rejected"]) | declines
+            # A note beside rejected proposals says why they were rejected,
+            # so it stays off the accepted ones.
+            note = "" if review["rejected"] else str(review.get("note") or "").strip()
             for proposal in item["proposals"]:
                 cluster_id = proposal["cluster_id"]
                 if proposal["id"] in left_out or cluster_id in declined["clusters"]:
@@ -5478,8 +5481,8 @@ def _lint_decisions(
                     cluster_id, {"families": set(), "notes": []}
                 )
                 entry["families"].add(item["family"])
-                if str(review.get("note") or "").strip():
-                    entry["notes"].append(str(review["note"]).strip())
+                if note:
+                    entry["notes"].append(note)
     return accepted
 
 
