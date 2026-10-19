@@ -7,9 +7,10 @@ Updating merges edited JSON back with RV2JSON's rules and writes the data as
 Ruby 3.4's Marshal would, so a game reads exactly what RV2JSON would give it.
 A few differences keep games working where RV2JSON did not: data files are
 found without regard to case, as on Windows, a Change Vehicle BGM command
-keeps its BGM object instead of becoming a Hash the game cannot play, and
+keeps its BGM object instead of becoming a Hash the game cannot play,
 System.json carries the equipment type names as ``equipTypes`` so they can
-be translated.
+be translated, and MapInfos, a Hash by map ID, takes its translated names
+back, which RV2JSON's lookup by integer key never found.
 
 Usage mirrors RV2JSON: ``python -m util.ace.rv2json -c -d Data -j ace_json``
 creates the JSON and ``-u`` updates the data from it.
@@ -1653,12 +1654,12 @@ def update_value(updater: _Updater, value: Any, json_value: Any) -> None:
             if _truthy(json_value[index]) and _truthy(item):
                 updater.update(item, json_value[index])
     elif isinstance(value, RHash):
-        # RV2JSON looks JSON objects up by the data's own keys; for MapInfos
-        # those are integers, which never match the JSON's string keys, so
-        # map infos keep their data, as with RV2JSON.
+        # RV2JSON looks JSON objects up by the data's own keys, and MapInfos'
+        # integer keys never match the JSON's string keys, so translated map
+        # names never reached the game; a key matches by its JSON text.
         for key, item in value.pairs:
-            if isinstance(key, RString) and isinstance(json_value, dict):
-                match = json_value.get(text(key))
+            if isinstance(key, (RString, int)) and isinstance(json_value, dict):
+                match = json_value.get(_key_text(key))
                 if _truthy(match) and _truthy(item):
                     updater.update(item, match)
     else:

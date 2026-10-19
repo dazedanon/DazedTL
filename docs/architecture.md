@@ -1280,7 +1280,7 @@ A local delivery packages only reviewed Git files.
 Public publication remains a separate action.
 Guided rewrap application also requires a matching completed scan.
 Ace preparation runs in Python on every platform: `util/ace` ports RV2JSON 1.2.1 and RPGMakerDecrypter's archive reading instead of shipping their Windows executables.
-The port writes RV2JSON's JSON and Ruby 3.4's Marshal bytes so games and existing `ace_json` exports read the same; it departs only where RV2JSON broke games or hid text: it finds data files in any case, keeps Change Vehicle BGM audio as objects and adds the equipment type names to `System.json` as `equipTypes`.
+The port writes RV2JSON's JSON and Ruby 3.4's Marshal bytes so games and existing `ace_json` exports read the same; it departs only where RV2JSON broke games or hid text: it finds data files in any case, keeps Change Vehicle BGM audio as objects, adds the equipment type names to `System.json` as `equipTypes` and packs translated map names into `MapInfos.rvdata2`, a Hash by map ID whose integer keys RV2JSON's update never matched.
 [The Ace fixture](../tests/fixtures/ace/regenerate.py) records RV2JSON's own output for synthetic editor-shaped data, so conversion tests need neither Ruby nor real games.
 RGSS3 reads only the archive while `Game.rgss3a` exists, scripts included, and probes on a real game confirmed it ignores loose copies and rejects an archive without its scripts.
 So Set up keeps an encrypted game's archive in `.dazedtl/ace`, where releases and Git never see it, and patches carry it rebuilt with the game's current files; the rebuild keeps the original header, order and keys, so it reproduces an unchanged archive byte for byte.

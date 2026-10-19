@@ -7,7 +7,8 @@ Ruby 3.4 loads and dumps it to check that the port writes the same bytes,
 and RV2JSON 1.2.1 then writes the expected JSON (ace_json) and packs the
 translated JSON (translated, over ace_json) into the expected data (packed).
 RV2JSON runs from a copy with the port's changes: packing keeps a Change
-Vehicle BGM command's BGM object, and System.json carries equipTypes.
+Vehicle BGM command's BGM object and takes MapInfos' translated names,
+and System.json carries equipTypes.
 
     python tests/fixtures/ace/regenerate.py RUBY RV2JSON_CHECKOUT
 
@@ -897,9 +898,16 @@ def translate(source: Path, target: Path) -> None:
 
 def patched_rv2json(checkout: Path, target: Path) -> str:
     """A copy of RV2JSON that runs on case-sensitive file systems and has the
-    port's changes: Change Vehicle BGM keeps its BGM, and System.json carries
-    the equipment type names as equipTypes."""
+    port's changes: Change Vehicle BGM keeps its BGM, System.json carries
+    the equipment type names as equipTypes, and MapInfos takes its JSON
+    entries by the text of its integer keys."""
     shutil.copytree(checkout, target, ignore=shutil.ignore_patterns(".git"))
+    main = target / "RV2JSON.rb"
+    code = main.read_text(encoding="utf-8")
+    fixed = code.replace("jsonData[k]", "jsonData[k.to_s]")
+    if fixed.count("jsonData[k.to_s]") != 2:
+        raise RuntimeError("RV2JSON's Hash update was not where expected.")
+    main.write_text(fixed, encoding="utf-8")
     rpg = target / "rgssV3/rpg"
     if not (rpg / "mapinfoMV.rb").exists():
         shutil.copy(rpg / "mapInfoMV.rb", rpg / "mapinfoMV.rb")
