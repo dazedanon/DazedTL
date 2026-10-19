@@ -226,17 +226,6 @@ def openrouter_hosts(value):
     return [pick(host, ("slug", "name")) for host in value]
 
 
-def rewrap(value):
-    # Scan rows also carry the engine's category and wrap internals.
-    return {
-        **pick(value, ("changes_found", "overflow_skipped")),
-        "previews": [
-            pick(row, ("file_name", "locator", "before", "after", "rows", "overflow"))
-            for row in value.get("previews", [])
-        ],
-    }
-
-
 def image_action(value):
     # A copied task also reports its request and report files, which the
     # assistant reads from the task text.
@@ -244,7 +233,6 @@ def image_action(value):
 
 
 def preview(value):
-    value = {**value, "rewrap": rewrap(value["rewrap"])} if "rewrap" in value else value
     return pick(
         value,
         (
@@ -256,7 +244,6 @@ def preview(value):
             "paths",
             "options",
             "confirmation",
-            "rewrap",
             "publication",
             "additions",
             "package",

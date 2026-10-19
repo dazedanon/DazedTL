@@ -1279,7 +1279,6 @@ The hunk merge lines files up with Git's histogram diff, as the cherry-pick's ow
 `git merge-file` takes the histogram diff from Git 2.44; an older Git keeps the default.
 A local delivery packages only reviewed Git files.
 Public publication remains a separate action.
-Guided rewrap application also requires a matching completed scan.
 Ace preparation runs in Python on every platform: `util/ace` ports RV2JSON 1.2.1 and RPGMakerDecrypter's archive reading instead of shipping their Windows executables.
 The port writes RV2JSON's JSON and Ruby 3.4's Marshal bytes so games and existing `ace_json` exports read the same; it departs only where RV2JSON broke games or hid text: it finds data files in any case, keeps Change Vehicle BGM audio as objects, adds the equipment type names to `System.json` as `equipTypes` and packs translated map names into `MapInfos.rvdata2`, a Hash by map ID whose integer keys RV2JSON's update never matched.
 [The Ace fixture](../tests/fixtures/ace/regenerate.py) records RV2JSON's own output for synthetic editor-shaped data, so conversion tests need neither Ruby nor real games.
