@@ -319,8 +319,7 @@ class Workflows:
             return load_walkthrough_skill(project["source"], "WOLF RPG" if project["engine"] == "WOLF" else "RPG Maker " + project["engine"])
         if name == "qa":
             return load_rpgmaker_qa_skill("release")
-        files = {"wolf_speakers": "wolf_speakers.md", "advanced": "risky_codes.md", "wrap": "wrap_config.md",
-                 "plugins": "ace_script_translation.md" if project["engine"] == "ACE" else "plugin_translation.md"}
+        files = {"wolf_speakers": "wolf_speakers.md", "advanced": "risky_codes.md", "wrap": "wrap_config.md"}
         if name not in files:
             raise ValueError("Unknown workflow skill.")
         return f"Selected game: `{project['source']}`\nData folder: `{project['data']}`\n\n" + load_clipboard_skill(files[name])

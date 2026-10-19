@@ -63,7 +63,6 @@ class GuidedContext:
             "setup",
             "advanced",
             "wrap",
-            "plugins",
             "walkthrough",
             "qa",
         }:

@@ -97,7 +97,7 @@ first and go to the source for detail.
 | `modules/srpg.py` (2156) | SRPG Studio, incl. `customParameters` JS literals | `engine-srpg-studio.md` |
 | `modules/csv.py` (492) | Translator++ CSV convention and the batch-aligned resume | this file, above |
 | `modules/yuris.py` (403) | Whole-file pass-through for asset-path and font-face tables | `SKILL.md` (non-negotiables) |
-| `data/skills/*.md` | **Reusable per-game audit prompts**, directly copyable: `risky_codes.md` (which optional event codes hold text), `wrap_config.md` (derive width/faceWidth/rows), `ace_script_translation.md` (Ruby script audit), `wolf_speakers.md` (rule on low-confidence speakers), `rpgmaker_translation_qa.md`, `plugin_translation.md` | throughout |
+| `data/skills/*.md` | **Reusable per-game audit prompts**, directly copyable: `risky_codes.md` (which optional event codes hold text), `wrap_config.md` (derive width/faceWidth/rows), `wolf_speakers.md` (rule on low-confidence speakers), `rpgmaker_translation_qa.md` | throughout |
 | `tests/` | Encode the quirks more precisely than the source does. Each case is a real failure someone hit | - |
 
 ## Row-based / CSV formats: the resume convention
