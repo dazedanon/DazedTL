@@ -15,7 +15,6 @@ WIDTHS = ("width", "faceWidth", "listWidth", "noteWidth")
 # The rows a message window shows, measured with the widths; a report or
 # request from before it existed leaves the saved rows as they are.
 ROWS = "messageRows"
-DEFAULT_WIDTHS = {**dict(zip(WIDTHS, (60, 50, 100, 75))), ROWS: 4}
 # The speaker request a line width task records when no Names & glossary task
 # was copied; such a request waits for widths, never for guidance files.
 LAYOUT_REQUEST = "layout"
@@ -105,6 +104,8 @@ def inspect(
             "needsReview": False,
             "intentionalEmpty": False,
         }
+    from util.game_settings import default_wrap_widths
+
     complete = all(document_states.get(name, {}).get("exists") for name in CORE)
     receipt = native.get("guided_layout", {})
     applied = bool(
@@ -140,7 +141,7 @@ def inspect(
         "layoutStatus": "saved"
         if applied
         or reviews.get("layout") == digest(native["widths"])
-        or native["widths"] != DEFAULT_WIDTHS
+        or native["widths"] != default_wrap_widths(native.get("engine"))
         else "defaults",
     }
     if not request_value:

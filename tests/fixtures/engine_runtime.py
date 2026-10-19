@@ -1130,6 +1130,14 @@ try:
             )
             assert ace["engines"]["rpgmakermvmz"]["VXACE"], ace["engines"]
             assert ace["runtime_profile"]["config"]["VXACE"], ace["runtime_profile"]
+            # Until widths are saved, an Ace game fits to its own windows,
+            # which cut off text fitted to MV/MZ's.
+            from util.game_settings import ACE_WRAP_WIDTHS, game_wrap_widths
+
+            native = temporary / "native-ace"
+            (native / "Data").mkdir(parents=True)
+            (native / "Data/Map001.rvdata2").write_bytes(b"")
+            assert game_wrap_widths(native) == ACE_WRAP_WIDTHS, game_wrap_widths(native)
             # The source keeps its \n[1] name code, which once went out as
             # "\ [1]", and MV/MZ's template literal escapes a translated
             # backtick and ${, which ended it early or interpolated.

@@ -29,6 +29,17 @@ DEFAULT_WRAP_WIDTHS = {
     "noteWidth": 75,
     MESSAGE_ROWS_KEY: 4,
 }
+# VX Ace's stock windows, measured in the engine: 520 pixels inside a
+# 544-pixel window, where RGSS3 draws its 24-point VL Gothic 10 pixels to a
+# half-width character. A face takes 112 pixels of a message's line, and the
+# help window starts its text 4 pixels in. No stock window draws notes.
+ACE_WRAP_WIDTHS = {
+    "width": 52,
+    "faceWidth": 40,
+    "listWidth": 51,
+    "noteWidth": 52,
+    MESSAGE_ROWS_KEY: 4,
+}
 # The game's GameUpdate repository, the values it sets itself instead of
 # following Settings, and the digest of the config DazedTL last wrote.
 GAME_UPDATE_KEYS = ("repo", "forge", "host", "username", "branch", "written")
@@ -63,6 +74,23 @@ def _coerce_width(value, fallback: int, key: str = "width") -> int:
     if not _in_range(key, width):
         return fallback
     return width
+
+
+def default_wrap_widths(engine: str | None = None) -> dict[str, int]:
+    """The Line widths of an engine's stock windows, which a game keeps until
+    any are measured or set: VX Ace's for "ACE", otherwise MV/MZ's."""
+    return dict(ACE_WRAP_WIDTHS if engine == "ACE" else DEFAULT_WRAP_WIDTHS)
+
+
+def game_wrap_widths(game_root: str | Path) -> dict[str, int]:
+    """A game's saved Line widths, or its engine's stock ones."""
+    saved = load_game_wrap_widths(game_root)
+    if saved is not None:
+        return saved
+    from util.project_preparation import rpgmaker_layout
+
+    layout = rpgmaker_layout(Path(game_root))
+    return default_wrap_widths(layout["engine"] if layout else None)
 
 
 def valid_line_widths(value) -> bool:

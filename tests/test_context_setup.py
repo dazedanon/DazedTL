@@ -7,6 +7,7 @@ from tempfile import TemporaryDirectory
 from dazedtl.storage import write_json
 from dazedtl.translation import context_setup as C
 from dazedtl.translation.files import digest, read_json
+from util.game_settings import default_wrap_widths
 
 
 class ContextSetupTests(unittest.TestCase):
@@ -18,7 +19,7 @@ class ContextSetupTests(unittest.TestCase):
             self.root / "profile/request.json",
             self.root / "profile/review.json",
         )
-        self.native = {"source": str(self.root), "widths": dict(C.DEFAULT_WIDTHS)}
+        self.native = {"source": str(self.root), "widths": default_wrap_widths()}
         self.docs = {}
         for name in C.CORE:
             path = self.root / f".dazedtl/{name}.txt"
@@ -100,7 +101,7 @@ class ContextSetupTests(unittest.TestCase):
             "request_id": request["request_id"],
             "project_id": "game",
             "layout": {
-                "widths": {**C.DEFAULT_WIDTHS, "width": 55},
+                "widths": {**default_wrap_widths(), "width": 55},
                 "reason": "Measured actual window and font.",
                 "evidence": [
                     {

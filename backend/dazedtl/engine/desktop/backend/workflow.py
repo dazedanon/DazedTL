@@ -8,7 +8,7 @@ import shutil
 import uuid
 
 from util.engine_options import validate_engine_options, engine_options
-from util.game_settings import GameSettingsError, load_game_wrap_widths, normalize_wrap_widths, save_game_wrap_widths, valid_line_widths
+from util.game_settings import GameSettingsError, default_wrap_widths, load_game_wrap_widths, normalize_wrap_widths, save_game_wrap_widths, valid_line_widths
 from util.rpgmaker_profiles import DB_FILES, EVENT_FILES_EXACT, PHASE0_CONFIG, PHASE1_CONFIG, PHASE1B_CONFIG, PHASE2_CONFIG
 from .project import atomic_json, digest
 from .settings import SettingsStore
@@ -57,7 +57,9 @@ class Workflows:
                        "selected": [item["name"] for item in game["files"] if item["default"]],
                        "engine_options": settings["engines"]["rpgmakermvmz"],
                        "wolf": {"literal_line1_lowconf": True, "db_groups": []},
-                       "widths": load_game_wrap_widths(root) or normalize_wrap_widths(settings["values"]),
+                       # Settings' widths are MV/MZ's; VX Ace's windows are smaller.
+                       "widths": load_game_wrap_widths(root) or (default_wrap_widths("ACE") if game["engine"] == "ACE"
+                                                                 else normalize_wrap_widths(settings["values"])),
                        "mode": SettingsStore(self.workspace).translation_defaults(self.manual.allow_providers)['default_mode'],
                        "phase1_comments": False, "manual_job": "", "collected": [], "collection_error": ""}
             self.projects[project["id"]] = project

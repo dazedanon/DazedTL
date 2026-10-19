@@ -251,6 +251,37 @@ class Guided:
         self.projects._get(data, project_id)["backend_id"] = native["id"]
         self.projects._commit(data)
 
+    def ace_widths(self, project_id):
+        """Earlier versions gave a VX Ace project MV/MZ's Line widths, which
+        Ace's smaller windows cut off. A project still on exactly those,
+        here and in the game's settings, takes Ace's, saved as widths set by
+        hand are, and its applied text is fitted to them."""
+        from util.game_settings import (
+            DEFAULT_WRAP_WIDTHS,
+            default_wrap_widths,
+            load_game_wrap_widths,
+        )
+
+        _, native = self.record(project_id)
+        if native["engine"] != "ACE" or native["widths"] != DEFAULT_WRAP_WIDTHS:
+            return
+        try:
+            if load_game_wrap_widths(native["source"]) not in (
+                None,
+                DEFAULT_WRAP_WIDTHS,
+            ):
+                return
+            result = self.backend.workflows.update(
+                native["id"], native["revision"], {"widths": default_wrap_widths("ACE")}
+            )
+        except OSError, ValueError:
+            # The game's settings can't be read or changed now, such as
+            # during another save; the next look tries again.
+            return
+        self.text_fit.request(
+            project_id, native, native["widths"], result["project"]["widths"]
+        )
+
     def path(self, project_id, name):
         self.projects.get(project_id)
         return (
@@ -612,6 +643,7 @@ class Guided:
         return self.preferences(result["project"])
 
     def state(self, project_id):
+        self.ace_widths(project_id)
         with self.observations.read():
             return self._state(project_id)
 

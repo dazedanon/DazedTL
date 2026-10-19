@@ -55,7 +55,7 @@ from util.rpgmaker_qa_preflight import (
     read_sources,
     with_kept,
 )
-from util.game_settings import load_game_wrap_widths, normalize_wrap_widths
+from util.game_settings import game_wrap_widths, normalize_wrap_widths
 from util.reference_games import reference_context
 from util import rpgmaker_screens
 from util.rpgmaker_screens import screen_of, shown_text
@@ -490,7 +490,7 @@ def task_layout(
     fit = fit or {}
     return {
         "widths": normalize_wrap_widths(
-            fit.get("widths") or load_game_wrap_widths(game_root)
+            fit.get("widths") or game_wrap_widths(game_root)
         ),
     }
 
