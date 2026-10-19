@@ -580,9 +580,52 @@ try:
         from util.rpgmaker_rewrap import visible_width
 
         assert visible_width("Fufu…♥ See you～") == 18
+        # Accented letters stay half width, as both fonts draw them.
+        assert visible_width("Café") == 4
         # Only translated text is fitted: Japanese and a text picture, which
         # has no window, stay exact. New widths fit only their own area.
         line = "The old road bends toward a quiet village."
+        # A script of the game's own (122 without a source) is code, and a
+        # break inside ${...} stopped the game with a SyntaxError; a
+        # translated text variable wraps around its interpolations.
+        script = (
+            "`Score: ${$gameVariables.value(1) + $gameVariables.value(2)} points today`"
+        )
+        scripts = {
+            "list": [
+                {"code": 122, "parameters": [1, 1, 0, 4, script]},
+                {"code": 122, "parameters": [2, 2, 0, 4, script], "_original": "点数"},
+            ]
+        }
+        fit_document(
+            scripts,
+            "CommonEvents.json",
+            Layout.from_widths({**widths, "listWidth": 20}),
+        )
+        assert [command["parameters"][4] for command in scripts["list"]] == [
+            script,
+            r"`Score: ${$gameVariables.value(1) + $gameVariables.value(2)}\npoints today`",
+        ], scripts
+        # A note's translated tag body fits beside a tag left in Japanese,
+        # and English with "・" bullets is not Japanese.
+        notes = [
+            None,
+            {
+                "note": "<SG説明:A light blade of copper.>\n<SG種別:武器>",
+                "description": "・A light blade of copper\n・Easy to swing",
+            },
+        ]
+        report = fit_document(
+            notes,
+            "Weapons.json",
+            Layout.from_widths({**widths, "listWidth": 20, "noteWidth": 20}),
+        )
+        assert (
+            notes[1]["note"] == "<SG説明:A light blade of\ncopper.>\n<SG種別:武器>"
+        ), notes
+        assert [row["pointer"] for row in report.misfits] == ["/1/description"], (
+            report.misfits
+        )
         page = {
             "list": [
                 {

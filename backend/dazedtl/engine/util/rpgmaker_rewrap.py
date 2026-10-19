@@ -18,6 +18,7 @@ from typing import Any, Iterator
 
 from util import dazedwrap
 from util.game_settings import MESSAGE_ROWS_KEY, normalize_wrap_widths
+from util.rpgmaker_script_strings import BREAK
 
 
 LIST_FIELDS_BY_FILE = {
@@ -93,15 +94,24 @@ MARKED_WIDTH = 100
 def visible_width(text: str) -> int:
     """The characters *text* takes on one line of a window: name windows,
     alignment and other codes draw nothing there, while names, icons and
-    variables take their room. A full-width character, and one East Asian
-    fonts draw full width such as ♥ or …, takes two: RPG Maker games draw
-    text in Japanese fonts."""
+    variables take their room. A full-width character takes two, and so
+    does a symbol East Asian fonts draw full width, such as ♥ or …: RPG
+    Maker games draw text in Japanese fonts."""
     text = _MARKER.sub("", _ALIGNMENT.sub("", _NAME_WINDOW.sub("", text)))
     for pattern, size in _EXPANDING.items():
         text = pattern.sub("x" * size, text)
     drawn = dazedwrap.visible_text(text)
-    return len(drawn) + sum(
-        1 for character in drawn if unicodedata.east_asian_width(character) in "FWA"
+    return len(drawn) + sum(1 for character in drawn if _full_width(character))
+
+
+def _full_width(character: str) -> bool:
+    """Whether Japanese fonts draw *character* full width: a full-width
+    character, or one of ambiguous width other than a letter. MV/MZ's and
+    VX Ace's fonts draw ♥, … and ① full width, while accented, Greek and
+    Cyrillic letters, such as é, stay half width."""
+    width = unicodedata.east_asian_width(character)
+    return width in "FW" or (
+        width == "A" and not unicodedata.category(character).startswith("L")
     )
 
 
@@ -121,8 +131,10 @@ def over_width(text: str, width: int) -> bool:
     return widest_line(text) > int(width)
 
 
-# Japanese the translation left as it is, which is never rewrapped.
-_JAPANESE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff]")
+# Japanese the translation left as it is, which is never rewrapped: kana and
+# kanji. English uses the middle dot and the long vowel mark (\u30fb, \u30fc) as
+# bullets and dashes, so they alone do not make text Japanese.
+_JAPANESE = re.compile(r"[\u3040-\u30fa\u30fd-\u30ff\u3400-\u9fff]")
 
 
 def untranslated(text: str) -> bool:
@@ -356,14 +368,15 @@ def wrap_lines(
 
 
 def wrap_note(note: str, width: int) -> str:
-    """A database note with each known prose tag body wider than *width*
-    fitted to it; the rest of the note stays exact."""
+    """A database note with each translated prose tag body wider than
+    *width* fitted to it; the rest of the note, such as other tags or a
+    body left in Japanese, stays exact."""
     return _replace_spans(
         note,
         [
             (start, end, _fit_note_body(body, width, structured))
             for start, end, body, structured in _note_bodies(note)
-            if over_width(body, width)
+            if not untranslated(body) and over_width(body, width)
         ],
     )
 
@@ -394,15 +407,96 @@ def _replace_spans(text: str, edits: list[tuple[int, int, str]]) -> str:
     return text
 
 
-def wrap_backtick(value: str, width: int) -> str:
-    """A text variable's script value (122), `text` with ``\\n`` escapes as
-    its line breaks, wrapped to *width*; name codes such as ``\\n[1]`` stay."""
-    first, last = value.find("`"), value.rfind("`")
-    if first < 0 or last <= first:
+# The quote marks translation writes a text variable's operand (122) in, and
+# what starts an interpolation there: MV/MZ's template literal and VX Ace's
+# Ruby string (see rpgmaker_script_strings).
+_SCRIPT_QUOTES = {"`": "${", '"': "#{"}
+# An interpolation kept whole while its text wraps, and how wide its value
+# is counted, as a variable's (\V[n]).
+_HELD = re.compile("[-]")
+_HELD_WIDTH = 3
+
+
+def _script_string(value: str) -> tuple[int, int] | None:
+    """Where the text of a text variable's operand starts and ends: an
+    operand that opens with one of the quote marks translation writes, up
+    to the last one of that kind."""
+    first = len(value) - len(value.lstrip())
+    if value[first : first + 1] not in _SCRIPT_QUOTES:
+        return None
+    last = value.rfind(value[first])
+    return (first + 1, last) if last > first else None
+
+
+def _interpolations(body: str, opener: str) -> list[tuple[int, int]]:
+    """The spans of *body*'s interpolations, each from *opener* to its
+    closing brace. An escaped opener, such as ``\\${``, is text."""
+    spans, index = [], 0
+    while index < len(body):
+        if body[index] == "\\":
+            index += 2
+        elif body.startswith(opener, index):
+            depth, end = 0, index + len(opener) - 1
+            while end < len(body):
+                if body[end] == "\\":
+                    end += 1
+                elif body[end] == "{":
+                    depth += 1
+                elif body[end] == "}":
+                    depth -= 1
+                    if not depth:
+                        break
+                end += 1
+            spans.append((index, min(end + 1, len(body))))
+            index = end + 1
+        else:
+            index += 1
+    return spans
+
+
+def _held(value: str) -> tuple[str, list[str], tuple[int, int]] | None:
+    """A text variable's operand as the lines it shows, each interpolation
+    held as one character, with the interpolations and where the text is in
+    *value*; None when it holds no quoted text to fit."""
+    span = _script_string(value)
+    if span is None:
+        return None
+    body = value[span[0] : span[1]]
+    spans = _interpolations(body, _SCRIPT_QUOTES[value[span[0] - 1]])
+    if _HELD.search(body) or len(spans) > 0xF8FF - 0xE000:
+        return None
+    kept = [body[start:end] for start, end in spans]
+    for number, (start, end) in reversed(list(enumerate(spans))):
+        body = body[:start] + chr(0xE000 + number) + body[end:]
+    return BREAK.sub("\n", body), kept, span
+
+
+def _script_width(text: str) -> int:
+    """The width of a text variable's line, each interpolation as wide as a
+    variable's value."""
+    return visible_width(_HELD.sub("x" * _HELD_WIDTH, text))
+
+
+def _script_text(value: str) -> str | None:
+    """The lines a text variable's operand shows, or None (see _held)."""
+    held = _held(value)
+    return None if held is None else _HELD.sub("x" * _HELD_WIDTH, held[0])
+
+
+def wrap_variable(value: str, width: int) -> str:
+    """A text variable's operand (122), the text between its quote marks
+    with ``\\n`` escapes as its line breaks, wrapped to *width* when a line
+    is wider. Its script stays as it runs: an interpolation such as
+    ``${...}`` is never broken, and name codes such as ``\\n[1]`` stay."""
+    held = _held(value)
+    if held is None or max(map(_script_width, held[0].split("\n"))) <= int(width):
         return value
-    body = re.sub(r"\\n(?![\[<])", " ", value[first + 1 : last])
-    wrapped = wrap_text(body, width).replace("\n", r"\n")
-    return value[: first + 1] + wrapped + value[last:]
+    body, kept, (start, end) = held
+    wrapped = dazedwrap.wrapShaped(
+        body.replace("\n", " "), int(width), measure=_script_width
+    )
+    wrapped = _HELD.sub(lambda mark: kept[ord(mark.group(0)) - 0xE000], wrapped)
+    return value[:start] + wrapped.replace("\n", r"\n") + value[end:]
 
 
 # --------------------------------------------------------------------- boxes
@@ -487,6 +581,8 @@ def fit_value(
         return text
     if box.kind == "note":
         return wrap_note(text, box.width)
+    if box.kind == "variable":
+        return wrap_variable(text, box.width)
     rows_apart = box.kind in ("message", "scroll")
     if not over_width(_translated(text) if rows_apart else text, box.width):
         return text
@@ -495,8 +591,6 @@ def fit_value(
             row if untranslated(row) else wrap_lines(row, box.width)
             for row in text.split("\n")
         )
-    if box.kind == "variable":
-        return wrap_backtick(text, box.width)
     if box.kind == "lines":
         return wrap_lines(text, box.width, box.rows)
     return wrap_message(
@@ -509,7 +603,13 @@ def misfit(text: str, box: Box) -> str | None:
     if not isinstance(text, str) or not text.strip():
         return None
     if box.kind == "note":
-        bodies = [body for _start, _end, body, _structured in _note_bodies(text)]
+        bodies = [
+            body
+            for _start, _end, body, _structured in _note_bodies(text)
+            if not untranslated(body)
+        ]
+    elif box.kind == "variable":
+        bodies = [_script_text(text) or ""]
     elif box.kind in ("message", "scroll"):
         bodies = [_translated(text)]
     else:
@@ -716,7 +816,14 @@ def _command_slots(commands: list, pointer: str, layout: Layout) -> Iterator[_Sl
                 if _MARKER.match(params[0]):
                     box = Box(MARKED_WIDTH, box.rows, True, "message")
             yield _Slot(f"{at}/0", box, _original(command), params, 0, run)
-        elif code == 122 and len(params) > 4 and isinstance(params[4], str) and "`" in params[4]:
+        elif (
+            code == 122
+            and len(params) > 4
+            and isinstance(params[4], str)
+            # Only text translation wrote: a script of the game's own is code.
+            and _original(command) is not None
+            and _script_string(params[4]) is not None
+        ):
             box = Box(layout.list_width, None, False, "variable", "listWidth")
             yield _Slot(f"{at}/4", box, None, params, 4)
         elif code == 324 and len(params) > 1 and isinstance(params[1], str):
@@ -737,8 +844,9 @@ def _fitted_slots(document, file_name: str, layout: Layout, areas):
         value = slot.read()
         if not isinstance(value, str):
             continue
-        # A message keeps untranslated rows as they are (see wrap_message).
-        if (
+        # A message keeps untranslated rows as they are (see wrap_message),
+        # and a note its untranslated tags (see wrap_note).
+        if slot.box.kind != "note" and (
             all(untranslated(row) for row in value.split("\n") if row.strip())
             if slot.box.kind in ("message", "scroll")
             else untranslated(value)
