@@ -239,19 +239,59 @@ def write_rpgmaker_json(source: Path, translated: Path, output: Path, layout=Non
         _inherit(previous, source_doc)
     result = preserve_originals(source_doc, staged_doc, filename=output.name)
     fit = fit_written(result, output.name, layout) if layout is not None else {}
-    text = staged_bytes.decode("utf-8-sig")
-    indentation = re.search(r"\n([ \t]+)\"", text)
-    indent = indentation.group(1) if indentation else None
-    rendered = json.dumps(result, ensure_ascii=False, indent=indent,
-                          separators=None if indent else (",", ":"))
-    if "\r\n" in text:
-        rendered = rendered.replace("\n", "\r\n")
-    if text.endswith("\n"):
-        rendered += "\r\n" if text.endswith("\r\n") else "\n"
-    if staged_bytes.startswith(b"\xef\xbb\xbf"):
-        rendered = "\ufeff" + rendered
+    rendered = _rendered_like(result, staged_bytes)
     if (output.read_bytes() if output.exists() else None) != previous_bytes:
         raise ValueError("Output changed while preparing the write; rerun against the current game file.")
     output.parent.mkdir(parents=True, exist_ok=True)
     _write_atomic(output, rendered)
     return {"path": output, **fit}
+
+
+def _rendered_like(document, like: bytes) -> str:
+    """*document* as JSON laid out as the *like* file is: its indentation,
+    line endings, final line break and byte order mark."""
+    text = like.decode("utf-8-sig")
+    indentation = re.search(r"\n([ \t]+)\"", text)
+    indent = indentation.group(1) if indentation else None
+    rendered = json.dumps(document, ensure_ascii=False, indent=indent,
+                          separators=None if indent else (",", ":"))
+    if "\r\n" in text:
+        rendered = rendered.replace("\n", "\r\n")
+    if text.endswith("\n"):
+        rendered += "\r\n" if text.endswith("\r\n") else "\n"
+    if like.startswith(b"\xef\xbb\xbf"):
+        rendered = "\ufeff" + rendered
+    return rendered
+
+
+def fit_game(data: Path, layout) -> dict:
+    """Fit the text write_rpgmaker_json wrote into a game's data folder to
+    the game's Line widths, *layout*, in place, as each file would be fitted
+    if written again now: once the widths change, text written earlier was
+    fitted to the old ones. Only files holding the sources the writer keeps
+    (``_original``) are read; each changed file is replaced atomically."""
+    from util.len_translation import _write_atomic
+
+    fitted, files, misfits, misfit_count = 0, [], [], 0
+    for path in sorted(Path(data).glob("*.json")):
+        before = path.read_bytes()
+        if b'"_original"' not in before:
+            continue
+        document = json.loads(before.decode("utf-8-sig"))
+        report = fit_written(document, path.name, layout)
+        misfits += report["misfits"][: LISTED_MISFITS - len(misfits)]
+        misfit_count += report["misfit_count"]
+        if not report["fitted"]:
+            continue
+        rendered = _rendered_like(document, before)
+        if path.read_bytes() != before:
+            raise ValueError(f"{path.name} changed while being fitted; save the widths again.")
+        _write_atomic(path, rendered)
+        fitted += report["fitted"]
+        files.append(path.name)
+    return {
+        "fitted": fitted,
+        "files": files,
+        "misfits": misfits,
+        "misfit_count": misfit_count,
+    }

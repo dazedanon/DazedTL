@@ -802,6 +802,19 @@ class TranslationEngine:
         save_game_wrap_widths(root, widths)
         return load_game_wrap_widths(root)
 
+    def fit_rpgmaker(self, root):
+        """Fits the text write_rpgmaker wrote into a game's data to its Line
+        widths as they are now, and says what changed and what still does
+        not fit; text written before the widths changed was fitted to the
+        old ones."""
+        from util.len_originals import fit_game
+        from util.project_preparation import rpgmaker_layout
+
+        layout = rpgmaker_layout(Path(root))
+        if layout is None or not Path(layout["data_path"]).is_dir():
+            return {"fitted": 0, "files": [], "misfits": [], "misfit_count": 0}
+        return fit_game(layout["data_path"], self.line_layout(root))
+
     def write_rpgmaker(self, root, source, translated, output):
         """Writes staged game JSON with its sources kept, fitted to the
         game's Line widths."""

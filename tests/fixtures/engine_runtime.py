@@ -757,6 +757,20 @@ try:
             )
             assert game.read_bytes() == before
 
+            # Saving narrower widths fits what was written to the old ones:
+            # VX Ace text written with MV/MZ's widths ran past its windows.
+            from util.len_originals import fit_game
+            from util.rpgmaker_rewrap import widest_line
+
+            narrow = Layout.from_widths({**tight, "width": 24, "faceWidth": 24})
+            refit = fit_game(game.parent, narrow)
+            assert refit["files"] == ["Map001.json"] and refit["fitted"], refit
+            refitted = json.loads(game.read_text(encoding="utf-8"))["list"]
+            assert len(refitted) == len(fitted) and refitted[1]["_original"] == gate
+            assert (
+                max(widest_line(item["parameters"][0]) for item in refitted[1:5]) <= 24
+            )
+            game.write_bytes(before)
             # Text QA corrects such a message as one text, fitted and spread over
             # its commands, however many rows it needs; undoing finds it there.
             pointers = [f"/list/{index}/parameters/0" for index in range(1, 5)]
