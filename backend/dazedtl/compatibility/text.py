@@ -470,13 +470,16 @@ def run_qa(plan, log):
     if plan["action"] == "qa_prepare":
         _set_aside(plan, log)
         # What the release playtest found in the same text goes to review.
-        from .playtest import pending
+        from .playtest import observe, pending, task_observations
 
-        observations = pending(folder, plan["guard"])
+        focus = plan["options"]["focus"]
+        found = pending(folder, plan["guard"])
+        # Newer findings join a resumed task's review as observations.
+        observations = task_observations(folder, focus, found)
         task, _state = qa.prepare_task(
             plan["project"]["source"],
             plan["project"]["data"],
-            plan["options"]["focus"],
+            focus,
             folder / "text-qa",
             fit=plan["options"].get("fit"),
             interface=True,
@@ -488,7 +491,7 @@ def run_qa(plan, log):
         )
         if observations:
             log(f"QA reviews {len(observations)} line(s) the playtest found")
-        manifest = qa.build_manifest(plan["project"]["data"], plan["options"]["focus"])
+        manifest = qa.build_manifest(plan["project"]["data"], focus)
         descriptor = read_json(task / "task.json")
         if (
             descriptor["manifest_sha256"] != manifest["content_sha256"]
@@ -507,9 +510,15 @@ def run_qa(plan, log):
             )
         }
         write_json(
-            folder / ("text-qa-" + plan["options"]["focus"] + ".json"),
-            {"task": str(task), "binding": binding(plan), "immutable": immutable},
+            folder / ("text-qa-" + focus + ".json"),
+            {
+                "task": str(task),
+                "binding": binding(plan),
+                "immutable": immutable,
+                "observations": observations,
+            },
         )
+        observe(folder, focus, {"observations": found})
         handoff = qa_handoff(task)
     else:
         handoff = None
@@ -843,10 +852,12 @@ def prepare_publication(plan):
             and row["before"] != previous[name],
         }
         if action in COMPARED:
+            # A file a batch added compares with none.
+            current = project_path(root, row["path"], exists=False)
             change.update(
                 comparison(
-                    project_path(root, row["path"]).read_bytes(),
-                    candidates[row["path"]],
+                    current.read_bytes() if current.exists() else b"",
+                    candidates[row["path"]] or b"",
                 )
             )
         rows.append(change)

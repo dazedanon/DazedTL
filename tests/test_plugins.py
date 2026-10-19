@@ -368,6 +368,29 @@ class PluginTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "missing files"):
             self.service.action(self.identity, "plugin_task")
 
+    def test_kept_text_the_playtest_saw_drawn_is_decided_again_once(self):
+        _request, _report, task = self.investigation(kept=("開始",))
+        self.assertEqual(task["stage"], "translation")
+        self.service.seen = lambda _project: {
+            "report": "r1",
+            "texts": [{"text": "開始", "where": "Seen on Scene_Title"}],
+        }
+        again = self.service.action(self.identity, "plugin_task")
+        self.assertEqual(again["stage"], "investigation")
+        asked = [
+            item
+            for row in read_json(again["request"])["files"]
+            for item in row["occurrences"]
+        ]
+        self.assertTrue(asked)
+        self.assertTrue(
+            all(item["value"] == "開始" and item["seen"] for item in asked), asked
+        )
+        self.assertIn("drawn on screen", again["text"])
+        # Kept again with the evidence, it is not asked a third time.
+        _request, _report, task = self.investigation(again, kept=("開始",))
+        self.assertNotEqual(task["stage"], "investigation")
+
     def test_foreign_duplicate_traversal_and_stale_reports_are_atomic(self):
         # MZ plugin subfolders are valid names; traversal and empty parts are not.
         self.assertEqual(safe_name("Author/Plugin"), "Author/Plugin")

@@ -234,7 +234,7 @@ class Workflows:
             selected["fit"] = {"widths": check["widths"], "categories": check["categories"],
                                "codes": sorted(parse_event_codes(check["codes"]) or SUPPORTED_EVENT_CODES),
                                "row_limit": check["max_rows"] if check["protect_rows"] else 0}
-        if action == "release_playtest":
+        if action in {"release_playtest", "playtest_fix"}:
             from util.playtest.run import read_stops
             from util.skills import RPGMAKER_QA_FOCUSES
             if project["engine"] != "MVMZ":
@@ -242,6 +242,12 @@ class Workflows:
             focus = options.get("focus", "release")
             selected = {"stops": read_stops(options.get("stops")),
                         "focus": focus if focus in dict(RPGMAKER_QA_FOCUSES) else "release"}
+            if action == "playtest_fix":
+                # The fixes as they were when checked; the play refuses others.
+                fixes = options.get("fixes")
+                if not isinstance(fixes, str) or not re.fullmatch(r"[0-9a-f]{64}", fixes):
+                    raise ValueError("Name the fixes to play by their SHA-256.")
+                selected["fixes"] = fixes
         if action == "layout_capture":
             from util.playtest.run import read_widths
             if project["engine"] != "MVMZ":

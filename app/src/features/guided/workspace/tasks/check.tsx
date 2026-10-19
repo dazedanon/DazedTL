@@ -1,4 +1,5 @@
-/** Check: the line width check, text QA and the release playtest. */
+/** Check: the line width check and text QA, which for MV/MZ is also the
+ * final check with the playtest. */
 import type { ReactNode } from "react";
 import { textLocation } from "../../textLocation";
 import { ActionList, ActionRow } from "../../../../ui/ActionList";
@@ -22,11 +23,7 @@ import {
 import { qaPhase, qaUnsaved } from "../../qaView";
 import { savedTranslations } from "../../translationView";
 import { PlaytestWork } from "../../Playtest";
-import {
-  playtestFailure,
-  playtestPhase,
-  playtestWaiting,
-} from "../../playtestView";
+import { playtestFailure, playtestWaiting } from "../../playtestView";
 
 export function fittingView(w: GuidedWorkspace): TaskView {
   const {
@@ -235,10 +232,20 @@ export function qaView(w: GuidedWorkspace): TaskView {
     save,
   } = w;
   const phase = qaPhase(qa);
-  // Problems the playtest found in translated text, which QA reviews when
-  // it next prepares.
-  const found = playtestWaiting(state.readiness.playtest);
+  // For MV/MZ the assistant also plays the game in this task.
+  const playtest = state.engine === "MVMZ" ? state.readiness.playtest : null;
+  // Problems the playtest found in translated text after QA finished, which
+  // QA reviews when it runs again.
+  const found = playtest ? playtestWaiting(playtest) : 0;
   const again = found > 0 && ["applied", "clean"].includes(phase);
+  // The latest play: a playtest, or one with the assistant's fixes in place.
+  const playing = [
+    operationJob("release_playtest"),
+    operationJob("playtest_fix"),
+  ]
+    .filter((job) => !!job)
+    .sort((a, b) => jobTime(a) - jobTime(b))
+    .at(-1);
   // An apply that failed and rolled back says so beside its retry; one from
   // before this task was prepared belongs to an earlier task.
   const applying = operationJob("qa_apply");
@@ -303,12 +310,11 @@ export function qaView(w: GuidedWorkspace): TaskView {
   );
   const content: ReactNode = (
     <>
-      {found > 0 && (
+      {again && (
         <Notice>
           The playtest found {found.toLocaleString()}{" "}
           {found === 1 ? "problem" : "problems"} in translated text; QA reviews{" "}
-          {found === 1 ? "it" : "them"}{" "}
-          {phase === "running" ? "in its next round." : "when it runs again."}
+          {found === 1 ? "it" : "them"} when it runs again.
         </Notice>
       )}
       <TextQaWork
@@ -319,6 +325,38 @@ export function qaView(w: GuidedWorkspace): TaskView {
         applyFailed={applyFailed}
         run={step}
         restorable
+        // The playtest's panel follows QA's, before its corrections.
+        beside={
+          playtest && (
+            <PlaytestWork
+              projectId={project.id}
+              playtest={playtest}
+              running={playing?.status === "running"}
+              progress={
+                playing?.status === "running" ? playing.message : undefined
+              }
+              // A refused fix is the assistant's to revise, not a failed play.
+              failed={playtestFailure(
+                playtest,
+                operationJob("release_playtest"),
+              )}
+              idle="Your assistant plays the game while QA reviews it, and fixes what it finds."
+              rerun="Your assistant plays it again before it finishes."
+              compact
+              stop={
+                <ActionControl
+                  label="Stop playtest"
+                  variant="link"
+                  disabled={action.busy}
+                  {...feedback("playtest-stop", "Stopping…")}
+                  onClick={() =>
+                    action.run(() => api.stop(project.id), "", "playtest-stop")
+                  }
+                />
+              }
+            />
+          )
+        }
       >
         <FieldRow id="qa-focus" label="QA focus">
           {(props) => (
@@ -402,71 +440,9 @@ export function qaView(w: GuidedWorkspace): TaskView {
     ),
     heading: {
       title: "Text QA",
-      description:
-        "Your assistant reviews the game's text and applies verified corrections; you answer only what it can't settle.",
-    },
-  };
-}
-
-export function playtestView(w: GuidedWorkspace): TaskView {
-  const {
-    project,
-    state,
-    action,
-    disabled,
-    feedback,
-    advance,
-    operationJob,
-    save,
-  } = w;
-  const playtest = state.readiness.playtest;
-  const job = operationJob("release_playtest");
-  const running = job?.status === "running";
-  const phase = playtestPhase(playtest, running);
-  const content: ReactNode = (
-    <PlaytestWork
-      projectId={project.id}
-      playtest={playtest}
-      running={running}
-      progress={running ? job?.message : undefined}
-      failed={playtestFailure(playtest, job)}
-    />
-  );
-  const footer = running ? (
-    <ActionControl
-      label="Stop playtest"
-      disabled={action.busy}
-      {...feedback("playtest-stop", "Stopping…")}
-      onClick={() =>
-        action.run(() => api.stop(project.id), "", "playtest-stop")
-      }
-    />
-  ) : (
-    <ActionControl
-      label={phase === "not_started" ? "Run playtest" : "Run playtest again"}
-      variant={phase === "done" ? "default" : "primary"}
-      disabled={disabled}
-      {...feedback("playtest", "Starting…")}
-      onClick={() =>
-        action.run(
-          async () => {
-            await save();
-            await api.guided.playtest(project.id, "run");
-          },
-          "",
-          "playtest",
-        )
-      }
-    />
-  );
-  return {
-    content,
-    action: footer,
-    next: advance(undefined, undefined, phase === "done" ? "primary" : "quiet"),
-    heading: {
-      title: "Playtest",
-      description:
-        "DazedTL plays the game to find crashes, Japanese left on screen and text that doesn't fit; problems in translated text go to Text QA.",
+      description: playtest
+        ? "Your assistant reviews the game's text, plays the game and fixes what it finds; you answer only what it can't settle."
+        : "Your assistant reviews the game's text and applies verified corrections; you answer only what it can't settle.",
     },
   };
 }

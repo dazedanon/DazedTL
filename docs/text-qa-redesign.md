@@ -117,23 +117,27 @@ Its behavior is in [architecture](architecture.md#workflow-and-shared-presentati
 
 ### Where it sits
 
-- In Guided it is the third optional Check task, Playtest, after Line width check and Text QA, because it checks the text those tasks leave; Release never waits for it.
+- In Guided it is part of Text QA's copied task for MV/MZ games: the assistant plays the game while QA's workers review, fixes what it finds, and plays it again after QA's apply; Release never waits for it.
+  Inside the task, its findings in translated text join a review in progress, while a separate task after QA would need QA to run again; and the user hands over the whole final check once.
 - In Assistant-led the starting prompt runs it through the project helper's `playtest` before text QA and again after QA's apply, and a Playtest tab shows its report once one exists.
 
 ### Decisions
 
-- Every run checks the game's files and then plays it, with no one at the keyboard: one click in Guided, or the assistant through the helper.
+- Every run checks the game's files and then plays it, with no one at the keyboard, started by the assistant through the helper; the Assistant-led tab can run it again.
   The checks are static and the same for MV and MZ; the tour runs in a hidden window of DazedTL's own Electron, so it works the same on every system and never starts the game's executable.
 - The playtest never writes the game: no saves, settings or fixes go into the game folder.
 - Problems are fixed where their own reviewed path already applies verified fixes, never by the playtest.
   Problems in lines text QA reviews become [observations](#observations) of a `playtest` worker, both when QA is prepared and while it reviews, so a deep reviewer corrects them and editorial confirms the correction before QA applies it by itself.
-  Plugin text goes to Plugin files, text never translated to Translate, and crashes and window sizes to the game's own code, which the assistant changes.
+  Plugin text goes to Plugin files, text never translated to Translate, and crashes and window sizes to a fixes plugin of DazedTL's own, which the assistant writes.
   The playtest's checks find where a problem is, not the wording or code that fixes it.
+- Fixes for the game's own code go in only after the playtest plays the game with them in place, as fit checks confirm on screen: the play must still play, stop nowhere new, reach as many places and no longer show something the last playtest found.
+  They live in one plugin that `js/main.js` loads after the game's plugins, so the game's plugin files and plugin list stay as Plugin files applied them, one file says what changed, and History takes them out like any applied batch.
 - Running it again is how kinks are ironed out, so every run is idempotent: QA prepared with the same findings is the same task, a running task records each finding once, and each report counts what was fixed since the last one and marks what is new.
 - Only what the tour drew on screen counts as seen; a static reach or line count says where to look, because fonts, plugins and custom windows decide what fits and what shows.
 - What the tour cannot reach is a coverage gap in the report, never a request for the user to play it or confirm a review.
-  The assistant adds stops for what only it can find, such as a dungeon floor with a trap or the recollection room.
-- A screen the tour opens on its own, without what the game sets up first, and an error a plugin raises because it needs NW.js, are coverage gaps rather than crashes, because neither says anything about the game players run.
+  The assistant adds stops for what only it can find, such as a dungeon floor with a trap or the recollection room, and the app keeps them for every later run.
+- Text a plugin draws on screen is player text, so Plugin files decides again about such text it kept in Japanese; a screen the tour opened on its own may be one players never reach, as Arina's trial-end screen showed, so the evidence says so.
+- A screen the tour opens on its own, without what the game sets up first, an error a plugin raises because it needs NW.js, and a stop that fails, such as one starting an event whose page the game has not turned on, are coverage gaps rather than crashes, because none says anything about the game players run.
 
 ### Why the playtest
 

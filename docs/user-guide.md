@@ -151,10 +151,11 @@ All Check tasks are optional:
   When text was checked before you used DazedTL, such as everything up to an update, tell your assistant which version, and QA skips it from then on.
   To take out every correction at once, inspect **Apply QA corrections** in the Project page's **History** and choose **Review restore**.
   Inspecting **Prepare or resume translation QA** there shows what QA did not cover: lines its reviewers declined, Japanese never translated and screen text QA can't change.
-- **Playtest** (MV and MZ): **Run playtest** has DazedTL check the game's files and play it in a hidden window for a few minutes, writing nothing into the game.
-  It lists crashes, Japanese left in the game, text that doesn't fit and names or codes the translation lost, each with the task that fixes it; **View** shows what the game looked like when it found the problem.
-  Problems in translated text go to Text QA, which corrects them when it runs, so after fixing, run the playtest again: it counts what was fixed since the last run.
-  **1 not reached** lists what the playtest could not get to; your assistant can add those places.
+- **Playtest** (MV and MZ) is part of the Text QA task, so one copy hands your assistant the whole final check.
+  While QA reviews, DazedTL plays the game in a hidden window, writing nothing into it, and your assistant fixes what it finds: translated text through QA's review, Japanese a plugin shows through **Plugin files**, and crashes or windows too small for English in a fixes plugin of DazedTL's own.
+  DazedTL puts those fixes into the game only after playing it with them in place breaks nothing new; to take them out, inspect **Apply playtest fixes** in the Project page's **History** and choose **Review restore**.
+  Your assistant adds places the tour can't reach by itself, such as story scenes or a recollection room, and plays the game again after QA's corrections.
+  The **Playtest** panel shows how far it got; **Problems** lists what is left, each with the task that fixes it, and **View** shows what the game looked like.
 
 **Playtest tools** at the top installs TL Inspector and Forge to help you playtest MV and MZ games.
 Apply and playtest an early scene before translating everything.

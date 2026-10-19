@@ -11,8 +11,10 @@ from pathlib import Path
 
 root, temporary = map(Path, sys.argv[1:])
 sys.path.insert(0, str(root / "backend/dazedtl/engine"))
+sys.path.insert(0, str(root / "backend"))
 
 from util import rpgmaker_qa as qa
+from util.playtest import fixes
 from util.playtest.checks import static_checks
 from util.playtest.run import (
     compare,
@@ -279,6 +281,13 @@ runtime = {
             "source": {"file": "js/plugins/Dungeon.js", "line": 9},
         },
         {**seen, "kind": "nwjs", "message": "require is not defined"},
+        # The failed shop stop's own error is the tour's, not the game's.
+        {
+            **seen,
+            "kind": "harness",
+            "message": "shop: Cannot read properties of undefined (reading 'list')",
+            "source": {"file": "js/plugins/Dungeon.js", "line": 3},
+        },
         {
             **seen,
             "stop": "screen Scene_Gallery",
@@ -328,6 +337,7 @@ assert [(row["fix"], row["window"]) for row in gallery] == [("game", "Window_Hel
     gallery
 )
 assert problems[("runtime-error", "js/plugins/Dungeon.js", "")]["line"] == 9
+assert [row["check"] for row in report["problems"]].count("runtime-error") == 1
 assert len(report["gaps"]) == 4, report["gaps"]
 assert "Scene_Gallery could not be opened on its own" in report["gaps"][1], report[
     "gaps"
@@ -347,6 +357,53 @@ plugin = next(row for row in again["problems"] if row["check"] == "plugin-text")
 plugin["texts"] = plugin["texts"][1:]
 assert compare(report, again) == {"fixed": 2, "new": 1}, compare(report, again)
 assert [row["text"] for row in again["problems"] if row.get("new")] == ["A new caption"]
+
+# Fixes go in only when the play with them in place fixed something and broke
+# nothing new: no new crash, and no fewer places reached.
+again["since"] = compare(report, again)
+assert fixes.refusal(report, again) == "", fixes.refusal(report, again)
+unchanged = {**again, "since": {"fixed": 0, "new": 1}}
+assert fixes.refusal(report, unchanged).startswith("Nothing the last playtest"), (
+    unchanged
+)
+stopping = json.loads(json.dumps(again))
+stopping["problems"].append(
+    {
+        "kind": "crash",
+        "check": "runtime-crash",
+        "file": "",
+        "note": "TypeError",
+        "new": True,
+    }
+)
+assert fixes.refusal(report, stopping).endswith(": TypeError"), stopping
+fewer = {**again, "coverage": {**again["coverage"], "reached": 1}}
+assert "fewer places" in fixes.refusal(report, fewer), fewer
+assert "did not play" in fixes.refusal(report, {**again, "played": False})
+# main.js loads them once, just before the engine sets up plugins, in MV's
+# top-level form and MZ's indented one, keeping a BOM and CRLF.
+mv = b"\xef\xbb\xbfPluginManager.setup($plugins);\r\nwindow.onload = run;\r\n"
+loaded = fixes.with_loader(mv)
+assert loaded == (b"\xef\xbb\xbf" + fixes.LOADER.encode() + b"\r\n" + mv[3:]), loaded
+assert fixes.with_loader(loaded) == loaded
+mz = b"    load() {\n        PluginManager.setup($plugins);\n    }\n"
+assert (
+    b"        " + fixes.LOADER.encode() + b"\n        PluginManager"
+    in fixes.with_loader(mz)
+)
+for broken in (b"run();\n", mz + mz):
+    try:
+        fixes.with_loader(broken)
+    except ValueError:
+        continue
+    raise AssertionError(broken)
+fixes.check(fixes.TEMPLATE.encode())
+try:
+    fixes.check(b"(() => {\n  window.x = ;\n})();\n")
+except ValueError as error:
+    assert "line 2" in str(error), error
+else:
+    raise AssertionError("A fix that does not compile was accepted")
 
 # Text QA takes the playtest's findings as observations when it prepares, so
 # QA with new findings is a new task, the same findings give the same task,
@@ -394,6 +451,18 @@ assert [(row["worker"], row["note"]) for row in rows] == [
 ], rows
 assert "Items.json#/1/description" in qa.observed_names(noted)
 assert not qa.observed_names(plain)
+# Preparing again while a task still reviews, as after a playtest fix
+# changes the plugins, keeps the findings it was prepared with, so it resumes
+# that task instead of starting a new review; newer findings are observed.
+from dazedtl.compatibility.playtest import task_observations
+
+workflow = temporary / "workflow"
+workflow.mkdir()
+write(workflow / "text-qa-database.json", {"task": str(plain), "observations": []})
+assert task_observations(workflow, "database", found) == []
+write(workflow / "text-qa-database.json", {"task": str(noted)})
+assert task_observations(workflow, "database", found[:1]) == []
+assert task_observations(workflow, "release", found) == found
 
 # A layout check proves a width only with lines exactly that wide, in as
 # many rows as one message shows, under the face the game's actors use.

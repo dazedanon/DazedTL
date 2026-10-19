@@ -61,6 +61,7 @@ export function TextQaWork({
   rerun = "Run QA again to check the text.",
   restorable = false,
   children,
+  beside,
 }: {
   qa: QaState;
   /** The task went to an assistant that has not started on it yet. */
@@ -80,6 +81,8 @@ export function TextQaWork({
   restorable?: boolean;
   /** Fields before QA starts, such as its focus. */
   children?: ReactNode;
+  /** Work that runs with QA, such as the playtest, right after its panel. */
+  beside?: ReactNode;
 }) {
   const phase = qaPhase(qa);
   // Once applied, only a proposal the user chose went into the game.
@@ -151,6 +154,7 @@ export function TextQaWork({
           <StepProgress label="QA stages" steps={qaStages(qa)} />
         )}
       </AssistantTask>
+      {beside}
       {unavailable && (
         <Notice>
           An update changed QA's rules after these corrections were applied, so{" "}

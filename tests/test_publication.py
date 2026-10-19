@@ -71,6 +71,41 @@ class PublicationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             p.publish(self.folder, self.root, plan)
 
+    def test_a_batch_that_adds_a_file_takes_it_out_again_on_restore(self):
+        added = {
+            "js/plugins/Fixes.js": b"// fix",
+            "data/A.json": self.after["data/A.json"],
+        }
+        with self.assertRaisesRegex(ValueError, "no file"):
+            p.freeze(self.folder, self.root, added, "playtest_fix")
+        plan = p.freeze(
+            self.folder,
+            self.root,
+            added,
+            "playtest_fix",
+            created={"js/plugins/Fixes.js"},
+        )
+        result = p.publish(self.folder, self.root, plan)
+        self.assertEqual((self.root / "js/plugins/Fixes.js").read_bytes(), b"// fix")
+        restore, record = p.restore_candidates(
+            self.folder, self.root, result["publication"]
+        )
+        self.assertEqual(
+            restore,
+            {"js/plugins/Fixes.js": None, "data/A.json": self.before["data/A.json"]},
+        )
+        p.publish(
+            self.folder,
+            self.root,
+            p.freeze(
+                self.folder, self.root, restore, "runtime_restore", restore=record
+            ),
+        )
+        self.assertFalse((self.root / "js/plugins/Fixes.js").exists())
+        self.assertEqual(
+            (self.root / "data/A.json").read_bytes(), self.before["data/A.json"]
+        )
+
     def test_write_then_raise_rolls_back_the_attempted_batch_and_retains_backups(self):
         plan = p.freeze(self.folder, self.root, self.after, "export_selected")
 

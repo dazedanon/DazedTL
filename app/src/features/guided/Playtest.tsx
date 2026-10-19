@@ -1,10 +1,11 @@
 /**
  * The release playtest as both methods show it: where it stands, each
  * problem with the task that fixes it and a capture when the tour saw it,
- * and what the tour reached.
+ * and what the tour reached. Guided shows it in its Text QA task, whose
+ * assistant runs it, with the problems in a sheet of their own.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { PlaytestProblem, PlaytestState } from "../../api/contracts";
 import { api } from "../../api/client";
 import { ActionList, ActionRow } from "../../ui/ActionList";
@@ -37,6 +38,9 @@ export function PlaytestWork({
   progress,
   failed = "",
   rerun = "Run the playtest again to check the current files.",
+  idle = "DazedTL plays the game in a hidden window and writes nothing into it.",
+  compact = false,
+  stop,
 }: {
   projectId: string;
   playtest: PlaytestState;
@@ -46,18 +50,33 @@ export function PlaytestWork({
   progress?: string;
   /** Why the last playtest started did not finish, when it did not. */
   failed?: string;
-  /** How the user has an outdated playtest run again. */
+  /** How an outdated playtest runs again. */
   rerun?: string;
+  /** What happens before the first playtest. */
+  idle?: string;
+  /** The problems open in a sheet from the coverage line, for a page that
+   * shows the playtest beside other work. */
+  compact?: boolean;
+  /** Stops the running playtest, beside its progress. */
+  stop?: ReactNode;
 }) {
   const phase = playtestPhase(playtest, running);
   const [capture, setCapture] = useState<PlaytestProblem | null>(null);
   const [strings, setStrings] = useState<PlaytestProblem | null>(null);
   const [coverage, setCoverage] = useState(false);
-  const [expanded, setExpanded] = useState<string[]>([]);
+  const [report, setReport] = useState(false);
   // While a playtest runs, the last report's problems are about to change.
   const groups =
     playtest.unreadable || running ? [] : playtestGroups(playtest.problems);
   const reached = playtestCoverage(playtest);
+  const problems = (
+    <PlaytestProblems
+      groups={groups}
+      since={!!playtest.since}
+      onCapture={setCapture}
+      onStrings={setStrings}
+    />
+  );
   return (
     <>
       <StatusPanel
@@ -66,7 +85,7 @@ export function PlaytestWork({
         progress={phase === "running" ? progress : undefined}
         description={
           phase === "not_started"
-            ? "DazedTL plays the game in a hidden window and writes nothing into it."
+            ? idle
             : phase === "running"
               ? "DazedTL is playing the game; this takes a few minutes."
               : phase === "blocked"
@@ -78,6 +97,9 @@ export function PlaytestWork({
         }
         help="It checks the game's files, then plays the title, New Game, every menu screen, a save and a load, a shop, a battle and the screens plugins add, with every item and skill on hand. Problems the tour saw come with a capture; the rest were found in the files. Problems in translated text go to Text QA's review."
       >
+        {phase === "running" && stop && (
+          <p className="playtest-coverage">{stop}</p>
+        )}
         {phase !== "not_started" &&
           phase !== "running" &&
           !playtest.unreadable &&
@@ -89,6 +111,11 @@ export function PlaytestWork({
                   ? `${playtest.gaps.length.toLocaleString()} not reached`
                   : "Coverage"}
               </Button>
+              {compact && groups.length > 0 && (
+                <Button variant="link" onClick={() => setReport(true)}>
+                  Problems
+                </Button>
+              )}
             </p>
           )}
       </StatusPanel>
@@ -97,70 +124,20 @@ export function PlaytestWork({
           <span>The last playtest did not finish: {failed}</span>
         </Notice>
       )}
-      {groups.length > 0 && (
-        <div className="playtest-problems">
-          {groups.map((group) => (
-            <section key={group.kind} aria-label={group.title}>
-              <h3>
-                {group.title} · {group.problems.length.toLocaleString()}
-              </h3>
-              <ActionList>
-                {(expanded.includes(group.kind)
-                  ? group.problems
-                  : group.problems.slice(0, groupPreview)
-                ).map((problem, index) => (
-                  <ActionRow
-                    key={index}
-                    label={
-                      <>
-                        <strong className="playtest-title">
-                          {playtestTitle(problem)}
-                          {problem.new && playtest.since && (
-                            <span className="playtest-new">New</span>
-                          )}
-                        </strong>
-                        <small>{problem.note}</small>
-                        <small>
-                          {[playtestWhere(problem), playtestFix(problem)]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </small>
-                      </>
-                    }
-                  >
-                    {problem.seen?.capture && (
-                      <Button
-                        variant="link"
-                        onClick={() => setCapture(problem)}
-                      >
-                        View
-                      </Button>
-                    )}
-                    {problem.texts && (
-                      <Button
-                        variant="link"
-                        onClick={() => setStrings(problem)}
-                      >
-                        Show strings
-                      </Button>
-                    )}
-                  </ActionRow>
-                ))}
-              </ActionList>
-              {group.problems.length > groupPreview &&
-                !expanded.includes(group.kind) && (
-                  <Button
-                    variant="link"
-                    onClick={() =>
-                      setExpanded((value) => [...value, group.kind])
-                    }
-                  >
-                    Show all {group.problems.length.toLocaleString()}
-                  </Button>
-                )}
-            </section>
-          ))}
-        </div>
+      {!compact && problems}
+      {report && groups.length > 0 && (
+        <Modal
+          label="Playtest problems"
+          onDismiss={() => setReport(false)}
+          size="lg"
+        >
+          <DialogHeader
+            title="Playtest problems"
+            description={playtestSummary(playtest)}
+            onClose={() => setReport(false)}
+          />
+          <DialogBody>{problems}</DialogBody>
+        </Modal>
       )}
       {capture && (
         <PlaytestCapture
@@ -176,6 +153,81 @@ export function PlaytestWork({
         <PlaytestReach playtest={playtest} onClose={() => setCoverage(false)} />
       )}
     </>
+  );
+}
+
+/** Problems by kind, each with where it is, the task that fixes it and
+ * what the tour saw. */
+function PlaytestProblems({
+  groups,
+  since,
+  onCapture,
+  onStrings,
+}: {
+  groups: ReturnType<typeof playtestGroups>;
+  /** The report compares with the playtest before it. */
+  since: boolean;
+  onCapture: (problem: PlaytestProblem) => void;
+  onStrings: (problem: PlaytestProblem) => void;
+}) {
+  const [expanded, setExpanded] = useState<string[]>([]);
+  if (!groups.length) return null;
+  return (
+    <div className="playtest-problems">
+      {groups.map((group) => (
+        <section key={group.kind} aria-label={group.title}>
+          <h3>
+            {group.title} · {group.problems.length.toLocaleString()}
+          </h3>
+          <ActionList>
+            {(expanded.includes(group.kind)
+              ? group.problems
+              : group.problems.slice(0, groupPreview)
+            ).map((problem, index) => (
+              <ActionRow
+                key={index}
+                label={
+                  <>
+                    <strong className="playtest-title">
+                      {playtestTitle(problem)}
+                      {problem.new && since && (
+                        <span className="playtest-new">New</span>
+                      )}
+                    </strong>
+                    <small>{problem.note}</small>
+                    <small>
+                      {[playtestWhere(problem), playtestFix(problem)]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </small>
+                  </>
+                }
+              >
+                {problem.seen?.capture && (
+                  <Button variant="link" onClick={() => onCapture(problem)}>
+                    View
+                  </Button>
+                )}
+                {problem.texts && (
+                  <Button variant="link" onClick={() => onStrings(problem)}>
+                    Show strings
+                  </Button>
+                )}
+              </ActionRow>
+            ))}
+          </ActionList>
+          {group.problems.length > groupPreview &&
+            !expanded.includes(group.kind) && (
+              <Button
+                variant="link"
+                onClick={() => setExpanded((value) => [...value, group.kind])}
+              >
+                Show all {group.problems.length.toLocaleString()}
+              </Button>
+            )}
+        </section>
+      ))}
+    </div>
   );
 }
 

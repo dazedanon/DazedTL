@@ -101,7 +101,7 @@ export const playtestReach: Record<string, string> = {
 const fixes: Record<PlaytestFix, string> = {
   "text-qa": "Text QA corrects it",
   translate: "Translate it in Translate",
-  "plugin-files": "Translate it in Plugin files",
+  "plugin-files": "Your assistant translates it",
   game: "The game's own code or data",
 };
 const reviews = {

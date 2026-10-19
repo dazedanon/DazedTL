@@ -11,6 +11,7 @@ from dazedtl.storage import write_json
 from . import context_setup, header_review, reference_folders, speaker_setup
 from .files import digest, project_path, read_json
 from .helper_command import helper_command, windows_note
+from .playtest import final_check
 
 if TYPE_CHECKING:
     from .guided import Guided
@@ -207,9 +208,18 @@ class GuidedContext:
         if not qa["current"]:
             raise ValueError(qa["message"])
         task = Path(qa["task"])
-        helper = helper_command(self.guided.translation.workspace, project_id, "qa")
+        workspace = self.guided.translation.workspace
+        helper = helper_command(workspace, project_id, "qa")
+        text = qa_handoff(task, helper)
+        # For MV/MZ the task is also the final check, with the playtest.
+        if native["engine"] == "MVMZ":
+            text += final_check(
+                helper_command(workspace, project_id, "playtest"),
+                helper_command(workspace, project_id, "plugins"),
+                helper,
+            )
         return {
-            "text": qa_handoff(task, helper),
+            "text": text,
             "handoff": {
                 "kind": "qa",
                 "requestId": task.name,

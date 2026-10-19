@@ -120,15 +120,7 @@ export const workflow: WorkflowStage[] = [
         optional: true,
         title: "Text QA",
         description:
-          "Prepare a QA task, copy it to your assistant, then review its saved findings.",
-      },
-      {
-        id: "release-playtest",
-        optional: true,
-        engine: "MVMZ",
-        title: "Playtest",
-        description:
-          "Play the game to find crashes, Japanese left on screen and text that doesn't fit.",
+          "Your assistant reviews the game's text and, for MV and MZ, plays the game and fixes what it finds.",
       },
     ],
   },

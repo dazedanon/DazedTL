@@ -82,10 +82,17 @@ def pick(value, keys):
 
 
 def undecided(item):
-    """Text only the assistant can settle; the app protects lookup keys itself."""
-    return (
-        not item["protected"]
-        and item.get("finding", {}).get("disposition") not in DECIDED
+    """Text only the assistant can settle; the app protects lookup keys itself.
+    Text kept in Japanese that the playtest saw drawn is decided again, once,
+    with that evidence."""
+    finding = item.get("finding", {})
+    return not item["protected"] and (
+        finding.get("disposition") not in DECIDED
+        or bool(
+            item.get("seen")
+            and finding.get("disposition") in KEPT
+            and not finding.get("seen")
+        )
     )
 
 
@@ -183,6 +190,10 @@ def no_captured(_project_id):
     return None
 
 
+def no_seen(_project_id):
+    return {"report": "", "texts": []}
+
+
 # Stored reviews and receipts also keep the working copies and frozen bytes that
 # publication and recovery check; the renderer sees only what it shows.
 REVIEW_KEYS = (
@@ -274,6 +285,7 @@ class PluginService:
         labels=no_labels,
         capture=no_capture,
         captured=no_captured,
+        seen=no_seen,
     ):
         self.projects, self.translation, self.backend = projects, translation, backend
         self.documents = documents or Documents()
@@ -286,6 +298,8 @@ class PluginService:
         # Starts a capture of those labels' screens with the shortening
         # copies served in place of the game's files, and reads the latest.
         self.capture_labels, self.captured = capture, captured
+        # Japanese the latest release playtest saw a plugin draw.
+        self.seen = seen
         self.lock = threading.RLock()
         self.previews, self.cache, self.observed, self.foreign = {}, {}, {}, {}
         self.located = {}
@@ -583,7 +597,12 @@ class PluginService:
                     "plugin": name,
                     "enabled": enabled,
                 }
+        from util.playtest.fixes import NAME as FIXES
+
         for path in sorted((root / (prefix + "js/plugins")).glob("*.js")):
+            # The playtest's fixes are DazedTL's own code, never game text.
+            if path.stem == FIXES:
+                continue
             relative = path.relative_to(root).as_posix()
             owner = (
                 path.stem.removesuffix("Config")
@@ -941,6 +960,28 @@ class PluginService:
         if self.row_status(value, row) == "applied":
             return row["path"]
         return self.current_copy(row)
+
+    def mark_seen(self, project_id, value):
+        """Marks each occurrence the latest playtest saw drawn with where; one
+        kept in Japanese then goes back to the assistant."""
+        texts = {row["text"]: row for row in self.seen(project_id)["texts"]}
+        for row in value["files"].values():
+            for item in row["occurrences"]:
+                item.pop("seen", None)
+                if item["protected"] or not texts:
+                    continue
+                text = str(item["value"]).strip()
+                # A plugin may draw a long string over several lines.
+                found = texts.get(text) or next(
+                    (
+                        row
+                        for key, row in texts.items()
+                        if len(key) >= 4 and key in text
+                    ),
+                    None,
+                )
+                if found:
+                    item["seen"] = pick(found, ("where", "capture"))
 
     def find_labels(self, project_id, value, texts):
         """Where the game draws each label from: text in the bytes each plugin
@@ -1464,6 +1505,7 @@ class PluginService:
                     # A copied task scans again and reports the problem.
                     value = self.load(project_id)
             self.observe(project_id, value)
+            self.mark_seen(project_id, value)
             project, _ = self.record(project_id)
             selected = set(value["selection"])
             stands = {
@@ -1614,6 +1656,7 @@ class PluginService:
         of every decision once nothing is."""
         self.scan(project_id, value)
         self.observe(project_id, value)
+        self.mark_seen(project_id, value)
         active = next(
             (
                 request
@@ -1835,6 +1878,11 @@ class PluginService:
                 "You may report some files, run the helper and continue with the request it returns for the rest.\n"
                 "A plugin that loads its own JSON through an exact path literal listed in loaderLiterals can add that file under dependencies; a later request lists its text.\n"
                 + (
+                    "An occurrence with seen was drawn on screen when DazedTL played the game: seen says where, with a capture to look at. Text a screen of the game draws is player text, so decide it visible unless the plugin also uses it as a key; a screen the playtest opened on its own may be one players never reach, so check what opens it first. Say why in the reason.\n"
+                    if any(item.get("seen") for _, items in scope for item in items)
+                    else ""
+                )
+                + (
                     "This is a recheck: each occurrence lists its earlier finding. Keep or correct each one, starting with anything the user reports as untranslated or broken in the game. Files left out of the report keep their findings; a file you report must decide all of its listed occurrences again.\n"
                     if recheck
                     else "A finding listed with an occurrence was left undecided earlier; settle it now.\n"
@@ -1944,7 +1992,7 @@ class PluginService:
                 workspace, project_id, "plugins", "--continue-request", identity
             )
             + "\nIt checks the report and returns the next request with its instructions, or the final state. "
-            "Working copies are prepared automatically, and runtime Apply stays in the app: this helper cannot approve or publish game files.\n"
+            "Working copies are prepared automatically; applying them to the game is a separate step, never part of this task.\n"
             "If loopback access is sandboxed, use your normal permission flow and retry this read-only status command first:\n"
             + helper_command(workspace, project_id, "plugins")
             + "\nA lost response may follow a completed action. Read the activeRequest path from that status and follow its saved instructions; "
@@ -1992,6 +2040,7 @@ class PluginService:
                     "Copy a plugin task in the app before continuing through the helper."
                 )
             self.verify_request(project_id, request)
+            self.mark_seen(project_id, value)
             if request_id != request["requestId"]:
                 if request_id == request.get("previousRequestId"):
                     # A lost reply must not restart the next stage or replace edited copies.
@@ -2019,6 +2068,7 @@ class PluginService:
             if any(row.get("stale") for row in value["files"].values()):
                 self.scan(project_id, value)
             self.observe(project_id, value)
+            self.mark_seen(project_id, value)
             result = self.advance(project_id, value, request)
             self.save(project_id, value)
             if result:
@@ -2050,7 +2100,7 @@ class PluginService:
                         if any(row["state"] != "elsewhere" for row in labels)
                         else ""
                     )
-                    + ". The user applies it to the game in the app."
+                    + ". Applying it to the game is a separate step."
                     + (
                         " These files could not be read and were left unchanged: "
                         + ", ".join(unreadable)
@@ -2321,6 +2371,8 @@ class PluginService:
                         )
                     elif target["latent"] and finding["disposition"] == "visible":
                         finding["disposition"] = "latent"
+                    if target.get("seen"):
+                        finding["seen"] = True
                     if not updated["originals"]:
                         finding["safe"] = False
                     target["finding"] = finding

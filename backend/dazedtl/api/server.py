@@ -84,6 +84,7 @@ class Application:
             labels=self.text_qa.plugin_labels,
             capture=self.playtest.check_labels,
             captured=self.playtest.labels,
+            seen=self.playtest.seen_plugin_text,
         )
         self.assistant_tasks = AssistantTasks(self.workspace)
         self.image_editor = ImageEditor(self.images)
@@ -443,15 +444,26 @@ class Application:
         )
 
     def translation_playtest(self, project_id, step, stops=None, widths=None):
-        """The release playtest for the Playtest task or the project's
-        assistant, and its layout check; both play the game and write
-        nothing into it."""
+        """The release playtest for the project's assistant, and its layout
+        check; both play the game and write nothing into it. Its fix step
+        writes the assistant's fixes once a play with them in place breaks
+        nothing new."""
         return self.playtest.run(project_id, step, stops, widths)
 
     def plugins_action(self, project_id, action, options=None):
         return self._handed_off(
             project_id, self.plugins.action(project_id, action, options)
         )
+
+    def plugins_task(self, project_id):
+        """The Plugin files task for the final check's assistant, as Copy
+        gives it, such as text the playtest saw that Plugin files kept."""
+        return self.plugins_action(project_id, "plugin_task")
+
+    def plugins_apply(self, project_id):
+        """Applies the checked plugin files for the final check's assistant,
+        as Apply to game does."""
+        return self.plugins.action(project_id, "apply")
 
     def assistant_task_dismiss(self, project_id, kind):
         self.projects.get(project_id)
@@ -846,6 +858,8 @@ def routes(app):
     methods["plugins_action"] = (app.plugins_action, lambda value, _params: value)
     methods["plugins_state"] = (app.plugins.state, lambda value, _params: value)
     methods["plugins_capture"] = (app.plugins.capture, lambda value, _params: value)
+    methods["plugins_task"] = (app.plugins_task, lambda value, _params: value)
+    methods["plugins_apply"] = (app.plugins_apply, lambda value, _params: value)
     methods["plugins_continue"] = (
         app.plugins.continue_task,
         lambda value, _params: value,

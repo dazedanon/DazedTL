@@ -32,9 +32,12 @@ The assistant shortens those in the plugin files before `qa --apply` and runs `q
 Apply waits while a playtest or context question is open: the user answers it in DazedTL's Text QA task, and `qa --apply --wait MINUTES` applies once every answer is in.
 `qa --undo QA-0001` puts back one applied correction and `qa --apply-again QA-0001` applies an undone one again, each with its own checkpoint; `qa --choose QUESTION keep` or `use` records an answer the user gave the assistant.
 
-The release playtest for RPG Maker MV/MZ runs with `playtest --run --wait MINUTES`, which checks the game's files, plays it in a hidden window and returns where it stands; `--report` names the report file, and `playtest` alone the next step.
+The release playtest for RPG Maker MV/MZ runs with `playtest --run --wait MINUTES`, which checks the game's files, plays it in a hidden window and returns where it stands; `--report` names the report file, and `playtest` alone the next step, the fixes file and the saved stops.
 `--stops FILE` adds places after the standard tour, a JSON list of `{"title", "do"}` objects: `map` with `map`, `x` and `y`, `event` with `event` (and `map`), `common-event` with `id`, `battle` with `troop`, `scene` with `scene`, or `script` with `script`, each optionally with `switches`, `variables` and the `seconds` to play after it.
-Its findings in translated text reach text QA by themselves; the rest name the step that fixes them.
+The stops given replace the saved ones, which every later run visits, and `[]` clears them.
+`playtest --fix --wait MINUTES` plays the game with the fixes file, a working copy of the game's `js/plugins/DazedTL_Fixes.js`, in its place and with `js/main.js` loading it after the game's plugins.
+Only when that play still plays, stops nowhere new, reaches as many places and no longer shows something the last playtest found does it write both, as one batch History restores; the play then becomes the latest report, and otherwise its reason is the step's failure.
+Its findings in translated text reach text QA by themselves; plugin text the playtest saw drawn goes back to Plugin files, which `plugins --task` continues as the app's Copy does and `plugins --apply` applies as Apply to game does; the rest name the step that fixes them.
 
 ### Sandboxed connections
 

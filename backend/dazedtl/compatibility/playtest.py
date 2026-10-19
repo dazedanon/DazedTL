@@ -56,9 +56,7 @@ def run_playtest(plan, log):
             "finished_at": datetime.now(UTC).isoformat(),
         },
     )
-    for old in sorted(path for path in storage.iterdir() if path.is_dir())[:-KEEP]:
-        if old.name != name:
-            shutil.rmtree(old, ignore_errors=True)
+    _prune(storage, name)
     observed = observe(folder, plan["options"]["focus"], report)
     if observed:
         log(f"Handed {observed} finding(s) to text QA's review")
@@ -67,6 +65,171 @@ def run_playtest(plan, log):
         "observed": observed,
         "seconds": report["seconds"],
     }
+
+
+# A fix check keeps its report apart until its fixes go into the game; then
+# it is the playtest's latest, since it played the game as it now is.
+FIX_POINTER = "playtest-fix.json"
+FIX_STORAGE = "playtest-fix"
+# The assistant's working copy of the game's fixes plugin.
+FIXES = ".dazedtl/playtest/DazedTL_Fixes.js"
+
+
+def fixes_copy(root, web):
+    """The working copy of the fixes plugin, made from the game's own, or an
+    empty plugin before the game has one."""
+    from util.playtest import fixes
+
+    path = project_path(root, FIXES, exists=False)
+    if not path.exists():
+        current = web / fixes.PLUGIN
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(
+            current.read_bytes()
+            if current.is_file()
+            else fixes.TEMPLATE.encode("utf-8")
+        )
+    return path
+
+
+def run_fixes(plan, log):
+    """Plays the game with the assistant's fixes in place of the game's files;
+    once nothing new breaks and something the last playtest found is gone,
+    writes them as one batch History can restore, and the play becomes the
+    playtest's latest report."""
+    from desktop.backend.workflow_actions import action_guard, validate_plan
+    from util import rpgmaker_window
+    from util.playtest import fixes
+    from util.playtest.run import run
+
+    from dazedtl.plugins.service import kept_settings
+    from dazedtl.translation import publication
+
+    validate_plan(plan)
+    folder = Path(plan["folder"])
+    root = Path(plan["project"]["source"])
+    data = Path(plan["project"]["data"])
+    found = latest(folder)
+    if not found or found[0]["binding"] != binding(plan["guard"]):
+        raise ValueError(
+            "Run the playtest first: fixes are checked against a playtest of the "
+            "game as it is now."
+        )
+    raw = project_path(root, FIXES).read_bytes()
+    if digest(raw) != plan["options"]["fixes"]:
+        raise ValueError("The fixes changed after the check started. Check them again.")
+    fixes.check(raw)
+    web = rpgmaker_window.web_root(data)
+    prefix = web.relative_to(root.resolve()).as_posix()
+    names = {
+        key: (key if prefix == "." else f"{prefix}/{key}")
+        for key in (fixes.PLUGIN, fixes.MAIN)
+    }
+    plugin = web / fixes.PLUGIN
+    if plugin.is_file() and plugin.read_bytes() == raw:
+        raise ValueError("The game already has these fixes.")
+    storage = folder / FIX_STORAGE
+    storage.mkdir(exist_ok=True)
+    name = datetime.now(UTC).strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
+    out = storage / name
+    served = fixes.served(web, raw, out)
+    log("Playing the game with the fixes in place")
+    report = run(
+        root,
+        data,
+        out,
+        stops=plan["options"]["stops"],
+        log=log,
+        stopped=getattr(log, "stopped", lambda: False),
+        previous=found[1],
+        kept=kept_settings(root),
+        overlay=served,
+    )
+    reason = fixes.refusal(found[1], report)
+    record = {
+        "report": name,
+        "finished_at": datetime.now(UTC).isoformat(),
+        "fixes": digest(raw),
+        "since": report.get("since") or {},
+        "reason": reason,
+    }
+    if not reason:
+        try:
+            validate_plan(plan)
+        except ValueError:
+            record["reason"] = reason = (
+                "The game changed while the fixes were played. Check them again."
+            )
+    if not reason:
+        candidates = {names[fixes.PLUGIN]: raw}
+        main = served[fixes.MAIN].read_bytes()
+        if main != (web / fixes.MAIN).read_bytes():
+            candidates[names[fixes.MAIN]] = main
+        frozen = publication.freeze(
+            folder, root, candidates, "playtest_fix", created={names[fixes.PLUGIN]}
+        )
+        log("Writing the fixes into the game; History can restore them")
+        record["publication"] = publication.publish(folder, root, frozen, log)[
+            "publication"
+        ]
+        # The play matched the game as it now is, so it is the latest report.
+        shutil.rmtree(out / "served", ignore_errors=True)
+        out.rename(folder / STORAGE / name)
+        write_json(
+            folder / POINTER,
+            {
+                "report": name,
+                "binding": binding(action_guard(plan["project"], folder)),
+                "finished_at": record["finished_at"],
+            },
+        )
+        _prune(folder / STORAGE, name)
+        observe(folder, plan["options"]["focus"], report)
+    write_json(folder / FIX_POINTER, record)
+    _prune(storage, name)
+    if reason:
+        raise ValueError(reason)
+    return {
+        "publication": record["publication"],
+        "fixed": record["since"].get("fixed", 0),
+        "new": record["since"].get("new", 0),
+        "problems": len(report["problems"]),
+    }
+
+
+def _prune(storage, keep):
+    """Removes all but the newest reports, never `keep`."""
+    for old in sorted(path for path in storage.iterdir() if path.is_dir())[:-KEEP]:
+        if old.name != keep:
+            shutil.rmtree(old, ignore_errors=True)
+
+
+def fixes_state(folder, root, web):
+    """The working copy of the fixes plugin, whether the game has it as it
+    is, and the latest check of it."""
+    from util.playtest.fixes import PLUGIN
+
+    copy = fixes_copy(root, web)
+    game = web / PLUGIN
+    result = {
+        "file": str(copy),
+        "in_game": game.is_file() and game.read_bytes() == copy.read_bytes(),
+    }
+    pointer = Path(folder) / FIX_POINTER
+    try:
+        check = read_json(pointer) if pointer.exists() else None
+    except OSError, ValueError:
+        check = None
+    if check:
+        result["check"] = {
+            key: check[key]
+            for key in ("finished_at", "reason", "publication")
+            if check.get(key)
+        } | {
+            "fixed": check["since"].get("fixed", 0),
+            "new": check["since"].get("new", 0),
+        }
+    return result
 
 
 # A layout check keeps its own reports, so it never replaces the playtest's.
@@ -95,9 +258,7 @@ def run_layout(plan, log):
         folder / LAYOUT_POINTER,
         {"report": name, "finished_at": datetime.now(UTC).isoformat()},
     )
-    for old in sorted(path for path in storage.iterdir() if path.is_dir())[:-KEEP]:
-        if old.name != name:
-            shutil.rmtree(old, ignore_errors=True)
+    _prune(storage, name)
     return {
         "probes": len(result["probes"]),
         "fit": sum(probe["fits"] for probe in result["probes"]),
@@ -172,9 +333,7 @@ def run_labels(plan, log):
             "files": {row["path"]: row["hash"] for row in options["files"]},
         },
     )
-    for old in sorted(path for path in storage.iterdir() if path.is_dir())[:-KEEP]:
-        if old.name != name:
-            shutil.rmtree(old, ignore_errors=True)
+    _prune(storage, name)
     return {
         "labels": len(result["labels"]),
         "fit": sum(row["fits"] for row in result["labels"]),
@@ -201,6 +360,44 @@ def latest(folder) -> tuple[dict, dict] | None:
     return saved, read_json(path)
 
 
+def seen_plugin_text(folder):
+    """Japanese the latest playtest saw a plugin draw, each with where, for
+    Plugin files to decide again: players see it."""
+    try:
+        found = latest(folder)
+    except ValueError, OSError, KeyError, TypeError:
+        return {"report": "", "texts": []}
+    if not found:
+        return {"report": "", "texts": []}
+    saved, report = found
+    captures = Path(folder) / STORAGE / saved["report"] / "captures"
+    texts = {}
+
+    def add(text, seen):
+        text = str(text or "").strip()
+        if text and text not in texts:
+            texts[text] = {
+                "text": text,
+                "where": "Seen on "
+                + (seen.get("scene") or seen.get("stop") or "screen"),
+                **(
+                    {"capture": str(captures / (seen["capture"] + ".jpg"))}
+                    if seen.get("capture")
+                    else {}
+                ),
+            }
+
+    for problem in report.get("problems", []):
+        if problem.get("fix") != "plugin-files" or problem["kind"] != "japanese":
+            continue
+        for row in problem.get("texts") or []:
+            if row.get("seen"):
+                add(row["text"], row["seen"])
+        if problem.get("seen") and problem.get("text"):
+            add(problem["text"], problem["seen"])
+    return {"report": saved["report"], "texts": list(texts.values())}
+
+
 def pending(folder, guard):
     """The latest playtest's findings in translated text, while the game is
     as it played it."""
@@ -224,6 +421,18 @@ def reviewing(folder, focus):
         return task, qa.observed_names(task), complete
     except ValueError, OSError, KeyError, TypeError:
         return None
+
+
+def task_observations(folder, focus, found):
+    """The playtest findings QA prepares its task with: the ones a task still
+    under review was prepared with, so preparing again, as after a plugin or
+    playtest fix, resumes it rather than starting a new review; else `found`,
+    the current report's."""
+    under_review = reviewing(folder, focus)
+    if under_review and not under_review[2]:
+        pointer = Path(folder) / ("text-qa-" + focus + ".json")
+        return list(read_json(pointer).get("observations") or [])
+    return found
 
 
 def observe(folder, focus, report):

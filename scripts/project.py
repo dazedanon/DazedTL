@@ -297,7 +297,7 @@ def main():
         "playtest",
         help="The release playtest for RPG Maker MV/MZ: DazedTL checks the game's files and "
         "plays it in a hidden window, then reports crashes, Japanese on screen, text "
-        "that doesn't fit and lost names or codes; it writes nothing into the game",
+        "that doesn't fit and lost names or codes; only --fix writes into the game",
     )
     playtest_step = playtest.add_mutually_exclusive_group()
     playtest_step.add_argument(
@@ -305,6 +305,13 @@ def main():
     )
     playtest_step.add_argument(
         "--report", action="store_true", help="Where it stands, with the report file"
+    )
+    playtest_step.add_argument(
+        "--fix",
+        action="store_true",
+        help="Play the game with the fixes file the status names in place of the game's "
+        "fixes plugin, and write it into the game once nothing new breaks and something "
+        "the last playtest found is gone; History restores it",
     )
     playtest_step.add_argument(
         "--layout",
@@ -318,7 +325,8 @@ def main():
         "--stops",
         type=Path,
         help="With --run: a JSON file of places to visit after the standard tour, each "
-        '{"title": ..., "do": "map"|"event"|"common-event"|"battle"|"scene"|"script", ...}',
+        '{"title": ..., "do": "map"|"event"|"common-event"|"battle"|"scene"|"script", ...}; '
+        "they replace the saved stops, which every later run visits, and [] clears them",
     )
     playtest.add_argument(
         "--wait",
@@ -335,6 +343,17 @@ def main():
     plugins_step.add_argument(
         "--continue-request",
         help="Exact active request ID; checks the report and returns the next stage without publishing game files",
+    )
+    plugins_step.add_argument(
+        "--task",
+        action="store_true",
+        help="Start or resume the Plugin files task, as the app's Copy does, and print its "
+        "instructions; the final check uses it for plugin text the playtest saw",
+    )
+    plugins_step.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply the checked plugin files to the game, as the app's Apply to game does",
     )
     plugins_step.add_argument(
         "--capture",
@@ -540,6 +559,8 @@ def main():
                 params["step"] = (
                     "run"
                     if args.run
+                    else "fix"
+                    if args.fix
                     else "report"
                     if args.report
                     else "layout"
@@ -560,6 +581,10 @@ def main():
                     if args.continue_request
                     else "plugins_capture"
                     if args.capture
+                    else "plugins_task"
+                    if args.task
+                    else "plugins_apply"
+                    if args.apply
                     else "plugins_state"
                 )
                 if args.continue_request:

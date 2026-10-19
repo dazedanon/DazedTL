@@ -64,12 +64,15 @@ def freeze(
     task=None,
     findings=None,
     sources=None,
+    created=(),
 ):
     """Freeze both sides before the user reviews an exact destination batch.
     `task` names the QA task whose corrections the batch applies or undoes,
     and `findings` which of them. `sources` names saved files that hold
     candidates, such as a run's outputs, which publishing reads again and
-    checks by hash instead of copies."""
+    checks by hash instead of copies. `created` names files the batch may add
+    to the game; a restore takes an added file out again, its candidate None,
+    and puts back one a batch took out."""
     if not candidates:
         raise ValueError("Select at least one file or correction to apply.")
     _discard_unused(folder)
@@ -82,22 +85,27 @@ def freeze(
         following = restore["prior_outputs"]
     rows = []
     for index, (name, raw) in enumerate(sorted(candidates.items())):
-        target = project_path(root, name)
-        before = target.read_bytes()
+        target = project_path(root, name, exists=False)
+        # A file a batch adds is absent before it, and after its restore.
+        if not target.exists() and not (restore or name in created):
+            raise ValueError("The game has no file " + name + ".")
+        if raw is None and not restore:
+            raise ValueError("Only a restore takes a file out of the game.")
+        before = target.read_bytes() if target.exists() else None
         # A full overwrite backs up the bytes it replaces when it publishes.
-        if not overwrite:
+        if not overwrite and before is not None:
             write_bytes(base / f"{index}.before", before)
         source = (sources or {}).get(name)
-        if source is None:
+        if source is None and raw is not None:
             write_bytes(base / f"{index}.after", raw)
         rows.append(
             {
                 "path": name,
-                "before": digest(before),
-                "after": digest(raw),
+                "before": _hash(before),
+                "after": _hash(raw),
                 "index": index,
-                "size": len(raw),
-                "mode": target.stat().st_mode & 0o777,
+                "size": len(raw or b""),
+                "mode": target.stat().st_mode & 0o777 if before is not None else 0o644,
                 **({"source": str(source)} if source is not None else {}),
             }
         )
@@ -121,6 +129,24 @@ def freeze(
     record["source_inputs"] = digest(index.read_bytes()) if index.exists() else None
     write_json(base / "receipt.json", record)
     return {"id": identity, "sha256": digest(record), "files": rows}
+
+
+def _hash(raw):
+    """A file's digest, or None for a file that is not there."""
+    return None if raw is None else digest(raw)
+
+
+def _current(target):
+    return target.read_bytes() if target.exists() else None
+
+
+def _put(target, raw, mode):
+    """Writes a file, or takes it out for None."""
+    if raw is None:
+        target.unlink(missing_ok=True)
+        return
+    write_bytes(target, raw)
+    target.chmod(mode)
 
 
 def _discard_unused(folder):
@@ -200,22 +226,26 @@ def publish(folder, root, plan, log=lambda _: None):
     overwrite = record.get("overwrite")
     payloads = []
     for row in record["files"]:
-        target = project_path(root, row["path"])
+        target = project_path(root, row["path"], exists=False)
         after = (
-            Path(row["source"])
-            if "source" in row
-            else project_path(base, f"{row['index']}.after")
-        ).read_bytes()
+            None
+            if row["after"] is None
+            else (
+                Path(row["source"])
+                if "source" in row
+                else project_path(base, f"{row['index']}.after")
+            ).read_bytes()
+        )
         before = (
             None
-            if overwrite
+            if overwrite or row["before"] is None
             else project_path(base, f"{row['index']}.before").read_bytes()
         )
-        if digest(after) != row["after"] or (
+        if _hash(after) != row["after"] or (
             not overwrite
             and (
-                digest(before) != row["before"]
-                or digest(target.read_bytes()) != row["before"]
+                _hash(before) != row["before"]
+                or _hash(_current(target)) != row["before"]
             )
         ):
             raise ValueError(
@@ -235,16 +265,15 @@ def publish(folder, root, plan, log=lambda _: None):
     attempted = []
     try:
         for target, row, before, after in payloads:
-            if digest(target.read_bytes()) != row["before"]:
+            if _hash(_current(target)) != row["before"]:
                 if not overwrite:
                     raise ValueError("A runtime file changed during publication.")
                 # The game file changed since its backup moments ago.
                 before = _back_up(base, row, target)
                 write_json(base / "receipt.json", record)
             attempted.append((target, row, before, after))
-            write_bytes(target, after)
-            target.chmod(row["mode"])
-            if digest(target.read_bytes()) != row["after"]:
+            _put(target, after, row["mode"])
+            if _hash(_current(target)) != row["after"]:
                 raise ValueError("Published bytes failed verification.")
         write_json(Path(folder) / "applied-outputs.json", record["next_outputs"])
         record["state"] = "complete"
@@ -254,13 +283,12 @@ def publish(folder, root, plan, log=lambda _: None):
         errors = []
         for target, row, before, after in reversed(attempted):
             try:
-                current = digest(target.read_bytes())
+                current = _hash(_current(target))
                 if current not in {row["before"], row["after"]}:
                     raise ValueError("newer runtime edit retained")
                 if current != row["before"]:
-                    write_bytes(target, before)
-                    target.chmod(row["mode"])
-                if digest(target.read_bytes()) != row["before"]:
+                    _put(target, before, row["mode"])
+                if _hash(_current(target)) != row["before"]:
                     raise ValueError("rollback verification failed")
             except BaseException as exc:  # noqa: BLE001
                 errors.append(row["path"] + ": " + str(exc))
@@ -311,17 +339,22 @@ def restore_candidates(folder, root, identity):
         )
     candidates = {}
     for row in record["files"]:
-        target = project_path(root, row["path"])
-        if digest(target.read_bytes()) not in {row["before"], row["after"]}:
+        target = project_path(root, row["path"], exists=False)
+        if _hash(_current(target)) not in {row["before"], row["after"]}:
             raise ValueError(
                 "Newer runtime edits conflict with restore: "
                 + row["path"]
                 + ". Keep those edits or review them separately."
             )
-        raw = project_path(
-            folder, "text-publications/" + identity + f"/{row['index']}.before"
-        ).read_bytes()
-        if digest(raw) != row["before"]:
+        # A file the batch added goes out again.
+        raw = (
+            None
+            if row["before"] is None
+            else project_path(
+                folder, "text-publications/" + identity + f"/{row['index']}.before"
+            ).read_bytes()
+        )
+        if _hash(raw) != row["before"]:
             raise ValueError("The preserved restore bytes changed.")
         candidates[row["path"]] = raw
     return candidates, record

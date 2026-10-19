@@ -21,6 +21,8 @@ AGENT_METHODS = frozenset(
         "plugins_state",
         "plugins_continue",
         "plugins_capture",
+        "plugins_task",
+        "plugins_apply",
         "guided_context_status",
         "guided_event_text_request",
     }

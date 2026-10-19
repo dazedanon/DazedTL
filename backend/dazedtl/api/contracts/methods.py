@@ -255,11 +255,11 @@ class TranslationQaRequest(TypedDict):
 
 class TranslationPlaytestRequest(TypedDict):
     project_id: str
-    step: Literal["status", "report", "run", "layout"]
+    step: Literal["status", "report", "run", "fix", "layout"]
     stops: NotRequired[
         Annotated[
             list[dict[str, object]],
-            "Places only the game's events reach, played after the standard tour.",
+            "Places only the game's events reach, played after the standard tour; they replace the saved stops every later run visits.",
         ]
     ]
     widths: NotRequired[
@@ -788,6 +788,8 @@ METHODS: dict[str, Method] = {
     "plugins_capture": Method(PluginsCaptureRequest, PluginCapture, refresh=False),
     "plugins_action": Method(ActionRequest, PluginActionResult),
     "plugins_continue": Method(PluginsContinueRequest, PluginActionResult),
+    "plugins_task": Method(ProjectRequest, PluginActionResult),
+    "plugins_apply": Method(ProjectRequest, PluginActionResult),
     "plugins_adopt": Method(ForeignWorkRequest, PluginActionResult),
     "plugins_start_over": Method(ForeignWorkRequest, PluginActionResult),
 }

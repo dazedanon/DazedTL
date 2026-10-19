@@ -28,6 +28,7 @@ LABELS = {
     "reference_add": "Add DazedTL reference translation", "reference_pair": "Add Japanese / English reference pair",
     "reference_remove": "Remove reference registration", "reference_build": "Build exact reference matches", "images_status": "Refresh image readiness",
     "release_playtest": "Play the game for the release playtest",
+    "playtest_fix": "Apply playtest fixes",
     "layout_capture": "Show test text in the game's windows",
     "label_capture": "Show shortened plugin labels in the game",
 }

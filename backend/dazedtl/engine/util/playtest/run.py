@@ -108,9 +108,11 @@ def tour(
     log: Callable[[str], None],
     stopped: Callable[[], bool] = lambda: False,
     standard: bool = True,
+    overlay: dict[str, Path] | None = None,
 ) -> dict[str, Any]:
     """Plays the game; the runtime part of the report, or why it could not.
-    Without the standard tour it only starts a game for `stops`."""
+    Without the standard tour it only starts a game for `stops`. *overlay*
+    serves files, by path under the game's web folder, in place of its own."""
     try:
         web = rpgmaker_window.web_root(data)
     except rpgmaker_window.WindowUnavailable as missing:
@@ -143,6 +145,7 @@ def tour(
             HARNESS, web, out, plan,
             seconds=minutes * 60,
             size=rpgmaker_window.screen_size(data),
+            overlay=overlay,
             starting="Starting the game",
             status=status,
             log=log,
@@ -208,6 +211,16 @@ def merge(static: dict[str, Any], runtime: dict[str, Any], data_prefix: str) -> 
             gaps.append(
                 f"{event['stop'][7:]} could not be opened on its own: {event['message']}"
             )
+            continue
+        if event["kind"] == "harness":
+            # The tour's own step failed, such as a stop that started an event
+            # whose page the game had not turned on; a stop's failure is
+            # already among the gaps, with its note.
+            if not any(
+                event["message"].startswith(stop["id"] + ": ")
+                for stop in runtime.get("stops", [])
+            ):
+                gaps.append(event["message"])
             continue
         if event["kind"] == "nwjs":
             gaps.append(
@@ -519,11 +532,13 @@ def run(
     stopped: Callable[[], bool] = lambda: False,
     previous: dict[str, Any] | None = None,
     kept: Iterable[dict[str, Any]] = (),
+    overlay: dict[str, Path] | None = None,
 ) -> dict[str, Any]:
     """The full playtest of one game; writes report.json to `out`. With the
     previous report, it counts what was fixed since and marks what is new.
     *kept* names the plugin settings the plugin task keeps in Japanese on
-    purpose, which it does not report as never translated."""
+    purpose, which it does not report as never translated. *overlay* plays
+    files in place of the game's, such as fixes not yet written into it."""
     game = Path(game_root).expanduser().resolve()
     data = Path(data_root).expanduser().resolve()
     target = Path(out).expanduser().resolve()
@@ -532,7 +547,7 @@ def run(
     started = time.time()
     log("Checking the game's files")
     static = static_checks(game, data, kept)
-    runtime = tour(data, target, extra, minutes, log, stopped)
+    runtime = tour(data, target, extra, minutes, log, stopped, overlay=overlay)
     merged = merge(static, runtime, data.relative_to(game).as_posix())
     report = {
         "schema": SCHEMA,

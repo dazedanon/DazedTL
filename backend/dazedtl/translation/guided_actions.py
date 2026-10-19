@@ -45,6 +45,7 @@ NATIVE_ACTIONS = {
     "qa_apply",
     "qa_undo",
     "release_playtest",
+    "playtest_fix",
     "layout_capture",
     "label_capture",
     "runtime_restore",
@@ -679,6 +680,9 @@ class GuidedActions:
                     # one click; History restores each batch.
                     "qa_apply",
                     "qa_undo",
+                    # The assistant's fixes go in once a play with them in
+                    # place breaks nothing new; History restores them.
+                    "playtest_fix",
                     "playtest_install",
                     "playtest_apply",
                     "inspector_install",

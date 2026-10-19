@@ -599,6 +599,26 @@ class LayoutCheck(TypedDict):
     unavailable: NotRequired[str]
 
 
+class PlaytestFixCheck(TypedDict):
+    finished_at: str
+    fixed: Annotated[
+        int, "Problems of the last playtest the play with the fixes no longer found."
+    ]
+    new: int
+    reason: NotRequired[Annotated[str, "Why the fixes stayed out of the game."]]
+    publication: NotRequired[
+        Annotated[str, "The batch that wrote them, which History restores."]
+    ]
+
+
+class PlaytestFixes(TypedDict):
+    """The plugin that carries the assistant's fixes for the game's own code."""
+
+    file: Annotated[str, "The working copy the assistant edits."]
+    in_game: Annotated[bool, "The game has the working copy as it is."]
+    check: NotRequired[PlaytestFixCheck]
+
+
 class PlaytestStatus(TypedDict):
     """Where the release playtest stands, for the assistant's project helper."""
 
@@ -609,6 +629,8 @@ class PlaytestStatus(TypedDict):
     gaps: int
     reached: Annotated[str, "Stops reached, as 'done of total'."]
     next: Annotated[str, "The step to run next."]
+    stops: Annotated[int, "Saved stops every run visits after the standard tour."]
+    fixes: PlaytestFixes
     operation: NotRequired[PlaytestOperation]
     report: NotRequired[Annotated[str, "The saved report file."]]
     layout: NotRequired[LayoutCheck]
@@ -824,8 +846,8 @@ class SpeakerScan(TypedDict):
 class PublicationChange(TypedDict):
     path: str
     destination: str
-    before: str
-    after: str
+    before: Annotated[str | None, "None for a file the batch adds."]
+    after: Annotated[str | None, "None for a file the batch takes out."]
     size: int
     later_edits: bool
     # A restore's review compares the text; other publications list files.

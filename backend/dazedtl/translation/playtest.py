@@ -1,9 +1,11 @@
-"""The release playtest, started from the Playtest task or by the assistant
-through the project helper.
+"""The release playtest, which the assistant runs through the project
+helper, and the Assistant-led Playtest tab runs again.
 
 The app plays the game in a hidden window and keeps one report; it writes
 nothing into the game. Findings in text QA's lines go to QA's review, and
-the rest name the task that fixes them.
+the rest name the task that fixes them. The assistant's fixes for the game's
+own code, such as a crash or a window sized for the Japanese, go in through
+one plugin once a play with it in place breaks nothing new.
 """
 
 from __future__ import annotations
@@ -14,19 +16,45 @@ from typing import TYPE_CHECKING, Any
 
 from dazedtl.storage import write_json
 
-from .files import read_json
+from .files import digest, read_json
 
 if TYPE_CHECKING:
     from .guided import Guided
     from .text_qa import TextQA
 
-STEPS = ("status", "report", "run", "layout")
+STEPS = ("status", "report", "run", "fix", "layout")
+
+
+def final_check(playtest, plugins, qa):
+    """The playtest's part of the copied Text QA task for an RPG Maker MV/MZ
+    game: the final check the assistant runs with QA, given the helper's
+    playtest, plugins and qa commands."""
+    return f"""
+## Playtest
+
+For this RPG Maker MV/MZ game, this task is also the final check: DazedTL plays the game and you fix what it finds. Do it while QA's workers review, so the playtest's findings in translated text join their review. Never ask the user to play the game or look at it.
+Below, PLAYTEST stands for `{playtest}`, PLUGINS for `{plugins}` and QA for `{qa}`; each alone prints where its work stands.
+
+1. Run `PLAYTEST --run --wait 20`. DazedTL checks the game's files and plays it in a hidden window for a few minutes, up to ten on a system without a GPU, and writes nothing into the game. `PLAYTEST --report` names the report file; read its problems, and look at the capture each problem the tour saw names, an image in the report folder's captures.
+2. Each problem names its fix:
+   - `text-qa`: text QA corrects it, since the playtest hands it to this task's review; nothing more to do.
+   - `plugin-files`: Japanese a plugin shows. Run `PLUGINS --task` and follow the task it prints until it reports complete; it decides again, with the playtest's evidence, text Plugin files kept in Japanese that the playtest saw drawn. Then run `PLUGINS --apply` to put the checked files into the game.
+   - `translate`: game data that was never translated; translating it is a Translate run the user starts, so report it.
+   - `game`: a crash, a script that fails, Japanese the game's own code draws, or text running past a window sized for the Japanese. Fix it in the fixes plugin, the working copy `fixes.file` names in what PLAYTEST prints: plain JavaScript that js/main.js loads after the game's plugins. Give each fix its own block, starting with a comment naming the problem, and override the plugin's or engine's functions there, such as a window's width or its scene's layout, rather than changing other files. Then run `PLAYTEST --fix --wait 20`: DazedTL plays the game with the plugin in place and writes it into the game only when nothing new breaks and something the last playtest found is gone; otherwise it says why and writes nothing, so revise and run it again. That play becomes the latest report, and History can restore the fixes. Fix crashes the translation causes; one the original game's own code causes stays as it is, in your report. Text too long for its window may instead be shortened: record a translated line as an observation for QA's review, as the README's coordinator steps describe, and send plugin text to Plugin files.
+3. The report's gaps and stops not reached name what the tour could not reach. For places only the game's events lead to, such as story scenes, other maps or a recollection room, find the map, event or common event in the game's data and add stops: write a JSON list such as `[{{"title": "Recollection room", "do": "map", "map": 12, "x": 8, "y": 6}}]` and run `PLAYTEST --run --stops FILE --wait 20`. A stop does `map` (map, x, y), `event` (event, with map, x and y to go there first), `common-event` (id), `battle` (troop), `scene` (scene) or `script` (script), and may set `switches` and `variables` ({{"id": value}}) first. DazedTL saves the stops, and every later run visits them; give `[]` to clear them.
+4. A fix or a Plugin files apply changes the game's plugins, so text QA reads outdated until it captures the game's screens again: run `QA --prepare`, which resumes the same task with its review, before `QA --apply`.
+5. After `QA --apply` puts QA's corrections into the game, run `PLAYTEST --run --wait 20` again and repeat steps 2 to 4 for what it finds. Text problems found after QA is complete wait for QA's next run.
+6. Finish when the report holds only gaps nothing in the game's data leads to and problems you can't fix here. End with a short report: what the playtest reached, what you fixed in the fixes plugin and through Plugin files, and what stays, each with why.
+"""
 
 
 class Playtest:
     def __init__(self, guided: Guided, text_qa: TextQA):
         self.guided = guided
         self.text_qa = text_qa
+        # Each game's seen plugin text, by its latest report's pointer:
+        # Plugin files asks on every poll.
+        self.seen: dict[str, tuple[Any, dict[str, Any]]] = {}
 
     def run(self, project_id, step, stops=None, widths=None):
         if step not in STEPS:
@@ -34,6 +62,8 @@ class Playtest:
         native = self.native(project_id)
         if step == "run":
             self.start(project_id, stops)
+        if step == "fix":
+            self.fix(project_id, native)
         if step == "layout":
             self.check_layout(project_id, widths)
         return self.status(project_id, native, report=step == "report")
@@ -55,13 +85,48 @@ class Playtest:
         return native
 
     def start(self, project_id, stops):
+        """Plays the game; the stops given replace the saved ones, which every
+        later run visits too, so a run started from the app reaches what the
+        assistant added."""
         if stops is not None and not isinstance(stops, list):
             raise ValueError("Give the playtest's stops as a list.")
+        saved = self.stops(project_id)
         preview = self.guided.preview(
             project_id,
             "release_playtest",
             None,
-            {"stops": stops or [], "focus": self.text_qa.focus(project_id)},
+            {
+                "stops": saved if stops is None else stops,
+                "focus": self.text_qa.focus(project_id),
+            },
+        )
+        if stops is not None:
+            write_json(self.guided.path(project_id, "playtest-stops"), stops)
+        job = self.guided.execute(project_id, preview["token"])
+        write_json(
+            self.guided.path(project_id, "playtest-operation"), {"id": job["id"]}
+        )
+
+    def stops(self, project_id):
+        """The places the assistant added to every run."""
+        path = self.guided.path(project_id, "playtest-stops")
+        return read_json(path) if path.exists() else []
+
+    def fix(self, project_id, native):
+        """Plays the game with the assistant's fixes plugin in place, then
+        writes it into the game once nothing new breaks."""
+        from dazedtl.compatibility.playtest import fixes_copy
+
+        copy = fixes_copy(Path(native["source"]), Path(native["data"]).parent)
+        preview = self.guided.preview(
+            project_id,
+            "playtest_fix",
+            None,
+            {
+                "stops": self.stops(project_id),
+                "focus": self.text_qa.focus(project_id),
+                "fixes": digest(copy.read_bytes()),
+            },
         )
         job = self.guided.execute(project_id, preview["token"])
         write_json(
@@ -84,6 +149,27 @@ class Playtest:
         preview = self.guided.preview(project_id, "label_capture", None, plan)
         job = self.guided.execute(project_id, preview["token"])
         write_json(self.guided.path(project_id, "label-operation"), {"id": job["id"]})
+
+    def seen_plugin_text(self, project_id):
+        """Japanese the latest playtest saw a plugin draw, for Plugin files;
+        a game without a Guided workspace has none."""
+        from dazedtl.compatibility.playtest import POINTER, seen_plugin_text
+
+        none: dict[str, Any] = {"report": "", "texts": []}
+        project = self.guided.projects.get(project_id)
+        native = self.guided.backend.workflows.projects.get(project.get("backend_id"))
+        if not native:
+            return none
+        folder = Path(self.guided.backend.workflows.folder(native["id"]))
+        try:
+            stat = (folder / POINTER).stat()
+        except OSError:
+            return none
+        key = (stat.st_mtime_ns, stat.st_size)
+        saved = self.seen.get(project_id)
+        if not saved or saved[0] != key:
+            saved = self.seen[project_id] = (key, seen_plugin_text(folder))
+        return saved[1]
 
     def labels(self, project_id):
         """The latest label check, with the operation that makes it, or None."""
@@ -176,16 +262,17 @@ class Playtest:
         problems = state["problems"]
         stops = (state.get("coverage") or {}).get("stops", [])
         if operation and operation["status"] == "running":
-            following = "The playtest is running; wait with playtest --run --wait MINUTES or check again."
+            following = "The playtest is running; wait with playtest --wait MINUTES or check again."
         elif not state.get("report"):
             following = "Run playtest --run."
         elif not state["current"]:
             following = "The game changed after the last playtest; run playtest --run."
         elif problems or state["gaps"]:
             following = (
-                "Read the report: fix crashes and plugin text through their tasks, let "
-                "text QA correct its lines, add stops for what the tour could not "
-                "reach, then run playtest --run again."
+                "Read the report: write fixes for crashes and windows sized for the "
+                "Japanese in the fixes file and run playtest --fix, send plugin text "
+                "to Plugin files, let text QA correct its lines, and add stops for "
+                "what the tour could not reach with playtest --run --stops FILE."
             )
         else:
             following = (
@@ -199,6 +286,8 @@ class Playtest:
             "gaps": len(state["gaps"]),
             "reached": f"{sum(stop['status'] == 'done' for stop in stops)} of {len(stops)}",
             "next": following,
+            "stops": len(self.stops(project_id)),
+            "fixes": self.fixes(native),
             **({"operation": operation} if operation else {}),
         }
         layout = self.layout(project_id, native)
@@ -214,6 +303,15 @@ class Playtest:
                 / "report.json"
             )
         return result
+
+    def fixes(self, native):
+        from dazedtl.compatibility.playtest import fixes_state
+
+        return fixes_state(
+            self.guided.backend.workflows.folder(native["id"]),
+            Path(native["source"]),
+            Path(native["data"]).parent,
+        )
 
     def capture(self, project_id, name):
         from dazedtl.compatibility.playtest import capture

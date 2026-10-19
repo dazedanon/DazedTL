@@ -517,11 +517,11 @@ function ProjectHistory({
   const backup = translation.lifecycle.source_backup;
   const baseline =
     !!backup && backup.available !== false && !!translation.git?.configured;
-  // A text QA batch, or a glossary fix batch from before Text QA took the
-  // glossary over, restores from here, newest first, as each restore needs
-  // the game's text as the batch left it.
+  // A text QA batch, a glossary fix batch from before Text QA took the
+  // glossary over, or a playtest fix batch restores from here, newest first,
+  // as each restore needs the game as the batch left it.
   const publication =
-    ["qa_apply", "qa_undo", "glossary_apply"].includes(
+    ["qa_apply", "qa_undo", "glossary_apply", "playtest_fix"].includes(
       inspected?.action || "",
     ) &&
     inspected?.status === "complete" &&
@@ -596,7 +596,9 @@ function ProjectHistory({
                         ? "Put back the text these corrections replaced; Text QA then offers them again."
                         : inspected?.action === "glossary_apply"
                           ? "Put back the text these glossary fixes replaced."
-                          : "Apply the corrections this batch undid again."}
+                          : inspected?.action === "playtest_fix"
+                            ? "Put back the game's fixes plugin and main.js as they were before these fixes."
+                            : "Apply the corrections this batch undid again."}
                     </small>
                   }
                 >

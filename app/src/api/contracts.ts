@@ -911,6 +911,26 @@ export type LayoutCheck = {
   unavailable?: string;
 };
 
+export type PlaytestFixCheck = {
+  finished_at: string;
+  /** Problems of the last playtest the play with the fixes no longer found. */
+  fixed: number;
+  new: number;
+  /** Why the fixes stayed out of the game. */
+  reason?: string;
+  /** The batch that wrote them, which History restores. */
+  publication?: string;
+};
+
+/** The plugin that carries the assistant's fixes for the game's own code. */
+export type PlaytestFixes = {
+  /** The working copy the assistant edits. */
+  file: string;
+  /** The game has the working copy as it is. */
+  in_game: boolean;
+  check?: PlaytestFixCheck;
+};
+
 /** Where the release playtest stands, for the assistant's project helper. */
 export type PlaytestStatus = {
   current: boolean;
@@ -924,6 +944,9 @@ export type PlaytestStatus = {
   reached: string;
   /** The step to run next. */
   next: string;
+  /** Saved stops every run visits after the standard tour. */
+  stops: number;
+  fixes: PlaytestFixes;
   operation?: PlaytestOperation;
   /** The saved report file. */
   report?: string;
@@ -1122,8 +1145,10 @@ export type SpeakerScan = {
 export type PublicationChange = {
   path: string;
   destination: string;
-  before: string;
-  after: string;
+  /** None for a file the batch adds. */
+  before: string | null;
+  /** None for a file the batch takes out. */
+  after: string | null;
   size: number;
   later_edits: boolean;
   diff?: string;
@@ -2624,8 +2649,8 @@ export type TranslationQaRequest = {
 
 export type TranslationPlaytestRequest = {
   project_id: string;
-  step: "status" | "report" | "run" | "layout";
-  /** Places only the game's events reach, played after the standard tour. */
+  step: "status" | "report" | "run" | "fix" | "layout";
+  /** Places only the game's events reach, played after the standard tour; they replace the saved stops every later run visits. */
   stops?: Record<string, unknown>[];
   /** With layout: characters per line as width, faceWidth and listWidth, and messageRows. */
   widths?: Record<string, number>;
@@ -3242,6 +3267,8 @@ export type RpcContract = {
     request: PluginsContinueRequest;
     response: PluginActionResult;
   };
+  plugins_task: { request: ProjectRequest; response: PluginActionResult };
+  plugins_apply: { request: ProjectRequest; response: PluginActionResult };
   plugins_adopt: { request: ForeignWorkRequest; response: PluginActionResult };
   plugins_start_over: {
     request: ForeignWorkRequest;
