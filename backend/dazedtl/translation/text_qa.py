@@ -431,6 +431,15 @@ class TextQA:
                 and operation["status"] == "complete"
                 else "Findings are applied; save their checkpoint with qa --checkpoint."
             )
+        elif qa.get("rules_changed") and stage not in {"", "screen", "complete"}:
+            # Its finished screening may carry over to a task under the new
+            # rules; a complete task's review does anyway, as later tasks
+            # build on it.
+            following = (
+                f"{qa['message']} Its screening is finished, so run rebuild-deep as "
+                f"{Path(qa['task']) / 'README.md'} says, which keeps that review "
+                "when the current rules screen the same bundles; then run qa --prepare."
+            )
         elif not qa["current"]:
             following = qa["message"] + " Run qa --prepare."
         elif stage == "complete" and waiting:

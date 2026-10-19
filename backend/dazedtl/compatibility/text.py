@@ -479,7 +479,7 @@ def run_qa(plan, log):
         _set_aside(plan, log)
         # What the release playtest found in the same text goes to review; a
         # task prepared again keeps its own and takes the ones it lacks.
-        from .playtest import note_outside, pending
+        from .playtest import pending
 
         focus = plan["options"]["focus"]
         observations = pending(folder, plan["guard"])
@@ -520,7 +520,6 @@ def run_qa(plan, log):
             folder / ("text-qa-" + focus + ".json"),
             {"task": str(task), "binding": binding(plan), "immutable": immutable},
         )
-        note_outside(folder, focus, observations)
         handoff = qa_handoff(task)
     else:
         handoff = None

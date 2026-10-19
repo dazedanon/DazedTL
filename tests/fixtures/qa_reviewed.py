@@ -9,7 +9,9 @@ from pathlib import Path
 
 root, temporary = map(Path, sys.argv[1:])
 sys.path.insert(0, str(root / "backend/dazedtl/engine"))
+sys.path.insert(0, str(root / "backend"))
 
+from dazedtl.compatibility.playtest import reviewing
 from util import rpgmaker_qa as qa
 
 game = temporary / "game"
@@ -176,13 +178,42 @@ def finish(task, flagged, corrections):
     assert qa.status(task)["stage"] == "complete", qa.status(task)
 
 
-first = prepare()
+# The playtest found two lines running past their window.
+probe = prepare()
+found = [
+    {
+        "identity": name,
+        "categories": ["ui"],
+        "note": "This text runs past the right edge of Window_Message.",
+    }
+    for name in (
+        "Map001.json#/events/1/pages/0/list/0/_original",
+        "Map001.json#/events/1/pages/0/list/1/_original",
+    )
+]
+shutil.rmtree(probe)
+first = prepare(observations=found)
 assert targets(first) == sorted(
     [*(source for source, _text in LINES), PRONOUN[0], PRONOUN[0]]
 ), targets(first)
 finish(first, {"扉を開けた"}, {"扉を開けた": "I opened the door."})
 # Nothing changed, so preparing again is the same, finished task.
 assert prepare() == first
+workflow = temporary / "workflow"
+workflow.mkdir()
+
+
+def labels(task):
+    """How the playtest's problems on the two lines read with *task* as QA's."""
+    (workflow / "text-qa-release.json").write_text(
+        json.dumps({"task": str(task)}), encoding="utf-8"
+    )
+    review = reviewing(workflow, "release")
+    review.read({row["identity"] for row in found}, {})
+    return [review.state(row["identity"]) for row in found]
+
+
+assert labels(first) == ["reviewed", "reviewed"]
 # Findings another task made are no review of this one, and a task the app
 # set aside as unreadable is no review to build on, even with its ledger
 # saved before.
@@ -194,6 +225,15 @@ findings.write_text(
 assert qa._task_ledger(first) is None
 findings.write_bytes(saved)
 assert qa._task_ledger(first)
+# A ledger an earlier version saved is derived again.
+cached = first / qa.REVIEWED_FILE
+cached.write_text(
+    json.dumps(
+        {**json.loads(cached.read_text(encoding="utf-8")), "version": 1, "pairs": []}
+    ),
+    encoding="utf-8",
+)
+assert qa._task_ledger(first)["pairs"]
 aside = first.rename(first.with_name(first.name + "-unreadable"))
 assert len(targets(prepare())) == 7
 shutil.rmtree(first)
@@ -217,10 +257,24 @@ LINES[1] = ("扉を開けた", "I opened the door.\n")
 written = json.loads((data / "Map001.json").read_text(encoding="utf-8"))
 write_game(LINES)
 assert json.loads((data / "Map001.json").read_text(encoding="utf-8")) == written
+# The playtest still finds the corrected line too long: the task reviewed
+# its earlier text, so that problem waits for QA's next round.
+assert labels(first) == ["reviewed", "waiting"]
 glossary("剣 (sword) - The hero's only weapon.\nミナ (Mina) - Calls herself Mina.\n")
-second = prepare()
+second = prepare(observations=found)
 assert second != first
 assert targets(second) == ["ミナが来る", "剣を抜け"], targets(second)
+# The next round reviews the corrected line, and leaves out the other, which
+# deep review judged for the same text and reason: it reads as reviewed,
+# never as outside QA's review.
+assert labels(second) == ["reviewed", "reviewing"]
+assert prepare(observations=found) == second
+assert [
+    row["note"]
+    for row in json.loads((second / "checkpoint.json").read_text(encoding="utf-8"))[
+        "observations"
+    ]
+] == [found[1]["note"]]
 # Lines count every place a text shows, so the shared line counts twice.
 assert qa.status(second)["reviewed_before"] == {
     "lines": 5,
@@ -246,6 +300,20 @@ assert prepare() == everything
 finish(everything, set(), {})
 fingerprint = qa._engine_fingerprint
 qa._engine_fingerprint = lambda: "updated rules"
+# The update changed the extractor's code too, which its inventories name.
+build, verify = qa.build_manifest, qa.verify_manifest
+
+
+def rebuilt_manifest(*arguments):
+    manifest = build(*arguments)
+    del manifest["content_sha256"]
+    manifest["extractor_source_sha256"] = "0" * 64
+    manifest["content_sha256"] = qa._sha256(qa._canonical_bytes(manifest))
+    return manifest
+
+
+qa.build_manifest = rebuilt_manifest
+qa.verify_manifest = lambda *_arguments: {"valid": True, "errors": []}
 rebuilt, state = qa.rebuild_deep_from_screen(everything)
 assert rebuilt != everything and state["screen"]["accepted"] == 7, state
 # One that can't keep it leaves no task behind.
@@ -254,11 +322,12 @@ tasks = set(rebuilt.parent.iterdir())
 try:
     qa.rebuild_deep_from_screen(everything)
 except ValueError as error:
-    assert "manifest_sha256 changed" in str(error), error
+    assert "text changed" in str(error), error
 else:
     raise AssertionError("A screen of other text was reused.")
 assert set(rebuilt.parent.iterdir()) == tasks
 qa._engine_fingerprint = fingerprint
+qa.build_manifest, qa.verify_manifest = build, verify
 write_game(LINES)
 
 
@@ -302,6 +371,9 @@ scoped = prepare(since="1.10")
 assert targets(scoped) == ["おはよう", PRONOUN[0], PRONOUN[0], "新しい台詞"], targets(
     scoped
 )
+# Preparing again goes on with the scope named last.
+assert prepare(earlier=False) != scoped
+assert prepare(since="1.10") == prepare() == scoped
 # The scope stays in effect for the game's later tasks, and naming a version
 # the game was never updated to is refused.
 LINES[3] = ("剣を抜け", "Unsheathe your sword!")

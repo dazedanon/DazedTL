@@ -459,6 +459,10 @@ write(
 )
 storage = temporary / "qa"
 plain, _state = qa.prepare_task(qa_game, qa_game / "data", "database", storage)
+# A reviewer observed the line for another reason, which keeps the playtest's.
+qa.record_observation(
+    plain, "coordinator", "Items.json#/1/description", ["fluency"], "Reads stiffly."
+)
 found = [
     {
         "identity": "Items.json#/1/description",
@@ -482,35 +486,42 @@ rows = json.loads((noted / "checkpoint.json").read_text(encoding="utf-8"))[
     "observations"
 ]
 assert [(row["worker"], row["note"]) for row in rows] == [
-    ("playtest", "Cut off in the item screen.")
+    ("coordinator", "Reads stiffly."),
+    ("playtest", "Cut off in the item screen."),
 ], rows
 assert "Items.json#/1/description" in qa.observed_names(noted)
-# A finding the task can't hold, when QA prepared with it or while it
-# reviews, is outside its focus rather than waiting for QA's next round,
-# which could never take it.
-from dazedtl.compatibility.playtest import _problem, note_outside, observe, reviewing
+# A finding no line of the task's inventory has the name of, such as
+# dialogue for a database focus, is outside it rather than waiting for QA's
+# next round, which could never take it; a line it holds waits.
+from dazedtl.compatibility.playtest import _problem, observe, reviewing
 
 workflow = temporary / "workflow"
 workflow.mkdir()
 write(workflow / "text-qa-database.json", {"task": str(noted)})
-note_outside(workflow, "database", found)
 unheld = {
     "identity": "Items.json#/8/name",
     "categories": ["ui"],
     "note": "Not in the database.",
 }
 assert observe(workflow, "database", {"observations": [unheld]}) == 0
+named = [
+    *found,
+    unheld,
+    {**unheld, "identity": "Map001.json#/events/1"},
+    {**unheld, "identity": "Items.json#/1/name"},
+]
+review = reviewing(workflow, "database")
+review.read({row["identity"] for row in named}, {})
 reviews = {
-    row["identity"]: _problem(
-        {"fix": "text-qa", **row}, reviewing(workflow, "database")
-    )["review"]
-    for row in [*found, unheld, {**unheld, "identity": "Map001.json#/events/1"}]
+    row["identity"]: _problem({"fix": "text-qa", **row}, review)["review"]
+    for row in named
 }
 assert reviews == {
     "Items.json#/1/description": "reviewing",
     "Items.json#/9/description": "outside",
     "Items.json#/8/name": "outside",
-    "Map001.json#/events/1": "waiting",
+    "Map001.json#/events/1": "outside",
+    "Items.json#/1/name": "waiting",
 }, reviews
 
 # A layout check proves a width only with lines exactly that wide, in as

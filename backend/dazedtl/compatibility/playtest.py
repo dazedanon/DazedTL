@@ -448,71 +448,100 @@ def pending(folder, guard):
     return list(found[1].get("observations") or [])
 
 
+class Review:
+    """Where the focus's QA task stands on the lines the playtest names: each
+    in its review, reviewed, waiting for QA's next round, or outside what QA
+    can take."""
+
+    def __init__(self, task, observed, judged, complete):
+        self.task = task
+        # Every name of the lines it observes, with the reasons it holds.
+        self.observed = observed
+        # Lines it left out when prepared, since an earlier review judged them
+        # for the same text and reason.
+        self.judged = judged
+        self.complete = complete
+        # Lines it can't take, which no one line of its inventory has the name
+        # of, such as dialogue for a database focus: no round could take them.
+        self.outside = set()
+        # Lines whose English changed since the task read it, as when its
+        # correction is in the game: its review is of other text.
+        self.changed = set()
+
+    def notes(self, name):
+        """The reasons the task observes or judged a line for."""
+        return self.observed.get(name, set()) | self.judged.get(name, set())
+
+    def read(self, names, hashes):
+        """Notes which of these lines it can't take, and which it knows that
+        changed since it read them; *hashes* holds the game's data files'."""
+        from util import rpgmaker_qa as qa
+
+        names = set(names)
+        known = {name for name in names if self.notes(name)}
+        try:
+            self.outside = names - known - qa.held_names(self.task, names - known)
+            self.changed = (
+                qa.changed_names(self.task, known, hashes) if known else set()
+            )
+        except ValueError, OSError, KeyError, TypeError:
+            self.outside, self.changed = set(), set()
+
+    def state(self, name):
+        if name in self.changed:
+            return "waiting"
+        if name in self.observed:
+            return "reviewed" if self.complete else "reviewing"
+        if name in self.judged:
+            return "reviewed"
+        return "outside" if name in self.outside else "waiting"
+
+
 def reviewing(folder, focus):
-    """The focus's QA task, every name of the lines it already takes from
-    observations, whether it is complete, and the playtest's lines it can't
-    hold, outside its focus; or None."""
+    """The focus's QA task as the playtest's problems read it, or None."""
     from util import rpgmaker_qa as qa
 
     pointer = Path(folder) / ("text-qa-" + focus + ".json")
     if not pointer.exists():
         return None
-    saved = read_json(pointer)
-    task = str(saved["task"])
-    outside = {value for value in saved.get("outside") or [] if isinstance(value, str)}
+    task = str(read_json(pointer)["task"])
     try:
-        complete = qa.status(task).get("stage") == "complete"
-        return task, qa.observed_names(task), complete, outside
+        return Review(
+            task,
+            qa.observed_lines(task),
+            qa.observed_lines(task, judged=True),
+            qa.status(task).get("stage") == "complete",
+        )
     except ValueError, OSError, KeyError, TypeError:
         return None
 
 
-def note_outside(folder, focus, found, add=False):
-    """Saves which of the playtest's findings the focus's QA task can't hold,
-    such as dialogue for a database focus, so they read as outside it rather
-    than waiting for a round that could never take them: once QA prepared
-    with `found`, those it does not observe, or with `add`, `found` itself."""
-    pointer = Path(folder) / ("text-qa-" + focus + ".json")
-    review = reviewing(folder, focus)
-    if not review:
-        return
-    identities = {row["identity"] for row in found}
-    outside = review[3] | identities if add else identities - review[1]
-    write_json(pointer, {**read_json(pointer), "outside": sorted(outside)})
-
-
 def observe(folder, focus, report):
     """Records the report's findings in translated text in the focus's QA
-    task while it still reviews, each once; a line the task does not hold
-    stays in the report, outside the task, and a task already complete takes
-    them when QA runs again."""
+    task while it still reviews, each line once for each reason it lacks; a
+    line the task does not hold stays in the report, outside the task, and a
+    task already complete takes them when QA runs again."""
     from util import rpgmaker_qa as qa
 
-    found = reviewing(folder, focus)
-    if not report.get("observations") or not found:
+    review = reviewing(folder, focus)
+    if not report.get("observations") or not review or review.complete:
         return 0
-    task, known, complete, _outside = found
-    if complete:
-        return 0
-    count, outside = 0, []
+    count = 0
     for row in report["observations"]:
-        if row["identity"] in known:
+        if row["note"] in review.notes(row["identity"]):
             continue
         try:
             qa.record_observation(
-                task, "playtest", row["identity"], row["categories"], row["note"]
+                review.task, "playtest", row["identity"], row["categories"], row["note"]
             )
         except qa.QAResultError:
             # The task's inventory does not hold this line.
-            outside.append(row)
             continue
         except ValueError:
             # QA completed meanwhile; its next run takes the rest.
             break
-        known.add(row["identity"])
+        review.observed.setdefault(row["identity"], set()).add(row["note"])
         count += 1
-    if outside:
-        note_outside(folder, focus, outside, add=True)
     return count
 
 
@@ -548,15 +577,7 @@ def _seen(value):
 def _problem(row, review):
     problem = {key: row[key] for key in PROBLEM_KEYS if key in row}
     if row.get("fix") == "text-qa" and row.get("identity"):
-        _task, known, complete, outside = review or (None, set(), False, set())
-        identity = row["identity"]
-        problem["review"] = (
-            ("reviewed" if complete else "reviewing")
-            if identity in known
-            else "outside"
-            if identity in outside
-            else "waiting"
-        )
+        problem["review"] = review.state(row["identity"]) if review else "waiting"
     if row.get("seen"):
         problem["seen"] = _seen(row["seen"])
     if row.get("texts"):
@@ -589,6 +610,15 @@ def playtest_state(folder, guard, focus="release"):
     saved, report = found
     coverage = report.get("coverage") or {}
     review = reviewing(folder, focus)
+    if review:
+        review.read(
+            {
+                row["identity"]
+                for row in report["problems"]
+                if row.get("fix") == "text-qa" and row.get("identity")
+            },
+            guard.get("data") or {},
+        )
     return {
         "report": saved["report"],
         "current": saved["binding"] == binding(guard),

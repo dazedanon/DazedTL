@@ -1832,13 +1832,19 @@ def _recapture(
 def _observe_again(
     root: Path, observations: list[dict[str, Any]], observer: str
 ) -> None:
-    """Observations of lines a reused task does not observe yet, such as a
-    later playtest's, go to its review: at once while it reviews, and in a
+    """Observations a reused task does not hold yet, such as a later
+    playtest's, go to its review: at once while it reviews, and in a
     follow-up deep round once complete, keeping the review done so far."""
     with _task_lock(root):
         root, _task, checkpoint = _load_task(root)
-        known = {row["identity"] for row in checkpoint.get("observations") or []}
-        fresh = [row for row in observations if row["identity"] not in known]
+        known = {
+            _observation_key(row)
+            for row in [
+                *(checkpoint.get("observations") or []),
+                *(checkpoint.get(JUDGED_BEFORE) or []),
+            ]
+        }
+        fresh = [row for row in observations if _observation_key(row) not in known]
         if not fresh:
             return
         _note_observations(checkpoint, fresh, checkpoint["stage"], observer)
@@ -2809,6 +2815,11 @@ def handoff_text(task_dir: str | Path, helper: str) -> str:
 REVIEWED_SCHEMA = "rpgmaker-qa-reviewed-v1"
 REVIEWED_FILE = "reviewed.json"
 BASELINE_FOLDER = "baselines"
+# A task's ledger is saved in its folder once derived; one an earlier version
+# derived, which may keep lines this one leaves out or lack lines it keeps, is
+# derived again. A baseline holds the game's text as Git had it, which no
+# version reads differently.
+TASK_LEDGER_VERSION = 2
 
 
 def _pair_key(source: Any, translation: Any) -> str:
@@ -2860,7 +2871,10 @@ def _task_ledger(root: Path) -> dict[str, Any] | None:
     cached = root / REVIEWED_FILE
     try:
         ledger = _read_json(cached)
-        if ledger.get("schema") == REVIEWED_SCHEMA:
+        if (
+            ledger.get("schema") == REVIEWED_SCHEMA
+            and ledger.get("version") == TASK_LEDGER_VERSION
+        ):
             return ledger
     except (OSError, ValueError):
         pass
@@ -2990,6 +3004,7 @@ def _derive_ledger(
         unsettled.add(_pair_key(row.get("source"), row.get("current")))
     return {
         "schema": REVIEWED_SCHEMA,
+        "version": TASK_LEDGER_VERSION,
         "origin": f"task {root.name}",
         "pairs": sorted(reviewed - unsettled),
         "scenes": sorted(scenes),
@@ -3236,6 +3251,30 @@ class _Reviewed:
 # A task's folder is named by its key; the app sets aside a task it can't
 # trust under another name, and a task being prepared has a staging name.
 _TASK_FOLDER_RE = re.compile(r"[0-9a-f]{16}")
+# Beside a focus's tasks, the scope the user named last: the key of a review
+# of every line, or none once a `since` named earlier text checked.
+SCOPE_FILE = "scope.json"
+
+
+def _last_scope(path: Path) -> str | None:
+    """The review of every line the user chose last, "" once they named
+    another scope, or None before either."""
+    try:
+        return str(_read_json(path).get("everything") or "")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+# Observations a task left out when it was prepared, since an earlier review
+# had judged them for the same text.
+JUDGED_BEFORE = "judged_before"
+
+
+def _observation_key(observation: dict[str, Any]) -> tuple[str, str]:
+    """An observation is the same as another of the same line for the same
+    reason; another reason, such as the playtest's beside a reviewer's, is
+    evidence of its own."""
+    return observation["identity"], observation["note"]
 
 
 def _earlier_reviews(
@@ -3348,7 +3387,8 @@ def prepare_task(
             (observation,) = _read_observations([entry], manifest)
         except QAResultError:
             continue
-        if all(row["identity"] != observation["identity"] for row in observed):
+        # A line may hold several problems, each its own reason to review it.
+        if all(_observation_key(row) != _observation_key(observation) for row in observed):
             observed.append(observation)
     games = storage / _slug(game.name)
     if since and earlier:
@@ -3374,9 +3414,14 @@ def prepare_task(
     task_parent = games / focus
     task_parent.mkdir(parents=True, exist_ok=True)
     with _task_lock(task_parent):
-        # A review of every line of the same text goes on unless the user
-        # names a scope again.
-        if earlier and not since and (task_parent / full_review / "task.json").is_file():
+        # The scope the user named last goes on while the text is the same: a
+        # review of every line, until a `since` names earlier text checked.
+        scope = task_parent / SCOPE_FILE
+        if not earlier or since:
+            _atomic_write_json(scope, {"everything": "" if earlier else full_review})
+        elif (task_parent / full_review / "task.json").is_file() and _last_scope(
+            scope
+        ) in {None, full_review}:
             task_key = full_review
         task_dir = task_parent / task_key
         existing = task_dir / "task.json"
@@ -3551,15 +3596,24 @@ def prepare_task(
                 "findings_file": "",
             }
             # An observation deep review already judged for the same text is
-            # not asked again.
-            _note_observations(checkpoint, [
+            # not asked again; the task keeps it apart, so it reads as
+            # reviewed and preparing again does not take it either.
+            judged = [
                 observation for observation in observed
-                if not (reviewed and reviewed.observed(
+                if reviewed and reviewed.observed(
                     clusters_by_id[observation["cluster_id"]]["source"],
                     clusters_by_id[observation["cluster_id"]]["live"],
                     observation["note"],
-                ))
+                )
+            ]
+            _note_observations(checkpoint, [
+                observation for observation in observed if observation not in judged
             ], "screen", observer)
+            if judged:
+                checkpoint[JUDGED_BEFORE] = [
+                    {key: observation[key] for key in ("identity", "note")}
+                    for observation in judged
+                ]
             _atomic_write_json(staging / "task.json", task)
             _atomic_write_json(staging / "checkpoint.json", checkpoint)
             _atomic_write_text(
@@ -5319,6 +5373,11 @@ def record_observation(
             [{"identity": identity, "categories": list(categories), "note": note}],
             _read_json(root / "inventory.json"),
         )
+        # The same reason for the same line is already evidence.
+        if _observation_key(observation) in {
+            _observation_key(row) for row in checkpoint.get("observations") or []
+        }:
+            return observation
         _note_observations(checkpoint, [observation], checkpoint["stage"], str(worker or ""))
         checkpoint["updated_at"] = _utc_now()
         _atomic_write_json(root / "checkpoint.json", checkpoint)
@@ -5326,16 +5385,133 @@ def record_observation(
     return observation
 
 
-def observed_names(task_dir: str | Path) -> set[str]:
+class _TaskLines:
+    """A task's inventory as lines named from outside it: every name of each
+    line, and where each line's English lives in the game."""
+
+    def __init__(self, manifest: dict[str, Any]):
+        self.names = _line_names(manifest)
+        self.lines = {
+            record["identity"]: (
+                record["file"],
+                record["live_pointers"],
+                record["live_transform"],
+                record["live"],
+            )
+            for record in manifest["records"]
+        }
+        self.files = {row["path"]: row["sha256"] for row in manifest["files"]}
+
+    def identities(self, name: str) -> set[str]:
+        """The lines a name holds: an identity, or a shorter name."""
+        if name in self.lines:
+            return {name}
+        return self.names.get(name.split("@", 1)[0], set())
+
+
+# The app asks after the same task on every poll, and a task's inventory
+# never changes, so its lines are read once.
+_TASK_LINES: dict[Path, tuple[tuple[int, int], _TaskLines]] = {}
+# Lines whose English changed since their task's inventory, by task, data
+# file and that file's SHA-256.
+_CHANGED: dict[tuple[Path, str, str], dict[str, bool]] = {}
+
+
+def _task_lines(root: Path) -> _TaskLines:
+    path = root / "inventory.json"
+    info = path.stat()
+    key = (info.st_mtime_ns, info.st_size)
+    saved = _TASK_LINES.get(root)
+    if not saved or saved[0] != key:
+        if len(_TASK_LINES) >= 4:
+            _TASK_LINES.clear()
+        saved = _TASK_LINES[root] = (key, _TaskLines(_read_json(path)))
+    return saved[1]
+
+
+def observed_lines(
+    task_dir: str | Path, judged: bool = False
+) -> dict[str, set[str]]:
     """The lines a task already observes, under every name an observation
-    may give them, such as `States.json#/42/message1`."""
+    may give them, such as `States.json#/42/message1`, each with the reasons
+    it was observed for; with *judged*, those it left out instead, since an
+    earlier review had judged them for the same text."""
     root = Path(task_dir).expanduser().resolve()
     _root, _task, checkpoint = _read_task(root)
-    recorded = {row["identity"] for row in checkpoint.get("observations") or []}
-    if not recorded:
-        return set()
-    names = _line_names(_read_json(root / "inventory.json"))
-    return recorded | {name for name, lines in names.items() if lines & recorded}
+    notes: dict[str, set[str]] = defaultdict(set)
+    for row in checkpoint.get(JUDGED_BEFORE if judged else "observations") or []:
+        notes[row["identity"]].add(row["note"])
+    if not notes:
+        return {}
+    found = {identity: set(held) for identity, held in notes.items()}
+    for name, lines in _task_lines(root).names.items():
+        if held := lines & notes.keys():
+            found.setdefault(name, set()).update(*(notes[line] for line in held))
+    return found
+
+
+def observed_names(task_dir: str | Path) -> set[str]:
+    """The lines a task already observes, under every name an observation
+    may give them."""
+    return set(observed_lines(task_dir))
+
+
+def held_names(task_dir: str | Path, names: Iterable[str]) -> set[str]:
+    """Of these names of lines, such as the playtest's findings, those that
+    name one line of the task's inventory, which QA can take."""
+    lines = _task_lines(Path(task_dir).expanduser().resolve())
+    return {name for name in names if len(lines.identities(name)) == 1}
+
+
+def changed_names(
+    task_dir: str | Path, names: Iterable[str], hashes: dict[str, str] | None = None
+) -> set[str]:
+    """Of these names of lines the task's inventory holds, those whose English
+    in the game is no longer the text the task reviewed, as once one of its
+    corrections is in. *hashes*, each data file's SHA-256 by its path in the
+    game's data folder, spares reading a file still as the inventory read it."""
+    root = Path(task_dir).expanduser().resolve()
+    lines = _task_lines(root)
+    data = Path(_read_json(root / "task.json")["data_root"])
+    documents: dict[str, Any] = {}
+
+    def changed(identity: str) -> bool:
+        file, pointers, transform, reviewed = lines.lines[identity]
+        digest = (hashes or {}).get(file)
+        if digest is not None and digest == lines.files.get(file):
+            return False
+        if digest is None:
+            try:
+                digest = _sha256((data / file).read_bytes())
+            except OSError:
+                return True
+        cached = _CHANGED.setdefault((root, file, digest), {})
+        if identity not in cached:
+            if file not in documents:
+                try:
+                    documents[file] = json.loads(
+                        (data / file).read_text(encoding="utf-8-sig")
+                    )
+                except (OSError, ValueError):
+                    documents[file] = None
+            try:
+                current = "\n".join(
+                    resolve_pointer(documents[file], pointer) for pointer in pointers
+                )
+                if transform in QUOTED_TRANSFORMS:
+                    match = _QUOTED_VALUE_RE.search(current)
+                    current = match.group(2) if match else current
+                cached[identity] = current != reviewed
+            except (KeyError, IndexError, TypeError, ValueError):
+                cached[identity] = True
+        return cached[identity]
+
+    if len(_CHANGED) >= 64:
+        _CHANGED.clear()
+    return {
+        name for name in names
+        if any(changed(identity) for identity in lines.identities(name))
+    }
 
 
 # Commands the context view leaves out: flow, waits, sound and picture moves.
@@ -7122,7 +7298,8 @@ def rebuild_deep_from_screen(
         raise ValueError("The source task already uses the current QA rules")
     try:
         _replay_screen(
-            source_task, source_rows, reusable_results, reusable_summaries, rebuilt
+            source, source_task, source_rows, reusable_results, reusable_summaries,
+            rebuilt,
         )
     except ValueError:
         # A task this rebuild made but could not fill is no task to go on with.
@@ -7135,7 +7312,19 @@ def rebuild_deep_from_screen(
     return rebuilt, status(rebuilt)
 
 
+def _inventory_text(root: Path) -> dict[str, Any]:
+    """A task's inventory without the hash of the extractor's own source,
+    which any change to the extractor's code changes, or the content hash
+    covering it: the text and where it lives."""
+    return {
+        key: value
+        for key, value in _read_json(root / "inventory.json").items()
+        if key not in {"extractor_source_sha256", "content_sha256"}
+    }
+
+
 def _replay_screen(
+    source: Path,
     source_task: dict[str, Any],
     source_rows: list[dict[str, Any]],
     reusable_results: dict[str, Path],
@@ -7145,9 +7334,10 @@ def _replay_screen(
     """Accept a completed screen's results in a rebuilt task, once its screen
     bundles are the same."""
     _rebuilt_root, rebuilt_task, rebuilt_checkpoint = _load_task(rebuilt)
-    for key in ("manifest_sha256", "context_sha256"):
-        if rebuilt_task.get(key) != source_task.get(key):
-            raise ValueError(f"Cannot reuse screening after {key} changed")
+    if _inventory_text(rebuilt) != _inventory_text(source):
+        raise ValueError("Cannot reuse screening after the game's text changed")
+    if rebuilt_task.get("context_sha256") != source_task.get("context_sha256"):
+        raise ValueError("Cannot reuse screening after QA's context changed")
     rebuilt_summaries = {
         row["id"]: (row["sha256"], int(row["item_count"]))
         for row in rebuilt_checkpoint["screen"]["bundles"]
