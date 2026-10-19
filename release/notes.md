@@ -13,9 +13,17 @@
 
 ### Fixed
 
+- **Apply:** a game's own scripts that build text, such as a score line, are no longer rewrapped when you apply or save new Line widths; a line break in one stopped the game with "SyntaxError".
+- **Assistant-led:** saving the playtest's fixes no longer fails with "Supply the matching untranslated original" for js/main.js, as in a game you moved, and **Start over** sets the earlier attempt's fixes aside.
 - **Assistant-led:** patches always carry the update check and Forge plugins and the GameUpdate files Set up installs; a patch whose file list left them out made players' game stop at start with "Failed to load".
 - **Assistant-led:** saving a translation version now stops and names the plugin when the patch's plugin list loads one that neither the patch nor players' game has, such as a plugin your assistant wrote, instead of making a patch that stops their game at start.
+- **Game updates:** an update that changes js/main.js keeps loading the playtest's fixes, and saving a version stops when js/main.js and the fixes don't go together, instead of making a patch that crashes or loses the fixes.
+- **Line widths:** saving new widths rewraps only text DazedTL applied, leaving files you translated another way as they are; **History** on the Project page undoes it with **Review restore**, and the next Apply no longer says those files were edited in the game.
+- **Line widths:** English beside a note tag left in Japanese and English with "・" bullets now fit their windows, a list in an item's description keeps one item a line, and accented letters such as é count as one character.
 - **Playtest:** a place your assistant added that the playtest could not play no longer shows as "A script failed" in the game's code; it is listed with what the playtest did not reach.
 - **Playtest:** item and skill descriptions longer than two lines no longer go to Text QA as cut off unless the playtest saw them cut off, as in games whose help window shows three lines or draws its own text; text a plugin adds beside a description, such as a line of stats, no longer counts as the description's.
 - **Project:** the **Status** tab of an Assistant-led game shows its latest activity once, in the status card, instead of repeating it below as "Last activity".
+- **Text QA:** a damaged settings file in the game folder no longer stops **Start text QA**.
 - **Text QA:** running QA again, such as after a plugin change, continues the same review instead of starting a new one when the playtest found something, also once the review is finished; lines a later playtest finds are reviewed on their own.
+- **VX Ace:** games start with their own windows' widths, 52 characters and 40 beside a face, instead of MV and MZ's 60, which ran past the window's edge; an Ace game still on the old widths switches when you open it, and Assistant-led assistants measure Ace windows too.
+- **VX Ace:** translated map names now reach the packed game.
