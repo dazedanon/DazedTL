@@ -41,6 +41,13 @@ DATABASE_FILES = frozenset(
 TOOL_MANAGED_QA_EXCLUSIONS = frozenset({
     ("System.json", "/_original/gameTitle"),
 })
+# A record's text is its value ("identity") or the text between a code 122
+# operand's quote marks, named by the mark that opens it: translation writes
+# MV/MZ's JavaScript template literal between backticks and VX Ace's Ruby
+# string between double quotes, and QA writes corrections there with the same
+# escapes. Between other quote marks no escapes are known ("quoted-string").
+SCRIPT_STRINGS = {"`": "template-literal", '"': "double-quoted-string"}
+QUOTED_TRANSFORMS = frozenset({"quoted-string", *SCRIPT_STRINGS.values()})
 SCALAR_PARAMETER = {
     108: 0,
     122: 4,
@@ -388,10 +395,10 @@ def _read_live(
         raise TypeError("live counterpart is not a string")
     live = "\n".join(values)
     if code == 122:
-        match = re.search(r"['\"`](.*)['\"`]", live)
+        match = re.search(r"(['\"`])(.*)['\"`]", live)
         if not match:
             raise ValueError("code 122 live parameter has no quoted string")
-        return match.group(1), "quoted-string"
+        return match.group(2), SCRIPT_STRINGS.get(match.group(1), "quoted-string")
     return live, "identity"
 
 

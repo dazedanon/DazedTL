@@ -5,6 +5,7 @@ import os
 import re
 import util.dazedwrap as dazedwrap
 from util import rpgmaker_rewrap
+from util import rpgmaker_script_strings as script_strings
 import threading
 import time
 import traceback
@@ -1437,58 +1438,30 @@ def _122_inner_current(cmd) -> str | None:
     return None
 
 
-# A line break in an operand's source, which is rewrapped: "\n", except where
-# it starts a \n[1] actor name or \n<name> name window code, as
-# rpgmaker_rewrap reads it.
-_122_BREAK = re.compile(r"\\n(?![\[<])")
-# What would end MV/MZ's template literal early or interpolate in it: a
-# backtick, "${" and a backslash ending the text. An escape the text already
-# has, such as \\ or \`, stays as it is.
-_JS_122_SPECIAL = re.compile(r"(\\.)|\\|`|\$\{", re.S)
-
-
 def _js_122_operand(text: str) -> str:
     """Code 122's script operand for MV/MZ: a JavaScript template literal."""
     # Remove characters that may break scripts
-    text = _122_BREAK.sub(" ", text.replace('"', ""))
+    text = script_strings.BREAK.sub(" ", text.replace('"', ""))
 
     # Force 4 Escapes
-    text = re.sub(r'(?<![\\])([\\]{1})(?=\w)', r'\\\\', text)
+    text = script_strings.keep_backslashes(text)
 
     # Textwrap
     text = rpgmaker_rewrap.wrap_text(text, LISTWIDTH)
-    text = text.replace("\n", "\\n")
-    text = _JS_122_SPECIAL.sub(lambda match: match[1] or "\\" + match[0], text)
-    return f"`{text}`"
-
-
-# In an operand's source a backslash escapes the next character; a lone one
-# before anything else, such as a translated \C[2], stands for itself. "\n"
-# breaks the line as _122_BREAK reads it.
-_RUBY_122_ESCAPE = re.compile(r'\\(n(?![\[<])|[\\"#])?')
-# What a Ruby double-quoted string escapes: a backslash, its delimiter, a line
-# break and a "#" that would start interpolation.
-_RUBY_122_SPECIAL = re.compile(r'[\\"\n]|#(?=[{$@])')
+    return f"`{script_strings.template_text(text)}`"
 
 
 def _ruby_122_operand(text: str) -> str:
     """Code 122's script operand for VX Ace: a Ruby double-quoted string.
 
     Ace evaluates the operand with Ruby, where MV/MZ's backtick literal runs a
-    shell command. *text* is translated from the operand's source, so ``\\\\``
-    stands for one backslash and ``\\n`` for a line break, except in the
-    ``\\n[1]`` and ``\\n<name>`` name codes. The text is rewrapped to the list
-    width, and quote marks are dropped as for MV/MZ, since QA writes a
-    correction between the quotes as it is.
+    shell command. *text* is translated from the operand's source, as
+    rpgmaker_script_strings reads a string's text. The text is rewrapped to
+    the list width, and quote marks are dropped as for MV/MZ.
     """
-    value = _RUBY_122_ESCAPE.sub(
-        lambda match: " " if match[1] == "n" else match[1] or "\\", text
-    )
+    value = script_strings.ruby_value(text, " ")
     value = rpgmaker_rewrap.wrap_text(value.replace('"', ""), LISTWIDTH)
-    escaped = _RUBY_122_SPECIAL.sub(
-        lambda match: "\\n" if match[0] == "\n" else "\\" + match[0], value
-    )
-    return f'"{escaped}"'
+    return f'"{script_strings.ruby_text(value)}"'
 
 
 def _101_name_source(cmd, is_var: bool) -> str:
@@ -4392,7 +4365,7 @@ def _searchCodes(page, pbar, jobList, filename):
                         continue
 
                     # Remove Textwrap
-                    finalJAString = _122_BREAK.sub(" ", innerSource)
+                    finalJAString = script_strings.BREAK.sub(" ", innerSource)
 
                     # Pass 1
                     if setData:

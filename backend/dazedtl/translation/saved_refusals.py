@@ -134,7 +134,7 @@ def restore(document, original=lambda: None):
     for note in notes:
         first = note.paths[0]
         parent, key = resolve(document, first[:-1]), first[-1]
-        if note.transform == "quoted-string":
+        if note.transform != "identity":
             match = QUOTED.search(parent[key])
             assert match  # find read the note between these quote marks.
             parent[key] = (

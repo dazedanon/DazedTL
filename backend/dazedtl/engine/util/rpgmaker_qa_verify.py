@@ -561,13 +561,16 @@ def verify_manifest(data_root: str | Path, manifest: dict[str, Any]) -> dict[str
             if not all(isinstance(item, str) for item in live_values):
                 raise ValueError("live counterpart is not a string")
             live = "\n".join(live_values)
-            if record.get("live_transform") == "quoted-string":
-                match = re.search(r"['\"`](.*)['\"`]", live)
+            transform = record.get("live_transform")
+            if transform != "identity":
+                match = re.search(r"(['\"`])(.*)['\"`]", live)
                 if not match:
                     raise ValueError("quoted live string is missing")
-                live = match.group(1)
-            elif record.get("live_transform") != "identity":
-                raise ValueError("unknown live transform")
+                # The script strings translation writes, by their quote mark.
+                written = {"`": "template-literal", '"': "double-quoted-string"}
+                if transform != written.get(match.group(1), "quoted-string"):
+                    raise ValueError("live transform mismatch")
+                live = match.group(2)
             if live != record.get("live"):
                 raise ValueError("live text changed")
             code = actual_code

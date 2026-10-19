@@ -1151,6 +1151,13 @@ else:
 # wrapped to the Line widths.
 checks_game = temporary / "checks-game"
 FIRE = "敵全体に大きな火属性ダメージを与え、3ターン燃焼させる。"
+# Text variables as translation writes them: MV/MZ's template literal and VX
+# Ace's Ruby string.
+NICKNAME, GREETING = "村人の名前", "\\\\C[2]村人\\\\C[0]の挨拶"
+VARIABLES = [
+    "`The villager's \\`nickname\\``",
+    '"\\\\C[2]Villager\\\\C[0]\'s greeting"',
+]
 (checks_game / "data").mkdir(parents=True)
 (checks_game / "js").mkdir()
 (checks_game / "js/rmmz_core.js").write_text("")
@@ -1176,6 +1183,27 @@ for name, value in {
             "_original": {"name": "幻惑", "message4": "の幻惑が解けた"},
         },
     ],
+    "Map001.json": {
+        "events": [
+            None,
+            {
+                "id": 1,
+                "pages": [
+                    page(
+                        *(
+                            {
+                                "code": 122,
+                                "indent": 0,
+                                "parameters": [4, 4, 0, 4, operand],
+                                "_original": source,
+                            }
+                            for source, operand in zip((NICKNAME, GREETING), VARIABLES)
+                        )
+                    )
+                ],
+            },
+        ]
+    },
 }.items():
     (checks_game / "data" / name).write_text(
         json.dumps(value, ensure_ascii=False), encoding="utf-8"
@@ -1206,10 +1234,17 @@ assert reasons == {
 for worker in ("screen-a", "screen-b"):
     row = qa.next_bundle(checked, worker)
     assert row["id"].startswith("screen"), row
-    qa.accept_result(checked, screen(row, set()))
+    qa.accept_result(checked, screen(row, {NICKNAME, GREETING}))
 row = qa.next_bundle(checked, "deep-a")
 items = {item["source"]: item for item in bundle_of(row)["items"]}
-assert set(items) == {"払い斬り", "薙ぎ払い", "の幻惑が解けた", FIRE}, items
+assert set(items) == {
+    "払い斬り",
+    "薙ぎ払い",
+    "の幻惑が解けた",
+    FIRE,
+    NICKNAME,
+    GREETING,
+}, items
 assert items[FIRE]["checks"] == [
     {
         "check": "text-fit",
@@ -1260,7 +1295,19 @@ fix = {
     "correction": "%1 was freed from the Illusion.",
     "source_fix": {"kind": "battler-name"},
 }
+# Corrections of the text variables, written as English holds them: a
+# backtick, ${...}, quote marks, #{...} and message codes with one backslash.
+variable_fixes = {
+    source: {**fix, "category": "meaning", "source_fix": None, "correction": text}
+    for source, text in (
+        (NICKNAME, "The villager's `nickname` is ${name}"),
+        (GREETING, '\\C[2]Villager\\C[0] says "hi" #{name}'),
+    )
+}
+unescaped = {**variable_fixes[NICKNAME], "correction": "The villager's `nickname`"}
 for name, fixes, refusal in (
+    # A correction that differs only by escapes changes nothing.
+    ("unescaped", {NICKNAME: unescaped}, "matches the current text"),
     ("plain", {"の幻惑が解けた": {**fix, "source_fix": None}}, "runtime-token"),
     (
         "other-code",
@@ -1274,8 +1321,10 @@ for name, fixes, refusal in (
     except qa.QAResultError as error:
         assert refusal in str(error), error
     else:
-        raise AssertionError(f"The {name} correction added a code.")
-qa.accept_result(checked, checked_deep("battler-name", {"の幻惑が解けた": fix}))
+        raise AssertionError(f"The {name} correction was accepted.")
+qa.accept_result(
+    checked, checked_deep("battler-name", {"の幻惑が解けた": fix, **variable_fixes})
+)
 assert qa.finalize(checked)["stage"] == "editorial"
 row = qa.next_bundle(checked, "editor-a")
 qa.accept_result(
@@ -1294,28 +1343,48 @@ qa.accept_result(
     ),
 )
 assert qa.next_bundle(checked, "editor-a") is None
-(finding,) = json.loads((checked / "findings.json").read_text())["findings"]
+findings = json.loads((checked / "findings.json").read_text())["findings"]
+(finding,) = [row for row in findings if row["source"] == "の幻惑が解けた"]
 assert finding["source_fix"] == "battler-name", finding
+# The text variables' corrections are stored as the game gets them, escaped
+# as translation writes each string, so none ends early or interpolates.
+WRITTEN = {
+    NICKNAME: "The villager's \\`nickname\\` is \\${name}",
+    GREETING: '\\\\C[2]Villager\\\\C[0] says \\"hi\\" \\#{name}',
+}
+corrections = {row["source"]: row["correction"] for row in findings}
+assert {source: corrections[source] for source in WRITTEN} == WRITTEN, corrections
 
 
 def message4():
     return json.loads((checks_game / "data/States.json").read_text())[1]["message4"]
 
 
-# Apply and undo pass the regression, which allows only that one %1.
-for undo, expected in (
-    (False, fix["correction"]),
-    (True, "was freed from the Illusion."),
+def variables():
+    commands = json.loads((checks_game / "data/Map001.json").read_text())["events"][1]
+    return [command["parameters"][4] for command in commands["pages"][0]["list"][:2]]
+
+
+# Apply and undo pass the regression, which allows only that one %1, and
+# write the text variables' corrections between their own quote marks.
+for undo, expected, written in (
+    (
+        False,
+        fix["correction"],
+        [f"`{WRITTEN[NICKNAME]}`", f'"{WRITTEN[GREETING]}"'],
+    ),
+    (True, "was freed from the Illusion.", VARIABLES),
 ):
     assert qa._apply_loaded_correction_map(
         checked,
         json.loads((checked / "task.json").read_text(encoding="utf-8")),
-        qa.correction_map(checked, [finding["id"]], undo=undo),
+        qa.correction_map(checked, [row["id"] for row in findings], undo=undo),
         json.loads((checked / "inventory.json").read_text(encoding="utf-8")),
         dry_run_name="dry-run.json",
         regression_name="regression.json",
     )["valid"]
     assert message4() == expected, message4()
+    assert variables() == written, variables()
 
 
 def pace(lanes):

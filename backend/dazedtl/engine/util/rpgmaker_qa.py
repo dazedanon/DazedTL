@@ -36,6 +36,8 @@ from util.paths import (
     unlink_with_retry,
 )
 from util.rpgmaker_qa_manifest import (
+    QUOTED_TRANSFORMS,
+    SCRIPT_STRINGS,
     _mechanical_evidence,
     build_manifest,
     resolve_pointer,
@@ -59,6 +61,7 @@ from util import rpgmaker_screens
 from util.rpgmaker_screens import screen_of, shown_text
 from util import rpgmaker_rewrap as rewrap
 from util.rpgmaker_rewrap import rendered_rows, widest_line
+from util import rpgmaker_script_strings as script_strings
 from util.skills import rpgmaker_qa_skill_file, rpgmaker_qa_skill_parts
 
 
@@ -162,6 +165,7 @@ _ENGINE_SOURCES = (
     "rpgmaker_qa_preflight.py", "rpgmaker_qa_reach.py", "rpgmaker_qa_checks.py",
     "rpgmaker_qa_glossary.py",
     "rpgmaker_header_check.py", "rpgmaker_rewrap.py", "dazedwrap.py",
+    "rpgmaker_script_strings.py",
     "rpgmaker_screens/__init__.py", "rpgmaker_screens/capture.cjs",
     "rpgmaker_screens/harness.js", "rpgmaker_window/__init__.py",
     "rpgmaker_window/launcher.cjs", "rpgmaker_window/bridge.cjs",
@@ -577,17 +581,36 @@ def _fit(
     return "\n".join(rewrap.spread(fitted, commands))
 
 
+# The quote mark of each script string transform.
+_SCRIPT_QUOTES = {transform: quote for quote, transform in SCRIPT_STRINGS.items()}
+
+
+def _script_text(correction: str, transform: str) -> str:
+    """A correction as DazedTL writes it into a script string: with the
+    escapes translation writes there, so it can't end the string early or
+    interpolate in it; other text as it is."""
+    quote = _SCRIPT_QUOTES.get(transform)
+    return script_strings.escape(correction, quote) if quote else correction
+
+
 def _fitted(
     correction: str,
     live: str,
-    boxes: list[dict[str, Any] | None],
-    source: str | None = None,
+    targets: list[dict[str, Any]],
+    layout: dict[str, Any],
 ) -> str:
-    """One correction for every target it reaches, fitted to the narrowest
-    box when each target takes a rewrapped value."""
+    """One correction for every target it reaches, as DazedTL writes it when
+    each target takes the same text: escaped into one kind of script string,
+    or fitted to the narrowest box when each target takes a rewrapped
+    value."""
+    transforms = {target["live_transform"] for target in targets}
+    if len(transforms) == 1 and transforms <= _SCRIPT_QUOTES.keys():
+        return _script_text(correction, *transforms)
+    boxes = [_box(target, layout) for target in targets]
     if not boxes or not all(box and box.get("wraps") for box in boxes):
         return correction
-    return _fit(correction, live, min(boxes, key=lambda box: box["width"]), source)
+    narrowest = min(boxes, key=lambda box: box["width"])
+    return _fit(correction, live, narrowest, targets[0].get("source"))
 
 
 def _fit_corrections(
@@ -608,8 +631,8 @@ def _fit_corrections(
             change["correction"] = _fitted(
                 change["correction"],
                 change["current"],
-                [_box(records[identity], layout) for identity in identities],
-                records[identities[0]].get("source"),
+                [records[identity] for identity in identities],
+                layout,
             )
     for question in questions:
         if question.get("correction"):
@@ -617,8 +640,8 @@ def _fit_corrections(
             question["correction"] = _fitted(
                 question["correction"],
                 question["current"],
-                [_box(records[identity], layout) for identity in identities],
-                records[identities[0]].get("source"),
+                [records[identity] for identity in identities],
+                layout,
             )
 
 
@@ -654,16 +677,20 @@ def correction_problems(
     regression treats as blocking. DazedTL writes the correction fitted to
     the box, which may not need more rows than the box shows or the current
     text uses; a correction it cannot rewrap may not have a line wider than
-    both the box and the current text.
+    both the box and the current text. Into a script string it writes the
+    correction escaped as translation writes the string.
     """
     problems = []
-    written = _fit(correction, live, box, source, len(live_pointers))
+    written = _script_text(
+        _fit(correction, live, box, source, len(live_pointers)), live_transform
+    )
     if written == live:
         problems.append("the correction matches the current text")
     lines = correction.split("\n")
     if live_transform == "quoted-string":
-        # The text sits between quote marks in a script parameter, so a new
-        # kind of quote mark could end the string early.
+        # The text sits between quote marks in a script parameter whose
+        # escapes are unknown, so a new kind of quote mark could end the
+        # string early.
         if any(mark in correction and mark not in live for mark in "'\"`"):
             problems.append("adds a quote mark to a script string")
     elif (
@@ -1938,7 +1965,9 @@ def _interface_after(
                     "live_pointers": record["live_pointers"],
                     "live_transform": record["live_transform"],
                     "expected": record["live"],
-                    "replacement": change["correction"],
+                    "replacement": _script_text(
+                        change["correction"], record["live_transform"]
+                    ),
                 }
                 try:
                     for pointer, value in _operation_writes(
@@ -8215,7 +8244,12 @@ def correction_map(
                 if previous is not None:
                     continue
                 targets[target] = change["correction"]
-                replacement = change["correction"]
+                # A correction that reaches only one kind of script string is
+                # stored escaped, which escaping again keeps; one that reaches
+                # other text too is escaped here for each script string.
+                replacement = _script_text(
+                    change["correction"], record["live_transform"]
+                )
                 # A message's rows are spread over the commands that hold
                 # them; the replacement reads as it will once written, so
                 # undoing it finds it there.
@@ -8267,7 +8301,7 @@ def _operation_writes(document: Any, operation: dict) -> list[tuple[str, Any]]:
         return [(operation["pointer"], operation["replacement"])]
     values = _operation_values(document, operation)
     current = "\n".join(values)
-    if operation["live_transform"] == "quoted-string":
+    if operation["live_transform"] in QUOTED_TRANSFORMS:
         match = _QUOTED_VALUE_RE.search(current)
         current = match.group(2) if match else current
     if current != operation["expected"]:
@@ -8284,7 +8318,7 @@ def _operation_values(document: Any, operation: dict) -> list[str]:
 def _operation_replacements(values: list[str], operation: dict) -> list[str]:
     replacement = operation["replacement"]
     transform = operation["live_transform"]
-    if transform == "quoted-string":
+    if transform in QUOTED_TRANSFORMS:
         if len(values) != 1:
             raise ValueError("Quoted-string operation has multiple live pointers")
         match = _QUOTED_VALUE_RE.search(values[0])
