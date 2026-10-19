@@ -2,7 +2,8 @@
 
 An Assistant-led project changes the game folder in many places: preparation,
 Git baselines, the canary and injected translations, and the assistant's work
-records under .dazedtl/len-method. Starting over puts the game files back to
+records under .dazedtl/len-method and the playtest's fixes under
+.dazedtl/playtest. Starting over puts the game files back to
 the original saved before setup and moves everything else aside under a dated
 folder, so the next starting prompt begins again from preparation. Nothing is
 deleted: backups of the game and project files come first, and files the
@@ -25,6 +26,8 @@ from . import backups
 from .files import project_path
 from .project import WORK
 
+# The assistant's working copy of the playtest's fixes.
+PLAYTEST = ".dazedtl/playtest"
 # Save games outlive any translation attempt, wherever the engine keeps them.
 SAVE_FOLDERS = {"save", "saves", "savedata"}
 SAVE_FILE = re.compile(r"save\d*\.(rvdata2|rvdata|rxdata|lsd)", re.IGNORECASE)
@@ -144,5 +147,10 @@ def run(
             # The project's options belong to the user, not to one attempt.
             if child.name != "workflow.json":
                 _move(child, archive / "len-method" / child.name)
+    # The playtest's fixes were written for this attempt's translation; the
+    # next one starts from an empty fixes plugin.
+    fixes = project_path(root, PLAYTEST, exists=False)
+    if fixes.is_dir():
+        _move(fixes, archive / "playtest")
     renewed["started_over"] = {"at": datetime.now(UTC).isoformat(), "archive": relative}
     return renewed, result

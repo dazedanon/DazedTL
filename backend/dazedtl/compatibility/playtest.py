@@ -229,21 +229,23 @@ def _prune(storage, keep):
 
 def fixes_state(folder, root, web):
     """The working copy of the fixes plugin, whether the game has it as it
-    is, and the latest check of it."""
+    is, and the latest check of it: a check of other fixes, such as those of
+    an attempt started over, is not of this copy."""
     from util.playtest.fixes import PLUGIN
 
     copy = fixes_copy(root, web)
+    raw = copy.read_bytes()
     game = web / PLUGIN
     result = {
         "file": str(copy),
-        "in_game": game.is_file() and game.read_bytes() == copy.read_bytes(),
+        "in_game": game.is_file() and game.read_bytes() == raw,
     }
     pointer = Path(folder) / FIX_POINTER
     try:
         check = read_json(pointer) if pointer.exists() else None
     except OSError, ValueError:
         check = None
-    if check:
+    if check and check.get("fixes") == digest(raw):
         result["check"] = {
             key: check[key]
             for key in ("finished_at", "reason", "publication")

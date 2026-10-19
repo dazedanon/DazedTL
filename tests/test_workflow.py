@@ -1061,6 +1061,9 @@ class WorkflowTests(unittest.TestCase):
         (self.game / ".git").mkdir()
         (self.game / ".git/HEAD").write_text("ref: refs/heads/main")
         (self.game / WORK / "progress.json").write_text("{}")
+        # The playtest's fixes for this attempt; the next began from them.
+        (self.game / ".dazedtl/playtest").mkdir()
+        (self.game / ".dazedtl/playtest/DazedTL_Fixes.js").write_text("// fix")
         glossary = self.game / ".dazedtl/glossary.txt"
         glossary.write_text("Lili (リリ)")
         self.engine.documents = lambda _source: {"glossary": {"path": str(glossary)}}
@@ -1094,6 +1097,8 @@ class WorkflowTests(unittest.TestCase):
         self.assertTrue((archive / "git/HEAD").is_file())
         self.assertFalse((self.game / ".git").exists())
         self.assertTrue((archive / "len-method/progress.json").is_file())
+        self.assertFalse((self.game / ".dazedtl/playtest").exists())
+        self.assertTrue((archive / "playtest/DazedTL_Fixes.js").is_file())
         self.assertTrue(self.project.path.is_file())
         self.assertEqual(glossary.read_text(), "Lili (リリ)")
         self.assertFalse((records / "assistant.json").exists())
