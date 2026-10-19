@@ -759,7 +759,8 @@ def _atomic_write_text(path: Path, value: str) -> None:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    value = json.loads(path.read_text(encoding="utf-8"))
+    # utf-8-sig: an assistant's shell may start a result file with a BOM.
+    value = json.loads(path.read_text(encoding="utf-8-sig"))
     if not isinstance(value, dict):
         raise ValueError(f"Expected a JSON object in {path}")
     return value
@@ -2580,7 +2581,8 @@ def _task_instructions(task_dir: Path, task: dict[str, Any]) -> str:
 
 
 def brief(task_dir: str | Path, role: str) -> str:
-    """One reviewer's fixed brief: the policy, its role and the commands."""
+    """One reviewer's brief: the policy, its role, the commands, and the
+    game's guidance and decisions, so a reviewer reads no other context."""
     if role not in QA_ROLES:
         raise ValueError("Choose a role: " + ", ".join(QA_ROLES))
     root, task, _checkpoint = _load_task(task_dir)
@@ -2589,7 +2591,41 @@ def brief(task_dir: str | Path, role: str) -> str:
         f"## {name}\n\n{sections[name]}"
         for name in ("Policy", *_BRIEF_SECTIONS[role], "Commands", "Result formats")
     ]
-    return _fill("\n\n".join(parts) + "\n", _skill_values(root, task))
+    # The game's own text is appended after filling, so it is never read as
+    # a placeholder.
+    return "\n\n".join(
+        [_fill("\n\n".join(parts), _skill_values(root, task)), *_game_guidance(root)]
+    ) + "\n"
+
+
+def _decision_line(decision: dict[str, Any]) -> str:
+    wording = (
+        f" ({decision['source']} = {decision['translation']})"
+        if decision.get("source") else ""
+    )
+    return f"- {decision['key']}: {decision['choice']}{wording}"
+
+
+def _game_guidance(root: Path) -> list[str]:
+    """The task context's game notes, translation quirks, custom guidance and
+    the decisions recorded so far; bundles carry the glossary entries they use."""
+    context = _read_json(root / "context.json")
+    documents = [
+        ("Game notes", context.get("game")),
+        ("Translation quirks", context.get("quirks")),
+        *(
+            (f"Game guidance: {Path(str(overlay.get('path') or '')).stem}", overlay)
+            for overlay in context.get("overlays") or []
+        ),
+    ]
+    parts = [
+        f"## {title}\n\n{text}"
+        for title, document in documents
+        if (text := str((document or {}).get("text") or "").strip())
+    ]
+    if decisions := _decisions(root):
+        parts.append("## Decisions\n\n" + "\n".join(map(_decision_line, decisions)))
+    return parts
 
 
 def handoff_text(task_dir: str | Path, helper: str) -> str:
@@ -3275,6 +3311,74 @@ def next_bundle(
             if row is not None or not moved:
                 return row
         return None
+
+
+def claim(
+    task_dir: str | Path,
+    worker: str,
+    bundle_id: str | None = None,
+    *,
+    helper: str | None = None,
+    skip_declined: bool = False,
+) -> str:
+    """What a worker reads when it asks for a bundle: the bundle as text, with
+    the decisions recorded since its last bundle, or why none waits for it."""
+    root = Path(task_dir).expanduser().resolve()
+    worker = str(worker or "worker")
+    row = next_bundle(
+        root, worker, bundle_id, helper=helper, skip_declined=skip_declined
+    )
+    if row is None:
+        return _no_bundle(root, worker)
+    with _task_lock(root):
+        _root, _task, checkpoint = _load_task(root)
+        record = checkpoint["workers"][worker]
+        seen = str(record.get("decisions_seen") or "")
+        newer = [entry for entry in _decisions(root) if str(entry["at"]) > seen]
+        if newer:
+            record["decisions_seen"] = max(str(entry["at"]) for entry in newer)
+            _atomic_write_json(root / "checkpoint.json", checkpoint)
+    text = render_bundle(root, row["id"])
+    if newer:
+        text += "\n## DECISIONS recorded since your last bundle\n" + "\n".join(
+            map(_decision_line, newer)
+        ) + "\n"
+    return text
+
+
+def _no_bundle(root: Path, worker: str) -> str:
+    state = status(root)
+    stage = state["stage"]
+    if stage not in REVIEW_STAGES:
+        return f"No bundle for {worker}: QA is {stage}.\n"
+    metrics = state[stage]
+    return (
+        f"No bundle for {worker} now: the {stage} stage has "
+        f"{metrics['bundles_pending']} waiting for another reviewer and "
+        f"{metrics['bundles_assigned']} in review.\n"
+    )
+
+
+def accept_text(
+    task_dir: str | Path,
+    result_path: str | Path,
+    *,
+    worker: str = "",
+    then_next: bool = False,
+) -> str:
+    """Accept a result and say so in one line; with *then_next*, also claim
+    and print the worker's next bundle, so each bundle costs one round."""
+    root = Path(task_dir).expanduser().resolve()
+    accept_result(root, result_path)
+    bundle_id = str(_read_json(Path(result_path).expanduser().resolve())["bundle_id"])
+    text = f"Accepted {bundle_id}.\n"
+    if not then_next:
+        return text
+    _root, _task, checkpoint = _read_task(root)
+    worker = worker or str(_bundle_row(checkpoint, bundle_id)[1].get("assigned_to") or "")
+    if not worker:
+        return text + "Name your worker to claim the next bundle.\n"
+    return text + "\n" + claim(root, worker)
 
 
 def _stage_finished(
@@ -4920,7 +5024,62 @@ def render_bundle(task_dir: str | Path, bundle_id: str) -> str:
                 out += _render_group(item)
             else:
                 out += _render_editorial(item)
+    out += _glossary_section(root, bundle)
     return "\n".join(out) + "\n"
+
+
+_GLOSSARY_ENTRY_RE = re.compile(r"^(.+?)\s+\((.+?)\)")
+
+
+def _glossary_entries(text: str) -> list[tuple[list[str], str, str]]:
+    """Each glossary line's Japanese terms, its English and the whole line,
+    whose notes, such as a character's gender, stay with it."""
+    entries = []
+    for raw in str(text or "").splitlines():
+        line = raw.strip()
+        if line and not line.startswith("#") and (
+            match := _GLOSSARY_ENTRY_RE.match(line)
+        ):
+            terms = [term for term in re.split(r"[,、]\s*", match.group(1)) if term]
+            entries.append((terms, match.group(2).strip(), line))
+    return entries
+
+
+def _bundle_wording(value: Any, japanese: list[str], names: set[str]) -> None:
+    """Collect a bundle's Japanese and the speaker names it shows."""
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key in {"source", "original"}:
+                japanese.append(
+                    item if isinstance(item, str)
+                    else json.dumps(item, ensure_ascii=False)
+                )
+            elif key == "speaker":
+                name = item.get("display_name") if isinstance(item, dict) else item
+                if name:
+                    names.add(str(name))
+            elif key == "speakers" and isinstance(item, list):
+                names.update(str(name) for name in item if name)
+            else:
+                _bundle_wording(item, japanese, names)
+    elif isinstance(value, list):
+        for item in value:
+            _bundle_wording(item, japanese, names)
+
+
+def _glossary_section(root: Path, bundle: dict[str, Any]) -> list[str]:
+    """The glossary entries whose Japanese a bundle holds, or whose English
+    names one of its speakers, so a reviewer needs no other glossary."""
+    japanese: list[str] = []
+    names: set[str] = set()
+    _bundle_wording(bundle, japanese, names)
+    text = "\n".join(japanese)
+    glossary = (_read_json(root / "context.json").get("glossary") or {}).get("text")
+    used = [
+        line for terms, english, line in _glossary_entries(glossary)
+        if english in names or any(term in text for term in terms)
+    ]
+    return ["", "## GLOSSARY entries for this bundle's text", *used] if used else []
 
 
 def _decode_pointer(pointer: str) -> list[str]:

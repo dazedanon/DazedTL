@@ -67,7 +67,7 @@ def main() -> int:
     observe.add_argument("--identity", required=True)
     observe.add_argument("--category", required=True, action="append")
     observe.add_argument("--note", required=True)
-    next_cmd = sub.add_parser("next")
+    next_cmd = sub.add_parser("next", help="Claim a bundle and print it for review.")
     next_cmd.add_argument("--task", required=True, type=Path)
     next_cmd.add_argument("--worker", required=True)
     next_cmd.add_argument(
@@ -97,9 +97,13 @@ def main() -> int:
     context.add_argument(
         "--worker", default="", help="Also show declined scenes your assigned bundle prints."
     )
-    accept = sub.add_parser("accept")
+    accept = sub.add_parser("accept", help="Submit a result.")
     accept.add_argument("--task", required=True, type=Path)
     accept.add_argument("--result", required=True, type=Path)
+    accept.add_argument("--worker", default="", help="The worker that reviewed it.")
+    accept.add_argument(
+        "--next", action="store_true", help="Then claim and print the next bundle."
+    )
     release = sub.add_parser("release")
     release.add_argument("--task", required=True, type=Path)
     release.add_argument("--bundle", required=True)
@@ -124,6 +128,15 @@ def main() -> int:
     )
 
     args = parser.parse_args()
+    try:
+        return run(parser, args)
+    except (ValueError, OSError) as exc:
+        # A refusal is for the reviewer to act on, not a traceback to read.
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+
+def run(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     if args.command == "prepare":
         task, state = rpgmaker_qa.prepare_task(
             args.game_root, args.data, args.focus, args.output_root,
@@ -134,16 +147,17 @@ def main() -> int:
     elif args.command == "status":
         _print(rpgmaker_qa.status(args.task))
     elif args.command == "next":
-        bundle = rpgmaker_qa.next_bundle(
+        print(rpgmaker_qa.claim(
             args.task,
             args.worker,
             args.bundle,
             helper=args.helper,
             skip_declined=args.skip_declined,
-        )
-        _print(bundle or {"bundle": None, "status": rpgmaker_qa.status(args.task)})
+        ), end="")
     elif args.command == "accept":
-        _print(rpgmaker_qa.accept_result(args.task, args.result))
+        print(rpgmaker_qa.accept_text(
+            args.task, args.result, worker=args.worker, then_next=args.next
+        ), end="")
     elif args.command == "release":
         _print(rpgmaker_qa.release_bundle(args.task, args.bundle))
     elif args.command == "decline":

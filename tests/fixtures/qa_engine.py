@@ -195,6 +195,15 @@ def source(identity):
     )
 
 
+# The game's own guidance and glossary, which reviewers read in their brief and
+# bundles instead of the task's whole context.
+(game / ".dazedtl/skills").mkdir(parents=True)
+OWNER_ENTRY = "店長 (Owner) - Runs the shop and calls Arina by name."
+(game / ".dazedtl/glossary.txt").write_text(
+    f"# Characters\n{OWNER_ENTRY}\n森の奥 (Deep Woods)\n", encoding="utf-8"
+)
+QUIRK = "Arina's cheerful lines end with a heart."
+(game / ".dazedtl/skills/quirks.md").write_text(QUIRK + "\n", encoding="utf-8")
 storage = temporary / "storage"
 # Small screen bundles give the first reviewer several to have checked. The
 # game's message windows show three rows.
@@ -222,10 +231,12 @@ assert state["not_translated"] == {"total": 3, "may_show": 2}, state["not_transl
 # of tempfile's private ones, which on Windows lock the app out of the files an
 # elevated assistant writes.
 assert task.stat().st_mode == task.parent.stat().st_mode, oct(task.stat().st_mode)
-# A worker's brief holds every role it may be handed, filled in for this task.
+# A worker's brief holds every role it may be handed, filled in for this task,
+# and the game's guidance, so it never reads the task's whole context.
 worker = qa.brief(task, "worker")
-assert "{{" not in worker and str(task / "context.json") in worker, worker
+assert "{{" not in worker and str(task / "context.json") not in worker, worker
 assert all(f"## {title}" in worker for title in qa._BRIEF_SECTIONS["worker"]), worker
+assert f"## Translation quirks\n\n{QUIRK}" in worker, worker
 
 
 def result_path(name, value):
@@ -319,17 +330,44 @@ OBSERVATION = {
     "categories": ["voice"],
     "note": "Idle small talk right after deciding to rest.",
 }
-while row := qa.next_bundle(task, "screen-a"):
+
+
+def claimed(text):
+    """The row of the bundle a worker's printed claim shows, if any."""
+    if not text.startswith("BUNDLE "):
+        return None
+    bundle_id = text.split()[1]
+    return next(
+        row
+        for stage in qa.REVIEW_STAGES
+        for row in checkpoint()[stage]["bundles"]
+        if row["id"] == bundle_id
+    )
+
+
+# It works the brief's loop: next prints a bundle with the glossary entries
+# its text uses, and accept --next accepts it and prints the following one.
+text = qa.claim(task, "screen-a")
+printed = []
+while row := claimed(text):
     assert row["id"].startswith("screen"), row
+    printed.append(text)
     lint_only = all(item["kind"] == "lint-family" for item in bundle_of(row)["items"])
-    qa.accept_result(
+    text = qa.accept_text(
         task,
         screen(
             row,
             {STRATUM["_original"]},
             observations=[OBSERVATION] if lint_only else [],
         ),
+        then_next=True,
     )
+    assert text.startswith(f"Accepted {row['id']}.\n\n"), text
+    text = text.split("\n", 2)[2]
+assert text.startswith("No bundle for screen-a now: the screen stage has "), text
+owner = [shown for shown in printed if "店長" in shown.split("## GLOSSARY")[0]]
+assert owner and all(OWNER_ENTRY in shown for shown in owner), owner
+assert not any(OWNER_ENTRY in shown for shown in printed if shown not in owner)
 # Only its first bundle is checked, which covers a quarter of its lines, and
 # deep review of those lines waits for the check. The declined scene waits for
 # a reviewer on another helper and the check for another reviewer, never this
@@ -823,7 +861,15 @@ def editorial(row, verdicts, observations=()):
 rows = json.loads((task / "checkpoint.json").read_text())["editorial"]["bundles"]
 judged = next(row for row in rows if row["authors"])
 assert judged["authors"] == ["deep-a", "sweep-a"], judged
-assert qa.next_bundle(task, "deep-a")["id"] != judged["id"]
+# A worker sees a decision recorded since its last bundle once, with the
+# bundle it claims next.
+text = qa.claim(task, "deep-a")
+assert not text.startswith(f"BUNDLE {judged['id']} "), text
+assert text.endswith(
+    "## DECISIONS recorded since your last bundle\n"
+    "- stratum names: Strata are ordinal titles (第1層 = First Stratum)\n"
+), text
+assert "## DECISIONS" not in qa.claim(task, "deep-a")
 qa.release_bundle(task, next(row["id"] for row in rows if not row["authors"]))
 try:
     qa.next_bundle(task, "deep-a", judged["id"])

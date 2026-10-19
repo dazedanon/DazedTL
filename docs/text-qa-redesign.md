@@ -26,6 +26,8 @@ The [release playtest](#release-playtest) extends the same goals to what text QA
   Single-line corrections and word-for-word sweep rules cannot fix a [defect that spans a scene](#scene-corrections), and the unit keeps such a fix from being half applied, half undone or left partly in declined text.
 - Reviewers run as four workers at once, each a fresh session for a few bundles at a time under a worker brief DazedTL writes; the coordinator starts them and reviews nothing itself.
   A [single session](#parallel-workers) taking turns under two worker names was five times slower, read more per bundle and made every check its own second read.
+- A worker reads only what its bundles need: its brief carries the game's notes, quirks and decisions, each bundle the glossary entries its text uses, and claiming and accepting print the next bundle, so a bundle costs about two turns.
+  Every turn rereads the assistant's whole conversation, its own long prompt included, so turns and context, not the text under review, were most of what QA [read](#token-cost).
 
 ## Why
 
