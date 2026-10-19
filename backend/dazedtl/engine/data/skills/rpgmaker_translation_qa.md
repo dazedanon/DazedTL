@@ -130,6 +130,9 @@ Review a check bundle like any other, without reading the result it repeats.
 - `risk` values are attention hints, not defects. Compare `same_source_alternatives` for genuine
   inconsistency and `reference_translations` for established wording.
 - A line's `lint` already proposes its mechanical fixes; do not report those again.
+- A line's `glossary` names the glossary terms its source holds and its English lacks. Report it
+  when the line names that character, place or thing another way; an ordinary word written like
+  a term, or a name said as "you", is clean.
 - A `motif-family` item gathers every translation of one recurring joke or wordplay rule from
   the translation quirks. Review it once: name one recognizable English joke mechanism and check
   that every nonliteral variant still reads as its callback before calling it `preserved`;

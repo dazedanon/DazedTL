@@ -42,6 +42,7 @@ from util.rpgmaker_qa_manifest import (
 )
 from util.rpgmaker_qa_verify import verify_manifest
 from util import rpgmaker_qa_checks as checks
+from util import rpgmaker_qa_glossary as glossary_rules
 from util import rpgmaker_qa_lint as lint
 from util.rpgmaker_header_check import check as check_headers
 from util.rpgmaker_qa_preflight import (
@@ -199,7 +200,6 @@ _JP_RISK_CUES = {
     "choice-or-order": re.compile(r"(?:選|決|必ず|先に|後で|前に|まで|以降|以前)"),
     "wordplay": re.compile(r"(?:駄洒落|冗談|笑|ふふ|はは|クク|語呂|謎|暗号)"),
 }
-_GLOSSARY_PAIR_RE = re.compile(r"^(.+?)\s+\((.+)\)\s*$")
 _QUOTED_VALUE_RE = re.compile(r"(['\"`])(.*)(\1)", re.DOTALL)
 _MOTIF_GUIDANCE_RE = re.compile(
     r"(?:recurring|running|joke|wordplay|pun|catchphrase|humou?r|冗談|駄洒落|語呂)",
@@ -879,20 +879,6 @@ def _context_pack(
     return pack
 
 
-def _glossary_pairs(text: str) -> list[tuple[str, str]]:
-    pairs: dict[str, str] = {}
-    for raw in str(text or "").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        match = _GLOSSARY_PAIR_RE.match(line)
-        if match:
-            source, target = match.group(1).strip(), match.group(2).strip()
-            if source and target:
-                pairs[source] = target
-    return sorted(pairs.items(), key=lambda item: (-len(item[0]), item[0]))
-
-
 def _record_maps(manifest: dict[str, Any]) -> tuple[dict[str, dict], dict[str, dict]]:
     records = {record["identity"]: record for record in manifest["records"]}
     clusters = {cluster["representative"]: cluster for cluster in manifest["clusters"]}
@@ -912,7 +898,7 @@ def _semantic_manifest_sha256(manifest: dict[str, Any]) -> str:
 
 
 def _risk_reasons(
-    cluster: dict[str, Any], records: dict[str, dict], glossary: list[tuple[str, str]]
+    cluster: dict[str, Any], records: dict[str, dict], glossary: glossary_rules.Glossary
 ) -> tuple[list[str], list[list[str]]]:
     members = [records[identity] for identity in cluster["identities"]]
     reasons: set[str] = set()
@@ -928,7 +914,11 @@ def _risk_reasons(
     for label, pattern in _JP_RISK_CUES.items():
         if pattern.search(source):
             reasons.add(label)
-    hits = [[src, dst] for src, dst in glossary if src in source]
+    # The glossary terms the English lacks; a term it uses needs no word.
+    hits = [
+        [term.source, term.english]
+        for term, _start, _end in glossary_rules.missing(source, str(cluster["live"]), glossary)
+    ] if source not in glossary.unseen else []
     if hits:
         reasons.add("glossary")
     facets = {
@@ -947,7 +937,7 @@ def _risk_reasons(
 
 def _compact_items(manifest: dict[str, Any], context: dict[str, Any]) -> list[dict]:
     records, clusters = _record_maps(manifest)
-    glossary = _glossary_pairs(context["glossary"]["text"])
+    glossary = _game(manifest, context).glossary
     live_by_source: dict[str, set[str]] = defaultdict(set)
     for cluster in manifest["clusters"]:
         live_by_source[str(cluster["source"])].add(str(cluster["live"]))
@@ -1353,15 +1343,19 @@ def _motif_items(
 _LINT_GAMES: dict[tuple[str, str], lint.Game] = {}
 
 
-def _lint_game(root: Path, manifest: dict[str, Any]) -> lint.Game:
-    """What the lint families read from the whole game: the task's inventory
-    and the glossary its context holds, as the task was prepared with."""
-    context = _read_json(root / "context.json")
+def _game(manifest: dict[str, Any], context: dict[str, Any]) -> lint.Game:
+    """What the lint families and screen hints read from the whole game: an
+    inventory and the glossary its task's context holds."""
     key = (manifest["content_sha256"], context["content_sha256"])
     if key not in _LINT_GAMES:
         _LINT_GAMES.clear()
         _LINT_GAMES[key] = lint.game(manifest, context["glossary"]["text"])
     return _LINT_GAMES[key]
+
+
+def _lint_game(root: Path, manifest: dict[str, Any]) -> lint.Game:
+    """The lint game of a prepared task, as it was prepared."""
+    return _game(manifest, _read_json(root / "context.json"))
 
 
 def _lint_items(
@@ -2730,9 +2724,7 @@ def prepare_task(
                         forced_candidates, clusters[flag["identity"]],
                         ["show-text-header"], [flag["identity"]],
                     )
-            lint_items, lint_fixes = _lint_items(
-                manifest, layout, lint.game(manifest, context["glossary"]["text"])
-            )
+            lint_items, lint_fixes = _lint_items(manifest, layout, _game(manifest, context))
             items, screen_index = _screen_items(manifest, context, data, lint_fixes)
             screen_index_document = {
                 "schema": "rpgmaker-qa-screen-index-v1",

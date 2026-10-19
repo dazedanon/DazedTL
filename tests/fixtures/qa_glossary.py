@@ -161,6 +161,9 @@ commands = [
     },
     line("存子はここにいる。", "Sonko is here."),
     line("分かち谷の東側だ。", "It's east of Wakachi Valley."),
+    # Screen lines name only the terms their English lacks.
+    line("存子が笑った。", "Aruko smiled."),
+    line("存子、ありがとう。", "Thank you."),
     {"code": 0, "indent": 0, "parameters": []},
 ]
 (data / "Map001.json").write_text(
@@ -170,10 +173,15 @@ commands = [
 (data / "System.json").write_text(json.dumps({"gameTitle": "Test"}), encoding="utf-8")
 task, state = qa.prepare_task(data.parent, data, "release", temporary / "storage")
 reviewed = 0
+hints = {}
 # A second reviewer takes the checks of the first one's bundles.
 while row := qa.next_bundle(task, "screen-a") or qa.next_bundle(task, "screen-b"):
     bundle = json.loads(Path(row["path"]).read_text(encoding="utf-8"))
     groups = [item for item in bundle["items"] if item["kind"] == "lint-family"]
+    for item in bundle["items"]:
+        for target in item.get("lines") or []:
+            if "id" in target:
+                hints[target["source"]] = target.get("glossary")
     if groups:
         assert [item["family"] for item in groups] == ["lint:glossary-term"], groups
         rendered = qa.render_bundle(task, row["id"])
@@ -209,6 +217,9 @@ while row := qa.next_bundle(task, "screen-a") or qa.next_bundle(task, "screen-b"
     qa.accept_result(task, result)
     reviewed += len(groups)
 assert reviewed == 1, reviewed
+assert hints["存子が笑った。"] is None and hints["存子、ありがとう。"] == [
+    ["存子", "Aruko"]
+], hints
 qa.advance(task)
 state = qa.finalize(task)
 findings = json.loads((task / "findings.json").read_text(encoding="utf-8"))["findings"]
