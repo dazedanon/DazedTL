@@ -216,7 +216,6 @@ test("the Project page continues with the next step and keeps a later saved posi
       applied: [],
       layout_scan: null,
       playtest: { current: false, problems: [], gaps: [] },
-      glossary: { scan: null },
     },
     comparisons: { status: "not_needed" },
     eventText: {

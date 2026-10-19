@@ -10,7 +10,6 @@ from . import context_setup, preparation, reference_folders, speaker_setup
 from .event_text import EventText
 from .files import Digests, digest, project_path, read_json, settled
 from .full_estimate import FullEstimate
-from .glossary_check import GlossaryCheck
 from .guided_actions import GuidedActions
 from .guided_context import GuidedContext
 from .guided_inputs import GuidedInputs
@@ -83,7 +82,6 @@ class Guided:
         self.observations = RunObservations()
         self.runs = GuidedRuns(self)
         self.event_text = EventText(self)
-        self.glossary = GlossaryCheck(self)
         self.full_estimate = FullEstimate(self)
         from .batch_monitor import BatchMonitor
 
@@ -549,7 +547,6 @@ class Guided:
             "runtime_edited": edited,
             "review_current": current,
             "layout_scan": scan["id"] if scan else None,
-            "glossary": self.glossary.state(native),
             "delivery_available": bool(
                 state.get("delivery") and Path(state["delivery"]["path"]).is_file()
             ),

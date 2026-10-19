@@ -34,10 +34,6 @@ def run_action(plan, log):
         from dazedtl.compatibility.text import run_qa
 
         return run_qa(plan, log)
-    if plan["action"] == "glossary_check":
-        from dazedtl.compatibility.glossary_check import run_check
-
-        return run_check(plan, log)
     if plan["action"] == "release_playtest":
         from dazedtl.compatibility.playtest import run_playtest
 

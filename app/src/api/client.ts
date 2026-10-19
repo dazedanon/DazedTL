@@ -332,19 +332,6 @@ export const api = {
     ) => request("translation_qa", { project_id, step, ...details }),
     qaReport: (project_id: string) =>
       request("guided_qa_report", { project_id }),
-    /** Saves a choice for lines the glossary check found, or applies the
-     * chosen fixes as one text batch. */
-    glossary: (
-      project_id: string,
-      step: "choose" | "apply",
-      details: {
-        keys?: string[];
-        choice?: "keep" | "use" | "edit" | "clear";
-        text?: string;
-      } = {},
-    ) => request("guided_glossary", { project_id, step, ...details }),
-    glossaryReport: (project_id: string) =>
-      request("guided_glossary_report", { project_id }),
     /** Starts the release playtest or reads where it stands, as the
      * assistant's project helper does. */
     playtest: (project_id: string, step: "status" | "run") =>

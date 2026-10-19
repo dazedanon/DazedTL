@@ -876,7 +876,6 @@ export function useGuidedWorkspace({
         "forge_remove",
         "editors",
         "rewrap_preview",
-        "glossary_check",
         "qa_prepare",
       ].includes(name);
     // A tool row reports only its latest change, so installing again

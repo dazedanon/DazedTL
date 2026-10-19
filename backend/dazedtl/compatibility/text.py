@@ -802,10 +802,6 @@ def prepare_publication(plan):
                 candidates[(prefix / name).as_posix()] = project_path(
                     scratch, name
                 ).read_bytes()
-    elif action == "glossary_apply":
-        from .glossary_check import candidates as glossary_candidates
-
-        candidates = glossary_candidates(plan, root, prefix, folder)
     else:
         raise ValueError("Unknown text publication.")
     frozen = publication.freeze(

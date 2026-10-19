@@ -919,66 +919,10 @@ export type PlaytestCapture = {
   url: string;
 };
 
-/** The glossary check's last scan, as observations summarize it. */
-export type GlossaryState = {
-  /** The operation whose lines the check shows. */
-  scan: string | null;
-  /** The game's data and glossary are as the scan read them. */
-  current: boolean;
-  /** Translated lines the scan checked. */
-  lines: number;
-  /** Lines whose English lacks a glossary term. */
-  flagged: number;
-  open: number;
-  /** Chosen fixes not yet in the game. */
-  fixes: number;
-  kept: number;
-  /** Changes with the scan and every choice. */
-  revision: string;
-};
-
-export type GlossaryTerm = {
-  source: string;
-  english: string;
-  /** Where the term starts in the line's Japanese. */
-  start: number;
-  end: number;
-};
-
-export type GlossaryLine = {
-  key: string;
-  file: string;
-  /** The line's place in its file, as a JSON pointer. */
-  pointer: string;
-  source: string;
-  /** The English the game shows. */
-  live: string;
-  /** The terms its English lacks. */
-  terms: GlossaryTerm[];
-  /** The line with each term written over its rendering. */
-  proposal?: string;
-  state: "open" | "fix" | "kept";
-  choice?: "keep" | "use" | "edit";
-  /** The chosen fix, as the game gets it. */
-  text?: string;
-};
-
-export type GlossaryOperation = {
-  id: string;
-};
-
-/** Every line the glossary check found, for its task's list. */
-export type GlossaryReport = GlossaryState & {
-  found: GlossaryLine[];
-  /** The text batch an apply started. */
-  operation?: GlossaryOperation;
-};
-
 export type Readiness = {
   publications: PublicationStatus[];
   qa: QaState;
   playtest: PlaytestState;
-  glossary: GlossaryState;
   outputs: string[];
   applied: string[];
   unapplied: string[];
@@ -2674,15 +2618,6 @@ export type PlaytestCaptureRequest = {
   name: string;
 };
 
-export type GlossaryRequest = {
-  project_id: string;
-  step: "choose" | "apply";
-  keys?: string[];
-  choice?: "keep" | "use" | "edit" | "clear";
-  /** The user's own fix, for one line. */
-  text?: string;
-};
-
 export type TranslationLegacyRequest = {
   project_id: string;
   action: "resume" | "stop" | "answer" | "export";
@@ -3232,8 +3167,6 @@ export type RpcContract = {
   };
   translation_qa: { request: TranslationQaRequest; response: TextQaStatus };
   guided_qa_report: { request: ProjectRequest; response: QaReport };
-  guided_glossary: { request: GlossaryRequest; response: GlossaryReport };
-  guided_glossary_report: { request: ProjectRequest; response: GlossaryReport };
   translation_playtest: {
     request: TranslationPlaytestRequest;
     response: PlaytestStatus;

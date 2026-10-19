@@ -1,4 +1,4 @@
-/** Check: the line width check, the glossary check and optional text QA. */
+/** Check: the line width check, text QA and the release playtest. */
 import type { ReactNode } from "react";
 import { textLocation } from "../../textLocation";
 import { ActionList, ActionRow } from "../../../../ui/ActionList";
@@ -21,8 +21,6 @@ import {
 } from "../../qaSteps";
 import { qaPhase, qaUnsaved } from "../../qaView";
 import { savedTranslations } from "../../translationView";
-import { GlossaryCheckWork } from "../../GlossaryCheck";
-import { glossaryPhase } from "../../glossaryView";
 import { PlaytestWork } from "../../Playtest";
 import {
   playtestFailure,
@@ -215,104 +213,6 @@ export function fittingView(w: GuidedWorkspace): TaskView {
       description:
         "Rewrap applied text that is wider than the saved line widths.",
     },
-  };
-}
-
-export function glossaryCheckView(w: GuidedWorkspace): TaskView {
-  const {
-    project,
-    state,
-    baseline,
-    action,
-    disabled,
-    feedback,
-    task,
-    advance,
-    save,
-    preparePreview,
-    whenFinished,
-    move,
-  } = w;
-  const glossary = state.readiness.glossary;
-  const phase = glossaryPhase(glossary);
-  // The check reads the game's own text, whichever profile or method
-  // translated it.
-  const check = (label: string, variant: "primary" | "default" | "link") =>
-    task(
-      "glossary_check",
-      label,
-      {},
-      baseline ? false : "Set up the game first.",
-      variant,
-    );
-  /** Puts the chosen fixes into the game, then checks again, so the list
-   * shows what is left. */
-  const apply = () =>
-    action.run(
-      async () => {
-        await save();
-        const started = await api.guided.glossary(project.id, "apply");
-        const ended = await whenFinished(started.operation!.id);
-        if (ended.status !== "complete")
-          throw new Error(
-            ended.message || "The fixes did not go into the game.",
-          );
-        const preview = await preparePreview("glossary_check", {});
-        await whenFinished((await api.execute(project.id, preview.token)).id);
-      },
-      `${glossary.fixes === 1 ? "Fix" : "Fixes"} applied.`,
-      "glossary-apply",
-    );
-  const footer =
-    phase === "review" ? (
-      <ActionControl
-        label={
-          glossary.fixes
-            ? `Apply ${glossary.fixes.toLocaleString()} ${glossary.fixes === 1 ? "fix" : "fixes"}`
-            : "Apply fixes"
-        }
-        variant="primary"
-        disabled={disabled || !glossary.fixes}
-        disabledReason={glossary.fixes ? "" : "Choose the fixes to apply."}
-        {...feedback("glossary-apply", "Applying…")}
-        onClick={apply}
-      />
-    ) : (
-      check(
-        phase === "none" ? "Check glossary terms" : "Check again",
-        phase === "done" ? "default" : "primary",
-      )
-    );
-  return {
-    content: (
-      <>
-        <ActionList>
-          <ActionRow
-            title="Glossary"
-            description="The game's own rows in Guidance; the base glossary's honorifics and interface terms only guide translation."
-          >
-            <Button
-              disabled={disabled}
-              onClick={() => void move("context", "guidance", "glossary")}
-            >
-              Edit glossary
-            </Button>
-          </ActionRow>
-        </ActionList>
-        <GlossaryCheckWork
-          projectId={project.id}
-          state={glossary}
-          disabled={disabled}
-          feedback={feedback}
-          run={(key, work) => void action.run(work, "", key)}
-          // With lines to settle the footer applies; checking again stays
-          // beside the result.
-          checkAgain={phase === "review" && check("Check again", "link")}
-        />
-      </>
-    ),
-    action: footer,
-    next: advance(undefined, undefined, phase === "done" ? "primary" : "quiet"),
   };
 }
 

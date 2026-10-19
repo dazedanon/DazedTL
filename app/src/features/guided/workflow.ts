@@ -116,13 +116,6 @@ export const workflow: WorkflowStage[] = [
           "Rewrap applied text that is wider than the saved line widths.",
       },
       {
-        id: "glossary-check",
-        optional: true,
-        title: "Glossary check",
-        description:
-          "Find translated text that renders a glossary term another way.",
-      },
-      {
         id: "qa",
         optional: true,
         title: "Text QA",

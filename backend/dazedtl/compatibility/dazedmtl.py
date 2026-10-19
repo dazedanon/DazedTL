@@ -443,7 +443,6 @@ class ExistingBackend:
                 "runtime_restore": "Restore reviewed text batch",
                 "qa_apply": "Apply QA corrections",
                 "qa_undo": "Undo QA corrections",
-                "glossary_apply": "Apply glossary fixes",
             }[action],
         )
         return {

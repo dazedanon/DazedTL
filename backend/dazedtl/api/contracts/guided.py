@@ -599,59 +599,10 @@ class PlaytestCapture(TypedDict):
     url: Annotated[str, "A data URL of the JPEG."]
 
 
-class GlossaryState(TypedDict):
-    """The glossary check's last scan, as observations summarize it."""
-
-    scan: Annotated[str | None, "The operation whose lines the check shows."]
-    current: Annotated[bool, "The game's data and glossary are as the scan read them."]
-    lines: Annotated[int, "Translated lines the scan checked."]
-    flagged: Annotated[int, "Lines whose English lacks a glossary term."]
-    open: int
-    fixes: Annotated[int, "Chosen fixes not yet in the game."]
-    kept: int
-    revision: Annotated[str, "Changes with the scan and every choice."]
-
-
-class GlossaryTerm(TypedDict):
-    source: str
-    english: str
-    start: Annotated[int, "Where the term starts in the line's Japanese."]
-    end: int
-
-
-class GlossaryLine(TypedDict):
-    key: str
-    file: str
-    pointer: Annotated[str, "The line's place in its file, as a JSON pointer."]
-    source: str
-    live: Annotated[str, "The English the game shows."]
-    terms: Annotated[list[GlossaryTerm], "The terms its English lacks."]
-    proposal: NotRequired[
-        Annotated[str, "The line with each term written over its rendering."]
-    ]
-    state: Literal["open", "fix", "kept"]
-    choice: NotRequired[Literal["keep", "use", "edit"]]
-    text: NotRequired[Annotated[str, "The chosen fix, as the game gets it."]]
-
-
-class GlossaryOperation(TypedDict):
-    id: str
-
-
-class GlossaryReport(GlossaryState):
-    """Every line the glossary check found, for its task's list."""
-
-    found: list[GlossaryLine]
-    operation: NotRequired[
-        Annotated[GlossaryOperation, "The text batch an apply started."]
-    ]
-
-
 class Readiness(TypedDict):
     publications: list[PublicationStatus]
     qa: QaState
     playtest: PlaytestState
-    glossary: GlossaryState
     outputs: list[str]
     applied: list[str]
     unapplied: list[str]
