@@ -559,6 +559,9 @@ def detect_image_engine(game_root: str | Path) -> ImageEngineDetection:
         root / "assets",
         root / "game" / "images",
         root / "img",
+        # RPG Maker XP, VX and VX Ace keep images in Graphics, loose once
+        # Set up has extracted the game's archive.
+        root / "Graphics",
     )
     suggested = next(
         (
