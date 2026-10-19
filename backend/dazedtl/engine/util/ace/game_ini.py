@@ -4,21 +4,58 @@ The editor writes the database's game title there on every save; packing
 does the same, so a translated game's window shows its translated title.
 Game.exe reads the file with GetPrivateProfileStringW: a file without a
 byte order mark is decoded with the player's ANSI code page, so the
-Shift-JIS title of a Japanese game turns to mojibake on English Windows,
-while a UTF-16 file reads the same on every Windows. A title of plain ASCII
-reads the same either way, so only the Title line changes and every other
-byte is kept; any other title turns the file into UTF-16.
+Shift-JIS title of a Japanese game turns to mojibake on English Windows.
+mkxp-z, which plays Ace games on Linux, the Steam Deck and Android
+(JoiPlay), reads the file as bytes: in UTF-16 it finds no [Game] section,
+loses Scripts= and starts the game as RPG Maker XP. Only plain ASCII reads
+the same everywhere, so packing writes the title in ASCII (é as e, ～ as
+~, ♥ left out) and changes only the Title line, keeping every other byte;
+a file that is already UTF-16 keeps its encoding and the whole title.
 """
 
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Callable
 from pathlib import Path
 
 # The encoding the Japanese editor writes Game.ini in.
 EDITOR_ENCODING = "cp932"
 BOMS = {b"\xff\xfe": "utf-16-le", b"\xfe\xff": "utf-16-be"}
+
+
+# Punctuation with a plain ASCII form that compatibility decomposition, which
+# turns ～ into ~ and … into ..., leaves alone.
+_ASCII_PUNCTUATION = str.maketrans(
+    {
+        "\u00b7": " ",
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+        "\u2013": "-",
+        "\u2014": "-",
+        "\u2015": "-",
+        "\u2212": "-",
+        "\u301c": "~",
+        "\u30fb": " ",
+    }
+)
+
+
+def ascii_title(title: str) -> str:
+    """*title* in plain ASCII, which every reader of Game.ini decodes alike:
+    accented letters lose their accents, full-width forms and typographic
+    punctuation take their ASCII ones, and other characters, such as ♥,
+    become spaces."""
+    text = unicodedata.normalize("NFKD", title).translate(_ASCII_PUNCTUATION)
+    text = "".join(
+        character if character.isascii() else " "
+        for character in text
+        if not unicodedata.combining(character)
+    )
+    return " ".join(text.split())
 
 
 def find(root: Path) -> Path | None:
@@ -91,25 +128,23 @@ def write_title(path: Path, title: object, log: Callable[[str], None] = print) -
     else:
         # Latin-1 maps every byte to one character, so lines split and join
         # without changing bytes Shift-JIS or any code page gave them.
-        updated, previous = _with_title(data.decode("latin-1"), value)
+        text = data.decode("latin-1")
+        previous = _with_title(text, value)[1]
         if previous is not None:
-            raw = previous.encode("latin-1")
             try:
-                if raw.decode(EDITOR_ENCODING) == value:
+                # The title the editor wrote: the game is untranslated.
+                if previous.encode("latin-1").decode(EDITOR_ENCODING) == value:
                     return False
             except UnicodeDecodeError:
                 pass
-        if value.isascii():
-            output = updated.encode("latin-1")
-        else:
-            try:
-                text = data.decode(EDITOR_ENCODING)
-            except UnicodeDecodeError:
-                log(
-                    f"{path.name} keeps its title: its text is not in the editor's encoding"
-                )
-                return False
-            output = b"\xff\xfe" + _with_title(text, value)[0].encode("utf-16-le")
+        value = ascii_title(value)
+        if not value:
+            log(f"{path.name} keeps its title: it has no letters in ASCII")
+            return False
+        updated, previous = _with_title(text, value)
+        if previous == value:
+            return False
+        output = updated.encode("latin-1")
     path.write_bytes(output)
     log(f"Set the window title in {path.name}")
     return True

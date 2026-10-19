@@ -133,7 +133,7 @@ class AceConversionTests(unittest.TestCase):
             )
             self.assertEqual(data, packed)
 
-    def test_packing_writes_the_game_title_into_game_ini_as_english_windows_reads_it(
+    def test_packing_writes_the_game_title_into_game_ini_as_every_player_reads_it(
         self,
     ):
         # Game.exe decodes an ini without a byte order mark with the player's
@@ -168,11 +168,12 @@ class AceConversionTests(unittest.TestCase):
                 encoding="utf-8",
             )
             actions.run(game, "ace_pack", log=lambda _line: None)
-            data = ini.read_bytes()
-            self.assertTrue(data.startswith(b"\xff\xfe"))
+            # Any other title turned the file into UTF-16, where mkxp-z
+            # (Linux, Steam Deck, JoiPlay) found no Scripts= and could not
+            # start the game; the title is written in ASCII instead.
             self.assertEqual(
-                data[2:].decode("utf-16-le"),
-                original.replace("テストゲーム", "Orc ♥ Revenge"),
+                ini.read_bytes(),
+                original.replace("テストゲーム", "Orc Revenge").encode("cp932"),
             )
 
     def test_archives_extract_their_files_inside_the_game_and_keep_existing_ones(self):

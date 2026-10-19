@@ -187,7 +187,7 @@ For an RPG Maker MV/MZ game it reads **Done** once your assistant's validation o
 Set up's **Convert Ace data** unpacks an encrypted `Game.rgss3a` and converts the game data so it can be translated.
 VX Ace keeps menu commands, battle messages and other interface text in its Ruby scripts instead of plugins, so **Plugin files** has your assistant translate the text the scripts show.
 **Review native Ace packing**, in Check or Release, writes the translations back, applied scripts included.
-It also puts the translated game title into `Game.ini`, which is the title the game window shows.
+It also puts the translated game title into `Game.ini`, which is the title the game window shows, in plain letters (é as e, ♥ left out), since players on Linux, Steam Deck or JoiPlay can't start the game from a title in other letters.
 Name a clean game ZIP with English letters, numbers and symbols only: the name becomes the game's folder, and a VX Ace game doesn't start on English Windows from a folder named in Japanese.
 A patch ZIP for an encrypted game carries a rebuilt `Game.rgss3a`, so players replace one file.
 GameUpdate can't update an encrypted game, so share a new patch for each update instead.
