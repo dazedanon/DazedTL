@@ -121,7 +121,6 @@ Its behavior is in [architecture](architecture.md#workflow-and-shared-presentati
   Inside the task, its findings in translated text join a review in progress, while a separate task after QA would need QA to run again; and the user hands over the whole final check once.
 - In Assistant-led the starting prompt runs it through the project helper's `playtest` before text QA and again after QA's apply, and a Playtest tab shows its report once one exists.
   Its assistant fixes the game's own code through the same fixes plugin and play as Guided's, never by editing the game's files, and DazedTL then saves the fixes in a checkpoint, since Assistant-led has no History restore and its Git history is how it takes changes out.
-  Every checkpoint and patch carries the plugin and the `js/main.js` that loads it, whichever method wrote the patch's manifest, because a manifest without them would leave the fixes out of the patch without an error.
 
 ### Decisions
 

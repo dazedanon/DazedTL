@@ -537,8 +537,8 @@ def _problem(row, review):
 
 
 def playtest_state(folder, guard, focus="release"):
-    """The latest report, as the Playtest task shows it, with where text QA
-    stands on each problem it corrects."""
+    """The latest report, as the playtest's panel shows it, with where text
+    QA stands on each problem it corrects."""
     try:
         found = latest(folder)
     except (ValueError, OSError, KeyError, TypeError) as exc:

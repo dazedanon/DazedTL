@@ -107,7 +107,7 @@ test("saved runs choose their owning task instead of native progress labels", ()
     ["package"],
   );
   // Five stages: Plugin files and Images are Translate tasks, and Check
-  // holds the line width check and Text QA.
+  // holds Text QA alone.
   assert.deepEqual(
     stagesFor("MVMZ").map((stage) => stage.id),
     ["setup", "context", "translate", "check", "release"],
