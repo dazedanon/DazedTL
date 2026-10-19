@@ -62,8 +62,8 @@ def qa_handoff(task, helper="project.py qa"):
 
 def qa_selection(state, action, options):
     """The findings and chosen proposals an apply or undo names, each in the
-    state that step needs: not yet applied before the task's first apply,
-    undone after it, or applied for an undo."""
+    state that step needs: applied for an undo, and for an apply not in the
+    game, whether never applied, such as a follow-up round's, or undone."""
     chosen = options.get("findings", [])
     proposals = options.get("proposals", [])
     if (
@@ -81,15 +81,13 @@ def qa_selection(state, action, options):
         for row in state["questions"]
         if row.get("choice") == "use"
     )
-    wanted = "applied" if action == "qa_undo" else "undone" if state["applied"] else ""
-    if any(states.get(value, "missing") != wanted for value in chosen + proposals):
-        raise ValueError(
-            "Only applied corrections can be undone."
-            if action == "qa_undo"
-            else "Only undone corrections can be applied again."
-            if state["applied"]
-            else "The chosen QA corrections changed. Refresh findings."
-        )
+    found = [states.get(value, "missing") for value in chosen + proposals]
+    if "missing" in found:
+        raise ValueError("The chosen QA corrections changed. Refresh findings.")
+    if action == "qa_undo" and any(value != "applied" for value in found):
+        raise ValueError("Only applied corrections can be undone.")
+    if action == "qa_apply" and "applied" in found:
+        raise ValueError("Those QA corrections are already applied.")
     return chosen, proposals
 
 
@@ -245,7 +243,6 @@ def qa_state(plan):
             undone_ids -= named
         else:
             undone_ids |= named
-    applied = any(row["kind"] == "qa_apply" for row in rows)
 
     def finding_state(identity):
         return (
@@ -311,6 +308,14 @@ def qa_state(plan):
     ]
     engine_status = qa.status(root)
     stage = engine_status.get("stage", "")
+    # Its corrections are in the game once one was applied and nothing QA
+    # made since, such as a follow-up round's finding, waits to be.
+    applied = (
+        any(row["kind"] == "qa_apply" for row in rows)
+        and stage == "complete"
+        and all(row.get("state") for row in findings)
+        and all(row.get("choice") == "keep" or row.get("state") for row in questions)
+    )
     activity = {}
     if stage in ACTIVITY_STAGES:
         counts = engine_status[stage]
@@ -410,29 +415,6 @@ def qa_outside(task):
     return outside
 
 
-def qa_unreviewed(task):
-    """Lines a capture taken again after QA was complete found squeezed, so
-    no reviewer judged them on screen: each one's English and the screen."""
-    from util import rpgmaker_qa as qa
-    from util import rpgmaker_screens
-
-    root = Path(task)
-    captured = qa.interface_capture(root)
-    if not captured or not captured["unreviewed"]:
-        return []
-    manifest = qa._read_json(root / "inventory.json")
-    places, _outside = qa._interface_places(captured["folder"], manifest)
-    records, _clusters = qa._record_maps(manifest)
-    return [
-        {
-            "text": rpgmaker_screens.shown_text(records[cluster_id]["live"]),
-            "title": places[cluster_id][0]["title"],
-        }
-        for cluster_id in captured["unreviewed"]
-        if cluster_id in places
-    ]
-
-
 def qa_report(plan):
     """What QA could not cover, for the History inspector: lines no reviewer
     judged, Japanese never translated, by file and plugin, and text the game
@@ -455,7 +437,6 @@ def qa_report(plan):
         "interface_outside": [
             {"text": row["text"], "title": row["title"]} for row in outside
         ],
-        "interface_unreviewed": qa_unreviewed(root),
         **({"interface_error": interface["error"]} if "error" in interface else {}),
     }
 
@@ -765,23 +746,28 @@ def prepare_publication(plan):
         from util import rpgmaker_qa as qa
 
         state = qa_state(plan)
-        # Applying an undone correction again checks each of its lines against
-        # the text QA reviewed, as Undo does, so edits elsewhere since the
-        # first apply do not stop it.
-        again = action == "qa_apply" and state["applied"]
-        if action == "qa_apply" and not again and not state["current"]:
-            raise ValueError(state["message"])
         if options.get("task") != state["task"]:
             raise ValueError(
                 "The QA task changed. Choose corrections from the current findings."
             )
+        chosen, proposals = qa_selection(state, action, options)
+        # Applying an undone correction again checks each of its lines against
+        # the text QA reviewed, as Undo does, so edits elsewhere since the
+        # first apply do not stop it.
+        undone = {
+            row["id"]
+            for row in state["findings"] + state["questions"]
+            if row.get("state") == "undone"
+        }
+        again = action == "qa_apply" and set(chosen + proposals) <= undone
+        if action == "qa_apply" and not again and not state["current"]:
+            raise ValueError(state["message"])
         if state.get("rules_changed"):
             raise ValueError(
                 "An update changed QA's rules after these corrections were applied, so "
                 "they can't be undone or applied again. Run QA again to check the text."
             )
         task_root, task, _checkpoint = qa._load_task(state["task"])
-        chosen, proposals = qa_selection(state, action, options)
         try:
             selected = qa.correction_map(
                 task_root, chosen, proposals, undo=action == "qa_undo"

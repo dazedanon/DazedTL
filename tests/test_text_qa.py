@@ -104,8 +104,20 @@ class TextQATests(unittest.TestCase):
                 service.run("project", "checkpoint")
             # Applied findings are not applied twice.
             qa["applied"] = True
+            for row in qa["findings"] + qa["questions"]:
+                row["state"] = "applied"
             with self.assertRaisesRegex(ValueError, "already applied"):
                 service.run("project", "apply")
+            # A follow-up round after the apply applies only its own finding;
+            # the task read as applied, so it never applied.
+            qa["applied"] = False
+            qa["findings"].append({"id": "QA-0003"})
+            service.run("project", "apply")
+            self.assertEqual(calls[-2][2]["findings"], ["QA-0003"])
+            self.assertEqual(calls[-2][2]["proposals"], [])
+            service.run("project", "checkpoint")
+            qa["applied"] = True
+            qa["findings"][-1]["state"] = "applied"
             # Undo's reply meets the helper contract; one that did not made
             # the page report a finished undo as failed before its checkpoint.
             undone = service.run("project", "undo", findings=["QA-0001"])

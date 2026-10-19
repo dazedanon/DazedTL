@@ -146,7 +146,7 @@ All Check tasks are optional:
   Squeezed text QA can't change, such as a plugin's menu command, goes to **Plugin files**, where its assistant shortens it.
   Answer the questions it can't settle on the page; each correction is listed with **Undo**, and an undone one with **Apply again**.
   QA reviews translations, so Japanese that was never translated is the playtest's to find, with the task that translates it.
-  Running QA again after plugin files change opens the game's screens again and keeps the review done so far.
+  Running QA again after plugin files change opens the game's screens again and keeps the review done so far; text the game squeezes only now goes to review, even once QA finished.
   A correction that changes several lines of one scene, such as narration that switches tense, is listed and undone as one.
   QA reviews only text it hasn't reviewed before or that changed since, including lines whose glossary entries changed, and reads the rest only as context.
   When text was checked before you used DazedTL, such as everything up to an update, tell your assistant which version, and QA skips it from then on.

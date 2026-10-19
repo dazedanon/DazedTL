@@ -721,7 +721,6 @@ export type QaReport = {
   not_reviewed: QaReportLine[];
   not_translated: QaUntranslatedSource[];
   interface_outside: QaInterfaceText[];
-  interface_unreviewed: QaInterfaceText[];
   interface_error?: string;
 };
 

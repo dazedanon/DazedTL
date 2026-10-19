@@ -225,7 +225,9 @@ class TextQA:
 
     def apply(self, project_id, native):
         """Every finding, and each proposal the user chose, as one reviewed
-        text batch, once no question waits for the user."""
+        text batch, once no question waits for the user. After an earlier
+        apply, only what QA made since, such as a follow-up round's findings;
+        undone corrections wait for Apply again."""
         qa = self.qa(project_id, native)
         if qa.get("unreadable"):
             raise ValueError(_unreadable_step(qa))
@@ -241,8 +243,12 @@ class TextQA:
                 f"{len(waiting)} question(s) wait for the user's choice in DazedTL's "
                 "Text QA task; apply follows their answers."
             )
-        chosen = [row["id"] for row in qa["findings"]]
-        proposals = [row["id"] for row in qa["questions"] if row["choice"] == "use"]
+        chosen = [row["id"] for row in qa["findings"] if not row.get("state")]
+        proposals = [
+            row["id"]
+            for row in qa["questions"]
+            if row["choice"] == "use" and not row.get("state")
+        ]
         if not chosen + proposals:
             raise ValueError("QA found nothing to correct.")
         preview = self.guided.preview(
@@ -268,7 +274,7 @@ class TextQA:
             raise ValueError(_unreadable_step(qa))
         if not qa.get("task"):
             raise ValueError("No QA task is prepared; run qa --prepare.")
-        if not qa["applied"]:
+        if not any(row.get("state") for row in qa["findings"] + qa["questions"]):
             raise ValueError(
                 "QA has applied no corrections yet; run qa --apply once review is complete."
             )
@@ -306,7 +312,8 @@ class TextQA:
             raise ValueError("That question is no longer open.")
         if choice not in CHOICES or choice == "use" and "proposal" not in row:
             raise ValueError("Keep the current text, or use the reviewer's proposal.")
-        if qa["applied"]:
+        # A follow-up round after an apply asks again until its answers apply.
+        if qa["applied"] or row.get("state") == "applied":
             raise ValueError("This task's findings are already applied.")
         folder = self.folder(native)
         path = folder / "text-qa-choices.json"

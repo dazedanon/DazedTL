@@ -2,9 +2,9 @@
 
 The capture runs the game in Electron, so a stand-in writes what it would:
 the menu squeezes a plugin's command, and the item list squeezes a weapon's
-name once a plugin change narrows its window. Reviewers are played with fixed
-results, from the deep check that names the capture to the editorial pass
-that reads the corrected one.
+name once a plugin change narrows its window, and the second weapon's once
+QA is complete. Reviewers are played with fixed results, from the deep check
+that names the capture to the editorial pass that reads the corrected one.
 """
 
 import json
@@ -23,6 +23,7 @@ data.mkdir(parents=True)
 LONG = "Legendary Sword of the Northern Wastes"
 SHORT = "Northern Sword"
 SPEAR = "Ancient Spear"
+SHORT_SPEAR = "Spear"
 (data / "Weapons.json").write_text(
     json.dumps(
         [
@@ -164,12 +165,17 @@ assert [(row["identity"].split("@")[0], row["worker"]) for row in observed] == [
 qa.prepare_task(game, data, "release", temporary / "storage", interface=True)
 assert len(captures) == 2, captures
 shown = {}
+# The items each stage's reviewers took.
+reviewed = {}
 
 
 def review(row):
     bundle = json.loads(Path(row["path"]).read_text(encoding="utf-8"))
     rendered = qa.render_bundle(task, row["id"])
     shown[bundle["stage"]] = rendered
+    reviewed.setdefault(bundle["stage"], []).extend(
+        item["id"].split("@")[0] for item in bundle["items"]
+    )
     common = {"bundle_id": row["id"], "bundle_sha256": row["sha256"]}
     if bundle["stage"] == "screen":
         value = {
@@ -193,7 +199,7 @@ def review(row):
                     "family_key": "",
                     "motif_ids": [],
                     "evidence": "The item list squeezes it.",
-                    "correction": SHORT,
+                    "correction": SHORT if "/1/" in item["id"] else SHORT_SPEAR,
                     "apply_identities": [],
                 }
                 for item in bundle["items"]
@@ -213,12 +219,16 @@ def review(row):
     qa.accept_result(task, path)
 
 
-while qa.status(task)["stage"] != "complete":
-    rows = [row for worker in ("a", "b") if (row := qa.next_bundle(task, worker))]
-    for row in rows:
-        review(row)
-    if not rows:
-        qa.finalize(task)
+def complete():
+    while qa.status(task)["stage"] != "complete":
+        rows = [row for worker in ("a", "b") if (row := qa.next_bundle(task, worker))]
+        for row in rows:
+            review(row)
+        if not rows:
+            qa.finalize(task)
+
+
+complete()
 # The deep reviewer read which screen squeezed the name, and its capture.
 assert "check interface-fit" in shown["deep"] and "Items: Weapons" in shown["deep"]
 assert str(qa.interface_capture(task)["folder"] / "items-2-01.png") in shown["deep"], (
@@ -237,19 +247,38 @@ assert (
     "findings"
 ]
 assert (finding["current"], finding["correction"]) == (LONG, SHORT), finding
-# Once QA is complete, a line a later capture finds squeezed is recorded as
-# unreviewed instead of reopening review.
+# Once QA is complete, a line a later capture finds squeezed sends QA back to
+# deep review for it, keeping the review done so far; nothing applies the
+# earlier findings meanwhile, and later tasks stop building on its reviews
+# until it is complete again.
+spear_pair = qa._pair_key("古代の槍", SPEAR)
+assert spear_pair in qa._task_ledger(task)["pairs"]
 configure("Bestiary", 10)
-_task, state = qa.prepare_task(
+reviewed.clear()
+again, state = qa.prepare_task(
     game, data, "release", temporary / "storage", interface=True
 )
-assert state["stage"] == "complete", state
-assert state["interface"] == {
-    "captured": 2,
-    "squeezed": 1,
-    "outside": 0,
-    "unreviewed": 1,
-}, state
-(spear,) = qa.interface_capture(task)["unreviewed"]
-assert spear.startswith("Weapons.json#/2/"), spear
+assert again == task and state["stage"] == "deep", state
+assert state["interface"] == {"captured": 2, "squeezed": 2, "outside": 0}, state
+assert not (task / "findings.json").exists()
+assert qa._task_ledger(task) is None
+complete()
+sword, spear = json.loads((task / "findings.json").read_text(encoding="utf-8"))[
+    "findings"
+]
+assert (sword["id"], sword["current"], sword["correction"]) == (
+    finding["id"],
+    LONG,
+    SHORT,
+), sword
+assert (spear["current"], spear["correction"]) == (SPEAR, SHORT_SPEAR), spear
+# Only the spear was reviewed again, and only its correction went to editorial.
+assert reviewed == {
+    "deep": ["Weapons.json#/2/_original/name"],
+    "editorial": [spear["id"]],
+}, reviewed
+assert "check interface-fit" in shown["deep"] and SPEAR in shown["deep"], shown["deep"]
+# The spear's correction waits to be applied, so its line no longer counts as
+# reviewed and standing.
+assert spear_pair not in qa._task_ledger(task)["pairs"]
 print("ok")

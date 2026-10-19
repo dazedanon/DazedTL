@@ -375,13 +375,20 @@ class PublicationTests(unittest.TestCase):
             qa_selection(state, "qa_undo", {"proposals": ["use"]}), ([], ["use"])
         )
         # After the task's first apply, an undone correction applies again;
-        # the first apply's rule refused it as a changed correction.
+        # the first apply's rule refused it as a changed correction. So does a
+        # finding never applied, such as a follow-up round's, but no applied
+        # correction applies twice.
         state["applied"] = True
         state["questions"][0]["state"] = "undone"
         self.assertEqual(
             qa_selection(state, "qa_apply", {"proposals": ["use"]}), ([], ["use"])
         )
-        with self.assertRaisesRegex(ValueError, "Only undone"):
+        self.assertEqual(
+            qa_selection(state, "qa_apply", {"findings": ["QA-0001"]}),
+            (["QA-0001"], []),
+        )
+        state["findings"][0]["state"] = "applied"
+        with self.assertRaisesRegex(ValueError, "already applied"):
             qa_selection(state, "qa_apply", {"findings": ["QA-0001"]})
 
     def test_saved_qa_findings_and_unreadable_tasks_reach_the_app_by_contract(self):
@@ -418,7 +425,7 @@ class PublicationTests(unittest.TestCase):
         engine.FINDINGS_SCHEMA = "findings"
         engine._sha256 = lambda value: "task"
         engine._canonical_bytes = lambda value: b""
-        engine.status = lambda root: {}
+        engine.status = lambda root: {"stage": "complete"}
         refreshed = []
         engine.refresh_kept = lambda root, kept: refreshed.append((root, kept))
         write_json(
@@ -534,11 +541,30 @@ class PublicationTests(unittest.TestCase):
             p.publish(
                 self.folder,
                 self.root,
-                p.freeze(self.folder, self.root, candidates, kind, task=task_path),
+                p.freeze(
+                    self.folder,
+                    self.root,
+                    candidates,
+                    kind,
+                    task=task_path,
+                    findings=["QA-0001", "QA-0002"] if task_path else None,
+                ),
             )
             with patch.dict(sys.modules, {"util": package, "util.rpgmaker_qa": engine}):
                 applied.append(text.qa_state(plan)["applied"])
         self.assertEqual(applied, [False, True, True])
+        # A follow-up round's finding, made after the apply, waits to be
+        # applied; the task read as applied, so nothing ever applied it.
+        document = read_json(task_dir / "findings.json")
+        document["findings"].append({**document["findings"][0], "id": "QA-0003"})
+        write_json(task_dir / "findings.json", document)
+        with patch.dict(sys.modules, {"util": package, "util.rpgmaker_qa": engine}):
+            state = text.qa_state(plan)
+        self.assertFalse(state["applied"])
+        self.assertEqual(
+            [row.get("state", "") for row in state["findings"]],
+            ["applied", "applied", ""],
+        )
 
         # A task the app couldn't read read as Not started with no reason, and
         # preparing again returned the same task; it reads as blocked, and

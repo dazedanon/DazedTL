@@ -33,6 +33,7 @@ from util.paths import (
     GAME_SKILLS_RELATIVE,
     new_folder,
     replace_with_retry,
+    unlink_with_retry,
 )
 from util.rpgmaker_qa_manifest import (
     _mechanical_evidence,
@@ -1628,9 +1629,8 @@ def _capture_record(root: Path) -> dict[str, Any] | None:
 
 
 def interface_capture(task_dir: str | Path) -> dict[str, Any] | None:
-    """A task's latest interface capture: its round, its folder, what it
-    found and the squeezed clusters it found too late for review; None for a
-    task prepared without one."""
+    """A task's latest interface capture: its round, its folder and what it
+    found; None for a task prepared without one."""
     root = Path(task_dir)
     record = _capture_record(root)
     if record:
@@ -1638,7 +1638,6 @@ def interface_capture(task_dir: str | Path) -> dict[str, Any] | None:
             "round": record["round"],
             "folder": root / INTERFACE_FOLDER / record["folder"],
             "summary": record["summary"],
-            "unreviewed": record.get("unreviewed", []),
         }
     # A task from before captures kept a record has its one capture in the
     # folder itself.
@@ -1649,7 +1648,6 @@ def interface_capture(task_dir: str | Path) -> dict[str, Any] | None:
         "round": 1,
         "folder": root / INTERFACE_FOLDER,
         "summary": found,
-        "unreviewed": [],
     }
 
 
@@ -1709,8 +1707,12 @@ def _recapture(
 ) -> None:
     """Capture a reused task's interface screens again once the plugin files
     they ran with changed, keeping its review. Lines the new capture finds
-    squeezed go to deep review as observations while QA still takes them,
-    and are recorded as unreviewed once it is complete."""
+    squeezed go to deep review as observations; a complete task goes back to
+    deep review for them, as for an observation made after deep review.
+
+    A reused task always holds the text it reviewed, since applying its
+    corrections changes the inventory and so the task, so no correction of
+    it is in the game when its findings are made again."""
     previous = _capture_record(root)
     if previous is None or previous.get(
         "plugins_sha256"
@@ -1729,16 +1731,9 @@ def _recapture(
             if "interface-fit" not in (candidates.get(cluster_id) or {}).get("reasons", [])
             and cluster_id not in observed
         )
-        record["unreviewed"] = sorted(
-            set(previous.get("unreviewed", [])) & set(places)
-            | (set(fresh) if complete else set())
-        )
-        record["summary"]["squeezed"] -= len(record["unreviewed"])
-        if record["unreviewed"]:
-            record["summary"]["unreviewed"] = len(record["unreviewed"])
         # Deep items read the squeezed places from the latest capture.
         _save_capture_record(root, record)
-        if fresh and not complete:
+        if fresh:
             # A cluster is named by its representative line.
             _note_observations(
                 checkpoint,
@@ -1757,10 +1752,13 @@ def _recapture(
             )
             checkpoint["updated_at"] = _utc_now()
             _atomic_write_json(root / "checkpoint.json", checkpoint)
-            _issue_new_evidence(root, checkpoint)
+            if complete:
+                _follow_up(root, checkpoint)
+            else:
+                _issue_new_evidence(root, checkpoint)
     if complete:
-        # Review bundles name the captures they were made with; once QA is
-        # complete no reviewer reads the earlier ones again.
+        # Review bundles name the captures they were made with; a follow-up
+        # round's name only the latest.
         for folder in (root / INTERFACE_FOLDER).glob("round-*"):
             if folder.name != record["folder"]:
                 shutil.rmtree(folder, ignore_errors=True)
@@ -8043,15 +8041,23 @@ def _finalize_unlocked(
 
 
 def _follow_up(root: Path, checkpoint: dict[str, Any]) -> bool:
-    """Return QA to deep review for observations made after its last deep round."""
+    """Return QA to deep review for observations made after its last deep
+    round; a complete task's findings are made again once that round ends."""
     observations = len(checkpoint.get("observations") or [])
     if observations <= int(checkpoint["deep"].get("observed", 0)):
         return False
     if not _issue_deep(root, checkpoint, final=True):
         return False
     checkpoint["stage"] = "deep"
+    checkpoint["findings_file"] = ""
     checkpoint["updated_at"] = _utc_now()
     _atomic_write_json(root / "checkpoint.json", checkpoint)
+    # Nothing applies findings of a task in review, and later tasks build on
+    # its reviews only once it is complete again; the app's polls read these
+    # files, and Windows can't remove a file while one does.
+    for name in ("findings.json", REVIEWED_FILE):
+        if (root / name).is_file():
+            unlink_with_retry(root / name)
     return True
 
 

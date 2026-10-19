@@ -712,27 +712,6 @@ export function QaCoverageReport({
       {report.interface_outside.length > 0 && (
         <ScreenLabels rows={report.interface_outside} labels={labels} />
       )}
-      {report.interface_unreviewed.length > 0 && (
-        <section aria-label="Squeezed after QA">
-          <h3>
-            Squeezed after QA ·{" "}
-            {report.interface_unreviewed.length.toLocaleString()}
-          </h3>
-          <p className="muted">
-            Plugin files changed after QA finished, and the game now squeezes or
-            cuts off these lines, which no reviewer judged on screen.
-          </p>
-          <ActionList>
-            {report.interface_unreviewed.map((row) => (
-              <ActionRow
-                key={row.text + row.title}
-                title={row.text}
-                description={row.title}
-              />
-            ))}
-          </ActionList>
-        </section>
-      )}
     </>
   );
 }

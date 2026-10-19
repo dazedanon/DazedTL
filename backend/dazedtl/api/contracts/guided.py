@@ -402,7 +402,6 @@ class QaReport(TypedDict):
     not_reviewed: list[QaReportLine]
     not_translated: list[QaUntranslatedSource]
     interface_outside: list[QaInterfaceText]
-    interface_unreviewed: list[QaInterfaceText]
     interface_error: NotRequired[str]
 
 
@@ -451,7 +450,8 @@ class TextQaStatus(TypedDict):
 
 class QaState(TypedDict):
     current: bool
-    # This task's findings were applied and that batch was not restored.
+    # This task's findings were applied, that batch was not restored and
+    # nothing QA made since, such as a follow-up round's finding, waits.
     applied: bool
     task: NotRequired[str]
     status: dict[str, object]
