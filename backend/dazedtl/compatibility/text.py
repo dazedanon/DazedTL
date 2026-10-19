@@ -451,13 +451,12 @@ def run_qa(plan, log):
     folder = Path(plan["folder"])
     if plan["action"] == "qa_prepare":
         _set_aside(plan, log)
-        # What the release playtest found in the same text goes to review.
-        from .playtest import observe, pending, task_observations
+        # What the release playtest found in the same text goes to review; a
+        # task prepared again keeps its own and takes the ones it lacks.
+        from .playtest import pending
 
         focus = plan["options"]["focus"]
-        found = pending(folder, plan["guard"])
-        # Newer findings join a resumed task's review as observations.
-        observations = task_observations(folder, focus, found)
+        observations = pending(folder, plan["guard"])
         task, _state = qa.prepare_task(
             plan["project"]["source"],
             plan["project"]["data"],
@@ -493,14 +492,8 @@ def run_qa(plan, log):
         }
         write_json(
             folder / ("text-qa-" + focus + ".json"),
-            {
-                "task": str(task),
-                "binding": binding(plan),
-                "immutable": immutable,
-                "observations": observations,
-            },
+            {"task": str(task), "binding": binding(plan), "immutable": immutable},
         )
-        observe(folder, focus, {"observations": found})
         handoff = qa_handoff(task)
     else:
         handoff = None

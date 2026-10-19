@@ -2,6 +2,7 @@
 version the user says was checked before, are read only as context."""
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -19,7 +20,12 @@ storage = temporary / "storage"
 
 
 def line(original, text):
-    return {"code": 401, "indent": 0, "parameters": [text], "_original": original}
+    """A message's commands: the first holds its Japanese, and each a row."""
+    first, *rows = text.split("\n")
+    return [
+        {"code": 401, "indent": 0, "parameters": [first], "_original": original},
+        *({"code": 401, "indent": 0, "parameters": [row]} for row in rows),
+    ]
 
 
 # A third-person line both scenes repeat, which each scene's screen reads as a
@@ -39,7 +45,7 @@ def write_game(lines):
                 "pages": [
                     {
                         "list": [
-                            *(line(*pair) for pair in page),
+                            *(command for pair in page for command in line(*pair)),
                             {"code": 0, "indent": 0, "parameters": []},
                         ]
                     }
@@ -59,13 +65,14 @@ def glossary(text):
 
 LINES = [
     ("おはよう", "Good morning."),
-    ("扉を開けた", "I open the door."),
+    # A message over two commands.
+    ("扉を開けた", "I open\nthe door."),
     ("静かな部屋だ", "A quiet room."),
     ("剣を抜け", "Draw your sword!"),
-    ("魔王が来る", "The Demon King comes."),
+    ("ミナが来る", "Mina comes."),
 ]
 write_game(LINES)
-glossary("剣 (sword)\n")
+glossary("剣 (sword)\nミナ (Mina)\n")
 
 
 def targets(task):
@@ -164,6 +171,8 @@ def finish(task, flagged, corrections):
             encoding="utf-8",
         )
         qa.accept_result(task, path)
+    if qa.status(task)["stage"] == "ready-finalize":
+        qa.finalize(task)
     assert qa.status(task)["stage"] == "complete", qa.status(task)
 
 
@@ -174,30 +183,83 @@ assert targets(first) == sorted(
 finish(first, {"扉を開けた"}, {"扉を開けた": "I opened the door."})
 # Nothing changed, so preparing again is the same, finished task.
 assert prepare() == first
+# Findings another task made are no review of this one, and a task the app
+# set aside as unreadable is no review to build on, even with its ledger
+# saved before.
+findings = first / "findings.json"
+saved = findings.read_bytes()
+findings.write_text(
+    json.dumps({**json.loads(saved), "task_sha256": "0" * 64}), encoding="utf-8"
+)
+assert qa._task_ledger(first) is None
+findings.write_bytes(saved)
+assert qa._task_ledger(first)
+aside = first.rename(first.with_name(first.name + "-unreadable"))
+assert len(targets(prepare())) == 7
+shutil.rmtree(first)
+aside.rename(first)
 
-# The correction is applied and the glossary entry for 剣 gains a note: the
-# next task screens only the line the changed entry governs. Neither scene
-# reads the shared line again, since one changed only by a confirmed
-# correction and the other only by guidance for another of its lines.
-LINES[1] = ("扉を開けた", "I opened the door.")
+# The correction is applied as the app applies it, its rows spread over the
+# message's commands, and the glossary entries for 剣 and ミナ gain notes:
+# the next task screens only the lines the changed entries govern. Neither
+# scene reads the shared line again, since one changed only by a confirmed
+# correction and the other only by guidance for other lines.
+(finding,) = json.loads(saved)["findings"]
+assert qa._apply_loaded_correction_map(
+    first,
+    json.loads((first / "task.json").read_text(encoding="utf-8")),
+    qa.correction_map(first, [finding["id"]]),
+    json.loads((first / "inventory.json").read_text(encoding="utf-8")),
+    dry_run_name="dry-run.json",
+    regression_name="regression.json",
+)["valid"]
+LINES[1] = ("扉を開けた", "I opened the door.\n")
+written = json.loads((data / "Map001.json").read_text(encoding="utf-8"))
 write_game(LINES)
-glossary("剣 (sword) - The hero's only weapon.\n")
+assert json.loads((data / "Map001.json").read_text(encoding="utf-8")) == written
+glossary("剣 (sword) - The hero's only weapon.\nミナ (Mina) - Calls herself Mina.\n")
 second = prepare()
 assert second != first
-assert targets(second) == ["剣を抜け"], targets(second)
+assert targets(second) == ["ミナが来る", "剣を抜け"], targets(second)
 # Lines count every place a text shows, so the shared line counts twice.
 assert qa.status(second)["reviewed_before"] == {
-    "lines": 6,
+    "lines": 5,
     "from": [f"task {first.name}"],
 }, qa.status(second)["reviewed_before"]
 # A retranslated line is screened, and so is the shared line in its scene,
 # whose text changed.
 LINES[2] = ("静かな部屋だ", "It's a quiet room.")
 write_game(LINES)
-assert targets(prepare()) == ["剣を抜け", "彼女はもう帰った", "静かな部屋だ"]
-# The same, reviewing everything, is another task.
+assert targets(prepare()) == [
+    "ミナが来る",
+    "剣を抜け",
+    "彼女はもう帰った",
+    "静かな部屋だ",
+]
+# The same, reviewing everything, is another task, which preparing again
+# goes on with.
 everything = prepare(earlier=False)
 assert len(targets(everything)) == 7 and everything != second
+assert prepare() == everything
+# A task whose screen is done is rebuilt under rules an update changed from
+# the same earlier reviews it read, so it keeps that screen, here every line.
+finish(everything, set(), {})
+fingerprint = qa._engine_fingerprint
+qa._engine_fingerprint = lambda: "updated rules"
+rebuilt, state = qa.rebuild_deep_from_screen(everything)
+assert rebuilt != everything and state["screen"]["accepted"] == 7, state
+# One that can't keep it leaves no task behind.
+write_game([*LINES[:4], ("ミナが来る", "Here comes Mina.")])
+tasks = set(rebuilt.parent.iterdir())
+try:
+    qa.rebuild_deep_from_screen(everything)
+except ValueError as error:
+    assert "manifest_sha256 changed" in str(error), error
+else:
+    raise AssertionError("A screen of other text was reused.")
+assert set(rebuilt.parent.iterdir()) == tasks
+qa._engine_fingerprint = fingerprint
+write_game(LINES)
 
 
 # The user says text from before the 1.10 update was checked elsewhere. The

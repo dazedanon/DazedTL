@@ -452,18 +452,6 @@ def reviewing(folder, focus):
         return None
 
 
-def task_observations(folder, focus, found):
-    """The playtest findings QA prepares its task with: the ones a task still
-    under review was prepared with, so preparing again, as after a plugin or
-    playtest fix, resumes it rather than starting a new review; else `found`,
-    the current report's."""
-    under_review = reviewing(folder, focus)
-    if under_review and not under_review[2]:
-        pointer = Path(folder) / ("text-qa-" + focus + ".json")
-        return list(read_json(pointer).get("observations") or [])
-    return found
-
-
 def observe(folder, focus, report):
     """Records the report's findings in translated text in the focus's QA
     task while it still reviews, each once; a line the task does not hold

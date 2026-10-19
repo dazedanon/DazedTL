@@ -5,6 +5,9 @@ the menu squeezes a plugin's command, and the item list squeezes a weapon's
 name once a plugin change narrows its window, and the second weapon's once
 QA is complete. Reviewers are played with fixed results, from the deep check
 that names the capture to the editorial pass that reads the corrected one.
+The playtest found something in the second weapon's name before QA started,
+and QA is prepared again without it, as once the game changed since that
+playtest.
 """
 
 import json
@@ -40,6 +43,7 @@ SHORT_SPEAR = "Spear"
                 "description": "",
                 "_original": {"name": "古代の槍"},
             },
+            {"id": 3, "name": "Club", "description": "", "_original": {"name": "棍棒"}},
         ],
         ensure_ascii=False,
     ),
@@ -131,8 +135,18 @@ def capture(
 
 
 qa.rpgmaker_screens.capture = capture
+PLAYTEST = {
+    "identity": "Weapons.json#/2/name",
+    "categories": ["meaning"],
+    "note": "The playtest read the spear's name.",
+}
 task, state = qa.prepare_task(
-    game, data, "release", temporary / "storage", interface=True
+    game,
+    data,
+    "release",
+    temporary / "storage",
+    interface=True,
+    observations=[PLAYTEST],
 )
 # The plugin's command is QA's to report; nothing QA holds is squeezed.
 assert state["interface"] == {"captured": 2, "squeezed": 0, "outside": 1}, state
@@ -159,7 +173,8 @@ assert state["interface"] == {"captured": 2, "squeezed": 1, "outside": 0}, state
 assert outside() == [], outside()
 observed = json.loads((task / "checkpoint.json").read_text())["observations"]
 assert [(row["identity"].split("@")[0], row["worker"]) for row in observed] == [
-    ("Weapons.json#/1/_original/name", "interface")
+    ("Weapons.json#/2/_original/name", "playtest"),
+    ("Weapons.json#/1/_original/name", "interface"),
 ], observed
 # Unchanged plugin files keep the capture.
 qa.prepare_task(game, data, "release", temporary / "storage", interface=True)
@@ -167,6 +182,8 @@ assert len(captures) == 2, captures
 shown = {}
 # The items each stage's reviewers took.
 reviewed = {}
+# What deep review corrects: the spear only once a capture finds it squeezed.
+corrections = {"/1/": SHORT}
 
 
 def review(row):
@@ -199,7 +216,28 @@ def review(row):
                     "family_key": "",
                     "motif_ids": [],
                     "evidence": "The item list squeezes it.",
-                    "correction": SHORT if "/1/" in item["id"] else SHORT_SPEAR,
+                    "correction": correction,
+                    "apply_identities": [],
+                }
+                if (
+                    correction := next(
+                        (
+                            text
+                            for key, text in corrections.items()
+                            if key in item["id"]
+                        ),
+                        None,
+                    )
+                )
+                else {
+                    "id": item["id"],
+                    "disposition": "clean",
+                    "severity": None,
+                    "category": "",
+                    "family_key": "",
+                    "motif_ids": [],
+                    "evidence": "Reads right.",
+                    "correction": None,
                     "apply_identities": [],
                 }
                 for item in bundle["items"]
@@ -252,8 +290,25 @@ assert (finding["current"], finding["correction"]) == (LONG, SHORT), finding
 # earlier findings meanwhile, and later tasks stop building on its reviews
 # until it is complete again.
 spear_pair = qa._pair_key("古代の槍", SPEAR)
+# The ledger is made under the task's lock, which a follow-up round holds
+# while it reopens the task, so no ledger made meanwhile outlives it.
+derive, held = qa._derive_ledger, []
+
+
+def deriving(*arguments):
+    with qa._task_lock(task, wait=False) as free:
+        held.append(not free)
+    return derive(*arguments)
+
+
+qa._derive_ledger = deriving
 assert spear_pair in qa._task_ledger(task)["pairs"]
+qa._derive_ledger = derive
+assert held == [True], held
+# The spear, which deep review kept as the playtest asked about, is squeezed
+# too now.
 configure("Bestiary", 10)
+corrections["/2/"] = SHORT_SPEAR
 reviewed.clear()
 again, state = qa.prepare_task(
     game, data, "release", temporary / "storage", interface=True
@@ -281,4 +336,25 @@ assert "check interface-fit" in shown["deep"] and SPEAR in shown["deep"], shown[
 # The spear's correction waits to be applied, so its line no longer counts as
 # reviewed and standing.
 assert spear_pair not in qa._task_ledger(task)["pairs"]
+# A later playtest's finding in a line the complete task does not observe yet
+# sends QA back to deep review for that line alone.
+reviewed.clear()
+again, state = qa.prepare_task(
+    game,
+    data,
+    "release",
+    temporary / "storage",
+    interface=True,
+    observations=[
+        PLAYTEST,
+        {
+            "identity": "Weapons.json#/3/name",
+            "categories": ["meaning"],
+            "note": "The playtest saw the club's name in the shop.",
+        },
+    ],
+)
+assert again == task and state["stage"] == "deep", state
+complete()
+assert reviewed == {"deep": ["Weapons.json#/3/_original/name"]}, reviewed
 print("ok")

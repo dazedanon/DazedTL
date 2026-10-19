@@ -440,9 +440,9 @@ except ValueError as error:
 else:
     raise AssertionError("A fix that does not compile was accepted")
 
-# Text QA takes the playtest's findings as observations when it prepares, so
-# QA with new findings is a new task, the same findings give the same task,
-# and a line its inventory lacks is left out.
+# Text QA takes the playtest's findings as observations when it prepares: a
+# task prepared again goes on with its review and takes findings of lines it
+# does not observe yet, each once, and a line its inventory lacks is left out.
 qa_game = temporary / "qa-game"
 (qa_game / "data").mkdir(parents=True)
 write(
@@ -477,7 +477,7 @@ noted, _state = qa.prepare_task(
 same, _state = qa.prepare_task(
     qa_game, qa_game / "data", "database", storage, observations=found
 )
-assert plain != noted == same, (plain, noted, same)
+assert plain == noted == same, (plain, noted, same)
 rows = json.loads((noted / "checkpoint.json").read_text(encoding="utf-8"))[
     "observations"
 ]
@@ -485,19 +485,6 @@ assert [(row["worker"], row["note"]) for row in rows] == [
     ("playtest", "Cut off in the item screen.")
 ], rows
 assert "Items.json#/1/description" in qa.observed_names(noted)
-assert not qa.observed_names(plain)
-# Preparing again while a task still reviews, as after a playtest fix
-# changes the plugins, keeps the findings it was prepared with, so it resumes
-# that task instead of starting a new review; newer findings are observed.
-from dazedtl.compatibility.playtest import task_observations
-
-workflow = temporary / "workflow"
-workflow.mkdir()
-write(workflow / "text-qa-database.json", {"task": str(plain), "observations": []})
-assert task_observations(workflow, "database", found) == []
-write(workflow / "text-qa-database.json", {"task": str(noted)})
-assert task_observations(workflow, "database", found[:1]) == []
-assert task_observations(workflow, "release", found) == found
 
 # A layout check proves a width only with lines exactly that wide, in as
 # many rows as one message shows, under the face the game's actors use.

@@ -1208,23 +1208,35 @@ for name, value in {
     (checks_game / "data" / name).write_text(
         json.dumps(value, ensure_ascii=False), encoding="utf-8"
     )
-checked, _state = qa.prepare_task(
-    checks_game,
-    checks_game / "data",
-    "release",
-    temporary / "checks-storage",
-    fit={"widths": {"width": 60, "faceWidth": 50, "listWidth": 30, "noteWidth": 30}},
-)
-sources = {
-    cluster["representative"]: cluster["source"]
-    for cluster in json.loads((checked / "inventory.json").read_text())["clusters"]
-}
-reasons = {
-    sources[identity]: candidate["reasons"]
-    for identity, candidate in json.loads((checked / "checkpoint.json").read_text())[
-        "deep"
-    ]["candidate_reasons"].items()
-}
+CHECK_WIDTHS = {"width": 60, "faceWidth": 50, "listWidth": 30, "noteWidth": 30}
+
+
+def prepare_checks(widths):
+    return qa.prepare_task(
+        checks_game,
+        checks_game / "data",
+        "release",
+        temporary / "checks-storage",
+        fit={"widths": widths},
+    )[0]
+
+
+def forced(task):
+    """The Japanese of each line deep review takes, with its reasons."""
+    sources = {
+        cluster["representative"]: cluster["source"]
+        for cluster in json.loads((task / "inventory.json").read_text())["clusters"]
+    }
+    return {
+        sources[identity]: candidate["reasons"]
+        for identity, candidate in json.loads((task / "checkpoint.json").read_text())[
+            "deep"
+        ]["candidate_reasons"].items()
+    }
+
+
+checked = prepare_checks(CHECK_WIDTHS)
+reasons = forced(checked)
 assert reasons == {
     "払い斬り": ["name-collision"],
     "薙ぎ払い": ["name-collision"],
@@ -1385,6 +1397,25 @@ for undo, expected, written in (
     )["valid"]
     assert message4() == expected, message4()
     assert variables() == written, variables()
+# Once the corrections are in, a later task leaves out what deep review
+# settled for the same text, including the help text it kept and the text
+# variables as written, while the Line widths are the same; under narrower
+# ones that help text is a check again.
+assert qa._apply_loaded_correction_map(
+    checked,
+    json.loads((checked / "task.json").read_text(encoding="utf-8")),
+    qa.correction_map(checked, [row["id"] for row in findings]),
+    json.loads((checked / "inventory.json").read_text(encoding="utf-8")),
+    dry_run_name="dry-run.json",
+    regression_name="regression.json",
+)["valid"]
+assert forced(prepare_checks(CHECK_WIDTHS)) == {}
+skills = json.loads((checks_game / "data/Skills.json").read_text(encoding="utf-8"))
+skills[3]["name"] = "Hellfire"
+(checks_game / "data/Skills.json").write_text(
+    json.dumps(skills, ensure_ascii=False), encoding="utf-8"
+)
+assert forced(prepare_checks({**CHECK_WIDTHS, "width": 56})) == {FIRE: ["text-fit"]}
 
 
 def pace(lanes):

@@ -1766,7 +1766,12 @@ def _recapture(
         root, _task, checkpoint = _load_task(root)
         complete = checkpoint["stage"] == "complete"
         candidates = checkpoint["deep"].get("candidate_reasons") or {}
-        observed = {row["cluster_id"] for row in checkpoint.get("observations") or []}
+        # A line observed for another reason, such as by the playtest, was
+        # not judged squeezed.
+        observed = {
+            row["cluster_id"] for row in checkpoint.get("observations") or []
+            if row.get("worker") == RECAPTURE_OBSERVER
+        }
         fresh = sorted(
             cluster_id for cluster_id in places
             if "interface-fit" not in (candidates.get(cluster_id) or {}).get("reasons", [])
@@ -1803,6 +1808,27 @@ def _recapture(
         for folder in (root / INTERFACE_FOLDER).glob("round-*"):
             if folder.name != record["folder"]:
                 shutil.rmtree(folder, ignore_errors=True)
+
+
+def _observe_again(
+    root: Path, observations: list[dict[str, Any]], observer: str
+) -> None:
+    """Observations of lines a reused task does not observe yet, such as a
+    later playtest's, go to its review: at once while it reviews, and in a
+    follow-up deep round once complete, keeping the review done so far."""
+    with _task_lock(root):
+        root, _task, checkpoint = _load_task(root)
+        known = {row["identity"] for row in checkpoint.get("observations") or []}
+        fresh = [row for row in observations if row["identity"] not in known]
+        if not fresh:
+            return
+        _note_observations(checkpoint, fresh, checkpoint["stage"], observer)
+        checkpoint["updated_at"] = _utc_now()
+        _atomic_write_json(root / "checkpoint.json", checkpoint)
+        if checkpoint["stage"] == "complete":
+            _follow_up(root, checkpoint)
+        else:
+            _issue_new_evidence(root, checkpoint)
 
 
 def _capture_interface(
@@ -2820,23 +2846,53 @@ def _task_ledger(root: Path) -> dict[str, Any] | None:
     except (OSError, ValueError):
         pass
     try:
-        _root, _task, checkpoint = _read_task(root)
-        if checkpoint["stage"] != "complete":
-            return None
-        ledger = _derive_ledger(root, checkpoint)
+        # A follow-up round reopens the task and removes its ledger under the
+        # task's lock, so the ledger is made and saved under it too.
+        with _task_lock(root):
+            _root, task, checkpoint = _read_task(root)
+            if checkpoint["stage"] != "complete":
+                return None
+            ledger = _derive_ledger(root, task, checkpoint)
+            try:
+                _atomic_write_json(cached, ledger)
+            except OSError:
+                pass
     except (OSError, ValueError, KeyError, TypeError):
         # A task whose files moved or broke is no review to build on.
         return None
-    try:
-        _atomic_write_json(cached, ledger)
-    except OSError:
-        pass
     return ledger
 
 
-def _derive_ledger(root: Path, checkpoint: dict[str, Any]) -> dict[str, Any]:
+def _layout_key(layout: Any) -> str:
+    return _sha256(_canonical_bytes(layout))[:32]
+
+
+def _written(record: dict[str, Any], text: str) -> str:
+    """The text a correction leaves in a record: escaped as translation
+    writes a script string, and a message's rows spread over the commands
+    that hold them.
+
+    A correction that reaches only one kind of script string is stored
+    escaped, which escaping again keeps; one that reaches other text too is
+    escaped here for each script string."""
+    text = _script_text(text, record["live_transform"])
+    if len(record["live_pointers"]) > 1 and _message_code(record.get("event_code")):
+        return "\n".join(rewrap.spread(text, len(record["live_pointers"])))
+    return text
+
+
+def _derive_ledger(
+    root: Path, task: dict[str, Any], checkpoint: dict[str, Any]
+) -> dict[str, Any]:
     report = _read_json(root / "findings.json")
+    if (
+        report.get("schema") != FINDINGS_SCHEMA
+        or report.get("task_sha256") != checkpoint["task_sha256"]
+        or checkpoint["task_sha256"] != _sha256(_canonical_bytes(task))
+    ):
+        raise ValueError(f"QA findings belong to another task: {root}")
     context = _read_json(root / "context.json")
+    records, _clusters = _record_maps(_read_json(root / "inventory.json"))
     reviewed: set[str] = set()
     scenes: set[str] = set()
     variants: set[str] = set()
@@ -2900,10 +2956,15 @@ def _derive_ledger(root: Path, checkpoint: dict[str, Any]) -> dict[str, Any]:
     for finding in report.get("findings") or []:
         for change in _changes(finding):
             unsettled.add(_pair_key(change["source"], change["current"]))
-            # Editorial confirmed the correction, which passed every check.
-            corrected = _pair_key(change["source"], change["correction"])
-            reviewed.add(corrected)
-            cleared[corrected].add("*")
+            # Editorial confirmed the correction, which passed every check,
+            # as the game holds it once applied.
+            for written in {
+                _written(records[identity], change["correction"])
+                for identity in change["identities"]
+            }:
+                corrected = _pair_key(change["source"], written)
+                reviewed.add(corrected)
+                cleared[corrected].add("*")
     for row in [
         *(report.get("uncertain_playtests") or []), *(report.get("not_reviewed") or []),
     ]:
@@ -2921,6 +2982,8 @@ def _derive_ledger(root: Path, checkpoint: dict[str, Any]) -> dict[str, Any]:
         },
         "observed": sorted(observed),
         "guidance": _guidance_lines(context),
+        # Text fits its window only under the Line widths it was reviewed with.
+        "layout": _layout_key(task.get("layout")),
     }
 
 
@@ -3023,30 +3086,32 @@ def _baseline_ledger(
 
 
 _KANA_RE = re.compile(r"[ぁ-ゔァ-ヴー]+")
-_LINE_PUNCTUATION_RE = re.compile(r"[\s。、！？!?…‥―〜~・「」『』]+")
+_HIRAGANA_RE = re.compile(r"[ぁ-ゔー]+")
+_LINE_PUNCTUATION_RE = re.compile(r"[\s。、！？!?…‥―〜~・「」『』【】]+")
 
 
 class _Terms:
-    """Changed guidance terms found in a line's Japanese. A word of two kana
-    or fewer, such as a pun on なる, governs only a line that is that word, or
-    it would reopen every line sharing common kana."""
+    """Changed guidance terms found in a line's Japanese. A hiragana word of
+    two kana or fewer, such as a pun on なる, governs only a line that is
+    that word, and a katakana one, such as the name ミナ, only where it is a
+    word of its own, or each would reopen every line sharing common kana."""
 
     def __init__(self, terms: set[str]):
-        whole = {
-            bare for term in terms
+        short = {
+            term: bare for term in terms
             if _KANA_RE.fullmatch(bare := _LINE_PUNCTUATION_RE.sub("", term))
             and len(bare) <= 2
         }
-        inside = sorted(
-            (term for term in terms if _LINE_PUNCTUATION_RE.sub("", term) not in whole),
-            key=lambda term: (-len(term), term),
-        )
-        self.whole = whole
+        self.whole = {bare for bare in short.values() if _HIRAGANA_RE.fullmatch(bare)}
+        self.words = sorted(set(short.values()) - self.whole)
+        inside = sorted(set(terms) - set(short), key=lambda term: (-len(term), term))
         self.inside = re.compile("|".join(map(re.escape, inside))) if inside else None
 
     def search(self, source: str) -> bool:
-        return bool(self.inside and self.inside.search(source)) or (
-            _LINE_PUNCTUATION_RE.sub("", source) in self.whole
+        return (
+            bool(self.inside and self.inside.search(source))
+            or any(glossary_rules.mentions(source, word) for word in self.words)
+            or _LINE_PUNCTUATION_RE.sub("", source) in self.whole
         )
 
 
@@ -3059,8 +3124,14 @@ class _Reviewed:
     task's guidance: a ledger's line no longer counts once a glossary entry
     or quirk whose Japanese it holds changed since that review."""
 
-    def __init__(self, ledgers: list[dict[str, Any]], context: dict[str, Any]):
+    def __init__(
+        self,
+        ledgers: list[dict[str, Any]],
+        context: dict[str, Any],
+        layout: dict[str, Any],
+    ):
         guidance = _guidance_lines(context)
+        self.layout = _layout_key(layout)
         self.ledgers = []
         for ledger in ledgers:
             before = ledger.get("guidance") or {}
@@ -3103,19 +3174,23 @@ class _Reviewed:
 
     def cleared(self, source: Any, translation: Any, reasons: Iterable[str]) -> bool:
         """Whether deep review already settled every one of these reasons for
-        the line, so they send it to deep review no more. Squeezed text and
-        text too long for its window are always looked at again, since a
-        capture or new Line widths can change what fits."""
+        the line, so they send it to deep review no more. Squeezed text is
+        always looked at again, since a capture can change what fits, and
+        text too long for its window under other Line widths than it was
+        reviewed with."""
         reasons = set(reasons)
-        if reasons & {"interface-fit", "text-fit"}:
+        if not reasons or "interface-fit" in reasons:
             return False
         key = _pair_key(source, translation)
         settled: set[str] = set()
         for ledger, sets in self._standing(str(source)):
-            if ledger.get("everything") and key in sets["pairs"]:
-                return True
-            settled.update((ledger.get("cleared") or {}).get(key) or [])
-        return bool(reasons) and ("*" in settled or reasons <= settled)
+            found = set((ledger.get("cleared") or {}).get(key) or [])
+            if "*" in found or ledger.get("everything") and key in sets["pairs"]:
+                found = set(reasons)
+            if ledger.get("layout") != self.layout:
+                found.discard("text-fit")
+            settled |= found
+        return reasons <= settled
 
     def variant(self, family: str, source: Any, translation: Any) -> bool:
         pair = _pair_key(source, translation)
@@ -3139,28 +3214,43 @@ class _Reviewed:
         return any(key in sets["observed"] for _ledger, sets in self._standing(str(source)))
 
 
-def _earlier_reviews(games: Path, context: dict[str, Any]) -> _Reviewed:
+# A task's folder is named by its key; the app sets aside a task it can't
+# trust under another name, and a task being prepared has a staging name.
+_TASK_FOLDER_RE = re.compile(r"[0-9a-f]{16}")
+
+
+def _earlier_reviews(
+    games: Path,
+    context: dict[str, Any],
+    layout: dict[str, Any],
+    origins: set[str] | None = None,
+) -> _Reviewed:
     """The reviews a new task builds on: every complete task of this game and
-    every baseline the user named."""
+    every baseline the user named, or only those *origins* names."""
     ledgers = [
         ledger
-        for path in sorted(games.glob(f"*/*/{REVIEWED_FILE}"))
-        if (ledger := _task_ledger(path.parent))
-    ]
-    seen = {path.parent for path in games.glob(f"*/*/{REVIEWED_FILE}")}
-    ledgers += [
-        ledger
         for task in sorted(games.glob("*/*/task.json"))
-        if task.parent not in seen and (ledger := _task_ledger(task.parent))
+        if _TASK_FOLDER_RE.fullmatch(task.parent.name)
+        and (origins is None or f"task {task.parent.name}" in origins)
+        and (ledger := _task_ledger(task.parent))
     ]
     for path in sorted((games / BASELINE_FOLDER).glob("*.json")):
         try:
             ledger = _read_json(path)
         except (OSError, ValueError):
             continue
-        if ledger.get("schema") == REVIEWED_SCHEMA:
+        if ledger.get("schema") == REVIEWED_SCHEMA and (
+            origins is None or ledger.get("origin") in origins
+        ):
             ledgers.append(ledger)
-    return _Reviewed(ledgers, context)
+    return _Reviewed(ledgers, context, layout)
+
+
+def _baseline_origin(path: Path) -> str | None:
+    try:
+        return _read_json(path).get("origin")
+    except (OSError, ValueError):
+        return None
 
 
 def prepare_task(
@@ -3179,6 +3269,7 @@ def prepare_task(
     kept: Iterable[dict[str, Any]] = (),
     since: str | None = None,
     earlier: bool = True,
+    origins: Iterable[str] | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     """Create or reuse one immutable QA task and its exhaustive screen bundles.
 
@@ -3188,7 +3279,10 @@ def prepare_task(
     since a baseline the user named once with *since*, a version this game was
     updated to or a Git revision, whose earlier text was checked before. A
     baseline stays in effect for the game's later tasks. *earlier* False
-    reviews everything.
+    reviews everything, and preparing again without a new *since* goes on
+    with that review while the text is the same. *origins* limits the earlier
+    reviews to those a task names as its `reviewed_before`, as a task rebuilt
+    from another reads what that one read.
 
     *fit* holds the Line widths the task fits corrections to; a task already
     prepared keeps the ones it was made with.
@@ -3200,8 +3294,10 @@ def prepare_task(
 
     Observations made outside QA, such as the release playtest's findings in
     translated text, start in its checkpoint, so deep review takes their lines;
-    a task with different observations is another task, and one a line the
-    inventory lacks is left out.
+    one a line the inventory lacks is left out. A task prepared again keeps
+    the observations it holds and takes those of lines it does not observe
+    yet, at once while it reviews and in a follow-up deep round once
+    complete.
 
     *kept* names the plugin settings the plugin task keeps in Japanese on
     purpose, which the never-translated report leaves out. A task prepared
@@ -3238,23 +3334,32 @@ def prepare_task(
     games = storage / _slug(game.name)
     if since and earlier:
         _baseline_ledger(games, game, data, focus, since)
+    if origins is not None:
+        origins = set(origins)
     baselines = sorted(
         path.stem for path in (games / BASELINE_FOLDER).glob("*.json")
+        if origins is None or _baseline_origin(path) in origins
     ) if earlier else []
     # A baseline is the user's scope, so a task under another is another task;
-    # tasks finished since leave a prepared task as it is.
-    task_key = _sha256(
+    # tasks finished since leave a prepared task as it is, and so do
+    # observations, which join its review.
+    basis = (
         f"{TASK_SCHEMA}\0{engine_fingerprint}\0{focus}\0"
         f"{manifest['content_sha256']}\0{context['content_sha256']}\0"
         f"{_sha256(_canonical_bytes(screen_configuration))}"
-        + (f"\0{_sha256(_canonical_bytes(observed))}" if observed else "")
-        + (f"\0baselines:{','.join(baselines)}" if baselines else "")
-        + ("" if earlier else "\0everything")
-    )[:16]
+    )
+    full_review = _sha256(basis + "\0everything")[:16]
+    task_key = _sha256(
+        basis + (f"\0baselines:{','.join(baselines)}" if baselines else "")
+    )[:16] if earlier else full_review
     task_parent = games / focus
     task_parent.mkdir(parents=True, exist_ok=True)
-    task_dir = task_parent / task_key
     with _task_lock(task_parent):
+        # A review of every line of the same text goes on unless the user
+        # names a scope again.
+        if earlier and not since and (task_parent / full_review / "task.json").is_file():
+            task_key = full_review
+        task_dir = task_parent / task_key
         existing = task_dir / "task.json"
         if existing.is_file():
             task = _read_json(existing)
@@ -3265,6 +3370,8 @@ def prepare_task(
                 _write_report(task_dir, report)
             if interface:
                 _recapture(task_dir, data, manifest, progress)
+            if observed:
+                _observe_again(task_dir, observed, observer)
             return task_dir, status(task_dir)
 
         staging = new_folder(task_parent, f".{task_key}.")
@@ -3275,7 +3382,8 @@ def prepare_task(
             _atomic_write_json(staging / "preflight.json", preflight(data, manifest, kept))
             _atomic_write_json(staging / "context.json", context)
             reviewed = (
-                _earlier_reviews(games, context) if earlier else _Reviewed([], context)
+                _earlier_reviews(games, context, layout, origins)
+                if earlier else _Reviewed([], context, layout)
             )
             _records, clusters_by_id = _record_maps(manifest)
 
@@ -6965,6 +7073,12 @@ def rebuild_deep_from_screen(
         if output_root is not None
         else source.parents[2]
     )
+    tasks = (
+        destination_root
+        / _slug(Path(source_task["game_root"]).expanduser().resolve().name)
+        / source_task["focus"]
+    )
+    before = {path.name for path in tasks.iterdir()} if tasks.is_dir() else set()
     rebuilt, _state = prepare_task(
         source_task["game_root"],
         source_task["data_root"],
@@ -6981,9 +7095,36 @@ def rebuild_deep_from_screen(
             )
         ),
         fit=source_task.get("layout"),
+        # The earlier reviews its source read, so its screen holds the same
+        # lines.
+        origins=(source_task.get("reviewed_before") or {}).get("from") or [],
     )
     if rebuilt == source:
         raise ValueError("The source task already uses the current QA rules")
+    try:
+        _replay_screen(
+            source_task, source_rows, reusable_results, reusable_summaries, rebuilt
+        )
+    except ValueError:
+        # A task this rebuild made but could not fill is no task to go on with.
+        if rebuilt.name not in before:
+            with _task_lock(tasks):
+                shutil.rmtree(rebuilt, ignore_errors=True)
+        raise
+    if _stage_finished(_read_task(rebuilt)[2], ["screen"]):
+        return rebuilt, advance(rebuilt)
+    return rebuilt, status(rebuilt)
+
+
+def _replay_screen(
+    source_task: dict[str, Any],
+    source_rows: list[dict[str, Any]],
+    reusable_results: dict[str, Path],
+    reusable_summaries: dict[str, tuple[str, int]],
+    rebuilt: Path,
+) -> None:
+    """Accept a completed screen's results in a rebuilt task, once its screen
+    bundles are the same."""
     _rebuilt_root, rebuilt_task, rebuilt_checkpoint = _load_task(rebuilt)
     for key in ("manifest_sha256", "context_sha256"):
         if rebuilt_task.get(key) != source_task.get(key):
@@ -7017,9 +7158,6 @@ def rebuild_deep_from_screen(
                     row["assigned_to"] = str(source_row.get("assigned_to") or "")
                     _atomic_write_json(rebuilt / "checkpoint.json", checkpoint)
             accept_result(rebuilt, reusable_results[source_row["id"]])
-        if _stage_finished(_read_task(rebuilt)[2], ["screen"]):
-            return rebuilt, advance(rebuilt)
-    return rebuilt, status(rebuilt)
 
 
 def _draft_document(
@@ -8244,22 +8382,12 @@ def correction_map(
                 if previous is not None:
                     continue
                 targets[target] = change["correction"]
-                # A correction that reaches only one kind of script string is
-                # stored escaped, which escaping again keeps; one that reaches
-                # other text too is escaped here for each script string.
-                replacement = _script_text(
-                    change["correction"], record["live_transform"]
-                )
-                # A message's rows are spread over the commands that hold
-                # them; the replacement reads as it will once written, so
-                # undoing it finds it there.
+                # The replacement reads as it will once written, so undoing
+                # it finds it there.
+                replacement = _written(record, change["correction"])
                 message = len(record["live_pointers"]) > 1 and _message_code(
                     record.get("event_code")
                 )
-                if message:
-                    replacement = "\n".join(
-                        rewrap.spread(replacement, len(record["live_pointers"]))
-                    )
                 operations.append({
                     "finding_id": finding["id"],
                     "identity": identity,
