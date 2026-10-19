@@ -41,23 +41,34 @@ function game() {
     contentsHeight() {
       return 72;
     }
-    // Draws each line 36 pixels below the last, as MZ does.
+    // Draws each line 36 pixels below the last, as MZ does once it reads
+    // the line's end.
     drawTextEx(text: string, x: number, y: number) {
-      const state = { x, y, height: 36, drawing: true, text };
+      const state = { x, y, height: 36, drawing: true, text, index: 0 };
       for (const line of text.split("\n")) {
         this.contents.drawText(line);
         state.x = x + line.length * 10;
+        state.index += line.length + 1;
         this.flushTextState(state);
         state.y += 36;
       }
+    }
+    convertEscapeCharacters(text: string) {
+      return text;
     }
     flushTextState(_state: object) {}
     processNewLine() {}
   }
   class Window_Selectable extends Window_Base {}
   class Window_Help extends Window_Base {
-    setItem(item: { id: number; description: string }) {
-      this.setText(item.description);
+    // Gear help as a plugin may draw it, as Arina's does: the description's
+    // first line, then a line of the plugin's own.
+    setItem(item: { id: number; description: string; stats?: string }) {
+      this.setText(
+        item.stats
+          ? `${item.description.split("\n")[0]}\n${item.stats}`
+          : item.description,
+      );
     }
     setText(text: string) {
       this.drawTextEx(text, 0, 0);
@@ -144,6 +155,13 @@ test("the playtest records text that runs past a window players see", async () =
     description: "Blocks one attack.\nThen it\nshatters.",
   });
   help.setText("x".repeat(45));
+  // Gear help whose description fits, beside a line of stats too wide for
+  // the window: shortening the description would not fix those.
+  help.setItem({
+    id: 22,
+    description: "A black collar.\nHP never runs out.\nA reward.",
+    stats: "Effect: " + "y".repeat(40),
+  });
   // A hidden window, a pass that only measures, and Japanese drawn on it.
   hidden.setText("One\nTwo\nThree 呪い");
   const measure = new Window_Base();
@@ -164,6 +182,16 @@ test("the playtest records text that runs past a window players see", async () =
         "001-overflow",
       ],
       ["right", null, "001-overflow"],
+      ["right", null, "001-overflow"],
+    ],
+  );
+  // Which entries a help window showed, for the static line count; routine,
+  // so it takes no capture of its own.
+  assert.deepEqual(
+    events("help").map((event) => event.data),
+    [
+      { file: "Items.json", pointer: "/21/description" },
+      { file: "Items.json", pointer: "/22/description" },
     ],
   );
   assert.equal(events("japanese").length, 0);

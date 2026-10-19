@@ -121,6 +121,20 @@ write(
             description="Heals.\nA little.",
             _original={"name": "薬草", "description": "回復する。"},
         ),
+        # A plugin's help window shows all three lines.
+        entry(
+            3,
+            name="Tonic",
+            description="Restores a little HP.\nTastes bitter.\nSold everywhere.",
+            _original={"name": "強壮剤", "description": "体力を回復する。"},
+        ),
+        # No screen the tour opened shows it.
+        entry(
+            4,
+            name="Relic",
+            description="An old relic.\nIt hums.\nNobody knows why.",
+            _original={"name": "遺物", "description": "古い遺物。"},
+        ),
     ],
 )
 write(data / "CommonEvents.json", "{ broken")
@@ -225,6 +239,8 @@ expected = {
     ("placeholder-glyph", "data/Map001.json", "/events/1/pages/1/list/3/parameters/0"),
     ("untranslated", "data/Map001.json", ""),
     ("help-rows", "data/Items.json", "/1/description"),
+    ("help-rows", "data/Items.json", "/3/description"),
+    ("help-rows", "data/Items.json", "/4/description"),
     ("plugin-text", "js/plugins/Dungeon.js", "Dungeon"),
     ("placeholder-glyph", "js/plugins/Dungeon.js", "Dungeon"),
 }
@@ -310,6 +326,14 @@ runtime = {
             "text": "Blocks one attack",
             "data": {"file": "Items.json", "pointer": "/1/description"},
         },
+        # A line of a description its window shows in full is too wide.
+        {
+            **seen,
+            "window": "Window_Help",
+            "edge": "right",
+            "text": "Restores a little HP.",
+            "data": {"file": "Items.json", "pointer": "/3/description"},
+        },
         {
             **seen,
             "scene": "Scene_Gallery",
@@ -318,6 +342,7 @@ runtime = {
             "text": "A long caption",
         },
     ],
+    "help": ["Items.json#/1/description", "Items.json#/3/description"],
     "scenes": [{"scene": "Scene_Title"}],
     "complete": True,
 }
@@ -332,21 +357,31 @@ assert group["seen"] == seen and [
 ] == [seen], group
 help_rows = problems[("help-rows", "data/Items.json", "/1/description")]
 assert help_rows["seen"] == seen, help_rows
+# A description's line count counts only where the tour saw it run past the
+# bottom of its window: one the tour showed otherwise fits, though a line of
+# it may be too wide, and one it never showed is a gap saying where to look.
+assert not {
+    ("help-rows", "data/Items.json", "/3/description"),
+    ("help-rows", "data/Items.json", "/4/description"),
+} & set(problems), problems
 gallery = [row for row in report["problems"] if row["check"] == "overflow"]
-assert [(row["fix"], row["window"]) for row in gallery] == [("game", "Window_Help")], (
-    gallery
-)
+assert [(row["fix"], row.get("pointer")) for row in gallery] == [
+    ("text-qa", "/3/description"),
+    ("game", None),
+], gallery
 assert problems[("runtime-error", "js/plugins/Dungeon.js", "")]["line"] == 9
 assert [row["check"] for row in report["problems"]].count("runtime-error") == 1
-assert len(report["gaps"]) == 4, report["gaps"]
+assert len(report["gaps"]) == 5, report["gaps"]
 assert "Scene_Gallery could not be opened on its own" in report["gaps"][1], report[
     "gaps"
 ]
 assert report["gaps"][3].endswith("on their own: Scene_Hang."), report["gaps"]
+assert report["gaps"][4].endswith(": Items.json 4."), report["gaps"]
 assert report["coverage"]["reached"] == 2, report["coverage"]
 observed = {row["identity"]: row for row in observations(report)}
 assert observed["Items.json#/1/description"]["categories"] == ["ui"], observed
 assert "Seen on Scene_Item" in observed["Items.json#/1/description"]["note"], observed
+assert "Items.json#/4/description" not in observed, observed
 # A second run counts what the first found and it no longer does, and marks
 # what is new; a group counts its strings one by one.
 again = json.loads(json.dumps(report))

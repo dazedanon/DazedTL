@@ -192,6 +192,47 @@
     return file ? { file, pointer: `/${item.id}/description` } : null;
   }
 
+  // Text without its escape codes, as \C[2] or the engine's converted form,
+  // and with its spacing evened out.
+  const plain = (text) =>
+    String(text)
+      .replace(/[\x1b\\](?:[A-Za-z]+(?:\[[^\]]*\])?|.)/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+
+  /** Whether a line a help window drew is its entry's description: its
+   * words in order, as a plugin that wraps, shrinks or trims the description
+   * draws them, and not text a plugin adds, such as a line of stats. */
+  function fromDescription(line, help) {
+    const drawn = plain(line);
+    if (!drawn) return false;
+    let source = help.description;
+    try {
+      source = help.window.convertEscapeCharacters(source);
+    } catch {
+      // A plugin's escape code that fails here is compared as written.
+    }
+    source = plain(source);
+    if (source.includes(drawn)) return true;
+    const words = drawn.split(" ");
+    let at = 0;
+    for (const word of source.split(" "))
+      if (word === words[at] && ++at === words.length) return true;
+    return false;
+  }
+
+  /** The line of a window's text that was drawing. */
+  function lineAt(textState) {
+    const text = String(textState.text || "");
+    let at = Math.min(Math.max((textState.index || 0) - 1, 0), text.length - 1);
+    // MZ draws a line when it reaches the line's end.
+    if (text[at] === "\n") at--;
+    const start = text.lastIndexOf("\n", at) + 1;
+    const end = text.indexOf("\n", start);
+    return text.slice(start, end < 0 ? text.length : end);
+  }
+
   // ---------------------------------------------------------------- errors
 
   function error(kind, message, stack = "") {
@@ -325,8 +366,15 @@
       " " +
       String(text).replace(/\d+/g, "#");
     if (seen.has(key) || state.pending.some((row) => row.key === key)) return;
+    // Text a plugin draws beside a description, such as a line of stats,
+    // is not the description, so shortening it would fix nothing.
     const help =
-      state.help && state.help.window === window_ ? state.help.source : null;
+      state.help &&
+      state.help.window === window_ &&
+      state.help.source &&
+      fromDescription(lineAt(textState), state.help)
+        ? state.help.source
+        : null;
     const message =
       /Message/.test(window_.constructor.name) && state.message
         ? state.message.source
@@ -346,6 +394,19 @@
         ...((help || message) && { data: help || message }),
         source: source(new Error().stack),
       }),
+    });
+  }
+
+  /** A database entry a help window shows, kept once it is on screen, so a
+   * description's line count counts only where the tour saw it cut off. */
+  function described(window_, source) {
+    const key = `help ${source.file}#${source.pointer}`;
+    if (seen.has(key) || state.pending.some((row) => row.key === key)) return;
+    state.pending.push({
+      type: "help",
+      key,
+      bitmap: window_.contents,
+      event: { data: source },
     });
   }
 
@@ -401,7 +462,11 @@
     // Which database entry a help window draws, set before it draws.
     const setItem = Window_Help.prototype.setItem;
     Window_Help.prototype.setItem = function (item) {
-      state.item = { window: this, source: helpSource(item) };
+      state.item = {
+        window: this,
+        source: helpSource(item),
+        description: String((item && item.description) || ""),
+      };
       try {
         return setItem.call(this, item);
       } finally {
@@ -409,11 +474,13 @@
       }
     };
     before(Window_Help.prototype, "setText", function () {
+      const item = state.item && state.item.window === this ? state.item : null;
       state.help = {
         window: this,
-        source:
-          state.item && state.item.window === this ? state.item.source : null,
+        source: item && item.source,
+        description: item ? item.description : "",
       };
+      if (item && item.source) described(this, item.source);
     });
     // A pass that only measures, MZ's drawing false or MV's text drawn below
     // the contents, can't overflow.
@@ -625,7 +692,9 @@
       .splice(0, state.pending.length)
       .filter((row) => !seen.has(row.key) && onScreen(row.bitmap));
     if (!shown.length) return;
-    const name = snapshot(shown[0].type);
+    // An entry a help window shows is no finding, so it takes no capture.
+    const finding = shown.find((row) => row.type !== "help");
+    const name = finding ? snapshot(finding.type) : null;
     for (const row of shown) {
       seen.add(row.key);
       send(row.type, { ...row.event, ...(name && { capture: name }) });

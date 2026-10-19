@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from util import rpgmaker_window
-from util.playtest.checks import static_checks
+from util.playtest.checks import GROUP_TEXT_LIMIT, HELP_ROWS, static_checks
 
 SCHEMA = "rpgmaker-playtest-report-v1"
 LAYOUT_SCHEMA = "rpgmaker-layout-check-v1"
@@ -176,8 +176,30 @@ def _identity(data: dict[str, Any] | None) -> str:
 def merge(static: dict[str, Any], runtime: dict[str, Any], data_prefix: str) -> dict[str, Any]:
     """Static problems, with what the tour saw added to them or beside them,
     and the coverage the tour reached."""
-    problems = [dict(problem) for problem in static["problems"]]
     gaps = list(static["gaps"])
+    if "unavailable" in runtime:
+        gaps.append(runtime["unavailable"])
+        runtime = {}
+    # A description's line count only says where to look: a plugin may draw
+    # the help its own way or give the window more lines. It stays a problem
+    # where the tour saw the description run past the bottom of its window;
+    # one the tour showed otherwise fits, and one it never showed is a gap.
+    cut = {
+        _identity(event.get("data"))
+        for event in runtime.get("overflow", [])
+        if event["edge"] == "bottom"
+    }
+    looked = cut | set(runtime.get("help", []))
+    unchecked = [
+        problem
+        for problem in static["problems"]
+        if problem["check"] == "help-rows" and problem["identity"] not in looked
+    ]
+    problems = [
+        dict(problem)
+        for problem in static["problems"]
+        if problem["check"] != "help-rows" or problem["identity"] in cut
+    ]
     titles = {
         stop["id"]: stop.get("title") or stop["id"] for stop in runtime.get("stops", [])
     }
@@ -192,9 +214,6 @@ def merge(static: dict[str, Any], runtime: dict[str, Any], data_prefix: str) -> 
     def seen(problem: dict[str, Any], event: dict[str, Any]) -> None:
         problem.setdefault("seen", _seen(event, titles))
 
-    if "unavailable" in runtime:
-        gaps.append(runtime["unavailable"])
-        runtime = {}
     errors: dict[tuple[str, str], dict[str, Any]] = {}
     # The engine writes the error that stopped the game to the console too.
     crashes = [
@@ -347,6 +366,8 @@ def merge(static: dict[str, Any], runtime: dict[str, Any], data_prefix: str) -> 
             missed = [name for name in stop["screens"] if name not in opened]
             if missed:
                 gaps.append("Plugin screens the tour could not open: " + ", ".join(missed) + ".")
+    if unchecked:
+        gaps.append(_unchecked(unchecked))
     return {
         "problems": problems,
         "gaps": gaps,
@@ -364,6 +385,23 @@ def merge(static: dict[str, Any], runtime: dict[str, Any], data_prefix: str) -> 
         "played": any(stop["status"] == "done" for stop in stops),
         "complete": bool(runtime.get("complete")),
     }
+
+
+def _unchecked(problems: list[dict[str, Any]]) -> str:
+    """The gap for descriptions longer than the standard help window that the
+    tour never showed, by file and entry."""
+    entries: dict[str, list[str]] = {}
+    for problem in problems[:GROUP_TEXT_LIMIT]:
+        name, pointer = problem["identity"].split("#", 1)
+        entries.setdefault(name, []).append(pointer.split("/")[1])
+    more = len(problems) - GROUP_TEXT_LIMIT
+    return (
+        f"Descriptions longer than the standard help window's {HELP_ROWS} lines, "
+        "which the tour never showed, so whether they fit is unchecked: "
+        + "; ".join(f"{name} {', '.join(ids)}" for name, ids in entries.items())
+        + (f"; and {more} more" if more > 0 else "")
+        + "."
+    )
 
 
 def _where(event: dict[str, Any]) -> str:

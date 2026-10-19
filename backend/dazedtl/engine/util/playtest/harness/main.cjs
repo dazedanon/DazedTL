@@ -25,6 +25,8 @@ launch((run) => {
     errors: [],
     japanese: [],
     overflow: [],
+    // The database entries a help window showed on screen.
+    help: [],
     scenes: [],
     captures: [],
     layout: [],
@@ -95,6 +97,10 @@ launch((run) => {
     } else if (type === "error") report.errors.push(value);
     else if (type === "japanese") report.japanese.push(value);
     else if (type === "overflow") report.overflow.push(value);
+    else if (type === "help") {
+      const entry = `${value.data.file}#${value.data.pointer}`;
+      if (!report.help.includes(entry)) report.help.push(entry);
+    }
     else if (type === "layout") report.layout.push(value);
     else if (type === "scene") report.scenes.push(value);
     else if (type === "message") {

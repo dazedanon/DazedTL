@@ -321,7 +321,9 @@ class _Checks:
         )
 
     def descriptions(self) -> None:
-        """Descriptions with more lines than the standard help window shows."""
+        """Descriptions with more lines than the standard help window shows,
+        for the tour to look at: a plugin may draw the help its own way or
+        give the window more lines."""
         for name in DESCRIBED_FILES:
             for index, entry in enumerate(self.documents.get(name) or []):
                 text = entry.get("description") if isinstance(entry, dict) else None

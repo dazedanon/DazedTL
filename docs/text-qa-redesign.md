@@ -134,6 +134,8 @@ Its behavior is in [architecture](architecture.md#workflow-and-shared-presentati
   They live in one plugin that `js/main.js` loads after the game's plugins, so the game's plugin files and plugin list stay as Plugin files applied them, one file says what changed, and History takes them out like any applied batch.
 - Running it again is how kinks are ironed out, so every run is idempotent: QA prepared with the same findings is the same task, a running task records each finding once, and each report counts what was fixed since the last one and marks what is new.
 - Only what the tour drew on screen counts as seen; a static reach or line count says where to look, because fonts, plugins and custom windows decide what fits and what shows.
+  On 2026-10-19 descriptions still went to QA by line count alone: Slime Hunter Nena's engine gives its help window three lines, and Arina's gear help draws a description's first sentence beside a stats line of its own, so 23 descriptions reached review as cut off when none was.
+  A description now counts once the tour sees its own text run past the bottom of its window, and text a plugin draws beside it, such as that stats line, is the game's to fix.
 - What the tour cannot reach is a coverage gap in the report, never a request for the user to play it or confirm a review.
   The assistant adds stops for what only it can find, such as a dungeon floor with a trap or the recollection room, and the app keeps them for every later run.
 - Text a plugin draws on screen is player text, so Plugin files decides again about such text it kept in Japanese; a screen the tour opened on its own may be one players never reach, as Arina's trial-end screen showed, so the evidence says so.
