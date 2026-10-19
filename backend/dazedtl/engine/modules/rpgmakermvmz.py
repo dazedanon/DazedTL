@@ -2397,6 +2397,9 @@ def parseTroops(data, filename):
 
 def parseNames(data, filename, context):
     totalTokens = [0, 0]
+    # VX Ace keeps MapInfos as a hash by map ID: translate its entries in
+    # place through a list, and keep saving the hash so the file keeps its shape.
+    entries = list(data.values()) if isinstance(data, dict) else data
 
     # --- Preflight: custom estimator that mirrors searchNames increments (incl. notes/messages) ---
     class _CountingBar:
@@ -2491,11 +2494,11 @@ def parseNames(data, filename, context):
         except Exception:
             return 1
 
-    total_units = _estimate_names_units(data, context, filename)
+    total_units = _estimate_names_units(entries, context, filename)
     if not isinstance(total_units, int) or total_units <= 0:
         # Reasonable fallback: count visible fields/messages (no notes)
         total_units = 0
-        for entry in data:
+        for entry in entries:
             if not entry:
                 continue
             if entry.get("name"): total_units += 1
@@ -2512,7 +2515,7 @@ def parseNames(data, filename, context):
         PBAR = pbar
         try:
             # Thread the filename through so progress saves write to the right file
-            result = searchNames(data, pbar, context, filename)
+            result = searchNames(entries, pbar, context, filename, saved=data)
             totalTokens[0] += result[0]
             totalTokens[1] += result[1]
         except Exception as e:
@@ -2952,7 +2955,10 @@ def _translate_skill_messages(texts: list[str], skills: list[int]):
     return translated, tokens
 
 
-def searchNames(data, pbar, context, filename):
+def searchNames(data, pbar, context, filename, saved=None):
+    """Translates database entries; progress saves write `saved`, the file's
+    own value, when `data` is a list view of it."""
+    saved = data if saved is None else saved
     totalTokens = [0, 0]
     nameList = []
     nameSourceList = []
@@ -3299,7 +3305,7 @@ def searchNames(data, pbar, context, filename):
                     batchFull = False
                     filling = False
                     # Persist after applying this batch only if we actually translated something in this batch
-                    checkSave(data, filename, batchTokens)
+                    checkSave(saved, filename, batchTokens)
                 else:
                     mismatch = True
 
@@ -3368,7 +3374,7 @@ def searchNames(data, pbar, context, filename):
                     batchFull = False
                     filling = False
                     # Persist after applying this batch only if we actually translated something in this batch
-                    checkSave(data, filename, batchTokens)
+                    checkSave(saved, filename, batchTokens)
                 else:
                     mismatch = True
             if context in ["Enemies", "Classes", "MapInfos"]:
@@ -3404,7 +3410,7 @@ def searchNames(data, pbar, context, filename):
                     batchFull = False
                     filling = False
                     # Persist after applying this batch only if we actually translated something in this batch
-                    checkSave(data, filename, batchTokens)
+                    checkSave(saved, filename, batchTokens)
                 else:
                     mismatch = True
 

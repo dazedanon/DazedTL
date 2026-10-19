@@ -484,6 +484,7 @@ try:
             "A spare weapon kept in reserve for when the first breaks.",
             detail: "A massive greataxe favored by strongmen\n\u3000\n"
             "Has the following special effects\n・TP +25 every turn",
+            "村": "Village",
         }
         weapons = [
             None,
@@ -537,6 +538,12 @@ try:
                 sent.clear()
                 parser.searchNames(weapons, None, "Weapons", "Weapons.json")
                 assert sent == [], sent
+                # VX Ace keeps MapInfos as a hash by map ID; the names pass
+                # indexed it as a list and failed with KeyError: 0.
+                infos = {"1": {"id": None, "name": "村", "order": 1}}
+                result = parser.parseNames(infos, "MapInfos.json", "MapInfos")
+                assert result[0] is infos and result[2] is None, result
+                assert infos["1"]["name"] == "Village", infos
         finally:
             os.chdir(directory)
         # Rewrap and the line width check keep those lines too.
