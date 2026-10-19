@@ -27,6 +27,7 @@ from typing import Iterable, Mapping
 import jsbeautifier
 
 from util.paths import ensure_game_tool_gitignore, staging_folder
+from util.playtest import fixes
 
 from .json_merge import merge_json
 from .script_merge import is_plugin_registry, merge_plugins, restore_lines
@@ -2569,11 +2570,22 @@ def _merged_by_value(repo: Path, path: str, base: str, translated: str, official
 
 def _restored(repo: Path, path: str, base: str, translated: str, official: str, merged: bytes) -> bytes:
     """A script Git merged by line, with the translated lines the release left
-    back in place (see script_merge)."""
+    back in place (see script_merge), and the line loading the playtest's
+    fixes back in a main.js whose hunk the release won."""
     if not path.casefold().endswith(".js"):
         return merged
     blobs = _blob_bytes(repo, base, translated, official)
-    return merged if blobs is None else restore_lines(*blobs, merged)
+    if blobs is None:
+        return merged
+    merged = restore_lines(*blobs, merged)
+    if ("/" + path).endswith("/" + fixes.MAIN) and fixes.loads_fixes(blobs[1]):
+        try:
+            return fixes.with_loader(merged)
+        except ValueError:
+            # A release that sets plugins up otherwise; the checkpoint
+            # refuses fixes main.js does not load.
+            return merged
+    return merged
 
 
 def _restored_object(repo: Path, path: str, base: str, translated: str, official: str, merged: str) -> str:

@@ -61,6 +61,22 @@ def with_loader(raw: bytes) -> bytes:
     return bom + loaded.encode("utf-8")
 
 
+def loads_fixes(raw: bytes) -> bool:
+    """Whether a main.js holds the line that loads the fixes."""
+    return LOADER in raw.decode("utf-8-sig", errors="replace")
+
+
+def without_loader(raw: bytes) -> bytes | None:
+    """main.js as it was before :func:`with_loader` added the line loading
+    the fixes, or None when it holds no such line."""
+    bom = b"\xef\xbb\xbf" if raw.startswith(b"\xef\xbb\xbf") else b""
+    main = raw.decode("utf-8-sig")
+    found = list(re.finditer(r"^[ \t]*" + re.escape(LOADER) + r"\r?\n", main, re.M))
+    if len(found) != 1:
+        return None
+    return bom + (main[: found[0].start()] + main[found[0].end() :]).encode("utf-8")
+
+
 def patch_files(root: Path) -> dict[str, dict[str, Any]]:
     """The patch-manifest rows of the fixes a game holds, which every patch
     carries, whichever method wrote its manifest (util.len_patch_scope adds

@@ -16,7 +16,10 @@ from util.gameupdate_config import CONFIG, file_values
 from util.len_git import git_status
 from util.len_translation import LenProject, _write_atomic
 from util.paths import PROJECT_ROOT, normalize_game_tool_gitignore_text
+from util.playtest.fixes import MAIN as FIXES_MAIN
 from util.playtest.fixes import NAME as FIXES_PLUGIN
+from util.playtest.fixes import PLUGIN as FIXES_FILE
+from util.playtest.fixes import loads_fixes, without_loader
 from util.playtest.fixes import patch_files as fixes_files
 from util.project_preparation import (
     GAMEUPDATE_COPY_SKIP_NAMES, RPG_GAMEUPDATE_COPY_SKIP_NAMES, rpgmaker_layout,
@@ -163,6 +166,24 @@ def _plugin_refusal(root: Path, scope: Collection[str], original: Iterable[str],
     return None
 
 
+def _fixes_refusal(root: Path, scope: Collection[str]) -> str | None:
+    """Why a patch's main.js and the playtest's fixes may not go to players
+    together: a main.js that loads fixes the patch lacks stops their game at
+    start, and fixes no main.js loads, as a game update's merge can leave
+    the release's main.js, let the problems they fix come back."""
+    for web in ("www/", ""):
+        main, plugin = web + FIXES_MAIN, web + FIXES_FILE
+        loads = main in scope and _held(root, main) and loads_fixes((root / main).read_bytes())
+        if loads and plugin not in scope:
+            return (f"{main} loads the playtest's fixes, but the patch has no {plugin}, so players' "
+                    f"game would stop at start. Apply the fixes again, or take their line out of {main}.")
+        if plugin in scope and not loads:
+            return (f"{plugin} holds the playtest's fixes, but {main} in the patch doesn't load them, "
+                    "as a game update can leave it, so the problems they fix would come back. "
+                    f"Apply the fixes again, which loads them, or take {plugin} out of the game.")
+    return None
+
+
 def _file(root: Path, relative: str) -> Path:
     path = root
     for part in relative.split("/"):
@@ -281,6 +302,12 @@ def sync_patch_scope(project: LenProject, document: object, *, original_game: Pa
     `original_names` lists all of the untranslated game's files when
     `original_game` holds only the patch's, as a restored backup does.
     """
+    with tempfile.TemporaryDirectory(prefix="dazedtl-original-") as derived:
+        return _sync_patch_scope(project, document, original_game, original_names, dry_run, Path(derived))
+
+
+def _sync_patch_scope(project: LenProject, document: object, original_game: Path | None,
+                      original_names: Collection[str], dry_run: bool, derived: Path) -> dict:
     selected = patch_manifest(document)
     state = git_status(project)
     repo = project.game_root
@@ -320,7 +347,8 @@ def sync_patch_scope(project: LenProject, document: object, *, original_game: Pa
     # Players keep the original game's plugins; Git's inventory of them leaves
     # out names that look local, such as a plugin called Save..., which the
     # backup's list holds.
-    refusal = _plugin_refusal(repo, selected, chain(originals, assets or (), original_names), source)
+    refusal = (_plugin_refusal(repo, selected, chain(originals, assets or (), original_names), source)
+               or _fixes_refusal(repo, selected))
     if refusal:
         raise GitWorkflowError(refusal)
     # Existing Git originals are authoritative; a supplied backup must match them.
@@ -330,11 +358,20 @@ def sync_patch_scope(project: LenProject, document: object, *, original_game: Pa
     # baseline, or one without a prepared backup, has none, and only the
     # translation adds them.
     installed = set(setup_files(repo))
+    # The main.js loading the playtest's fixes is the game's with one line of
+    # DazedTL's added; without a backup or Git copy, that line taken out is
+    # its original.
+    loaders = {name for name, row in fixes_files(repo).items() if "original_sha256" not in row}
     for relative, row in selected.items():
         if "sha256" in row and _hash_file(files[relative]) != row["sha256"]:
             raise GitWorkflowError(f"Reviewed patch bytes are not installed in the game root: {relative}")
         if source is not None and ((source / relative).exists() or (source / relative).is_symlink()):
             original_files[relative] = _file(source, relative)
+        elif (relative in loaders and relative not in originals
+              and (raw := without_loader(files[relative].read_bytes())) is not None):
+            original_files[relative] = derived / relative
+            original_files[relative].parent.mkdir(parents=True, exist_ok=True)
+            original_files[relative].write_bytes(raw)
         elif (relative not in originals and relative not in installed
               and not ("original_sha256" in row and row["original_sha256"] is None)):
             raise GitWorkflowError(f"Supply the matching untranslated original, or declare a translation-only addition with original_sha256: null: {relative}")

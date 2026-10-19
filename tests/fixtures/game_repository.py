@@ -113,6 +113,8 @@ defaults = {
     "branch": "main",
 }
 published = game("published")
+# The game's own main.js, which loads the playtest's fixes once they exist.
+(published / "js/main.js").write_text("PluginManager.setup($plugins);\n")
 (published / "gameupdate").mkdir()
 (published / "gameupdate/patch.ps1").write_text("# GameUpdate fixture\n")
 save(published)
@@ -195,6 +197,41 @@ with engine.context():
     registry.write_bytes(shipped)
     for path in added:
         path.unlink()
+    # With no backup, the original of the main.js loading the playtest's
+    # fixes is the file without that line, as the game's asset record holds
+    # it; a checkpoint then refused the fixes. Each goes to players only
+    # with the other: fixes main.js no longer loads, as a game update can
+    # leave it, and a main.js loading fixes the patch lacks are refused.
+    from util.len_patch_scope import with_dazedtl_files
+    from util.playtest import fixes
+
+    main = published / fixes.MAIN
+    game_main = main.read_bytes()
+    (published / fixes.PLUGIN).write_text("// Fixes\n")
+    main.write_bytes(fixes.with_loader(game_main))
+    data = {"files": {"data/System.json": {}}}
+    engine.git_scope(
+        published, options, with_dazedtl_files(published, data), None, True
+    )
+    main.write_bytes(game_main)
+    for scope, message in (
+        (
+            with_dazedtl_files(published, data),
+            "js/main.js in the patch doesn't load them",
+        ),
+        ({"files": {**data["files"], fixes.MAIN: {}}}, None),
+    ):
+        if message is None:
+            (published / fixes.PLUGIN).unlink()
+            main.write_bytes(fixes.with_loader(game_main))
+            message = "the patch has no js/plugins/DazedTL_Fixes.js"
+        try:
+            engine.git_scope(published, options, scope, None, True)
+        except GitWorkflowError as error:
+            assert message in str(error), error
+        else:
+            raise AssertionError(f"A checkpoint took {sorted(scope['files'])}.")
+    main.write_bytes(game_main)
     git(
         published,
         "remote",

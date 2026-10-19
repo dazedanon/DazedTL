@@ -2,6 +2,7 @@
 
 import json
 import unittest
+from pathlib import Path
 
 from util.rpgmaker_plugin_registry import format_plugins_js, plugin_entries
 from util.version_update.script_merge import merge_plugins, restore_lines
@@ -93,3 +94,38 @@ class ScriptMergeTests(unittest.TestCase):
             # Code the translation rewrote stays with Git's merge.
             b"const a = PluginManager.parameters(\"Title\");\nconsole.log(a.text, 'Adventure');\nconst b = 1;\n",
         )
+
+    def test_main_js_keeps_loading_the_fixes_where_the_release_won_its_hunk(self):
+        # A release that changed main.js beside the line loading the
+        # playtest's fixes won the conflict, and the fixes stopped loading.
+        import subprocess
+        from tempfile import TemporaryDirectory
+
+        from util.playtest import fixes
+        from util.version_update.git_workflow import merged_file
+
+        base = b"    onScriptLoad() {\n        PluginManager.setup($plugins);\n    }\n"
+        official = base.replace(b"onScriptLoad()", b"onScriptLoad(url)")
+        with TemporaryDirectory() as repo:
+            subprocess.run(["git", "init", "-q", repo], check=True)
+
+            def blob(raw):
+                return (
+                    subprocess.run(
+                        ["git", "-C", repo, "hash-object", "-w", "--stdin"],
+                        input=raw,
+                        capture_output=True,
+                        check=True,
+                    )
+                    .stdout.decode()
+                    .strip()
+                )
+
+            merged = merged_file(
+                Path(repo),
+                "www/js/main.js",
+                blob(fixes.with_loader(base)),
+                blob(base),
+                blob(official),
+            )
+        self.assertEqual(merged, fixes.with_loader(official))

@@ -319,8 +319,21 @@ class GuidedRelease:
                 source_files = backups.manifest(location, source=project["source"])[
                     "files"
                 ]
+            from util.playtest.fixes import patch_files as fixes
+
+            # The main.js loading the playtest's fixes is the game's own,
+            # whose original the checkpoint finds without a backup.
+            loaders = {
+                name
+                for name, row in fixes(Path(project["source"])).items()
+                if "original_sha256" not in row
+            }
             for name in paths:
-                if name not in originals and name not in source_files:
+                if (
+                    name not in originals
+                    and name not in source_files
+                    and name not in loaders
+                ):
                     entries[name] = {"original_sha256": None}
         inputs = packing_paths(native) if native["engine"] == "ACE" else []
         return {"files": entries, "inputs": inputs}
