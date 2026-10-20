@@ -374,6 +374,7 @@ class Guided:
             native["data"],
             self.translation.engine.source_bindings,
             self.translation.engine.original_bytes,
+            original_blobs=self.translation.engine.original_blobs,
             native_exports=native["engine"] == "ACE",
             observations=self.observations,
         )
@@ -692,16 +693,13 @@ class Guided:
         )
         source_status["retired"] = inputs.record().get("retired_runs", [])
         source_status["noRequests"] = inputs.no_requests()
-        source_status["refusalNotes"] = inputs.refusal_notes(
-            [row["name"] for row in native["files"]]
-        )
-        source_status["untranslatedComments"] = (
-            inputs.untranslated_comments(
-                [row["name"] for row in native["files"] if row["group"] == "dialogue"],
-                comment_text.markers(native["source"]),
-            )
-            if native["engine"] == "MVMZ" and native["phase1_comments"]
-            else {}
+        # Database files and Maps & events read each file's own lines; Maps
+        # & events counts choice help while Comment text translates it.
+        source_status["lines"] = inputs.line_counts(
+            {row["name"]: row["group"] for row in native["files"]},
+            comment_text.markers(native["source"])
+            if native["phase1_comments"]
+            else frozenset(),
         )
         prepared = list(dict.fromkeys([*native["imported"], *source_status["ready"]]))
         if prepared != native["imported"]:

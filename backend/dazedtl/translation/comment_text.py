@@ -57,19 +57,6 @@ def markers(source: str | Path) -> frozenset[str]:
     return _MARKERS[key]
 
 
-def untranslated(name: str, raw: bytes, markers: frozenset[str]) -> int:
-    """The comment lines under *markers* that a data file's bytes still hold
-    in Japanese, which a run with Comment text on sends."""
-    # Most files hold no marker; only those that do are parsed.
-    if not any(marker.encode() in raw for marker in markers):
-        return 0
-    try:
-        document = json.loads(raw.decode("utf-8-sig"))
-    except UnicodeDecodeError, ValueError:
-        return 0
-    return len(_japanese_lines(name, document, markers))
-
-
 def shows_comment_text(data: str | Path, plugins: str | Path) -> bool:
     """Whether a game's turned-on plugins show comment lines that hold
     Japanese, from its data folder and plugin list."""

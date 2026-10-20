@@ -9,14 +9,12 @@ import { Button } from "../../ui/Button";
 import { FileSelection } from "./FileSelection";
 import {
   activeRun,
+  countedPhase,
   filePreviewRun,
   fileRun,
   fileLines,
   fileMetricRun,
-  fileStatus,
-  settledWithoutRequests,
-  translatedFiles,
-  untranslatedComments,
+  translationFileStatus,
 } from "./translationView";
 import type { RequestInspectionTarget } from "./ProcessPanel";
 import { retainOtherScope } from "./selection";
@@ -75,7 +73,7 @@ export function TranslateWorkspace({
   const scoped = rows.filter((row) => selected.has(row.name));
   const owner = (name: string) =>
     fileRun(state.runs, phase, name, state.sourceStatus.retired);
-  const translated = translatedFiles(state.runs, state.sourceStatus.retired);
+  const counted = countedPhase(phase);
   const openFile = (name: string) => {
     const job = filePreviewRun(
       name,
@@ -84,9 +82,11 @@ export function TranslateWorkspace({
       owner(name),
       currentEstimate,
     );
+    const lines = counted ? state.sourceStatus.lines?.[name] : undefined;
     inspect(job || null, {
       file: name,
       index: job?.process?.files?.[name]?.first,
+      left: lines && lines.lines - lines.translated,
     });
   };
   return (
@@ -170,7 +170,11 @@ export function TranslateWorkspace({
                 <>
                   <span
                     className="translation-file-lines"
-                    title="Lines saved of the lines the latest run prepared"
+                    title={
+                      counted
+                        ? "Lines translated of the lines in each file that hold Japanese"
+                        : "Lines saved of the lines the latest run prepared"
+                    }
                   >
                     Lines
                   </span>
@@ -186,21 +190,12 @@ export function TranslateWorkspace({
                 </>
               ),
               details: (row) => {
-                const fileOwner = owner(row.name),
-                  comments = untranslatedComments(
-                    state,
-                    phase,
-                    row.name,
-                    fileOwner,
-                  ),
-                  status = fileStatus(
-                    row.name,
-                    fileOwner,
-                    settledWithoutRequests(state, phase, row.name, fileOwner),
-                    !translated.has(row.name),
-                    state.sourceStatus.refusalNotes?.[row.name],
-                    comments,
-                  );
+                const status = translationFileStatus(
+                  state,
+                  phase,
+                  row.name,
+                  owner(row.name),
+                );
                 const metricRun = fileMetricRun(
                     state.runs,
                     phase,
@@ -215,15 +210,19 @@ export function TranslateWorkspace({
                       className="translation-file-lines"
                       title={
                         lines.running
-                          ? "Lines saved so far; the total is known when the run ends"
-                          : lines.total && comments
-                            ? "Lines saved of the lines the latest run prepared and the choice help it left out"
-                            : lines.total
-                              ? "Lines saved of the lines the latest run prepared"
-                              : lines.done
-                                ? "Lines saved before the latest run ended; it did not reach the rest of the file"
-                                : lines.total === 0
-                                  ? "Nothing to translate in this file"
+                          ? counted
+                            ? "Lines saved so far; the file's count returns once the run is done with it"
+                            : "Lines saved so far; the total is known when the run ends"
+                          : lines.total
+                            ? counted
+                              ? "Lines translated of the lines in this file that hold Japanese"
+                              : "Lines saved of the lines the latest run prepared"
+                            : lines.done
+                              ? "Lines saved before the latest run ended; it did not reach the rest of the file"
+                              : lines.total === 0
+                                ? "Nothing to translate in this file"
+                                : counted
+                                  ? "This file could not be read as game data"
                                   : "Line counts appear once a run prepares this file"
                       }
                     >

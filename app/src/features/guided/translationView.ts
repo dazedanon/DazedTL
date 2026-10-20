@@ -1,4 +1,5 @@
 import type {
+  FileLines,
   GuidedState,
   Job,
   Phase,
@@ -235,14 +236,20 @@ export function translatedFiles(
   translatedCache.set(runs, { retired, names });
   return names;
 }
-/** Saved working outputs holding translation, and those in the game. */
+/**
+ * Saved working outputs holding translation, and those in the game: a file
+ * whose own lines are translated, or one a run changed, such as with Other
+ * event text.
+ */
 export function savedTranslations(
   state: Pick<GuidedState, "runs" | "sourceStatus" | "readiness">,
 ) {
-  const translated = translatedFiles(state.runs, state.sourceStatus.retired);
+  const changed = translatedFiles(state.runs, state.sourceStatus.retired);
+  const translated = (name: string) =>
+    changed.has(name) || !!state.sourceStatus.lines?.[name]?.translated;
   return {
-    outputs: state.readiness.outputs.filter((name) => translated.has(name)),
-    applied: state.readiness.applied.filter((name) => translated.has(name)),
+    outputs: state.readiness.outputs.filter(translated),
+    applied: state.readiness.applied.filter(translated),
   };
 }
 /**
@@ -275,24 +282,57 @@ export function settledWithoutRequests(
     !!checked && (!run || (!activeWorker(run) && (run.created || "") < checked))
   );
 }
+/** Database files and Maps & events read each file's lines from the file. */
+export const countedPhase = (phase: Phase) =>
+  phase === "database" || phase === "dialogue";
 /**
- * A file's translated and total lines from the engine's own receipts: the
- * lines its latest run saved, out of the lines that run prepared. A saved
- * "nothing to translate" check closes the file at what is done, and a run
- * that found nothing to translate gives it a total of none. Estimates
- * carry no per-file lines, so without a run the amounts stay unknown. A Live
- * run prepares requests as it goes, so while it works only the saved lines
- * are known; `running` marks that partial count. A Batch writes a file only
- * while it saves its results, so until then, or when saving it failed, the
- * received lines are not saved. A run that carried a finished file over
- * without sending it, such as a rerun after a stop, found every line of the
- * run that translated it translated, since it sends any line still in the
- * game's own words. Lines whose saved text is a refusal note an earlier run
- * kept (refusalNotes) stay untranslated until a run sends them again, even
- * when a check found nothing to send. Comment lines the latest run left out
- * (untranslatedComments) add to a known total.
+ * A file's translated and total lines. Database files and Maps & events read
+ * them from the file's newest copy (sourceStatus.lines), except that a Live
+ * run still working on the file knows only the lines it saved so far
+ * (`running`); the count takes over once it is done with the file. A file the
+ * backend could not read has no total. Other event text reads its runs'
+ * receipts.
  */
 export function fileLines(
+  state: Pick<GuidedState, "runs" | "sourceStatus">,
+  phase: Phase,
+  name: string,
+): { done: number; total: number | null; running?: boolean } {
+  if (!countedPhase(phase)) return runLines(state, phase, name);
+  const run = fileRun(state.runs, phase, name, state.sourceStatus.retired);
+  if (
+    run &&
+    !run.temporary &&
+    run.mode !== "batch" &&
+    runActivity(name, run)?.state === "working"
+  )
+    return {
+      done: run.process?.files?.[name]?.done ?? 0,
+      total: null,
+      running: true,
+    };
+  const counted = state.sourceStatus.lines?.[name];
+  return counted
+    ? { done: counted.translated, total: counted.lines }
+    : { done: 0, total: null };
+}
+/**
+ * Other event text's translated and total lines from the engine's own
+ * receipts: the lines its latest run saved, out of the lines that run
+ * prepared. A saved "nothing to translate" check closes the file at what is
+ * done, and a run that found nothing to translate gives it a total of none.
+ * Estimates carry no per-file lines, so without a run the amounts stay
+ * unknown. A Live run prepares requests as it goes, so while it works only
+ * the saved lines are known; `running` marks that partial count. A Batch
+ * writes a file only while it saves its results, so until then, or when
+ * saving it failed, the received lines are not saved. A run that carried a
+ * finished file over without sending it, such as a rerun after a stop, found
+ * every line of the run that translated it translated, since it sends any
+ * line still in the game's own words. Refusal notes an earlier run kept
+ * (otherNotes) stay untranslated until a run sends them again, even when a
+ * check found nothing to send.
+ */
+function runLines(
   state: Pick<GuidedState, "runs" | "sourceStatus">,
   phase: Phase,
   name: string,
@@ -312,8 +352,7 @@ export function fileLines(
   const run =
     translated && requests(translated)?.requests ? translated : latest;
   const lines = requests(run);
-  const notes = state.sourceStatus.refusalNotes?.[name] ?? 0;
-  const comments = untranslatedComments(state, phase, name, latest);
+  const notes = state.sourceStatus.lines?.[name]?.otherNotes ?? 0;
   const done =
     run !== latest && lines
       ? Math.max(0, lines.lines - notes)
@@ -322,7 +361,7 @@ export function fileLines(
         : (lines?.done ?? 0);
   // A check that found nothing to send read refusal notes as translations.
   if (!notes && settledWithoutRequests(state, phase, name, latest))
-    return { done, total: done + comments };
+    return { done, total: done };
   if (
     latest &&
     nothingFound(
@@ -331,7 +370,7 @@ export function fileLines(
       !translatedFiles(state.runs, state.sourceStatus.retired).has(name),
     )
   )
-    return { done: 0, total: comments };
+    return { done: 0, total: 0 };
   if (run && run.mode !== "batch" && activeWorker(run))
     return { done, total: null, running: true };
   // Live prepares requests as it goes, so a file a run did not finish never
@@ -343,23 +382,7 @@ export function fileLines(
     !finished(run)
   )
     return { done, total: null };
-  return { done, total: lines?.requests ? lines.lines + comments : null };
-}
-/**
- * Comment lines, such as a choice's help, that Comment text translates but a
- * file's working copy still holds in Japanese, because the file's latest Maps
- * & events run ran with Comment text off and never sent them. A run with it
- * on counts its own comment lines; the next run sends these.
- */
-export function untranslatedComments(
-  state: Pick<GuidedState, "runs" | "sourceStatus">,
-  phase: Phase,
-  name: string,
-  run = fileRun(state.runs, phase, name, state.sourceStatus.retired),
-) {
-  if (phase !== "dialogue" || !run || run.commentText || activeWorker(run))
-    return 0;
-  return state.sourceStatus.untranslatedComments?.[name] ?? 0;
+  return { done, total: lines?.requests ? lines.lines : null };
 }
 /**
  * The files an event-code task covers: the selected event files and every
@@ -390,10 +413,10 @@ export function eventTaskFiles(
     .map((file) => file.name);
 }
 /**
- * Task progress combines each file's latest run, so re-running some files
- * keeps the rest. Database and map tasks cover their whole file group,
- * independently of the next action's selection; event-code tasks cover
- * eventTaskFiles.
+ * Database and map tasks are done when no file in their group has lines
+ * left and no run still works on one, independently of the next action's
+ * selection. Event-code tasks cover eventTaskFiles and combine each file's
+ * latest run, so re-running some files keeps the rest.
  */
 export function translationTaskComplete(
   state: Pick<GuidedState, "files" | "runs" | "sourceStatus">,
@@ -403,15 +426,27 @@ export function translationTaskComplete(
     .map((file) => file.name),
 ) {
   if (!names.length) return false;
+  if (countedPhase(phase))
+    return names.every((name) => {
+      const counted = state.sourceStatus.lines?.[name];
+      const run = fileRun(state.runs, phase, name, state.sourceStatus.retired);
+      // A worker may still write a file it already saved.
+      return (
+        !state.sourceStatus.changed.includes(name) &&
+        !(run && activeWorker(run)) &&
+        !runActivity(name, run) &&
+        !!counted &&
+        counted.translated === counted.lines
+      );
+    });
   const translated = translatedFiles(state.runs, state.sourceStatus.retired);
   return names.every((name) => {
     if (
       state.sourceStatus.changed.includes(name) ||
-      state.sourceStatus.refusalNotes?.[name]
+      state.sourceStatus.lines?.[name]?.otherNotes
     )
       return false;
     const run = fileRun(state.runs, phase, name, state.sourceStatus.retired);
-    if (untranslatedComments(state, phase, name, run)) return false;
     if (settledWithoutRequests(state, phase, name, run)) return true;
     if (
       !run ||
@@ -437,6 +472,22 @@ export function translationTaskComplete(
         !!run.process?.noRequestFiles?.includes(name))
     );
   });
+}
+/** A file's state in a translation task's file list. */
+export function translationFileStatus(
+  state: Pick<GuidedState, "runs" | "sourceStatus" | "readiness">,
+  phase: Phase,
+  name: string,
+  run = fileRun(state.runs, phase, name, state.sourceStatus.retired),
+) {
+  if (countedPhase(phase)) return countedFileStatus(state, phase, name, run);
+  return fileStatus(
+    name,
+    run,
+    settledWithoutRequests(state, phase, name, run),
+    !translatedFiles(state.runs, state.sourceStatus.retired).has(name),
+    state.sourceStatus.lines?.[name]?.otherNotes,
+  );
 }
 /** Status follows current work; metrics follow the last run that changed this file. */
 export function fileMetricRun(
@@ -492,13 +543,67 @@ const fileState = (state: DisplayState, detail = "") => ({
   detail,
   pending: state === "working",
 });
+const count = (amount: number, one: string, many = one + "s") =>
+  `${amount.toLocaleString()} ${amount === 1 ? one : many}`;
+/** Why a file's lines are left, for its status tooltip. */
+export function linesLeft(counted: FileLines) {
+  const notes = counted.notes ?? 0,
+    help = counted.help ?? 0,
+    never = counted.lines - counted.translated - notes - help;
+  return [
+    never > 0 && `${count(never, "line")} never translated.`,
+    help > 0 &&
+      `${count(help, "line")} of choice help ${help === 1 ? "is" : "are"} still in Japanese; Comment text now translates ${help === 1 ? "it" : "them"}.`,
+    notes > 0 &&
+      `${count(notes, "line holds", "lines hold")} a refusal note an earlier run saved instead of a translation.`,
+    counted.lines - counted.translated === 1
+      ? "Translate sends it; Inspect lists it."
+      : "Translate sends them; Inspect lists them.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
 /**
- * File receipts and verified output own the row; run diagnostics stay in
- * Inspect. `untranslated` says no run translated the file (translatedFiles),
- * so a run that sent nothing for it leaves nothing to apply. `notes` counts
- * lines whose saved text is a refusal note an earlier run kept, and
- * `comments` choice help the latest run left out (untranslatedComments); both
- * leave a finished file needing review until a run sends them.
+ * A Database files or Maps & events file's state: a run's work while it is
+ * still in progress for the file, else what the file's newest copy holds.
+ * Lines left read Not started until any is translated or holds a refusal
+ * note; a file with none left is in the game when its translated copy is,
+ * or when it has no translated copy of its own.
+ */
+export function countedFileStatus(
+  state: Pick<GuidedState, "runs" | "sourceStatus" | "readiness">,
+  phase: Phase,
+  name: string,
+  run = fileRun(state.runs, phase, name, state.sourceStatus.retired),
+) {
+  const active = runActivity(name, run);
+  if (active) return active;
+  const counted = state.sourceStatus.lines?.[name];
+  if (!counted)
+    return fileState("blocked", "This file could not be read as game data.");
+  if (!counted.lines)
+    return fileState("done", "Nothing to translate in this file.");
+  if (counted.translated < counted.lines) {
+    const detail =
+      run && uncertainSubmission(name, run)
+        ? "Its submission could not be confirmed. Check Run history before sending it again."
+        : linesLeft(counted);
+    return counted.translated || counted.notes
+      ? fileState("needs_review", detail)
+      : fileState("not_started", counted.help ? detail : "");
+  }
+  return !state.readiness.outputs.includes(name) ||
+    state.readiness.applied.includes(name)
+    ? fileState("applied")
+    : fileState("ready");
+}
+/**
+ * Other event text's file state from its run's receipts and verified output;
+ * run diagnostics stay in Inspect. `untranslated` says no run translated the
+ * file (translatedFiles), so a run that sent nothing for it leaves nothing to
+ * apply. `notes` counts the file's refusal notes outside its Database files
+ * or Maps & events lines (otherNotes), which leave a finished file needing
+ * review until a run sends them.
  */
 export function fileStatus(
   name: string,
@@ -506,31 +611,115 @@ export function fileStatus(
   settled = false,
   untranslated = false,
   notes = 0,
-  comments = 0,
 ) {
   const status = runFileStatus(name, run, settled, untranslated);
-  if (
-    (!notes && !comments) ||
-    !["ready", "applied", "done"].includes(status.state)
-  )
+  if (!notes || !["ready", "applied", "done"].includes(status.state))
     return status;
   return fileState(
     "needs_review",
-    [
-      notes === 1
-        ? "1 line holds a refusal note an earlier run saved instead of a translation. Translate sends it again."
-        : notes
-          ? `${notes.toLocaleString()} lines hold a refusal note an earlier run saved instead of a translation. Translate sends them again.`
-          : "",
-      comments === 1
-        ? "1 line of a choice's help is not translated yet: Comment text did not cover it when this file was translated. Translate sends only that line."
-        : comments
-          ? `${comments.toLocaleString()} lines of choice help are not translated yet: Comment text did not cover them when this file was translated. Translate sends only those lines.`
-          : "",
-    ]
-      .filter(Boolean)
-      .join(" "),
+    `${count(notes, "line holds", "lines hold")} a refusal note an earlier run saved instead of a translation. Translate sends ${notes === 1 ? "it" : "them"} again.`,
   );
+}
+/** A Live request still marked sent when its worker stopped, or any without
+ * a provider receipt, may still be at the provider. */
+function uncertainSubmission(name: string, run: Job) {
+  const states = run.process?.files?.[name]?.states || [];
+  return (
+    states.includes("uncertain") ||
+    (!activeWorker(run) && run.mode !== "batch" && states.includes("submitted"))
+  );
+}
+/**
+ * A run's work on a file while it is still in progress: Working, or awaiting
+ * cost approval; undefined once the run no longer works on the file.
+ */
+function runActivity(name: string, run?: Job) {
+  if (!run || !run.files?.includes(name) || run.retiredFiles?.includes(name))
+    return undefined;
+  const progress = fileState("working");
+  // A prepared run waiting for cost approval has not started work.
+  const awaiting = fileState("needs_review", "Awaiting your cost approval.");
+  if (run.temporary)
+    return activeWorker(run) ? (run.approval ? awaiting : progress) : undefined;
+  const noRequests =
+    run.mode === "batch" && run.process?.noRequestFiles?.includes(name);
+  if (noRequests || (run.workerStatus ?? run.status) === "complete")
+    return undefined;
+  const requests = run.process?.files?.[name];
+  const states = requests?.states || [];
+  const working = activeWorker(run);
+  const saved =
+    run.availableOutputs?.includes(name) ??
+    (run.outputsAvailable && !!run.outputs?.[name]);
+  // After a restart the app's monitor finishes a stopped worker's Batch and
+  // then saves its results.
+  const monitored = ["monitoring", "collecting"].includes(
+    run.process?.monitoring?.state || "",
+  );
+  const invalid = run.process?.validationIssues?.some(
+    (issue) => issue.file === name,
+  );
+  const partial = run.partialOutputs?.includes(name) || invalid;
+  const rejected =
+    invalid || states.some((state) => ["rejected", "failed"].includes(state));
+  if (working && run.approval) return awaiting;
+  // Submitted requests, grouped by the Batch receipts holding their latest
+  // attempt (a clarification sits under the original request).
+  const submitted = requests?.submitted || [];
+  if (run.mode === "batch" && submitted.length) {
+    // A retained submission protects against duplicate charges; it does not
+    // establish current provider activity.
+    const batches = run.process?.batches || [];
+    if (
+      batches.some(
+        (batch) =>
+          providerBatchActive(batch.status) &&
+          submitted.some((group) => group.batches.includes(batch.id)),
+      )
+    )
+      return progress;
+    // An ended Batch, canceled or expired ones included, finished every
+    // request it held; collection downloads what it returned.
+    const finished = submitted.every(
+      (group) =>
+        group.finished &&
+        batches.some(
+          (batch) =>
+            group.batches.includes(batch.id) && terminalBatch(batch.status),
+        ),
+    );
+    if (finished) return progress;
+  }
+  if (working && run.mode !== "batch" && submitted.length) return progress;
+  if (working && states.some((state) => ["queued", "prepared"].includes(state)))
+    return progress;
+  if (!saved || (partial && (working || monitored))) {
+    // Received results are written by this run, including while a Batch
+    // waits at the provider for a clarification of refused requests.
+    if (
+      (working || monitored) &&
+      states.some((state) => ["received", "validated"].includes(state))
+    )
+      return progress;
+    // Item progress identifies the file still being parsed between requests,
+    // including after rejection; progress.file is the last finished file.
+    if (working && run.mode !== "batch" && run.itemProgress?.file === name)
+      return progress;
+    // A file stays partial until the worker finishes writing it, so only
+    // rejected or failed lines need review before then.
+    if (working && run.mode !== "batch" && saved && !rejected) return progress;
+  }
+  // A Live run reaches the file's queued or failed requests in turn.
+  if (
+    working &&
+    run.mode !== "batch" &&
+    !saved &&
+    !run.outputs?.[name] &&
+    !partial &&
+    states.every((state) => ["queued", "failed"].includes(state))
+  )
+    return progress;
+  return undefined;
 }
 function runFileStatus(
   name: string,
@@ -541,7 +730,6 @@ function runFileStatus(
   const idle = fileState("not_started");
   // Saved output that is not in the game yet.
   const complete = fileState("ready");
-  const progress = fileState("working");
   const nothing = fileState("done", "Nothing to translate in this file.");
   // A check that needs no requests keeps the output the file already has,
   // in the game or not.
@@ -560,88 +748,20 @@ function runFileStatus(
   const noRequests =
     run.mode === "batch" && run.process?.noRequestFiles?.includes(name);
   if (noRequests && !saved && !run.outputs?.[name]) return complete;
-  // A prepared run waiting for cost approval has not started work.
-  const awaiting = fileState("needs_review", "Awaiting your cost approval.");
-  if (run.temporary) {
-    return activeWorker(run) ? (run.approval ? awaiting : progress) : idle;
-  }
-  const requests = run.process?.files?.[name];
-  const states = requests?.states || [];
-  const working = activeWorker(run);
-  // After a restart the app's monitor finishes a stopped worker's Batch and
-  // then saves its results.
-  const monitored = ["monitoring", "collecting"].includes(
-    run.process?.monitoring?.state || "",
-  );
+  const activity = runActivity(name, run);
+  if (activity || run.temporary) return activity || idle;
+  const states = run.process?.files?.[name]?.states || [];
   // A submission without a provider receipt may still be at the provider, so
-  // its reason is checking before sending again, not rejected lines. A Live
-  // request still marked sent when its worker stopped is one of them.
+  // its reason is checking before sending again, not rejected lines.
   const incomplete = fileState(
     "needs_review",
-    states.includes("uncertain") ||
-      (!working && run.mode !== "batch" && states.includes("submitted"))
+    uncertainSubmission(name, run)
       ? "Its submission could not be confirmed. Check Run history before sending it again."
       : "Some lines were rejected or not saved; Inspect shows which.",
   );
-  const invalid = run.process?.validationIssues?.some(
-    (issue) => issue.file === name,
-  );
-  const partial = run.partialOutputs?.includes(name) || invalid;
-  const rejected =
-    invalid || states.some((state) => ["rejected", "failed"].includes(state));
-  if (!noRequests && (run.workerStatus ?? run.status) !== "complete") {
-    if (working && run.approval) return awaiting;
-    // Submitted requests, grouped by the Batch receipts holding their latest
-    // attempt (a clarification sits under the original request).
-    const submitted = requests?.submitted || [];
-    if (run.mode === "batch" && submitted.length) {
-      // A retained submission protects against duplicate charges; it does not
-      // establish current provider activity.
-      const batches = run.process?.batches || [];
-      if (
-        batches.some(
-          (batch) =>
-            providerBatchActive(batch.status) &&
-            submitted.some((group) => group.batches.includes(batch.id)),
-        )
-      )
-        return progress;
-      // An ended Batch, canceled or expired ones included, finished every
-      // request it held; collection downloads what it returned.
-      const finished = submitted.every(
-        (group) =>
-          group.finished &&
-          batches.some(
-            (batch) =>
-              group.batches.includes(batch.id) && terminalBatch(batch.status),
-          ),
-      );
-      if (finished) return progress;
-    }
-    if (working && run.mode !== "batch" && submitted.length) return progress;
-    if (
-      working &&
-      states.some((state) => ["queued", "prepared"].includes(state))
-    )
-      return progress;
-    if (!saved || (partial && (working || monitored))) {
-      // Received results are written by this run, including while a Batch
-      // waits at the provider for a clarification of refused requests.
-      if (
-        (working || monitored) &&
-        states.some((state) => ["received", "validated"].includes(state))
-      )
-        return progress;
-      // Item progress identifies the file still being parsed between requests,
-      // including after rejection; progress.file is the last finished file.
-      if (working && run.mode !== "batch" && run.itemProgress?.file === name)
-        return progress;
-      // A file stays partial until the worker finishes writing it, so only
-      // rejected or failed lines need review before then.
-      if (working && run.mode !== "batch" && saved && !rejected)
-        return progress;
-    }
-  }
+  const partial =
+    run.partialOutputs?.includes(name) ||
+    run.process?.validationIssues?.some((issue) => issue.file === name);
   if (saved && partial) return incomplete;
   if (saved)
     return run.appliedOutputs?.includes(name) ? fileState("applied") : complete;
@@ -651,7 +771,6 @@ function runFileStatus(
   // returned no lines, so either way the run left the file untouched.
   if (partial || states.some((state) => !["queued", "failed"].includes(state)))
     return incomplete;
-  if (working && run.mode !== "batch") return progress;
   if (states.includes("failed"))
     return fileState(
       "not_started",

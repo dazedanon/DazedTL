@@ -35,7 +35,7 @@ def text_fields(value, source=None, path=""):
         yield {"location": path or "/", "text": value, "source": before}
 
 
-def preview(inputs, name, runtime, offset=0, query=""):
+def _check(offset, query):
     if (
         type(offset) is not int
         or offset < 0
@@ -45,21 +45,13 @@ def preview(inputs, name, runtime, offset=0, query=""):
         raise ValueError(
             "Choose a valid text page and search of at most 256 characters."
         )
-    working, output = inputs.path("files", name), inputs.path("translated", name)
-    base = working if working.is_file() else runtime
-    path = output if output.is_file() else base
-    origin = (
-        "translated" if path == output else "working" if path == working else "game"
-    )
-    # The parser is for display only. It never decides which fields the engine
-    # will translate and does not create working copies, estimates or receipts.
-    value = read_json(path, limit=32_000_000)
-    source = (
-        read_json(base, limit=32_000_000) if path != base and base.is_file() else None
-    )
+
+
+def _page(name, origin, value, found, offset, query):
+    """One page of rows matching the search."""
     rows, total, size = [], 0, 0
     needle = query.casefold().strip()
-    for row in text_fields(value, source):
+    for row in found:
         if (
             needle
             and needle
@@ -90,3 +82,43 @@ def preview(inputs, name, runtime, offset=0, query=""):
         "total": total,
         "nextOffset": offset + len(rows) if offset + len(rows) < total else None,
     }
+
+
+def _origin(inputs, name, runtime):
+    working, output = inputs.path("files", name), inputs.path("translated", name)
+    base = working if working.is_file() else runtime
+    path = output if output.is_file() else base
+    return (
+        path,
+        base,
+        "translated" if path == output else "working" if path == working else "game",
+    )
+
+
+def preview(inputs, name, runtime, offset=0, query=""):
+    _check(offset, query)
+    path, base, origin = _origin(inputs, name, runtime)
+    # The parser is for display only. It never decides which fields the engine
+    # will translate and does not create working copies, estimates or receipts.
+    value = read_json(path, limit=32_000_000)
+    source = (
+        read_json(base, limit=32_000_000) if path != base and base.is_file() else None
+    )
+    return _page(name, origin, value, text_fields(value, source), offset, query)
+
+
+def lines_left(inputs, name, runtime, phase, markers, offset=0, query=""):
+    """The lines still left in the file's newest copy, as its Lines count
+    reads them (file_lines.left)."""
+    from .file_lines import left
+
+    _check(offset, query)
+    path, _base, origin = _origin(inputs, name, runtime)
+    value = read_json(path, limit=32_000_000)
+    found = (
+        {**row, "source": row["source"] or None}
+        for row in left(
+            name, value, phase, markers, lambda: inputs.original_document(name)
+        )
+    )
+    return _page(name, origin, value, found, offset, query)

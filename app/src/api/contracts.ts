@@ -133,8 +133,6 @@ export type Job = {
   partialOutputs?: string[];
   retiredFiles?: string[];
   logicalPhase?: Phase | null;
-  /** A Maps & events run translated comment lines (Comment text on). */
-  commentText?: boolean;
   preparationMode?: "batch" | "translate" | null;
   /** A finished estimate found no source text in any of its files. */
   nothingToTranslate?: boolean;
@@ -359,6 +357,8 @@ export type FileTextRow = {
   text: string;
   source: string | null;
   truncated: boolean;
+  /** Why a line left is: never translated, choice help still in Japanese, or a refusal note. */
+  reason?: "untranslated" | "help" | "note";
 };
 
 export type FileTextPreview = {
@@ -600,16 +600,29 @@ export type Comparisons = {
   rows: ComparisonRow[];
 };
 
+/** How much of a file is translated, from the file itself (see
+translation/file_lines.py). */
+export type FileLines = {
+  /** Lines whose source holds Japanese. */
+  lines: number;
+  /** Lines holding no Japanese and no refusal note. */
+  translated: number;
+  /** Lines holding a refusal note an earlier run saved instead of a translation; the next run sends them again. */
+  notes?: number;
+  /** Choice help blocks still in Japanese, which Comment text translates. */
+  help?: number;
+  /** Refusal notes in values outside these lines, such as Other event text. */
+  otherNotes?: number;
+};
+
 export type SourceStatus = {
   ready: string[];
   changed: string[];
   retired?: string[];
   /** Estimate start time per phase and file found without text to translate. */
   noRequests?: Partial<Record<Phase, Record<string, string>>>;
-  /** Lines per working copy that hold a refusal note an earlier run saved; the next run sends them again. */
-  refusalNotes?: Record<string, number>;
-  /** Comment lines per Maps & events working copy, such as a choice's help, still in Japanese under a marker Comment text translates. */
-  untranslatedComments?: Record<string, number>;
+  /** Each Database files and Maps & events file's lines, read from its newest copy; a file that cannot be read has none. */
+  lines?: Record<string, FileLines>;
 };
 
 /** The newest later batch still in the game that changed some of a
@@ -3002,6 +3015,8 @@ export type GuidedFilePreviewRequest = {
   name: string;
   offset?: number;
   query?: string;
+  /** Only the Database files or Maps & events lines still left in the file. */
+  left?: boolean;
 };
 
 export type GuidedBatchCancelPreviewRequest = {

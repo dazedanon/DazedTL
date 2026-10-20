@@ -3,7 +3,11 @@
 // breaks before users do. CI runs it on both systems; see the live test in
 // docs/development.md.
 //
-//   node scripts/e2e.mjs [--work <folder>]
+//   node scripts/e2e.mjs [--work <folder>] [--upgrade-from <tag>]
+//
+// With --upgrade-from, the release at that tag runs its own journey on the
+// same game, then this checkout updates that install the way the app does and
+// checks that the project reads right and translates what is left.
 //
 // The install, profile and game sit in folders with spaces and Japanese
 // names, START runs with the PATH of a machine without Node, Python or (on
@@ -18,6 +22,8 @@ import crypto from "node:crypto";
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { root } from "./dependencies.mjs";
+import { extract } from "./tar.mjs";
+import { writeStaged } from "./update.mjs";
 import { entries } from "./zip.mjs";
 
 const windows = process.platform === "win32";
@@ -31,10 +37,14 @@ const work = path.resolve(
 fs.mkdirSync(work, { recursive: true });
 if (fs.readdirSync(work).length)
   throw new Error(`Choose an empty work folder; ${work} has files.`);
+const upgradeFrom = option("--upgrade-from");
+// The journey's install, profile and game: an upgrade's are the previous
+// release's, which its own journey leaves in a folder of their own.
+const journey = upgradeFrom ? path.join(work, "previous") : work;
 // Explorer unpacks a GitHub ZIP into a doubled, numbered folder.
-const install = path.join(work, "DazedTL-main (1)", "DazedTL-main");
-const profile = path.join(work, "プロファイル (テスト)");
-const game = path.join(work, "ゲーム", "魔法少女の冒険 体験版 (1.0)");
+const install = path.join(journey, "DazedTL-main (1)", "DazedTL-main");
+const profile = path.join(journey, "プロファイル (テスト)");
+const game = path.join(journey, "ゲーム", "魔法少女の冒険 体験版 (1.0)");
 const logs = path.join(work, "logs");
 const shots = path.join(logs, "screenshots");
 fs.mkdirSync(shots, { recursive: true });
@@ -82,18 +92,26 @@ async function until(description, check, timeout = 30_000) {
 
 // ------------------------------------------------------------------ install
 
+/** The files Git would commit, which a downloaded ZIP holds. */
+function checkoutFiles() {
+  return [
+    ...new Set(
+      execFileSync(
+        "git",
+        ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        { cwd: root, encoding: "utf8" },
+      )
+        .split("\0")
+        .filter(Boolean),
+    ),
+  ].filter((file) => fs.existsSync(path.join(root, file)));
+}
+
 /** Copies the files Git would commit, as a downloaded ZIP holds them. */
 function copyCheckout() {
-  const files = execFileSync(
-    "git",
-    ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
-    { cwd: root, encoding: "utf8" },
-  )
-    .split("\0")
-    .filter(Boolean);
-  for (const file of new Set(files)) {
+  const files = checkoutFiles();
+  for (const file of files) {
     const from = path.join(root, file);
-    if (!fs.existsSync(from)) continue;
     const to = path.join(install, file);
     fs.mkdirSync(path.dirname(to), { recursive: true });
     fs.copyFileSync(from, to);
@@ -120,6 +138,62 @@ const eventCommands = [
   [355, "Notice.show('宝箱を見つけた');"],
 ];
 
+/**
+ * Gives a game a menu whose choices show help from event comments, as
+ * MPP_ChoiceEX does, which Maps & events translates with Comment text on.
+ */
+function addChoiceHelp(folder) {
+  const file = path.join(folder, "data/Map001.json");
+  const map = JSON.parse(fs.readFileSync(file, "utf8"));
+  const command = (code, indent, ...parameters) => ({
+    code,
+    indent,
+    parameters,
+  });
+  const help = (choice, text, help) => [
+    command(402, 0, choice, text),
+    command(108, 1, "選択肢ヘルプ"),
+    command(408, 1, help),
+    command(0, 1),
+  ];
+  map.events.push({
+    ...map.events[1],
+    id: map.events.length,
+    name: "案内",
+    x: 10,
+    pages: [
+      {
+        ...map.events[1].pages[0],
+        list: [
+          command(101, 0, "", 0, 0, 2, ""),
+          command(401, 0, "どちらへ行きますか？"),
+          command(102, 0, ["森", "村"], -1, 0, 2, 0),
+          ...help(0, "森", "魔法の杖を探しに森へ向かいます。"),
+          ...help(1, "村", "村に残って準備をします。"),
+          command(404, 0),
+          command(0, 0),
+        ],
+      },
+    ],
+  });
+  fs.writeFileSync(file, JSON.stringify(map));
+  const plugins = path.join(folder, "js/plugins.js");
+  fs.writeFileSync(
+    plugins,
+    fs
+      .readFileSync(plugins, "utf8")
+      .replace(
+        /\n\];/,
+        ',\n{"name":"MPP_ChoiceEX","status":true,"description":"選択肢の機能拡張","parameters":{"Choice Help Commands":"[\\"選択肢ヘルプ\\"]"}}\n];',
+      ),
+  );
+  // The plugin itself only needs to be there, as players have it.
+  fs.writeFileSync(
+    path.join(folder, "js/plugins/MPP_ChoiceEX.js"),
+    "/*:\n * @target MV MZ\n * @plugindesc 選択肢の機能拡張\n * @param Choice Help Commands\n * @type string[]\n */\n",
+  );
+}
+
 /** Copies the MZ fixture game into a folder named like a Japanese release. */
 function makeGame() {
   fs.cpSync(path.join(root, "tests/fixtures/mz-game"), game, {
@@ -143,6 +217,7 @@ function makeGame() {
     })),
   );
   fs.writeFileSync(file, JSON.stringify(map));
+  addChoiceHelp(game);
 }
 
 // ----------------------------------------------------------------- provider
@@ -311,7 +386,7 @@ function userEnvironment() {
   } else {
     // A folder of links to the system's tools minus Node and Python, since
     // dropping whole folders would take Git and the shell with them.
-    const tools = path.join(work, "tools");
+    const tools = path.join(journey, "tools");
     if (!fs.existsSync(tools)) {
       fs.mkdirSync(tools);
       for (const folder of (process.env.PATH || "/usr/bin:/bin").split(":"))
@@ -324,7 +399,7 @@ function userEnvironment() {
     }
     env.PATH = tools;
     // Shortcuts and caches stay inside the work folder.
-    env.HOME = path.join(work, "home");
+    env.HOME = path.join(journey, "home");
     for (const name of [
       "XDG_CONFIG_HOME",
       "XDG_DATA_HOME",
@@ -723,7 +798,7 @@ const shortcut = windows
       process.env.APPDATA || "",
       "Microsoft/Windows/Start Menu/Programs/DazedTL.lnk",
     )
-  : path.join(work, "home/.local/share/applications/dazedtl.desktop");
+  : path.join(journey, "home/.local/share/applications/dazedtl.desktop");
 
 /** Runs one Guided translation task: estimate, approve, wait for the run, apply. */
 async function translateTask(page, task, check) {
@@ -761,7 +836,47 @@ let page;
 // The project helper an assistant's copied task runs, without its command.
 let projectHelper = "";
 
-try {
+/** Saves and checks a connection to the stand-in provider. */
+async function connectStandIn() {
+  const saved = await page.call("settings_get");
+  // An updated install keeps its earlier stand-in, at an address now gone.
+  const earlier = saved.connections.find((item) => item.name === "Stand-in");
+  let settings = await page.call("connection_save", {
+    revision: saved.revision,
+    ...(earlier && { connection_id: earlier.id }),
+    provider: "custom",
+    name: "Stand-in",
+    secret: "e2e-test-key",
+    endpoint: stand_in.url,
+    protocol: "openai",
+  });
+  const connection = settings.activeConnectionId;
+  settings = await page.call("settings_save", {
+    revision: settings.revision,
+    connection_id: connection,
+    values: { language: "English", model: "e2e-model" },
+    model_options: {
+      "e2e-model": {
+        entriesPerRequest: null,
+        pricing: "custom",
+        inputRate: 0,
+        outputRate: 0,
+      },
+    },
+  });
+  settings = await page.call("connection_check", {
+    revision: settings.revision,
+    connection_id: connection,
+  });
+  const check = settings.connections.find(
+    (item) => item.id === connection,
+  ).check;
+  if (check.status !== "reachable")
+    throw new Error(`Connection check: ${check.message}`);
+}
+
+/** The journey a new user takes, from a downloaded ZIP to a patch. */
+async function liveJourney() {
   await step("Copy the checkout into a downloaded-ZIP folder", () => {
     const count = copyCheckout();
     makeGame();
@@ -831,39 +946,7 @@ try {
     await page.shot("set-up");
   });
 
-  await step("Connect the stand-in provider", async () => {
-    let settings = await page.call("connection_save", {
-      revision: (await page.call("settings_get")).revision,
-      provider: "custom",
-      name: "Stand-in",
-      secret: "e2e-test-key",
-      endpoint: stand_in.url,
-      protocol: "openai",
-    });
-    const connection = settings.activeConnectionId;
-    settings = await page.call("settings_save", {
-      revision: settings.revision,
-      connection_id: connection,
-      values: { language: "English", model: "e2e-model" },
-      model_options: {
-        "e2e-model": {
-          entriesPerRequest: null,
-          pricing: "custom",
-          inputRate: 0,
-          outputRate: 0,
-        },
-      },
-    });
-    settings = await page.call("connection_check", {
-      revision: settings.revision,
-      connection_id: connection,
-    });
-    const check = settings.connections.find(
-      (item) => item.id === connection,
-    ).check;
-    if (check.status !== "reachable")
-      throw new Error(`Connection check: ${check.message}`);
-  });
+  await step("Connect the stand-in provider", connectStandIn);
 
   await step("Translate and apply the database", async () => {
     await page.click("3Translate");
@@ -884,11 +967,15 @@ try {
   });
 
   await step("Translate and apply maps and events", () =>
-    translateTask(page, "Maps & events", () =>
-      readJson("data/Map001.json")
-        .events[1].pages[0].list.filter((command) => command.code === 401)
-        .every((command) => translated(command.parameters[0])),
-    ),
+    translateTask(page, "Maps & events", () => {
+      const events = readJson("data/Map001.json").events;
+      const all = (event, code) =>
+        events[event].pages[0].list
+          .filter((command) => command.code === code)
+          .every((command) => translated(command.parameters[0]));
+      // Comment text came on by itself for the menu's choice help.
+      return all(1, 401) && all(2, 408);
+    }),
   );
 
   await step("The assistant investigates event text sources", async () => {
@@ -1124,6 +1211,186 @@ try {
     await closeApp();
     diagnostics();
   });
+}
+
+/**
+ * Leaves this checkout for the previous release's launcher as the app leaves
+ * a downloaded release: signed, in .runtime/update/next. The install trusts
+ * a key made for the test, as it trusts the release keys.
+ */
+function stageCheckout() {
+  const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
+  fs.writeFileSync(
+    path.join(install, "release/keys/upgrade-test.pem"),
+    publicKey.export({ type: "spki", format: "pem" }),
+  );
+  const executables = new Set(
+    execFileSync("git", ["ls-files", "-s", "-z"], {
+      cwd: root,
+      encoding: "utf8",
+    })
+      .split("\0")
+      .filter((row) => row.startsWith("100755 "))
+      .map((row) => row.split("\t")[1]),
+  );
+  const names = checkoutFiles().filter(
+    (name) => !name.startsWith("release/manifest."),
+  );
+  const files = new Map(
+    names.map((name) => [name, fs.readFileSync(path.join(root, name))]),
+  );
+  const [current] = JSON.parse(
+    fs.readFileSync(path.join(root, "app/package.json"), "utf8"),
+  ).version.split("-");
+  const version = `${current}-upgrade.1`;
+  const manifest = Buffer.from(
+    JSON.stringify({
+      format: 1,
+      version,
+      files: Object.fromEntries(
+        [...files].map(([name, data]) => [
+          name,
+          crypto.createHash("sha256").update(data).digest("hex"),
+        ]),
+      ),
+      executables: names.filter((name) => executables.has(name)),
+    }),
+  );
+  files.set("release/manifest.json", manifest);
+  files.set(
+    "release/manifest.sig",
+    Buffer.from(crypto.sign(null, manifest, privateKey).toString("base64")),
+  );
+  writeStaged(install, files);
+  return version;
+}
+
+/** Every Database files and Maps & events file's lines, read from the file. */
+async function fileLines() {
+  const { guided } = await page.call("workspace_snapshot");
+  const lines = guided.sourceStatus.lines || {};
+  const missing = guided.files.filter((file) => !lines[file.name]);
+  if (missing.length)
+    throw new Error(
+      `No line counts for ${missing.map((file) => file.name).join(", ")}.`,
+    );
+  return guided.files.map((file) => ({ ...file, ...lines[file.name] }));
+}
+
+/** The text of a file's row in the open translation task. */
+const fileRow = (name) =>
+  page.evaluate(`[...document.querySelectorAll(".translation-file-lines")]
+    .map((cell) => cell.parentElement)
+    .find((row) => row.getClientRects().length && row.innerText.includes(${JSON.stringify(name)}))
+    ?.innerText.replace(/\\s+/g, " ")`);
+
+/**
+ * The previous release translates the game with choice help in its own live
+ * test; this checkout then updates its install as the app does. The project
+ * must read each file's lines from the file, the help included, and finish
+ * what is left.
+ */
+async function upgradeJourney(tag) {
+  await step(`${tag} runs its live test on a game with choice help`, () => {
+    const previous = path.join(work, "previous-checkout");
+    extract(
+      execFileSync("git", ["archive", "--format=tar.gz", tag], {
+        cwd: root,
+        maxBuffer: 1 << 30,
+      }),
+      previous,
+    );
+    addChoiceHelp(path.join(previous, "tests/fixtures/mz-game"));
+    // Its live test copies the files Git would commit.
+    execFileSync("git", ["init", "-q"], { cwd: previous });
+    execFileSync("git", ["add", "-A"], { cwd: previous });
+    const result = spawnSync(
+      process.execPath,
+      [path.join(previous, "scripts/e2e.mjs"), "--work", journey],
+      { stdio: "inherit" },
+    );
+    if (result.status !== 0)
+      throw new Error(
+        `${tag}'s live test failed; its logs are in ${path.join(journey, "logs")}.`,
+      );
+  });
+
+  const version = await step("Stage this checkout as an update", stageCheckout);
+
+  await step("START applies the update and opens the project", async () => {
+    const result = await runStart("start-update", debug, 15 * 60_000);
+    if (result.code !== 0) throw startFailed(result);
+    const installed = JSON.parse(
+      fs.readFileSync(path.join(install, "release/manifest.json"), "utf8"),
+    ).version;
+    if (installed !== version)
+      throw new Error(`START left ${installed} installed, not ${version}.`);
+    protocol = JSON.parse(
+      fs.readFileSync(
+        path.join(install, "backend/dazedtl/api/protocol.json"),
+        "utf8",
+      ),
+    ).version;
+    page = await Page.connect(port);
+    await page.waitText(path.basename(game));
+    await page.shot("updated");
+  });
+
+  await step("Each file reads its lines from the file", async () => {
+    const map = (await fileLines()).find((file) => file.name === "Map001.json");
+    // Four messages, four choices, the map's name and two choices' help.
+    if (map.lines !== 11)
+      throw new Error(`Map001.json counts ${map.lines} lines, not 11.`);
+  });
+
+  await step("Translate finishes what is left", async () => {
+    const left = (await fileLines()).filter(
+      (file) => file.translated < file.lines,
+    );
+    if (!left.length) return;
+    await connectStandIn();
+    // A restarted app opens on the project's overview.
+    await page.click("Translation");
+    // The stage tab also names its state, such as "Completed".
+    await page.click(/^3\s*Translate/);
+    for (const [group, task] of [
+      ["database", "Database files"],
+      ["dialogue", "Maps & events"],
+    ])
+      if (left.some((file) => file.group === group))
+        await translateTask(page, task, async () =>
+          (await fileLines()).every(
+            (file) => file.group !== group || file.translated === file.lines,
+          ),
+        );
+  });
+
+  await step("The project reads translated and applied", async () => {
+    const files = await fileLines();
+    const total = files.reduce((sum, file) => sum + file.lines, 0);
+    const done = files.reduce((sum, file) => sum + file.translated, 0);
+    if (done !== total)
+      throw new Error(`${done} of ${total} lines read translated.`);
+    await page.click("Translation");
+    // The stage tab also names its state, such as "Completed".
+    await page.click(/^3\s*Translate/);
+    await page.click("Maps & events");
+    const row = await until("Map001.json's row", () => fileRow("Map001.json"));
+    if (!/11 \/ 11 Applied/.test(row))
+      throw new Error(`Map001.json reads "${row}".`);
+    await page.click("Project");
+    await page.waitText(
+      `${total.toLocaleString("en-US")} / ${total.toLocaleString("en-US")}`,
+    );
+    await page.shot("project");
+    page.close();
+    page = undefined;
+    await closeApp();
+    diagnostics();
+  });
+}
+try {
+  await (upgradeFrom ? upgradeJourney(upgradeFrom) : liveJourney());
 } catch (error) {
   failures.push(`${current}: ${message(error)}`);
   // Annotations show on the run page without signing in, unlike logs.

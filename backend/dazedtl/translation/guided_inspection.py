@@ -87,11 +87,6 @@ class RunInspection:
             ) == len(job["outputs"])
             workflow = plan.get("workflow") or {}
             job["logicalPhase"] = workflow.get("phase")
-            if workflow.get("phase") == "dialogue":
-                # Maps & events sends comment lines only with Comment text on.
-                job["commentText"] = (workflow.get("engine_options") or {}).get(
-                    "CODE408"
-                ) is True
             if job.get("mode") == "estimate":
                 from dazedtl.compatibility.process_view import nothing_to_translate
 
@@ -362,7 +357,7 @@ class RunInspection:
             )
             return request_page(view, group, index)
 
-    def file_preview(self, project_id, name, offset=0, query=""):
+    def file_preview(self, project_id, name, offset=0, query="", left=False):
         _, native = self.guided.record(project_id)
         if name not in self.guided.supported_files(native):
             raise ValueError("Choose a supported file from this project.")
@@ -373,9 +368,25 @@ class RunInspection:
             (Path(native["data"]) / name).relative_to(Path(native["source"])).as_posix()
         )
         runtime = project_path(native["source"], relative, exists=False)
-        from .file_preview import preview
+        from .file_preview import lines_left, preview
 
-        return preview(inputs, name, runtime, offset, query)
+        if not left:
+            return preview(inputs, name, runtime, offset, query)
+        from . import comment_text
+
+        return lines_left(
+            inputs,
+            name,
+            runtime,
+            "database"
+            if name in self.guided.backend.phase_files(native, "database")
+            else "dialogue",
+            comment_text.markers(native["source"])
+            if native["phase1_comments"]
+            else frozenset(),
+            offset,
+            query,
+        )
 
     def name_results(self, project_id, run_id, offset=0):
         _, native = self.guided.record(project_id)

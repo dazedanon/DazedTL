@@ -1,14 +1,24 @@
-import { useEffect, useRef, useState } from "react";
-import type { FileTextPreview } from "../../api/contracts";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { FileTextPreview, FileTextRow } from "../../api/contracts";
 import { Button } from "../../ui/Button";
 import { Message } from "../../ui/Feedback";
 import { HelpPopover } from "../../ui/HelpPopover";
 import { useOnChange } from "../../state/useOnChange";
 import { useRead } from "../../state/useRead";
+import { textLocation } from "./textLocation";
+
+const reasons: Record<NonNullable<FileTextRow["reason"]>, string> = {
+  untranslated: "Never translated",
+  help: "Choice help",
+  note: "Refusal note",
+};
 
 export function WorkingFileText({
   source,
   read,
+  tools,
+  empty,
+  noun = "field",
 }: {
   /** Identifies what `read` reads; a new source reads again from the start. */
   source: string;
@@ -17,11 +27,23 @@ export function WorkingFileText({
     query: string,
     refresh: boolean,
   ) => Promise<FileTextPreview>;
+  /** Controls placed before the search, such as which text is shown. */
+  tools?: ReactNode;
+  /** What an empty file says, when not "no changed text". */
+  empty?: string;
+  /** What each row is, for the page count. */
+  noun?: string;
 }) {
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
   const [offsets, setOffsets] = useState([0]);
   const [refresh, setRefresh] = useState(0);
+  // Another source, such as another view of the file, starts on its first page.
+  const [shownSource, setShownSource] = useState(source);
+  if (shownSource !== source) {
+    setShownSource(source);
+    setOffsets([0]);
+  }
   const content = useRef<HTMLDivElement>(null);
   const readRefresh = useRef(0);
   const offset = offsets.at(-1)!;
@@ -56,6 +78,7 @@ export function WorkingFileText({
           setOffsets([0]);
         }}
       >
+        {tools}
         <input
           type="search"
           aria-label="Find text in this file"
@@ -90,7 +113,7 @@ export function WorkingFileText({
           <p className="muted">
             {query
               ? "No text fields match this search."
-              : "No changed or unmatched text fields to show."}
+              : empty || "No changed or unmatched text fields to show."}
           </p>
         ) : (
           page && (
@@ -121,7 +144,11 @@ export function WorkingFileText({
                       </td>
                     )}
                     <td>
-                      <small>{row.location}</small>
+                      <small>
+                        {row.reason
+                          ? `${textLocation(row.location)} · ${reasons[row.reason]}`
+                          : row.location}
+                      </small>
                       {row.text}
                       {row.truncated && (
                         <small>Long field shortened for display.</small>
@@ -156,8 +183,7 @@ export function WorkingFileText({
         {page && page.total > 0 && (
           <span>
             {page.offset + 1}–{page.offset + page.rows.length} of{" "}
-            {page.total.toLocaleString()}{" "}
-            {page.total === 1 ? "field" : "fields"}
+            {page.total.toLocaleString()} {page.total === 1 ? noun : noun + "s"}
           </span>
         )}
         {page && (page.nextOffset != null || offsets.length > 1) && (

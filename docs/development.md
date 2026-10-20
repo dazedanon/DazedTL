@@ -53,16 +53,20 @@ Format with `node scripts/format.mjs`; it applies Prettier and Ruff defaults and
 
 `node scripts/e2e.mjs` installs the checkout the way a user's downloaded ZIP is installed and drives the running app through a translation.
 It copies the files Git would commit, including uncommitted changes, into a doubled `DazedTL-main (1)` folder and runs START with a PATH that has no Node or Python, and on Windows no Git.
-The profile and a copy of the [fixture game](../tests/fixtures/mz-game) sit in folders with spaces and Japanese names.
+The profile and a copy of the [fixture game](../tests/fixtures/mz-game) sit in folders with spaces and Japanese names; the copy gains a menu whose choices show help from event comments, as MPP_ChoiceEX shows it, so Comment text comes on.
 Through the window it opens the game, runs Set up, translates and applies the database and the maps with Live translation against a local stand-in provider, stands in for the assistant's Event text sources investigation and translates and applies Other event text, opens Check and runs the Text QA assistant's playtest through the project helper, which checks the files and reports that the fixture game has no engine to play, and builds a patch ZIP.
 It then builds a clean game ZIP and checks that its one top folder takes the archive's name, that it holds the translated game and that notes and a spellcheck folder added beside the game stay out.
 Finally it closes the window and expects every app process to exit with no failures in the app's diagnostics, and starts again to check that setup does not repeat.
 Logs, screenshots and the app's diagnostics land in `logs` inside the work folder; `--work <empty folder>` chooses it.
+
+`--upgrade-from <tag>` runs the upgrade test instead: the release at that tag runs its own live test on the same game in `previous` inside the work folder, then this checkout is left for that install's launcher as a signed update, under a key made for the test that the install trusts.
+START applies it, and the test checks that every Database files and Maps & events file reads its lines from the file, the choice help included, translates what is left, and expects the project to read every line translated and applied.
+The previous release's own logs land in `previous/logs`.
 On Linux the app needs a display: CI runs it under `xvfb-run`, and on a desktop a private virtual compositor keeps its window off yours, such as `dbus-run-session -- kwin_wayland --virtual --xwayland --no-lockscreen --socket e2e` with `WAYLAND_DISPLAY=e2e`.
 Without `--no-lockscreen` it starts locked while your own session is locked, and the live test fails at its first screenshot.
 It adds two X displays; set `DISPLAY` to the lower-numbered one, such as `:2` beside `:3`, since KWin keeps the other for its own startup.
 
-[CI](../.github/workflows/ci.yml) runs the build checks, the behavior tests, the [previous-release QA check](#previous-release-qa-check) and the live test on Windows and Linux for every pushed branch, every pull request and once a week, and attaches each live test's logs to the run.
+[CI](../.github/workflows/ci.yml) runs the build checks, the behavior tests, the [previous-release QA check](#previous-release-qa-check), the live test and the upgrade test from the latest earlier stable release on Windows and Linux for every pushed branch, every pull request and once a week, and attaches their logs to the run.
 GitHub's Windows images include the Visual C++ runtime and other tools a fresh Windows lacks, so a change to what setup downloads or unpacks still needs a check on a fresh Windows.
 
 ## Previous-release QA check

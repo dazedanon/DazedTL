@@ -1,6 +1,7 @@
 # Runs the build checks, behavior tests and previous-release QA check, then
 # installs DazedTL the way a downloaded ZIP is installed and drives it through
-# a translation, on Windows and Linux. See "Checks", "Previous-release QA
+# a translation, on Windows and Linux, and updates the previous release's
+# translated project to this commit. See "Checks", "Previous-release QA
 # check" and "Live test" in docs/development.md.
 name: CI
 
@@ -94,4 +95,47 @@ jobs:
         with:
           name: live-test-${{ matrix.os }}
           path: ${{ runner.temp }}/e2e/logs
+          if-no-files-found: ignore
+
+  upgrade:
+    name: Upgrade test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, ubuntu-24.04]
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v7
+        with:
+          # The previous release's tag and files.
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+      - name: Previous release
+        id: previous
+        shell: bash
+        run: >-
+          echo "tag=$(git describe --tags --abbrev=0 --match 'v[0-9]*'
+          --exclude '*-*' HEAD^)" >> "$GITHUB_OUTPUT"
+      - name: Upgrade test
+        if: runner.os == 'Windows'
+        run: >-
+          node scripts/e2e.mjs --upgrade-from ${{ steps.previous.outputs.tag }}
+          --work "$env:RUNNER_TEMP\upgrade"
+      - name: Upgrade test
+        if: runner.os == 'Linux'
+        run: >-
+          xvfb-run --auto-servernum --server-args="-screen 0 1600x1000x24"
+          node scripts/e2e.mjs --upgrade-from ${{ steps.previous.outputs.tag }}
+          --work "$RUNNER_TEMP/upgrade"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: upgrade-test-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/upgrade/logs
+            ${{ runner.temp }}/upgrade/previous/logs
           if-no-files-found: ignore

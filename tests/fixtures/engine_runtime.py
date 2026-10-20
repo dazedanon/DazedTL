@@ -10,6 +10,7 @@ from copy import deepcopy
 from importlib import import_module
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import patch
 
 root, temporary = map(Path, sys.argv[1:])
@@ -3004,6 +3005,221 @@ try:
         )
         with patch.dict(os.environ, environment, clear=True):
             anthropic.Anthropic(api_key="run-key")
+    # Guided reads each file's lines from the file (translation/file_lines.py)
+    # and must agree with what the engine sends: a line it counts that the
+    # engine never sends would read unfinished forever. A real pass over the
+    # fixture games, answered like the live test's stand-in, sends text for
+    # exactly the files with lines left and leaves none, without changing
+    # which lines count; a second pass over its own output sends nothing.
+    with app.backend.context():
+        from dazedtl.compatibility.worker_policy import configure_states
+        from dazedtl.translation import file_lines
+        from modules import rpgmakermvmz as parser
+        from util import extensions
+        from util.rpgmaker_markers import comment_markers
+        from util.rpgmaker_profiles import DB_FILES, PHASE0_CONFIG, PHASE1_CONFIG
+
+        # Japanese letters are the engine's own range without its punctuation
+        # and brackets, which translations keep in labels such as 【Name】.
+        punctuation = {
+            0x3000,
+            *range(0x3002, 0x3005),
+            0x3008,
+            0x3009,
+            *range(0x300C, 0x3040),
+            *range(0xFF61, 0xFF66),
+        }
+        engine_japanese = re.compile(parser.LANGREGEX)
+        for code in range(0x10000):
+            letter = code not in punctuation and bool(
+                engine_japanese.fullmatch(chr(code))
+            )
+            assert file_lines.japanese(chr(code)) == letter, hex(code)
+        # A refusal note an older run saved in a database note tag, which the
+        # database pass translates, is a line left.
+        noted = [
+            None,
+            {
+                "name": "Potion",
+                "note": "<SG説明:[Not translated]>",
+                "_original": {"name": "薬", "note": "<SG説明:薬です>"},
+            },
+        ]
+        assert file_lines.count("Items.json", noted, "database", frozenset()) == {
+            "lines": 2,
+            "translated": 1,
+            "notes": 1,
+        }, file_lines.count("Items.json", noted, "database", frozenset())
+        # A control code's argument names a plugin's asset, never text: the
+        # engine sends such a line again on every pass, but it is translated.
+        assert not file_lines.japanese(r"\SA[びっくり]Hello") and file_lines.japanese(
+            r"\SA[びっくり]こんにちは"
+        )
+        # A name box counts the name the engine translates, not what follows.
+        for value in (
+            "村長",
+            "【開放条件】\n・レベル：1",
+            r"\C[16]【スキル初期化】\C[0]" + "\n説明",
+            r"ミカ\C[2]",
+            "",
+        ):
+            assert file_lines.speaker_name(value) == parser._101_speaker_name(value), (
+                value
+            )
+
+        def stand_in(value):
+            text = str(value)
+            prefix = re.match(r"^(\[[^\n]*?\]:\s*)", text)
+            body = text[prefix.end() :] if prefix else text
+            kept = re.sub(r"\s+", " ", engine_japanese.sub(" ", body)).strip()
+            return (prefix[1] if prefix else "") + f"Tested {len(text)} {kept}".strip()
+
+        sent = []
+
+        def answer_all(text, *_args, **_kwargs):
+            values = list(text) if isinstance(text, list) else [text]
+            sent.extend(values)
+            answers = [stand_in(value) for value in values]
+            return [answers if isinstance(text, list) else answers[0], [0, 0]]
+
+        def engine_pass(file, document, vxace):
+            kind = str(parser.mvmz_file_kind(file))
+            parsers = {
+                "Map": parser.parseMap,
+                "CommonEvents": parser.parseCommonEvents,
+                "Troops": parser.parseTroops,
+                "System": parser.parseSystem,
+                "States": parser.parseSS,
+            }
+            options: dict[str, Any] = {
+                "translateAI": extensions.point(answer_all),
+                "VXACE": vxace,
+                "FIXTEXTWRAP": True,
+                **(
+                    PHASE0_CONFIG
+                    if file in DB_FILES
+                    else {**PHASE1_CONFIG, "CODE408": True}
+                ),
+            }
+            sent.clear()
+            with (
+                patch.multiple(parser, **options),
+                patch.dict(os.environ, {"DAZED_GAME_ROOT": str(lines_game)}),
+            ):
+                if kind in parsers:
+                    result = parsers[kind](document, file)
+                else:
+                    result = parser.parseNames(document, file, kind)
+                assert result[2] is None, file
+            return [value for value in sent if file_lines.japanese(value)]
+
+        lines_game = temporary / "lines-game"
+        # The parser logs and saves progress beside the files it reads.
+        for folder in ("data", "log", "translated"):
+            (lines_game / folder).mkdir(parents=True)
+
+        def step(code, *parameters):
+            return {"code": code, "indent": 0, "parameters": list(parameters)}
+
+        # What the fixtures lack: a name box with more after its name, a 401
+        # label the engine reads as a speaker, a message split at a code,
+        # scrolling text, and choice help with Comment text on.
+        page = [
+            step(101, "", 0, 0, 2, "【開放条件】\n・レベル：1"),
+            step(401, r"\C[16]【チュートリアル】\C[0]"),
+            step(401, "基本的な操作を説明します。"),
+            step(101, "", 0, 0, 2, "ミカ"),
+            step(401, "前半の文です。"),
+            step(401, r"\C[2]後半の文です。"),
+            step(105, 2, False),
+            step(405, "遠い昔の物語。"),
+            step(405, "村は静かだった。"),
+            step(102, ["森", "村"], 1, 0, 2, 0),
+            step(402, 0, "森"),
+            step(108, "選択肢ヘルプ"),
+            step(408, "森へ向かいます。"),
+            step(402, 1, "村"),
+            step(108, "選択肢ヘルプ"),
+            step(408, "村に残ります。"),
+            step(404),
+            step(0),
+        ]
+        (lines_game / "data/Map002.json").write_text(
+            json.dumps(
+                {
+                    "displayName": "森の入口",
+                    "events": [None, {"id": 1, "pages": [{"list": page}]}],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        markers = comment_markers(())
+        configure_states(
+            {"engine": "MVMZ"},
+            temporary,
+            {
+                "choiceCollection": CHOICE_COLLECTION,
+                "speakerContext": SPEAKER_CONTEXT,
+                "sameLineSpeakers": SAME_LINE_SPEAKERS,
+                "pagePacking": PAGE_PACKING,
+            },
+        )
+        fixtures = Path(__file__).resolve().parent
+        directory = os.getcwd()
+        os.chdir(lines_game)
+        try:
+            for folder, vxace in (
+                (fixtures / "mz-game/data", False),
+                (fixtures / "ace/ace_json", True),
+                (lines_game / "data", False),
+            ):
+                for path in sorted(folder.glob("*.json")):
+                    file = path.name
+                    phase = "database" if file in DB_FILES else "dialogue"
+                    if phase == "dialogue" and parser.mvmz_file_kind(file) not in {
+                        "Map",
+                        "CommonEvents",
+                        "Troops",
+                    }:
+                        continue
+                    document = json.loads(path.read_text("utf-8-sig"))
+                    translated = deepcopy(document)
+                    before = file_lines.count(file, document, phase, markers)
+                    sends = engine_pass(file, translated, vxace)
+                    after = file_lines.count(file, translated, phase, markers)
+                    # A translated map name's source is the original's name.
+                    if after.pop("mapName", None) is not None and file_lines.japanese(
+                        document.get("displayName")
+                    ):
+                        after["lines"] += 1
+                        after["translated"] += 1
+                    left = before["lines"] - before["translated"]
+                    report = (folder.name, file, before, after, sends)
+                    assert (left > 0) == bool(sends), report
+                    assert after == {
+                        "lines": before["lines"],
+                        "translated": before["lines"],
+                    }, (
+                        report,
+                        file_lines.left(file, translated, phase, markers),
+                    )
+                    assert not engine_pass(file, translated, vxace), report
+            # The help counts only while Comment text translates it.
+            help_map = json.loads((lines_game / "data/Map002.json").read_text("utf-8"))
+            assert file_lines.count("Map002.json", help_map, "dialogue", markers) == {
+                "lines": 8,
+                "translated": 0,
+                "help": 2,
+            }
+            assert (
+                file_lines.count("Map002.json", help_map, "dialogue", frozenset())[
+                    "lines"
+                ]
+                == 6
+            )
+        finally:
+            os.chdir(directory)
     for module_name, module in list(sys.modules.items()):
         if module_name.startswith(
             ("util.", "modules.", "desktop.backend.")
