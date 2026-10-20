@@ -7,11 +7,12 @@
 //   node scripts/scenario.mjs app|stop|clean --work <dir>
 //   node scripts/scenario.mjs provider --work <dir> '<mode JSON>'
 //   node scripts/scenario.mjs drive --work <dir> text|click|call|eval|shot ...
+//   node scripts/scenario.mjs live [e2e.mjs options]
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { root, python } from "./dependencies.mjs";
 import { Page, until, message } from "./testkit/cdp.mjs";
 import { freePort, startApp, stopApp, running } from "./testkit/app.mjs";
@@ -333,7 +334,27 @@ try {
     );
     console.log(`The stand-in now answers with ${JSON.stringify(mode)}.`);
   } else if (command === "drive") await drive(readState(option("--work")));
-  else await build(command);
+  else if (command === "live") {
+    // The live test in a private display of its own, so its window stays off
+    // the desktop.
+    const display =
+      process.platform === "linux"
+        ? await startDisplay({
+            name: `dazedtl-live-${crypto.randomBytes(3).toString("hex")}`,
+            log: path.join(os.tmpdir(), "dazedtl-live-display.log"),
+          })
+        : undefined;
+    try {
+      const result = spawnSync(
+        process.execPath,
+        [path.join(root, "scripts/e2e.mjs"), ...args.slice(1)],
+        { stdio: "inherit", env: { ...process.env, ...display?.env } },
+      );
+      process.exitCode = result.status ?? 1;
+    } finally {
+      if (display) stopGroup(display.group);
+    }
+  } else await build(command);
 } catch (error) {
   console.error(message(error));
   process.exitCode = 1;

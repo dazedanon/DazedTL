@@ -96,6 +96,7 @@ It drives this checkout's app through the same steps a user takes, in a private 
 `node scripts/scenario.mjs drive --work <dir>` with `text`, `click <accessible name>`, `call <method> <params>`, `eval` or `shot <file>` drives it, and scripts import the same driver from [scripts/testkit/cdp.mjs](../scripts/testkit/cdp.mjs).
 `node scripts/scenario.mjs provider --work <dir> '<mode>'` changes how the stand-in answers, such as `{"stall":true}` or `{"refuse":["text"]}`; [its header](../scripts/testkit/provider.mjs) lists the modes.
 `node scripts/scenario.mjs clean --work <dir>` stops every process the scenario started and removes its folder.
+`node scripts/scenario.mjs live [--work <dir>] [--upgrade-from <tag>]` runs the [live test](#live-test) in a private KWin of its own.
 Scenario apps reach no provider outside the machine: the OpenAI preset points at the stand-in through `DAZEDTL_TEST_OPENAI_ENDPOINT`, and other requests go to a proxy that is not there.
 
 To add a scenario, add its steps to [scripts/testkit/scenarios.mjs](../scripts/testkit/scenarios.mjs), reusing the steps there and in [journey.mjs](../scripts/testkit/journey.mjs).
