@@ -1675,8 +1675,8 @@ main:has(> .page-layout--wide) {
   white-space: nowrap;
 }
 /* A line and its other versions, labelled in a column; the side a change
-   added reads in the success color, the side it removed in the error one,
-   with the changed words tinted. */
+   added reads in the success color, the side it removed in the error one.
+   When words are marked only they take the color, with a tint behind them. */
 .line-change {
   display: grid;
   grid-template-columns: var(--change-label-width) minmax(0, 1fr);
@@ -1693,11 +1693,16 @@ main:has(> .page-layout--wide) {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.line-change [data-change="added"] {
+.line-change [data-change="added"],
+.line-change ins {
   color: var(--color-success);
 }
-.line-change [data-change="removed"] {
+.line-change [data-change="removed"],
+.line-change del {
   color: var(--color-error-text);
+}
+.line-change dd[data-plain] {
+  color: inherit;
 }
 .line-change :is(ins, del) {
   padding: 0 var(--space-half);

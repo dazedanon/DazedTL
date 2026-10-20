@@ -17,3 +17,5 @@
 - **Maps & events:** choice help markers listed by a plugin are now found in a plugin list without a semicolon or with code after it, by translation and Text QA alike.
 - **Assistant-led:** choice help the assistant translates is now fitted to the game's Line widths like its other text.
 - **Text QA:** the playtest now matches an untranslated message it sees with the line it lists as never translated, and a message whose speaker name alone was translated counts as never translated.
+- **Text QA:** an applied correction now colors only the words it changed, instead of the whole new line, so an unchanged second row no longer looks changed.
+- **Playtest:** a placeholder glyph such as ◯ that the message window draws is now reported once per message, instead of once for the whole run.

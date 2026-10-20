@@ -456,8 +456,6 @@
     if (text.replace(/\s/g, "").length < 2 && !PLACEHOLDER.test(text)) return;
     const japanese = JAPANESE.test(text);
     if (!japanese && !PLACEHOLDER.test(text)) return;
-    const key = "draw " + sceneName() + " " + text.replace(/\d+/g, "#");
-    if (seen.has(key) || state.pending.some((row) => row.key === key)) return;
     const stack = new Error().stack;
     const help =
       state.help && bitmap === state.help.window.contents ? state.help : null;
@@ -482,6 +480,18 @@
       $gameMessage.isBusy()
         ? choiceSource(state.choices, text)
         : null;
+    // A glyph a message draws is one finding per message, as the same glyph
+    // in another command is a different line to fix; text no command holds
+    // is one finding per screen.
+    const data =
+      (help && help.source) || (message && message.source) || choice || null;
+    const key =
+      "draw " +
+      sceneName() +
+      " " +
+      (data ? `${data.file}#${data.pointer} ` : "") +
+      text.replace(/\d+/g, "#");
+    if (seen.has(key) || state.pending.some((row) => row.key === key)) return;
     state.pending.push({
       type: "japanese",
       key,
