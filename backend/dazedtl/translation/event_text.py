@@ -357,22 +357,23 @@ After saving, run `{command} --apply`. It validates the report and saves its rec
                 else None
             )
             # Applied findings keep describing the files they covered, since
-            # later edits to the game and its plugins are expected. Selecting
-            # files they did not cover, or a change to the installed parser
-            # definitions, still needs a new investigation.
+            # later edits to the game, its plugins and DazedTL's own handlers
+            # are expected. Only selecting files they did not cover needs a
+            # new investigation.
+            receipt = native.get(RECEIPT, {}).get("reportId")
+            applied = report is not None and receipt == digest(report)
             basis = (
                 request
-                if report is not None
-                and native.get(RECEIPT, {}).get("reportId") == digest(report)
-                and set(context["files"]) <= set(request["files"])
-                and context["definitions"] == request["definitions"]
+                if applied and set(context["files"]) <= set(request["files"])
                 else context
             )
             if request.get("fingerprint") != basis["fingerprint"]:
                 return {
                     **result,
                     "status": "stale",
-                    "message": "The event scope, source dependencies or installed handlers changed. Copy a refreshed investigation task.",
+                    "message": "The selection includes event files these findings did not cover. Copy a refreshed investigation task."
+                    if applied
+                    else "The event scope, source dependencies or installed handlers changed. Copy a refreshed investigation task.",
                 }
             if report is None:
                 return {

@@ -3421,10 +3421,11 @@ class GuidedTests(unittest.TestCase):
         self.native["engine_options"]["CODE356"] = False
         self.projects.get(self.identity)["phase"] = "advanced"
         quote = self.preview()
+        # A DazedTL update leaves applied findings current, but a quote made
+        # before it needs a new estimate.
         self.catalog["fingerprint"] = "changed-installed-parser"
-        self.assertEqual(
-            self.guided.event_text.status(self.identity, self.native)["status"], "stale"
-        )
+        findings = self.guided.event_text.status(self.identity, self.native)
+        self.assertEqual((findings["status"], findings["applied"]), ("ready", True))
         with self.assertRaises(ValueError):
             self.guided.execute(self.identity, quote["token"])
         self.assertEqual(self.started, [])

@@ -211,7 +211,16 @@ def _catalog(path, modified, changed, size):
                 "builtins": builtins,
             }
         )
-    return {"fingerprint": digest(raw), "source": str(path), "controls": controls}
+    # Findings depend on the registry and built-in handlers, not on the rest
+    # of the module, which engine fixes change in almost every release.
+    fingerprint = digest(
+        {
+            "handlers": handlers,
+            "patterns": patterns,
+            "builtins": {row["key"]: row["builtins"] for row in controls},
+        }
+    )
+    return {"fingerprint": fingerprint, "source": str(path), "controls": controls}
 
 
 def catalog(source):

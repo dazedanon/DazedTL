@@ -783,7 +783,7 @@ Missing references remain listed so they can be removed or replaced.
 Earlier native reference imports and their translation matching remain intact.
 Context's Event text sources holds the investigation and source choice views, so its sources are settled before the [whole-game estimate](#whole-game-estimate) prices them; Translate's Other event text keeps translation and comparisons, and views saved by earlier versions open the task that holds them now.
 Event text sources is complete once current findings are saved or a source is chosen by hand.
-Its [investigation contract](../backend/dazedtl/translation/event_text.py) binds findings to selected event files, original data and plugin dependencies, and installed parser definitions.
+Its [investigation contract](../backend/dazedtl/translation/event_text.py) binds findings to selected event files, original data and plugin dependencies, and the installed parser's registry and built-in handlers, not the rest of the engine module, which most releases change.
 The assistant applies a current report through the project helper's `event-text --apply`, and Use recommendations does the same in Source choices; either saves the recommendations and the consumed report ID in one write, and running work or a pending option draft refuses it, as for speaker findings.
 Mixed or uncertain recommendations stay off; source choices need no separate review, and each frozen run records its source settings and report.
 Code 122 requires explicit starting IDs, registered 357 and 355/655 selectors use exact installed identifiers, and 356 remains a single coarse switch.
@@ -857,7 +857,7 @@ It is a [StatusPanel](../app/src/ui/StatusPanel.tsx), the panel any work that is
 The panel reads Needs review only while a result waits for the user's decision in that panel; a result that saved itself reads Done, or Applied once in the game, and one waiting only to go into the game reads Ready to apply.
 Findings that inform a later step read Done once saved, and that step holds any choices they leave, as Event text sources' Source choices do.
 Outdated marks a saved result whose basis changed before it went into the game; edits after a task's result is applied are expected and leave it as it was.
-Event text findings applied as source choices therefore stay current until the selection reaches event files they did not cover or the installed parser definitions change, a plugin file with nothing left to apply keeps its state until a copied task rescans every file, and Text QA reads Applied once its own task's corrections are applied.
+Event text findings applied as source choices therefore stay current, through DazedTL updates too, until the selection reaches event files they did not cover, a plugin file with nothing left to apply keeps its state until a copied task rescans every file, and Text QA reads Applied once its own task's corrections are applied.
 The task's main copy action stays in its footer; an optional companion task, such as layout measurement, keeps its own on its result row.
 Each copy reply names its handoff: the task's kind, request id and the result files it expects back.
 A task whose assistant keeps working after its first results also names the file it saves last, and reads Waiting until that file is saved after the copy; Names & glossary ends with its measured line widths, which its prompt saves last even when nothing could be measured.

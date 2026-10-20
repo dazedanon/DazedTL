@@ -805,6 +805,18 @@ def parse(codeList, i, headerString, jaString):
             self.assertEqual(rows["CODE357"]["choices"][0]["id"], "Case/Plugin")
             self.assertIn("message", rows["CODE357"]["choices"][0]["details"])
             self.assertEqual(rows["CODE356"]["choices"], [])
+            # Engine fixes elsewhere in the module leave findings current; a
+            # new registry entry does not.
+            module = root / "modules/rpgmakermvmz.py"
+            before = catalog(root)["fingerprint"]
+            module.write_text(module.read_text() + "\ndef fixed():\n    pass\n")
+            self.assertEqual(catalog(root)["fingerprint"], before)
+            module.write_text(
+                module.read_text().replace(
+                    '"Case/Plugin"', '"Case/Plugin": (["message"], "font"), "New"'
+                )
+            )
+            self.assertNotEqual(catalog(root)["fingerprint"], before)
 
     def test_preparation_preview_keeps_native_guards_and_public_configuration(self):
         from dazedtl.compatibility.dazedmtl import ExistingBackend
