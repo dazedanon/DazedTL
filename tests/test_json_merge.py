@@ -51,6 +51,21 @@ class JsonMergeTests(unittest.TestCase):
             [line("今日はいい天気じゃな。"), translated[0], line("頼んだぞ、ミカ。")],
         )
 
+    def test_a_moved_help_line_keeps_its_translation_and_the_rows_it_owns(self):
+        # A comment line records the rows its translation owns beside its
+        # source; both are notes, not game data, and carry over together.
+        help_line = {"code": 408, "indent": 0, "parameters": ["所要時間:20分"]}
+        translated = {
+            **help_line,
+            "parameters": ["Takes twenty\nminutes."],
+            "_original": "所要時間:20分",
+            "_rows": 1,
+        }
+        official = {**help_line, "indent": 1}
+        self.assertEqual(
+            merged([help_line], [translated], [official]), [{**translated, "indent": 1}]
+        )
+
     def test_a_record_keeps_the_fields_whose_translation_carries_over(self):
         # Field-keyed notes follow their fields; the release's other changes,
         # such as a price, come through.

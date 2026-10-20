@@ -129,10 +129,36 @@ def find(document, original=lambda: None):
 def restore(document, original=lambda: None):
     """Puts each saved refusal note's source back in place, so the engine
     sends the line again; returns how many lines it restored."""
-    notes = find(document, original)
+    from util import rpgmaker_blocks as blocks
+
+    read = []
+
+    def source_document():
+        if not read:
+            read.append(original())
+        return read[0]
+
+    notes = find(document, source_document)
     added = []
     for note in notes:
         first = note.paths[0]
+        if note.code == 408:
+            # A comment's translation keeps the rows it owns, read against
+            # the original game file where it recorded none, so the next run
+            # writes over those and leaves the game's own rows.
+            listed, index = resolve(document, first[:-3]), first[-3]
+            if blocks.recorded(listed[index]) is None:
+                try:
+                    theirs = resolve(source_document(), first[:-3])
+                except KeyError, IndexError, TypeError:
+                    theirs = None
+                listed[index][blocks.ROWS] = len(
+                    blocks.owned(
+                        listed,
+                        index,
+                        original=theirs if isinstance(theirs, list) else None,
+                    )
+                )
         parent, key = resolve(document, first[:-1]), first[-1]
         if note.transform != "identity":
             match = QUOTED.search(parent[key])

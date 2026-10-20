@@ -4,7 +4,7 @@ import json
 import os
 import re
 import util.dazedwrap as dazedwrap
-from util import rpgmaker_rewrap
+from util import rpgmaker_blocks, rpgmaker_rewrap
 from util import rpgmaker_script_strings as script_strings
 import threading
 import time
@@ -1108,24 +1108,13 @@ def _text_group_end(codeList, start: int, allowed_codes: tuple[int, ...]) -> int
     return end
 
 
-def _code408_has_supported_marker(codeList, index: int) -> bool:
-    """Return whether a 408 belongs to a known player-facing comment block."""
-    marker_index = index - 1
-    while marker_index >= 0:
-        command = codeList[marker_index]
-        if command.get("code") == 408:
-            marker_index -= 1
-            continue
-        if command.get("code") == -1 and not command.get("parameters"):
-            marker_index -= 1
-            continue
-        break
-
-    if marker_index < 0 or codeList[marker_index].get("code") != 108:
-        return False
-
-    marker = _param_source(codeList[marker_index], 0).strip()
-    return marker in _code408_markers()
+def _code408_block(codeList, index: int):
+    """The comment holding the comment line (408) at *index* when players
+    read it, under a marker the game's plugins show, or None."""
+    block = rpgmaker_blocks.block_at(codeList, index)
+    if block is None or not block.shown(_code408_markers()):
+        return None
+    return block if block.kind in (rpgmaker_blocks.HELP, rpgmaker_blocks.COMMENT) else None
 
 
 def _code408_markers() -> frozenset[str]:
@@ -1139,37 +1128,30 @@ def _code408_markers() -> frozenset[str]:
         return _CODE408_MARKERS_CACHE[1]
 
 
-def _code408_group_end(codeList, start: int) -> int:
-    """The last comment line (408) translated with the one at *start*. A
-    translated line goes on over the lines its translation was written to,
-    which hold no translation of their own and no Japanese; under JOIN408 an
-    untranslated line takes the untranslated lines after it."""
-    end = start
-    if _scalar_original(codeList[start]) is not None:
-        while (
-            end + 1 < len(codeList)
-            and codeList[end + 1].get("code") == 408
-            and "_original" not in codeList[end + 1]
-            and not _has_japanese_text(_param_current(codeList[end + 1], 0))
-        ):
-            end += 1
-        return end
+def _code408_group(codeList, block, start: int) -> tuple[int, ...] | None:
+    """The comment lines (408) translated with the one at *start*: the rows a
+    translation starting there owns, which it writes again; under JOIN408 an
+    untranslated line and the untranslated lines after it; otherwise the line
+    alone. None for a line a translation before it owns, such as
+    Assistant-led's, kept on the comment's 108 (see rpgmaker_blocks.owned)."""
+    part = block.part(start)
+    if part is None:
+        return None
+    if part.translated:
+        return part.rows if part.rows[0] == start and not part.on_head else None
     if JOIN408 is not True:
-        return start
-    for index in range(start + 1, _text_group_end(codeList, start, (408,)) + 1):
-        if "_original" in codeList[index]:
-            break
-        end = index
-    return end
+        return (start,)
+    end = _text_group_end(codeList, start, (408,))
+    return tuple(index for index in part.rows if start <= index <= end)
 
 
 def _code408_lines(text: str, source: str, face: bool = False) -> list[str]:
     """A comment's translation as the comment lines (408) plugins show one
     per row, wrapped like its Japanese to the message window, beside a face
     when the message before its choice has one (see
-    rpgmaker_rewrap.choice_help_face)."""
+    rpgmaker_blocks.help_face)."""
     if FIXTEXTWRAP is True:
-        text = rpgmaker_rewrap.wrap_message(
+        text = rpgmaker_rewrap.wrap_help(
             text, FACEWIDTH if face else WIDTH, source=source
         )
     return [line for line in text.split("\n") if line.strip()] or [text]
@@ -1184,23 +1166,17 @@ def _code408_progress_units(codeList) -> int:
     index = 0
     while index < len(codeList):
         command = codeList[index]
-        if not command or command.get("code") != 408:
+        if not command or command.get("code") != 408 or not command.get("parameters"):
             index += 1
             continue
-        if not _code408_has_supported_marker(codeList, index):
+        block = _code408_block(codeList, index)
+        group = _code408_group(codeList, block, index) if block else None
+        if group is None or not _param_source(command, 0).strip():
             index += 1
             continue
-        if not command.get("parameters"):
-            index += 1
-            continue
-        if not _param_source(command, 0).strip():
-            index += 1
-            continue
-
-        group_end = _code408_group_end(codeList, index)
-        if _text_needs_translation(_group_current(codeList, index, group_end)):
+        if _text_needs_translation(_group_current(codeList, group[0], group[-1])):
             count += 1
-        index = group_end + 1
+        index = group[-1] + 1
     return count
 
 
@@ -5401,11 +5377,11 @@ def _searchCodes(page, pbar, jobList, filename):
                 # A 108 starts an RPG Maker comment and each following 408
                 # continues it. Translate only blocks whose 108 marker identifies
                 # a supported player-facing use.
-                if not _code408_has_supported_marker(codeList, i):
-                    i += 1
-                    continue
-
-                if not codeList[i].get("parameters"):
+                block408 = (
+                    _code408_block(codeList, i) if codeList[i].get("parameters") else None
+                )
+                group408 = _code408_group(codeList, block408, i) if block408 else None
+                if group408 is None:
                     i += 1
                     continue
 
@@ -5419,19 +5395,17 @@ def _searchCodes(page, pbar, jobList, filename):
                 # wrapped like its Japanese, as plugins read them; JOIN408
                 # translates its lines as one text. The first line keeps the
                 # Japanese of them all.
-                groupEnd408 = _code408_group_end(codeList, i)
                 if _scalar_original(codeList[groupStart408]) is None:
                     rawSource = "\n".join(
                         source
                         for source in (
-                            _param_source(codeList[index], 0)
-                            for index in range(groupStart408, groupEnd408 + 1)
+                            _param_source(codeList[index], 0) for index in group408
                         )
                         if source.strip()
                     )
-                i = groupEnd408
+                i = group408[-1]
                 if not _text_needs_translation(
-                    _group_current(codeList, groupStart408, groupEnd408)
+                    _group_current(codeList, group408[0], group408[-1])
                 ):
                     i += 1
                     continue
@@ -5445,27 +5419,11 @@ def _searchCodes(page, pbar, jobList, filename):
                 elif len(list408) > 0:
                     translatedText = list408.pop(0)
 
-                    lines = _code408_lines(
-                        translatedText,
-                        rawSource,
-                        rpgmaker_rewrap.choice_help_face(codeList, groupStart408),
-                    )
-                    slots = range(groupStart408, groupEnd408 + 1)
-                    for line, index in zip(lines, slots):
-                        codeList[index]["parameters"] = [line]
-                    # Lines it no longer needs go when the list is written.
-                    for index in slots[len(lines) :]:
-                        codeList[index]["parameters"] = []
-                        codeList[index]["code"] = -1
-                    indent = codeList[groupEnd408].get("indent", 0)
-                    for extra, line in enumerate(lines[len(slots) :], 1):
-                        codeList.insert(
-                            groupEnd408 + extra,
-                            {"code": 408, "indent": indent, "parameters": [line]},
-                        )
-                    i = groupEnd408 + max(0, len(lines) - len(slots))
-
+                    lines = _code408_lines(translatedText, rawSource, block408.face)
+                    # Over the lines it owns, adding and removing none.
                     _apply_original(codeList[groupStart408], rawSource)
+                    used = rpgmaker_blocks.write_help(codeList, block408, group408, lines)
+                    i = groupStart408 + used - 1
 
             ## Event Code: 108 (Script)
             if "code" in codeList[i] and (codeList[i]["code"] == 108) and CODE108 is True:

@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Any
 from collections import Counter
 
+from util import rpgmaker_blocks as blocks
+
 SCHEMA = "rpgmaker-qa-manifest-v1"
 EXTRACTOR = "dazedtl-rpgmaker-qa-extractor-v1"
 PATH_GRAMMAR = "rfc6901-json-pointer-v1"
@@ -302,10 +304,16 @@ def _speaker(command_list: list[Any], index: int, code: int) -> dict[str, str]:
 def _choice_help(record: dict[str, Any], command_list: list[Any], index: int) -> None:
     """Mark a comment line (408) that is a choice's help, which shows in the
     message window beside the face of the choice's message."""
-    from util.rpgmaker_rewrap import choice_help_branch, choice_help_face
+    if blocks.help_branch(command_list, index) is not None:
+        record["choice_help"] = {"face": blocks.help_face(command_list, index)}
 
-    if choice_help_branch(command_list, index) is not None:
-        record["choice_help"] = {"face": choice_help_face(command_list, index)}
+
+_ROW_MAPPINGS = {
+    401: "joined-contiguous-401",
+    405: "joined-contiguous-405",
+    408: "joined-contiguous-408",
+    108: "joined-comment-108-408",
+}
 
 
 def _live_mapping(
@@ -339,36 +347,14 @@ def _live_mapping(
         else:
             return None
         return [owner_path + ("parameters", index)], "direct"
-    if code in (401, 405, 408):
-        continuation_code = code
-        paths = [owner_path + ("parameters", 0)]
-        if command_list is not None and command_index is not None:
-            cursor = command_index + 1
-            while cursor < len(command_list):
-                following = command_list[cursor]
-                if (
-                    not isinstance(following, dict)
-                    or following.get("code") != continuation_code
-                ):
-                    break
-                if "_original" in following:
-                    break
-                paths.append(owner_path[:-1] + (cursor, "parameters", 0))
-                cursor += 1
-        return paths, f"joined-contiguous-{code}"
-    if code == 108:
-        paths = [owner_path + ("parameters", 0)]
-        if command_list is not None and command_index is not None:
-            cursor = command_index + 1
-            while cursor < len(command_list):
-                following = command_list[cursor]
-                if not isinstance(following, dict) or following.get("code") != 408:
-                    break
-                if "_original" in following:
-                    break
-                paths.append(owner_path[:-1] + (cursor, "parameters", 0))
-                cursor += 1
-        return paths, "joined-comment-108-408"
+    if code in blocks.ROW_CODES:
+        # The rows the translation owns (see rpgmaker_blocks.owned).
+        if command_list is None or command_index is None:
+            return [owner_path + ("parameters", 0)], _ROW_MAPPINGS[code]
+        rows = blocks.part_rows(command_list, command_index)
+        return [
+            owner_path[:-1] + (cursor, "parameters", 0) for cursor in rows
+        ], _ROW_MAPPINGS[code]
     if code == 355:
         paths = [owner_path + ("parameters", 0)]
         if command_list is not None and command_index is not None:
@@ -436,29 +422,9 @@ def _display_shape(code: int | None, classification: str) -> str:
     }.get(code, "event-command" if code is not None else classification)
 
 
-# Codes translation repeats at the start of every row of a message, such as
-# instant lines and an indent (see rpgmaker_rewrap._PER_LINE): fitting a row
-# to its window repeats them on each new row.
-_PER_LINE_RE = re.compile(
-    r"^(?:\\+a[clr](?![A-Za-z])|\\+>|\\+px\[\d+\])+ ?", re.IGNORECASE
-)
-
-
-def _row_codes(text: str) -> tuple[list[tuple[str, ...]], Counter]:
-    """*text*'s runtime codes with the ones each row starts with counted once
-    for a run of rows that start with the same ones: the row-start codes of
-    each run in order, and the other codes."""
-    runs: list[tuple[str, ...]] = []
-    others: Counter = Counter()
-    for row in re.split(r"\n|<br>", text):
-        if not row.strip():
-            continue
-        match = _PER_LINE_RE.match(row)
-        start = tuple(_RUNTIME_TOKEN_RE.findall(match.group(0))) if match else ()
-        if not runs or runs[-1] != start:
-            runs.append(start)
-        others.update(_RUNTIME_TOKEN_RE.findall(row[match.end():] if match else row))
-    return runs, others
+def _row_codes(text: str):
+    """*text*'s runtime codes counted per row (see rpgmaker_blocks.row_codes)."""
+    return blocks.row_codes(text, _RUNTIME_TOKEN_RE)
 
 
 def _runtime_tokens_match(source: str, live: str) -> bool:

@@ -14,9 +14,10 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from util import rpgmaker_window
+from util import rpgmaker_blocks, rpgmaker_window
 from util.playtest.checks import GROUP_TEXT_LIMIT, HELP_ROWS, static_checks
-from util.rpgmaker_markers import SUPPORTED_CODE408_MARKERS
+from util.rpgmaker_markers import comment_markers, data_plugins
+from util.rpgmaker_qa_preflight import pointer
 
 SCHEMA = "rpgmaker-playtest-report-v1"
 LAYOUT_SCHEMA = "rpgmaker-layout-check-v1"
@@ -120,6 +121,7 @@ def tour(
         return {"unavailable": str(missing)}
     first = TOUR[:-1] if standard else TOUR[:3]
     plan = {
+        "blocks": block_index(data, overlay),
         "stops": [{"id": stop_id, "title": title} for stop_id, title in first]
         + stops
         + [{"id": TOUR[-1][0], "title": TOUR[-1][1]}],
@@ -160,6 +162,54 @@ def tour(
         return {"unavailable": "The playtest window closed before it wrote its report."}
 
 
+_EVENT_FILES = ("CommonEvents.json", "Troops.json")
+
+
+def block_index(data: Path, overlay: dict[str, Path] | None = None) -> dict[str, Any]:
+    """The text blocks of every event command list the game plays, by file
+    and list pointer, for the tour to name what it sees as the static checks
+    do (see harness/page.js textBlocks). *overlay* holds files played in
+    place of the game's."""
+    markers = comment_markers(data_plugins(data))
+    files = {path.name: path for path in data.glob("*.json")}
+    # The web folder holds the data folder (see rpgmaker_window.web_root).
+    prefix = data.name
+    for relative, path in (overlay or {}).items():
+        if relative.startswith(prefix + "/") and "/" not in relative[len(prefix) + 1 :]:
+            files[relative[len(prefix) + 1 :]] = Path(path)
+    index: dict[str, Any] = {}
+    for name, path in sorted(files.items()):
+        if not (name in _EVENT_FILES or (name.startswith("Map") and name[3:-5].isdigit())):
+            continue
+        try:
+            document = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, UnicodeDecodeError, ValueError):
+            continue
+        lists: dict[str, list] = {}
+        for parts, commands in rpgmaker_blocks.command_lists(document):
+            found = [
+                [
+                    block.kind,
+                    -1 if block.head is None else block.head,
+                    block.rows[0],
+                    block.rows[-1],
+                    int(not any(
+                        part.translated and set(part.rows) & set(block.rows)
+                        for part in block.parts
+                    )),
+                    block.marker,
+                    int(block.shown(markers)),
+                ]
+                for block in rpgmaker_blocks.blocks(commands)
+                if block.rows and block.kind != rpgmaker_blocks.CHOICE
+            ]
+            if found:
+                lists[pointer(parts)] = found
+        if lists:
+            index[name] = lists
+    return index
+
+
 def _seen(event: dict[str, Any], titles: dict[str, str] | None = None) -> dict[str, Any]:
     """Where the tour saw something: its stop by title, screen, map and capture."""
     seen = {
@@ -177,6 +227,17 @@ def _identity(data: dict[str, Any] | None) -> str:
 def _within(pointer: str, parent: str) -> bool:
     """Whether a JSON pointer is *parent* or inside it."""
     return pointer == parent or pointer.startswith(parent + "/")
+
+
+def _holds(data: dict[str, Any], pointer: str) -> bool:
+    """Whether what the tour saw, a block of text rows or a value, holds the
+    value at *pointer* of its data file."""
+    if "last" not in data:
+        return _within(pointer, data["pointer"])
+    base, first = data["pointer"].rsplit("/", 1)
+    return any(
+        _within(pointer, f"{base}/{row}") for row in range(int(first), int(data["last"]) + 1)
+    )
 
 
 def merge(static: dict[str, Any], runtime: dict[str, Any], data_prefix: str) -> dict[str, Any]:
@@ -311,7 +372,7 @@ def merge(static: dict[str, Any], runtime: dict[str, Any], data_prefix: str) -> 
             listed = next(
                 (
                     row for row in never.get(f"{data_prefix}/{data['file']}", [])
-                    if _within(row[1]["pointer"], data["pointer"])
+                    if _holds(data, row[1]["pointer"])
                 ),
                 None,
             )
@@ -322,7 +383,8 @@ def merge(static: dict[str, Any], runtime: dict[str, Any], data_prefix: str) -> 
         target = next(
             (
                 problem for problem in problems
-                if identity and _within(problem.get("identity", ""), identity)
+                if identity and problem.get("identity", "").startswith(f"{data['file']}#")
+                and _holds(data, problem["identity"].split("#", 1)[1])
                 or problem["check"] in {"visible-text", "placeholder-glyph"}
                 and problem.get("text") and problem["text"] in event["text"]
             ),
@@ -339,7 +401,7 @@ def merge(static: dict[str, Any], runtime: dict[str, Any], data_prefix: str) -> 
             # read once comment text is on.
             "check": (
                 "untranslated-comment"
-                if comment and data["comment"].strip() in SUPPORTED_CODE408_MARKERS
+                if comment and data.get("shown")
                 else "seen-glyph" if event.get("glyph") else "seen-text"
             ),
             "file": (f"{data_prefix}/{event['data']['file']}" if event.get("data") else located.get("file", "")),

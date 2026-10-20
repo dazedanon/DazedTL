@@ -13,7 +13,10 @@ const page = fs.readFileSync(
 /** The release playtest's page script in a game made of the few engine
  * classes its hooks change, with one help window on screen and the game's
  * own `globals`, such as its map and message. */
-function game(globals: Record<string, unknown> = {}) {
+function game(
+  globals: Record<string, unknown> = {},
+  blocks: Record<string, unknown> = {},
+) {
   const listeners: Record<string, ((event: unknown) => void)[]> = {};
   let frame = 0;
   // Glyphs of 26-pixel text reach 6 pixels below their baseline.
@@ -136,7 +139,7 @@ function game(globals: Record<string, unknown> = {}) {
   const sent: { type: string; value: Record<string, unknown> }[] = [];
   const context: Record<string, unknown> = {
     dazedtlHarness: {
-      plan: () => ({ stops: [] }),
+      plan: () => ({ stops: [], blocks }),
       send: (type: string, value: Record<string, unknown>) =>
         sent.push({ type, value: structuredClone(value) }),
     },
@@ -289,23 +292,34 @@ test("the playtest names the event command whose text a window draws", async () 
     Window_Base,
     Window_Message,
     Window_ChoiceList,
-  } = game({
-    $dataMap: { events: [null, { id: 1, pages: [{ list }] }] },
-    $gameMap: {
-      mapId: () => 1,
-      _interpreter: interpreter,
-      events: () => [],
-      _commonEvents: [],
+  } = game(
+    {
+      $dataMap: { events: [null, { id: 1, pages: [{ list }] }] },
+      $gameMap: {
+        mapId: () => 1,
+        _interpreter: interpreter,
+        events: () => [],
+        _commonEvents: [],
+      },
+      $gameParty: { inBattle: () => false },
+      $gameTroop: {},
+      $gameMessage: {
+        allText: () => texts.join("\n"),
+        isBusy: () => true,
+        speakerName: () => "",
+        choices: () => ["見る", "Skip"],
+      },
     },
-    $gameParty: { inBattle: () => false },
-    $gameTroop: {},
-    $gameMessage: {
-      allText: () => texts.join("\n"),
-      isBusy: () => true,
-      speakerName: () => "",
-      choices: () => ["見る", "Skip"],
+    // The list's text blocks, as the playtest reads them before it plays.
+    {
+      "Map001.json": {
+        "/events/1/pages/0/list": [
+          ["message", 0, 1, 1, 0, "", 1],
+          ["help", 4, 5, 6, 1, "選択肢ヘルプ", 1],
+        ],
+      },
     },
-  });
+  );
   const message = show(new Window_Message());
   const choices = show(new Window_ChoiceList());
   // A map's HUD draws its own text while the message is open.
@@ -328,8 +342,10 @@ test("the playtest names the event command whose text a window draws", async () 
   const help = {
     file: "Map001.json",
     pointer: `${page}/5`,
+    last: 6,
     untranslated: true,
     comment: "選択肢ヘルプ",
+    shown: true,
   };
   assert.deepEqual(drawn, {
     見る: { file: "Map001.json", pointer: `${page}/2/parameters/0/0` },

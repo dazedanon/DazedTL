@@ -18,7 +18,10 @@ from typing import Any, Iterator
 
 from util import dazedwrap
 from util.game_settings import MESSAGE_ROWS_KEY, normalize_wrap_widths
+from util import rpgmaker_blocks as blocks
 from util import rpgmaker_script_strings as script_strings
+from util.rpgmaker_blocks import PER_LINE as _PER_LINE
+from util.rpgmaker_blocks import spread
 from util.rpgmaker_script_strings import BREAK
 
 
@@ -135,12 +138,11 @@ def over_width(text: str, width: int) -> bool:
 # Japanese the translation left as it is, which is never rewrapped: kana and
 # kanji. English uses the middle dot and the long vowel mark (\u30fb, \u30fc) as
 # bullets and dashes, so they alone do not make text Japanese.
-_JAPANESE = re.compile(r"[\u3040-\u30fa\u30fd-\u30ff\u3400-\u9fff]")
 
 
 def untranslated(text: str) -> bool:
     """Whether *text* still holds Japanese, which DazedTL never rewraps."""
-    return bool(_JAPANESE.search(text))
+    return blocks.japanese(text)
 
 
 def _translated(text: str) -> str:
@@ -169,9 +171,6 @@ def rendered_rows(text: str) -> int:
 
 # ------------------------------------------------------------------ wrapping
 
-# Codes translation repeats on every line of a message: centring, instant
-# lines and an indent.
-_PER_LINE = re.compile(r"^(?:\\+a[clr](?![A-Za-z])|\\+>|\\+px\[\d+\])+ ?", re.IGNORECASE)
 _LEADING_CODES = re.compile(r"^(?:\\+[A-Za-z]+\[[^\]\n]*\]|\\+[{}<>|.!^$])+")
 
 
@@ -376,6 +375,26 @@ def wrap_message(
     return prefix + result
 
 
+# A list item inside a row: an item mark after a space, past the codes
+# before it.
+_INLINE_ITEM = re.compile(
+    r" +(?=(?:" + _LEADING_CODES.pattern.lstrip("^") + r")?"
+    + dazedwrap.ITEM_START.pattern.lstrip("^") + ")"
+)
+
+
+def wrap_help(text: str, width: int, *, source: str | None = None) -> str:
+    """A choice's help laid out for its window like its Japanese *source*
+    (see :func:`wrap_message`). A translation of several rows comes back on
+    one line, so a list the Japanese gives a row an item gets those rows
+    back, as a message's does, even when the window then needs more rows."""
+    wrapped = wrap_message(text, width, source=source)
+    items = _item_rows(str(source or "").split("\n"))
+    if items < 2 or "\n" in text or _item_rows(wrapped.split("\n")) >= items:
+        return wrapped
+    return wrap_message(_INLINE_ITEM.sub("\n", text), width, source=source)
+
+
 def wrap_text(text: str, width: int) -> str:
     """Text with no source layout to follow, such as a script's message,
     wrapped to *width* in even lines."""
@@ -570,7 +589,7 @@ def message_box(layout: Layout, *, face: bool = False) -> Box:
 def choice_help_box(layout: Layout, *, face: bool = False) -> Box:
     """A choice's help (MPP_ChoiceEX): comment lines (408) the message window
     shows while the choice is open, beside the face of the message before the
-    choice (see :func:`choice_help_face`). Rows the window cannot show go on
+    choice (see :func:`util.rpgmaker_blocks.help_face`). Rows the window cannot show go on
     to a page the player never sees, so the help is never paged."""
     message = message_box(layout, face=face)
     return Box(message.width, message.rows, False, "message", message.area)
@@ -671,17 +690,6 @@ class FitReport:
 
     changes: list[dict[str, Any]] = field(default_factory=list)
     misfits: list[dict[str, Any]] = field(default_factory=list)
-
-
-def spread(text: str, count: int) -> list[str]:
-    """A message's rows laid over the *count* commands that hold it, which
-    the game shows one after another: a row each, the rows left over in the
-    last command and empty commands when the text has fewer rows. No command
-    is added or removed, so a saved game's place in an event stays valid and
-    each command keeps its source."""
-    rows = text.split("\n")
-    rows += [""] * (count - len(rows))
-    return rows[: count - 1] + ["\n".join(rows[count - 1 :])]
 
 
 def fit_run(texts: list[str], box: Box, source: str | None = None) -> list[str]:
@@ -794,137 +802,44 @@ def _command_lists(node, pointer: str = ""):
             yield from _command_lists(value, f"{pointer}/{index}")
 
 
-def _has_face(command: dict) -> bool:
-    params = command.get("parameters") or []
-    return len(params) >= 4 and isinstance(params[0], str) and bool(params[0].strip())
-
-
-def _text_command(command, code: int) -> bool:
-    return (
-        isinstance(command, dict)
-        and command.get("code") == code
-        and isinstance(command.get("parameters"), list)
-        and bool(command["parameters"])
-        and isinstance(command["parameters"][0], str)
-    )
-
-
-def _run_end(commands: list, start: int) -> int:
-    """Where the message starting at *start* ends: the Show Text (401) or
-    Scroll Text (405) commands after it that carry no source of their own,
-    as translation, Len's writer and QA group them."""
-    code = commands[start]["code"]
-    end = start + 1
-    while (
-        end < len(commands)
-        and _text_command(commands[end], code)
-        and "_original" not in commands[end]
-    ):
-        end += 1
-    return end
-
-
-def _code(command) -> int | None:
-    return command.get("code") if isinstance(command, dict) else None
-
-
-def choice_help_branch(commands: list, index: int) -> int | None:
-    """The choice branch (402) whose help the comment line (408) at *index*
-    is, or None: MPP_ChoiceEX reads a choice's help from the comment (108)
-    right after its branch."""
-    at = index - 1
-    # Lines before it, and lines translation emptied until the list is written.
-    while at >= 0 and (
-        _code(commands[at]) == 408
-        or (_code(commands[at]) == -1 and not commands[at].get("parameters"))
-    ):
-        at -= 1
-    if at < 1 or _code(commands[at]) != 108 or _code(commands[at - 1]) != 402:
-        return None
-    return at - 1
-
-
-def choice_help_face(commands: list, index: int) -> bool:
-    """Whether the choice help comment line (408) at *index* shows beside a
-    face. MPP_ChoiceEX draws the help in the message window, which keeps the
-    face of the Show Text (101) the choice follows; a choice right after
-    another's end (404) joins that one and shows with its message."""
-    at = choice_help_branch(commands, index)
-    if at is None:
-        return False
-    indent = commands[at].get("indent")
-    while True:
-        while at >= 0 and not (
-            _code(commands[at]) == 102 and commands[at].get("indent") == indent
-        ):
-            at -= 1
-        at -= 1
-        if at < 0:
-            return False
-        if _code(commands[at]) != 404 or commands[at].get("indent") != indent:
-            break
-    while at >= 0 and _code(commands[at]) == 401:
-        at -= 1
-    return at >= 0 and _code(commands[at]) == 101 and _has_face(commands[at])
-
-
-def _help_end(commands: list, start: int) -> int:
-    """Where the help text translated at *start* ends: the comment lines
-    (408) after it that hold no translation of their own and no Japanese,
-    which translation wrote that text over."""
-    end = start + 1
-    while (
-        end < len(commands)
-        and _text_command(commands[end], 408)
-        and "_original" not in commands[end]
-        and not untranslated(commands[end]["parameters"][0])
-    ):
-        end += 1
-    return end
-
-
 def _command_slots(commands: list, pointer: str, layout: Layout) -> Iterator[_Slot]:
-    face = False
-    # The end of the last message, whose commands it fitted.
-    end = 0
+    slots: list[tuple[int, _Slot]] = []
+    for block in blocks.blocks(commands):
+        if block.kind in (blocks.MESSAGE, blocks.SCROLL):
+            # A message is fitted as a whole, even when its rows are stored
+            # one command each, as Assistant-led writes them.
+            if block.kind == blocks.SCROLL:
+                box = scrolling_box(layout)
+            else:
+                box = message_box(layout, face=block.face)
+            parts = block.parts
+        elif block.kind == blocks.HELP:
+            # Translated choice help, fitted over its own rows as a message
+            # is; other comments, which plugins may read as settings, stay.
+            box = choice_help_box(layout, face=block.face)
+            parts = tuple(part for part in block.parts if part.translated and part.rows)
+        else:
+            continue
+        for part in parts:
+            first = part.rows[0]
+            params = commands[first]["parameters"]
+            shown = box
+            if block.kind == blocks.MESSAGE and _MARKER.match(params[0]):
+                shown = Box(MARKED_WIDTH, box.rows, True, "message")
+            run = tuple(commands[at]["parameters"] for at in part.rows)
+            slots.append((first, _Slot(
+                f"{pointer}/{first}/parameters/0", shown,
+                blocks.source(commands, part), params, 0, run,
+            )))
     for index, command in enumerate(commands):
-        if index < end or not isinstance(command, dict):
+        if not isinstance(command, dict):
             continue
         code = command.get("code")
         params = command.get("parameters")
-        # A Show Text with a face graphic narrows the lines that follow it.
-        if code == 101:
-            face = _has_face(command)
-        elif code not in (401, 405, 0, -1):
-            face = False
         if not isinstance(params, list) or not params:
             continue
         at = f"{pointer}/{index}/parameters"
-        if code in (401, 405) and _text_command(command, code):
-            # A message is fitted as a whole, even when its rows are stored
-            # one command each, as Assistant-led writes them.
-            end = _run_end(commands, index)
-            run = tuple(item["parameters"] for item in commands[index:end])
-            if code == 405:
-                box = scrolling_box(layout)
-            else:
-                box = message_box(layout, face=face)
-                if _MARKER.match(params[0]):
-                    box = Box(MARKED_WIDTH, box.rows, True, "message")
-            yield _Slot(f"{at}/0", box, _original(command), params, 0, run)
-        elif (
-            code == 408
-            and _text_command(command, code)
-            and _original(command) is not None
-            and choice_help_branch(commands, index) is not None
-        ):
-            # Translated choice help, fitted over its own lines as a message
-            # is; other comments, which plugins may read as settings, stay.
-            end = _help_end(commands, index)
-            run = tuple(item["parameters"] for item in commands[index:end])
-            box = choice_help_box(layout, face=choice_help_face(commands, index))
-            yield _Slot(f"{at}/0", box, _original(command), params, 0, run)
-        elif (
+        if (
             code == 122
             and len(params) > 4
             and isinstance(params[4], str)
@@ -932,16 +847,23 @@ def _command_slots(commands: list, pointer: str, layout: Layout) -> Iterator[_Sl
             and _original(command) is not None
             and _script_string(params[4]) is not None
         ):
-            yield _Slot(f"{at}/4", variable_box(layout), None, params, 4)
+            slots.append((index, _Slot(f"{at}/4", variable_box(layout), None, params, 4)))
         elif code == 324 and len(params) > 1 and isinstance(params[1], str):
-            yield _Slot(f"{at}/1", nickname_box(layout), None, params, 1)
+            slots.append((index, _Slot(f"{at}/1", nickname_box(layout), None, params, 1)))
         elif code == 325 and len(params) > 1 and isinstance(params[1], str):
             source = _original(command) or params[1]
-            yield _Slot(f"{at}/1", help_box(layout, source, dialogue=True), source, params, 1)
+            slots.append((index, _Slot(
+                f"{at}/1", help_box(layout, source, dialogue=True), source, params, 1
+            )))
         elif code == 357 and len(params) > 3 and isinstance(params[3], dict):
             for key in MESSAGE_PLUGIN_TEXT.get(params[0], ()):
                 if isinstance(params[3].get(key), str):
-                    yield _Slot(f"{at}/3/{key}", message_box(layout), None, params[3], key)
+                    slots.append((index, _Slot(
+                        f"{at}/3/{key}", message_box(layout), None, params[3], key
+                    )))
+    slots.sort(key=lambda item: item[0])
+    for _index, slot in slots:
+        yield slot
 
 
 def _fitted_slots(document, file_name: str, layout: Layout, areas):

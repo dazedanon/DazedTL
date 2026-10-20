@@ -48,6 +48,21 @@ Frozen run context stays authoritative for execution and recovery.
 Engine parsers, context assembly and Len's maintained methodology/tool bundle are shipped in the owned engine behind the compatibility boundary.
 Existing phased jobs retain their original engine-owned records and recovery path rather than being rewritten into a different request format.
 
+### RPG Maker text blocks
+
+[rpgmaker_blocks](../backend/dazedtl/engine/util/rpgmaker_blocks.py) is the one definition of how MV/MZ event commands form the text one window shows: a message (101 and its 401 rows), scrolling text (105 and its 405 rows), a choice list (102), a choice's help and other comments.
+A choice's help is a comment (108) right after a choice branch (402), whose 408 rows MPP_ChoiceEX shows while the choice is open; players read a comment's rows only under a marker a plugin shows, read from the plugin list the game loads beside its data folder, as JavaScript reads it ([rpgmaker_markers](../backend/dazedtl/engine/util/rpgmaker_markers.py)).
+Translation, the fitter, Text QA's inventory, verifier and never-translated preflight, Assistant-led's writer and the release playtest all read blocks there.
+The playtest's tour gets an index of them before it plays, so a message it sees and the line the static checks list share one identity, the block's first text row, and a message whose name alone was translated still reads as never translated.
+A translated part keeps its Japanese in `_original` on its anchor and owns the rows its text was written over; rows outside the parts are the game's own, and nothing writes them.
+Translation laid a comment one Japanese line at a time, and a game may follow those lines with its own, such as "(1/3)" or a blank spacer, so a comment's translation records the rows it owns beside `_original` as `_rows`, a note that game updates and Assistant-led's writer carry with it.
+A message is one command once translation joins its rows, and Assistant-led's rows run up to the next translation, so they need no record.
+Help translated before the record existed reads its rows against the original game file where the reader has it, as restoring a refusal note before a run does, and otherwise owns the rows after it that hold text and no Japanese, which is all translation ever wrote there.
+Assistant-led keeps a comment's Japanese, marker first, on the 108; both forms read as one block.
+Translating a comment never adds or removes a command, so saved games keep their place and Assistant-led's `rebase_rpgmaker` still lines up: the lines go over the rows it owns, extra lines in its last row, and rows it no longer needs move, empty, to the end of the comment, where they show nothing.
+Translation still joins a message's 401 rows into one command on the first pass, as it always has.
+Help wraps beside the face of the message its choice follows, even while the engine has emptied that message's joined rows, and keeps the rows of the Japanese list items ([wrap_help](../backend/dazedtl/engine/util/rpgmaker_rewrap.py)).
+
 ## Guided runs and paid work
 
 ### Estimates and approval
@@ -921,7 +936,7 @@ A new task also starts with the decisions complete earlier tasks recorded, the l
 A screen whose reviewers declined items is finished too: the new task declines the same items into the same bundles and sets aside again what its source set aside as not reviewed.
 Hints are not what screening shows: the new task packs its screen into the source's bundles and compares them without the risks and glossary terms items point reviewers at, which an update may word otherwise or at another length, as when screen items started naming only the glossary terms a line's English lacks.
 Each task's ledger carries a version, so one an earlier version derived and cached is derived again; baselines, the game's text as Git had it, carry none.
-Its inventory holds the text the engine translated, which keeps its Japanese in `_original`; a [preflight](../backend/dazedtl/engine/util/rpgmaker_qa_preflight.py) reports the Japanese that was never translated, in messages and database fields without `_original`, custom data files and plugin parameters, so that gap is shown rather than silent.
+Its inventory holds the text the engine translated, which keeps its Japanese in `_original`; a [preflight](../backend/dazedtl/engine/util/rpgmaker_qa_preflight.py) reports the Japanese that was never translated, in rows no translation holds (see [RPG Maker text blocks](#rpg-maker-text-blocks)), database fields without `_original`, custom data files and plugin parameters, so that gap is shown rather than silent.
 Status, findings and the Text QA task name it as never translated and not reviewed, by file and plugin, never as a passing count.
 QA neither reviews it nor blocks on it: reviewers judge translations, corrections apply only to the inventory's data files, plugin text goes through Plugin files' checked publication, and whether a plugin's text shows is evidence too uncertain to stop QA.
 Plugin parameters that Plugin files keeps in Japanese on purpose, lookup keys the app protects and text its assistant found players never read, are not reported: the compatibility layer reads them from [Plugin files' saved findings](../backend/dazedtl/plugins/service.py) while its scan matches `js/plugins.js` or the file is settled, and the preflight leaves out a parameter only while it holds the value its finding was about, so text Plugin files never examined or left undecided is still reported.

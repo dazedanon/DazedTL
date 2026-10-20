@@ -84,23 +84,11 @@ def _json_compatible_string_escapes(content: str, start: int) -> str:
     return "".join(compatible)
 
 
-def _parse_registry(content: str) -> _Registry:
-    array_start = _assignment_array_start(content)
+def _read_entries(content: str, array_start: int, array_end: int) -> list[_RegistryEntry]:
+    """The plugin entries of the array that starts at *array_start*, read one
+    at a time as JavaScript reads them, a comma after the last allowed."""
     parse_content = _json_compatible_string_escapes(content, array_start)
     decoder = json.JSONDecoder()
-    try:
-        values, array_end = decoder.raw_decode(parse_content, array_start)
-    except json.JSONDecodeError as exc:
-        raise PluginRegistryError(
-            f"invalid $plugins array at line {exc.lineno}, column {exc.colno}: {exc.msg}"
-        ) from exc
-    if not isinstance(values, list):
-        raise PluginRegistryError("the $plugins assignment is not an array")
-
-    trailer = content[array_end:].lstrip()
-    if not trailer.startswith(";"):
-        raise PluginRegistryError("the $plugins array is not followed by a semicolon")
-
     entries: list[_RegistryEntry] = []
     position = array_start + 1
     while True:
@@ -125,7 +113,26 @@ def _parse_registry(content: str) -> _Registry:
             continue
         if position >= array_end or content[position] != "]":
             raise PluginRegistryError("plugin entries must be separated by one comma")
+    return entries
 
+
+def _parse_registry(content: str) -> _Registry:
+    array_start = _assignment_array_start(content)
+    parse_content = _json_compatible_string_escapes(content, array_start)
+    try:
+        values, array_end = json.JSONDecoder().raw_decode(parse_content, array_start)
+    except json.JSONDecodeError as exc:
+        raise PluginRegistryError(
+            f"invalid $plugins array at line {exc.lineno}, column {exc.colno}: {exc.msg}"
+        ) from exc
+    if not isinstance(values, list):
+        raise PluginRegistryError("the $plugins assignment is not an array")
+
+    trailer = content[array_end:].lstrip()
+    if not trailer.startswith(";"):
+        raise PluginRegistryError("the $plugins array is not followed by a semicolon")
+
+    entries = _read_entries(content, array_start, array_end)
     if len(entries) != len(values):
         raise PluginRegistryError("could not account for every plugin registry entry")
     if entries:
@@ -253,6 +260,14 @@ def format_plugins_js(content: str) -> str:
 def plugin_entries(content: str) -> tuple[dict, ...]:
     """Read registry values without executing JavaScript or editing the file."""
     return tuple(entry.value for entry in _parse_registry(content).entries)
+
+
+def loaded_entries(content: str) -> tuple[dict, ...]:
+    """The plugin list as the game loads it, which JavaScript reads with or
+    without a semicolon after the array, code after it, or a comma after the
+    last entry; only edits need the stricter layout (see plugin_entries)."""
+    array_start = _assignment_array_start(content)
+    return tuple(entry.value for entry in _read_entries(content, array_start, len(content)))
 
 
 def entry_texts(content: str) -> tuple[tuple[dict, str], ...]:

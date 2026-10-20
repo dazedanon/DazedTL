@@ -573,6 +573,33 @@ class TranslationTests(unittest.TestCase):
         self.assertEqual(restore(items, unread), 1)
         self.assertEqual(items[1]["name"], "薬")
 
+        # A choice's help translated before translation recorded its rows
+        # gets them recorded from the original game file, so the next run
+        # writes over its own rows and not the game's "(1/3)".
+        def helped(*rows):
+            return game(
+                "x", [command(402, [0, "Go"]), command(108, ["選択肢ヘルプ"]), *rows]
+            )
+
+        original_help = helped(
+            command(408, ["所要時間:20分"]),
+            command(408, ["(1/3)"]),
+            command(408, ["二行目"]),
+        )
+        saved_help = helped(
+            command(408, ["[Not translated: sexual"], "所要時間:20分"),
+            command(408, ["content]"]),
+            command(408, ["(1/3)"]),
+            command(408, ["Line two."], "二行目"),
+        )
+        self.assertEqual(restore(saved_help, lambda: original_help), 1)
+        rows = saved_help["events"][1]["pages"][0]["list"][2:6]
+        self.assertEqual(
+            [row["parameters"][0] for row in rows],
+            ["所要時間:20分", "content]", "(1/3)", "Line two."],
+        )
+        self.assertEqual(rows[0]["_rows"], 2)
+
     def test_batch_wait_resume_and_unordered_collection_keep_one_submission(self):
         job, plan = self.run_record(
             "batch", [request("one"), request("two"), request("three")]

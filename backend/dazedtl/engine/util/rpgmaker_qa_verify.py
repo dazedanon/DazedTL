@@ -15,6 +15,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from util import rpgmaker_blocks as blocks
+
 SCHEMA = "rpgmaker-qa-manifest-v1"
 DIALOGUE = {101, 102, 401, 405}
 RISKY = {108, 111, 122, 320, 324, 325, 355, 356, 357, 408, 655, 657}
@@ -253,29 +255,9 @@ def _decode_pointer(json_pointer: str) -> list[str]:
     ]
 
 
-# Codes translation repeats at the start of every row of a message, such as
-# instant lines and an indent (see rpgmaker_rewrap._PER_LINE): fitting a row
-# to its window repeats them on each new row.
-_PER_LINE_RE = re.compile(
-    r"^(?:\\+a[clr](?![A-Za-z])|\\+>|\\+px\[\d+\])+ ?", re.IGNORECASE
-)
-
-
-def _row_codes(text: str) -> tuple[list[tuple[str, ...]], Counter]:
-    """*text*'s runtime codes with the ones each row starts with counted once
-    for a run of rows that start with the same ones: the row-start codes of
-    each run in order, and the other codes."""
-    runs: list[tuple[str, ...]] = []
-    others: Counter = Counter()
-    for row in re.split(r"\n|<br>", text):
-        if not row.strip():
-            continue
-        match = _PER_LINE_RE.match(row)
-        start = tuple(_RUNTIME_TOKEN_RE.findall(match.group(0))) if match else ()
-        if not runs or runs[-1] != start:
-            runs.append(start)
-        others.update(_RUNTIME_TOKEN_RE.findall(row[match.end():] if match else row))
-    return runs, others
+def _row_codes(text: str):
+    """*text*'s runtime codes counted per row (see rpgmaker_blocks.row_codes)."""
+    return blocks.row_codes(text, _RUNTIME_TOKEN_RE)
 
 
 def _runtime_tokens_match(source: str, live: str) -> bool:
@@ -360,34 +342,13 @@ def _expected_live_pointers(document: Any, record: dict[str, Any]) -> list[str]:
         else:
             raise ValueError("code 101 has no supported visible-name field")
         return [_pointer(tuple(owner_parts + ["parameters", str(index)]))]
-    if code in (401, 405, 408):
+    if code in blocks.ROW_CODES:
         index = int(owner_parts[-1])
         command_list = _resolve(document, _pointer(tuple(owner_parts[:-1])))
-        paths = [owner_parts + ["parameters", "0"]]
-        cursor = index + 1
-        while cursor < len(command_list):
-            command = command_list[cursor]
-            if not isinstance(command, dict) or command.get("code") != code:
-                break
-            if "_original" in command:
-                break
-            paths.append(owner_parts[:-1] + [str(cursor), "parameters", "0"])
-            cursor += 1
-        return [_pointer(tuple(item)) for item in paths]
-    if code == 108:
-        index = int(owner_parts[-1])
-        command_list = _resolve(document, _pointer(tuple(owner_parts[:-1])))
-        paths = [owner_parts + ["parameters", "0"]]
-        cursor = index + 1
-        while cursor < len(command_list):
-            command = command_list[cursor]
-            if not isinstance(command, dict) or command.get("code") != 408:
-                break
-            if "_original" in command:
-                break
-            paths.append(owner_parts[:-1] + [str(cursor), "parameters", "0"])
-            cursor += 1
-        return [_pointer(tuple(item)) for item in paths]
+        return [
+            _pointer(tuple(owner_parts[:-1] + [str(cursor), "parameters", "0"]))
+            for cursor in blocks.part_rows(command_list, index)
+        ]
     if code == 355:
         index = int(owner_parts[-1])
         command_list = _resolve(document, _pointer(tuple(owner_parts[:-1])))
@@ -709,13 +670,11 @@ def verify_manifest(data_root: str | Path, manifest: dict[str, Any]) -> dict[str
             elif "choice_context" in record:
                 raise ValueError("unexpected choice context")
             if code == 408:
-                from util.rpgmaker_rewrap import choice_help_branch, choice_help_face
-
                 command_index = int(owner_parts[-1])
                 command_list = _resolve(document, _pointer(tuple(owner_parts[:-1])))
                 expected_help = (
-                    {"face": choice_help_face(command_list, command_index)}
-                    if choice_help_branch(command_list, command_index) is not None
+                    {"face": blocks.help_face(command_list, command_index)}
+                    if blocks.help_branch(command_list, command_index) is not None
                     else None
                 )
                 if record.get("choice_help") != expected_help:

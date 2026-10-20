@@ -19,10 +19,12 @@ import re
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+from util import rpgmaker_blocks as blocks
 from util.rpgmaker_markers import (
     MARKER_SETTINGS,
     SUPPORTED_CODE408_MARKERS,
     comment_markers,
+    data_plugins,
 )
 from util.rpgmaker_qa_reach import MAY_SHOW, Reach
 
@@ -103,19 +105,6 @@ def _leaves(value: Any, path: tuple = ()):
             yield from _leaves(value[key], path + (key,))
 
 
-def _command_lists(document: Any, path: tuple = ()):
-    if isinstance(document, list):
-        if any(isinstance(item, dict) and "code" in item for item in document):
-            yield path, document
-            return
-        for index, child in enumerate(document):
-            yield from _command_lists(child, path + (index,))
-    elif isinstance(document, dict):
-        for key, child in document.items():
-            if key != "_original":
-                yield from _command_lists(child, path + (key,))
-
-
 def _entry(rows: list, file: str, path: tuple, text: str, kind: str) -> None:
     rows.append({
         "file": file,
@@ -125,15 +114,6 @@ def _entry(rows: list, file: str, path: tuple, text: str, kind: str) -> None:
     })
 
 
-def _comment_marker(command: dict) -> str:
-    """A comment's (108) first line as the game wrote it."""
-    original = command.get("_original")
-    if isinstance(original, str) and original.strip():
-        return original.strip()
-    parameters = command.get("parameters")
-    return str(parameters[0]).strip() if parameters else ""
-
-
 def visible_texts(
     name: str, document: Any, markers: frozenset[str] = SUPPORTED_CODE408_MARKERS
 ):
@@ -141,32 +121,33 @@ def visible_texts(
     value, its kind and whether the engine translated it, keeping its
     Japanese in `_original`. Map names keep no `_original`.
 
-    Comment lines (408) count under the *markers* the game's plugins show,
-    such as a choice's help; a joined translation keeps its `_original` on the first
-    line and the lines after it continue that translation."""
-    for list_path, commands in _command_lists(document):
-        marker = ""
-        joined = False
+    A message's or comment's rows count as translated where a translation
+    owns them (see rpgmaker_blocks.owned). Comment lines (408) count under
+    the *markers* the game's plugins show, such as a choice's help."""
+    for list_path, commands in blocks.command_lists(document):
+        translated_rows: set[int] = set()
+        comment_rows: set[int] = set()
+        for block in blocks.blocks(commands):
+            for part in block.parts:
+                if part.translated:
+                    translated_rows.update(part.commands)
+            if block.kind in (blocks.HELP, blocks.COMMENT) and block.shown(markers):
+                comment_rows.update(block.rows)
         for index, command in enumerate(commands):
             if not isinstance(command, dict):
                 continue
             code = command.get("code")
             parameters = command.get("parameters")
-            if code == 108:
-                marker, joined = _comment_marker(command), False
-            elif code == 408:
-                joined = joined or "_original" in command
-                if marker in markers and parameters:
+            if code == 408:
+                if index in comment_rows and parameters:
                     base = list_path + (index, "parameters", 0)
-                    yield base, parameters[0], "comment text", joined
+                    yield base, parameters[0], "comment text", index in translated_rows
                 continue
-            elif code != -1 or parameters:
-                # The engine empties joined lines into -1 commands until it
-                # writes the list back.
-                marker = ""
             if code not in COMMAND_TEXT or not isinstance(parameters, list):
                 continue
-            translated = "_original" in command
+            translated = (
+                index in translated_rows if code in (401, 405) else "_original" in command
+            )
             base = list_path + (index, "parameters")
             if code == 102 and parameters and isinstance(parameters[0], list):
                 for choice, value in enumerate(parameters[0]):
@@ -244,20 +225,6 @@ def kept_digest(kept: Iterable[dict[str, Any]]) -> str:
     return hashlib.sha256("\n".join(rows).encode("utf-8")).hexdigest()
 
 
-def _plugin_entries(script: Path) -> list[Any]:
-    """The game's plugin list in js/plugins.js, or none it can read."""
-    try:
-        text = script.read_text(encoding="utf-8-sig")
-    except (OSError, UnicodeDecodeError):
-        return []
-    match = re.search(r"\$plugins\s*=\s*(\[.*\])\s*;?\s*$", text, re.S)
-    try:
-        entries = json.loads(match.group(1)) if match else []
-    except ValueError:
-        return []
-    return entries if isinstance(entries, list) else []
-
-
 def preflight(
     data_root: str | Path,
     manifest: dict[str, Any],
@@ -273,7 +240,7 @@ def preflight(
     covered: dict[str, set[str]] = {}
     for record in manifest["records"]:
         covered.setdefault(record["file"], set()).update(record["live_pointers"])
-    entries = _plugin_entries(data.parent / "js" / "plugins.js")
+    entries = list(data_plugins(data))
     reach = Reach(data, entries)
     markers = comment_markers(entries)
     rows: dict[str, list[dict[str, Any]]] = {"untranslated": [], "custom_data": []}
