@@ -21,6 +21,7 @@ import { ActionControl } from "../../ui/ActionControl";
 import { Tabs, TabPanel, type Tab } from "../../ui/Tabs";
 import { Button } from "../../ui/Button";
 import { Feedback, Message } from "../../ui/Feedback";
+import { FeedbackOwners, useOwnedFeedback } from "../../ui/FeedbackOwners";
 import type { ProjectLink } from "../guided/workspace/model";
 import type { SettingsSection } from "../settings/Settings";
 import { useProjectOptions } from "./useProjectOptions";
@@ -77,13 +78,15 @@ export default function Translation({
       </PageLayout>
     );
   return (
-    <Workspace
-      project={project}
-      state={state}
-      settings={settings}
-      openProject={openProject}
-      initialView={view}
-    />
+    <FeedbackOwners key={project.id}>
+      <Workspace
+        project={project}
+        state={state}
+        settings={settings}
+        openProject={openProject}
+        initialView={view}
+      />
+    </FeedbackOwners>
   );
 }
 
@@ -102,6 +105,9 @@ function Workspace({
 }) {
   const application = useApplication();
   const action = useAction({ observer: application });
+  // A control that reports its own result, such as Run playtest again,
+  // keeps its failure beside itself.
+  const owned = useOwnedFeedback(action.key);
   const draft = useProjectOptions(state, action.report);
   const [view, setView] = useState<View>(initialView);
   const [editorAssets, setEditorAssets] = useState<string[] | null>(null);
@@ -290,6 +296,7 @@ function Workspace({
       </div>
       <Message
         message={
+          owned ||
           [
             "copy",
             "resume",
@@ -297,7 +304,8 @@ function Workspace({
             "pause",
             "estimate-declined",
             "copy-declined",
-          ].includes(action.key) || action.key.startsWith("qa-")
+          ].includes(action.key) ||
+          action.key.startsWith("qa-")
             ? ""
             : action.error
         }
