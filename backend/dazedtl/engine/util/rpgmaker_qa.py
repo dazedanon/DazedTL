@@ -25,6 +25,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, NamedTuple
 
+from util.freshness import Basis, compare
 from util.paths import (
     GAME_GLOSSARY_RELATIVE,
     GAME_QUIRKS_RELATIVE,
@@ -3986,9 +3987,12 @@ def rules_changed(task: dict[str, Any], checkpoint: dict[str, Any]) -> bool:
     """Whether an update changed QA's rules while this task was in review, so
     it takes no more review and QA is prepared again. A finished task keeps
     its results through any update."""
-    return (
-        _rules_version(task) != QA_RULES_VERSION and checkpoint["stage"] != "complete"
-    )
+    return _rules_moved(task) and checkpoint["stage"] != "complete"
+
+
+def _rules_moved(task: dict[str, Any]) -> bool:
+    """Whether QA's rules changed since this task was prepared."""
+    return compare(Basis(_rules_version(task), {}), Basis(QA_RULES_VERSION, {})) is not None
 
 
 def inventory_matches(task_dir: str | Path, manifest: dict[str, Any]) -> bool:
@@ -3999,9 +4003,13 @@ def inventory_matches(task_dir: str | Path, manifest: dict[str, Any]) -> bool:
     task = _read_json(root / "task.json")
     inventory = _read_json(root / "inventory.json")
     claimed = inventory.pop("content_sha256", None)
-    return (
-        claimed == task.get("manifest_sha256") == _sha256(_canonical_bytes(inventory))
-        and _inventory_text(inventory) == _inventory_text(manifest)
+
+    def text(value: dict[str, Any]) -> str:
+        return _sha256(_canonical_bytes(_inventory_text(value)))
+
+    return claimed == _sha256(_canonical_bytes(inventory)) and not compare(
+        Basis(_rules_version(task), {"inventory": task.get("manifest_sha256"), "text": text(inventory)}),
+        Basis(_rules_version(task), {"inventory": claimed, "text": text(manifest)}),
     )
 
 
@@ -4009,7 +4017,7 @@ def _load_task(task_dir: str | Path) -> tuple[Path, dict, dict]:
     """The task and its checkpoint for review work, which needs the rules
     version that made it."""
     root, task, checkpoint = _read_task(task_dir)
-    if _rules_version(task) != QA_RULES_VERSION:
+    if _rules_moved(task):
         raise ValueError(
             "An update changed QA's rules after this task was prepared, so it "
             f"takes no more review; prepare QA again: {root}"
