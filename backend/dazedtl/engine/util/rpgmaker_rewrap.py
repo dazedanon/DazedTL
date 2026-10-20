@@ -280,6 +280,29 @@ def _flow(
     return wrapped
 
 
+def _item_row(row: str) -> bool:
+    """Whether a row starts a list item, as wrapping reads one (see
+    :data:`dazedwrap.ITEM_START`), after the codes its message repeats on
+    each row."""
+    return bool(dazedwrap.ITEM_START.match(_PER_LINE.sub("", row).lstrip()))
+
+
+def _item_rows(rows: list[str]) -> int:
+    return sum(map(_item_row, rows))
+
+
+def _items(rows: list[str]) -> list[list[str]]:
+    """Rows in groups that each start with a list item, the rows before the
+    first item a group of their own."""
+    groups: list[list[str]] = []
+    for row in rows:
+        if not groups or _item_row(row):
+            groups.append([row])
+        else:
+            groups[-1].append(row)
+    return groups
+
+
 def _repeated(code: str, line: str) -> str:
     """*line* after the code its message repeats on each row. RPG Maker reads
     every letter after an escape as part of it, so a letter after a code such
@@ -335,6 +358,18 @@ def wrap_message(
                 wrapped += _flow(part, span.per_line, width, None, rows)
             else:
                 wrapped += part
+    # A message window pages instead of cutting rows off, so a list keeps one
+    # item a row where flowing ran items together: on Fuuma, a too-wide item
+    # pulled the item above onto its row, which text QA's lint then flagged.
+    if _item_rows(wrapped) < _item_rows(lines):
+        wrapped = []
+        for span in spans:
+            part = lines[span.start : span.end]
+            for item in _items(part) if span.flows else [part]:
+                if span.flows and any(visible_width(row) > width for row in item):
+                    wrapped += _flow(item, span.per_line, width, None, rows)
+                else:
+                    wrapped += item
     result = "\n".join(wrapped)
     if uses_br:
         result = result.replace("\n", "<br>")

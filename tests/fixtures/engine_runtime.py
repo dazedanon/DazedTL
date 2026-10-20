@@ -565,6 +565,31 @@ try:
         assert items == (
             r"・Possess \C[24]Red Wine\C[0]" "\n・Scene completed\n・Rest in your room"
         ), items
+        # A message window pages, so an item too wide for its row wraps on rows
+        # of its own: Fuuma's banners pulled the item above onto its row,
+        # which text QA's lint then flagged in its own corrections.
+        from util.rpgmaker_rewrap import wrap_message
+
+        banner = (
+            r"\i[343]True Lilith's Miasma"
+            "\n"
+            r"・SAN \C[1]-9\C[0] every turn."
+            "\n"
+            r"・Once every 3 turns, \i[71]Lilith's Miasma \C[1]+1\C[0]."
+        )
+        japanese = (
+            r"\i[343]真・リリスの瘴気"
+            "\n"
+            r"・毎ターンSAN値が\C[1]-9\C[0]される。"
+            "\n"
+            r"・3ターンに一度、\i[71]リリスの瘴気が\C[1]+1\C[0]される。"
+        )
+        kept = banner.replace("turns, ", "turns,\n")
+        for centred in ("", "\\>\\ac "):
+            fitted = wrap_message(
+                centred + banner, 36, source="\\>\\ac" + japanese, rows=4
+            )
+            assert fitted == centred + kept, fitted
         paged = wrapShaped(
             "The gate opens at dawn. Bring the lantern and the key. "
             "We leave before the guards wake up.",
