@@ -23,7 +23,7 @@ def fake_guided(folder, qa, method="guided"):
 
     guided = SimpleNamespace(
         projects=SimpleNamespace(get=lambda _id: {"backend_id": "native"}),
-        record=lambda _id: ({}, {"id": "native"}),
+        record=lambda _id: ({}, {"id": "native", "source": str(folder)}),
         saved_form=lambda _id: {"text": {"focus": "release"}},
         backend=SimpleNamespace(
             guided_text_state=lambda _native, _focus: {"qa": qa},
@@ -67,7 +67,18 @@ class TextQATests(unittest.TestCase):
                 service.run("project", "checkpoint")
             service.run("project", "choose", question="Map001.json#/1", choice="use")
             qa["questions"][0]["choice"] = "use"
+            # A version takes every change in the game, so QA's waits while
+            # the playtest's fixes are in none, as Fuuma's took them.
+            fixes = Path(folder) / "js/plugins/DazedTL_Fixes.js"
+            fixes.parent.mkdir(parents=True)
+            fixes.write_text("// Fix\n")
+            with self.assertRaisesRegex(ValueError, "playtest --checkpoint"):
+                service.run("project", "apply")
+            fixes.unlink()
             applied = service.run("project", "apply")
+            # The playtest's fixes wait in turn for QA's version.
+            with self.assertRaisesRegex(ValueError, "qa --checkpoint"):
+                service.require_saved("project")
             # The job reports its end before its worker exits; the checkpoint
             # waits for the worker, so the apply still reads as running.
             guided.backend.operations.active = applied["operation"]["id"]
@@ -76,6 +87,7 @@ class TextQATests(unittest.TestCase):
             )
             guided.backend.operations.active = ""
             state = service.run("project", "checkpoint")
+            service.require_saved("project")
             self.assertEqual(
                 calls,
                 [

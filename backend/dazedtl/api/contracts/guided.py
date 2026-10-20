@@ -638,7 +638,7 @@ class PlaytestFixes(TypedDict):
     saved: NotRequired[
         Annotated[
             bool,
-            "Assistant-led, once the game has fixes: the latest checkpoint holds them as they are.",
+            "Once the game has fixes: the latest version or checkpoint holds them as they are.",
         ]
     ]
 

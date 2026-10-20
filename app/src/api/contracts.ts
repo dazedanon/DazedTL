@@ -937,7 +937,7 @@ export type PlaytestFixes = {
   /** The game's main.js loads fixes other than the working copy, such as an older copy. */
   other_in_game?: boolean;
   check?: PlaytestFixCheck;
-  /** Assistant-led, once the game has fixes: the latest checkpoint holds them as they are. */
+  /** Once the game has fixes: the latest version or checkpoint holds them as they are. */
   saved?: boolean;
 };
 

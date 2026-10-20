@@ -154,6 +154,7 @@ class Playtest:
         writes it into the game once nothing new breaks."""
         from dazedtl.compatibility.playtest import fixes_copy
 
+        self.text_qa.require_saved(project_id)
         copy = fixes_copy(Path(native["source"]), Path(native["data"]).parent)
         preview = self.guided.preview(
             project_id,
@@ -171,24 +172,31 @@ class Playtest:
         )
 
     def checkpoint(self, project_id):
-        """Saves the fixes in an Assistant-led game in a checkpoint, with the
-        runtime manifest of the assistant's own checkpoints, which carries
-        them; Guided saves them with its own versions."""
-        if self.guided.projects.get(project_id).get("method") != "len":
-            raise ValueError("Guided saves the playtest's fixes with its versions.")
-        manifest = lifecycle(self.guided.translation.workspace, project_id).get(
-            "runtime_manifest"
-        )
-        if not manifest:
-            raise ValueError(
-                "Save a checkpoint with the patch's runtime manifest first; the "
-                "playtest's fixes are saved with the same manifest."
+        """Saves the fixes in the game as a version of their own, so a later
+        batch's version, such as QA's, holds only that batch's changes: in an
+        Assistant-led game a checkpoint with the runtime manifest of the
+        assistant's own checkpoints, which carries them, and in Guided a
+        translation version."""
+        self.text_qa.require_saved(project_id)
+        if self.guided.projects.get(project_id).get("method") == "len":
+            manifest = lifecycle(self.guided.translation.workspace, project_id).get(
+                "runtime_manifest"
             )
-        job = self.guided.translation.operation(
-            project_id,
-            "checkpoint",
-            {"manifest": manifest, "message": CHECKPOINT_MESSAGE},
-        )
+            if not manifest:
+                raise ValueError(
+                    "Save a checkpoint with the patch's runtime manifest first; the "
+                    "playtest's fixes are saved with the same manifest."
+                )
+            job = self.guided.translation.operation(
+                project_id,
+                "checkpoint",
+                {"manifest": manifest, "message": CHECKPOINT_MESSAGE},
+            )
+        else:
+            preview = self.guided.preview(
+                project_id, "checkpoint", None, {"message": CHECKPOINT_MESSAGE}
+            )
+            job = self.guided.execute(project_id, preview["token"])
         write_json(
             self.guided.path(project_id, "playtest-checkpoint"), {"id": job["id"]}
         )
@@ -338,16 +346,17 @@ class Playtest:
         waiting = sum(problem.get("review") == "waiting" for problem in problems)
         stops = (state.get("coverage") or {}).get("stops", [])
         assistant = self.guided.projects.get(project_id).get("method") == "len"
-        fixes = self.fixes(native, assistant)
-        saving = self.saving(project_id) if assistant else None
+        fixes = self.fixes(native)
+        saving = self.saving(project_id)
         if operation and operation["status"] == "running":
             following = "The playtest is running; wait with playtest --wait MINUTES or check again."
         elif saving and saving["status"] == "running":
             following = "DazedTL is saving the fixes in a checkpoint; wait with playtest --wait MINUTES."
         elif fixes.get("saved") is False:
             following = (
-                "The fixes are in the game but in no checkpoint; save them with "
-                "playtest --checkpoint."
+                "The fixes are in the game but in no "
+                + ("checkpoint" if assistant else "version")
+                + "; save them with playtest --checkpoint."
             )
         elif fixes.get("other_in_game"):
             following = (
@@ -431,9 +440,9 @@ class Playtest:
             )
         return result
 
-    def fixes(self, native, assistant=False):
-        """The fixes plugin's working copy and latest check; for an
-        Assistant-led game, also whether a checkpoint saved the game's fixes."""
+    def fixes(self, native):
+        """The fixes plugin's working copy and latest check, and whether the
+        game's latest version holds the game's fixes."""
         from dazedtl.compatibility.playtest import fixes_saved, fixes_state
 
         state = fixes_state(
@@ -441,7 +450,7 @@ class Playtest:
             Path(native["source"]),
             Path(native["data"]).parent,
         )
-        saved = fixes_saved(native["source"]) if assistant else None
+        saved = fixes_saved(native["source"])
         return state if saved is None else {**state, "saved": saved}
 
     def capture(self, project_id, name):

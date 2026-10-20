@@ -160,8 +160,8 @@ def settle_qa(workspace, params, result):
 
 def wait_playtest(workspace, params, result, minutes):
     """Waits while the playtest plays, then returns its status with the
-    report file. Fixes it writes into an Assistant-led game go on to their
-    checkpoint, so one command writes and records them."""
+    report file. Fixes it writes into the game go on to their own version,
+    so one command writes and records them."""
     deadline = time.monotonic() + minutes * 60
     status = {"project_id": params["project_id"], "step": "report"}
 
@@ -328,13 +328,13 @@ def main():
         help="Play the game with the fixes file the status names in place of the game's "
         "fixes plugin, and write it into the game once nothing new breaks and something "
         "the last playtest found is gone; History restores it in Guided, and with --wait "
-        "an Assistant-led game saves it in a checkpoint",
+        "it is saved as a version of its own",
     )
     playtest_step.add_argument(
         "--checkpoint",
         action="store_true",
-        help="Assistant-led: save the fixes in the game in a checkpoint with the runtime "
-        "manifest of your checkpoints, which carries them",
+        help="Save the fixes in the game as a version of their own: a checkpoint with "
+        "the runtime manifest of your checkpoints in Assistant-led, which carries them",
     )
     playtest_step.add_argument(
         "--layout",
