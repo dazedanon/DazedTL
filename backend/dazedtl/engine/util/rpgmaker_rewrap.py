@@ -445,12 +445,26 @@ def _script_width(text: str) -> int:
     return visible_width(script_strings.HELD.sub("x" * _HELD_WIDTH, text))
 
 
+# The space before a word that starts with "[" or "<", which a line break
+# may not take: written as "\n", a break there would start a name code such
+# as \n[1] or \n<name> (see rpgmaker_script_strings.BREAK). It is held as a
+# character no game text has, outside the interpolations' private use area.
+_BEFORE_NAME_CODE = re.compile(rf"(?<=\S)\s+(?={script_strings.NAME_CODE})")
+_KEPT_SPACE = "\U000f0000"
+
+
 def wrap_script(text: str, width: int) -> str:
     """A text variable's text with its interpolations held (see
     rpgmaker_script_strings.hold), wrapped to *width* in even lines as
     :func:`wrap_text` wraps text, each interpolation as wide as a
-    variable's value, as later fits count it."""
-    return dazedwrap.wrapShaped(text, int(width), measure=_script_width)
+    variable's value, as later fits count it. No line starts with "[" or
+    "<" after a word, which its break would make a name code."""
+    wrapped = dazedwrap.wrapShaped(
+        _BEFORE_NAME_CODE.sub(_KEPT_SPACE, text),
+        int(width),
+        measure=lambda word: _script_width(word.replace(_KEPT_SPACE, " ")),
+    )
+    return wrapped.replace(_KEPT_SPACE, " ")
 
 
 def _script_text(value: str) -> str | None:
@@ -468,10 +482,7 @@ def wrap_variable(value: str, width: int) -> str:
     if held is None or max(map(_script_width, held[0].split("\n"))) <= int(width):
         return value
     body, kept, (start, end) = held
-    wrapped = dazedwrap.wrapShaped(
-        body.replace("\n", " "), int(width), measure=_script_width
-    )
-    wrapped = script_strings.release(wrapped, kept)
+    wrapped = script_strings.release(wrap_script(body.replace("\n", " "), width), kept)
     return value[:start] + wrapped.replace("\n", r"\n") + value[end:]
 
 

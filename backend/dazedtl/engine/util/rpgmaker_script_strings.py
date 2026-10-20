@@ -16,10 +16,13 @@ from __future__ import annotations
 
 import re
 
-# A line break in a string's text: "\n", except where it starts a \n[1] actor
-# name or a name window code (\n<name>, \nc<name>, \nl<name>, \nr<name>), as
-# rpgmaker_rewrap reads them.
-BREAK = re.compile(r"\\n(?!\[|[a-zA-Z]?<)")
+# What follows "\n" where it starts a \n[1] actor name or a name window code
+# (\n<name>, \nc<name>, \nl<name>, \nr<name>), as rpgmaker_rewrap reads them.
+NAME_CODE = r"\[|[a-zA-Z]?<"
+# A line break in a string's text: "\n", except where it starts a name code,
+# so no text is written with a break right before one (see
+# rpgmaker_rewrap.wrap_script).
+BREAK = re.compile(rf"\\n(?!{NAME_CODE})")
 # A lone backslash before a letter, digit or underscore, such as a translated
 # \C[2], which the script would read as an escape of its own.
 _LONE_BACKSLASH = re.compile(r"(?<![\\])([\\]{1})(?=\w)")
@@ -29,7 +32,7 @@ _LONE_BACKSLASH = re.compile(r"(?<![\\])([\\]{1})(?=\w)")
 _TEMPLATE_SPECIAL = re.compile(r"(\\.)|\\|`|\$\{", re.S)
 # In a Ruby string's text a backslash escapes the next character; a lone one
 # before anything else, such as a translated \C[2], stands for itself.
-_RUBY_ESCAPE = re.compile(r'\\(n(?!\[|[a-zA-Z]?<)|[\\"#])?')
+_RUBY_ESCAPE = re.compile(rf'\\(n(?!{NAME_CODE})|[\\"#])?')
 # What a Ruby double-quoted string escapes: a backslash, its delimiter, a line
 # break and a "#" that would start interpolation.
 _RUBY_SPECIAL = re.compile(r'[\\"\n]|#(?=[{$@])')

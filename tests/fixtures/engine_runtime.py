@@ -588,13 +588,17 @@ try:
         # A script of the game's own (122 without a source) is code, and a
         # break inside ${...} stopped the game with a SyntaxError; a
         # translated text variable wraps around its interpolations.
+        # A line break right before "[" or "<", written as "\n", would start a
+        # name code such as \n[1] or \n<name>, so no line starts with one.
         script = (
             "`Score: ${$gameVariables.value(1) + $gameVariables.value(2)} points today`"
         )
+        herbs = "`Bring the herbs: [Herb] and <Potion> today`"
         scripts = {
             "list": [
                 {"code": 122, "parameters": [1, 1, 0, 4, script]},
                 {"code": 122, "parameters": [2, 2, 0, 4, script], "_original": "点数"},
+                {"code": 122, "parameters": [3, 3, 0, 4, herbs], "_original": "薬草"},
             ]
         }
         fit_document(
@@ -605,6 +609,7 @@ try:
         assert [command["parameters"][4] for command in scripts["list"]] == [
             script,
             r"`Score: ${$gameVariables.value(1) + $gameVariables.value(2)}\npoints today`",
+            r"`Bring the\nherbs: [Herb]\nand <Potion> today`",
         ], scripts
         # A note's translated tag body fits beside a tag left in Japanese,
         # and English with "・" bullets is not Japanese.

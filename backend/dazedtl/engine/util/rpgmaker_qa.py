@@ -590,7 +590,7 @@ _SCRIPT_QUOTES = {transform: quote for quote, transform in SCRIPT_STRINGS.items(
 # A line break a script string's text would read as the start of a name code,
 # such as \n[1] or \n<name>, once written as "\n" (see
 # rpgmaker_script_strings.BREAK).
-_BREAK_BEFORE_CODE = re.compile(r"\n(?=\[|[a-zA-Z]?<)")
+_BREAK_BEFORE_CODE = re.compile(rf"\n(?={script_strings.NAME_CODE})")
 
 
 def _as_written(
