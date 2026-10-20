@@ -231,6 +231,7 @@ class GuidedRuns:
             Basis(RUN_VERSION, {}, record.get("fingerprint"), record.get("shape")),
             Basis(RUN_VERSION, {}, inputs["fingerprint"], inputs["shape"]),
             prices_unknown=reprice
+            and record.get("fingerprint") != inputs["fingerprint"]
             and repricing.unknown_prices(
                 record["configuration"], inputs["configuration"]
             ),

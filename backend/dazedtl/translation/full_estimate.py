@@ -113,24 +113,26 @@ class FullEstimate:
             return Basis(ESTIMATE_VERSION, {}, current["fingerprint"], current["shape"])
         saved, version = {}, ESTIMATE_VERSION
         for key, value in current.items():
-            if result.get(key) in {
+            saved[key] = result.get(key)
+            if saved[key] != value and saved[key] in {
                 self.fingerprint(tasks, key, old) for old in RELEASES
             }:
                 saved[key], version = value, 1
-            else:
-                saved[key] = result.get(key)
         return Basis(version, {}, saved["fingerprint"], saved["shape"])
 
     def changed(self, result, tasks, *, reprice=True):
         """What changed since ``result`` was estimated, or None while it is
         current. With ``reprice``, settings that differ only in prices not
         known yet count as the same."""
-        configuration = self.configuration(tasks)
+        saved, current = self.basis(tasks, result), self.basis(tasks)
         return compare(
-            self.basis(tasks, result),
-            self.basis(tasks),
+            saved,
+            current,
             prices_unknown=reprice
-            and repricing.unknown_prices(result["configuration"], configuration),
+            and saved.settings != current.settings
+            and repricing.unknown_prices(
+                result["configuration"], self.configuration(tasks)
+            ),
         )
 
     @staticmethod

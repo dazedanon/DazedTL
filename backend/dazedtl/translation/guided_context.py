@@ -445,7 +445,8 @@ class GuidedContext:
             if path.is_file() and path.suffix.lower() == ".json"
         }
         findings = self.speaker_findings(project_id, native)["reportId"]
-        version = result.get("version", SCAN_VERSION)
+        # Scans saved before versions were kept count as the first.
+        version = result.get("version", 1)
         saved = Basis(
             version,
             {**sources, "findings": result.get("reportId")},
