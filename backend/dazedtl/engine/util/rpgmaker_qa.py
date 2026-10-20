@@ -23,7 +23,7 @@ from collections import Counter, defaultdict
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, NamedTuple
 
 from util.paths import (
     GAME_GLOSSARY_RELATIVE,
@@ -1518,8 +1518,13 @@ def _game(manifest: dict[str, Any], context: dict[str, Any]) -> lint.Game:
 
 
 def _lint_game(root: Path, manifest: dict[str, Any]) -> lint.Game:
-    """The lint game of a prepared task, as it was prepared."""
-    return _game(manifest, _read_json(root / "context.json"))
+    """The lint game of a prepared task, as it was prepared, with the
+    decisions its reviewers recorded since."""
+    return _game(manifest, _read_json(root / "context.json"))._replace(decided=tuple(
+        (str(entry["source"]), str(entry["translation"]))
+        for entry in _decisions(root)
+        if entry.get("source") and entry.get("translation")
+    ))
 
 
 def _lint_items(
@@ -8333,20 +8338,18 @@ def _scene_revision(
     lines: list[dict[str, Any]], replacements: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
     """A scene correction's lines after an editorial revision: a line named
-    by its command and current text takes its replacement, and one put back
-    to its current text is left out."""
+    by its command and current text takes its replacement, on which only
+    the automatic lint families compose again (see _judged_findings); one
+    put back to its current text is left out."""
     revised = {
         (row["command"], row["current"]): row["replacement"] for row in replacements
     }
-    lines = [
-        {
-            **line,
-            "correction": revised.get(
-                (line["command"], line["current"]), line["correction"]
-            ),
-        }
-        for line in lines
-    ]
+    lines = [dict(line) for line in lines]
+    for line in lines:
+        key = (line["command"], line["current"])
+        if key in revised:
+            line["correction"] = revised[key]
+            _keep_automatic_lint(line)
     return [line for line in lines if line["correction"] != line["current"]]
 
 
@@ -8548,46 +8551,36 @@ def _supersede(
     return kept, superseded
 
 
-def _complete_editorial(
-    root: Path, task: dict[str, Any], checkpoint: dict[str, Any]
-) -> dict[str, Any]:
-    """Apply editorial verdicts, then open a round for the findings no
-    editorial reviewer has judged, such as a follow-up deep round's, or for
-    conflicts, or finish."""
-    draft = _read_json(root / "draft-findings.json")
-    manifest = _read_json(root / "inventory.json")
-    records, clusters = _record_maps(manifest)
-    layout = task["layout"]
-    game = _lint_game(root, manifest)
-    editorial = checkpoint.setdefault(
-        "editorial", {"total_items": 0, "accepted_items": 0, "bundles": [], "round": 0}
-    )
-    # Each finding's verdicts in round order; a later round judged the text
-    # the earlier ones left.
-    verdicts: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    shown: dict[str, dict[str, Any]] = {}
-    set_aside: set[str] = set()
-    for row in editorial["bundles"]:
-        items = _read_json(Path(row["path"]))["items"]
-        if row["status"] == "set-aside":
-            set_aside |= {item["id"] for item in items}
-            continue
-        if row["status"] != "accepted":
-            continue
-        for review in _read_json(Path(row["result_path"]))["reviews"]:
-            verdicts[review["id"]].append(
-                {**review, "reviewer": row.get("assigned_to") or ""}
-            )
-        shown.update({item["id"]: item for item in items})
-    acks = editorial.setdefault("acks", {})
-    for identity, item in shown.items():
-        if verdicts[identity] and verdicts[identity][-1]["verdict"] == "accept":
-            for conflict in item.get("conflicts") or []:
-                if conflict["kind"] == "soft":
-                    acks[f"{conflict['key']}:{identity}"] = conflict["signature"]
+class _Judged(NamedTuple):
+    """The draft's findings after editorial's verdicts."""
+
+    # The findings that stand, as reviewers revised them, with lint remnants.
+    final: list[dict[str, Any]]
+    withdrawn: list[dict[str, Any]]
+    unverified: list[dict[str, Any]]
+    # The lint remnants still to compose; each is in final too.
+    remnants: list[dict[str, Any]]
+    # The findings no editorial reviewer has judged yet.
+    unjudged: set[str]
+
+
+def _judged_findings(
+    findings: list[dict[str, Any]],
+    verdicts: dict[str, list[dict[str, Any]]],
+    set_aside: set[str],
+    checkpoint: dict[str, Any],
+) -> _Judged:
+    """Each draft finding after its editorial verdicts, in round order.
+
+    A withdrawn finding leaves its line the lint fixes it was given, as a
+    remnant a conflict may show editorial; a verdict on the remnant counts
+    like any other, so a withdrawn one stays withdrawn. A revision replaces
+    a correction the reviewer saw with its lint fixes in it, so only the
+    automatic families, which are always right, compose on it again.
+    """
     final, withdrawn, unverified, remnants = [], [], [], []
     unjudged: set[str] = set()
-    for finding in draft["findings"]:
+    for finding in findings:
         identity = finding["id"]
         history = verdicts.get(identity) or []
         verdict = history[-1] if history else None
@@ -8631,6 +8624,7 @@ def _complete_editorial(
                 )
             else:
                 finding["correction"] = earlier["replacement"]
+                _keep_automatic_lint(finding)
         if finding.get("kind") == "scene":
             finding["target_identities"] = [
                 target for line in finding["lines"] for target in line["identities"]
@@ -8643,6 +8637,72 @@ def _complete_editorial(
             }
         final.append(finding)
     _number_findings(checkpoint, remnants)
+    composing, gone = [], set()
+    for remnant in remnants:
+        verdict = (verdicts.get(remnant["id"]) or [None])[-1]
+        if verdict and verdict["verdict"] == "withdraw":
+            withdrawn.append({
+                "id": remnant["id"], "note": verdict["note"],
+                "reviewer": verdict["reviewer"],
+            })
+            gone.add(remnant["id"])
+        elif verdict and verdict["verdict"] == "revise":
+            remnant["correction"] = verdict["replacement"]
+        else:
+            composing.append(remnant)
+    final = [finding for finding in final if finding["id"] not in gone]
+    return _Judged(final, withdrawn, unverified, composing, unjudged)
+
+
+def _keep_automatic_lint(change: dict[str, Any]) -> None:
+    """Drop the reviewed lint families of a change a reviewer revised."""
+    families = [
+        family for family in change.pop("lint_families", None) or []
+        if family in lint.AUTOMATIC
+    ]
+    if families:
+        change["lint_families"] = families
+
+
+def _complete_editorial(
+    root: Path, task: dict[str, Any], checkpoint: dict[str, Any]
+) -> dict[str, Any]:
+    """Apply editorial verdicts, then open a round for the findings no
+    editorial reviewer has judged, such as a follow-up deep round's, or for
+    conflicts, or finish."""
+    draft = _read_json(root / "draft-findings.json")
+    manifest = _read_json(root / "inventory.json")
+    records, clusters = _record_maps(manifest)
+    layout = task["layout"]
+    game = _lint_game(root, manifest)
+    editorial = checkpoint.setdefault(
+        "editorial", {"total_items": 0, "accepted_items": 0, "bundles": [], "round": 0}
+    )
+    # Each finding's verdicts in round order; a later round judged the text
+    # the earlier ones left.
+    verdicts: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    shown: dict[str, dict[str, Any]] = {}
+    set_aside: set[str] = set()
+    for row in editorial["bundles"]:
+        items = _read_json(Path(row["path"]))["items"]
+        if row["status"] == "set-aside":
+            set_aside |= {item["id"] for item in items}
+            continue
+        if row["status"] != "accepted":
+            continue
+        for review in _read_json(Path(row["result_path"]))["reviews"]:
+            verdicts[review["id"]].append(
+                {**review, "reviewer": row.get("assigned_to") or ""}
+            )
+        shown.update({item["id"]: item for item in items})
+    acks = editorial.setdefault("acks", {})
+    for identity, item in shown.items():
+        if verdicts[identity] and verdicts[identity][-1]["verdict"] == "accept":
+            for conflict in item.get("conflicts") or []:
+                if conflict["kind"] == "soft":
+                    acks[f"{conflict['key']}:{identity}"] = conflict["signature"]
+    judged = _judged_findings(draft["findings"], verdicts, set_aside, checkpoint)
+    final, withdrawn, unverified, remnants, unjudged = judged
     lint_dropped = []
     for finding in remnants:
         composed = lint.compose(

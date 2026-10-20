@@ -100,6 +100,9 @@ class Game(NamedTuple):
     titles: Mapping[str, set[str]] = {}
     # An rpgmaker_qa_glossary.Glossary, or None for a text checked alone.
     glossary: Any = None
+    # The (Japanese, English) renderings reviewers recorded as decisions,
+    # which a glossary fix may not undo.
+    decided: tuple[tuple[str, str], ...] = ()
 
 
 def _heart_spacing(source: str, text: str, game: Game) -> str:
@@ -236,7 +239,15 @@ def _glossary_term(source: str, text: str, game: Game) -> str:
         return text
     from util import rpgmaker_qa_glossary as glossary
 
-    return glossary.fix(source, text, game.glossary)
+    fixed = glossary.fix(source, text, game.glossary)
+    # A decision reviewers recorded wins over the glossary row it disputes,
+    # as Demon Lord for 魔王 over a row's Demon King's Kunai.
+    if any(
+        japanese in source and english in text and english not in fixed
+        for japanese, english in game.decided
+    ):
+        return text
+    return fixed
 
 
 FIXERS = {

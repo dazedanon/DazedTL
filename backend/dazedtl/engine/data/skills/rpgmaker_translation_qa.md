@@ -248,7 +248,8 @@ wordings are equally valid. For `fluency`, `voice` and `wordplay`, confirm the `
 independently. An item's `conflicts` name corrections that contradict each other, the
 translation quirks, a recorded decision or a structured label: revise until they agree, or
 accept with a note when the contexts need the difference. A Show Text header fix is accepted or
-withdrawn, never revised.
+withdrawn, never revised. A `replacement` is applied as you write it, with only the spacing
+after ♥ and the stray letters for the small っ fixed on top, so keep the lint fixes you agree with.
 
 A scene correction changes several lines of one scene together, and its item prints the whole
 scene with each changed line's fix.

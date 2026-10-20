@@ -221,11 +221,21 @@ assert hints["存子が笑った。"] is None and hints["存子、ありがと�
     ["存子", "Aruko"]
 ], hints
 qa.advance(task)
+# A decision the reviewers record wins over the glossary row it disputes, so
+# the accepted fix of that term gives way; on Fuuma, the glossary's Demon
+# King's Kunai fought a decision for Demon Lord through every editorial round.
+qa.record_decision(
+    task,
+    "term:分かち谷",
+    "Wakachi Valley",
+    "screen-a",
+    source="分かち谷",
+    translation="Wakachi Valley",
+)
 state = qa.finalize(task)
 findings = json.loads((task / "findings.json").read_text(encoding="utf-8"))["findings"]
 assert [(row["current"], row["correction"], row["category"]) for row in findings] == [
     ("Sonko", "Aruko", "terminology"),
-    ("It's east of Wakachi Valley.", "It's east of Dividing Valley.", "terminology"),
 ], findings
 # The note explains the rejected proposal, so the accepted one goes without it.
 assert findings[0]["evidence"] == 'The glossary gives 存子 as "Aruko".', findings
@@ -243,5 +253,50 @@ written = json.loads((data / "Map001.json").read_text(encoding="utf-8"))
 assert [
     command["parameters"][4 if command["code"] == 101 else 0]
     for command in written["events"][1]["pages"][0]["list"][:3]
-] == ["Aruko", "Sonko is here.", "It's east of Dividing Valley."], written
+] == ["Aruko", "Sonko is here.", "It's east of Wakachi Valley."], written
+
+# Editorial judges the lint remnant a withdrawn finding leaves like any
+# finding, so withdrawing it too ends it instead of reopening rounds; a
+# revision keeps only the automatic lint fixes, since the reviewer saw the
+# reviewed ones in the text they replaced.
+FIXES = ["lint:heart-spacing", "lint:glossary-term"]
+
+
+def drafted(identity, current):
+    return {
+        "id": identity,
+        "cluster_id": identity,
+        "source": "存子だ♥",
+        "current": current,
+        "correction": current + "!",
+        "target_identities": [identity],
+        "lint_families": FIXES,
+        "category": "terminology",
+        "severity": "medium",
+    }
+
+
+def verdict(kind, replacement=None):
+    return [
+        {
+            "verdict": kind,
+            "note": "Checked.",
+            "reviewer": "editor",
+            **({"replacement": replacement} if replacement else {}),
+        }
+    ]
+
+
+drafts = [drafted("QA-0001", "Sonko♥Hi"), drafted("QA-0002", "Sonko♥Bye")]
+verdicts = {"QA-0001": verdict("withdraw"), "QA-0002": verdict("revise", "Sonko♥ Bye.")}
+numbering = {"finding_ids": {"draft": "QA-0002"}}
+judged = qa._judged_findings(drafts, verdicts, set(), numbering)
+(remnant,) = judged.remnants
+assert remnant["lint_families"] == FIXES and remnant["id"] == "QA-0003", remnant
+assert [row["id"] for row in judged.final] == ["QA-0003", "QA-0002"], judged.final
+assert judged.final[1]["lint_families"] == ["lint:heart-spacing"], judged.final
+verdicts["QA-0003"] = verdict("withdraw")
+judged = qa._judged_findings(drafts, verdicts, set(), numbering)
+assert [row["id"] for row in judged.final] == ["QA-0002"] and not judged.remnants
+assert [row["id"] for row in judged.withdrawn] == ["QA-0001", "QA-0003"], judged
 print("ok")
