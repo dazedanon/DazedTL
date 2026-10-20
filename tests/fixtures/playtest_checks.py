@@ -210,7 +210,8 @@ PLUGIN_LIST = [
         "status": True,
         "parameters": {
             "ShowGauge": "false",
-            "Choice Help Commands": json.dumps(["ChoiceHelp"]),
+            # Comment markers it looks for, never text it shows.
+            "Choice Help Commands": json.dumps(["ChoiceHelp", "選択肢ヘルプ"]),
         },
     },
     {"name": "Broken", "status": True, "parameters": {}},

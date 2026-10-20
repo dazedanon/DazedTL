@@ -19,7 +19,11 @@ import re
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from util.rpgmaker_markers import SUPPORTED_CODE408_MARKERS, comment_markers
+from util.rpgmaker_markers import (
+    MARKER_SETTINGS,
+    SUPPORTED_CODE408_MARKERS,
+    comment_markers,
+)
 from util.rpgmaker_qa_reach import MAY_SHOW, Reach
 
 _JAPANESE_RE = re.compile(r"[ぁ-ゔァ-ヴ一-龠々〆〤]")
@@ -211,14 +215,16 @@ def _text(value: str) -> str:
 
 def _settings(entries: list[Any]) -> list[tuple[tuple, str]]:
     """Each turned-on plugin's Japanese settings that may be text players
-    read, rather than code or an asset path, by where they are."""
+    read, rather than code, an asset path or the comment markers it looks
+    for, by where they are."""
     found = []
     for plugin in entries:
         if not isinstance(plugin, dict) or plugin.get("status") is not True:
             continue
         for parts, value in _leaves(plugin.get("parameters") or {}):
             if (
-                japanese(value)
+                parts[0] not in MARKER_SETTINGS
+                and japanese(value)
                 and not _SCRIPT_RE.search(value)
                 and not _ASSET_PATH_RE.match(value)
             ):
