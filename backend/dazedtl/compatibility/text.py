@@ -350,17 +350,23 @@ def qa_state(plan):
             # until every proposal is reviewed or declined.
             stage, done, total = "lint", lint["accepted"], lint["total"]
         estimate = engine_status["estimate"]
-        activity = {
-            "stage": stage,
-            "done": done,
-            "total": total,
-            **(
-                {"eta_seconds": int(estimate["eta_seconds"])}
-                if estimate["eta_seconds"] is not None
-                else {}
-            ),
-            **({"one_at_a_time": True} if estimate["one_at_a_time"] else {}),
-        }
+        # A round prepared only for observed lines has nothing to screen
+        # until its first bundle moves it on: no "Screening 0 of 0".
+        activity = (
+            {}
+            if not total
+            else {
+                "stage": stage,
+                "done": done,
+                "total": total,
+                **(
+                    {"eta_seconds": int(estimate["eta_seconds"])}
+                    if estimate["eta_seconds"] is not None
+                    else {}
+                ),
+                **({"one_at_a_time": True} if estimate["one_at_a_time"] else {}),
+            }
+        )
     return {
         "current": current,
         "applied": applied,
