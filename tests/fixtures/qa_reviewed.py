@@ -335,20 +335,16 @@ assert targets(prepare()) == [
 everything = prepare(earlier=False)
 assert len(targets(everything)) == 7 and everything != second
 assert prepare() == everything
-# A task whose screen is done is rebuilt under rules an update changed from
-# the same earlier reviews it read, so it keeps that screen, here every line.
 finish(everything, set(), {})
-fingerprint = qa._engine_fingerprint
-qa._engine_fingerprint = lambda: "updated rules"
-# The update changed the extractor's code too, which its inventories name, and
-# what it derives from the text, such as each line's mechanical evidence.
+# An update that derives otherwise from the text, such as each line's
+# mechanical evidence, leaves a task of the same text current: preparing again
+# goes on with it, and its inventory reads as the game's.
 build, verify = qa.build_manifest, qa.verify_manifest
 
 
 def rebuilt_manifest(*arguments):
     manifest = build(*arguments)
     del manifest["content_sha256"]
-    manifest["extractor_source_sha256"] = "0" * 64
     for record in manifest["records"]:
         record["mechanical"]["source_runtime_tokens"].append("\\n<")
     manifest["content_sha256"] = qa._sha256(qa._canonical_bytes(manifest))
@@ -369,6 +365,11 @@ def hinted(*arguments):
 
 qa.build_manifest = rebuilt_manifest
 qa.verify_manifest = lambda *_arguments: {"valid": True, "errors": []}
+assert prepare() == everything
+assert qa.inventory_matches(everything, qa.build_manifest(data, "release"))
+# Bumping QA's rules version makes another task, which a rebuild fills from a
+# finished screen read from the same earlier reviews, here every line.
+qa.QA_RULES_VERSION += 1
 qa._screen_items = hinted
 rebuilt, state = qa.rebuild_deep_from_screen(everything)
 assert rebuilt != everything and state["screen"]["accepted"] == 7, state
@@ -382,7 +383,7 @@ except ValueError as error:
 else:
     raise AssertionError("A screen of other text was reused.")
 assert set(rebuilt.parent.iterdir()) == tasks
-qa._engine_fingerprint = fingerprint
+qa.QA_RULES_VERSION -= 1
 qa.build_manifest, qa.verify_manifest = build, verify
 qa._screen_items = screen_items
 write_game(LINES)
@@ -431,6 +432,55 @@ assert targets(scoped) == ["おはよう", PRONOUN[0], PRONOUN[0], "新しい台
 # Preparing again goes on with the scope named last.
 assert prepare(earlier=False) != scoped
 assert prepare(since="1.10") == prepare() == scoped
+
+
+def made_by_2_24(task):
+    """*task* as 2.24.0 and earlier left it: its key and task.json name a hash
+    of QA's code files, and its inventory the extractor's own hash."""
+    write = lambda name, value: (task / name).write_bytes(
+        qa._canonical_bytes(value) + b"\n"
+    )
+    read = lambda name: json.loads((task / name).read_text(encoding="utf-8"))
+    inventory = read("inventory.json")
+    del inventory["content_sha256"]
+    inventory["extractor_source_sha256"] = "e" * 64
+    inventory["content_sha256"] = qa._sha256(qa._canonical_bytes(inventory))
+    write("inventory.json", inventory)
+    descriptor = read("task.json")
+    del descriptor["rules_version"]
+    descriptor["engine_fingerprint"] = "f" * 64
+    descriptor["manifest_sha256"] = inventory["content_sha256"]
+    write("task.json", descriptor)
+    checkpoint = read("checkpoint.json")
+    checkpoint["task_sha256"] = qa._sha256(qa._canonical_bytes(descriptor))
+    write("checkpoint.json", checkpoint)
+    baselines = sorted(
+        path.stem
+        for path in (storage / qa._slug(game.name) / qa.BASELINE_FOLDER).glob("*.json")
+    )
+    key = hashlib.sha256(
+        (
+            f"{qa.TASK_SCHEMA}\0{'f' * 64}\0release\0{inventory['content_sha256']}\0"
+            f"{descriptor['context_sha256']}\0"
+            + qa._sha256(qa._canonical_bytes(descriptor["screen_configuration"]))
+            + f"\0baselines:{','.join(baselines)}"
+        ).encode()
+    ).hexdigest()[:16]
+    # Its bundles' paths and the task preparing QA returned last name its key.
+    old, new = (json.dumps(str(path))[1:-1] for path in (task, task.with_name(key)))
+    text = (task / "checkpoint.json").read_text(encoding="utf-8")
+    (task / "checkpoint.json").write_text(text.replace(old, new), encoding="utf-8")
+    (task.parent / qa.CURRENT_FILE).write_text(json.dumps({"task": key}))
+    return task.rename(task.with_name(key))
+
+
+# A task 2.24.0 or earlier made of the same text and scope goes on, in review
+# here, and its helpers find it current.
+scoped = made_by_2_24(scoped)
+assert prepare(since="1.10") == prepare() == scoped
+qa.require_current(scoped)
+row = qa.next_bundle(scoped, "rev-a")
+qa.release_bundle(scoped, row["id"])
 # The scope stays in effect for the game's later tasks, and naming a version
 # the game was never updated to is refused.
 LINES[3] = ("剣を抜け", "Unsheathe your sword!")

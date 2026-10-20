@@ -13,6 +13,7 @@
 - Default to compact, task-focused layouts. Show each status once; omit zero-value counters, repeated explanations, finished progress bars, and technical identifiers from routine views. Keep related text and actions close, and put diagnostics in the dedicated inspector. Keep window dimensions stable when switching tabs; compact the content inside them. Do not use disclosure dropdowns to hide an overstuffed layout; shorten long text with an explicit expand action when needed.
 - Add functional pages incrementally; keep prototype translation routes and synthetic output out of the product.
 - Keep credentials, games, run files, logs, and caches outside the source tree.
+- Key saved work on its inputs and an explicit version, never on hashes of source files; see [persistence](docs/architecture.md#persistence-and-settings).
 - Use `rg` for repository searches.
 - For project-helper connection failures, follow the [sandboxed connection guidance](docs/translation-contract.md#sandboxed-connections).
 

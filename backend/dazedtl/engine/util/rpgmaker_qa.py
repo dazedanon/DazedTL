@@ -63,10 +63,16 @@ from util.rpgmaker_screens import screen_of, shown_text
 from util import rpgmaker_rewrap as rewrap
 from util.rpgmaker_rewrap import rendered_rows, widest_line
 from util import rpgmaker_script_strings as script_strings
-from util.skills import rpgmaker_qa_skill_file, rpgmaker_qa_skill_parts
+from util.skills import rpgmaker_qa_skill_parts
 
 
 TASK_SCHEMA = "rpgmaker-qa-task-v3"
+# The rules a task is reviewed under. Bump it only when a change makes reviews
+# an earlier version saved wrong or unreadable: a task in review then prepares
+# again, while a finished task keeps its results and applies as before. Any
+# other change to DazedTL's code leaves saved QA work current. Tasks from
+# before this version was kept, up to 2.24.0, count as version 1.
+QA_RULES_VERSION = 1
 CHECKPOINT_SCHEMA = "rpgmaker-qa-checkpoint-v3"
 BUNDLE_SCHEMA = "rpgmaker-qa-bundle-v3"
 SCREEN_RESULT_SCHEMA = "rpgmaker-qa-screen-result-v2"
@@ -167,18 +173,6 @@ SOURCE_FIX_ALLOWED_FLAGS = {
     "database-numbers": ("visible-number-mismatch",),
     "battler-name": (ADDED_BATTLER_NAME,),
 }
-# Every module whose rules shape bundles, flags, findings or the briefs.
-_ENGINE_SOURCES = (
-    "rpgmaker_qa.py", "rpgmaker_qa_manifest.py", "rpgmaker_qa_lint.py",
-    "rpgmaker_qa_preflight.py", "rpgmaker_qa_reach.py", "rpgmaker_qa_checks.py",
-    "rpgmaker_qa_glossary.py",
-    "rpgmaker_header_check.py", "rpgmaker_rewrap.py", "dazedwrap.py",
-    "rpgmaker_script_strings.py",
-    "rpgmaker_screens/__init__.py", "rpgmaker_screens/capture.cjs",
-    "rpgmaker_screens/harness.js", "rpgmaker_window/__init__.py",
-    "rpgmaker_window/launcher.cjs", "rpgmaker_window/bridge.cjs",
-    "skills/setup.py",
-)
 # Lint proposals per review item, so a decline sets aside few of them.
 LINT_ITEM_LIMIT = 60
 
@@ -883,19 +877,11 @@ def _disallowed_flags(
     return left
 
 
-def _engine_fingerprint() -> str:
-    """Fingerprint the files that define QA's rules: the engine modules and
-    the policy the README and briefs are made from.
-
-    Only the files count, never this process's loaded values: the app keeps
-    the code it started with while each QA worker loads the files as they are,
-    so once the files change, both still agree on which rules are current.
-    """
-    files = {name: Path(__file__).parent / name for name in _ENGINE_SOURCES}
-    files["policy"] = rpgmaker_qa_skill_file()
-    return _sha256(_canonical_bytes({
-        name: _sha256(path.read_bytes()) for name, path in files.items()
-    }))
+def _rules_version(task: dict[str, Any]) -> int:
+    """The QA rules version a task was prepared under. Tasks from before
+    versions were kept name a hash of QA's code files instead and count as
+    the first."""
+    return int(task.get("rules_version", 1))
 
 
 def _atomic_write_json(path: Path, value: Any) -> None:
@@ -3483,6 +3469,94 @@ def require_current(task_dir: str | Path) -> None:
         )
 
 
+def _task_basis(
+    rules: str,
+    focus: str,
+    inventory: str,
+    context: str,
+    screen_configuration: dict[str, Any],
+) -> str:
+    """What names a task: its rules, focus, inventory and context hashes and
+    how its screen is packed."""
+    return (
+        f"{TASK_SCHEMA}\0{rules}\0{focus}\0{inventory}\0{context}\0"
+        f"{_sha256(_canonical_bytes(screen_configuration))}"
+    )
+
+
+def _task_keys(basis: str, baselines: list[str]) -> tuple[str, str]:
+    """The keys of a task reviewing every line and of one building on earlier
+    reviews and *baselines*."""
+    return (
+        _sha256(basis + "\0everything")[:16],
+        _sha256(
+            basis + (f"\0baselines:{','.join(baselines)}" if baselines else "")
+        )[:16],
+    )
+
+
+def _fingerprinted_tasks(
+    task_parent: Path,
+    manifest: dict[str, Any],
+    context: dict[str, Any],
+    screen_configuration: dict[str, Any],
+    baselines: list[str],
+) -> dict[str, str]:
+    """Tasks of these inputs that 2.24.0 and earlier made, by scope:
+    "everything" or "scoped", the one prepared last of each.
+
+    Those versions put a hash of QA's code files in a task's key, with the
+    hash of its whole inventory. Each task's key made again from what its
+    task.json recorded says which scope it has, here under *baselines*, and
+    its inventory must hold the same text.
+    """
+    try:
+        current = str(_read_json(task_parent / CURRENT_FILE).get("task") or "")
+    except (OSError, ValueError, AttributeError):
+        current = ""
+    found: dict[str, list[tuple[bool, str, str]]] = {}
+    text = None
+    for path in task_parent.iterdir():
+        if not _TASK_FOLDER_RE.fullmatch(path.name):
+            continue
+        try:
+            task = _read_json(path / "task.json")
+            fingerprint = task.get("engine_fingerprint")
+            if (
+                task.get("schema") != TASK_SCHEMA
+                or not isinstance(fingerprint, str)
+                or "rules_version" in task
+                or task.get("focus") != manifest["focus"]
+                or task.get("context_sha256") != context["content_sha256"]
+                or task.get("screen_configuration") != screen_configuration
+                or (task.get("counts") or {}).get("records")
+                != manifest["counts"]["records"]
+            ):
+                continue
+            everything, scoped = _task_keys(
+                _task_basis(
+                    fingerprint,
+                    task["focus"],
+                    task["manifest_sha256"],
+                    task["context_sha256"],
+                    task["screen_configuration"],
+                ),
+                baselines,
+            )
+            scope = {everything: "everything", scoped: "scoped"}.get(path.name)
+            if scope is None:
+                continue
+            text = text or _inventory_text(manifest)
+            if _inventory_text(_read_json(path / "inventory.json")) != text:
+                continue
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        found.setdefault(scope, []).append(
+            (path.name == current, str(task.get("created_at") or ""), path.name)
+        )
+    return {scope: max(tasks)[2] for scope, tasks in found.items()}
+
+
 def _last_scope(path: Path) -> str | None:
     """The review of every line the user chose last, "" once they named
     another scope, or None before either."""
@@ -3610,7 +3684,6 @@ def prepare_task(
     context = _context_pack(
         game, (str(record.get("source") or "") for record in manifest["records"])
     )
-    engine_fingerprint = _engine_fingerprint()
     screen_configuration = {
         "char_budget": int(screen_char_budget),
         "item_limit": int(screen_item_limit),
@@ -3633,21 +3706,38 @@ def prepare_task(
         path.stem for path in (games / BASELINE_FOLDER).glob("*.json")
         if origins is None or _baseline_origin(path) in origins
     ) if earlier else []
-    # A baseline is the user's scope, so a task under another is another task;
-    # tasks finished since leave a prepared task as it is, and so do
-    # observations, which join its review.
-    basis = (
-        f"{TASK_SCHEMA}\0{engine_fingerprint}\0{focus}\0"
-        f"{manifest['content_sha256']}\0{context['content_sha256']}\0"
-        f"{_sha256(_canonical_bytes(screen_configuration))}"
+    # A task is named by what it reviews and the rules version, never by
+    # DazedTL's code: the text its inventory holds rather than what QA derives
+    # from it. A baseline is the user's scope, so a task under another is
+    # another task; tasks finished since leave a prepared task as it is, and
+    # so do observations, which join its review.
+    full_review, task_key = _task_keys(
+        _task_basis(
+            f"rules:{QA_RULES_VERSION}",
+            focus,
+            _sha256(_canonical_bytes(_inventory_text(manifest))),
+            context["content_sha256"],
+            screen_configuration,
+        ),
+        baselines,
     )
-    full_review = _sha256(basis + "\0everything")[:16]
-    task_key = _sha256(
-        basis + (f"\0baselines:{','.join(baselines)}" if baselines else "")
-    )[:16] if earlier else full_review
     task_parent = games / focus
     task_parent.mkdir(parents=True, exist_ok=True)
     with _task_lock(task_parent):
+        # A task an earlier version made of the same inputs goes on.
+        if QA_RULES_VERSION == 1 and not all(
+            (task_parent / key / "task.json").is_file()
+            for key in (full_review, task_key)
+        ):
+            fingerprinted = _fingerprinted_tasks(
+                task_parent, manifest, context, screen_configuration, baselines
+            )
+            if not (task_parent / full_review / "task.json").is_file():
+                full_review = fingerprinted.get("everything", full_review)
+            if not (task_parent / task_key / "task.json").is_file():
+                task_key = fingerprinted.get("scoped", task_key)
+        if not earlier:
+            task_key = full_review
         # The scope the user named last goes on while the text is the same: a
         # review of every line, until a `since` names earlier text checked.
         scope = task_parent / SCOPE_FILE
@@ -3802,7 +3892,7 @@ def prepare_task(
                 "game_root": str(game),
                 "data_root": str(data),
                 "focus": focus,
-                "engine_fingerprint": engine_fingerprint,
+                "rules_version": QA_RULES_VERSION,
                 "screen_configuration": screen_configuration,
                 "layout": layout,
                 "manifest_sha256": manifest["content_sha256"],
@@ -3880,7 +3970,8 @@ def prepare_task(
 
 
 def _read_task(task_dir: str | Path) -> tuple[Path, dict, dict]:
-    """The task and its checkpoint for reading, whichever rules prepared it."""
+    """The task and its checkpoint for reading, or for applying a finished
+    task's findings, whichever rules prepared it."""
     root = Path(task_dir).expanduser().resolve()
     task = _read_json(root / "task.json")
     checkpoint = _read_json(root / "checkpoint.json")
@@ -3889,12 +3980,37 @@ def _read_task(task_dir: str | Path) -> tuple[Path, dict, dict]:
     return root, task, checkpoint
 
 
+def rules_changed(task: dict[str, Any], checkpoint: dict[str, Any]) -> bool:
+    """Whether an update changed QA's rules while this task was in review, so
+    it takes no more review and QA is prepared again. A finished task keeps
+    its results through any update."""
+    return (
+        _rules_version(task) != QA_RULES_VERSION and checkpoint["stage"] != "complete"
+    )
+
+
+def inventory_matches(task_dir: str | Path, manifest: dict[str, Any]) -> bool:
+    """Whether a prepared task's inventory is the one it was prepared with
+    and holds the text of *manifest*, read from the game now, whichever
+    version made it."""
+    root = Path(task_dir)
+    task = _read_json(root / "task.json")
+    inventory = _read_json(root / "inventory.json")
+    claimed = inventory.pop("content_sha256", None)
+    return (
+        claimed == task.get("manifest_sha256") == _sha256(_canonical_bytes(inventory))
+        and _inventory_text(inventory) == _inventory_text(manifest)
+    )
+
+
 def _load_task(task_dir: str | Path) -> tuple[Path, dict, dict]:
-    """The task and its checkpoint for work, which needs the rules that made it."""
+    """The task and its checkpoint for review work, which needs the rules
+    version that made it."""
     root, task, checkpoint = _read_task(task_dir)
-    if task.get("engine_fingerprint") != _engine_fingerprint():
+    if _rules_version(task) != QA_RULES_VERSION:
         raise ValueError(
-            f"QA rules changed after this task was prepared; create a fresh task: {root}"
+            "An update changed QA's rules after this task was prepared, so it "
+            f"takes no more review; prepare QA again: {root}"
         )
     return root, task, checkpoint
 
@@ -4085,8 +4201,7 @@ def status(task_dir: str | Path) -> dict[str, Any]:
     return {
         "task": str(root),
         "focus": task["focus"],
-        "engine_fingerprint": task["engine_fingerprint"],
-        "rules_changed": task["engine_fingerprint"] != _engine_fingerprint(),
+        "rules_changed": rules_changed(task, checkpoint),
         "stage": checkpoint["stage"],
         "mechanical": {
             "checked": task["counts"]["records"],
@@ -7653,14 +7768,12 @@ def rebuild_deep_from_screen(
     return rebuilt, status(rebuilt)
 
 
-def _inventory_text(root: Path) -> dict[str, Any]:
-    """The text a task's inventory holds and where it lives: each line's
-    Japanese, English and places, and whether its English is a script
-    string's inside. Not what QA derives from them, which an update may
-    derive otherwise, such as mechanical evidence or the transform naming a
-    text variable's quote marks, nor the hashes of the extractor's source
-    and of what it made."""
-    manifest = _read_json(root / "inventory.json")
+def _inventory_text(manifest: dict[str, Any]) -> dict[str, Any]:
+    """The text an inventory holds and where it lives: each line's Japanese,
+    English and places, and whether its English is a script string's inside.
+    Not what QA derives from them, which an update may derive otherwise, such
+    as mechanical evidence or the transform naming a text variable's quote
+    marks, nor the hashes of the extractor's source and of what it made."""
     return {
         "focus": manifest.get("focus"),
         "records": [
@@ -7782,7 +7895,9 @@ def _replay_screen(
     and set aside again as the source set them aside."""
     source_rows = source_checkpoint["screen"]["bundles"]
     _rebuilt_root, rebuilt_task, rebuilt_checkpoint = _load_task(rebuilt)
-    if _inventory_text(rebuilt) != _inventory_text(source):
+    if _inventory_text(_read_json(rebuilt / "inventory.json")) != _inventory_text(
+        _read_json(source / "inventory.json")
+    ):
         raise ValueError("Cannot reuse screening after the game's text changed")
     if rebuilt_task.get("context_sha256") != source_task.get("context_sha256"):
         raise ValueError("Cannot reuse screening after QA's context changed")
@@ -9104,7 +9219,9 @@ def correction_map(
     It is built in memory for the app's apply, which runs it on disposable
     copies and publishes the result; no QA command writes the game itself.
     """
-    root, task, checkpoint = _load_task(task_dir)
+    # A finished task's findings apply under any rules version, since apply
+    # checks them with the current rules.
+    root, task, checkpoint = _read_task(task_dir)
     if checkpoint["stage"] != "complete":
         raise ValueError("QA review must be complete before its findings are applied")
     findings_doc = _read_json(root / "findings.json")
@@ -9473,9 +9590,17 @@ def _regression_check_loaded(
             if record is None or record["live"] != expected:
                 errors.append(f"approved correction is missing: {operation['identity']}")
                 continue
-            before_record = before_records.get(operation["identity"], {})
+            # The text QA reviewed, flagged by the current rules as the
+            # correction is, whichever rules made its inventory.
+            before_record = before_records.get(operation["identity"])
             before_flags = set(
-                before_record.get("mechanical", {}).get("flags") or []
+                _mechanical_evidence(
+                    before_record["source"],
+                    before_record["live"],
+                    before_record.get("event_code"),
+                )["flags"]
+                if before_record
+                else ()
             )
             after_flags = set(record.get("mechanical", {}).get("flags") or [])
             introduced_flags = _disallowed_flags(
