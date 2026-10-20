@@ -1,17 +1,24 @@
 """Rebuild logical requests without rewriting saved plans or paid-work approvals."""
 
+from dazedtl.freshness import Basis, compare
+
 from .files import project_path, read_json
 from .requests import logical_request, plan_input
 
+# Raise when the same plan input compiles to different requests or provider
+# payloads. Plans saved before 2.25 hold a digest of the compiler's source
+# files instead, so their payloads are checked again.
+COMPILER_VERSION = 1
+
 
 def compile_requests(engine, source, options, raw, language):
-    compiled, compiler = engine.compile(source, options, raw, language)
+    compiled = engine.compile(source, options, raw, language)
     if len(compiled) != len(raw["batches"]):
         raise ValueError("The engine compiler did not return every source batch.")
     return [
         logical_request(batch, row["context"])
         for batch, row in zip(raw["batches"], compiled)
-    ], compiler
+    ], COMPILER_VERSION
 
 
 CHANGED = "Shared guidance, source metadata or references changed. Compile and review a new plan."
@@ -41,7 +48,7 @@ def verify_compilation(engine, plan, index=None):
         for row, request in zip(current, saved)
     ):
         raise ValueError(CHANGED)
-    if compiler != plan["compiler"]:
+    if compare(Basis(plan["compiler"], {}), Basis(compiler, {})):
         # A compatible code update need not orphan accepted results or approved
         # work. New paid calls still require exactly the reviewed provider bytes.
         for row, request in zip(current, saved):
@@ -51,4 +58,3 @@ def verify_compilation(engine, plan, index=None):
                 raise ValueError(
                     "The provider payload changed. Compile and review a new plan before further paid work."
                 )
-    return compiler

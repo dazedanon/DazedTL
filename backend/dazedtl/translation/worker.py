@@ -122,10 +122,10 @@ def run_locked(workspace, identity, store):
             }:
                 raise ValueError("This worker requires an approved API run.")
 
-            checked_compiler = None
+            compiled = False
 
             def current():
-                nonlocal checked_compiler
+                nonlocal compiled
                 project = ProjectWorkspace(plan["source"])
                 if scope(project.read()["options"]) != plan["scope_sha256"]:
                     raise ValueError(
@@ -139,8 +139,9 @@ def run_locked(workspace, identity, store):
                     plan["options"],
                     lifecycle(workspace, job["project_id"]),
                 )
-                if checked_compiler != engine.compiler_fingerprint():
-                    checked_compiler = verify_compilation(engine, plan)
+                if not compiled:
+                    verify_compilation(engine, plan)
+                    compiled = True
 
             last_report = 0.0
 

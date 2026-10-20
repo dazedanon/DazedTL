@@ -1357,7 +1357,6 @@ class ManualJobs:
         }
         engine = TranslationEngine.__new__(TranslationEngine)
         engine.project = lambda *_args: None
-        engine.compiler_fingerprint = lambda: "compiler"
         plan = {
             "batches": [
                 {
@@ -1372,8 +1371,22 @@ class ManualJobs:
                 }
             ]
         }
-        with patch.dict(sys.modules, modules):
-            rows, _compiler = compile_requests(engine, "unused", {}, plan, "English")
+        with patch.dict(sys.modules, modules), TemporaryDirectory() as folder:
+            # A release that only changes the engine's code keeps saved plans.
+            engine.source = Path(folder)
+            util = engine.source / "util"
+            (util / "skills").mkdir(parents=True)
+            for name in (
+                *("len_api", "len_translation", "paths", "translation", "vocab"),
+                *("sfx_reference", "reference_games", "skills/__init__"),
+                *("skills/contexts", "skills/system"),
+            ):
+                (util / (name + ".py")).write_text("")
+            rows, compiler = compile_requests(engine, "unused", {}, plan, "English")
+            Path(folder, "util/vocab.py").write_text("# changed")
+            self.assertEqual(
+                compile_requests(engine, "unused", {}, plan, "English")[1], compiler
+            )
             row = rows[0]
             self.assertEqual(row["context"]["line_kinds"], {"line": "dialogue"})
             self.assertEqual(row["context"]["qa_notes"], {"line": note})

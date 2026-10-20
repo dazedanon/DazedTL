@@ -74,7 +74,7 @@ class Engine:
                 }
             }
             for batch in plan["batches"]
-        ], "fixture-compiler"
+        ]
 
     def glossary_terms(self, _source):
         return getattr(self, "glossary", [])
@@ -688,9 +688,7 @@ class WorkflowTests(unittest.TestCase):
         changed = deepcopy(requests)
         changed[0]["context"]["system"] = "Changed guidance"
         with (
-            patch.object(
-                self.engine, "compile", return_value=(changed, "previous-compiler")
-            ),
+            patch.object(self.engine, "compile", return_value=changed),
             self.assertRaises(ValueError),
         ):
             self.service.validate_current(self.identity, frozen)
@@ -700,9 +698,9 @@ class WorkflowTests(unittest.TestCase):
         compile = self.engine.compile
 
         def guidance_changed(*args):
-            rows, compiler = compile(*args)
+            rows = compile(*args)
             rows[0]["context"]["system"] = "Changed guidance"
-            return rows, compiler
+            return rows
 
         with (
             patch.object(self.engine, "compile", guidance_changed),

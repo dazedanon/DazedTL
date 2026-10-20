@@ -240,37 +240,7 @@ class TranslationEngine:
                 )
             context.pop("request_sha256", None)
             context["request_sha256"] = digest(context)
-        return compiled, self.compiler_fingerprint()
-
-    def compiler_fingerprint(self):
-        from dazedtl.translation import compilation, requests
-
-        # Retain the compiler's code identity without hashing obsolete prompt
-        # copies in its checkout. Actual guidance also binds each logical request.
-        engine_files = (
-            "util/len_api.py",
-            "util/len_translation.py",
-            "util/paths.py",
-            "util/translation.py",
-            "util/skills/__init__.py",
-            "util/skills/contexts.py",
-            "util/skills/system.py",
-            "util/sfx_reference.py",
-            "util/vocab.py",
-            "util/reference_games.py",
-        )
-        return digest(
-            {
-                "engine": {
-                    name: digest((self.source / name).read_bytes())
-                    for name in engine_files
-                },
-                "bridge": digest(Path(__file__).read_bytes()),
-                "contract": digest(Path(requests.__file__).read_bytes()),
-                "compilation": digest(Path(compilation.__file__).read_bytes()),
-                "parameters": digest(Path(request_parameters.__file__).read_bytes()),
-            }
-        )
+        return compiled
 
     def payload(self, request, configuration):
         from util.translation import buildClaudeRequest, buildOpenAIRequest

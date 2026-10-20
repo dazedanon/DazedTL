@@ -8,6 +8,7 @@ import math
 import os
 from pathlib import Path
 
+from util.freshness import Basis, compare
 from util.len_translation import LenProject, request_contexts, shared_context, _reference_subset
 from util.paths import DATA_DIR
 
@@ -47,30 +48,28 @@ def _evidence(project, paths):
     return [{"path": key, "sha256": evidence[key]["sha256"]} for key in sorted(evidence)]
 
 
-def _compiler_fingerprint():
-    # Request fingerprints cannot detect a changed compiler/template by themselves.
-    root = DATA_DIR.parent
-    paths = ("util/len_api.py", "util/len_translation.py", "util/translation.py",
-             "util/skills/__init__.py", "util/skills/contexts.py", "util/skills/system.py",
-             "util/sfx_reference.py", "util/vocab.py", "util/reference_games.py",
-             "data/translation_contexts.json",
-             "data/sfx_reference/j_ono.json")
-    return _hash(_canonical({name: _hash((root / name).read_bytes())
-                            if (root / name).is_file() else None for name in paths}))
+# Raise when the same plan input compiles to different requests, such as after
+# a template or prompt change. Plans saved before 2.25 hold a digest of the
+# compiler's source files instead, so they ask once to be compiled again, a
+# local step with no cost.
+PLAN_VERSION = 1
+
+
+def _plan_basis():
+    return Basis(PLAN_VERSION, {})
 
 
 def compile_plan(project: LenProject, plan: dict) -> dict:
     if (not isinstance(plan, dict) or set(plan) != {"complete", "inputs", "batches"}
             or type(plan["complete"]) is not bool):
         raise ValueError("A request plan requires complete, inputs and batches.")
-    compiler = _compiler_fingerprint()
     inputs = _evidence(project, plan["inputs"])
     requests = request_contexts(project, plan["batches"])
-    if compiler != _compiler_fingerprint() or inputs != _evidence(project, plan["inputs"]):
+    if inputs != _evidence(project, plan["inputs"]):
         raise ValueError("Source inputs changed during compilation; retry the plan.")
     for request in requests:
         request["sources_sha256"] = _hash(_canonical(request["sources"]))
-    return {"schema": 1, "complete": plan["complete"], "compiler_sha256": compiler,
+    return {"schema": 1, "complete": plan["complete"], "compiler": _plan_basis().record(),
             "inputs": inputs, "batches": requests,
             "scope_sha256": _scope(project)}
 
@@ -88,7 +87,7 @@ def _read_plan(project, path):
     if (not isinstance(plan, dict) or plan.get("schema") != 1 or plan.get("complete") is not True
             or not isinstance(plan.get("batches"), list) or not plan["batches"]):
         raise ValueError("Prepare the complete request plan first; a partial corpus cannot be quoted as the whole API job.")
-    if plan.get("compiler_sha256") != _compiler_fingerprint():
+    if compare(Basis.read(plan.get("compiler")), _plan_basis()):
         raise ValueError("Request compiler or templates changed. Recompile the request plan.")
     if plan.get("scope_sha256") != _scope(project):
         raise ValueError("Project scope changed. Recompile the request plan.")
