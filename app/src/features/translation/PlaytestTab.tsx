@@ -17,6 +17,7 @@ export function PlaytestTab({
   projectId,
   playtest,
   job,
+  release,
   action,
   disabled,
   waiting,
@@ -24,8 +25,12 @@ export function PlaytestTab({
 }: {
   projectId: string;
   playtest: PlaytestState;
-  /** The latest playtest started, running or finished. */
+  /** The latest play started, running or finished: a playtest, or one with
+   * the assistant's fixes in place. */
   job?: Job;
+  /** The latest playtest; a refused fix is the assistant's to revise, not a
+   * failed play. */
+  release?: Job;
   action: ReturnType<typeof useAction>;
   disabled: boolean;
   /** The assistant is still at work, and plays the game again after its
@@ -50,7 +55,7 @@ export function PlaytestTab({
           playtest={playtest}
           running={running}
           progress={running ? job?.message : undefined}
-          failed={playtestFailure(playtest, job)}
+          failed={playtestFailure(playtest, release)}
           rerun="Run it again, or your assistant runs it again as it finishes."
           waiting={waiting}
         />

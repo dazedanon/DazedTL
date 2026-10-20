@@ -42,6 +42,7 @@ import { useOperationEnd } from "../../state/useOperationEnd";
 import { TextQaTab } from "./TextQaTab";
 import { PlaytestTab } from "./PlaytestTab";
 import { jobTime } from "../guided/workspace/model";
+import { playtestActions } from "../guided/playtestView";
 import { assistantRunState } from "./assistantPhases";
 
 export type TranslationView =
@@ -113,13 +114,13 @@ function Workspace({
       ? own.readiness.qa
       : null;
   const questions = qa?.questions.filter((row) => !row.choice).length || 0;
-  // The release playtest shows once the assistant has run one.
-  const playtestJob = own?.operations
-    .filter((item) => item.action === "release_playtest")
-    .sort((a, b) => jobTime(a) - jobTime(b))
-    .at(-1);
+  // The plays, oldest first: a playtest, or one with the assistant's fixes in
+  // place. The release playtest shows once the assistant has run one.
+  const plays = (own?.operations || [])
+    .filter((item) => playtestActions.includes(item.action || ""))
+    .sort((a, b) => jobTime(a) - jobTime(b));
   const playtest =
-    own && (own.readiness.playtest.report || playtestJob)
+    own && (own.readiness.playtest.report || plays.length)
       ? own.readiness.playtest
       : null;
   const finished = useOperationEnd(
@@ -394,7 +395,10 @@ function Workspace({
           <PlaytestTab
             projectId={project.id}
             playtest={playtest}
-            job={playtestJob}
+            job={plays.at(-1)}
+            release={plays
+              .filter((item) => item.action === "release_playtest")
+              .at(-1)}
             action={action}
             disabled={disabled}
             waiting={assistantRunState(state.progress, started) !== "done"}
