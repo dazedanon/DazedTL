@@ -15,7 +15,12 @@ import {
   shortcutLabel,
   useShortcut,
 } from "../../state/useShortcut";
-import { PageLayout, PageHeader, PageBody } from "../../ui/PageLayout";
+import {
+  PageLayout,
+  PageHeader,
+  PageBody,
+  PageMessages,
+} from "../../ui/PageLayout";
 import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
 import { Tabs, TabPanel, type Tab } from "../../ui/Tabs";
@@ -294,30 +299,30 @@ function Workspace({
           onChange={(next) => void show(next)}
         />
       </div>
-      <Message
-        message={
-          owned ||
-          [
-            "copy",
-            "resume",
-            "approve",
-            "pause",
-            "estimate-declined",
-            "copy-declined",
-          ].includes(action.key) ||
-          action.key.startsWith("qa-")
-            ? ""
-            : action.error
-        }
-        onDismiss={action.clear}
-      />
-      {[...state.warnings, ...(state.progress?.warnings || [])].map(
-        (warning) => (
-          <p className="banner" key={warning}>
-            {warning}
-          </p>
-        ),
-      )}
+      <PageMessages>
+        <Message
+          message={
+            owned ||
+            [
+              "copy",
+              "resume",
+              "approve",
+              "pause",
+              "estimate-declined",
+              "copy-declined",
+            ].includes(action.key) ||
+            action.key.startsWith("qa-")
+              ? ""
+              : action.error
+          }
+          onDismiss={action.clear}
+        />
+        {[...state.warnings, ...(state.progress?.warnings || [])].map(
+          (warning) => (
+            <Message key={warning} message={warning} />
+          ),
+        )}
+      </PageMessages>
       <TabPanel id="translation" value={view}>
         {view === "progress" && (
           <>

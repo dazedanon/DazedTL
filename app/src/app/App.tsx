@@ -17,7 +17,7 @@ import type { GuidedStep, Screen, TranslationMethod } from "../api/contracts";
 import { useApplication } from "./ApplicationProvider";
 import Settings, { type SettingsSection } from "../features/settings/Settings";
 import Updates from "../features/settings/Updates";
-import { PageHeader, PageLayout } from "../ui/PageLayout";
+import { PageHeader, PageLayout, PageMessages } from "../ui/PageLayout";
 import GuidedWorkflow from "../features/guided/GuidedWorkflow";
 import { guidedProgress, projectAmounts } from "../features/guided/progress";
 import type { GuidedIntent } from "../features/guided/workspace/model";
@@ -376,17 +376,19 @@ export default function App() {
         </aside>
         <main>
           {/* Before a workspace opens, its page says why instead. */}
-          <Message
-            message={state ? error : ""}
-            onDismiss={
-              application.stopped
-                ? undefined
-                : () => {
-                    action.clear();
-                    application.clearError();
-                  }
-            }
-          />
+          <PageMessages>
+            <Message
+              message={state ? error : ""}
+              onDismiss={
+                application.stopped
+                  ? undefined
+                  : () => {
+                      action.clear();
+                      application.clearError();
+                    }
+              }
+            />
+          </PageMessages>
           {(settingsOpened || state?.screen === "settings") && (
             <div
               hidden={state?.screen !== "settings"}

@@ -158,8 +158,8 @@
   color: var(--color-muted);
 }
 /* Pages own their scrolling; main only frames them. Anything that is not a
-   page (the app error banner, loading text, recovery panels) follows the
-   shared content column. */
+   page (loading text, recovery panels) follows the shared content column;
+   the app error banner is a frame row, as a page's own messages are. */
 main {
   flex: 1;
   min-width: 0;
@@ -168,12 +168,11 @@ main {
   overflow: hidden;
   container: frame / inline-size;
 }
-main > :not(.page-layout) {
+main > :not(.page-layout, .page-messages) {
   margin-inline: var(--frame-inline);
 }
-main > .banner {
-  flex-shrink: 0;
-  margin-block: var(--space-4) 0;
+main > .page-messages > .banner {
+  margin-top: var(--space-4);
 }
 main > p {
   margin-block: var(--space-6);

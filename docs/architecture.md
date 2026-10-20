@@ -694,7 +694,7 @@ Size and reflow content using the available window space and system display scal
 The desktop window fits its display's work area in logical pixels.
 Every page centers one content column, `--content-width` in [tokens.css](../app/src/styles/tokens.css).
 A workspace whose grid and preview use every pixel, the Images task in Guided and Assistant-led, is a wide [PageLayout](../app/src/ui/PageLayout.tsx) instead: it spans the window inside the gutter, and its frame rows widen with it so their edges keep lining up.
-Frame rows (page headers, stage strip, task tabs, scrolling bodies and footers) span the window and pad their content to that column; rows that do not scroll reserve the body's scrollbar gutter, so every edge matches across screens and window sizes.
+Frame rows (page headers, stage strip, task tabs, a page's or the app's [messages](../app/src/ui/PageLayout.tsx), scrolling bodies and footers) span the window and pad their content to that column; rows that do not scroll reserve the body's scrollbar gutter, so every edge matches across screens and window sizes.
 Windows 720px tall or shorter compact the top bar and footers; fill editors and file lists keep a minimum height, and the body scrolls instead of collapsing them.
 One choice among a few, such as Batch or Live and the file-group filters, uses [SegmentedControl](../app/src/ui/SegmentedControl.tsx), so it reads as one choice rather than separate actions.
 Editable suggestion fields use the shared [ComboBox](../app/src/ui/ComboBox.tsx): its top-layer list scrolls within the available window height and opens above the field when space below is limited.

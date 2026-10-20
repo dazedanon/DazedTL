@@ -393,9 +393,16 @@ pre {
   flex: 1;
   min-height: 0;
 }
-.page-layout--editor > .banner {
+/* A page's messages are a frame row of their own, so a banner's right edge
+   meets the gutter the header, tabs and body reserve. */
+.page-messages {
   flex-shrink: 0;
-  margin: var(--space-3) var(--frame-inline) 0;
+}
+.page-messages:empty {
+  display: none;
+}
+.page-messages > .banner {
+  margin: var(--space-3) 0 0;
 }
 .page-layout--editor .page-body {
   flex: 1;

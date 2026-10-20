@@ -23,10 +23,6 @@
   margin: 0 0 var(--space-4);
   color: var(--color-label);
 }
-.lens-method > .banner {
-  flex-shrink: 0;
-  margin: var(--space-3) var(--frame-inline) 0;
-}
 /* The context editor fills the body above its footer. */
 .lens-context-body {
   display: flex;

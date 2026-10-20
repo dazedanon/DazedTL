@@ -13,7 +13,12 @@ import Updates from "./Updates";
 import Notifications from "./Notifications";
 import { updateAttention, useUpdates } from "../../app/updates";
 import { RemoveConnection } from "./RemoveConnection";
-import { PageLayout, PageHeader, PageBody } from "../../ui/PageLayout";
+import {
+  PageLayout,
+  PageHeader,
+  PageBody,
+  PageMessages,
+} from "../../ui/PageLayout";
 import { StatusIcon } from "../../ui/StatusIcon";
 import { FieldRow, DetailRow } from "../../ui/FieldRow";
 import { Tabs, TabPanel } from "../../ui/Tabs";
@@ -122,9 +127,11 @@ export default function Settings({
           onChange={move}
         />
       </div>
-      {action.error && action.key !== "check" && section === "api" && (
-        <Message message={action.error} onDismiss={action.clear} />
-      )}
+      <PageMessages>
+        {action.error && action.key !== "check" && section === "api" && (
+          <Message message={action.error} onDismiss={action.clear} />
+        )}
+      </PageMessages>
       {section === "updates" ? (
         <TabPanel id="settings" value={section}>
           <Updates running={running} />

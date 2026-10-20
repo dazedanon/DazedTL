@@ -42,6 +42,14 @@ export function PageHeader({
     </header>
   );
 }
+/**
+ * Messages about a whole editor page or the app, such as a failed action or
+ * a warning, in a frame row of their own, so they line up with the page's
+ * header, tabs and body; it shows nothing when every message is empty.
+ */
+export function PageMessages({ children }: { children: ReactNode }) {
+  return <div className="page-messages frame-row">{children}</div>;
+}
 export function PageBody({
   className = "",
   ref,
