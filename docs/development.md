@@ -102,7 +102,8 @@ It drives this checkout's app through the same steps a user takes, in a private 
 `node scripts/scenario.mjs provider --work <dir> '<mode>'` changes how the stand-in answers, such as `{"stall":true}` or `{"refuse":["text"]}`; [its header](../scripts/testkit/provider.mjs) lists the modes.
 `node scripts/scenario.mjs clean --work <dir>` stops every process the scenario started and removes its folder.
 `node scripts/scenario.mjs live [--work <dir>] [--upgrade-from <tag>]` runs the [live test](#live-test) in a private KWin of its own.
-Scenario apps reach no provider outside the machine: the OpenAI preset points at the stand-in through `DAZEDTL_TEST_OPENAI_ENDPOINT`, and other requests go to a proxy that is not there.
+Scenario connections reach only the stand-in: the custom connection names it, and the OpenAI preset points at it through `DAZEDTL_TEST_OPENAI_ENDPOINT`, which run workers follow too.
+Other requests from the backend and window go to a proxy that is not there; run workers start without proxy settings, so a new provider path needs the run's own address.
 
 To add a scenario, add its steps to [scripts/testkit/scenarios.mjs](../scripts/testkit/scenarios.mjs), reusing the steps there and in [journey.mjs](../scripts/testkit/journey.mjs).
 To add a kind of game content, add a folder to [tests/fixtures/game-variants](../tests/fixtures/game-variants) whose `variant.json` describes it; [games.mjs](../scripts/testkit/games.mjs) says what it can change.

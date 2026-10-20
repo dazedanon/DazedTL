@@ -7,6 +7,7 @@ import net from "node:net";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import { until } from "./cdp.mjs";
 
 /** The environment variable every process of a scenario app carries. */
@@ -46,7 +47,7 @@ export function electronOf(root) {
 export async function ensureRenderer(root) {
   const build = path.join(root, "scripts/build.mjs");
   const { rendererStale, buildRenderer } = await import(
-    /* @vite-ignore */ new URL(`file://${build.replaceAll("\\", "/")}`).href
+    pathToFileURL(build).href
   );
   if (rendererStale()) {
     console.log("Building the interface…");
@@ -111,8 +112,10 @@ export async function startApp({
       env: {
         ...variables,
         ...env,
-        // Nothing a scenario does may reach a real provider: every request
-        // outside this machine goes to a proxy that is not there.
+        // Requests the backend and window make outside this machine go to a
+        // proxy that is not there. Run workers start from a clean
+        // environment without it, so the stand-in's address must reach them
+        // through the run's own route, as DAZEDTL_TEST_OPENAI_ENDPOINT does.
         HTTP_PROXY: "http://127.0.0.1:9",
         HTTPS_PROXY: "http://127.0.0.1:9",
         ALL_PROXY: "http://127.0.0.1:9",
@@ -132,15 +135,14 @@ export async function startApp({
   child.unref();
   await until(
     "the app window",
-    () => {
-      if (exit !== null)
-        throw new Error(
-          `The app exited while starting:\n${fs.readFileSync(log, "utf8").trim().split("\n").slice(-15).join("\n")}`,
-        );
-      return fs.readFileSync(log, "utf8").includes("dazedtl:shown");
-    },
+    () =>
+      exit !== null || fs.readFileSync(log, "utf8").includes("dazedtl:shown"),
     120_000,
   );
+  if (exit !== null)
+    throw new Error(
+      `The app exited while starting:\n${fs.readFileSync(log, "utf8").trim().split("\n").slice(-15).join("\n")}`,
+    );
   return child.pid;
 }
 
