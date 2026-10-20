@@ -43,15 +43,31 @@ def comment_markers(entries: Iterable[Any]) -> frozenset[str]:
     return SUPPORTED_CODE408_MARKERS | plugin_markers(entries)
 
 
-def game_plugins(game_root: str | Path) -> tuple[dict, ...]:
-    """A game's plugin list, or none it can read."""
-    from util.rpgmaker_plugin_registry import plugin_entries
+def plugin_list(script: str | Path) -> tuple[dict, ...]:
+    """A plugin list (js/plugins.js) as the game loads it, or none it can
+    read. The one reader for what a game's plugins show."""
+    from util.rpgmaker_plugin_registry import loaded_entries
 
+    try:
+        return loaded_entries(Path(script).read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return ()
+
+
+def data_plugins(data_folder: str | Path) -> tuple[dict, ...]:
+    """The plugin list of the game whose data folder this is: the one in the
+    js folder beside it, which the game loads with it."""
+    return plugin_list(Path(data_folder).parent / "js" / "plugins.js")
+
+
+def game_plugins(game_root: str | Path) -> tuple[dict, ...]:
+    """A game's plugin list, or none it can read: beside its data folder,
+    which a deployed MV game keeps in www."""
     root = Path(game_root)
-    for path in (root / "js/plugins.js", root / "www/js/plugins.js"):
-        if path.is_file():
-            try:
-                return plugin_entries(path.read_text(encoding="utf-8-sig"))
-            except (OSError, UnicodeDecodeError, ValueError):
-                return ()
+    for base in (root, root / "www"):
+        if (base / "data").is_dir() and (base / "js/plugins.js").is_file():
+            return data_plugins(base / "data")
+    for base in (root, root / "www"):
+        if (base / "js/plugins.js").is_file():
+            return plugin_list(base / "js/plugins.js")
     return ()

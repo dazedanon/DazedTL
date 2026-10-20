@@ -807,6 +807,44 @@ try:
                 max(widest_line(item["parameters"][0]) for item in refitted[1:5]) <= 24
             )
             game.write_bytes(before)
+            # A choice's help is fitted too, kept on the comment as written:
+            # its Japanese, marker first, on the 108.
+            asked = [
+                command(102, [["見る", "見ない"], 1, 0, 2, 0]),
+                command(402, [0, "見る"]),
+                command(108, ["選択肢ヘルプ"], indent=1),
+                command(408, ["所要時間:20分"], indent=1),
+                command(408, ["初回は見ることを推奨します。"], indent=1),
+                command(0, [], indent=1),
+                command(404, []),
+                command(0, []),
+            ]
+            answered = deepcopy(asked)
+            answered[0]["parameters"][0] = ["Watch", "Skip"]
+            answered[3]["parameters"] = [
+                "It takes about twenty minutes to watch it all."
+            ]
+            answered[4]["parameters"] = ["We recommend watching it the first time."]
+            helped = temporary / "helped"
+            helped.mkdir()
+            for name, value in (("source", asked), ("staged", answered)):
+                (helped / name).write_text(
+                    json.dumps({"list": value}, ensure_ascii=False)
+                )
+            written = write_rpgmaker_json(
+                helped / "source",
+                helped / "staged",
+                helped / "Map002.json",
+                Layout.from_widths(tight),
+            )
+            rows = json.loads((helped / "Map002.json").read_text(encoding="utf-8"))[
+                "list"
+            ]
+            assert written["fitted"] == 1 and len(rows) == len(asked), (written, rows)
+            assert rows[2]["_original"].startswith("選択肢ヘルプ\n"), rows[2]
+            assert max(widest_line(row["parameters"][0]) for row in rows[3:5]) <= 30, (
+                rows
+            )
 
             # Text QA corrects such a message as one text, fitted and spread over
             # its commands, however many rows it needs; undoing finds it there.
@@ -1100,8 +1138,9 @@ try:
             assert not report.changes, report.changes
             # A choice plugin shows each comment line (408) under its help
             # marker as a row. JOIN408 translates the block as one text; it is
-            # written back a line per row, laid out like the Japanese, and a
-            # later run keeps them, and lines translated one by one too.
+            # written back a line per row, laid out like the Japanese, over the
+            # rows it came from, which it records; a later run keeps them, and
+            # lines translated one by one too.
             help_lines = [
                 command(108, ["選択肢ヘルプ"]),
                 command(408, ["所要時間:20分"]),
@@ -1125,19 +1164,25 @@ try:
                         408,
                         ["Takes about 20 minutes."],
                         _original="所要時間:20分\n初回は見ることを推奨します。",
+                        _rows=2,
                     ),
                     command(408, ["We recommend watching it the first time."]),
                 ], result
                 assert parse(result[:-1]) == result, result
                 # One line at a time, a line too wide for the window wraps
-                # into lines of its own.
+                # within its own row: no command is added.
                 with patch.object(parser, "JOIN408", False):
                     result = parse(help_lines[:2])
-                    assert result[1:3] == [
+                    assert result[1:] == [
                         command(
-                            408, ["Takes about 20 minutes."], _original="所要時間:20分"
+                            408,
+                            [
+                                "Takes about 20 minutes.\nWe recommend watching it the first time."
+                            ],
+                            _original="所要時間:20分",
+                            _rows=1,
                         ),
-                        command(408, ["We recommend watching it the first time."]),
+                        command(0, []),
                     ], result
                     assert parse(result[:-1]) == result, result
                 lines = [
@@ -1146,6 +1191,15 @@ try:
                     command(408, ["Line two."], _original="二行目"),
                 ]
                 assert parse(lines)[:-1] == lines
+                # A translation written again goes over the rows it recorded,
+                # never the game's own row after them.
+                again = [
+                    help_lines[0],
+                    command(408, ["所要時間:20分"], _original="所要時間:20分", _rows=1),
+                    command(408, ["(1/3)"]),
+                ]
+                result = parse(again)
+                assert len(result) == 4 and result[2] == again[2], result
                 # A marker the game's choice plugin lists in its settings counts.
                 choice = temporary / "choice"
                 (choice / "js").mkdir(parents=True)
@@ -1160,7 +1214,12 @@ try:
                 with patch.dict(os.environ, {"DAZED_GAME_ROOT": str(choice)}):
                     result = parse([command(108, ["ChoiceHelp"]), help_lines[1]])
                 assert result[1] == command(
-                    408, ["Takes about 20 minutes."], _original="所要時間:20分"
+                    408,
+                    [
+                        "Takes about 20 minutes.\nWe recommend watching it the first time."
+                    ],
+                    _original="所要時間:20分",
+                    _rows=1,
                 ), result
                 # A choice's help shows beside the face of the message the
                 # choice follows, joined choices included, so it wraps to the

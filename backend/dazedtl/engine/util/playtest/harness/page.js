@@ -179,24 +179,6 @@
       );
   }
 
-  /** The commands that continue the one at `index`: a Show Text's lines or
-   * a comment's, past the empty commands the engine leaves where it joined
-   * lines into one. */
-  function continued(list, index, code) {
-    const lines = [];
-    for (let at = index + 1; at < list.length; at++) {
-      const command = list[at];
-      if (command && command.code === code) lines.push(command);
-      else if (
-        !command ||
-        command.code !== -1 ||
-        (command.parameters && command.parameters.length)
-      )
-        break;
-    }
-    return lines;
-  }
-
   /** Whether a text holds every line of these commands, and one at least. */
   function holds(text, commands) {
     const lines = commands
@@ -206,24 +188,44 @@
     return lines.length > 0 && lines.every((line) => whole.includes(line));
   }
 
-  /** Where commands of an interpreter's list are, as a data source marked
-   * `untranslated` when the engine never translated them, which keeps a
-   * translated command's Japanese in `_original`. */
-  function placed(list, index, commands, extra = {}) {
+  // The text blocks of each event command list, by data file and list
+  // pointer, as DazedTL read them from the game's data before it played
+  // (util/rpgmaker_blocks.py): each its kind, first command (-1 for rows
+  // without one), first and last text row, whether no translation holds its
+  // rows, and a comment's marker and whether a plugin shows it.
+  let blockIndex = null;
+
+  function textBlocks(list) {
     const found = listPointer(list);
     if (!found) return null;
+    blockIndex ||= bridge.plan().blocks || {};
+    const blocks = (blockIndex[found.file] || {})[found.pointer];
+    return blocks ? { found, blocks } : null;
+  }
+
+  /** A block's text rows, as the interpreter's list holds them. */
+  function blockRows(list, block) {
+    return list.slice(block[2], block[3] + 1);
+  }
+
+  /** Where a block is, as a data source: its first text row, the last, and
+   * `untranslated` when no translation holds its rows. */
+  function placed({ found }, block) {
+    const [kind, , first, last, untranslated, marker, shown] = block;
     return {
       file: found.file,
-      pointer: `${found.pointer}/${index}${extra.within || ""}`,
-      ...(!commands.some((command) => "_original" in command) && {
-        untranslated: true,
+      pointer: `${found.pointer}/${first}`,
+      last,
+      ...(untranslated && { untranslated: true }),
+      ...((kind === "help" || kind === "comment") && {
+        comment: marker,
+        ...(shown && { shown: true }),
       }),
-      ...(extra.comment && { comment: extra.comment }),
     };
   }
 
   /** The event command whose text the message on screen shows: its Show
-   * Text command, or a comment a plugin shows in the message window, as
+   * Text's block, or a comment a plugin shows in the message window, as
    * MPP_ChoiceEX shows a choice's help there. A message whose text no
    * command holds, as a script may add, has the Show Text it follows
    * straight on, if any. */
@@ -232,29 +234,28 @@
     let started = null;
     for (const interpreter of running()) {
       const list = interpreter._list;
+      const blocks = textBlocks(list);
+      if (!blocks) continue;
       const at = Math.min(interpreter._index, list.length - 1);
-      let index = at;
-      while (index > 0 && list[index] && list[index].code !== 101) index--;
-      if (list[index] && list[index].code === 101) {
-        const lines = continued(list, index, 401);
-        const message = [list[index], ...lines];
-        if (holds(text, lines)) return placed(list, index, message);
+      const message = blocks.blocks
+        .filter((block) => block[0] === "message" && block[1] >= 0 && block[1] <= at)
+        .pop();
+      if (message) {
+        if (holds(text, blockRows(list, message))) return placed(blocks, message);
         if (
           !started &&
           list
-            .slice(index + 1, at)
+            .slice(message[1] + 1, at)
             .every((command) => command && [401, 102].includes(command.code))
         )
-          started = placed(list, index, message);
+          started = placed(blocks, message);
       }
-      for (let index = 0; index < list.length; index++) {
-        if (!list[index] || list[index].code !== 108) continue;
-        const lines = continued(list, index, 408);
-        if (holds(text, lines))
-          return placed(list, list.indexOf(lines[0]), lines, {
-            comment: String(list[index].parameters[0]),
-          });
-      }
+      for (const block of blocks.blocks)
+        if (
+          (block[0] === "help" || block[0] === "comment") &&
+          holds(text, blockRows(list, block))
+        )
+          return placed(blocks, block);
     }
     return started;
   }
@@ -277,10 +278,13 @@
         if (choice >= 0 && (!best || distance < best.distance))
           best = { index, choice, command, distance };
       });
-      if (best)
-        return placed(list, best.index, [best.command], {
-          within: `/parameters/0/${best.choice}`,
-        });
+      const found = best && listPointer(list);
+      if (found)
+        return {
+          file: found.file,
+          pointer: `${found.pointer}/${best.index}/parameters/0/${best.choice}`,
+          ...(!("_original" in best.command) && { untranslated: true }),
+        };
     }
     return null;
   }

@@ -18,8 +18,9 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
 
+from util.rpgmaker_blocks import command_lists
 from util.rpgmaker_markers import comment_markers
-from util.rpgmaker_plugin_registry import PluginRegistryError, plugin_entries
+from util.rpgmaker_plugin_registry import PluginRegistryError, loaded_entries
 from util.rpgmaker_qa_checks import BATTLE_MESSAGES, battler_name_note, runtime
 from util.rpgmaker_qa_preflight import (
     STANDARD_FILES,
@@ -91,20 +92,6 @@ def _original(entry: Any, *keys: Any) -> Any:
     return value
 
 
-def _command_lists(document: Any, path: tuple = ()):
-    """Every event command list in a document, as an event page holds it."""
-    if isinstance(document, list):
-        if any(isinstance(item, dict) and "code" in item for item in document):
-            yield path, document
-            return
-        for index, child in enumerate(document):
-            yield from _command_lists(child, path + (index,))
-    elif isinstance(document, dict):
-        for key, child in document.items():
-            if key != "_original":
-                yield from _command_lists(child, path + (key,))
-
-
 class _Checks:
     def __init__(self, game: Path, data: Path):
         self.game = game
@@ -144,7 +131,7 @@ class _Checks:
         if not registry.is_file():
             return []
         try:
-            entries = plugin_entries(registry.read_text(encoding="utf-8-sig"))
+            entries = loaded_entries(registry.read_text(encoding="utf-8-sig"))
         except (PluginRegistryError, ValueError, UnicodeDecodeError) as exc:
             self.add(
                 "crash", "plugin-list", self._js("plugins.js"),
@@ -254,7 +241,7 @@ class _Checks:
                 )
         for name, document in self.documents.items():
             if _EVENT_FILE_RE.fullmatch(name):
-                for path, commands in _command_lists(document):
+                for path, commands in command_lists(document):
                     self._page(name, path, commands)
 
     def _code(self, name, parts, live, source, note, check) -> None:

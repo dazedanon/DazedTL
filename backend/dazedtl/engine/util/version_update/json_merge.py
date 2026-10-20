@@ -23,6 +23,8 @@ import copy
 import json
 from difflib import SequenceMatcher
 
+from util.rpgmaker_blocks import NOTES, ROWS
+
 ORIGINAL = "_original"
 _MISSING = object()
 # The key under which expand() holds a string's JSON.
@@ -110,7 +112,7 @@ def _format(value) -> str:
 def _plain(value):
     """A value without translation notes, as the releases hold it."""
     if isinstance(value, dict):
-        return {key: _plain(item) for key, item in value.items() if key != ORIGINAL}
+        return {key: _plain(item) for key, item in value.items() if key not in NOTES}
     if isinstance(value, list):
         return [_plain(item) for item in value]
     return value
@@ -138,12 +140,12 @@ def _merge(old, translation, new):
 
 
 def _merge_record(old, translation, new):
-    if translation.keys() - {ORIGINAL} != old.keys():
+    if translation.keys() - NOTES != old.keys() - NOTES:
         raise _Unsafe
     merged = {
         key: _merge(old[key], translation[key], value) if key in old else copy.deepcopy(value)
         for key, value in new.items()
-        if key != ORIGINAL
+        if key not in NOTES
     }
     notes = translation.get(ORIGINAL, _MISSING)
     if notes is _MISSING:
@@ -159,6 +161,8 @@ def _merge_record(old, translation, new):
             merged[key] = copy.deepcopy(new[key])
     if not dropped:
         merged[ORIGINAL] = copy.deepcopy(notes)
+        if ROWS in translation:
+            merged[ROWS] = translation[ROWS]
     elif isinstance(notes, dict):
         # Notes keyed by field keep the fields whose translation carried over.
         kept = {key: copy.deepcopy(value) for key, value in notes.items() if key not in dropped}

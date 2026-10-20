@@ -833,6 +833,7 @@ class TranslationEngine:
         self, root, source, translated, output, expected_original_commit
     ):
         from util.len_originals import fit_written, preserve_originals
+        from util.rpgmaker_blocks import NOTES
         from util.version_update.git_workflow import _run_git
 
         from dazedtl.translation.files import read_json
@@ -864,7 +865,7 @@ class TranslationEngine:
                 return {
                     key: without_metadata(item)
                     for key, item in value.items()
-                    if key != "_original"
+                    if key not in NOTES
                 }
             return (
                 [without_metadata(item) for item in value]

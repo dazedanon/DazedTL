@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 import re
 
+from util import rpgmaker_blocks as blocks
 from util.rpgmaker_qa_manifest import SCALAR_PARAMETER
 
 _FIELDS = {
@@ -22,7 +23,9 @@ _SYSTEM_FIELDS = _FIELDS | {
     "terms", "armorTypes", "skillTypes", "equipTypes", "elements", "weaponTypes",
     "switches", "variables", "locale",
 }
-_RUNS = {401: 401, 405: 405, 108: 408, 408: 408, 355: 655}
+# A command's rows that one translation covers: text blocks' rows (see
+# rpgmaker_blocks.run) and a script's lines.
+_RUNS = {**blocks.ROW_CODES, 355: 655}
 
 
 def _merge(kept, added):
@@ -65,9 +68,9 @@ def _align(before, after, path=""):
     if type(before) is not type(after):
         raise ValueError(f"JSON shape changed at {path or '/'}; explicit source bindings required.")
     if isinstance(before, dict):
-        if before.keys() - {"_original"} != after.keys() - {"_original"}:
+        if before.keys() - blocks.NOTES != after.keys() - blocks.NOTES:
             raise ValueError(f"JSON fields changed at {path or '/'}; explicit source bindings required.")
-        for key in before.keys() - {"_original"}:
+        for key in before.keys() - blocks.NOTES:
             if key in {"id", "code", "indent"} and before[key] != after[key]:
                 raise ValueError(f"JSON identity changed at {path}/{key}.")
             _align(before[key], after[key], f"{path}/{key}")
@@ -83,9 +86,9 @@ def _inherit(before, after):
     if isinstance(before, dict):
         if "_original" in after and after["_original"] != before.get("_original"):
             raise ValueError("Staged _original differs from the trusted source. Keep source metadata unchanged.")
-        if "_original" in before:
-            after["_original"] = copy.deepcopy(before["_original"])
-        for key in before.keys() - {"_original"}:
+        for key in blocks.NOTES & before.keys():
+            after[key] = copy.deepcopy(before[key])
+        for key in before.keys() - blocks.NOTES:
             _inherit(before[key], after[key])
     elif isinstance(before, list):
         for old, new in zip(before, after):
@@ -145,18 +148,15 @@ def _walk(before, after, *, system=False):
             item = before[index]
             code = item.get("code") if isinstance(item, dict) else None
             if code in _RUNS:
-                end = index + 1
-                while end < len(before):
-                    following = before[end]
-                    if (not isinstance(following, dict) or following.get("code") != _RUNS[code]
-                            or "_original" in following):
-                        break
-                    end += 1
+                end = (blocks.run(before, index, _RUNS[code]) or (index,))[-1] + 1
                 old = [row["parameters"][0] for row in before[index:end]]
                 new = [row["parameters"][0] for row in after[index:end]]
                 if old != new:
                     original = "\n".join(old)
                     _remember(after[index], original if original.strip() else None)
+                    if code == 408 and "_original" in after[index]:
+                        # Comment rows record the rows they own, as translation does.
+                        after[index][blocks.ROWS] = end - index
                 index = end
             else:
                 _walk(item, after[index])

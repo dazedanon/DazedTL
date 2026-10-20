@@ -17,6 +17,7 @@ from util import rpgmaker_qa as qa
 from util.playtest import fixes
 from util.playtest.checks import static_checks
 from util.playtest.run import (
+    block_index,
     compare,
     layout_probes,
     merge,
@@ -172,6 +173,13 @@ write(
                             line("◯日目", "Day ◯"),
                             # A font name is no text the player reads.
                             line("\\fn[和風]晴れの日", "\\fn[和風]A sunny day."),
+                            # A message of its own whose name alone was translated.
+                            {
+                                "code": 101,
+                                "indent": 0,
+                                "parameters": ["", 0, 0, 2, "Elder"],
+                                "_original": "村長",
+                            },
                             {
                                 "code": 401,
                                 "indent": 0,
@@ -287,10 +295,17 @@ assert report["engine"] == "MZ" and report["gaps"] == [], report
 assert [
     row["pointer"] for row in found[("untranslated", "data/Map001.json", "")]["texts"]
 ] == [
-    "/events/1/pages/1/list/5/parameters/0",
+    "/events/1/pages/1/list/6/parameters/0",
     "/events/1/pages/2/list/1/parameters/0",
     "/events/1/pages/2/list/8/parameters/0",
 ]
+
+# The tour names what it sees by the blocks the static checks read: a
+# message is untranslated by its text rows, though its name was translated.
+assert block_index(data)["Map001.json"]["/events/1/pages/1/list"] == [
+    ["message", 0, 1, 4, 0, "", 1],
+    ["message", 5, 6, 6, 1, "", 1],
+], block_index(data)
 
 assert found[("plugin-syntax", "js/plugins/Broken.js", "Broken")]["line"] == 1
 assert found[("event-codes", "data/Map001.json", "/events/1/pages/1/list/1")][
@@ -369,7 +384,8 @@ runtime = {
             "text": "まだ訳していない",
             "data": {
                 "file": "Map001.json",
-                "pointer": "/events/1/pages/1/list/5",
+                "pointer": "/events/1/pages/1/list/6",
+                "last": 6,
                 "untranslated": True,
             },
         },
@@ -381,6 +397,7 @@ runtime = {
                 "pointer": "/events/1/pages/0/list/9",
                 "untranslated": True,
                 "comment": "選択肢ヘルプ",
+                "shown": True,
             },
         },
     ],
