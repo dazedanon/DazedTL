@@ -8,6 +8,10 @@
 - Land one feature or fix at a time: merge it into `dev` and verify it there before starting the next.
   Run sessions in parallel only for areas that share no files, and never collect several feature branches to merge together at release time.
 - Match the model and effort to the job: design and hard debugging on the strongest model at high effort; reviews, probes, merges, pushes and mechanical edits on a cheaper model or lower effort.
+- Before fixing a bug, read the git history of the code involved.
+  If the same behavior was fixed before, stop and report the root cause with a proposed rework instead of patching it again.
+- Give each rule one definition, such as how a text block's rows are grouped or how a file's status is counted, and call it from every place that needs it.
+  When a fix touches a rule that is defined in more than one place, merge the copies first, or report them if merging is large.
 - Follow the ownership boundaries in [architecture](docs/architecture.md) and reuse its shared UI and state mechanisms.
 - Follow the [navigation and responsiveness boundary](docs/architecture.md#navigation-and-responsiveness) when adding screens, tabs, action handlers, or observed state.
 - Use the Qt GUI as the guided workflow reference, following the [reference and runtime distinction](docs/architecture.md#ownership).
@@ -40,6 +44,7 @@
 - Use shared layout primitives and spacing tokens, including ActionList/ActionRow for repeated action rows. Fix reusable layout defects in the shared primitive; do not compensate with per-button widths, fixed text heights, or clipped feedback.
 - Routine reversible actions should start on one click. Keep review where the user must approve cost, scope, or consequential changes; do not remove execution checks or duplicate-submission guards.
 - Action buttons must acknowledge pending work and show success or failure near the control; check saved artifacts on disk before presenting them as available.
+- Turn each bug's reproduction into a test that fails without the fix and commit it with the fix, unless the bug is a kind the skip rule below lists.
 - Before adding a test, name the concrete failure it protects against and search for overlapping coverage.
 - Extend an existing case for a distinct risk when readable; use the cheapest level that reliably catches the failure.
 - Reserve application tests for a few critical user journeys; use direct tests for difficult parsing, reconciliation, and other isolated logic.
