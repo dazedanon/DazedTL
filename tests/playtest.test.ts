@@ -15,8 +15,19 @@ const page = fs.readFileSync(
 function game() {
   const listeners: Record<string, ((event: unknown) => void)[]> = {};
   let frame = 0;
+  // Glyphs of 26-pixel text reach 6 pixels below their baseline.
   class Bitmap {
     height = 72;
+    fontSize = 26;
+    outlineWidth = 3;
+    context = {
+      save() {},
+      restore() {},
+      measureText: () => ({ actualBoundingBoxDescent: 6 }),
+    };
+    _makeFontNameText() {
+      return "26px GameFont";
+    }
     drawText(_text: string) {}
   }
   class Sprite {
@@ -44,12 +55,22 @@ function game() {
     // Draws each line 36 pixels below the last, as MZ does once it reads
     // the line's end.
     drawTextEx(text: string, x: number, y: number) {
-      const state = { x, y, height: 36, drawing: true, text, index: 0 };
+      const state = {
+        x,
+        y,
+        height: 36,
+        drawing: true,
+        text,
+        index: 0,
+        buffer: "",
+      };
       for (const line of text.split("\n")) {
         this.contents.drawText(line);
+        state.buffer = line;
         state.x = x + line.length * 10;
         state.index += line.length + 1;
         this.flushTextState(state);
+        state.buffer = "";
         state.y += 36;
       }
     }
@@ -74,6 +95,13 @@ function game() {
       this.drawTextEx(text, 0, 0);
     }
   }
+  // A window whose contents fit its glyphs rather than its line, as
+  // Keke_PredictionSystem's action view sizes them.
+  class Window_ActView extends Window_Base {
+    contentsHeight() {
+      return 33;
+    }
+  }
   class Window_Message extends Window_Base {
     startMessage() {}
   }
@@ -85,12 +113,13 @@ function game() {
   }
   const help = new Window_Help();
   const hidden = new Window_Help();
+  const action = new Window_ActView();
   const shown = new Sprite(help.contents);
   const unseen = new Sprite(hidden.contents);
   unseen.worldVisible = false;
   const scene = Object.assign(new Sprite(), {
     constructor: { name: "Scene_Item" },
-    children: [shown, unseen],
+    children: [shown, unseen, new Sprite(action.contents)],
   });
   // What the page sends the main process, as plain data the way IPC copies
   // it; a plan without stops leaves only the hooks running.
@@ -143,11 +172,11 @@ function game() {
   vm.runInNewContext(page, context);
   for (const listener of listeners.load) listener({});
   const playtest = context.__playtest as { look(): Promise<void> };
-  return { playtest, sent, help, hidden, Window_Base };
+  return { playtest, sent, help, hidden, action, Window_Base };
 }
 
 test("the playtest records text that runs past a window players see", async () => {
-  const { playtest, sent, help, hidden, Window_Base } = game();
+  const { playtest, sent, help, hidden, action, Window_Base } = game();
   // A three-line description in a two-line help window, attributed to its
   // database entry, and a sentence too wide for it.
   help.setItem({
@@ -166,6 +195,8 @@ test("the playtest records text that runs past a window players see", async () =
   hidden.setText("One\nTwo\nThree 呪い");
   const measure = new Window_Base();
   measure.drawTextEx("One\nTwo\nThree", 0, 72);
+  // Glyphs that fit a window sized to them, and the empty line after them.
+  action.drawTextEx("Attack\n", 0, 0);
   await playtest.look();
   const events = (type: string) =>
     sent.filter((event) => event.type === type).map((event) => event.value);

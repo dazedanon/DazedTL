@@ -410,8 +410,35 @@
     });
   }
 
-  function checkBounds(textState, drew) {
-    if (!drew || this._playtestMeasuring) return;
+  /** How far down the contents the glyphs of a line reach, as
+   * Bitmap.drawText centres them in the line: a window may size its contents
+   * to the glyphs rather than the line, as Keke_PredictionSystem's action
+   * view does. The line's own bottom where the glyphs can't be measured. */
+  function inkBottom(bitmap, text, textState) {
+    const line = textState.height || 0;
+    try {
+      const context = bitmap.context;
+      context.save();
+      context.font = bitmap._makeFontNameText();
+      const descent = context.measureText(text).actualBoundingBoxDescent;
+      context.restore();
+      if (!Number.isFinite(descent)) return textState.y + line;
+      return (
+        textState.y +
+        line / 2 +
+        bitmap.fontSize * 0.35 +
+        descent +
+        (bitmap.outlineWidth || 0) / 2
+      );
+    } catch {
+      return textState.y + line;
+    }
+  }
+
+  /** Text a window drew past its contents; `text` is what it drew, and
+   * nothing drawn, as at a closing line break, can't run past them. */
+  function checkBounds(textState, drew, text) {
+    if (!drew || this._playtestMeasuring || !/\S/.test(text)) return;
     const width = this.contentsWidth();
     const height = this.contentsHeight();
     // A window too small for a line only stands in for drawing elsewhere.
@@ -421,6 +448,7 @@
     // message goes on in a new page.
     else if (
       textState.y + (textState.height || 0) > height + 2 &&
+      inkBottom(this.contents, text, textState) > height + 2 &&
       !(window.Window_Selectable && this instanceof Window_Selectable) &&
       !(window.Window_Message && this instanceof Window_Message)
     )
@@ -498,16 +526,31 @@
         this._playtestText = textBefore;
       }
     };
-    if (Window_Base.prototype.flushTextState)
-      after(Window_Base.prototype, "flushTextState", function ([textState]) {
-        checkBounds.call(this, textState, textState.drawing !== false);
+    if (Window_Base.prototype.flushTextState) {
+      // MZ draws a line's text at once, from the buffer the flush empties.
+      before(Window_Base.prototype, "flushTextState", function ([textState]) {
+        this._playtestFlushed = String(textState.buffer || "");
       });
-    else
+      after(Window_Base.prototype, "flushTextState", function ([textState]) {
+        checkBounds.call(
+          this,
+          textState,
+          textState.drawing !== false,
+          this._playtestFlushed,
+        );
+      });
+    } else
       after(
         Window_Base.prototype,
         "processNormalCharacter",
         function ([textState]) {
-          checkBounds.call(this, textState, true);
+          const text = String(textState.text || "");
+          checkBounds.call(
+            this,
+            textState,
+            true,
+            text[textState.index - 1] || "",
+          );
         },
       );
     before(Window_Message.prototype, "startMessage", () => {
