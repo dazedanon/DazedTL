@@ -3097,7 +3097,8 @@ def _derive_ledger(
     variants: set[str] = set()
     rejected: set[str] = set()
     cleared: dict[str, set[str]] = defaultdict(set)
-    observed: set[str] = set()
+    # Each observation's verdict: the latest deep review of its line.
+    verdicts: dict[str, str] = {}
     unsettled: set[str] = set()
     for row in checkpoint["screen"]["bundles"]:
         if row["status"] != "accepted" or row.get("check_of"):
@@ -3147,17 +3148,10 @@ def _derive_ledger(
             if review["disposition"] == "clean":
                 reviewed.add(pair)
                 cleared[pair].update(item.get("deep_reasons") or [])
-            # An observation is judged where the reviewer left the line as it
-            # is on purpose; one they corrected is a problem still while the
-            # line keeps that text, as when editorial left the correction
-            # unverified, so the next playtest's report brings it back.
-            if review["disposition"] not in JUDGED_DISPOSITIONS:
-                continue
-            observed.update(
-                _sha256(f"{pair}\0{evidence['note']}")[:32]
-                for evidence in item.get("screen_evidence") or []
-                if evidence.get("verdict") == "observation"
-            )
+            for evidence in item.get("screen_evidence") or []:
+                if evidence.get("verdict") == "observation":
+                    key = _sha256(f"{pair}\0{evidence['note']}")[:32]
+                    verdicts[key] = review["disposition"]
     for finding in report.get("findings") or []:
         for change in _changes(finding):
             unsettled.add(_pair_key(change["source"], change["current"]))
@@ -3187,7 +3181,16 @@ def _derive_ledger(
             pair: sorted(reasons) for pair, reasons in sorted(cleared.items())
             if pair not in unsettled
         },
-        "observed": sorted(observed),
+        # An observation is judged where the reviewer left the line as it is
+        # on purpose; one they corrected is a problem still while the line
+        # keeps that text, as when editorial left the correction unverified,
+        # so the next playtest's report brings it back.
+        "observed": sorted(
+            key for key, verdict in verdicts.items() if verdict in JUDGED_DISPOSITIONS
+        ),
+        "corrected": sorted(
+            key for key, verdict in verdicts.items() if verdict not in JUDGED_DISPOSITIONS
+        ),
         "guidance": _guidance_lines(context),
         # Text fits its window only under the Line widths it was reviewed with.
         "layout": _layout_key(task.get("layout")),
@@ -5679,6 +5682,11 @@ class _TaskLines:
             for record in manifest["records"]
         }
         self.files = {row["path"]: row["sha256"] for row in manifest["files"]}
+        # Each cluster's text, as the task's ledger keys it.
+        self.pairs = {
+            cluster["representative"]: _pair_key(cluster["source"], cluster["live"])
+            for cluster in manifest["clusters"]
+        }
 
     def identities(self, name: str) -> set[str]:
         """The lines a name holds: an identity, or a shorter name."""
@@ -5719,6 +5727,11 @@ def observed_lines(
     notes: dict[str, set[str]] = defaultdict(set)
     for row in checkpoint.get(JUDGED_BEFORE if judged else "observations") or []:
         notes[row["identity"]].add(row["note"])
+    return _named(root, notes)
+
+
+def _named(root: Path, notes: dict[str, set[str]]) -> dict[str, set[str]]:
+    """Reasons by line identity, under every name of each line too."""
     if not notes:
         return {}
     found = {identity: set(held) for identity, held in notes.items()}
@@ -5726,6 +5739,33 @@ def observed_lines(
         if held := lines & notes.keys():
             found.setdefault(name, set()).update(*(notes[line] for line in held))
     return found
+
+
+def corrected_lines(
+    task_dir: str | Path, hashes: dict[str, str]
+) -> dict[str, set[str]]:
+    """The lines a complete task observes and its deep review corrected,
+    under every name, with the reasons, once the game's text changed since:
+    a line that still holds the text the task reviewed never got that
+    correction, and preparing QA again makes a task that takes it back.
+    *hashes* holds each data file's SHA-256 by its path in the data folder;
+    while the game's data is as the task read it, preparing again resumes
+    this task, so none counts."""
+    root = Path(task_dir).expanduser().resolve()
+    lines = _task_lines(root)
+    if all(hashes.get(path, digest) == digest for path, digest in lines.files.items()):
+        return {}
+    ledger = _task_ledger(root)
+    corrected = set((ledger or {}).get("corrected") or [])
+    if not corrected:
+        return {}
+    _root, _task, checkpoint = _read_task(root)
+    notes: dict[str, set[str]] = defaultdict(set)
+    for row in checkpoint.get("observations") or []:
+        pair = lines.pairs.get(row.get("cluster_id"))
+        if pair and _sha256(f"{pair}\0{row['note']}")[:32] in corrected:
+            notes[row["identity"]].add(row["note"])
+    return _named(root, notes)
 
 
 def observed_names(task_dir: str | Path) -> set[str]:

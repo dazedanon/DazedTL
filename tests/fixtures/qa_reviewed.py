@@ -1,6 +1,7 @@
 """Text QA builds on earlier reviews: lines a finished task reviewed, and a
 version the user says was checked before, are read only as context."""
 
+import hashlib
 import json
 import shutil
 import subprocess
@@ -204,13 +205,14 @@ workflow = temporary / "workflow"
 workflow.mkdir()
 
 
-def labels(task, problems=found):
-    """How the playtest's problems on the lines read with *task* as QA's."""
+def labels(task, problems=found, hashes=None):
+    """How the playtest's problems on the lines read with *task* as QA's;
+    *hashes* gives the data files' as the game holds them."""
     (workflow / "text-qa-release.json").write_text(
         json.dumps({"task": str(task)}), encoding="utf-8"
     )
     review = reviewing(workflow, "release")
-    review.read({row["identity"] for row in problems}, {})
+    review.read({row["identity"] for row in problems}, hashes or {})
     return [review.state(row["identity"], row["note"]) for row in problems]
 
 
@@ -254,6 +256,17 @@ earlier = qa._earlier_reviews(
 assert [
     earlier.observed(source, text, found[0]["note"]) for source, text in LINES[:2]
 ] == [True, False]
+# The playtest's problem on that line then waits for QA's next round once
+# other text changed, since preparing again makes a task that takes the line
+# back; while nothing changed, preparing again resumes this task.
+LINES[2] = ("静かな部屋だ", "So quiet in here.")
+write_game(LINES)
+hashes = {
+    "Map001.json": hashlib.sha256((data / "Map001.json").read_bytes()).hexdigest()
+}
+assert labels(first, hashes=hashes) == ["reviewed", "waiting"]
+LINES[2] = ("静かな部屋だ", "A quiet room.")
+write_game(LINES)
 
 # The correction is applied as the app applies it, its rows spread over the
 # message's commands, and the glossary entries for 剣 and ミナ gain notes:
