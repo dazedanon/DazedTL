@@ -203,17 +203,20 @@ workflow = temporary / "workflow"
 workflow.mkdir()
 
 
-def labels(task):
-    """How the playtest's problems on the two lines read with *task* as QA's."""
+def labels(task, problems=found):
+    """How the playtest's problems on the lines read with *task* as QA's."""
     (workflow / "text-qa-release.json").write_text(
         json.dumps({"task": str(task)}), encoding="utf-8"
     )
     review = reviewing(workflow, "release")
-    review.read({row["identity"] for row in found}, {})
-    return [review.state(row["identity"]) for row in found]
+    review.read({row["identity"] for row in problems}, {})
+    return [review.state(row["identity"], row["note"]) for row in problems]
 
 
-assert labels(first) == ["reviewed", "reviewed"]
+# A problem on a reviewed line for a reason the task never took waits for
+# QA's next round, so the final check doesn't finish without it.
+squeezed = {**found[0], "note": "Squeezed into the name box."}
+assert labels(first, [*found, squeezed]) == ["reviewed", "reviewed", "waiting"]
 # Findings another task made are no review of this one, and a task the app
 # set aside as unreadable is no review to build on, even with its ledger
 # saved before.
@@ -266,8 +269,8 @@ assert second != first
 assert targets(second) == ["ミナが来る", "剣を抜け"], targets(second)
 # The next round reviews the corrected line, and leaves out the other, which
 # deep review judged for the same text and reason: it reads as reviewed,
-# never as outside QA's review.
-assert labels(second) == ["reviewed", "reviewing"]
+# never as outside QA's review, while it was judged for that reason only.
+assert labels(second, [*found, squeezed]) == ["reviewed", "reviewing", "waiting"]
 assert prepare(observations=found) == second
 assert [
     row["note"]

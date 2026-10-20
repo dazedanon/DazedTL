@@ -512,10 +512,8 @@ named = [
 ]
 review = reviewing(workflow, "database")
 review.read({row["identity"] for row in named}, {})
-reviews = {
-    row["identity"]: _problem({"fix": "text-qa", **row}, review)["review"]
-    for row in named
-}
+problems = [{"kind": "fit", "fix": "text-qa", **row} for row in named]
+reviews = {row["identity"]: _problem(row, review)["review"] for row in problems}
 assert reviews == {
     "Items.json#/1/description": "reviewing",
     "Items.json#/9/description": "outside",

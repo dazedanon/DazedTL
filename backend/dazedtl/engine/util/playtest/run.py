@@ -433,24 +433,27 @@ def compare(previous: dict[str, Any], report: dict[str, Any]) -> dict[str, int]:
     return {"fixed": len(before - now), "new": new}
 
 
+def observation(problem: dict[str, Any]) -> dict[str, Any] | None:
+    """A problem text QA can correct, as an observation of its line; None
+    for any other problem."""
+    if problem.get("fix") != "text-qa" or not problem.get("identity"):
+        return None
+    category = {"japanese": "meaning", "fit": "ui", "codes": "runtime"}.get(
+        problem["kind"], "other"
+    )
+    note = problem["note"]
+    if problem.get("seen"):
+        note += f" Seen on {problem['seen'].get('scene', 'screen')} in the playtest."
+    return {
+        "identity": problem["identity"],
+        "categories": [category],
+        "note": note[:480],
+    }
+
+
 def observations(report: dict[str, Any]) -> list[dict[str, Any]]:
     """The problems text QA can correct, as observations of its lines."""
-    found = []
-    for problem in report["problems"]:
-        if problem.get("fix") != "text-qa" or not problem.get("identity"):
-            continue
-        category = {"japanese": "meaning", "fit": "ui", "codes": "runtime"}.get(
-            problem["kind"], "other"
-        )
-        note = problem["note"]
-        if problem.get("seen"):
-            note += f" Seen on {problem['seen'].get('scene', 'screen')} in the playtest."
-        found.append({
-            "identity": problem["identity"],
-            "categories": [category],
-            "note": note[:480],
-        })
-    return found
+    return [found for problem in report["problems"] if (found := observation(problem))]
 
 
 LAYOUT_WIDTHS = ("width", "faceWidth", "listWidth", "messageRows")

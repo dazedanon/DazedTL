@@ -487,12 +487,16 @@ class Review:
         except ValueError, OSError, KeyError, TypeError:
             self.outside, self.changed = set(), set()
 
-    def state(self, name):
+    def state(self, name, note):
+        """Where the task stands on a line the playtest names for the reason
+        in *note*, as its observation words it: the task's review of the
+        line for another reason leaves this one waiting for QA's next
+        round."""
         if name in self.changed:
             return "waiting"
-        if name in self.observed:
+        if note in self.observed.get(name, ()):
             return "reviewed" if self.complete else "reviewing"
-        if name in self.judged:
+        if note in self.judged.get(name, ()):
             return "reviewed"
         return "outside" if name in self.outside else "waiting"
 
@@ -575,9 +579,15 @@ def _seen(value):
 
 
 def _problem(row, review):
+    from util.playtest.run import observation
+
     problem = {key: row[key] for key in PROBLEM_KEYS if key in row}
-    if row.get("fix") == "text-qa" and row.get("identity"):
-        problem["review"] = review.state(row["identity"]) if review else "waiting"
+    if observed := observation(row):
+        problem["review"] = (
+            review.state(observed["identity"], observed["note"])
+            if review
+            else "waiting"
+        )
     if row.get("seen"):
         problem["seen"] = _seen(row["seen"])
     if row.get("texts"):
