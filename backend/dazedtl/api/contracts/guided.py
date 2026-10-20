@@ -321,14 +321,16 @@ class QaFinding(TypedDict):
     ]
     places: Annotated[int, "Lines the correction changes."]
     files: list[str]
-    reason: str
+    reason: Annotated[
+        str,
+        "What is wrong in one plain sentence; a task made before reviewers wrote one gives their full evidence.",
+    ]
     lines: NotRequired[
         Annotated[
             list[QaLineChange],
             "A scene correction's lines, which apply and undo together; source, current and correction join them.",
         ]
     ]
-    editorial: NotRequired[Annotated[str, "The editorial reviewer's note."]]
     state: NotRequired[Literal["applied", "undone"]]
 
 
@@ -339,7 +341,7 @@ class QaQuestion(TypedDict):
     id: str
     source: str
     current: str
-    reason: str
+    reason: Annotated[str, "As a finding's reason."]
     places: int
     proposal: str
     choice: NotRequired[Literal["keep", "use"]]
@@ -383,8 +385,20 @@ class QaNotCorrected(TypedDict):
     file: str
     source: str
     current: str
-    reason: str
+    reason: Annotated[str, "As a finding's reason."]
+    evidence: NotRequired[
+        Annotated[str, "The reviewer's full reasoning, when it says more."]
+    ]
     places: int
+
+
+class QaReviewNote(TypedDict):
+    """A finding's or question's full review, for the History inspector."""
+
+    id: str
+    current: Annotated[str, "The line as reviewers read it, to find it by."]
+    evidence: Annotated[str, "The reviewer's full reasoning."]
+    editorial: NotRequired[Annotated[str, "The editorial reviewer's note."]]
 
 
 class QaUntranslatedText(TypedDict):
@@ -424,6 +438,9 @@ class QaReport(TypedDict):
 
     not_reviewed: list[QaReportLine]
     not_corrected: list[QaNotCorrected]
+    notes: Annotated[
+        list[QaReviewNote], "Each correction's and question's full review."
+    ]
     not_translated: list[QaUntranslatedSource]
     interface_outside: list[QaInterfaceText]
     interface_error: NotRequired[str]

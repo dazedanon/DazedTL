@@ -134,6 +134,7 @@ def finish(task, flagged, corrections):
                         "category": "meaning",
                         "family_key": "",
                         "motif_ids": [],
+                        "summary": "The line breaks the scene's past tense.",
                         "evidence": "The scene is told in the past tense.",
                         "correction": corrections[item["source"]],
                         "apply_identities": [],

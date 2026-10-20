@@ -116,6 +116,11 @@ DEEP_DISPOSITIONS = frozenset({
 })
 # A reviewer that will not review an item says why in one line, without game text.
 DECLINE_REASON_LIMIT = 300
+# A review that changes or reports a line says what is wrong in one plain
+# sentence the user reads on the Text QA page; `evidence` keeps the reasoning.
+SUMMARY_LIMIT = 120
+_SUMMARY_CODE_RE = re.compile(r"\\[A-Za-z{}<>|.!^$]|\.json\b|#/")
+SUMMARY_DISPOSITIONS = frozenset({"actionable", "uncertain-playtest", "not-corrected"})
 # Workers on one AI helper share its boundaries, so what one of them declined
 # goes only to workers on another helper; a worker names its helper when it
 # runs on a different one than the coordinator.
@@ -458,6 +463,23 @@ def _simulate_apply(
     if problems:
         raise QAResultError(
             "These corrections would block apply: " + " | ".join(problems[:20])
+        )
+
+
+def _validate_summary(review: dict[str, Any], identity: str) -> None:
+    """Require the one plain sentence the user reads for a reviewed line."""
+    summary = review.get("summary")
+    if (
+        not isinstance(summary, str)
+        or not summary.strip()
+        or "\n" in summary
+        or len(summary.strip()) > SUMMARY_LIMIT
+        or _SUMMARY_CODE_RE.search(summary)
+    ):
+        raise QAResultError(
+            f"A review needs a summary: one plain sentence of at most "
+            f"{SUMMARY_LIMIT} characters saying what a player would see wrong, "
+            f"without control codes or file pointers: {identity}"
         )
 
 
@@ -2848,6 +2870,7 @@ def _skill_values(task_dir: Path, task: dict[str, Any]) -> dict[str, str]:
             Path(task["game_root"]) / ".dazedtl" / "qa-receipts" / task_dir.name
         ),
         "CATEGORIES": ", ".join(sorted(FINDING_CATEGORIES)),
+        "SUMMARY_LIMIT": str(SUMMARY_LIMIT),
         "SCREEN_SCHEMA": SCREEN_RESULT_SCHEMA,
         "DEEP_SCHEMA": DEEP_RESULT_SCHEMA,
         "SWEEP_SCHEMA": SWEEP_RESULT_SCHEMA,
@@ -5237,6 +5260,8 @@ def _validate_deep_result(
                     f"A declined item carries only its reason: {identity}"
                 )
             continue
+        if disposition in SUMMARY_DISPOSITIONS:
+            _validate_summary(review, identity)
         if disposition == "actionable":
             if review.get("severity") not in SEVERITIES:
                 raise QAResultError(f"Actionable review has invalid severity for {identity}")
@@ -6791,6 +6816,7 @@ def _add_sweep_findings(
             "severity": item["severity"],
             "category": item["category"],
             "family_key": item["family_key"],
+            "summary": item["example"]["summary"],
             "evidence": (
                 "Same problem as an accepted correction: "
                 + item["example"]["evidence"]
@@ -6879,6 +6905,11 @@ def _add_lint_findings(
                 })
                 continue
             reviewed = any(family not in lint.AUTOMATIC for family in part)
+            summary = " ".join(
+                lint.note(family, cluster["source"], cluster["live"], game)
+                or lint.FAMILIES[family]["description"]
+                for family in part
+            )
             findings.append({
                 "id": "",
                 "cluster_id": cluster_id,
@@ -6891,11 +6922,8 @@ def _add_lint_findings(
                     "formatting",
                 ),
                 "family_key": part[0],
-                "evidence": " ".join(
-                    lint.note(family, cluster["source"], cluster["live"], game)
-                    or lint.FAMILIES[family]["description"]
-                    for family in part
-                ) + "".join(
+                "summary": summary,
+                "evidence": summary + "".join(
                     " Reviewer: " + note for note in decision["notes"][:2] if reviewed
                 ),
                 "source": cluster["source"],
@@ -7269,6 +7297,7 @@ def _sweep_items(
                 "source": item["source"],
                 "current": item["translation"],
                 "correction": review["correction"],
+                "summary": review["summary"].strip(),
                 "evidence": review["evidence"],
             },
             "category": _normalize_category(review.get("category")),
@@ -7813,6 +7842,7 @@ def _draft_document(
                 "severity": review["severity"],
                 "category": _normalize_category(review.get("category")),
                 "family_key": _normalize_family_key(review.get("family_key")),
+                "summary": review["summary"].strip(),
                 "evidence": review["evidence"],
                 "source": cluster["source"],
                 "current": cluster["live"],
@@ -7836,6 +7866,7 @@ def _draft_document(
         elif review["disposition"] == "uncertain-playtest" and places:
             uncertain.append({
                 **review,
+                "summary": review["summary"].strip(),
                 "source": cluster["source"],
                 "current": cluster["live"],
                 "places": len(places),
@@ -7846,6 +7877,7 @@ def _draft_document(
                 "source": cluster["source"],
                 "current": cluster["live"],
                 "places": len(places),
+                "summary": review["summary"].strip(),
                 "evidence": review["evidence"],
                 "reviewer": str(row.get("assigned_to") or ""),
             })
@@ -8066,6 +8098,7 @@ def _show_text_finding(
         "severity": review["severity"],
         "category": "speaker",
         "family_key": _normalize_family_key(review.get("family_key")),
+        "summary": review["summary"].strip(),
         "evidence": review["evidence"],
         "source": record["source"],
         "current": header_text(parameters),
@@ -8150,6 +8183,7 @@ def _scene_finding(
         "severity": review["severity"],
         "category": category,
         "family_key": _normalize_family_key(review.get("family_key")),
+        "summary": review["summary"].strip(),
         "evidence": review["evidence"],
         "lines": lines,
         "target_identities": targets,
@@ -8639,10 +8673,11 @@ def _judged_findings(
                     "severity": "medium",
                     "category": "formatting",
                     "family_key": finding["lint_families"][0],
-                    "evidence": " ".join(
+                    "summary": (summary := " ".join(
                         lint.FAMILIES[family]["description"]
                         for family in finding["lint_families"]
-                    ),
+                    )),
+                    "evidence": summary,
                     "correction": finding["current"],
                     "lint_only": True,
                 })

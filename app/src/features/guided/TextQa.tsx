@@ -18,6 +18,7 @@ import { ActionControl } from "../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { AssistantTask, type AssistantTaskState } from "../../ui/AssistantTask";
 import { Button } from "../../ui/Button";
+import { ExpandableText } from "../../ui/ExpandableText";
 import { LineChange } from "../../ui/LineChange";
 import { Notice } from "../../ui/Notice";
 import { StatusMark } from "../../ui/StatusMark";
@@ -343,7 +344,7 @@ export function QaQuestions({
                   afterLabel="Proposal"
                   applied={row.state === "applied"}
                 />
-                <small>{row.reason}</small>
+                <QaReason text={row.reason} />
                 {row.places > 1 && (
                   <small>{row.places} places in the game</small>
                 )}
@@ -401,6 +402,26 @@ export function QaQuestions({
 
 /** Rows a category shows before its explicit Show all. */
 const groupPreview = 10;
+/**
+ * Characters of a reason shown before its explicit Show more: reviewers'
+ * plain sentences fit, while a task made before they wrote one shows the
+ * start of their full evidence.
+ */
+const reasonPreview = 140;
+
+/** What is wrong with a line, in the reviewer's plain sentence. */
+function QaReason({ text }: { text: string }) {
+  return (
+    <small>
+      <ExpandableText
+        text={text}
+        label="Reason"
+        appearance="inline"
+        limit={reasonPreview}
+      />
+    </small>
+  );
+}
 /** Lines a scene correction shows before its explicit Show all. */
 const scenePreview = 3;
 
@@ -476,13 +497,12 @@ export function QaAuditLog({
                 label={
                   <>
                     <FindingChange row={row} />
-                    <small>{row.reason}</small>
+                    <QaReason text={row.reason} />
                     <small>
                       {[
                         qaOrigin(row),
                         row.files.join(", "),
                         row.places > 1 && `${row.places} places`,
-                        row.editorial && `Editorial: ${row.editorial}`,
                       ]
                         .filter(Boolean)
                         .join(" · ")}
@@ -635,9 +655,9 @@ function ScreenLabels({
 }
 
 /**
- * What the current QA task did not cover, for the History inspector: defects
- * no correction could fix, lines reviewers declined, Japanese never
- * translated and screen text QA can't correct. Each has its own owner, so the page leaves it out and the
+ * QA's record for the History inspector: defects no correction could fix,
+ * reviewers' full notes, lines reviewers declined, Japanese never translated
+ * and screen text QA can't correct. Each has its own owner, so the page leaves it out and the
  * inspector keeps the record.
  */
 export function QaCoverageReport({
@@ -685,11 +705,37 @@ export function QaCoverageReport({
                   <>
                     <Change source={row.source} before={row.current} />
                     <small>{row.reason}</small>
+                    {row.evidence && <small>{row.evidence}</small>}
                     <small>
                       {row.places > 1
                         ? `${row.file} · ${row.places} places in the game`
                         : row.file}
                     </small>
+                  </>
+                }
+              />
+            ))}
+          </ActionList>
+        </section>
+      )}
+      {report.notes.length > 0 && (
+        <section aria-label="Reviewers' notes">
+          <h3>
+            Reviewers&apos; notes · {report.notes.length.toLocaleString()}
+          </h3>
+          <p className="muted">
+            The full reasoning behind the corrections and questions the page
+            sums up in one sentence.
+          </p>
+          <ActionList>
+            {report.notes.map((row) => (
+              <ActionRow
+                key={row.id}
+                label={
+                  <>
+                    <strong>{row.current}</strong>
+                    <small>{row.evidence}</small>
+                    {row.editorial && <small>Editorial: {row.editorial}</small>}
                   </>
                 }
               />

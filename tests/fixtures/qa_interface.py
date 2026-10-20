@@ -215,6 +215,7 @@ def review(row):
                     "category": "ui",
                     "family_key": "",
                     "motif_ids": [],
+                    "summary": "The name is squeezed in the item list.",
                     "evidence": "The item list squeezes it.",
                     "correction": correction,
                     "apply_identities": [],

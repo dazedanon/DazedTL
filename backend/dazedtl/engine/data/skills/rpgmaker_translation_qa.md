@@ -190,6 +190,10 @@ that `prior_review`, and your review replaces it.
   `motif-scene-contradiction` means a scene reviewer disputed a variant of a family called
   preserved, so every variant was reopened. Set `motif_ids` only when your correction or
   question concerns that joke mechanism.
+- Every `actionable`, `uncertain-playtest` and `not-corrected` review carries a `summary`: one
+  plain sentence of at most {{SUMMARY_LIMIT}} characters the user reads in DazedTL, saying what is
+  wrong as a player would see it, such as "The line break splits 'Unlock Condition:' across two
+  lines." No control codes, file names or pointers; `evidence` keeps your full reasoning.
 - `actionable` is for a concrete, source-supported defect with a correction: severity
   `critical`, `high` or `medium`, and one category from {{CATEGORIES}}. A correction must pass
   apply's regression: DazedTL refuses one that adds a flag, changes a number, breaks a line
@@ -301,7 +305,7 @@ Screen:
 Deep:
 
 ```json
-{"schema":"{{DEEP_SCHEMA}}","bundle_id":"deep-0001","bundle_sha256":"...","reviews":[{"id":"...","disposition":"actionable","severity":"medium","category":"voice","family_key":"term:...","motif_ids":[],"evidence":"concrete reason","correction":"Corrected text.","apply_identities":[],"editorial_basis":{"defect":"...","source_support":"...","not_preference":true},"sweep":{"find":"exact current text","replace":"exact corrected text","source_has":"optional Japanese"}}],"observations":[]}
+{"schema":"{{DEEP_SCHEMA}}","bundle_id":"deep-0001","bundle_sha256":"...","reviews":[{"id":"...","disposition":"actionable","severity":"medium","category":"voice","family_key":"term:...","motif_ids":[],"summary":"One plain sentence for the user.","evidence":"concrete reason","correction":"Corrected text.","apply_identities":[],"editorial_basis":{"defect":"...","source_support":"...","not_preference":true},"sweep":{"find":"exact current text","replace":"exact corrected text","source_has":"optional Japanese"}}],"observations":[]}
 ```
 
 A clean review keeps `severity` null, `category` and `family_key` empty and `correction` null.

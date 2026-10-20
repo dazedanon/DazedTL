@@ -294,13 +294,8 @@ def qa_state(plan):
                 "kind": _finding_kind(row),
                 "places": max(1, len(targets)),
                 "files": files,
-                "reason": row.get("evidence") or "",
+                "reason": reason(row),
                 **({"lines": lines} if lines else {}),
-                **(
-                    {"editorial": row["editorial"]["note"]}
-                    if (row.get("editorial") or {}).get("note")
-                    else {}
-                ),
                 **(
                     {"state": finding_state(row["id"])}
                     if finding_state(row["id"])
@@ -314,7 +309,7 @@ def qa_state(plan):
             "id": row["id"],
             "source": shown(row, "source"),
             "current": shown(row, "current"),
-            "reason": row.get("evidence") or "",
+            "reason": reason(row),
             "places": int(row.get("places") or 1),
             "proposal": shown(row, "correction"),
             **({"choice": choices[row["id"]]} if row["id"] in choices else {}),
@@ -451,6 +446,45 @@ def qa_outside(task):
     return outside
 
 
+def reason(row):
+    """What is wrong with a reviewed line, as the page shows it: the
+    reviewer's one plain sentence, or for a task made before reviewers wrote
+    one, their full evidence, which the page shortens."""
+    return row.get("summary") or row.get("evidence") or ""
+
+
+def review_notes(document):
+    """Each correction's and question's full review, for the History
+    inspector; the page shows only its plain sentence."""
+    return [
+        {
+            "id": row["id"],
+            "current": (row.get("shown") or {}).get(
+                "current",
+                row.get("current")
+                or "\n".join(line["current"] for line in row.get("lines") or []),
+            ),
+            "evidence": row.get("evidence") or "",
+            **(
+                {"editorial": row["editorial"]["note"]}
+                if (row.get("editorial") or {}).get("note")
+                else {}
+            ),
+        }
+        for row in [
+            *document.get("findings", []),
+            *(
+                row
+                for row in document.get("uncertain_playtests", [])
+                if row.get("correction")
+            ),
+        ]
+        # Lint fixes' evidence is their plain sentence, which the page shows.
+        if row.get("evidence") not in (None, "", row.get("summary"))
+        or (row.get("editorial") or {}).get("note")
+    ]
+
+
 def not_corrected(document):
     """The defects reviewers found but could not correct, as the page shows
     them: a text variable's as it reads. Older tasks asked a question without
@@ -461,7 +495,13 @@ def not_corrected(document):
             "file": row["id"].split("#", 1)[0],
             "source": (row.get("shown") or {}).get("source", row["source"]),
             "current": (row.get("shown") or {}).get("current", row["current"]),
-            "reason": row.get("evidence") or "",
+            "reason": reason(row),
+            **(
+                {"evidence": row["evidence"]}
+                if row.get("summary")
+                and row.get("evidence") not in (None, "", row["summary"])
+                else {}
+            ),
             "places": int(row.get("places") or 1),
         }
         for row in [
@@ -495,6 +535,7 @@ def qa_report(plan):
     return {
         "not_reviewed": document.get("not_reviewed", []),
         "not_corrected": not_corrected(document),
+        "notes": review_notes(document),
         "not_translated": read_sources(qa._read_json(root / "preflight.json")),
         "interface_outside": [
             {"text": row["text"], "title": row["title"]} for row in outside

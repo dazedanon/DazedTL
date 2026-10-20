@@ -1280,7 +1280,6 @@ main:has(> .page-layout--wide) {
 }
 .expandable-text--inline > button {
   display: inline;
-  margin-left: var(--space-1);
 }
 .expandable-text--fill {
   display: flex;

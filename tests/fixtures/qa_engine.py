@@ -543,6 +543,7 @@ def deep_result(row, corrections, declined=("朝だ",)):
                     "category": "",
                     "family_key": "",
                     "motif_ids": [],
+                    "summary": "Whether the owner knows Arina depends on an earlier scene.",
                     "evidence": "Whether the owner knows Arina depends on an earlier scene.",
                     "correction": "Welcome back.",
                     "apply_identities": [],
@@ -565,6 +566,7 @@ def deep_result(row, corrections, declined=("朝だ",)):
                     "category": "speaker",
                     "family_key": "",
                     "motif_ids": [],
+                    "summary": "The owner speaks, but the box shows Arina.",
                     "evidence": "The owner greets Arina; the header shows Arina.",
                     "correction": None,
                     "apply_identities": item["identities"][:1],
@@ -590,6 +592,7 @@ def deep_result(row, corrections, declined=("朝だ",)):
                 "severity": "medium" if correction else None,
                 "category": ("voice" if sweep else "terminology") if correction else "",
                 "family_key": "term:ムラムラ" if sweep else "",
+                "summary": "The English says something the Japanese doesn't.",
                 "sweep": sweep,
                 **(
                     {"source_fix": {"kind": "database-numbers"}}
@@ -1031,6 +1034,7 @@ assert untranslated_sources() == ["Map001.json", "Prompt", "Synopsis.json"]
 # app runs on its disposable copy; this game is the test's own copy.
 # The user chose the open question's proposal, so it applies too.
 (question,) = findings["uncertain_playtests"]
+assert question["summary"].startswith("Whether the owner knows Arina"), question
 assert question["source"] == "よく来たね、アリナちゃん" and question["places"] == 1, (
     question
 )
@@ -1314,6 +1318,7 @@ fix = {
     "disposition": "actionable",
     "severity": "medium",
     "category": "runtime",
+    "summary": "The message leaves out who was freed.",
     "correction": "%1 was freed from the Illusion.",
     "source_fix": {"kind": "battler-name"},
 }
@@ -1352,11 +1357,23 @@ for name, fixes, refusal in (
         "adds the one %1",
     ),
     ("name", {"払い斬り": {**fix, "correction": "%1 Sweeping Slash"}}, "check offers"),
+    # The user reads one plain sentence, so a reviewer's notes go to evidence.
+    (
+        "wordy",
+        {"の幻惑が解けた": {**fix, "summary": "Segment 1 holds \\C[2] and %1. " * 4}},
+        "one plain sentence of at most 120 characters",
+    ),
     # A question the user could only answer by keeping the line asks nobody:
     # the reviewer proposes the fix or reports the line as not corrected.
     (
         "no-proposal",
-        {RUMOR: {"disposition": "uncertain-playtest", "evidence": "Route-dependent."}},
+        {
+            RUMOR: {
+                "disposition": "uncertain-playtest",
+                "summary": "Whether the rumor is named yet depends on the route.",
+                "evidence": "Route-dependent.",
+            }
+        },
         "or when no correction passes apply's checks, give disposition not-corrected",
     ),
 ):
@@ -1375,6 +1392,7 @@ qa.accept_result(
             **variable_fixes,
             RUMOR: {
                 "disposition": "not-corrected",
+                "summary": "The rumor's name is missing.",
                 "evidence": "The rumor's name needs a code no correction may add.",
             },
         },

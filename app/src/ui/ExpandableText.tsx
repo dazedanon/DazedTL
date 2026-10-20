@@ -23,17 +23,25 @@ export function ExpandableText({
   const [expanded, setExpanded] = useState(false);
   const id = useId();
   const content = text.trimEnd();
+  const head = content.split("\n").slice(0, 6).join("\n").slice(0, limit);
   const excerpt = !truncate
     ? text
     : tail
       ? content.split("\n").slice(-6).join("\n").slice(-limit)
-      : content.split("\n").slice(0, 6).join("\n").slice(0, limit).trimEnd();
+      : appearance === "code" || head.length === content.length
+        ? head.trimEnd()
+        : // Prose ends its excerpt between words.
+          head.replace(/\s+\S*$/, "").trimEnd() || head.trimEnd();
   const shortened = truncate && excerpt.length < content.length;
+  // Inline text reads within a sentence, such as a row's reason, so it
+  // takes no block of its own.
+  const Box = appearance === "inline" ? "span" : "div";
+  const Content = appearance === "inline" ? "span" : "pre";
   return (
-    <div
+    <Box
       className={`expandable-text expandable-text--${appearance}${fill ? " expandable-text--fill" : ""}`}
     >
-      <pre
+      <Content
         id={id}
         className="expandable-text-content"
         role={fill ? "region" : undefined}
@@ -41,7 +49,9 @@ export function ExpandableText({
         aria-label={fill ? label : undefined}
       >
         {!shortened || expanded ? text : tail ? "…\n" + excerpt : excerpt + "…"}
-      </pre>
+      </Content>
+      {/* A space, unlike a margin, goes away where the button starts a line. */}
+      {shortened && appearance === "inline" && " "}
       {shortened && (
         <Button
           variant="link"
@@ -53,6 +63,6 @@ export function ExpandableText({
           {expanded ? "Show less" : "Show more"}
         </Button>
       )}
-    </div>
+    </Box>
   );
 }

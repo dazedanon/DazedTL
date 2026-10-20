@@ -482,6 +482,7 @@ class PublicationTests(unittest.TestCase):
                         "cluster_id": "MapInfos.json#/1/name@a",
                         "correction": "Arjilee Plateau",
                         "current": "Arjilee Highlands",
+                        "summary": "Other maps call this place a plateau.",
                         "evidence": "Other maps use Plateau.",
                         "family_key": "term:アージリー高原",
                         "severity": "medium",
@@ -577,6 +578,22 @@ class PublicationTests(unittest.TestCase):
         # keeps, here nothing.
         self.assertEqual(refreshed, [(task_dir, [])])
         self.assertEqual(state["findings"][0]["correction"], "Arjilee Plateau")
+        # The page reads the reviewer's plain sentence, or the evidence of a
+        # task made before reviewers wrote one; the inspector keeps the rest.
+        self.assertEqual(
+            [row["reason"] for row in state["findings"]],
+            ["Other maps call this place a plateau.", "The narration turns present."],
+        )
+        self.assertEqual(
+            [
+                (row["id"], row["current"], row["evidence"])
+                for row in text.review_notes(read_json(task_dir / "findings.json"))
+            ],
+            [
+                ("QA-0001", "Arjilee Highlands", "Other maps use Plateau."),
+                ("QA-0002", "It opens.\nShe goes.", "The narration turns present."),
+            ],
+        )
         # It asks nothing, and the History inspector lists it as not corrected.
         self.assertEqual(state["questions"], [])
         self.assertEqual(

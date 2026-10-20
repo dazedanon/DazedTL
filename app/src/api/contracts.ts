@@ -647,11 +647,10 @@ export type QaFinding = {
   /** Lines the correction changes. */
   places: number;
   files: string[];
+  /** What is wrong in one plain sentence; a task made before reviewers wrote one gives their full evidence. */
   reason: string;
   /** A scene correction's lines, which apply and undo together; source, current and correction join them. */
   lines?: QaLineChange[];
-  /** The editorial reviewer's note. */
-  editorial?: string;
   state?: "applied" | "undone";
 };
 
@@ -661,6 +660,7 @@ export type QaQuestion = {
   id: string;
   source: string;
   current: string;
+  /** As a finding's reason. */
   reason: string;
   places: number;
   proposal: string;
@@ -706,8 +706,22 @@ export type QaNotCorrected = {
   file: string;
   source: string;
   current: string;
+  /** As a finding's reason. */
   reason: string;
+  /** The reviewer's full reasoning, when it says more. */
+  evidence?: string;
   places: number;
+};
+
+/** A finding's or question's full review, for the History inspector. */
+export type QaReviewNote = {
+  id: string;
+  /** The line as reviewers read it, to find it by. */
+  current: string;
+  /** The reviewer's full reasoning. */
+  evidence: string;
+  /** The editorial reviewer's note. */
+  editorial?: string;
 };
 
 export type QaUntranslatedText = {
@@ -742,6 +756,8 @@ export type QaInterfaceText = {
 export type QaReport = {
   not_reviewed: QaReportLine[];
   not_corrected: QaNotCorrected[];
+  /** Each correction's and question's full review. */
+  notes: QaReviewNote[];
   not_translated: QaUntranslatedSource[];
   interface_outside: QaInterfaceText[];
   interface_error?: string;

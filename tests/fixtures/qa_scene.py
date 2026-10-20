@@ -154,6 +154,7 @@ def scene_review(source, fixes, scene=None):
         "category": "fluency",
         "family_key": "narration-tense",
         "motif_ids": [],
+        "summary": "The narration switches to the present tense partway through.",
         "evidence": "The narration turns present partway through.",
         "correction": None,
         "apply_identities": [],
@@ -198,6 +199,7 @@ def deep_result(scene):
                     "category": "meaning" if correction else "",
                     "family_key": "",
                     "motif_ids": [],
+                    "summary": "It calls Arina 'he'.",
                     "evidence": "彼女 is Arina, not a man."
                     if correction
                     else "Checked against the source.",
