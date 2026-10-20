@@ -23,8 +23,8 @@ how many rows a choice help or comment part owns beside ``_original``, under
 :func:`owned`). Assistant-led keeps a comment's Japanese, marker included, on
 the comment (108) itself.
 
-Commands the engine empties while it joins rows (code -1, no parameters) are
-left out until it writes the list back.
+Commands the engine empties when it writes a message's translation over its
+rows (code -1, no parameters) are left out until it writes the list back.
 """
 
 from __future__ import annotations
@@ -83,8 +83,8 @@ def code(command: Any) -> int | None:
 
 
 def emptied(command: Any) -> bool:
-    """A command the engine emptied while it joined rows, removed when it
-    writes the list back."""
+    """A command the engine emptied when it wrote a translation over its
+    rows, removed when it writes the list back."""
     return code(command) == -1 and not command.get("parameters")
 
 
@@ -493,6 +493,30 @@ def spread(value: str, count: int) -> list[str]:
     rows = value.split("\n")
     rows += [""] * (count - len(rows))
     return rows[: count - 1] + ["\n".join(rows[count - 1 :])]
+
+
+def untranslated(reply: Any, sent: Any) -> bool:
+    """Whether a reply leaves its text untranslated: text the translation
+    left untranslated or refused comes back as it was sent."""
+    return reply == sent
+
+
+def write_text(commands: list, rows: tuple[int, ...], value: str, *, joined: bool = True) -> None:
+    """Write a part's text, *value*, over the text *rows* that hold it.
+    Joined, as translation writes a message, the first row holds the text
+    and the others are emptied, which the engine leaves out when it writes
+    the list back. Otherwise the text is laid over the rows by :func:`spread`,
+    adding and removing none, as a list written as it stands needs. Text the
+    translation did not translate (see :func:`untranslated`) is not written,
+    so its rows stay as the game has them."""
+    if joined:
+        commands[rows[0]]["parameters"] = [value]
+        for at in rows[1:]:
+            commands[at]["code"] = -1
+            commands[at]["parameters"] = []
+        return
+    for at, row in zip(rows, spread(value, len(rows))):
+        commands[at]["parameters"] = [row]
 
 
 def write_help(commands: list, block: Block, rows: tuple[int, ...], lines: list[str]) -> int:

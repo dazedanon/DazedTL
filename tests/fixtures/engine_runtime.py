@@ -1137,6 +1137,44 @@ try:
                 {"list": result}, "Map001.json", Layout.from_widths(widths)
             )
             assert not report.changes, report.changes
+            # A message left untranslated or refused keeps every row; it was
+            # written back over its first row, and the others were dropped.
+            # A translated scroll still takes a row a line after it.
+            bard = [
+                name("花"),
+                *(command(401, [f"歌その{index}"]) for index in (1, 2, 3)),
+                command(105, [2, False]),
+                command(405, ["巻物の一行目"]),
+                command(405, ["巻物の二行目"]),
+            ]
+
+            def scroll_only(text, *_args, **_kwargs):
+                return [
+                    [
+                        "Scroll one.\nScroll two." if "巻物" in line else line
+                        for line in text
+                    ],
+                    [0, 0],
+                ]
+
+            for wrap in (False, True):
+                with patch.multiple(
+                    parser,
+                    FIXTEXTWRAP=wrap,
+                    CODE405=True,
+                    translateAI=extensions.point(scroll_only),
+                ):
+                    result = [row for row in parse(bard) if row["code"] != -1]
+                scroll = (
+                    [["Scroll one. Scroll two."]]
+                    if wrap
+                    else [["Scroll one."], ["Scroll two."]]
+                )
+                assert result[1:5] == bard[1:5], result
+                assert [row["parameters"] for row in result[5:]] == [*scroll, []], (
+                    result
+                )
+                assert result[5]["_original"] == "巻物の一行目\n巻物の二行目", result
             # A choice plugin shows each comment line (408) under its help
             # marker as a row. JOIN408 translates the block as one text; it is
             # written back a line per row, laid out like the Japanese, over the
