@@ -1163,11 +1163,15 @@ def _code408_group_end(codeList, start: int) -> int:
     return end
 
 
-def _code408_lines(text: str, source: str) -> list[str]:
+def _code408_lines(text: str, source: str, face: bool = False) -> list[str]:
     """A comment's translation as the comment lines (408) plugins show one
-    per row, wrapped like its Japanese."""
+    per row, wrapped like its Japanese to the message window, beside a face
+    when the message before its choice has one (see
+    rpgmaker_rewrap.choice_help_face)."""
     if FIXTEXTWRAP is True:
-        text = rpgmaker_rewrap.wrap_message(text, WIDTH, source=source)
+        text = rpgmaker_rewrap.wrap_message(
+            text, FACEWIDTH if face else WIDTH, source=source
+        )
     return [line for line in text.split("\n") if line.strip()] or [text]
 
 
@@ -5441,7 +5445,11 @@ def _searchCodes(page, pbar, jobList, filename):
                 elif len(list408) > 0:
                     translatedText = list408.pop(0)
 
-                    lines = _code408_lines(translatedText, rawSource)
+                    lines = _code408_lines(
+                        translatedText,
+                        rawSource,
+                        rpgmaker_rewrap.choice_help_face(codeList, groupStart408),
+                    )
                     slots = range(groupStart408, groupEnd408 + 1)
                     for line, index in zip(lines, slots):
                         codeList[index]["parameters"] = [line]

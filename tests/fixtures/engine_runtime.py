@@ -1137,7 +1137,9 @@ try:
                 assert result[1] == command(
                     408, ["Takes about 20 minutes."], _original="所要時間:20分"
                 ), result
-                # A choice after a message, and one joined to it.
+                # A choice's help shows beside the face of the message the
+                # choice follows, joined choices included, so it wraps to the
+                # portrait width there.
                 from util.rpgmaker_rewrap import Layout, fit_document, widest_line
 
                 def choosing(face):
@@ -1153,6 +1155,13 @@ try:
                         command(404, []),
                     ]
 
+                with patch.object(parser, "FACEWIDTH", 30):
+                    beside, alone = (
+                        [row["parameters"][0] for row in parse(choosing(face))[8:-2]]
+                        for face in ("Actor1", "")
+                    )
+                assert max(map(widest_line, beside)) <= 30, beside
+                assert max(map(widest_line, alone)) > 30, alone
             # Narrower Line widths fit translated help again over its own
             # comment lines, beside the face; a comment that is no choice's
             # help, such as a plugin's setting, stays as written.
