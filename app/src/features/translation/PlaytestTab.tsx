@@ -19,6 +19,7 @@ export function PlaytestTab({
   job,
   action,
   disabled,
+  waiting,
   copy,
 }: {
   projectId: string;
@@ -27,6 +28,9 @@ export function PlaytestTab({
   job?: Job;
   action: ReturnType<typeof useAction>;
   disabled: boolean;
+  /** The assistant is still at work, and plays the game again after its
+   * fixes and QA's corrections. */
+  waiting: boolean;
   /** The page's starting prompt. */
   copy: ReactNode;
 }) {
@@ -48,6 +52,7 @@ export function PlaytestTab({
           progress={running ? job?.message : undefined}
           failed={playtestFailure(playtest, job)}
           rerun="Run it again, or your assistant runs it again as it finishes."
+          waiting={waiting}
         />
       </PageBody>
       <ActionBar feedback={null}>

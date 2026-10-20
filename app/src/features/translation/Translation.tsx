@@ -42,6 +42,7 @@ import { useOperationEnd } from "../../state/useOperationEnd";
 import { TextQaTab } from "./TextQaTab";
 import { PlaytestTab } from "./PlaytestTab";
 import { jobTime } from "../guided/workspace/model";
+import { assistantRunState } from "./assistantPhases";
 
 export type TranslationView =
   "progress" | "options" | "context" | "images" | "qa" | "playtest";
@@ -396,6 +397,7 @@ function Workspace({
             job={playtestJob}
             action={action}
             disabled={disabled}
+            waiting={assistantRunState(state.progress, started) !== "done"}
             copy={copyControl()}
           />
         )}
