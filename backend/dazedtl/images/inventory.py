@@ -11,6 +11,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import cast
 
+from dazedtl import freshness
 from dazedtl.translation.files import project_path
 
 from . import families
@@ -22,14 +23,8 @@ def sha_file(path):
 
 
 def signature(path):
-    value = path.stat()
-    return [
-        value.st_dev,
-        value.st_ino,
-        value.st_size,
-        value.st_mtime_ns,
-        value.st_ctime_ns,
-    ]
+    """The file's stat signature, as a list as saved rows hold it."""
+    return list(freshness.signature(path.stat()))
 
 
 @contextmanager

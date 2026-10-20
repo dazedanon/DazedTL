@@ -9,6 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from dazedtl.freshness import Digests, signature, signature_settled
 from dazedtl.translation.files import digest, project_path, read_json
 
 # The engine's names pass translates the speakers of every file in one list and
@@ -18,8 +19,20 @@ NAMES_FILE = "speakers"
 NAMES_RECEIPT = "Speakers"
 
 
+def _read_cached(path, stamp):
+    """A JSON file read once per change; ``stamp`` is its ``file_stamp``."""
+    # A file younger than one clock tick may change without a new stamp.
+    if not signature_settled(stamp):
+        return _read(path)
+    return _read_kept(path, stamp)
+
+
 @lru_cache(maxsize=8)
-def _read_cached(path, signature):
+def _read_kept(path, _stamp):
+    return _read(path)
+
+
+def _read(path):
     # The engine writes this evidence without a cap, and a request queue grows
     # with the game: about 26 KB per request, 107 MB for a 970-map game.
     return read_json(path, limit=None)
@@ -55,13 +68,12 @@ def ledger(root):
 
 
 def file_stamp(path):
-    stat = path.stat()
-    return stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns
+    return signature(path.stat())
 
 
 def ledger_stamp(root):
     path = Path(root) / "log/dazedtl-process.sqlite3"
-    signatures: list[tuple[int, int, int, int] | None] = [file_stamp(path)]
+    signatures: list[tuple | None] = [file_stamp(path)]
     for suffix in ("-wal", "-journal"):
         sidecar = path.with_name(path.name + suffix)
         if sidecar.is_symlink():
@@ -73,9 +85,12 @@ def ledger_stamp(root):
     return tuple(signatures)
 
 
-@lru_cache(maxsize=20_000)
-def _verified_digest(path, signature):
-    return digest(Path(path).read_bytes())
+_DIGESTS = Digests()
+
+
+def _verified_digest(path):
+    """A file's digest, read again only after it changed."""
+    return _DIGESTS.file(path, Path(path).stat())
 
 
 def consumed_files(root, *, allow_mismatches=False):
@@ -104,8 +119,7 @@ def consumed_files(root, *, allow_mismatches=False):
         if (
             job.get("mode") != "batch"
             or job.get("status") != "complete"
-            or job.get("plan_hash")
-            != _verified_digest(str(plan_path), file_stamp(plan_path))
+            or job.get("plan_hash") != _verified_digest(plan_path)
         ):
             return frozenset()
         plan = _read_cached(str(plan_path), file_stamp(plan_path))
@@ -123,7 +137,7 @@ def consumed_files(root, *, allow_mismatches=False):
         for name in complete:
             path = project_path(root, "translated/" + name, exists=False)
             if path.is_file() and job.get("outputs", {}).get(name) == _verified_digest(
-                str(path), file_stamp(path)
+                path
             ):
                 verified.add(name)
         return frozenset(verified)

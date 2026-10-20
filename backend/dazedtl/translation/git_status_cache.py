@@ -6,6 +6,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
+from dazedtl.freshness import signature
+
 # Files Git rewrites for every ref, index, config or in-progress operation
 # change; logs/HEAD records every checkout, commit and reset.
 MARKERS = (
@@ -28,12 +30,11 @@ TREES = ("refs", "dazedtl/version-update")
 
 
 def file_signature(path):
-    """A file's size and modification time, or None while it is missing."""
+    """A file's stat signature, or None while it is missing."""
     try:
-        value = os.stat(path)
+        return signature(os.stat(path))
     except OSError:
         return None
-    return (value.st_mtime_ns, value.st_size)
 
 
 def repository_signature(root):

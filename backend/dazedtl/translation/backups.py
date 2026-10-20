@@ -14,9 +14,10 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
+from dazedtl.freshness import settled, signature
 from dazedtl.storage import WorkspaceLock, staging_folder, write_json
 
-from .files import digest, read_json, settled
+from .files import digest, read_json
 
 STORE_RELATIVE = ".dazedtl/backups/v2"
 _ID = re.compile(r"[0-9a-f]{32}")
@@ -126,15 +127,9 @@ def _hash_file(path, stopped=lambda: False):
 
 
 def _signature(path):
+    """The file's stat signature and permissions, which a backup keeps."""
     value = path.stat()
-    return (
-        value.st_dev,
-        value.st_ino,
-        value.st_size,
-        value.st_mtime_ns,
-        value.st_ctime_ns,
-        stat.S_IMODE(value.st_mode) & 0o777,
-    )
+    return (*signature(value), stat.S_IMODE(value.st_mode) & 0o777)
 
 
 def _inventory(source, source_game, stopped):

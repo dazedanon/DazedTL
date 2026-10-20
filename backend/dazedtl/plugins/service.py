@@ -9,7 +9,7 @@ from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 
-from dazedtl import foreign_work
+from dazedtl import foreign_work, freshness
 from dazedtl.foreign_work import ForeignWorkError
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation import backups, reference_folders
@@ -208,8 +208,7 @@ _KEPT = {}
 
 
 def _signature(path):
-    stat = path.stat()
-    return stat.st_ino, stat.st_size, stat.st_mtime_ns
+    return freshness.signature(path.stat())
 
 
 def kept_settings(root):
@@ -455,7 +454,8 @@ class PluginService:
         # Japanese the latest release playtest saw a plugin draw.
         self.seen = seen
         self.lock = threading.RLock()
-        self.previews, self.cache, self.observed, self.foreign = {}, {}, {}, {}
+        self.previews, self.cache, self.foreign = {}, {}, {}
+        self.digests = freshness.Digests()
         self.located = {}
         # A VX Ace original's lookup keys by the files they come from;
         # reading them decodes the game's whole database.
@@ -1608,21 +1608,11 @@ class PluginService:
         return " ".join(problems), seen
 
     def fingerprint(self, root, path):
-        """A file's hash, read again only when its file signature changes."""
+        """A file's hash, read again only when the file changed."""
         target = project_path(root, path)
-        stat = target.stat()
-        signature = (
-            stat.st_dev,
-            stat.st_ino,
-            stat.st_size,
-            stat.st_mtime_ns,
-            stat.st_ctime_ns,
+        return self.digests.remember(
+            str(target), target.stat(), lambda: digest(self.source(root, path))
         )
-        cached = self.observed.get(str(target))
-        if not cached or cached[0] != signature:
-            cached = (signature, digest(self.source(root, path)))
-            self.observed[str(target)] = cached
-        return cached[1]
 
     def observe(self, project_id, value):
         """Bounded observations invalidate displayed checks without rewriting assistant work."""

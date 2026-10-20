@@ -8,7 +8,8 @@ from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
 
-from dazedtl.translation.files import Digests, ObservedFiles, digest
+from dazedtl.freshness import Digests
+from dazedtl.translation.files import ObservedFiles, digest
 
 from . import process_view
 from .batch_continuation import APPROVAL

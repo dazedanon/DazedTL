@@ -323,7 +323,7 @@ def outcomes(root, queued, responses):
         if not path.is_file() or path.is_symlink() or path.parent.is_symlink():
             continue
         stamp = file_stamp(path)
-        if stamp[1] > 64_000_000:
+        if path.stat().st_size > 64_000_000:
             continue
         try:
             good, bad = records(path, stamp, entries)

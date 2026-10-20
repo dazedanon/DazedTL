@@ -4,61 +4,9 @@ import hashlib
 import json
 import os
 import stat
-import threading
-import time
 from pathlib import Path
 
 from dazedtl.storage import write_json
-
-# File times advance in ticks of milliseconds, so a file written twice within
-# one tick can keep its stat signature. Caches keyed by signatures keep only
-# files that have been still for longer than this.
-SETTLED_NS = 2_000_000_000
-
-
-def settled(*modified_ns):
-    """Whether every one of these modification times is safely in the past."""
-    return time.time_ns() - max(modified_ns) > SETTLED_NS
-
-
-class Digests:
-    """File digests by path, reused while a file's stat signature holds.
-
-    Every poll checks every saved run's outputs, so the files one poll needs
-    grow with the run history. Dropping all entries, or the oldest, once a
-    long history outgrew a fixed bound reread every output on every poll; only
-    entries no read has used for a while are dropped.
-    """
-
-    IDLE_SECONDS = 120
-
-    def __init__(self, limit=20_000):
-        self.limit = limit
-        self.entries = {}
-        # How many entries the last prune kept: pruning again waits until the
-        # cache doubles, so a large working set is not scanned on every insert.
-        self.kept = 0
-        self.lock = threading.Lock()
-
-    def get(self, key, signature):
-        with self.lock:
-            entry = self.entries.get(key)
-            if entry is None or entry[0] != signature:
-                return None
-            entry[2] = time.monotonic()
-            return entry[1]
-
-    def put(self, key, signature, value):
-        now = time.monotonic()
-        with self.lock:
-            self.entries[key] = [signature, value, now]
-            if len(self.entries) > max(self.limit, 2 * self.kept):
-                self.entries = {
-                    name: entry
-                    for name, entry in self.entries.items()
-                    if now - entry[2] < self.IDLE_SECONDS
-                }
-                self.kept = len(self.entries)
 
 
 def digest(value):
@@ -230,15 +178,7 @@ class ObservedFiles:
         info = entry.stat(follow_symlinks=False) if entry else os.lstat(key)
         if stat.S_ISLNK(info.st_mode):
             raise ValueError("Observed artifacts cannot be symbolic links.")
-        signature = (info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
-        cached = self.digests.get(key, signature)
-        if cached is not None:
-            return cached
-        with open(key, "rb") as stream:
-            value = digest(stream.read())
-        if settled(info.st_mtime_ns):
-            self.digests.put(key, signature, value)
-        return value
+        return self.digests.file(key, info)
 
 
 def evidence(root, paths):

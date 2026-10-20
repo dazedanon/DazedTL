@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import os
 import re
-import time
 from pathlib import Path
 
+from util.freshness import settled
 from util.paths import (
     GAME_GLOSSARY_RELATIVE,
     GAME_QUIRKS_RELATIVE,
@@ -291,7 +291,6 @@ def list_custom_skill_paths(game_root: str | Path | None) -> list[Path]:
 # migrates keeps the stats it had, once those stats are older than a clock
 # tick.
 _PROMPTS: dict[tuple[str, str], tuple[tuple, str]] = {}
-_SETTLED_NS = 2_000_000_000
 
 
 def _prompt_inputs(prompt_path: Path, root: str) -> tuple | None:
@@ -324,7 +323,7 @@ def _prompt_inputs(prompt_path: Path, root: str) -> tuple | None:
         # absence makes the build create it.
         (game / GAME_GLOSSARY_RELATIVE).exists(),
     )
-    if stamps and time.time_ns() - max(stamps) <= _SETTLED_NS:
+    if stamps and not settled(*stamps):
         return None
     return signature
 

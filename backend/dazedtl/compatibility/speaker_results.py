@@ -142,9 +142,7 @@ def read(root, job):
             raise ValueError("The saved run plan is invalid.")
         if not value and not names and not plan.get("dazedtl_reused_names"):
             return None
-        if _verified_digest(str(plan_path), file_stamp(plan_path)) != job.get(
-            "plan_hash"
-        ):
+        if _verified_digest(plan_path) != job.get("plan_hash"):
             raise ValueError("The name result belongs to a changed plan.")
         if value:
             if (
@@ -197,9 +195,7 @@ def read(root, job):
             if len(set(sources)) != len(sources):
                 raise ValueError("Name result sources are duplicated.")
             glossary = project_path(root, "log/" + GLOSSARY)
-            if _verified_digest(str(glossary), file_stamp(glossary)) != value.get(
-                "glossaryHash"
-            ):
+            if _verified_digest(glossary) != value.get("glossaryHash"):
                 raise ValueError("The retained name glossary is missing or changed.")
             return {
                 "state": "saved",

@@ -4,9 +4,9 @@ import io
 import os
 from pathlib import Path
 
+from dazedtl.freshness import Digests
 from dazedtl.storage import exclusive, write_json
 from dazedtl.translation.files import (
-    Digests,
     decode_json,
     digest,
     project_path,
@@ -46,16 +46,14 @@ def can_collect_outputs(job):
 _DIGESTS = Digests()
 
 
-def _json_digest(path, signature):
-    cached = _DIGESTS.get(path, signature)
-    if cached is not None:
-        return cached
-    raw = Path(path).read_bytes()
-    if not isinstance(decode_json(raw), (dict, list)):
-        raise ValueError("A progress checkpoint must contain game JSON.")
-    value = digest(raw)
-    _DIGESTS.put(path, signature, value)
-    return value
+def _json_digest(path, info):
+    def read():
+        raw = Path(path).read_bytes()
+        if not isinstance(decode_json(raw), (dict, list)):
+            raise ValueError("A progress checkpoint must contain game JSON.")
+        return digest(raw)
+
+    return _DIGESTS.remember(path, info, read)
 
 
 def _paths(root):
@@ -105,9 +103,7 @@ def outputs(root, plan):
         else:
             output = project_path(root, "translated/" + name)
             stat = output.stat()
-        actual = _json_digest(
-            str(output), (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
-        )
+        actual = _json_digest(str(output), stat)
         if actual == expected:
             result[name] = expected
         # A later atomic write can precede its receipt; only matching bytes count.

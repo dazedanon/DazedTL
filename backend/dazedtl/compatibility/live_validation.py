@@ -26,8 +26,7 @@ def finished_files(root):
         if (
             job.get("mode") != "translate"
             or job.get("status") != "complete"
-            or job.get("plan_hash")
-            != _verified_digest(str(plan_path), file_stamp(plan_path))
+            or job.get("plan_hash") != _verified_digest(plan_path)
         ):
             return frozenset()
         plan = _read_cached(str(plan_path), file_stamp(plan_path))
@@ -42,7 +41,7 @@ def finished_files(root):
         for name in complete:
             path = project_path(root, "translated/" + name, exists=False)
             if path.is_file() and job.get("outputs", {}).get(name) == _verified_digest(
-                str(path), file_stamp(path)
+                path
             ):
                 result.add(name)
         return frozenset(result)
@@ -146,7 +145,7 @@ def reconcile(root, rows, ledger_stamp):
     try:
         path = project_path(root, "log/mismatchHistory.txt")
         stamp = file_stamp(path)
-        if stamp[1] > 64_000_000:
+        if path.stat().st_size > 64_000_000:
             return rows
         changes = outcomes(str(root), ledger_stamp, stamp, files)
         return [

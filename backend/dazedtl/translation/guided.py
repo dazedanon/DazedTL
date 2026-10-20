@@ -4,11 +4,12 @@ import re
 from copy import deepcopy
 from pathlib import Path
 
+from dazedtl.freshness import Digests
 from dazedtl.storage import write_json
 
 from . import comment_text, context_setup, preparation, reference_folders, speaker_setup
 from .event_text import EventText
-from .files import Digests, digest, project_path, read_json, settled
+from .files import digest, project_path, read_json
 from .full_estimate import FullEstimate
 from .guided_actions import GuidedActions
 from .guided_context import GuidedContext
@@ -149,15 +150,7 @@ class Guided:
         path = Path(path)
         if path.is_symlink():
             raise ValueError("Observed artifacts cannot be symbolic links.")
-        stat = path.stat()
-        signature = (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
-        cached = self.observed_files.get(path, signature)
-        if cached is not None:
-            return cached
-        value = digest(path.read_bytes())
-        if settled(stat.st_mtime_ns):
-            self.observed_files.put(path, signature, value)
-        return value
+        return self.observed_files.file(path, path.stat())
 
     def observed_digests(self, root, names):
         """observed_digest(observed_path(root, name)) for each name, from one

@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 
+from dazedtl.freshness import signature, signature_settled
 from dazedtl.storage import write_json
 
 from .files import digest, project_path, read_json, write_project_json
@@ -56,10 +57,9 @@ def _rows(request):
 
 def _signature(path):
     try:
-        stat = path.stat()
+        return signature(path.stat())
     except FileNotFoundError:
         return None
-    return stat.st_mtime_ns, stat.st_size
 
 
 def _content(units):
@@ -109,10 +109,9 @@ class Results:
                 for entry in entries:
                     name = entry.name.casefold().removesuffix(".json")
                     if entry.is_file(follow_symlinks=False):
-                        stat = entry.stat(follow_symlinks=False)
                         result[name] = (
                             Path(entry.path),
-                            (stat.st_mtime_ns, stat.st_size),
+                            signature(entry.stat(follow_symlinks=False)),
                         )
                     else:
                         result[name] = (None, None)
@@ -263,7 +262,13 @@ class Results:
                     or (_content(previous["units"]) != _content(document["units"]))
                 )
                 write_project_json(self.source, relative, document)
-            _PARTS[str(path)] = (inputs, _signature(path))
+            stamp = _signature(path)
+            # A file younger than one clock tick may change without a new stamp.
+            if all(
+                signature_settled(item)
+                for item in (stamp, *(item for _, item in inputs))
+            ):
+                _PARTS[str(path)] = (inputs, stamp)
         index = {"complete": plan["complete"], "parts": parts}
         if legacy is not None:
             units = [

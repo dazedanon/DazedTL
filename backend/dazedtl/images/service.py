@@ -16,6 +16,7 @@ from pathlib import Path
 from dazedtl import foreign_work
 from dazedtl.compatibility.images import ImageCompatibility
 from dazedtl.foreign_work import ForeignWorkError
+from dazedtl.freshness import Digests
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import decode_json, digest, project_path, read_json
 from dazedtl.translation.helper_command import windows_note
@@ -29,7 +30,6 @@ from .inventory import (
     png_metadata,
     png_preview,
     sha_file,
-    signature,
 )
 
 WORK = ".dazedtl/image_manager/guided"
@@ -129,7 +129,7 @@ class ImageService:
         self.threads = {}
         self.foreign = {}
         # Recipe inputs by path and stat signature, hashed once per change.
-        self.hashes = {}
+        self.digests = Digests()
 
     def close(self):
         for event in self.cancellations.values():
@@ -2158,15 +2158,9 @@ class ImageService:
             path = project_path(root, relative, exists=False)
             if not path.is_file():
                 return None
-            stamp = signature(path)
-            saved = self.hashes.get(str(path))
-            if saved and saved[0] == stamp:
-                return saved[1]
-            value = sha_file(path)
+            return self.digests.file(path, path.stat())
         except OSError, ValueError:
             return None
-        self.hashes[str(path)] = (stamp, value)
-        return value
 
     def _prepare(self, project_id, options):
         identities = self._chosen(project_id, options)

@@ -7,10 +7,9 @@ import json
 import os
 import re
 import subprocess
-import threading
-import time
 from pathlib import Path
 
+from util.freshness import Digests
 from util.paths import replace_with_retry
 from util.project_preparation import rpgmaker_layout
 from util.rpgmaker_qa_manifest import pointer, resolve_pointer, _mechanical_evidence
@@ -25,37 +24,18 @@ def digest(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-# File times advance in ticks, so a file written twice within one tick can keep
-# its stat signature; only files still for longer than this are remembered.
-SETTLED_NS = 2_000_000_000
-_FILE_DIGESTS: dict[str, tuple[tuple, str]] = {}
-_FILE_DIGESTS_LOCK = threading.Lock()
+_FILE_DIGESTS = Digests(limit=50_000)
 
 
 def file_digest(path, info: os.stat_result | None = None) -> str:
-    """A regular file's content digest, read again only after its stat
-    signature changes.
+    """A regular file's content digest, read again only after it changed.
 
     An estimate's preview and confirmation, and the Batch preparation after
     it, each hashed every game data file: gigabytes per Batch on a large game
     and half a minute on Windows. ``info`` is the file's own lstat result when
     the caller already has it.
     """
-    key = os.fspath(path)
-    info = info or os.lstat(key)
-    signature = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
-    with _FILE_DIGESTS_LOCK:
-        cached = _FILE_DIGESTS.get(key)
-    if cached and cached[0] == signature:
-        return cached[1]
-    with open(key, "rb") as stream:
-        value = hashlib.file_digest(stream, "sha256").hexdigest()
-    if time.time_ns() - max(info.st_mtime_ns, info.st_ctime_ns) > SETTLED_NS:
-        with _FILE_DIGESTS_LOCK:
-            if len(_FILE_DIGESTS) > 50_000:
-                _FILE_DIGESTS.clear()
-            _FILE_DIGESTS[key] = (signature, value)
-    return value
+    return _FILE_DIGESTS.file(path, info)
 
 
 def atomic_json(path: Path, value):

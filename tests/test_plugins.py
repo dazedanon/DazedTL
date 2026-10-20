@@ -1006,6 +1006,21 @@ class PluginTests(unittest.TestCase):
         self.service.action(self.identity, "plugin_task")
         self.assertNotIn(path, self.service.load(self.identity)["files"])
 
+    def test_a_plugin_file_rewritten_within_one_clock_tick_reads_as_changed(self):
+        # Two writes within one tick keep the file's stat signature.
+        path = self.game / "www/js/plugins/PluginB.js"
+        before = self.service.fingerprint(self.game, "www/js/plugins/PluginB.js")
+        frozen, stat = path.stat(), Path.stat
+        path.write_bytes(path.read_bytes().replace("隠".encode(), "見".encode()))
+        with patch.object(
+            Path,
+            "stat",
+            lambda item, **kw: frozen if item.name == path.name else stat(item, **kw),
+        ):
+            after = self.service.fingerprint(self.game, "www/js/plugins/PluginB.js")
+        self.assertEqual(after, digest(path.read_bytes()))
+        self.assertNotEqual(after, before)
+
     def test_a_scan_saved_under_older_rules_is_read_again(self):
         # A problem an earlier version reported must not linger and invite
         # keeping a readable file unchanged.

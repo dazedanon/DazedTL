@@ -75,8 +75,7 @@ def saved_choices(root, filename):
     if (
         plan.get("engine") not in {"MVMZ", "RPG Maker MV/MZ"}
         or (plan.get("dazedtl_request_policy") or {}).get("choiceCollection")
-        or job.get("plan_hash")
-        != _verified_digest(str(plan_path), file_stamp(plan_path))
+        or job.get("plan_hash") != _verified_digest(plan_path)
     ):
         return {}
     expected = next(
@@ -94,9 +93,8 @@ def saved_choices(root, filename):
     source_stamp, output_stamp = file_stamp(source), file_stamp(output)
     if (
         not expected
-        or _verified_digest(str(source), source_stamp) != expected
-        or _verified_digest(str(output), output_stamp)
-        != job.get("outputs", {}).get(filename)
+        or _verified_digest(source) != expected
+        or _verified_digest(output) != job.get("outputs", {}).get(filename)
     ):
         return {}
     return choice_outputs(source, source_stamp, output, output_stamp)

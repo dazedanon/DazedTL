@@ -343,7 +343,11 @@ class WorkflowTests(unittest.TestCase):
             selected["revision"],
             {**selected["options"], "mode": "agent"},
         )
-        with patch("dazedtl.translation.results.PART_REQUESTS", 1):
+        # Files written this moment count as settled, so their parts are kept.
+        with (
+            patch("dazedtl.translation.results.PART_REQUESTS", 1),
+            patch("util.freshness.SETTLED_NS", -1),
+        ):
             run = self.prepared(self.service.organize(self.identity, units))["run"]
             _job, plan = self.service.jobs.store.load(run["id"])
             first, second = plan["requests"]

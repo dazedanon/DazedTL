@@ -335,8 +335,7 @@ def phased_workflows(workspace, lock, operations, manual):
                     plan_path = source / "plan.json"
                     plan = _read_cached(str(plan_path), file_stamp(plan_path))
                     if (
-                        _verified_digest(str(plan_path), file_stamp(plan_path))
-                        != job["plan_hash"]
+                        _verified_digest(plan_path) != job["plan_hash"]
                         or (plan.get("workflow") or {}).get("id") != project["id"]
                     ):
                         continue

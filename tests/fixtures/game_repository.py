@@ -101,7 +101,7 @@ _run_git(raced, "read-tree", "main")
 from dazedtl.compatibility.guided import guard_context
 from dazedtl.compatibility.observations import RunObservations
 from dazedtl.compatibility.translation import TranslationEngine
-from desktop.backend import project as project_files
+from util import freshness
 from desktop.backend.workflow_actions import action_guard
 from util import gameupdate_config as updater
 from util.game_settings import load_game_update, save_game_wrap_widths
@@ -252,7 +252,7 @@ with engine.context():
     # Guards reuse the digests of files that kept their stat signature, so a
     # data file rewritten at the same size must still read as changed.
     system = published / "data/System.json"
-    with patch.object(project_files, "SETTLED_NS", -1):
+    with patch.object(freshness, "SETTLED_NS", -1):
         guard = action_guard({"source": str(published)}, temporary / "workflow")
         raw = system.read_bytes()
         system.write_bytes(raw[:-1] + (b" " if raw[-1:] != b" " else b"\n"))
