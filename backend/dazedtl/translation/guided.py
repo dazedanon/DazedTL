@@ -6,7 +6,7 @@ from pathlib import Path
 
 from dazedtl.storage import write_json
 
-from . import context_setup, preparation, reference_folders, speaker_setup
+from . import comment_text, context_setup, preparation, reference_folders, speaker_setup
 from .event_text import EventText
 from .files import Digests, digest, project_path, read_json, settled
 from .full_estimate import FullEstimate
@@ -211,9 +211,10 @@ class Guided:
                     "The game location or engine changed. Open the correct game folder before continuing."
                 )
             if any(native.get(key) != value for key, value in current.items()):
-                updated = {**native, **current}
-                self.backend.workflows.save(updated)
-                self.backend.workflows.projects[native["id"]] = updated
+                native = {**native, **current}
+                self.backend.workflows.save(native)
+                self.backend.workflows.projects[native["id"]] = native
+            comment_text.check(self.backend.workflows, native)
             return
         self.idle()
         layout = self.backend.describe(project["source"])
@@ -244,6 +245,7 @@ class Guided:
                     "selected": sorted(self.supported_files(native)),
                 },
             )["project"]
+        native = comment_text.check(self.backend.workflows, native)
         if pending:
             self.backend.workflows.draft(native["id"], {"documents": pending})
         # Persist registry ownership before publishing it in memory.

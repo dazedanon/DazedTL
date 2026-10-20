@@ -245,7 +245,8 @@ Do **not** include:
 
 Code `408` is a continuation of an editor comment. It is normally internal, but plugins can parse
 `108`/`408` comment blocks and display their contents to players. DazedTL extracts code-408 text
-only from recognized player-facing code-108 markers; currently supported: {{SUPPORTED_CODE408_MARKERS}}.
+only from recognized player-facing code-108 markers: {{SUPPORTED_CODE408_MARKERS}}, and each marker an
+enabled plugin lists in its `Choice Help Commands` setting (MPP_ChoiceEX's choice help).
 
 1. Inventory code-408 values and group them with their preceding code-108 command.
 2. Search enabled plugin sources and event-handling code for the discovered comment tags,
@@ -263,8 +264,10 @@ only from recognized player-facing code-108 markers; currently supported: {{SUPP
    code-408 block and line counts, representative map/event locators, and confidence. Tell the user
    to add or request support for each listed marker in DazedTL before translation. If none are found,
    say `No unsupported player-facing code-408 markers found`; never omit this result.
-6. Tell the user to set the **Include displayed comment text (code 408)** checkbox in Phase 1 to the
-   recommended state. This is a user choice; do not edit tool configuration yourself.
+6. DazedTL turns **Comment text** on by itself when an enabled plugin lists a marker whose blocks
+   hold Japanese. Tell the user to change it in Context > Names & glossary > Speaker detection >
+   Settings only when your recommendation differs. This is a user choice; do not edit tool
+   configuration yourself.
 
 #### Window geometry, wrapping, and fonts
 
