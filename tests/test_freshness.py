@@ -29,13 +29,8 @@ class FreshnessTests(unittest.TestCase):
         self.assertEqual(
             compare(saved, reshaped, prices_unknown=True), Change(settings=True)
         )
-        # An older record holds one digest the current work lists among its own.
-        current = Basis(1, saved.inputs, "s", "p", legacy=frozenset({"old"}))
-        self.assertIsNone(compare(Basis(1, legacy=frozenset({"old"})), current))
-        self.assertEqual(
-            compare(Basis(1, legacy=frozenset({"other"})), current),
-            Change(unnamed=True),
-        )
+        # A record whose inputs cannot be named reads as changed.
+        self.assertEqual(compare(Basis(1), saved), Change(unnamed=True))
         self.assertEqual(Basis.read(saved.record()), saved)
 
     def test_a_file_is_read_again_until_it_has_settled(self):

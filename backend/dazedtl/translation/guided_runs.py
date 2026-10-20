@@ -4,12 +4,16 @@ import json
 import re
 from contextlib import closing
 
+from dazedtl.freshness import Basis, compare
 from dazedtl.storage import write_json
 
 from . import repricing
 from .files import digest, read_json
 
 PHASES = ("database", "dialogue", "advanced", "variables")
+# Raise when the same inputs and settings would estimate a phase differently.
+# It is part of every estimate's fingerprint, so raising it outdates them all.
+RUN_VERSION = 1
 JAPANESE = re.compile(
     r"[\u3000\u3002-\u3009\u300C-\u303F\u3040-\u309A\u309C-\u30FA\u31F0-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFF61-\uFF9F]+"
 )
@@ -170,7 +174,7 @@ class GuidedRuns:
         reused_names = self.name_reuse(native, configuration.get("language"))
         value = {
             "file_versions": versions,
-            "version": 1,
+            "version": RUN_VERSION,
             "project": project_id,
             "phase": phase,
             "mode": mode,
@@ -217,6 +221,20 @@ class GuidedRuns:
             "file_versions": versions,
             "reused_names": reused_names,
         }
+
+    @staticmethod
+    def changed(record, inputs, *, reprice=True):
+        """What changed since an estimate bound to ``record`` was made, or None
+        while it is current for ``inputs``. With ``reprice``, settings that
+        differ only in prices not known yet count as the same."""
+        return compare(
+            Basis(RUN_VERSION, {}, record.get("fingerprint"), record.get("shape")),
+            Basis(RUN_VERSION, {}, inputs["fingerprint"], inputs["shape"]),
+            prices_unknown=reprice
+            and repricing.unknown_prices(
+                record["configuration"], inputs["configuration"]
+            ),
+        )
 
     def repriced(self, project_id, native, identity, inputs):
         """A finished estimate's figures at the prices of ``inputs`` when
@@ -622,13 +640,7 @@ class GuidedRuns:
                     and bool(job.get("estimate"))
                     and identity
                     not in self.guided.inputs(native).record().get("retired_runs", [])
-                    and (
-                        record["fingerprint"] == inputs["fingerprint"]
-                        or record.get("shape") == inputs["shape"]
-                        and repricing.unknown_prices(
-                            record["configuration"], inputs["configuration"]
-                        )
-                    )
+                    and not self.changed(record, inputs)
                 )
                 view = (run_view or self.guided.run_view)(identity, compact=True)
                 # A model switch that keeps its requests prices it again.

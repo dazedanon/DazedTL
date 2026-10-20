@@ -8,6 +8,7 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
+from dazedtl.freshness import Basis, compare
 from dazedtl.settings.execution import (
     configuration,
     connection_summary,
@@ -41,18 +42,30 @@ def priced_mode(finishes, run_mode, project_mode):
     return run_mode if finishes else project_mode
 
 
-def changed_since(current, frozen_sha256, frozen):
+def changed_since(current, frozen_sha256, frozen, *, reprice=True):
     """Whether the settings a run would freeze now differ from those it froze;
-    ``current`` is None when they can't form a run. Prices not looked up since
-    DazedTL started read as unchanged while everything else matches, so a
-    restart alone never outdates a quote; a run saved before its record kept
-    its configuration can only be compared once they are known."""
+    ``current`` is None when they can't form a run. With ``reprice``, prices
+    not looked up since DazedTL started read as unchanged while everything
+    else matches, so a restart alone never outdates a quote; a run saved
+    before its record kept its configuration can only be compared once they
+    are known."""
     if current is None:
         return True
-    rates = current.get("rates")
-    if not rates or (rates["input"] is not None and rates["output"] is not None):
-        return digest(current) != frozen_sha256
-    return frozen is not None and not repricing.unknown_prices(frozen, current)
+    # A run's settings are its whole basis; its requests are checked apart.
+    return bool(
+        compare(
+            Basis(
+                None,
+                {},
+                frozen_sha256,
+                None if frozen is None else digest(repricing.unpriced(frozen)),
+            ),
+            Basis(None, {}, digest(current), digest(repricing.unpriced(current))),
+            prices_unknown=reprice
+            and frozen is not None
+            and repricing.unknown_prices(frozen, current),
+        )
+    )
 
 
 # Set while the project helper, run by the user's assistant, makes a request.
@@ -690,9 +703,9 @@ Additional project instructions:
                 "Choose API Batch or Live API in Options to estimate this run again."
             )
         current, provider = self.api_configuration(mode)
-        if digest(current) == job["configuration_sha256"] or self.repriceable(
-            plan["configuration"], current, provider
-        ):
+        if not changed_since(
+            current, job["configuration_sha256"], plan["configuration"], reprice=False
+        ) or self.repriceable(plan["configuration"], current, provider):
             return self.jobs.store.view(job)
         preparation = next(
             (
@@ -1049,7 +1062,12 @@ Additional project instructions:
                 )
             )
             if approval_token == job["approval_token"]:
-                if digest(current) != digest(plan["configuration"]):
+                if changed_since(
+                    current,
+                    digest(plan["configuration"]),
+                    plan["configuration"],
+                    reprice=False,
+                ):
                     raise ValueError(
                         "API settings or the translation mode changed after this estimate. Compile and review a new plan."
                     )

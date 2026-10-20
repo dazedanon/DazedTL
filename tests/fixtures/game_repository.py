@@ -101,8 +101,8 @@ _run_git(raced, "read-tree", "main")
 from dazedtl.compatibility.guided import guard_context
 from dazedtl.compatibility.observations import RunObservations
 from dazedtl.compatibility.translation import TranslationEngine
-from util import freshness
 from desktop.backend.workflow_actions import action_guard
+from util import freshness
 from util import gameupdate_config as updater
 from util.game_settings import load_game_update, save_game_wrap_widths
 

@@ -872,12 +872,12 @@ class Guided:
         if approved:
             if job.get("dazedtl_preapproval") and not job.get("dazedtl_approved"):
                 record = self.runs.records(project_id).get(job["id"])
-                if (
-                    not record
-                    or self.runs.inputs(
+                if not record or self.runs.changed(
+                    record,
+                    self.runs.inputs(
                         project_id, native, record["phase"], record["mode"]
-                    )["fingerprint"]
-                    != record["fingerprint"]
+                    ),
+                    reprice=False,
                 ):
                     raise ValueError(
                         "The files or settings changed after preparation. Click Translate for a fresh estimate."

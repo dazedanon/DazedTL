@@ -7,11 +7,10 @@ replaces it; it reads current while the inputs every task's own estimate
 binds to are unchanged.
 """
 
-import json
 from copy import deepcopy
 from datetime import datetime
-from functools import cache
-from pathlib import Path
+
+from dazedtl.freshness import Basis, compare
 
 from . import repricing
 from .files import digest
@@ -25,15 +24,16 @@ PHASES = ("database", "dialogue", "advanced")
 MODE = "translate"
 
 
-@cache
-def app_version():
-    """The running DazedTL release. A newer one may estimate differently, so
-    an estimate made by another release is never current."""
-    try:
-        package = Path(__file__).resolve().parents[3] / "app/package.json"
-        return json.loads(package.read_bytes())["version"]
-    except OSError, ValueError, KeyError, TypeError:
-        return None
+# Raise when the same tasks would estimate differently. It is part of the
+# fingerprint, so raising it outdates every saved whole-game estimate.
+ESTIMATE_VERSION = 1
+# Releases that bound a whole-game estimate to their own version instead, so
+# every upgrade outdated it. Their estimates read current while the tasks match.
+RELEASES = (
+    *("2.13.2", "2.14.0", "2.14.1", "2.14.2", "2.15.0", "2.15.1", "2.16.0"),
+    *("2.17.0", "2.18.0", "2.19.0", "2.20.0", "2.20.1", "2.21.0", "2.22.0"),
+    *("2.23.0", "2.23.1", "2.24.0"),
+)
 
 
 def took(job):
@@ -93,14 +93,44 @@ class FullEstimate:
         return tasks
 
     @staticmethod
-    def fingerprint(tasks, key="fingerprint"):
+    def fingerprint(tasks, key="fingerprint", release=None):
         """What every task's estimate binds to; with ``shape``, what a switch
-        that only prices their requests leaves alone."""
-        return digest(
-            {
-                "app": app_version(),
-                "tasks": [[task["phase"], task.get(key)] for task in tasks],
-            }
+        that only prices their requests leaves alone. ``release`` gives the
+        digest that release saved."""
+        rows = [[task["phase"], task.get(key)] for task in tasks]
+        if release:
+            return digest({"app": release, "tasks": rows})
+        return digest({"version": ESTIMATE_VERSION, "tasks": rows})
+
+    def basis(self, tasks, result=None):
+        """The basis of ``tasks`` or, with ``result``, of the saved estimate.
+        One a listed release saved for these tasks reads as made under
+        version 1."""
+        current = {
+            key: self.fingerprint(tasks, key) for key in ("fingerprint", "shape")
+        }
+        if result is None:
+            return Basis(ESTIMATE_VERSION, {}, current["fingerprint"], current["shape"])
+        saved, version = {}, ESTIMATE_VERSION
+        for key, value in current.items():
+            if result.get(key) in {
+                self.fingerprint(tasks, key, old) for old in RELEASES
+            }:
+                saved[key], version = value, 1
+            else:
+                saved[key] = result.get(key)
+        return Basis(version, {}, saved["fingerprint"], saved["shape"])
+
+    def changed(self, result, tasks, *, reprice=True):
+        """What changed since ``result`` was estimated, or None while it is
+        current. With ``reprice``, settings that differ only in prices not
+        known yet count as the same."""
+        configuration = self.configuration(tasks)
+        return compare(
+            self.basis(tasks, result),
+            self.basis(tasks),
+            prices_unknown=reprice
+            and repricing.unknown_prices(result["configuration"], configuration),
         )
 
     @staticmethod
@@ -116,7 +146,7 @@ class FullEstimate:
 
         configuration = self.configuration(tasks)
         if (
-            result.get("shape") != self.fingerprint(tasks, "shape")
+            self.basis(tasks, result).shape != self.fingerprint(tasks, "shape")
             or not repricing.priced(configuration)
             or not repricing.same_requests(result["configuration"], configuration)
         ):
@@ -170,7 +200,7 @@ class FullEstimate:
         if saved and not any(
             task.get("approximateInput") for task in saved["result"]["tasks"]
         ):
-            if saved["result"].get("fingerprint") == self.fingerprint(tasks):
+            if not self.changed(saved["result"], tasks, reprice=False):
                 raise ValueError(
                     "Nothing changed since the last estimate, so it is still current."
                 )
@@ -252,13 +282,7 @@ class FullEstimate:
                     guard=self.guided.runs.poll_guard(native),
                     cached_only=True,
                 )
-                current = (
-                    self.fingerprint(tasks) == result.get("fingerprint")
-                    or result.get("shape") == self.fingerprint(tasks, "shape")
-                    and repricing.unknown_prices(
-                        result["configuration"], self.configuration(tasks)
-                    )
-                )
+                current = not self.changed(result, tasks)
                 # A model switch that keeps every task's requests prices
                 # them again.
                 repriced = None if current else self.repriced(result, tasks)

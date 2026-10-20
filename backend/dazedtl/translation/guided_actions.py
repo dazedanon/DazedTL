@@ -888,7 +888,9 @@ class GuidedActions:
                 options["phase"],
                 confirmed["run_inputs"]["mode"],
             )
-            if current["fingerprint"] != confirmed["run_inputs"]["fingerprint"]:
+            if self.guided.runs.changed(
+                confirmed["run_inputs"], current, reprice=False
+            ):
                 raise ValueError(
                     "The estimate inputs changed. Refresh the estimate and review this run again."
                 )
@@ -1072,7 +1074,7 @@ class GuidedActions:
             job["status"] != "complete"
             or not job.get("estimate")
             or not temporary(job)
-            or record["fingerprint"] != run_inputs["fingerprint"]
+            or self.guided.runs.changed(record, run_inputs)
             and not self.guided.runs.repriced(project_id, native, identity, run_inputs)
             or identity in self.guided.inputs(native).record().get("retired_runs", [])
             or any(

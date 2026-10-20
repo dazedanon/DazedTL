@@ -18,10 +18,11 @@ Change naming what differs. Code changes alone never outdate saved work: never
 digest DazedTL's or the engine's source files into a basis, raise the kind's
 version instead.
 
-A record saved before its kind kept a full basis is read through ``legacy``:
-the one digest that release saved, which the current basis lists among the
-digests an older release would have written for the same work. It is accepted
-only while the kind's version is still the one those records were made under.
+Each kind reads its own saved records into a Basis, including records an
+older release saved in another form: when the old digest is what that release
+would have saved for the current work, the record reads as the current basis,
+so an upgrade alone never outdates saved work. A record whose inputs cannot be
+named reads with ``inputs`` None and compares as changed.
 
 File digests are reused by stat ``signature`` only once the file has been still
 for longer than one clock tick (``settled``): a file written twice within one
@@ -34,7 +35,7 @@ import hashlib
 import os
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Mapping
 
 # File times advance in ticks of milliseconds, so a file written twice within
@@ -133,9 +134,6 @@ class Basis:
     inputs: Mapping[str, object] | None = None
     settings: object = None
     shape: object = None
-    # The single digest an older release saved instead of ``inputs``, or, on a
-    # current basis, every such digest the same work would have had.
-    legacy: frozenset = field(default_factory=frozenset)
 
     def record(self) -> dict:
         """The basis as saved JSON."""
@@ -193,8 +191,6 @@ def compare(
         return Change(version=True)
     same_shape = saved.shape is not None and saved.shape == current.shape
     if saved.inputs is None:
-        if saved.legacy & current.legacy or same_shape and prices_unknown:
-            return None
         return Change(unnamed=True)
     old, new = dict(saved.inputs), dict(current.inputs or {})
     change = Change(

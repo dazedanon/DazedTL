@@ -680,6 +680,23 @@ class GuidedTests(unittest.TestCase):
         self.assertAlmostEqual(repriced["result"]["tasks"][0]["liveCost"], 0.008)
         self.configuration.update(model="fixture-model")
         self.configuration["rates"].update(input=1)
+        # An estimate the previous release saved stays current after an upgrade.
+        estimate = self.guided.full_estimate
+        with self.guided.observations.read():
+            tasks = estimate.scope(
+                self.identity,
+                self.native,
+                self.guided.event_text.status(self.identity, self.native),
+                guard=self.guided.runs.poll_guard(self.native),
+                cached_only=True,
+            )
+        self.backend.operations.jobs["estimate"]["result"].update(
+            {
+                key: estimate.fingerprint(tasks, key, "2.24.0")
+                for key in ("fingerprint", "shape")
+            }
+        )
+        self.assertTrue(current())
         # Estimating again would only repeat it, unless Claude's count failed.
         with self.assertRaisesRegex(ValueError, "Nothing changed"):
             self.guided.full_estimate.start(self.identity)
@@ -687,10 +704,8 @@ class GuidedTests(unittest.TestCase):
             {"approximateInput": True}
         ]
         self.guided.full_estimate.start(self.identity)
-        # Another release may estimate differently.
-        with patch(
-            "dazedtl.translation.full_estimate.app_version", return_value="0.0.1"
-        ):
+        # Raising the estimate version outdates every saved estimate.
+        with patch("dazedtl.translation.full_estimate.ESTIMATE_VERSION", 2):
             self.assertFalse(current())
         self.native["engine_options"]["CODE356"] = True
         self.assertFalse(current())
