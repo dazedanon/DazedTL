@@ -289,8 +289,9 @@ export const countedPhase = (phase: Phase) =>
  * A file's translated and total lines. Database files and Maps & events read
  * them from the file's newest copy (sourceStatus.lines), except that a Live
  * run still working on the file knows only the lines it saved so far
- * (`running`); the count takes over when it ends. A file the backend could
- * not read has no total. Other event text reads its runs' receipts.
+ * (`running`); the count takes over once it is done with the file. A file the
+ * backend could not read has no total. Other event text reads its runs'
+ * receipts.
  */
 export function fileLines(
   state: Pick<GuidedState, "runs" | "sourceStatus">,
@@ -299,7 +300,12 @@ export function fileLines(
 ): { done: number; total: number | null; running?: boolean } {
   if (!countedPhase(phase)) return runLines(state, phase, name);
   const run = fileRun(state.runs, phase, name, state.sourceStatus.retired);
-  if (run && !run.temporary && run.mode !== "batch" && activeWorker(run))
+  if (
+    run &&
+    !run.temporary &&
+    run.mode !== "batch" &&
+    runActivity(name, run)?.state === "working"
+  )
     return {
       done: run.process?.files?.[name]?.done ?? 0,
       total: null,
@@ -550,7 +556,9 @@ export function linesLeft(counted: FileLines) {
       `${count(help, "line")} of choice help ${help === 1 ? "is" : "are"} still in Japanese; Comment text now translates ${help === 1 ? "it" : "them"}.`,
     notes > 0 &&
       `${count(notes, "line holds", "lines hold")} a refusal note an earlier run saved instead of a translation.`,
-    "Translate sends them; Inspect lists them.",
+    counted.lines - counted.translated === 1
+      ? "Translate sends it; Inspect lists it."
+      : "Translate sends them; Inspect lists them.",
   ]
     .filter(Boolean)
     .join(" ");

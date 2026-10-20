@@ -748,6 +748,15 @@ test("Database files and Maps & events rows read the file's lines and state", ()
   const working = row(state(done, [running]));
   assert.deepEqual(working.lines, { done: 2, total: null, running: true });
   assert.equal(working.label, "Working");
+  // A file the run is done with, such as one with nothing left to send,
+  // keeps its own count.
+  assert.deepEqual(
+    row(
+      state({ "Map002.json": { lines: 3, translated: 3 } }, [running]),
+      "Map002.json",
+    ).lines,
+    { done: 3, total: 3 },
+  );
   const batch: Job = {
     ...live,
     mode: "batch",
