@@ -15,6 +15,7 @@ from inspect import signature
 
 from dazedtl.translation.files import digest
 
+from .batch_evidence import served_files
 from .process_view import (
     batch_state,
     consumed_files,
@@ -161,7 +162,8 @@ def recorded_outcomes(root, queued, responses):
             not entry
             or state not in {"validated", "rejected"}
             or key not in responses
-            or filename != entry.get("dazedtl_file")
+            # Each file a shared response serves records it; the last one stays.
+            or filename not in served_files(entry)
             or source != canonical(json.loads(entry["payload"]))
             or response_hash != digest(responses[key])
         ):

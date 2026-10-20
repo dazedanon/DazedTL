@@ -289,7 +289,8 @@ export function settledWithoutRequests(
  * run that translated it translated, since it sends any line still in the
  * game's own words. Lines whose saved text is a refusal note an earlier run
  * kept (refusalNotes) stay untranslated until a run sends them again, even
- * when a check found nothing to send.
+ * when a check found nothing to send. Comment lines the latest run left out
+ * (untranslatedComments) add to a known total.
  */
 export function fileLines(
   state: Pick<GuidedState, "runs" | "sourceStatus">,
@@ -312,6 +313,7 @@ export function fileLines(
     translated && requests(translated)?.requests ? translated : latest;
   const lines = requests(run);
   const notes = state.sourceStatus.refusalNotes?.[name] ?? 0;
+  const comments = untranslatedComments(state, phase, name, latest);
   const done =
     run !== latest && lines
       ? Math.max(0, lines.lines - notes)
@@ -320,7 +322,7 @@ export function fileLines(
         : (lines?.done ?? 0);
   // A check that found nothing to send read refusal notes as translations.
   if (!notes && settledWithoutRequests(state, phase, name, latest))
-    return { done, total: done };
+    return { done, total: done + comments };
   if (
     latest &&
     nothingFound(
@@ -329,7 +331,7 @@ export function fileLines(
       !translatedFiles(state.runs, state.sourceStatus.retired).has(name),
     )
   )
-    return { done: 0, total: 0 };
+    return { done: 0, total: comments };
   if (run && run.mode !== "batch" && activeWorker(run))
     return { done, total: null, running: true };
   // Live prepares requests as it goes, so a file a run did not finish never
@@ -341,7 +343,23 @@ export function fileLines(
     !finished(run)
   )
     return { done, total: null };
-  return { done, total: lines?.requests ? lines.lines : null };
+  return { done, total: lines?.requests ? lines.lines + comments : null };
+}
+/**
+ * Comment lines, such as a choice's help, that Comment text translates but a
+ * file's working copy still holds in Japanese, because the file's latest Maps
+ * & events run ran with Comment text off and never sent them. A run with it
+ * on counts its own comment lines; the next run sends these.
+ */
+export function untranslatedComments(
+  state: Pick<GuidedState, "runs" | "sourceStatus">,
+  phase: Phase,
+  name: string,
+  run = fileRun(state.runs, phase, name, state.sourceStatus.retired),
+) {
+  if (phase !== "dialogue" || !run || run.commentText || activeWorker(run))
+    return 0;
+  return state.sourceStatus.untranslatedComments?.[name] ?? 0;
 }
 /**
  * The files an event-code task covers: the selected event files and every
@@ -393,6 +411,7 @@ export function translationTaskComplete(
     )
       return false;
     const run = fileRun(state.runs, phase, name, state.sourceStatus.retired);
+    if (untranslatedComments(state, phase, name, run)) return false;
     if (settledWithoutRequests(state, phase, name, run)) return true;
     if (
       !run ||
@@ -477,8 +496,9 @@ const fileState = (state: DisplayState, detail = "") => ({
  * File receipts and verified output own the row; run diagnostics stay in
  * Inspect. `untranslated` says no run translated the file (translatedFiles),
  * so a run that sent nothing for it leaves nothing to apply. `notes` counts
- * lines whose saved text is a refusal note an earlier run kept, which leave a
- * finished file needing review until a run sends them again.
+ * lines whose saved text is a refusal note an earlier run kept, and
+ * `comments` choice help the latest run left out (untranslatedComments); both
+ * leave a finished file needing review until a run sends them.
  */
 export function fileStatus(
   name: string,
@@ -486,15 +506,30 @@ export function fileStatus(
   settled = false,
   untranslated = false,
   notes = 0,
+  comments = 0,
 ) {
   const status = runFileStatus(name, run, settled, untranslated);
-  if (!notes || !["ready", "applied", "done"].includes(status.state))
+  if (
+    (!notes && !comments) ||
+    !["ready", "applied", "done"].includes(status.state)
+  )
     return status;
   return fileState(
     "needs_review",
-    notes === 1
-      ? "1 line holds a refusal note an earlier run saved instead of a translation. Translate sends it again."
-      : `${notes.toLocaleString()} lines hold a refusal note an earlier run saved instead of a translation. Translate sends them again.`,
+    [
+      notes === 1
+        ? "1 line holds a refusal note an earlier run saved instead of a translation. Translate sends it again."
+        : notes
+          ? `${notes.toLocaleString()} lines hold a refusal note an earlier run saved instead of a translation. Translate sends them again.`
+          : "",
+      comments === 1
+        ? "1 line of a choice's help is not translated yet: Comment text did not cover it when this file was translated. Translate sends only that line."
+        : comments
+          ? `${comments.toLocaleString()} lines of choice help are not translated yet: Comment text did not cover them when this file was translated. Translate sends only those lines.`
+          : "",
+    ]
+      .filter(Boolean)
+      .join(" "),
   );
 }
 function runFileStatus(

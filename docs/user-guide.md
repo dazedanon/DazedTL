@@ -109,6 +109,7 @@ Translate has five tasks.
 
 Maps & events also translates the choice help that plugins such as MPP_ChoiceEX show from event comments.
 Guided turns **Comment text** on for this the first time it opens a game that shows such help; you can change it in Context > Names & glossary > Speaker detection > Settings.
+In a project translated before then, each file whose help is still in Japanese reads **Needs review** and counts those lines as untranslated; **Translate** sends only them.
 The help wraps to the message window, to the **With portrait** width when the message before the choice shows a face, and is rewrapped with the other text when it no longer fits.
 
 Approved Batch work carries on after DazedTL restarts.

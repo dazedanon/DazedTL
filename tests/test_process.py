@@ -94,6 +94,7 @@ class ProcessTests(unittest.TestCase):
 
                     translation = SimpleNamespace(
                         queue_batch_request=point(lambda *_: "unused"),
+                        _join_queued_request=point(lambda kept, _entry: kept),
                         _write_request_debug_log=point(lambda *_: None),
                         translateText=point(native),
                         translateAI=point(lambda text: None),
@@ -245,6 +246,7 @@ class ProcessTests(unittest.TestCase):
 
                     translation = SimpleNamespace(
                         queue_batch_request=point(lambda *_: "unused"),
+                        _join_queued_request=point(lambda kept, _entry: kept),
                         _write_request_debug_log=point(lambda *_: None),
                         translateText=point(tries(urls, evidence)),
                         translateAI=point(lambda text: None),
@@ -987,6 +989,7 @@ class ProcessTests(unittest.TestCase):
             def translator():
                 return SimpleNamespace(
                     queue_batch_request=point(lambda *_: "unused"),
+                    _join_queued_request=point(lambda kept, _entry: kept),
                     BATCH_LOCK=threading.RLock(),
                     _batch_queue_pending={},
                     _write_request_debug_log=point(lambda *_: None),
@@ -1417,6 +1420,7 @@ class ProcessTests(unittest.TestCase):
 
                 translation = SimpleNamespace(
                     queue_batch_request=point(queue),
+                    _join_queued_request=point(lambda kept, _entry: kept),
                     BATCH_LOCK=threading.RLock(),
                     _batch_queue_pending={},
                     _write_request_debug_log=point(lambda *_: None),
@@ -1568,6 +1572,7 @@ class ProcessTests(unittest.TestCase):
             def run(identities):
                 translation = SimpleNamespace(
                     queue_batch_request=point(lambda *_: "unused"),
+                    _join_queued_request=point(lambda kept, _entry: kept),
                     BATCH_LOCK=threading.RLock(),
                     _batch_queue_pending={},
                     _write_request_debug_log=point(lambda *_: None),

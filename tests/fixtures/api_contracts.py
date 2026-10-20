@@ -147,6 +147,13 @@ try:
     saved = {"id": "saved", "status": "complete", "message": "", "log": []}
     saved["estimate"] = {"input_tokens": 1, "cold_cache": False, "speakers": []}
     check_response("guided_inspect", views.job(saved))
+    # The run view keeps every field its contract declares: a dropped optional
+    # field passes every response check and reaches the app as missing.
+    from dazedtl.api.contracts.runs import Job
+
+    assert set(views.job(dict.fromkeys(Job.__annotations__))) == set(
+        Job.__annotations__
+    )
     # Copied Guided tasks tell the assistant to run these helper commands; the
     # loopback helper used to refuse every Guided request.
     from importlib.util import module_from_spec, spec_from_file_location

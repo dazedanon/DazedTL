@@ -5,6 +5,15 @@
 - Preserve existing user changes and the sibling DazedMTLTool repository.
 - Work on the `dev` branch; `main` changes only through `node scripts/release.mjs`.
 - Keep changes focused; preserve engine parsing, context, and translation behavior.
+- Land one feature or fix at a time: merge it into `dev` and verify it there before starting the next.
+  Run sessions in parallel only for areas that share no files, and never collect several feature branches to merge together at release time.
+- When a change is done, land it yourself with the `dazedtl-land` skill instead of waiting to be asked.
+- Put problems you notice outside the task under New in the bug list (`~/DazedTranslations/DazedTL-bugs.md`) instead of fixing them; the `dazedtl-triage` skill works through it.
+- Match the model and effort to the job: design and hard debugging on the strongest model at high effort; reviews, probes, merges, pushes and mechanical edits on a cheaper model or lower effort.
+- Before fixing a bug, read the git history of the code involved.
+  If the same behavior was fixed before, stop and report the root cause with a proposed rework instead of patching it again.
+- Give each rule one definition, such as how a text block's rows are grouped or how a file's status is counted, and call it from every place that needs it.
+  When a fix touches a rule that is defined in more than one place, merge the copies first, or report them if merging is large.
 - Follow the ownership boundaries in [architecture](docs/architecture.md) and reuse its shared UI and state mechanisms.
 - Follow the [navigation and responsiveness boundary](docs/architecture.md#navigation-and-responsiveness) when adding screens, tabs, action handlers, or observed state.
 - Use the Qt GUI as the guided workflow reference, following the [reference and runtime distinction](docs/architecture.md#ownership).
@@ -31,13 +40,14 @@
 - Run `node scripts/test.mjs` for foundation or shared behavior changes, and `node scripts/build.mjs` for any code change; it runs the formatting, lint and type checks.
   [Checks](docs/development.md#checks) lists what each covers, focused test commands, and the formatter.
 - Run the [live test](docs/development.md#live-test) for changes to setup, launching, updates, file or process handling, or other platform-specific behavior; CI runs it on Windows and Linux.
-- Test every new feature end to end on both Linux and Windows, as a user would, before reporting it done.
-  The live test covers only its fixed journey, so a new feature needs its own run on a real Windows install or VM; without one, report the feature unverified on Windows.
+- Test every new feature end to end on Linux, as a user would, before reporting it done.
+  Run it on a real Windows install or VM too when it touches files, paths, processes, setup, launching, updates or other platform-specific behavior; otherwise CI's Windows checks are enough, and report the feature as tested on Linux only.
 - UI changes require visual review of affected layouts against the [responsive layout guidance](docs/architecture.md#workflow-and-shared-presentation). Check resizing and reflow where relevant. Exercise long labels/paths and idle, pending, success, and error states; check alignment, text-to-action gaps, clipping, overflow, and redundant status text. Report unverified states.
 - For navigation or observer changes, verify that switching already-loaded views with clean drafts completes while a backend read is stalled, sends no navigation or refresh RPC, and survives a late snapshot. Reuse the [observer tests](tests/application.test.ts); retain draft recovery, project ownership, and execution guards.
 - Use shared layout primitives and spacing tokens, including ActionList/ActionRow for repeated action rows. Fix reusable layout defects in the shared primitive; do not compensate with per-button widths, fixed text heights, or clipped feedback.
 - Routine reversible actions should start on one click. Keep review where the user must approve cost, scope, or consequential changes; do not remove execution checks or duplicate-submission guards.
 - Action buttons must acknowledge pending work and show success or failure near the control; check saved artifacts on disk before presenting them as available.
+- Turn each bug's reproduction into a test that fails without the fix and commit it with the fix, unless the bug is a kind the skip rule below lists.
 - Before adding a test, name the concrete failure it protects against and search for overlapping coverage.
 - Extend an existing case for a distinct risk when readable; use the cheapest level that reliably catches the failure.
 - Reserve application tests for a few critical user journeys; use direct tests for difficult parsing, reconciliation, and other isolated logic.

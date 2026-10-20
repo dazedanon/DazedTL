@@ -408,6 +408,7 @@ Missing receipts for a changed file stay unknown.
 Line amounts follow the same receipts through [fileLines](../app/src/features/guided/translationView.ts): the lines a file's latest run saved, out of the lines that run prepared, counting each source request once at its latest attempt; a later "nothing to translate" check closes the file at what is done.
 A latest run that finished a file with nothing to send found every line of the run that last translated it done, since it sends any line still in the game's own words, except lines holding a saved refusal note; those notes also keep a "nothing to translate" check from closing the file.
 A Batch writes a file only while it saves its results, so its received lines count as saved once the file is written, and not at all when saving that file failed.
+A Batch sends identical requests of several files, such as a scene two maps repeat, once; the queued request names each of those files, and its lines and validation outcome count in every one of them.
 A Live run prepares requests as it works, so its files show only the lines saved so far until it ends, and Apply leaves them out until then.
 Estimates carry no per-file lines, so a file without a run shows no amount; the Project page totals the known amounts with files applied and the recorded cost.
 Saved-output counts there, on Apply and in the Check and Release notes about applied text leave out files no run translated, since their saved copy is the game's own text.

@@ -695,6 +695,14 @@ class Guided:
         source_status["refusalNotes"] = inputs.refusal_notes(
             [row["name"] for row in native["files"]]
         )
+        source_status["untranslatedComments"] = (
+            inputs.untranslated_comments(
+                [row["name"] for row in native["files"] if row["group"] == "dialogue"],
+                comment_text.markers(native["source"]),
+            )
+            if native["engine"] == "MVMZ" and native["phase1_comments"]
+            else {}
+        )
         prepared = list(dict.fromkeys([*native["imported"], *source_status["ready"]]))
         if prepared != native["imported"]:
             native["imported"] = prepared

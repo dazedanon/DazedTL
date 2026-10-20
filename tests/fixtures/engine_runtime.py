@@ -2285,7 +2285,7 @@ try:
         from dazedtl.compatibility.batch_evidence import (
             install as retain_batch_evidence,
         )
-        from dazedtl.compatibility.process_view import payload
+        from dazedtl.compatibility.process_view import payload, request_view
         from dazedtl.compatibility.request_parameters import batch_routing
         from dazedtl.compatibility.request_scope import identities
         from dazedtl.compatibility.run_evidence import Evidence
@@ -2474,6 +2474,18 @@ try:
                 ], queued_names
             translation.translateAI(["薬"], [], config, filename="Items.json")
             translation.translateAI(["回復", "毒"], [], config, filename="Items.json")
+            # Another file asking alike shares the request, queued once; its
+            # own queue fragment still names the file.
+            translation.translateAI(["回復", "毒"], [], config, filename="Weapons.json")
+            collected = translation._read_batch_queue()
+            assert [entry.get("dazedtl_files") for entry in collected.values()] == [
+                None,
+                ["Items.json", "Weapons.json"],
+            ], collected
+            assert set(request_view(router_root, {})["files"]) == {
+                "Items.json",
+                "Weapons.json",
+            }
             estimate = translation.estimateBatchCost()
             assert estimate["provider"] == "openrouter", estimate
             assert (
@@ -2530,12 +2542,22 @@ try:
             assert mismatches == ["Map002.json", "Map003.json", "Map004.json"], (
                 mismatches
             )
+            # The file sharing the request records the outcome last, and the
+            # rejection still counts in both of them.
+            translation.translateAI(["回復", "毒"], [], config, filename="Weapons.json")
             (router_root / "log/translation.txt").unlink()
             (router_root / "log/mismatches.txt").unlink()
             batch_rows = [payload(router_root, index) for index in range(2)]
             assert [row["state"] for row in batch_rows] == ["validated", "rejected"], (
                 batch_rows
             )
+            assert {
+                name: entry["states"]
+                for name, entry in request_view(router_root, {})["files"].items()
+            } == {
+                "Items.json": ["validated", "rejected"],
+                "Weapons.json": ["rejected"],
+            }
             assert json.loads(batch_rows[1]["response"]["text"]) == {
                 "Line1": "Potion",
                 "Line2": "",

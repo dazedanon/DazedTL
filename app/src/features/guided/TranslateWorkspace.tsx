@@ -16,6 +16,7 @@ import {
   fileStatus,
   settledWithoutRequests,
   translatedFiles,
+  untranslatedComments,
 } from "./translationView";
 import type { RequestInspectionTarget } from "./ProcessPanel";
 import { retainOtherScope } from "./selection";
@@ -186,12 +187,19 @@ export function TranslateWorkspace({
               ),
               details: (row) => {
                 const fileOwner = owner(row.name),
+                  comments = untranslatedComments(
+                    state,
+                    phase,
+                    row.name,
+                    fileOwner,
+                  ),
                   status = fileStatus(
                     row.name,
                     fileOwner,
                     settledWithoutRequests(state, phase, row.name, fileOwner),
                     !translated.has(row.name),
                     state.sourceStatus.refusalNotes?.[row.name],
+                    comments,
                   );
                 const metricRun = fileMetricRun(
                     state.runs,
@@ -208,13 +216,15 @@ export function TranslateWorkspace({
                       title={
                         lines.running
                           ? "Lines saved so far; the total is known when the run ends"
-                          : lines.total
-                            ? "Lines saved of the lines the latest run prepared"
-                            : lines.done
-                              ? "Lines saved before the latest run ended; it did not reach the rest of the file"
-                              : lines.total === 0
-                                ? "Nothing to translate in this file"
-                                : "Line counts appear once a run prepares this file"
+                          : lines.total && comments
+                            ? "Lines saved of the lines the latest run prepared and the choice help it left out"
+                            : lines.total
+                              ? "Lines saved of the lines the latest run prepared"
+                              : lines.done
+                                ? "Lines saved before the latest run ended; it did not reach the rest of the file"
+                                : lines.total === 0
+                                  ? "Nothing to translate in this file"
+                                  : "Line counts appear once a run prepares this file"
                       }
                     >
                       {lines.running || (!lines.total && lines.done)

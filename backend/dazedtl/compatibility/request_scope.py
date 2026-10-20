@@ -8,6 +8,7 @@ import json
 
 from dazedtl.translation.files import digest, read_json
 
+from .batch_evidence import served_files
 from .process_view import (
     batch_results,
     batch_state,
@@ -227,7 +228,7 @@ def requests(root, job, queued=None, records=None):
             receipt = validation.get(key, {}) if outcome == "received" else {}
             if receipt:
                 outcome = receipt["state"]
-            elif outcome == "received" and entry.get("dazedtl_file") in complete:
+            elif outcome == "received" and complete.issuperset(served_files(entry)):
                 outcome = "saved"
             if key in clarification_pending:
                 outcome, receipt = clarification_pending[key], {}
@@ -246,6 +247,7 @@ def requests(root, job, queued=None, records=None):
                 "keys": entry.get("dazedtl_sources"),
                 "file": entry.get("dazedtl_file"),
                 "lineFiles": entry.get("dazedtl_line_files"),
+                "servedFiles": entry.get("dazedtl_files"),
                 "response": results.get(key),
                 "error": receipt.get("error"),
                 "unused": receipt.get("unused"),
