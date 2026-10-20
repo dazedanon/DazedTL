@@ -3750,6 +3750,15 @@ class GuidedTests(unittest.TestCase):
             {"events": [{"pages": [{"list": help_lines}]}]},
         )
         self.assertEqual(inputs.untranslated_comments(["Map001.json"], markers), {})
+        # A file shaped unlike RPG Maker data holds no help, rather than
+        # failing every look at the project; the game's own help still counts.
+        odd = [{"code": 108, "parameters": {"text": "ChoiceHelp"}}]
+        write_json(self.source / "CustomEvents.json", odd)
+        write_json(self.folder / "translated/Map001.json", odd)
+        self.assertEqual(inputs.untranslated_comments(["Map001.json"], markers), {})
+        self.assertTrue(
+            comment_text.shows_comment_text(self.source, self.native["plugins"])
+        )
         native.update(phase1_comments=False, revision=native["revision"] + 1)
         self.guided.comment_text(self.identity)
         self.assertFalse(self.backend.workflows.projects["native"]["phase1_comments"])

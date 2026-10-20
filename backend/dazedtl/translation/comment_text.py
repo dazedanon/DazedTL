@@ -19,15 +19,21 @@ CHECKED = "comment_text_checked"
 _MARKERS: dict[tuple, frozenset[str]] = {}
 
 
-def _japanese_lines(name: str, document: Any, markers: frozenset[str]):
-    """The comment lines under *markers* that a data file holds in Japanese."""
+def _japanese_lines(name: str, document: Any, markers: frozenset[str]) -> list:
+    """The comment lines under *markers* that a data file holds in Japanese;
+    a file shaped unlike RPG Maker's, such as a plugin's own data, holds none."""
     from util.rpgmaker_qa_preflight import japanese, visible_texts
 
-    return (
-        value
-        for _path, value, kind, _translated in visible_texts(name, document, markers)
-        if kind == "comment text" and japanese(value)
-    )
+    try:
+        return [
+            value
+            for _path, value, kind, _translated in visible_texts(
+                name, document, markers
+            )
+            if kind == "comment text" and japanese(value)
+        ]
+    except AttributeError, IndexError, KeyError, TypeError:
+        return []
 
 
 def markers(source: str | Path) -> frozenset[str]:
@@ -61,7 +67,7 @@ def untranslated(name: str, raw: bytes, markers: frozenset[str]) -> int:
         document = json.loads(raw.decode("utf-8-sig"))
     except UnicodeDecodeError, ValueError:
         return 0
-    return sum(1 for _value in _japanese_lines(name, document, markers))
+    return len(_japanese_lines(name, document, markers))
 
 
 def shows_comment_text(data: str | Path, plugins: str | Path) -> bool:
