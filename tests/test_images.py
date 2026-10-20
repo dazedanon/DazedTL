@@ -799,6 +799,19 @@ class ImageTests(unittest.TestCase):
         self.assertEqual(item["classification"], "not_examined")
         self.assertIn("source changed", item["blockedReason"])
 
+    def test_an_editable_written_without_prepare_is_held_back_from_apply(self):
+        # An edited copy placed by hand has no preserved original to restore.
+        write_bytes(self.game / ".dazedtl/images/img/A.png", png((2, 3, 4, 100)))
+        self.service.recheck(self.identity)
+        self.service.action(self.identity, "user_review", {"asset_ids": ["img/A.png"]})
+        item = self.service.list(self.identity)["items"][0]
+        self.assertEqual(item["state"], "not_prepared")
+        self.assertIn("Prepare this image first", item["blockedReason"])
+        self.choose(["img/A.png"])
+        preview = self.service.action(self.identity, "preview_apply")["preview"]
+        self.assertEqual(preview["included"], 0)
+        self.assertEqual(preview["blocked"][0]["id"], "img/A.png")
+
     def test_applied_receipt_and_reviewed_restore_preserve_frozen_original_and_existing_copies(
         self,
     ):

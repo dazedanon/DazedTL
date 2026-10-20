@@ -751,6 +751,13 @@ class ImageService:
                 "not_prepared",
                 "Make this image editable before starting image work.",
             )
+        elif not row.get("runtimeBackup"):
+            # An edited copy placed without Prepare has no preserved original,
+            # so Apply could not keep the game's image to restore.
+            row["state"], row["blockedReason"] = (
+                "not_prepared",
+                "Prepare this image first so its original is kept.",
+            )
         elif not row.get("changed"):
             row["state"], row["blockedReason"] = (
                 "editable",
@@ -1470,7 +1477,7 @@ class ImageService:
             unprepared = [
                 row["id"]
                 for row in rows
-                if not row.get("hasEditable")
+                if not row.get("runtimeBackup")
                 and not row.get("sourceIssue")
                 and not row.get("originalIssue")
             ]
