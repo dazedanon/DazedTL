@@ -211,7 +211,7 @@ export function TranslateWorkspace({
                       title={
                         lines.running
                           ? counted
-                            ? "Lines saved so far; the file's count returns when the run ends"
+                            ? "Lines saved so far; the file's count returns once the run is done with it"
                             : "Lines saved so far; the total is known when the run ends"
                           : lines.total
                             ? counted
