@@ -487,6 +487,7 @@ function ApiRun({
             pending={action.busy && action.key === "reestimate"}
             pendingText="Estimating…"
             error={action.key === "reestimate" ? action.error : ""}
+            feedbackKey="reestimate"
             job={redo}
             onClick={() =>
               void action.run(
