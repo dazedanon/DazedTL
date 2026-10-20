@@ -267,12 +267,33 @@ def apply(qa, task, undo=False):
     shutil.rmtree(staging)
 
 
+def change_detectors(qa):
+    """Stands in for an update that changes what QA derives from the text:
+    the manifest builder, the verifier and apply's regression check all give
+    every line one more mechanical flag."""
+    from util import rpgmaker_qa_manifest as manifest
+    from util import rpgmaker_qa_verify as verify
+
+    def more(evidence):
+        def changed(*arguments):
+            value = evidence(*arguments)
+            return {**value, "flags": [*value["flags"], "changed-detector"]}
+
+        return changed
+
+    manifest._mechanical_evidence = more(manifest._mechanical_evidence)
+    verify._mechanical = more(verify._mechanical)
+    qa._mechanical_evidence = more(qa._mechanical_evidence)
+
+
 def new():
-    """The previous release's tasks with this code: the finished one stays
-    current and applies; the one in review goes on to the end, or under a new
-    QA_RULES_VERSION is refused and QA prepares a new task."""
+    """The previous release's tasks with this code and a changed detector:
+    the finished one stays current and applies; the one in review goes on to
+    the end, or under a new QA_RULES_VERSION is refused and QA prepares a new
+    task."""
     from util import rpgmaker_qa as qa
 
+    change_detectors(qa)
     saved = json.loads((work / "upgrade.json").read_text(encoding="utf-8"))
     bumped = saved["rules_version"] != qa.QA_RULES_VERSION
     storage = Path(saved["storage"])
@@ -281,6 +302,12 @@ def new():
         return qa.prepare_task(work / name, work / name / "data", "release", storage)[0]
 
     finished = Path(saved["finished"]["task"])
+    inventory = json.loads((finished / "inventory.json").read_text(encoding="utf-8"))
+    if any(
+        "changed-detector" in record["mechanical"]["flags"]
+        for record in inventory["records"]
+    ):
+        fail("the previous release's task already holds the changed detector's flag.")
     state = qa.status(finished)
     if state["stage"] != "complete" or state["rules_changed"]:
         fail(
@@ -330,7 +357,7 @@ def new():
     apply(qa, reviewing)
     print(
         f"Previous-release QA check passed: QA rules version {saved['rules_version']}"
-        f" -> {qa.QA_RULES_VERSION}; the finished task applied, undid and applied "
+        f" -> {qa.QA_RULES_VERSION}, with a changed detector; the finished task applied, undid and applied "
         "again, and the one in review "
         + ("was prepared again and " if bumped else "")
         + "finished and applied."

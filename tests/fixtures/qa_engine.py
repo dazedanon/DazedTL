@@ -1139,10 +1139,18 @@ assert [
     ("custom", "Synopsis.json", 1, "unread"),
 ], untranslated["sources"]
 # A finished task keeps its results through any update: under another rules
-# version it reads as it stood and its findings still apply.
+# version it reads as it stood and its findings still apply, while Undo still
+# needs the game to hold what the apply wrote.
 qa.QA_RULES_VERSION += 1
 assert not qa.status(task)["rules_changed"]
-assert qa.correction_map(task, [stratum])["operations"]
+try:
+    apply(qa.correction_map(task, [stratum], undo=True))
+except ValueError as error:
+    assert "Expected value changed" in str(error), error
+else:
+    raise AssertionError("A correction no longer in the game was undone.")
+assert apply(qa.correction_map(task, [stratum]))
+assert message(STRATUM["_original"]) == "Rest on the first stratum"
 qa.QA_RULES_VERSION -= 1
 
 # Database checks send what reviewers read apart to deep review with their

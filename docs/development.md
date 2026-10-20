@@ -69,7 +69,7 @@ GitHub's Windows images include the Visual C++ runtime and other tools a fresh W
 
 `node scripts/qa-upgrade.mjs` checks that a release keeps the [Text QA work](architecture.md#persistence-and-settings) the previous one saved.
 It takes the newest release tag other than the checked-out commit's, or `--tag <tag>`, and with that release's code prepares Text QA tasks on two translated copies of the [fixture game](../tests/fixtures/mz-game): one reviewed to the end with a correction and a question not yet applied, and one stopped in deep review.
-With this checkout's code the finished task must read complete, be the task preparing QA again returns and apply, undo and apply again; the one in review must go on to the end and apply.
+With this checkout's code and a stand-in detector change, which gives every line one more mechanical flag, the finished task must read complete, be the task preparing QA again returns and apply, undo and apply again; the one in review must go on to the end and apply.
 When the checkout's `QA_RULES_VERSION` differs from the release's, the task in review must refuse more review instead, and QA prepares a new one.
 The phases run in [qa_upgrade.py](../scripts/qa_upgrade.py), the release's own copy for its tasks when it has one; it needs the release tags (`git fetch --tags`) and the setup's `.venv`, and `--work <empty folder>` keeps its files.
 A failure means a change made saved QA work stale: keep what names a task as it was, or bump `QA_RULES_VERSION` when old reviews are wrong now.
