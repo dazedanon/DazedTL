@@ -248,6 +248,21 @@ class QAEngineTests(unittest.TestCase):
             {"lint:dakuten-apostrophe": "Why… Stop it…"},
         )
 
+    def test_merged_list_fix_adds_no_blank_row(self):
+        # A Fuuma banner whose head already ends its row: the fix put a blank
+        # row between the head and its items.
+        self.assertEqual(
+            lint.proposals(
+                "真・リリスの瘴気\n・毎ターンSAN値が-9される。\n・3ターンに一度+1される。",
+                "True Lilith's Miasma\n・SAN -9 every turn. ・Once every\n3 turns +1.",
+                lint.Game(),
+            ),
+            {
+                "lint:merged-list": "True Lilith's Miasma\n・SAN -9 every turn.\n"
+                "・Once every 3 turns +1."
+            },
+        )
+
     def test_quoted_titles_spare_lines_that_are_speech(self):
         # Released lines: speech in 「」 that another line's translation of a
         # shorter source would have overwritten.

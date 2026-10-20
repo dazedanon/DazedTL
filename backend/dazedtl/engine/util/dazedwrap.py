@@ -181,7 +181,7 @@ _CLOSERS = "\"'”’)]）」』】＞*"
 _SENTENCE_END = re.compile(r"(?:[.!?…♪♥♡～~！？]|―)[" + re.escape(_CLOSERS) + r"]*$")
 _CLAUSE_END = re.compile(r"(?:[,;:、，]|—|–|--)[" + re.escape(_CLOSERS) + r"]*$")
 # A line that starts a list item or a note starts on a line of its own.
-_ITEM_START = re.compile(r"^[・●◆◇■□※★☆•]")
+ITEM_START = re.compile(r"^[・●◆◇■□※★☆•]")
 # A source line that ends a sentence, and one that ends a clause: where the
 # writer broke the line on purpose rather than to fit the window.
 _SOURCE_SENTENCE_END = re.compile(r"[。！？!?…‥.♪♥♡～〜ー―」』）)】]$")
@@ -196,7 +196,7 @@ def _word_end(word: str) -> str:
 def _break_kind(words: list[str], end: int) -> str:
     """How a line break after ``words[end - 1]`` reads: after a sentence or
     before a list item, after a clause, or inside a sentence."""
-    if end < len(words) and _ITEM_START.match(_LEADING_CODES.sub("", words[end])):
+    if end < len(words) and ITEM_START.match(_LEADING_CODES.sub("", words[end])):
         return "sentence"
     tail = _word_end(words[end - 1])
     if _SENTENCE_END.search(tail):
@@ -221,7 +221,7 @@ def _source_segments(lines: list[str]) -> tuple[list[int], bool]:
             sizes.append(size)
         following = lines[index + 1].strip(_SOURCE_BLANK) if index + 1 < len(lines) else ""
         end = _word_end(text)
-        if _SOURCE_SENTENCE_END.search(end) or _ITEM_START.match(_LEADING_CODES.sub("", following)):
+        if _SOURCE_SENTENCE_END.search(end) or ITEM_START.match(_LEADING_CODES.sub("", following)):
             joined = False
         elif _SOURCE_CLAUSE_END.search(end):
             joined, clauses = False, True

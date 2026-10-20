@@ -467,14 +467,18 @@ class Review:
         # Lines whose English changed since the task read it, as when its
         # correction is in the game: its review is of other text.
         self.changed = set()
+        # Lines a complete task corrected whose correction never reached the
+        # game while other text did: QA's next task takes them back.
+        self.corrected = {}
 
     def notes(self, name):
         """The reasons the task observes or judged a line for."""
         return self.observed.get(name, set()) | self.judged.get(name, set())
 
     def read(self, names, hashes):
-        """Notes which of these lines it can't take, and which it knows that
-        changed since it read them; *hashes* holds the game's data files'."""
+        """Notes which of these lines it can't take, which it knows that
+        changed since it read them, and which it corrected to no effect;
+        *hashes* holds the game's data files'."""
         from util import rpgmaker_qa as qa
 
         names = set(names)
@@ -484,15 +488,18 @@ class Review:
             self.changed = (
                 qa.changed_names(self.task, known, hashes) if known else set()
             )
+            self.corrected = (
+                qa.corrected_lines(self.task, hashes) if known and self.complete else {}
+            )
         except ValueError, OSError, KeyError, TypeError:
-            self.outside, self.changed = set(), set()
+            self.outside, self.changed, self.corrected = set(), set(), {}
 
     def state(self, name, note):
         """Where the task stands on a line the playtest names for the reason
         in *note*, as its observation words it: the task's review of the
         line for another reason leaves this one waiting for QA's next
         round."""
-        if name in self.changed:
+        if name in self.changed or note in self.corrected.get(name, ()):
             return "waiting"
         if note in self.observed.get(name, ()):
             return "reviewed" if self.complete else "reviewing"

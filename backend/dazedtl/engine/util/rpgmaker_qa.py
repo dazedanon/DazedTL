@@ -2972,7 +2972,10 @@ BASELINE_FOLDER = "baselines"
 # derived, which may keep lines this one leaves out or lack lines it keeps, is
 # derived again. A baseline holds the game's text as Git had it, which no
 # version reads differently.
-TASK_LEDGER_VERSION = 2
+TASK_LEDGER_VERSION = 3
+# Deep reviews that judge a line's observation for good: the line is right, or
+# no correction can fix it.
+JUDGED_DISPOSITIONS = frozenset({"clean", "not-corrected"})
 
 
 def _pair_key(source: Any, translation: Any) -> str:
@@ -3094,7 +3097,8 @@ def _derive_ledger(
     variants: set[str] = set()
     rejected: set[str] = set()
     cleared: dict[str, set[str]] = defaultdict(set)
-    observed: set[str] = set()
+    # Each observation's verdict: the latest deep review of its line.
+    verdicts: dict[str, str] = {}
     unsettled: set[str] = set()
     for row in checkpoint["screen"]["bundles"]:
         if row["status"] != "accepted" or row.get("check_of"):
@@ -3144,11 +3148,10 @@ def _derive_ledger(
             if review["disposition"] == "clean":
                 reviewed.add(pair)
                 cleared[pair].update(item.get("deep_reasons") or [])
-            observed.update(
-                _sha256(f"{pair}\0{evidence['note']}")[:32]
-                for evidence in item.get("screen_evidence") or []
-                if evidence.get("verdict") == "observation"
-            )
+            for evidence in item.get("screen_evidence") or []:
+                if evidence.get("verdict") == "observation":
+                    key = _sha256(f"{pair}\0{evidence['note']}")[:32]
+                    verdicts[key] = review["disposition"]
     for finding in report.get("findings") or []:
         for change in _changes(finding):
             unsettled.add(_pair_key(change["source"], change["current"]))
@@ -3178,7 +3181,16 @@ def _derive_ledger(
             pair: sorted(reasons) for pair, reasons in sorted(cleared.items())
             if pair not in unsettled
         },
-        "observed": sorted(observed),
+        # An observation is judged where the reviewer left the line as it is
+        # on purpose; one they corrected is a problem still while the line
+        # keeps that text, as when editorial left the correction unverified,
+        # so the next playtest's report brings it back.
+        "observed": sorted(
+            key for key, verdict in verdicts.items() if verdict in JUDGED_DISPOSITIONS
+        ),
+        "corrected": sorted(
+            key for key, verdict in verdicts.items() if verdict not in JUDGED_DISPOSITIONS
+        ),
         "guidance": _guidance_lines(context),
         # Text fits its window only under the Line widths it was reviewed with.
         "layout": _layout_key(task.get("layout")),
@@ -3411,6 +3423,22 @@ class _Reviewed:
         key = _sha256(f"{_pair_key(source, translation)}\0{note}")[:32]
         return any(key in sets["observed"] for _ledger, sets in self._standing(str(source)))
 
+    def decisions(self) -> list[dict[str, Any]]:
+        """The decisions earlier tasks recorded that still stand, the latest
+        one per key: one no longer counts once a glossary entry or quirk for
+        Japanese it names changed since, as its reviews would not."""
+        latest: dict[str, dict[str, Any]] = {}
+        for ledger, _sets, changed in self.ledgers:
+            for entry in ledger.get("decisions") or []:
+                named = f"{entry.get('source') or ''}\n{entry['choice']}"
+                if changed is not None and changed.search(named):
+                    continue
+                if str(entry["at"]) >= str((latest.get(entry["key"]) or {}).get("at") or ""):
+                    latest[entry["key"]] = {
+                        **entry, "from": entry.get("from") or ledger["origin"],
+                    }
+        return sorted(latest.values(), key=lambda entry: entry["key"])
+
 
 # A task's folder is named by its key; the app sets aside a task it can't
 # trust under another name, and a task being prepared has a staging name.
@@ -3418,6 +3446,38 @@ _TASK_FOLDER_RE = re.compile(r"[0-9a-f]{16}")
 # Beside a focus's tasks, the scope the user named last: the key of a review
 # of every line, or none once a `since` named earlier text checked.
 SCOPE_FILE = "scope.json"
+# Beside a focus's tasks, the key of the one preparing QA returned last; the
+# others are replaced, and a helper still holding one's path is sent on.
+CURRENT_FILE = "current.json"
+
+
+def replaced_by(task_dir: str | Path) -> Path | None:
+    """The task preparing QA again made current in this one's place, or None
+    while this one is current, or none is recorded or it is gone, as when the
+    app set it aside."""
+    root = Path(task_dir).expanduser().resolve()
+    try:
+        key = str(_read_json(root.parent / CURRENT_FILE).get("task") or "")
+    except (OSError, ValueError, AttributeError):
+        return None
+    current = root.parent / key
+    if (
+        key == root.name
+        or not _TASK_FOLDER_RE.fullmatch(key)
+        or not (current / "task.json").is_file()
+    ):
+        return None
+    return current
+
+
+def require_current(task_dir: str | Path) -> None:
+    """Refuses work on a task a newer one replaced, naming the newer one, so
+    a helper can't review, report or finish the wrong task."""
+    if current := replaced_by(task_dir):
+        raise ValueError(
+            "QA was prepared again, and a newer task replaced this one; run "
+            f"this command with --task {current} and follow {current / 'README.md'}"
+        )
 
 
 def _last_scope(path: Path) -> str | None:
@@ -3448,9 +3508,10 @@ def _earlier_reviews(
     origins: set[str] | None = None,
 ) -> _Reviewed:
     """The reviews a new task builds on: every complete task of this game and
-    every baseline the user named, or only those *origins* names."""
+    every baseline the user named, or only those *origins* names, each task's
+    with the decisions its reviewers recorded."""
     ledgers = [
-        ledger
+        {**ledger, "decisions": _decisions(task.parent)}
         for task in sorted(games.glob("*/*/task.json"))
         if _TASK_FOLDER_RE.fullmatch(task.parent.name)
         and (origins is None or f"task {task.parent.name}" in origins)
@@ -3606,6 +3667,7 @@ def prepare_task(
                 _recapture(task_dir, data, manifest, progress)
             if observed:
                 _observe_again(task_dir, observed, observer)
+            _atomic_write_json(task_parent / CURRENT_FILE, {"task": task_key})
             return task_dir, status(task_dir)
 
         staging = new_folder(task_parent, f".{task_key}.")
@@ -3662,8 +3724,15 @@ def prepare_task(
                         forced_candidates, clusters[flag["identity"]],
                         ["show-text-header"], [flag["identity"]],
                     )
+            # Choices earlier QA of this game settled stay settled: reviewers
+            # follow them, and no glossary fix undoes a decided rendering.
+            if carried := reviewed.decisions():
+                _atomic_write_json(
+                    staging / DECISIONS_FILE,
+                    {"schema": DECISIONS_SCHEMA, "decisions": carried},
+                )
             lint_items, lint_fixes = _lint_items(
-                manifest, layout, _game(manifest, context), reviewed
+                manifest, layout, _lint_game(staging, manifest), reviewed
             )
             items, screen_index = _screen_items(
                 manifest, context, data, lint_fixes, reviewed
@@ -3803,6 +3872,7 @@ def prepare_task(
             if staging.is_dir() and not staging.is_symlink():
                 shutil.rmtree(staging)
             raise
+        _atomic_write_json(task_parent / CURRENT_FILE, {"task": task_key})
     return task_dir, status(task_dir)
 
 
@@ -5612,6 +5682,11 @@ class _TaskLines:
             for record in manifest["records"]
         }
         self.files = {row["path"]: row["sha256"] for row in manifest["files"]}
+        # Each cluster's text, as the task's ledger keys it.
+        self.pairs = {
+            cluster["representative"]: _pair_key(cluster["source"], cluster["live"])
+            for cluster in manifest["clusters"]
+        }
 
     def identities(self, name: str) -> set[str]:
         """The lines a name holds: an identity, or a shorter name."""
@@ -5652,6 +5727,11 @@ def observed_lines(
     notes: dict[str, set[str]] = defaultdict(set)
     for row in checkpoint.get(JUDGED_BEFORE if judged else "observations") or []:
         notes[row["identity"]].add(row["note"])
+    return _named(root, notes)
+
+
+def _named(root: Path, notes: dict[str, set[str]]) -> dict[str, set[str]]:
+    """Reasons by line identity, under every name of each line too."""
     if not notes:
         return {}
     found = {identity: set(held) for identity, held in notes.items()}
@@ -5659,6 +5739,33 @@ def observed_lines(
         if held := lines & notes.keys():
             found.setdefault(name, set()).update(*(notes[line] for line in held))
     return found
+
+
+def corrected_lines(
+    task_dir: str | Path, hashes: dict[str, str]
+) -> dict[str, set[str]]:
+    """The lines a complete task observes and its deep review corrected,
+    under every name, with the reasons, once the game's text changed since:
+    a line that still holds the text the task reviewed never got that
+    correction, and preparing QA again makes a task that takes it back.
+    *hashes* holds each data file's SHA-256 by its path in the data folder;
+    while the game's data is as the task read it, preparing again resumes
+    this task, so none counts."""
+    root = Path(task_dir).expanduser().resolve()
+    lines = _task_lines(root)
+    if all(hashes.get(path, digest) == digest for path, digest in lines.files.items()):
+        return {}
+    ledger = _task_ledger(root)
+    corrected = set((ledger or {}).get("corrected") or [])
+    if not corrected:
+        return {}
+    _root, _task, checkpoint = _read_task(root)
+    notes: dict[str, set[str]] = defaultdict(set)
+    for row in checkpoint.get("observations") or []:
+        pair = lines.pairs.get(row.get("cluster_id"))
+        if pair and _sha256(f"{pair}\0{row['note']}")[:32] in corrected:
+            notes[row["identity"]].add(row["note"])
+    return _named(root, notes)
 
 
 def observed_names(task_dir: str | Path) -> set[str]:
@@ -8912,9 +9019,14 @@ def _follow_up(root: Path, checkpoint: dict[str, Any]) -> bool:
     return True
 
 
+DECISIONS_FILE = "decisions.json"
+DECISIONS_SCHEMA = "rpgmaker-qa-decisions-v1"
+
+
 def _decisions(root: Path) -> list[dict[str, Any]]:
-    """The decision log's current entries, the latest one per key."""
-    path = root / "decisions.json"
+    """The decision log's current entries, the latest one per key, those
+    carried from earlier tasks included."""
+    path = root / DECISIONS_FILE
     if not path.is_file():
         return []
     latest: dict[str, dict[str, Any]] = {}
@@ -8941,10 +9053,10 @@ def record_decision(
         raise ValueError("A checked decision needs both its source and translation")
     with _task_lock(root):
         _load_task(root)
-        path = root / "decisions.json"
+        path = root / DECISIONS_FILE
         document = (
             _read_json(path) if path.is_file()
-            else {"schema": "rpgmaker-qa-decisions-v1", "decisions": []}
+            else {"schema": DECISIONS_SCHEMA, "decisions": []}
         )
         document["decisions"].append({
             "key": key,

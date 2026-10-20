@@ -1,6 +1,7 @@
 """Text QA builds on earlier reviews: lines a finished task reviewed, and a
 version the user says was checked before, are read only as context."""
 
+import hashlib
 import json
 import shutil
 import subprocess
@@ -204,13 +205,14 @@ workflow = temporary / "workflow"
 workflow.mkdir()
 
 
-def labels(task, problems=found):
-    """How the playtest's problems on the lines read with *task* as QA's."""
+def labels(task, problems=found, hashes=None):
+    """How the playtest's problems on the lines read with *task* as QA's;
+    *hashes* gives the data files' as the game holds them."""
     (workflow / "text-qa-release.json").write_text(
         json.dumps({"task": str(task)}), encoding="utf-8"
     )
     review = reviewing(workflow, "release")
-    review.read({row["identity"] for row in problems}, {})
+    review.read({row["identity"] for row in problems}, hashes or {})
     return [review.state(row["identity"], row["note"]) for row in problems]
 
 
@@ -242,6 +244,29 @@ aside = first.rename(first.with_name(first.name + "-unreadable"))
 assert len(targets(prepare())) == 7
 shutil.rmtree(first)
 aside.rename(first)
+# Deep review judged the playtest's first line right as it is, and corrected
+# the second: until that correction is in the game, a new task takes the
+# second line's observation again. On Fuuma, editorial left two corrected
+# descriptions unverified, and the next round left them out as judged.
+earlier = qa._earlier_reviews(
+    storage / qa._slug(game.name),
+    json.loads((first / "context.json").read_text(encoding="utf-8")),
+    json.loads((first / "task.json").read_text(encoding="utf-8"))["layout"],
+)
+assert [
+    earlier.observed(source, text, found[0]["note"]) for source, text in LINES[:2]
+] == [True, False]
+# The playtest's problem on that line then waits for QA's next round once
+# other text changed, since preparing again makes a task that takes the line
+# back; while nothing changed, preparing again resumes this task.
+LINES[2] = ("静かな部屋だ", "So quiet in here.")
+write_game(LINES)
+hashes = {
+    "Map001.json": hashlib.sha256((data / "Map001.json").read_bytes()).hexdigest()
+}
+assert labels(first, hashes=hashes) == ["reviewed", "waiting"]
+LINES[2] = ("静かな部屋だ", "A quiet room.")
+write_game(LINES)
 
 # The correction is applied as the app applies it, its rows spread over the
 # message's commands, and the glossary entries for 剣 and ミナ gain notes:
@@ -267,6 +292,16 @@ assert labels(first) == ["reviewed", "waiting"]
 glossary("剣 (sword) - The hero's only weapon.\nミナ (Mina) - Calls herself Mina.\n")
 second = prepare(observations=found)
 assert second != first
+# The first task's path now refuses work and names the task that replaced
+# it: on Fuuma, a coordinator kept running the old README's commands, read
+# "complete" and never reviewed the new round.
+try:
+    qa.require_current(first)
+except ValueError as error:
+    assert str(second) in str(error), error
+else:
+    raise AssertionError("A replaced task still took work.")
+qa.require_current(second)
 assert targets(second) == ["ミナが来る", "剣を抜け"], targets(second)
 # The next round reviews the corrected line, and leaves out the other, which
 # deep review judged for the same text and reason: it reads as reviewed,

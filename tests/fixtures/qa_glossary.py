@@ -255,6 +255,37 @@ assert [
     for command in written["events"][1]["pages"][0]["list"][:3]
 ] == ["Aruko", "Sonko is here.", "It's east of Wakachi Valley."], written
 
+
+def lint_proposals(task):
+    """The current text of each lint proposal the task's screen holds."""
+    checkpoint = json.loads((task / "checkpoint.json").read_text(encoding="utf-8"))
+    return [
+        proposal["current"]
+        for row in checkpoint["screen"]["bundles"]
+        for item in json.loads(Path(row["path"]).read_text(encoding="utf-8"))["items"]
+        if item["kind"] == "lint-family"
+        for proposal in item["proposals"]
+    ]
+
+
+# The next task, made for the applied text, follows the decision too: on
+# Fuuma, a later round raised every Demon King fix the decision settled.
+following, _state = qa.prepare_task(data.parent, data, "release", temporary / "storage")
+assert following != task
+assert [row["key"] for row in qa._decisions(following)] == ["term:分かち谷"]
+assert lint_proposals(following) == [], lint_proposals(following)
+# Once the glossary entry for its Japanese changes, the decision no longer
+# stands, as the reviews of its lines would not.
+(data.parent / ".dazedtl/glossary.txt").write_text(
+    GLOSSARY.replace("分かち谷 (Dividing Valley)", "分かち谷 (Parting Valley)"),
+    encoding="utf-8",
+)
+changed, _state = qa.prepare_task(data.parent, data, "release", temporary / "storage")
+assert qa._decisions(changed) == []
+assert lint_proposals(changed) == ["It's east of Wakachi Valley."], lint_proposals(
+    changed
+)
+
 # Editorial judges the lint remnant a withdrawn finding leaves like any
 # finding, so withdrawing it too ends it instead of reopening rounds; a
 # revision keeps only the automatic lint fixes, since the reviewer saw the
