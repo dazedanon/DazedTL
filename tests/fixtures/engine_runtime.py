@@ -1168,7 +1168,8 @@ try:
             # went out as "\ [1]" and "\ c<name>", and MV/MZ's template literal
             # escapes a translated backtick and ${, which ended it early or
             # interpolated. An interpolation the source runs, such as the
-            # hero's name, keeps running.
+            # hero's name, keeps running; one in a '...' string, which the
+            # game shows as text, started running and stopped it.
             operands, requests = {}, []
             replies = {
                 r"\\nc<村長>村人と\\n[1]": (
@@ -1178,6 +1179,7 @@ try:
                 "#{name}の部屋": "#{name}'s room, not #{hers}",
             }
             sources = {True: '"#{name}の部屋";', False: "`${name}の部屋`;"}
+            texts = {True: "'#{name}の部屋';", False: "'${name}の部屋';"}
 
             def variable(text, *_):
                 requests.extend(text)
@@ -1197,23 +1199,28 @@ try:
                                     122, [1, 1, 0, 4, r'"\\nc<村長>村人と\\n[1]";']
                                 ),
                                 command(122, [1, 1, 0, 4, sources[vxace]]),
+                                command(122, [1, 1, 0, 4, texts[vxace]]),
                             ]
                         )
-                    operands[vxace] = [item["parameters"][4] for item in result[:2]]
+                    operands[vxace] = [item["parameters"][4] for item in result[:3]]
             assert requests == [
                 r"\\nc<村長>村人と\\n[1]",
                 "#{name}の部屋",
+                "#{name}の部屋",
                 r"\\nc<村長>村人と\\n[1]",
+                "${name}の部屋",
                 "${name}の部屋",
             ], requests
             assert operands == {
                 True: [
                     r'"\\nc<Chief>\\C[2]\#{name}\\C[0] `says` ${hi} to \\n[1]";',
                     '"#{name}\'s room, not \\#{hers}";',
+                    '"\\#{name}\'s room, not \\#{hers}";',
                 ],
                 False: [
                     r"`\\nc<Chief>\\C[2]#{name}\\C[0] \`says\` \${hi} to \\n[1]`;",
                     r"`${name}'s room, not \${hers}`;",
+                    r"`\${name}'s room, not \${hers}`;",
                 ],
             }, operands
             # Batch collection queues a lone label or plugin argument with the

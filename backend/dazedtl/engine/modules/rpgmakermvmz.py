@@ -1438,13 +1438,25 @@ def _122_inner_current(cmd) -> str | None:
     return None
 
 
+def _122_running(cmd, quote: str) -> str:
+    """The inside of code 122's operand when the game interpolates in it: a
+    string between *quote* marks, MV/MZ's backtick literal or VX Ace's Ruby
+    double-quoted string. Empty for any other string, such as '…', which
+    shows a ``${…}`` or ``#{…}`` as text."""
+    params = cmd.get("parameters") or []
+    if len(params) <= 4 or not isinstance(params[4], str):
+        return ""
+    matched = re.search(r"(['\"`])(.*)['\"`]", params[4])
+    return matched.group(2) if matched and matched.group(1) == quote else ""
+
+
 def _js_122_operand(text: str, source: str = "") -> str:
     """Code 122's script operand for MV/MZ: a JavaScript template literal.
 
-    An interpolation the operand's *source* runs, such as
-    ``${$gameActors.actor(1).name()}`` for the hero's name, is the game's own
-    and keeps running where the translation keeps it; any other ``${`` is
-    text."""
+    An interpolation the game runs in *source*, the operand's current inside
+    (see :func:`_122_running`), such as ``${$gameActors.actor(1).name()}``
+    for the hero's name, is the game's own and keeps running where the
+    translation keeps it; any other ``${`` is text."""
     text, kept = script_strings.hold(
         text, "`", script_strings.interpolated("`", source)
     )
@@ -1464,10 +1476,10 @@ def _ruby_122_operand(text: str, source: str = "") -> str:
     """Code 122's script operand for VX Ace: a Ruby double-quoted string.
 
     Ace evaluates the operand with Ruby, where MV/MZ's backtick literal runs a
-    shell command. *text* is translated from the operand's *source*, as
-    rpgmaker_script_strings reads a string's text, and an interpolation the
-    source runs keeps running. The text is rewrapped to the list width, and
-    quote marks are dropped as for MV/MZ.
+    shell command. *text* is a string's text, as rpgmaker_script_strings
+    reads it, and an interpolation the game runs in *source*, the operand's
+    current inside (see :func:`_122_running`), keeps running. The text is
+    rewrapped to the list width, and quote marks are dropped as for MV/MZ.
     """
     text, kept = script_strings.hold(
         text, '"', script_strings.interpolated('"', source)
@@ -4394,9 +4406,11 @@ def _searchCodes(page, pbar, jobList, filename):
                             translatedText = list122[0]
                             translatedText = jaString.replace(jaString, translatedText)
 
-                            # Set
+                            # Set, keeping running only the interpolations
+                            # the game runs: a '${x}' string shows it as text.
                             operand = _ruby_122_operand if VXACE else _js_122_operand
-                            codeList[i]["parameters"][4] = operand(translatedText, rawInner)
+                            running = _122_running(codeList[i], '"' if VXACE else "`")
+                            codeList[i]["parameters"][4] = operand(translatedText, running)
                             if hadSemicolon:
                                 codeList[i]["parameters"][4] += ';'
 
