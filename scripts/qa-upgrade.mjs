@@ -11,6 +11,7 @@ import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { bundledGit, python, requireNode, root } from "./dependencies.mjs";
 import { extract } from "./tar.mjs";
+import { previousRelease } from "./testkit/checkout.mjs";
 
 requireNode();
 const option = (name) => {
@@ -26,23 +27,7 @@ const git = (...args) =>
     args,
     { cwd: root, maxBuffer: 1 << 30 },
   );
-const lines = (...args) =>
-  git(...args)
-    .toString("utf8")
-    .split("\n")
-    .filter(Boolean);
-
-// The newest release tag other than this commit's own.
-const head = lines("rev-parse", "HEAD")[0];
-const tag =
-  option("--tag") ||
-  lines("tag", "--list", "v*", "--sort=-v:refname").find(
-    (name) => lines("rev-parse", `${name}^{commit}`)[0] !== head,
-  );
-if (!tag)
-  throw new Error(
-    "No earlier release tag; fetch the tags with git fetch --tags and try again.",
-  );
+const tag = option("--tag") || previousRelease();
 
 // A folder with spaces and Japanese, as users' folders often have.
 const work = path.join(

@@ -6,10 +6,16 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { root, runtime } from "../dependencies.mjs";
+import { bundledGit, root, runtime } from "../dependencies.mjs";
 
+const gitBin = bundledGit()?.bin;
+/** Runs Git: on Windows the one setup installs, when it has. */
 const git = (args, cwd = root) =>
-  execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+  execFileSync(
+    gitBin && fs.existsSync(gitBin) ? path.join(gitBin, "git.exe") : "git",
+    args,
+    { cwd, encoding: "utf8" },
+  ).trim();
 
 /** The newest stable release tag before this checkout's own version. */
 export function previousRelease() {
@@ -27,7 +33,9 @@ export function previousRelease() {
       git(["rev-parse", `${tag}^{commit}`]) !== head
     )
       return tag;
-  throw new Error("No earlier release tag is reachable from this checkout.");
+  throw new Error(
+    "No earlier release tag is reachable from this checkout; fetch the tags with git fetch --tags.",
+  );
 }
 
 /** What the package installs depend on, without the app's own version. */
