@@ -180,6 +180,21 @@ write(
                             {"code": 0, "indent": 0, "parameters": []},
                         ]
                     },
+                    # A choice plugin shows comment lines under its marker as
+                    # help: one never translated, one joined translation whose
+                    # second line kept a name, and a note nothing shows.
+                    {
+                        "list": [
+                            {"code": 108, "indent": 1, "parameters": ["選択肢ヘルプ"]},
+                            {"code": 408, "indent": 1, "parameters": ["所要時間:20分"]},
+                            {"code": 108, "indent": 1, "parameters": ["選択肢ヘルプ"]},
+                            line("店長に会う。\n報酬あり。", "Meet the owner.", 408),
+                            {"code": 408, "indent": 1, "parameters": ["Ask 店長."]},
+                            {"code": 108, "indent": 1, "parameters": ["メモ"]},
+                            {"code": 408, "indent": 1, "parameters": ["開発用"]},
+                            {"code": 0, "indent": 0, "parameters": []},
+                        ]
+                    },
                 ],
             },
         ]
@@ -245,6 +260,7 @@ expected = {
     ("visible-text", "data/Map001.json", "/events/1/pages/1/list/2/parameters/0"),
     ("placeholder-glyph", "data/Map001.json", "/events/1/pages/1/list/3/parameters/0"),
     ("untranslated", "data/Map001.json", ""),
+    ("visible-text", "data/Map001.json", "/events/1/pages/2/list/4/parameters/0"),
     ("help-rows", "data/Items.json", "/1/description"),
     ("help-rows", "data/Items.json", "/3/description"),
     ("help-rows", "data/Items.json", "/4/description"),
@@ -253,6 +269,12 @@ expected = {
 }
 assert set(found) == expected, sorted(set(found) ^ expected)
 assert report["engine"] == "MZ" and report["gaps"] == [], report
+assert [
+    row["pointer"] for row in found[("untranslated", "data/Map001.json", "")]["texts"]
+] == [
+    "/events/1/pages/1/list/5/parameters/0",
+    "/events/1/pages/2/list/1/parameters/0",
+]
 
 assert found[("plugin-syntax", "js/plugins/Broken.js", "Broken")]["line"] == 1
 assert found[("event-codes", "data/Map001.json", "/events/1/pages/1/list/1")][

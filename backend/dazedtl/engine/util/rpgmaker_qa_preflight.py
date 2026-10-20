@@ -19,6 +19,7 @@ import re
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+from util.rpgmaker_markers import SUPPORTED_CODE408_MARKERS
 from util.rpgmaker_qa_reach import MAY_SHOW, Reach
 
 _JAPANESE_RE = re.compile(r"[ぁ-ゔァ-ヴ一-龠々〆〤]")
@@ -120,16 +121,43 @@ def _entry(rows: list, file: str, path: tuple, text: str, kind: str) -> None:
     })
 
 
+def _comment_marker(command: dict) -> str:
+    """A comment's (108) first line as the game wrote it."""
+    original = command.get("_original")
+    if isinstance(original, str) and original.strip():
+        return original.strip()
+    parameters = command.get("parameters")
+    return str(parameters[0]).strip() if parameters else ""
+
+
 def visible_texts(name: str, document: Any):
     """Each text players read in one data file: its pointer's parts, its
     value, its kind and whether the engine translated it, keeping its
-    Japanese in `_original`. Map names keep no `_original`."""
+    Japanese in `_original`. Map names keep no `_original`.
+
+    Comment lines (408) count under a marker a plugin shows, such as a
+    choice's help; a joined translation keeps its `_original` on the first
+    line and the lines after it continue that translation."""
     for list_path, commands in _command_lists(document):
+        marker = ""
+        joined = False
         for index, command in enumerate(commands):
             if not isinstance(command, dict):
                 continue
             code = command.get("code")
             parameters = command.get("parameters")
+            if code == 108:
+                marker, joined = _comment_marker(command), False
+            elif code == 408:
+                joined = joined or "_original" in command
+                if marker in SUPPORTED_CODE408_MARKERS and parameters:
+                    base = list_path + (index, "parameters", 0)
+                    yield base, parameters[0], "comment text", joined
+                continue
+            elif code != -1 or parameters:
+                # The engine empties joined lines into -1 commands until it
+                # writes the list back.
+                marker = ""
             if code not in COMMAND_TEXT or not isinstance(parameters, list):
                 continue
             translated = "_original" in command
