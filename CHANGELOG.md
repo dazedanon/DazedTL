@@ -3,6 +3,23 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.23.1] - 2026-10-20
+
+### Changed
+
+- **Text QA:** each correction and question says what is wrong in one short, plain sentence; the reviewers' full reasoning moved to the History inspector, where QA's record also lists lines a reviewer found wrong but could not correct.
+- **Text QA:** a question always offers the reviewer's proposal beside **Keep current text**; a problem no correction can fix is reported as not corrected instead of a question you could only keep, and never holds up applying the rest.
+
+### Fixed
+
+- **Text QA:** corrections to centered or instant-text messages that need an extra row are no longer refused, which had left lines such as a two-line event banner for you to fix by hand.
+- **Text QA:** a name reviewers settled, such as "Demon Lord", no longer fights a glossary entry that says otherwise through round after round of review, ending as unverified.
+- **Text QA:** two lines from one long scene go to one reviewer, so the scene is read once, lowering the cost on games with very long events.
+- **Playtest:** a font change such as `\fn[和風]` no longer counts as Japanese left in translated text.
+- **Playtest:** plugin strings **Plugin files** already settled, such as notetag names, are no longer reported again, which reopened the Plugin files task for nothing.
+- **Playtest:** a battle window sized tightly to its text, such as Keke_PredictionSystem's action preview, no longer reads as text running past its bottom edge.
+- **Playtest:** fixes written into the game are saved as a version of their own instead of riding along with the next Text QA apply, and the status says when the game runs other fixes than the ones you are editing.
+
 ## [2.23.0] - 2026-10-19
 
 ### Added
@@ -746,6 +763,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.23.1]: https://github.com/dazedanon/DazedTL/compare/v2.23.0...v2.23.1
 [2.23.0]: https://github.com/dazedanon/DazedTL/compare/v2.22.0...v2.23.0
 [2.22.0]: https://github.com/dazedanon/DazedTL/compare/v2.21.0...v2.22.0
 [2.21.0]: https://github.com/dazedanon/DazedTL/compare/v2.20.1...v2.21.0
