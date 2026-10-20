@@ -3746,12 +3746,15 @@ class GuidedTests(unittest.TestCase):
             inputs.line_counts({"Map001.json": "dialogue"}, markers),
             {"Map001.json": {"lines": 1, "translated": 0, "help": 1}},
         )
-        # A file shaped unlike RPG Maker data has no lines, rather than
+        # A file shaped unlike RPG Maker data holds no lines, rather than
         # failing every look at the project; the game's own help still counts.
         odd = [{"code": 108, "parameters": {"text": "ChoiceHelp"}}]
         write_json(self.source / "CustomEvents.json", odd)
         write_json(self.folder / "translated/Map001.json", odd)
-        self.assertEqual(inputs.line_counts({"Map001.json": "dialogue"}, markers), {})
+        self.assertEqual(
+            inputs.line_counts({"Map001.json": "dialogue"}, markers),
+            {"Map001.json": {"lines": 0, "translated": 0}},
+        )
         self.assertTrue(
             comment_text.shows_comment_text(self.source, self.native["plugins"])
         )
