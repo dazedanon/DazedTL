@@ -3,6 +3,7 @@
 from copy import deepcopy
 from pathlib import Path
 
+from dazedtl.freshness import Basis, compare
 from dazedtl.storage import write_json
 
 from .files import digest, project_path, read_json
@@ -68,7 +69,13 @@ def state(native, folder, *, active=False, observed=None):
         has_data(native)
         and saved.get("project_id") == native["id"]
         and saved.get("source") == native["source"]
-        and (active or saved.get("fingerprint") == fingerprint(native, observed))
+        and (
+            active
+            or not compare(
+                Basis(None, {}, saved.get("fingerprint")),
+                Basis(None, {}, fingerprint(native, observed)),
+            )
+        )
     )
     stages = [
         {"action": name, "label": LABELS[name], "status": "pending", "message": ""}

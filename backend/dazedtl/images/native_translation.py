@@ -254,7 +254,9 @@ class ImageNativeTranslation:
             )
         self._idle(project_id)
         root, binding, raw, value, fingerprint = self._inputs(project_id)
-        if fingerprint != preview["fingerprint"]:
+        if compare(
+            Basis(None, {}, preview["fingerprint"]), Basis(None, {}, fingerprint)
+        ):
             raise ValueError(
                 "Image scope, text, guidance or settings changed after review. Review again."
             )

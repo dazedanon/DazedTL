@@ -268,7 +268,10 @@ class EventText:
             )
         path = self.guided.path(project_id, "event-text-request")
         previous = read_json(path) if path.exists() else None
-        if previous and previous.get("fingerprint") == context["fingerprint"]:
+        if previous and not compare(
+            Basis(previous.get("version"), {}, previous.get("fingerprint")),
+            Basis(REQUEST_VERSION, {}, context["fingerprint"]),
+        ):
             return previous
         value = {
             **context,

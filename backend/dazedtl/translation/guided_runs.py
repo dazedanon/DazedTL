@@ -472,7 +472,10 @@ class GuidedRuns:
                 else {}
             )
             reviewed = (
-                receipt.get("fingerprint") == fingerprint
+                not compare(
+                    Basis(None, {}, receipt.get("fingerprint")),
+                    Basis(None, {}, fingerprint),
+                )
                 and receipt.get("accepted") is True
             )
             return {
