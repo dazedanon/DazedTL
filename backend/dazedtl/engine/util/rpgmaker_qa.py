@@ -664,27 +664,29 @@ def _fit_corrections(
             if shown := _shown(change, targets, layout):
                 change["shown"] = shown
     for question in questions:
+        targets = [
+            records[identity] for identity in clusters[question["id"]]["identities"]
+        ]
         if question.get("correction"):
-            targets = [
-                records[identity] for identity in clusters[question["id"]]["identities"]
-            ]
             question["correction"] = _fitted(
                 question["correction"], question["current"], targets, layout
             )
-            if shown := _shown(question, targets, layout):
-                question["shown"] = shown
+        # A question without a proposal still shows its Japanese and current
+        # text.
+        if shown := _shown(question, targets, layout):
+            question["shown"] = shown
 
 
 def _shown(
     change: dict[str, Any], targets: list[dict[str, Any]], layout: dict[str, Any]
 ) -> dict[str, str] | None:
-    """A text variable's Japanese, current text and correction as the Text
-    QA page shows them, all as their text reads (see script_strings.text):
-    its Japanese and current text hold the script string's escapes, while
-    findings keep its correction as its reviewer wrote it, so the page would
-    show escapes as changes. The correction reads as the game gets it,
-    wrapped to the list width. None for other text, which the page shows as
-    findings keep it."""
+    """A text variable's Japanese, current text and any correction as the
+    Text QA page shows them, all as their text reads (see
+    script_strings.text): its Japanese and current text hold the script
+    string's escapes, while findings keep its correction as its reviewer
+    wrote it, so the page would show escapes as changes. The correction reads
+    as the game gets it, wrapped to the list width. None for other text,
+    which the page shows as findings keep it."""
     quotes = {_SCRIPT_QUOTES.get(target["live_transform"], "") for target in targets}
     if len(quotes) != 1 or "" in quotes:
         return None
@@ -694,8 +696,14 @@ def _shown(
         # string and Ruby in its own.
         "source": script_strings.text(change["source"], quote),
         "current": script_strings.text(change["current"], quote),
-        "correction": script_strings.text(
-            _written(targets[0], change["correction"], layout), quote
+        **(
+            {
+                "correction": script_strings.text(
+                    _written(targets[0], change["correction"], layout), quote
+                )
+            }
+            if change.get("correction")
+            else {}
         ),
     }
 

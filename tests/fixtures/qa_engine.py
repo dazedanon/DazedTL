@@ -1153,14 +1153,17 @@ checks_game = temporary / "checks-game"
 FIRE = "敵全体に大きな火属性ダメージを与え、3ターン燃焼させる。"
 # Text variables as translation writes them: MV/MZ's template literal and VX
 # Ace's Ruby string. The nickname interpolates the hero's name, shows the
-# ${name} of a quoted source as text, and opens a name window.
-NICKNAME, GREETING = (
+# ${name} of a quoted source as text, and opens a name window. Reviewers
+# leave the rumor as a question without a proposal.
+NICKNAME, GREETING, RUMOR = (
     "${hero}が${name}を村の老人のあだ名で呼ぶ\\\\nc<アリス>",
     "\\\\C[2]村人\\\\C[0]の挨拶",
+    "\\\\C[1]噂\\\\C[0]の真相",
 )
 VARIABLES = [
     "`${hero}'s \\${name} \\`nickname\\`\\\\nc<Alice>`",
     '"\\\\C[2]Villager\\\\C[0]\'s greeting"',
+    "`The \\`truth\\` of the \\\\C[1]rumor\\\\C[0]`",
 ]
 (checks_game / "data").mkdir(parents=True)
 (checks_game / "js").mkdir()
@@ -1201,7 +1204,9 @@ for name, value in {
                                 "parameters": [4, 4, 0, 4, operand],
                                 "_original": source,
                             }
-                            for source, operand in zip((NICKNAME, GREETING), VARIABLES)
+                            for source, operand in zip(
+                                (NICKNAME, GREETING, RUMOR), VARIABLES
+                            )
                         )
                     )
                 ],
@@ -1250,7 +1255,7 @@ assert reasons == {
 for worker in ("screen-a", "screen-b"):
     row = qa.next_bundle(checked, worker)
     assert row["id"].startswith("screen"), row
-    qa.accept_result(checked, screen(row, {NICKNAME, GREETING}))
+    qa.accept_result(checked, screen(row, {NICKNAME, GREETING, RUMOR}))
 row = qa.next_bundle(checked, "deep-a")
 items = {item["source"]: item for item in bundle_of(row)["items"]}
 assert set(items) == {
@@ -1260,6 +1265,7 @@ assert set(items) == {
     FIRE,
     NICKNAME,
     GREETING,
+    RUMOR,
 }, items
 assert items[FIRE]["checks"] == [
     {
@@ -1354,7 +1360,18 @@ for name, fixes, refusal in (
     else:
         raise AssertionError(f"The {name} correction was accepted.")
 qa.accept_result(
-    checked, checked_deep("battler-name", {"の幻惑が解けた": fix, **variable_fixes})
+    checked,
+    checked_deep(
+        "battler-name",
+        {
+            "の幻惑が解けた": fix,
+            **variable_fixes,
+            RUMOR: {
+                "disposition": "uncertain-playtest",
+                "evidence": "Whether the rumor is named yet depends on the route.",
+            },
+        },
+    ),
 )
 assert qa.finalize(checked)["stage"] == "editorial"
 row = qa.next_bundle(checked, "editor-a")
@@ -1414,6 +1431,12 @@ for original, quote in ((NICKNAME, "`"), (GREETING, '"')):
     assert as_read[original]["correction"] == qa.script_strings.text(
         WRITTEN[original], quote
     ), original
+# A question without a proposal reads the same way.
+(question,) = json.loads((checked / "findings.json").read_text())["uncertain_playtests"]
+assert question["shown"] == {
+    "source": "\\C[1]噂\\C[0]の真相",
+    "current": "The `truth` of the \\C[1]rumor\\C[0]",
+}, question
 
 
 def message4():
@@ -1433,7 +1456,7 @@ for undo, expected, written in (
         fix["correction"],
         [f"`{WRITTEN[NICKNAME]}`", f'"{WRITTEN[GREETING]}"'],
     ),
-    (True, "was freed from the Illusion.", VARIABLES),
+    (True, "was freed from the Illusion.", VARIABLES[:2]),
 ):
     assert qa._apply_loaded_correction_map(
         checked,
