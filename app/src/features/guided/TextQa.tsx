@@ -364,7 +364,7 @@ export function QaQuestions({
                 {row.choice === "use"
                   ? "Using the proposal"
                   : "Keeping the text"}
-                {!row.state && row.proposal && (
+                {!row.state && (
                   <Button
                     variant="link"
                     disabled={disabled}
@@ -384,14 +384,12 @@ export function QaQuestions({
                   {...feedback("qa-keep:" + row.id, "Saving…")}
                   onClick={() => choose(row.id, "keep")}
                 />
-                {row.proposal && (
-                  <ActionControl
-                    label="Use proposal"
-                    disabled={disabled}
-                    {...feedback("qa-use:" + row.id, "Saving…")}
-                    onClick={() => choose(row.id, "use")}
-                  />
-                )}
+                <ActionControl
+                  label="Use proposal"
+                  disabled={disabled}
+                  {...feedback("qa-use:" + row.id, "Saving…")}
+                  onClick={() => choose(row.id, "use")}
+                />
               </>
             )}
           </ActionRow>
@@ -637,9 +635,9 @@ function ScreenLabels({
 }
 
 /**
- * What the current QA task did not cover, for the History inspector: lines
- * reviewers declined, Japanese never translated and screen text QA can't
- * correct. Each has its own owner, so the page leaves it out and the
+ * What the current QA task did not cover, for the History inspector: defects
+ * no correction could fix, lines reviewers declined, Japanese never
+ * translated and screen text QA can't correct. Each has its own owner, so the page leaves it out and the
  * inspector keeps the record.
  */
 export function QaCoverageReport({
@@ -670,6 +668,35 @@ export function QaCoverageReport({
   );
   return (
     <>
+      {report.not_corrected.length > 0 && (
+        <section aria-label="Not corrected">
+          <h3>
+            Not corrected · {report.not_corrected.length.toLocaleString()}
+          </h3>
+          <p className="muted">
+            Reviewers found a problem in these lines, but no correction passed
+            apply&apos;s checks, so they stay as they are.
+          </p>
+          <ActionList>
+            {report.not_corrected.map((row) => (
+              <ActionRow
+                key={row.id}
+                label={
+                  <>
+                    <Change source={row.source} before={row.current} />
+                    <small>{row.reason}</small>
+                    <small>
+                      {row.places > 1
+                        ? `${row.file} · ${row.places} places in the game`
+                        : row.file}
+                    </small>
+                  </>
+                }
+              />
+            ))}
+          </ActionList>
+        </section>
+      )}
       {report.not_reviewed.length > 0 && (
         <section aria-label="Not reviewed">
           <h3>Not reviewed · {report.not_reviewed.length.toLocaleString()}</h3>

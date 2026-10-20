@@ -219,8 +219,11 @@ that `prior_review`, and your review replaces it.
   Review another item whose line it changes as usual; when the scene correction already fixes
   it, call it clean and say so in `evidence`.
 - `uncertain-playtest` is for runtime or context uncertainty no evidence settles; say what must
-  be checked in `evidence`, and give a `correction` when you have a proposal the user may choose
-  instead of the current text. These become the questions the user answers in DazedTL.
+  be checked in `evidence`, and give the `correction` the user may choose instead of the current
+  text. These become the questions the user answers in DazedTL, so each needs a proposal.
+- `not-corrected` is for a concrete defect no correction can fix within apply's checks: say what
+  is wrong and why it can't be corrected in `evidence`, with no `correction`. DazedTL reports it
+  without asking the user.
 - A slip in the Japanese source itself gets a `source_fix`: a Show Text header showing the wrong
   speaker's face or name, a database text stating a number its own entry contradicts, or an MZ
   battle message missing the `%1` that shows its battler's name.

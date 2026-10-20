@@ -531,6 +531,17 @@ class PublicationTests(unittest.TestCase):
                         ],
                     },
                 ],
+                # An older task's question without a proposal, which the user
+                # could only answer by keeping the line; it held up apply.
+                "uncertain_playtests": [
+                    {
+                        "id": "Map029.json#/events/57@d",
+                        "source": "解放条件",
+                        "current": "Unlock\nCondition",
+                        "evidence": "Apply refused every fix.",
+                        "places": 1,
+                    }
+                ],
             },
         )
         plan = {
@@ -566,6 +577,21 @@ class PublicationTests(unittest.TestCase):
         # keeps, here nothing.
         self.assertEqual(refreshed, [(task_dir, [])])
         self.assertEqual(state["findings"][0]["correction"], "Arjilee Plateau")
+        # It asks nothing, and the History inspector lists it as not corrected.
+        self.assertEqual(state["questions"], [])
+        self.assertEqual(
+            text.not_corrected(read_json(task_dir / "findings.json")),
+            [
+                {
+                    "id": "Map029.json#/events/57@d",
+                    "file": "Map029.json",
+                    "source": "解放条件",
+                    "current": "Unlock\nCondition",
+                    "reason": "Apply refused every fix.",
+                    "places": 1,
+                }
+            ],
+        )
         self.assertEqual(state["findings"][0]["files"], ["MapInfos.json"])
         scene = state["findings"][1]
         self.assertEqual((scene["kind"], scene["places"]), ("scene", 2))

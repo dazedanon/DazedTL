@@ -316,11 +316,14 @@ def qa_state(plan):
             "current": shown(row, "current"),
             "reason": row.get("evidence") or "",
             "places": int(row.get("places") or 1),
-            **({"proposal": shown(row, "correction")} if row.get("correction") else {}),
+            "proposal": shown(row, "correction"),
             **({"choice": choices[row["id"]]} if row["id"] in choices else {}),
             **({"state": finding_state(row["id"])} if finding_state(row["id"]) else {}),
         }
+        # A question without a proposal, which older tasks made, could only
+        # be kept: QA reports it as not corrected instead.
         for row in document.get("uncertain_playtests", [])
+        if row.get("correction")
     ]
     engine_status = qa.status(root)
     stage = engine_status.get("stage", "")
@@ -448,10 +451,35 @@ def qa_outside(task):
     return outside
 
 
+def not_corrected(document):
+    """The defects reviewers found but could not correct, as the page shows
+    them: a text variable's as it reads. Older tasks asked a question without
+    a proposal for these."""
+    return [
+        {
+            "id": row["id"],
+            "file": row["id"].split("#", 1)[0],
+            "source": (row.get("shown") or {}).get("source", row["source"]),
+            "current": (row.get("shown") or {}).get("current", row["current"]),
+            "reason": row.get("evidence") or "",
+            "places": int(row.get("places") or 1),
+        }
+        for row in [
+            *document.get("not_corrected", []),
+            *(
+                row
+                for row in document.get("uncertain_playtests", [])
+                if not row.get("correction")
+            ),
+        ]
+    ]
+
+
 def qa_report(plan):
     """What QA could not cover, for the History inspector: lines no reviewer
-    judged, Japanese never translated, by file and plugin, and text the game
-    squeezes or cuts off that QA holds no line of."""
+    judged, defects no correction could fix, Japanese never translated, by
+    file and plugin, and text the game squeezes or cuts off that QA holds no
+    line of."""
     from util import rpgmaker_qa as qa
     from util.rpgmaker_qa_preflight import read_sources
 
@@ -466,6 +494,7 @@ def qa_report(plan):
     interface = state["status"].get("interface") or {}
     return {
         "not_reviewed": document.get("not_reviewed", []),
+        "not_corrected": not_corrected(document),
         "not_translated": read_sources(qa._read_json(root / "preflight.json")),
         "interface_outside": [
             {"text": row["text"], "title": row["title"]} for row in outside

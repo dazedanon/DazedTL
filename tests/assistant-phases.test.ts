@@ -70,7 +70,16 @@ test("only the assistant's reported phase reads as current, and Images shows onl
   const asking = qa(
     { stage: "complete" },
     {
-      questions: [{ id: "q", source: "", current: "", reason: "", places: 1 }],
+      questions: [
+        {
+          id: "q",
+          source: "",
+          current: "",
+          reason: "",
+          places: 1,
+          proposal: "",
+        },
+      ],
     },
   );
   assert.equal(qaStep(asking)?.detail, "1 question for you");

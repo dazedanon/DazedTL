@@ -310,7 +310,7 @@ class TextQA:
         row = next((row for row in qa["questions"] if row["id"] == question), None)
         if row is None:
             raise ValueError("That question is no longer open.")
-        if choice not in CHOICES or choice == "use" and "proposal" not in row:
+        if choice not in CHOICES:
             raise ValueError("Keep the current text, or use the reviewer's proposal.")
         # A follow-up round after an apply asks again until its answers apply.
         if qa["applied"] or row.get("state") == "applied":

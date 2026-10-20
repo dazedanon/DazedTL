@@ -655,14 +655,15 @@ export type QaFinding = {
   state?: "applied" | "undone";
 };
 
-/** A playtest or context question no evidence settled; the user answers. */
+/** A playtest or context question no evidence settled; the user keeps the
+current text or uses the reviewer's proposal. */
 export type QaQuestion = {
   id: string;
   source: string;
   current: string;
   reason: string;
   places: number;
-  proposal?: string;
+  proposal: string;
   choice?: "keep" | "use";
   state?: "applied" | "undone";
 };
@@ -698,6 +699,17 @@ export type QaReportLine = {
   current: string;
 };
 
+/** A defect a reviewer found but no correction could fix within apply's
+checks; QA reports it without asking the user. */
+export type QaNotCorrected = {
+  id: string;
+  file: string;
+  source: string;
+  current: string;
+  reason: string;
+  places: number;
+};
+
 export type QaUntranslatedText = {
   pointer: string;
   kind: string;
@@ -729,6 +741,7 @@ export type QaInterfaceText = {
 /** What QA could not cover, for the History inspector. */
 export type QaReport = {
   not_reviewed: QaReportLine[];
+  not_corrected: QaNotCorrected[];
   not_translated: QaUntranslatedSource[];
   interface_outside: QaInterfaceText[];
   interface_error?: string;

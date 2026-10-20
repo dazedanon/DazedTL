@@ -333,14 +333,15 @@ class QaFinding(TypedDict):
 
 
 class QaQuestion(TypedDict):
-    """A playtest or context question no evidence settled; the user answers."""
+    """A playtest or context question no evidence settled; the user keeps the
+    current text or uses the reviewer's proposal."""
 
     id: str
     source: str
     current: str
     reason: str
     places: int
-    proposal: NotRequired[str]
+    proposal: str
     choice: NotRequired[Literal["keep", "use"]]
     state: NotRequired[Literal["applied", "undone"]]
 
@@ -372,6 +373,18 @@ class QaReportLine(TypedDict):
     file: str
     source: str
     current: str
+
+
+class QaNotCorrected(TypedDict):
+    """A defect a reviewer found but no correction could fix within apply's
+    checks; QA reports it without asking the user."""
+
+    id: str
+    file: str
+    source: str
+    current: str
+    reason: str
+    places: int
 
 
 class QaUntranslatedText(TypedDict):
@@ -410,6 +423,7 @@ class QaReport(TypedDict):
     """What QA could not cover, for the History inspector."""
 
     not_reviewed: list[QaReportLine]
+    not_corrected: list[QaNotCorrected]
     not_translated: list[QaUntranslatedSource]
     interface_outside: list[QaInterfaceText]
     interface_error: NotRequired[str]

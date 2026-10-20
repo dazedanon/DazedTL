@@ -109,8 +109,10 @@ DEFAULT_SECONDS_PER_ITEM = {"screen": 5.0, "deep": 60.0, "sweep": 4.0, "editoria
 
 SCREEN_VERDICTS = frozenset({"suspect", "needs-context"})
 MOTIF_DISPOSITIONS = frozenset({"preserved", "suspect", "uncertain-playtest"})
+# A question offers the user a proposal; a defect no correction can fix within
+# apply's checks is reported as not corrected instead, which asks nobody.
 DEEP_DISPOSITIONS = frozenset({
-    "clean", "actionable", "uncertain-playtest", "declined",
+    "clean", "actionable", "uncertain-playtest", "not-corrected", "declined",
 })
 # A reviewer that will not review an item says why in one line, without game text.
 DECLINE_REASON_LIMIT = 300
@@ -651,7 +653,8 @@ def _fit_corrections(
     layout: dict[str, Any],
 ) -> None:
     """Write each correction and proposal as DazedTL applies it, so findings
-    show the text the game gets."""
+    show the text the game gets; *questions* also holds the lines reported
+    as not corrected, which only show their text."""
     for finding in findings:
         if finding.get("kind") == "show-text":
             continue
@@ -672,8 +675,7 @@ def _fit_corrections(
             question["correction"] = _fitted(
                 question["correction"], question["current"], targets, layout
             )
-        # A question without a proposal still shows its Japanese and current
-        # text.
+        # A line without a proposal still shows its Japanese and current text.
         if shown := _shown(question, targets, layout):
             question["shown"] = shown
 
@@ -3137,7 +3139,8 @@ def _derive_ledger(
                 reviewed.add(corrected)
                 cleared[corrected].add("*")
     for row in [
-        *(report.get("uncertain_playtests") or []), *(report.get("not_reviewed") or []),
+        *(report.get("uncertain_playtests") or []), *(report.get("not_corrected") or []),
+        *(report.get("not_reviewed") or []),
     ]:
         unsettled.add(_pair_key(row.get("source"), row.get("current")))
     return {
@@ -5282,10 +5285,25 @@ def _validate_deep_result(
             review.get("evidence") or ""
         ).strip():
             raise QAResultError(f"Uncertain review has no playtest reason for {identity}")
-        if disposition == "uncertain-playtest" and review.get("correction") is not None:
-            # A proposal the user may choose instead of the current text.
-            proposal = review["correction"]
+        if disposition == "not-corrected" and not str(
+            review.get("evidence") or ""
+        ).strip():
+            raise QAResultError(
+                f"A line not corrected needs the reason in evidence: {identity}"
+            )
+        if disposition == "not-corrected" and review.get("correction") is not None:
+            raise QAResultError(f"A line not corrected has no correction: {identity}")
+        if disposition == "uncertain-playtest":
+            # A proposal the user may choose instead of the current text: a
+            # question without one would only ask the user to keep the line.
+            proposal = review.get("correction")
             item = bundle_items[identity]
+            if proposal is None:
+                raise QAResultError(
+                    f"A question needs a correction the user may choose: {identity}. "
+                    "Propose the fix, or when no correction passes apply's checks, "
+                    "give disposition not-corrected with the reason in evidence."
+                )
             if not isinstance(proposal, str) or not proposal.strip():
                 raise QAResultError(f"A question's proposal must be text: {identity}")
             for shape in item.get("target_shapes") or []:
@@ -7717,6 +7735,7 @@ def _draft_document(
     faces = _face_names(Path(task["data_root"]))
     findings = []
     uncertain = []
+    not_corrected = []
     motif_families = []
     scene_dropped = []
     scenes: dict[str, Any] | None = None
@@ -7821,6 +7840,15 @@ def _draft_document(
                 "current": cluster["live"],
                 "places": len(places),
             })
+        elif review["disposition"] == "not-corrected" and places:
+            not_corrected.append({
+                "id": review["id"],
+                "source": cluster["source"],
+                "current": cluster["live"],
+                "places": len(places),
+                "evidence": review["evidence"],
+                "reviewer": str(row.get("assigned_to") or ""),
+            })
     layout = task["layout"]
     sweep_dropped = _add_sweep_findings(findings, checkpoint, records, layout)
     game = _lint_game(root, manifest)
@@ -7910,6 +7938,9 @@ def _draft_document(
         "focus": task["focus"],
         "findings": findings,
         "uncertain_playtests": uncertain,
+        # Defects reviewers found but could not correct within apply's
+        # checks, reported without asking the user.
+        "not_corrected": not_corrected,
         "motif_families": sorted(motif_families, key=lambda item: item["id"]),
         # A coverage gap, never a review someone must attest: what reviewers
         # declined and the lines nobody judged.
@@ -8768,13 +8799,15 @@ def _complete_editorial(
     final = [finding for finding in final if finding["id"] not in open_conflicts]
     final, superseded = _supersede(final)
     questions = copy.deepcopy(draft.get("uncertain_playtests") or [])
-    _fit_corrections(final, questions, records, clusters, layout)
+    not_corrected = copy.deepcopy(draft.get("not_corrected") or [])
+    _fit_corrections(final, questions + not_corrected, records, clusters, layout)
     _simulate_apply(final, records, layout)
     document = {
         **draft,
         "created_at": _utc_now(),
         "findings": final,
         "uncertain_playtests": questions,
+        "not_corrected": not_corrected,
         "finding_families": _finding_families(final),
         "withdrawn": withdrawn,
         "unverified": unverified,

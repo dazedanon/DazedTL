@@ -1352,6 +1352,13 @@ for name, fixes, refusal in (
         "adds the one %1",
     ),
     ("name", {"払い斬り": {**fix, "correction": "%1 Sweeping Slash"}}, "check offers"),
+    # A question the user could only answer by keeping the line asks nobody:
+    # the reviewer proposes the fix or reports the line as not corrected.
+    (
+        "no-proposal",
+        {RUMOR: {"disposition": "uncertain-playtest", "evidence": "Route-dependent."}},
+        "or when no correction passes apply's checks, give disposition not-corrected",
+    ),
 ):
     try:
         qa.accept_result(checked, checked_deep(name, fixes))
@@ -1367,8 +1374,8 @@ qa.accept_result(
             "の幻惑が解けた": fix,
             **variable_fixes,
             RUMOR: {
-                "disposition": "uncertain-playtest",
-                "evidence": "Whether the rumor is named yet depends on the route.",
+                "disposition": "not-corrected",
+                "evidence": "The rumor's name needs a code no correction may add.",
             },
         },
     ),
@@ -1431,8 +1438,10 @@ for original, quote in ((NICKNAME, "`"), (GREETING, '"')):
     assert as_read[original]["correction"] == qa.script_strings.text(
         WRITTEN[original], quote
     ), original
-# A question without a proposal reads the same way.
-(question,) = json.loads((checked / "findings.json").read_text())["uncertain_playtests"]
+# A line reported as not corrected reads the same way, and asks nothing.
+report = json.loads((checked / "findings.json").read_text())
+assert report["uncertain_playtests"] == [], report["uncertain_playtests"]
+(question,) = report["not_corrected"]
 assert question["shown"] == {
     "source": "\\C[1]噂\\C[0]の真相",
     "current": "The `truth` of the \\C[1]rumor\\C[0]",

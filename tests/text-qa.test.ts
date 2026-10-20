@@ -56,7 +56,16 @@ test("the QA strip marks one current stage and the activity line reads the engin
   const asking = qa(
     { stage: "complete" },
     {
-      questions: [{ id: "q", source: "", current: "", reason: "", places: 1 }],
+      questions: [
+        {
+          id: "q",
+          source: "",
+          current: "",
+          reason: "",
+          places: 1,
+          proposal: "",
+        },
+      ],
     },
   );
   assert.equal(qaPhase(asking), "questions");
