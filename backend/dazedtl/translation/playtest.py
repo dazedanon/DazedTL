@@ -337,9 +337,10 @@ class Playtest:
         }
 
     def status(self, project_id, native, report=False):
-        state = self.guided.backend.guided_text_state(
+        text = self.guided.backend.guided_text_state(
             native, self.text_qa.focus(project_id)
-        )["playtest"]
+        )
+        state = text["playtest"]
         operation = self.operation(project_id)
         problems = state["problems"]
         # Text problems a complete QA task does not hold, for its next round.
@@ -378,8 +379,13 @@ class Playtest:
             following = "The game changed after the last playtest; run playtest --run."
         elif waiting and not assistant:
             following = (
-                f"QA is complete, so {waiting} text problem(s) wait for its next "
-                "round: run qa --prepare, review it and run qa --apply, then run "
+                (
+                    f"QA is complete, so {waiting} text problem(s) wait for its "
+                    "next round"
+                    if text["qa"]["status"]
+                    else f"{waiting} text problem(s) wait for text QA"
+                )
+                + ": run qa --prepare, review it and run qa --apply, then run "
                 "playtest --run again."
             )
         elif not state.get("played") and stopping(problems):

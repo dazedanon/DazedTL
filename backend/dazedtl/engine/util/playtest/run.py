@@ -16,6 +16,7 @@ from typing import Any, Callable, Iterable
 
 from util import rpgmaker_window
 from util.playtest.checks import GROUP_TEXT_LIMIT, HELP_ROWS, static_checks
+from util.rpgmaker_markers import SUPPORTED_CODE408_MARKERS
 
 SCHEMA = "rpgmaker-playtest-report-v1"
 LAYOUT_SCHEMA = "rpgmaker-layout-check-v1"
@@ -173,6 +174,11 @@ def _identity(data: dict[str, Any] | None) -> str:
     return f"{data['file']}#{data['pointer']}" if data else ""
 
 
+def _within(pointer: str, parent: str) -> bool:
+    """Whether a JSON pointer is *parent* or inside it."""
+    return pointer == parent or pointer.startswith(parent + "/")
+
+
 def merge(static: dict[str, Any], runtime: dict[str, Any], data_prefix: str) -> dict[str, Any]:
     """Static problems, with what the tour saw added to them or beside them,
     and the coverage the tour reached."""
@@ -265,6 +271,13 @@ def merge(static: dict[str, Any], runtime: dict[str, Any], data_prefix: str) -> 
             "seen": _seen(event, titles),
         }
     problems += errors.values()
+    # Each line the static check found never translated, by its data file.
+    never: dict[str, list[tuple[dict[str, Any], dict[str, Any]]]] = {}
+    for problem in problems:
+        if problem["check"] == "untranslated":
+            for text in problem.get("texts", []):
+                if "pointer" in text:
+                    never.setdefault(problem["file"], []).append((problem, text))
     # A plugin draws its strings from a drawing call elsewhere in its code,
     # so the text itself ties what was drawn to the string.
     by_text: dict[str, list[tuple[dict[str, Any], dict[str, Any]]]] = {}
@@ -289,11 +302,27 @@ def merge(static: dict[str, Any], runtime: dict[str, Any], data_prefix: str) -> 
             text.setdefault("seen", _seen(event))
             seen(problem, event)
             continue
-        identity = _identity(event.get("data"))
+        data = event.get("data") or {}
+        identity = _identity(data)
+        # Text the engine never translated is translation's to fix: text QA
+        # reviews only what was translated.
+        untranslated = bool(data.get("untranslated"))
+        if untranslated:
+            listed = next(
+                (
+                    row for row in never.get(f"{data_prefix}/{data['file']}", [])
+                    if _within(row[1]["pointer"], data["pointer"])
+                ),
+                None,
+            )
+            if listed:
+                listed[1].setdefault("seen", _seen(event))
+                seen(listed[0], event)
+                continue
         target = next(
             (
                 problem for problem in problems
-                if identity and problem.get("identity", "").startswith(identity)
+                if identity and _within(problem.get("identity", ""), identity)
                 or problem["check"] in {"visible-text", "placeholder-glyph"}
                 and problem.get("text") and problem["text"] in event["text"]
             ),
@@ -303,16 +332,32 @@ def merge(static: dict[str, Any], runtime: dict[str, Any], data_prefix: str) -> 
             seen(target, event)
             continue
         plugin = located.get("file", "").startswith("js/plugins/")
+        comment = untranslated and "comment" in data
         problems.append({
             "kind": "japanese",
-            "check": "seen-glyph" if event.get("glyph") else "seen-text",
+            # DazedTL translates the comments under a marker it knows players
+            # read once comment text is on.
+            "check": (
+                "untranslated-comment"
+                if comment and data["comment"].strip() in SUPPORTED_CODE408_MARKERS
+                else "seen-glyph" if event.get("glyph") else "seen-text"
+            ),
             "file": (f"{data_prefix}/{event['data']['file']}" if event.get("data") else located.get("file", "")),
             "note": (
-                "A Japanese placeholder glyph showed on screen."
+                "A plugin shows this event comment, which was never translated."
+                if comment
+                else "This text was never translated."
+                if untranslated
+                else "A Japanese placeholder glyph showed on screen."
                 if event.get("glyph")
                 else "Japanese showed on screen."
             ),
-            "fix": "text-qa" if identity else "plugin-files" if plugin else "game",
+            "fix": (
+                "translate" if untranslated
+                else "text-qa" if identity
+                else "plugin-files" if plugin
+                else "game"
+            ),
             "text": event["text"],
             **({"identity": identity} if identity else {}),
             **({"line": located["line"]} if plugin and located.get("line") else {}),

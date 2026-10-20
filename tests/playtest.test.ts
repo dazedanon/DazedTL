@@ -11,8 +11,9 @@ const page = fs.readFileSync(
 );
 
 /** The release playtest's page script in a game made of the few engine
- * classes its hooks change, with one help window on screen. */
-function game() {
+ * classes its hooks change, with one help window on screen and the game's
+ * own `globals`, such as its map and message. */
+function game(globals: Record<string, unknown> = {}) {
   const listeners: Record<string, ((event: unknown) => void)[]> = {};
   let frame = 0;
   // Glyphs of 26-pixel text reach 6 pixels below their baseline.
@@ -167,12 +168,28 @@ function game() {
       (listeners[type] ||= []).push(listener);
     },
     setTimeout,
+    ...globals,
   };
   context.window = context;
   vm.runInNewContext(page, context);
   for (const listener of listeners.load) listener({});
   const playtest = context.__playtest as { look(): Promise<void> };
-  return { playtest, sent, help, hidden, action, Window_Base };
+  /** A window the player sees. */
+  const show = <T extends Window_Base>(window_: T) => {
+    scene.children.push(new Sprite(window_.contents));
+    return window_;
+  };
+  return {
+    playtest,
+    sent,
+    help,
+    hidden,
+    action,
+    show,
+    Window_Base,
+    Window_Message,
+    Window_ChoiceList,
+  };
 }
 
 test("the playtest records text that runs past a window players see", async () => {
@@ -227,4 +244,80 @@ test("the playtest records text that runs past a window players see", async () =
   );
   assert.equal(events("japanese").length, 0);
   assert.equal(events("capture").length, 1);
+});
+
+test("the playtest names the event command whose text a window draws", async () => {
+  // A translated message and its choices, then the help a plugin shows in
+  // the message window for each choice, as MPP_ChoiceEX does, from an
+  // event comment the engine never translated.
+  const list = [
+    { code: 101, parameters: ["", 0, 0, 2, ""] },
+    { code: 401, parameters: ["Pick one."], _original: "選んで。" },
+    {
+      code: 102,
+      parameters: [["見る", "Skip"], -1, 0, 1, 0],
+      _original: ["見る", "飛ばす"],
+    },
+    { code: 402, parameters: [0, "見る"] },
+    { code: 108, parameters: ["選択肢ヘルプ"] },
+    { code: 408, parameters: ["\\>所要時間:20分"] },
+    { code: 408, parameters: ["初回は\\c[3]推奨\\C[0]します。"] },
+  ];
+  let texts = ["Pick one."];
+  const interpreter = { _list: list, _index: 2, isRunning: () => true };
+  const {
+    playtest,
+    sent,
+    show,
+    Window_Base,
+    Window_Message,
+    Window_ChoiceList,
+  } = game({
+    $dataMap: { events: [null, { id: 1, pages: [{ list }] }] },
+    $gameMap: {
+      mapId: () => 1,
+      _interpreter: interpreter,
+      events: () => [],
+      _commonEvents: [],
+    },
+    $gameParty: { inBattle: () => false },
+    $gameTroop: {},
+    $gameMessage: {
+      allText: () => texts.join("\n"),
+      isBusy: () => true,
+      speakerName: () => "",
+      choices: () => ["見る", "Skip"],
+    },
+  });
+  const message = show(new Window_Message());
+  const choices = show(new Window_ChoiceList());
+  // A map's HUD draws its own text while the message is open.
+  const hud = show(new Window_Base());
+  message.startMessage();
+  choices.start();
+  choices.contents.drawText("見る");
+  hud.contents.drawText("現在地");
+  texts = list.slice(5).map((command) => String(command.parameters[0]));
+  message.startMessage();
+  message.contents.drawText("所要時間:20分");
+  message.contents.drawText("推奨");
+  await playtest.look();
+  const drawn = Object.fromEntries(
+    sent
+      .filter((event) => event.type === "japanese")
+      .map((event) => [event.value.text, event.value.data ?? null]),
+  );
+  const page = "/events/1/pages/0/list";
+  const help = {
+    file: "Map001.json",
+    pointer: `${page}/5`,
+    untranslated: true,
+    comment: "選択肢ヘルプ",
+  };
+  assert.deepEqual(drawn, {
+    見る: { file: "Map001.json", pointer: `${page}/2/parameters/0/0` },
+    現在地: null,
+    "所要時間:20分": help,
+    推奨: help,
+  });
 });
