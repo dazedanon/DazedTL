@@ -12,6 +12,8 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from stat import S_IFREG
 
+from dazedtl.freshness import Basis, compare
+
 from .files import evidence, project_path, read_json
 
 _PRIVATE_DIRS = {
@@ -337,6 +339,37 @@ def unpacked(inputs, outputs):
     return [name for name in inputs if packing_target(name) not in packed]
 
 
+def packing_receipt(native, folder, inputs):
+    """The game's saved packing receipt, what changed in ``inputs``, its
+    current exports, since it was saved, and the native files to pack again.
+
+    The receipt is None when there is none, an older packing version saved
+    it, or the native files it describes changed since; the game's data is
+    current while there is a receipt and nothing changed or is unpacked."""
+    try:
+        path = Path(folder) / "ace-packing.json"
+        saved = read_json(path) if path.exists() else {}
+        if not (
+            saved.get("source") == native["source"]
+            and isinstance(saved["inputs"], dict)
+            and saved["outputs"] == evidence(native["source"], list(saved["outputs"]))
+        ):
+            return None, None, None
+    except OSError, ValueError, KeyError, TypeError, AttributeError:
+        return None, None, None
+    change = compare(
+        Basis(saved.get("version"), saved["inputs"]), Basis(PACKING_VERSION, inputs)
+    )
+    if change and change.version:
+        return None, None, None
+    # A removed export leaves nothing to pack.
+    names = [
+        *(change.added + change.changed if change else ()),
+        *unpacked(inputs, saved["outputs"]),
+    ]
+    return saved, change, {packing_target(name) for name in names}
+
+
 def packing_state(native, folder):
     """Whether the game's native data holds its current ace_json, as the
     receipt every in-app write's packing saves shows. Writes outside the app,
@@ -344,16 +377,9 @@ def packing_state(native, folder):
     if native["engine"] != "ACE":
         return {"required": False, "current": True, "message": ""}
     try:
-        receipt = read_json(Path(folder) / "ace-packing.json")
         inputs = packing_inputs(native)
-        current = (
-            receipt.get("version") == PACKING_VERSION
-            and receipt.get("source") == native["source"]
-            and not unpacked(inputs, receipt["outputs"])
-            and receipt.get("inputs") == inputs
-            and receipt.get("outputs")
-            == evidence(native["source"], list(receipt["outputs"]))
-        )
+        receipt, change, targets = packing_receipt(native, folder, inputs)
+        current = receipt is not None and not change and not targets
     except OSError, ValueError, KeyError, TypeError:
         current = False
     return {

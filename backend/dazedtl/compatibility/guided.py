@@ -552,12 +552,10 @@ def pack_ace(native, folder, log, touched=None):
     everything, Pack outside edits, saves a receipt."""
     from util.ace import actions
 
-    from dazedtl.translation.files import evidence
     from dazedtl.translation.release import (
-        PACKING_VERSION,
         packing_inputs,
+        packing_receipt,
         packing_target,
-        unpacked,
     )
 
     root = Path(native["source"])
@@ -565,27 +563,10 @@ def pack_ace(native, folder, log, touched=None):
     if blocked:
         raise ValueError(blocked)
     inputs = packing_inputs(native)
-    path = Path(folder) / "ace-packing.json"
-    receipt = None
-    try:
-        saved = read_json(path) if path.exists() else {}
-        if (
-            saved.get("version") == PACKING_VERSION
-            and saved.get("source") == native["source"]
-            and saved["outputs"] == evidence(root, list(saved["outputs"]))
-            and isinstance(saved["inputs"], dict)
-        ):
-            receipt = saved
-    except OSError, ValueError, KeyError, TypeError, AttributeError:
-        receipt = None
+    receipt, change, only = packing_receipt(native, folder, inputs)
     if receipt is not None:
         outputs = list(receipt["outputs"])
-        only = {
-            packing_target(name)
-            for name, value in inputs.items()
-            if receipt["inputs"].get(name) != value
-        } | {packing_target(name) for name in unpacked(inputs, outputs)}
-        if not only and receipt["inputs"] == inputs:
+        if not only and not change:
             return []
     elif touched is not None:
         only, outputs = {packing_target(name) for name in touched}, None

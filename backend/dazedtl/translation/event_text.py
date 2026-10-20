@@ -9,6 +9,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from dazedtl.freshness import Basis, compare
 from dazedtl.storage import write_json
 
 from .files import digest, project_path, read_json
@@ -64,6 +65,9 @@ REPORT = ".dazedtl/guided/event-text-findings.json"
 SELECTED_CODES = re.compile(rb'"code"\s*:\s*(?:(?:35[57]|655)(?![0-9])|-?[0-9]+[.eE])')
 # The project record key naming the report whose recommendations were applied.
 RECEIPT = "guided_event_text"
+# Raise when the same event files, handlers and definitions need a new
+# investigation. Requests and their reports carry it.
+REQUEST_VERSION = 1
 VIEWS = {"audit", "sources", "advanced-run", "variables"}
 
 
@@ -207,7 +211,7 @@ class EventText:
                     self.hits[(dependencies[relative], catalog["fingerprint"])][key]
                 )
         value = {
-            "version": 1,
+            "version": REQUEST_VERSION,
             "project_id": project_id,
             "engine": native["engine"],
             "files": selected,
@@ -367,7 +371,10 @@ After saving, run `{command} --apply`. It validates the report and saves its rec
                 if applied and set(context["files"]) <= set(request["files"])
                 else context
             )
-            if request.get("fingerprint") != basis["fingerprint"]:
+            if compare(
+                Basis(request.get("version"), {}, request.get("fingerprint")),
+                Basis(REQUEST_VERSION, {}, basis["fingerprint"]),
+            ):
                 return {
                     **result,
                     "status": "stale",
