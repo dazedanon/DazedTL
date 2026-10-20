@@ -211,10 +211,9 @@ class Guided:
                     "The game location or engine changed. Open the correct game folder before continuing."
                 )
             if any(native.get(key) != value for key, value in current.items()):
-                native = {**native, **current}
-                self.backend.workflows.save(native)
-                self.backend.workflows.projects[native["id"]] = native
-            comment_text.check(self.backend.workflows, native)
+                updated = {**native, **current}
+                self.backend.workflows.save(updated)
+                self.backend.workflows.projects[native["id"]] = updated
             return
         self.idle()
         layout = self.backend.describe(project["source"])
@@ -245,7 +244,6 @@ class Guided:
                     "selected": sorted(self.supported_files(native)),
                 },
             )["project"]
-        native = comment_text.check(self.backend.workflows, native)
         if pending:
             self.backend.workflows.draft(native["id"], {"documents": pending})
         # Persist registry ownership before publishing it in memory.
@@ -283,6 +281,17 @@ class Guided:
         self.text_fit.request(
             project_id, native, native["widths"], result["project"]["widths"]
         )
+
+    def comment_text(self, project_id):
+        """Comment text on, once, for a game whose plugins show players
+        comment lines in Japanese (see :mod:`.comment_text`)."""
+        _, native = self.record(project_id)
+        try:
+            comment_text.check(self.backend.workflows, native)
+        except OSError, ValueError:
+            # The project can't be saved now, such as during another save;
+            # the next look tries again.
+            return
 
     def path(self, project_id, name):
         self.projects.get(project_id)
@@ -647,6 +656,7 @@ class Guided:
 
     def state(self, project_id):
         self.ace_widths(project_id)
+        self.comment_text(project_id)
         with self.observations.read():
             return self._state(project_id)
 

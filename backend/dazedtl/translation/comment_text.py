@@ -48,20 +48,16 @@ def shows_comment_text(data: str | Path, plugins: str | Path) -> bool:
     return False
 
 
-def check(workflows: Any, native: dict[str, Any]) -> dict[str, Any]:
-    """The project after its one Comment text check: on when the game shows
-    comment lines in Japanese, and never turned off."""
+def check(workflows: Any, native: dict[str, Any]) -> None:
+    """Record a project's one Comment text check, turning Comment text on
+    when the game shows comment lines in Japanese; it never turns it off."""
     if native.get(CHECKED) or native["engine"] != "MVMZ":
-        return native
+        return
+    values: dict[str, bool] = {CHECKED: True}
     if (
         not native["phase1_comments"]
         and native.get("plugins")
         and shows_comment_text(native["data"], native["plugins"])
     ):
-        native = workflows.update(
-            native["id"], native["revision"], {"phase1_comments": True}
-        )["project"]
-    native = {**native, CHECKED: True}
-    workflows.save(native)
-    workflows.projects[native["id"]] = native
-    return native
+        values["phase1_comments"] = True
+    workflows.update(native["id"], native["revision"], values)

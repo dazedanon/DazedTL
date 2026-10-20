@@ -3713,7 +3713,7 @@ class GuidedTests(unittest.TestCase):
 
     def test_comment_text_turns_on_once_for_plugin_shown_comments(self):
         # MPP_ChoiceEX shows the comment lines under a marker its settings
-        # list as each choice's help. An existing project opens with Comment
+        # list as each choice's help. A project's next look turns Comment
         # text on; turned off afterwards, it stays off.
         plugin = {
             "name": "MPP_ChoiceEX",
@@ -3730,17 +3730,12 @@ class GuidedTests(unittest.TestCase):
         write_json(
             self.source / "Map001.json", {"events": [{"pages": [{"list": help_lines}]}]}
         )
-        self.backend.describe = lambda source: {
-            "source": source,
-            "engine": "MVMZ",
-            "data": str(self.source),
-            "plugins": str(plugins),
-        }
-        self.guided.open(self.identity)
+        self.native["plugins"] = str(plugins)
+        self.guided.comment_text(self.identity)
         native = self.backend.workflows.projects["native"]
         self.assertTrue(native["phase1_comments"])
         native.update(phase1_comments=False, revision=native["revision"] + 1)
-        self.guided.open(self.identity)
+        self.guided.comment_text(self.identity)
         self.assertFalse(self.backend.workflows.projects["native"]["phase1_comments"])
 
     def test_deleted_backup_can_be_replaced_but_cannot_authorize_preparation(self):
