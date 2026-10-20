@@ -6,12 +6,14 @@ from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from dazedtl.freshness import Basis, compare
 from dazedtl.storage import write_json
 
 from . import context_setup, header_review, reference_folders, speaker_setup
 from .files import digest, project_path, read_json
 from .helper_command import helper_command, windows_note
 from .playtest import final_check
+from .speaker_setup import SCAN_VERSION
 
 if TYPE_CHECKING:
     from .guided import Guided
@@ -424,6 +426,48 @@ class GuidedContext:
             }
         )
 
+    def speaker_bases(self, project_id, native, result):
+        """A saved speaker scan's basis, the current one, and whether it
+        scanned any of the game's data files."""
+        root = Path(native["source"])
+        data = Path(native["data"])
+        data_relative = data.relative_to(root)
+        sources = result.get("source_inputs", {})
+        scanned = {
+            name
+            for name in sources
+            if Path(name).parent == data_relative
+            and Path(name).suffix.lower() == ".json"
+        }
+        inventory = {
+            path.relative_to(root).as_posix()
+            for path in data.iterdir()
+            if path.is_file() and path.suffix.lower() == ".json"
+        }
+        findings = self.speaker_findings(project_id, native)["reportId"]
+        version = result.get("version", SCAN_VERSION)
+        saved = Basis(
+            version,
+            {**sources, "findings": result.get("reportId")},
+            result.get("configuration"),
+        )
+        current = Basis(
+            SCAN_VERSION,
+            {
+                **{
+                    name: self.guided.observed_digest(project_path(root, name))
+                    if (root / name).exists()
+                    else None
+                    for name in {*sources, *(inventory - scanned)}
+                },
+                "findings": findings
+                if native.get("guided_speakers", {}).get("reportId") == findings
+                else None,
+            },
+            self.speaker_configuration(native),
+        )
+        return saved, current, bool(scanned)
+
     def speakers(self, project_id, scan=False, fix_headers=False):
         if type(scan) is not bool or type(fix_headers) is not bool:
             raise ValueError("Choose whether to run the local speaker scan.")
@@ -516,50 +560,24 @@ class GuidedContext:
         current = bool(saved and job is not None and job["id"] == saved["id"])
         # Why a saved scan no longer matches, so the next step is plain.
         stale = ""
-        if current and result.get("configuration") != self.speaker_configuration(
-            native
-        ):
-            current, stale = False, "Speaker settings changed since the scan."
-        elif current and not (
-            result.get("reportId")
-            == native.get("guided_speakers", {}).get("reportId")
-            == self.speaker_findings(project_id, native)["reportId"]
-        ):
-            current, stale = False, "Speaker findings changed since the scan."
         if current:
             try:
-                root = Path(native["source"])
-                data = Path(native["data"])
-                data_relative = data.relative_to(root)
-                inventory = {
-                    path.relative_to(root).as_posix()
-                    for path in data.iterdir()
-                    if path.is_file() and path.suffix.lower() == ".json"
-                }
-                scanned = {
-                    name
-                    for name in result.get("source_inputs", {})
-                    if Path(name).parent == data_relative
-                    and Path(name).suffix.lower() == ".json"
-                }
-                changed = sorted(
-                    (inventory ^ scanned)
-                    | {
-                        name
-                        for name, sha in result["source_inputs"].items()
-                        if self.guided.observed_digest(
-                            project_path(native["source"], name)
-                        )
-                        != sha
-                    }
-                )
-                current = bool(scanned) and not changed
-                if changed:
-                    shown = ", ".join(Path(name).name for name in changed[:3])
-                    more = f" and {len(changed) - 3} more" if len(changed) > 3 else ""
-                    stale = f"Game files changed since the scan: {shown}{more}."
+                scan, now, scanned = self.speaker_bases(project_id, native, result)
+                changed = compare(scan, now)
             except OSError, ValueError:
-                current = False
+                changed, scanned, current = None, False, False
+            if changed and changed.version:
+                stale = "DazedTL scans speakers differently since this scan."
+            elif changed and changed.settings:
+                stale = "Speaker settings changed since the scan."
+            elif changed and "findings" in changed.inputs:
+                stale = "Speaker findings changed since the scan."
+            elif changed and changed.inputs:
+                names = [name for name in changed.inputs if name != "findings"]
+                shown = ", ".join(Path(name).name for name in names[:3])
+                more = f" and {len(names) - 3} more" if len(names) > 3 else ""
+                stale = f"Game files changed since the scan: {shown}{more}."
+            current = current and scanned and not changed
         return {
             "job": job,
             "available": available,

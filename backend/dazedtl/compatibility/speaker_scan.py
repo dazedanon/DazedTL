@@ -7,6 +7,7 @@ from pathlib import Path
 
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, project_path
+from dazedtl.translation.speaker_setup import SCAN_VERSION
 
 
 def collect(engine, files, progress):
@@ -169,6 +170,7 @@ def run_scan(plan, log):
             "speaker slips. No API requests were made."
         )
         result = {
+            "version": SCAN_VERSION,
             "names": names,
             "actor_names": actor_names,
             "variable_actor_ids": variable_actors,

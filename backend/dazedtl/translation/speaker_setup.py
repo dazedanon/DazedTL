@@ -10,6 +10,9 @@ from .files import digest, project_path, read_json
 from .header_review import REPORT as HEADER_REPORT
 
 REPORT = ".dazedtl/guided/speaker-findings.json"
+# Raise when the same game files, findings and settings would scan to
+# different speakers. Scans saved before 2.25 hold none and read as 1.
+SCAN_VERSION = 1
 KEYS = (
     "NAMES",
     "FIRSTLINESPEAKERS",
