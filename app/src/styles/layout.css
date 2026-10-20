@@ -159,7 +159,8 @@
 }
 /* Pages own their scrolling; main only frames them. Anything that is not a
    page (loading text, recovery panels) follows the shared content column;
-   the app error banner is a frame row, as a page's own messages are. */
+   messages in main, such as the app error banner or why a workspace cannot
+   show, are a frame row, as a page's own messages are. */
 main {
   flex: 1;
   min-width: 0;

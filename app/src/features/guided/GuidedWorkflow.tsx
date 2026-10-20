@@ -9,7 +9,7 @@ import { Message } from "../../ui/Feedback";
 import { Notice } from "../../ui/Notice";
 import { FeedbackOwners, useOwnedFeedback } from "../../ui/FeedbackOwners";
 import { JobStatus } from "../../ui/JobStatus";
-import { PageBody, PageLayout } from "../../ui/PageLayout";
+import { PageBody, PageLayout, PageMessages } from "../../ui/PageLayout";
 import { StatusIcon } from "../../ui/StatusIcon";
 import { Tabs } from "../../ui/Tabs";
 import { displayLabels, displayMarks } from "../../ui/displayStatus";
@@ -41,12 +41,14 @@ export default function GuidedWorkflow(props: GuidedProps) {
         Opening translation workspace…
       </p>
     ) : (
-      <Message
-        message={
-          snapshot?.translationError ||
-          "Open this game’s Translation workspace to continue."
-        }
-      />
+      <PageMessages>
+        <Message
+          message={
+            snapshot?.translationError ||
+            "Open this game’s Translation workspace to continue."
+          }
+        />
+      </PageMessages>
     );
   return (
     <FeedbackOwners key={props.project.id}>
