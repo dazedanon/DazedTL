@@ -1137,6 +1137,56 @@ try:
                 assert result[1] == command(
                     408, ["Takes about 20 minutes."], _original="所要時間:20分"
                 ), result
+                # A choice after a message, and one joined to it.
+                from util.rpgmaker_rewrap import Layout, fit_document, widest_line
+
+                def choosing(face):
+                    return [
+                        command(101, [face, 0, 0, 2, ""]),
+                        command(401, ["Pick one."]),
+                        command(102, [["Stay"], -1, 0, 2, 0]),
+                        command(402, [0, "Stay"]),
+                        command(404, []),
+                        command(102, [["Watch"], -1, 0, 2, 0]),
+                        command(402, [0, "Watch"]),
+                        *(dict(line, indent=1) for line in help_lines),
+                        command(404, []),
+                    ]
+
+            # Narrower Line widths fit translated help again over its own
+            # comment lines, beside the face; a comment that is no choice's
+            # help, such as a plugin's setting, stays as written.
+            helped = choosing("Actor1")[:7] + [
+                command(108, ["選択肢ヘルプ"], indent=1),
+                command(
+                    408,
+                    ["Takes about 20 minutes. Watch it once."],
+                    indent=1,
+                    _original="所要時間:20分",
+                ),
+                command(408, ["We recommend it."], indent=1),
+                command(404, []),
+                command(108, ["<Popup>"]),
+                command(408, ["A note wider than any window shows."], _original="メモ"),
+            ]
+
+            def fit(face_width):
+                layout = Layout(20, face_width, 74, 45, 4)
+                report = fit_document({"list": helped}, "Map001.json", layout)
+                rows = "\n".join(row["parameters"][0] for row in helped[8:10])
+                return report.misfits, rows.split("\n")
+
+            misfits, rows = fit(16)
+            assert not misfits and len(rows) == 4, rows
+            assert max(map(widest_line, rows)) <= 16, rows
+            assert len(helped) == 13 and helped[-1]["parameters"] == [
+                "A note wider than any window shows."
+            ], helped
+            # Rows past the message window's are a page the player never sees.
+            misfits, rows = fit(10)
+            assert [row["reason"] for row in misfits] == [
+                f"needs {len(rows)} rows; its window shows 4"
+            ], (misfits, rows)
             # Plugins split 356 commands on spaces, so each handler joins a
             # translation's words its own way. A kept placeholder stays, and
             # must not shift the next translation onto the wrong command.
