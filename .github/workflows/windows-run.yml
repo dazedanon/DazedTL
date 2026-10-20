@@ -1,0 +1,44 @@
+# Runs one command on a disposable Windows machine, to reproduce a problem
+# there without a Windows install of your own. See "Live test" in
+# docs/development.md.
+name: Windows run
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or commit to check out
+        default: dev
+        required: true
+      command:
+        description: Bash command run from the checkout after setup; $WORK is an empty folder whose logs are kept
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    name: ${{ inputs.command }}
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          # Release tags, for scenarios built by an earlier release.
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
+      - name: Run
+        shell: bash
+        env:
+          COMMAND: ${{ inputs.command }}
+          WORK: ${{ runner.temp }}\work
+        run: eval "$COMMAND"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: logs
+          path: ${{ runner.temp }}/work/**/logs
+          if-no-files-found: ignore
