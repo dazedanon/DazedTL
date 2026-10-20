@@ -541,10 +541,26 @@ class Page {
     });
   }
 
-  send(method, params = {}) {
+  /** Sends a DevTools command; with `timeout`, fails with `late` when the
+   * reply takes longer. */
+  send(method, params = {}, { timeout = 0, late = "" } = {}) {
     const id = ++this.serial;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { method, resolve, reject });
+      const timer =
+        timeout &&
+        setTimeout(() => {
+          this.pending.delete(id);
+          reject(new Error(late || `${method} got no reply in time.`));
+        }, timeout);
+      const settle = (done) => (value) => {
+        clearTimeout(timer);
+        done(value);
+      };
+      this.pending.set(id, {
+        method,
+        resolve: settle(resolve),
+        reject: settle(reject),
+      });
       this.socket.send(JSON.stringify({ id, method, params }));
     });
   }
@@ -563,9 +579,16 @@ class Page {
   }
 
   async shot(name) {
-    const { data } = await this.send("Page.captureScreenshot", {
-      format: "png",
-    });
+    // A screenshot waits for the window's next frame, which never comes
+    // while the window can't paint, such as under a lock screen.
+    const { data } = await this.send(
+      "Page.captureScreenshot",
+      { format: "png" },
+      {
+        timeout: 30_000,
+        late: "The window drew no frame to capture within 30 s, as when a lock screen covers the display; start a virtual compositor with --no-lockscreen.",
+      },
+    );
     fs.writeFileSync(
       path.join(shots, `${String(steps.length).padStart(2, "0")}-${name}.png`),
       Buffer.from(data, "base64"),
@@ -1114,8 +1137,10 @@ try {
     `\n✖ ${current}\n${(error instanceof Error && error.stack) || message(error)}`,
   );
   try {
+    // The text first: a window that draws no frames still answers it.
+    if (page)
+      fs.writeFileSync(path.join(logs, "window.txt"), await page.text());
     await page?.shot("failure");
-    fs.writeFileSync(path.join(logs, "window.txt"), await page.text());
   } catch {
     // The window may already be gone.
   }
