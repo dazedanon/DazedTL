@@ -55,3 +55,12 @@ export function selectionNames(names: readonly string[]) {
     ? `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`
     : names.join(", ");
 }
+
+/** Why a game's workspace can't show while its folder is gone, in the
+ * Project page's words: "Game folder unavailable. Reconnect the drive…". */
+export function unavailableReason(project: {
+  status?: string;
+  detail?: string;
+}) {
+  return [project.status, project.detail].filter(Boolean).join(". ");
+}

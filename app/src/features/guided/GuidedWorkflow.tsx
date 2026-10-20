@@ -13,7 +13,7 @@ import { PageBody, PageLayout, PageMessages } from "../../ui/PageLayout";
 import { StatusIcon } from "../../ui/StatusIcon";
 import { Tabs } from "../../ui/Tabs";
 import { displayLabels, displayMarks } from "../../ui/displayStatus";
-import { selectionNames } from "../../ui/displayText";
+import { selectionNames, unavailableReason } from "../../ui/displayText";
 import { ImageTextEditor } from "../images/ImageTextEditor";
 import { WorkflowNavigation } from "./WorkflowNavigation";
 import { openedStages, runPhase, taskForStage } from "./workflow";
@@ -45,6 +45,9 @@ export default function GuidedWorkflow(props: GuidedProps) {
         <Message
           message={
             snapshot?.translationError ||
+            // Translation can't open while the folder is gone.
+            (props.project.available === false &&
+              unavailableReason(props.project)) ||
             "Open this game’s Translation workspace to continue."
           }
         />

@@ -44,6 +44,7 @@ import { ImageManager } from "../images/ImageManager";
 import { ImageTextEditor } from "../images/ImageTextEditor";
 import { StatusIcon } from "../../ui/StatusIcon";
 import { displayLabels, displayMarks } from "../../ui/displayStatus";
+import { unavailableReason } from "../../ui/displayText";
 import { useOperationEnd } from "../../state/useOperationEnd";
 import { TextQaTab } from "./TextQaTab";
 import { PlaytestTab } from "./PlaytestTab";
@@ -77,6 +78,7 @@ export default function Translation({
         <Message
           message={
             application.snapshot?.translationError ||
+            (project.available === false && unavailableReason(project)) ||
             "The project folder is unavailable."
           }
         />
