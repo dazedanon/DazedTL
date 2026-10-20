@@ -5,6 +5,7 @@ RV2JSON 1.2.1's own JSON and packed output; its regenerate.py rebuilds it.
 """
 
 import importlib
+import json
 import shutil
 import struct
 import unittest
@@ -187,6 +188,63 @@ class AceConversionTests(unittest.TestCase):
                     ini.read_bytes(),
                     original.replace("テストゲーム", shown).encode("cp932"),
                 )
+
+    def test_packing_writes_text_variables_translated_for_mv_mz_as_ruby_strings(
+        self,
+    ):
+        # Earlier versions translated a VX Ace text variable as MV/MZ's
+        # template literal, which Ruby runs as a shell command, so the packed
+        # game froze at the event.
+        with TemporaryDirectory() as temporary:
+            game = Path(temporary)
+            shutil.copytree(FIXTURE / "Data", game / "Data")
+            rv2json.create(game, log=lambda _line: None)
+            path = game / "ace_json/CommonEvents.json"
+            events = json.loads(path.read_text(encoding="utf-8"))
+            commands = events[1]["list"][16:19]
+            for command, operand, original in zip(
+                commands,
+                (
+                    "`\\\\C[2]Villager\\\\C[0] says #{hi}\\nto \\`you\\``;",
+                    # Interpolates, so it holds no text Ruby can.
+                    "`${name}'s room`",
+                    # The game's own.
+                    "`echo`",
+                ),
+                ("\\\\C[2]村人\\\\C[0]の挨拶", "${name}の部屋", None),
+            ):
+                self.assertEqual(command["code"], 122)
+                command["parameters"][3:] = [4, operand]
+                if original:
+                    command["_original"] = original
+            saved = json.dumps(events, ensure_ascii=False, indent=4)
+            path.write_text(saved, encoding="utf-8")
+            lines = []
+            actions.run(game, "ace_pack", log=lines.append)
+            packed = ruby_marshal.load(
+                (game / "Data/CommonEvents.rvdata2").read_bytes()
+            )
+            self.assertEqual(
+                [
+                    rv2json.text(command.ivars["@parameters"][4])
+                    for command in packed[1].ivars["@list"][16:19]
+                ],
+                [
+                    # The text the template literal held: a message code's
+                    # backslash, a line break, "#{" and backticks as text.
+                    '"\\\\C[2]Villager\\\\C[0] says \\#{hi}\\nto `you`";',
+                    "`${name}'s room`",
+                    "`echo`",
+                ],
+            )
+            self.assertIn(
+                "CommonEvents.json: packed 1 text variable(s) as Ruby strings", lines
+            )
+            self.assertTrue(
+                any("1 text variable(s) run JavaScript" in line for line in lines)
+            )
+            # The translation's JSON stays as it was written.
+            self.assertEqual(path.read_text(encoding="utf-8"), saved)
 
     def test_archives_extract_their_files_inside_the_game_and_keep_existing_ones(self):
         long = bytes(range(256)) * 5 + b"tail"

@@ -47,7 +47,7 @@
 - **VX Ace:** **Images** finds the game's images in `Graphics` instead of asking you to choose a folder.
 - **VX Ace:** your assistant's **Event text sources** findings are no longer refused once the game is translated.
 - **VX Ace:** a patch ZIP with translated images in `Graphics` no longer fails to build.
-- **VX Ace:** the packed game no longer freezes at an event that sets a text variable.
+- **VX Ace:** the packed game no longer freezes at an event that sets a text variable, also in a game translated with an earlier version: **Release** asks each VX Ace game to pack again with **Review native Ace packing**, which writes the text variables an earlier version translated so the game reads them.
 - **VX Ace:** the packed game's window shows the translated title instead of the Japanese one; packing puts it into `Game.ini` in plain letters.
 - **VX Ace:** games start with their own windows' widths, 52 characters and 40 beside a face, instead of MV and MZ's 60 and 50, which ran past the window's edge; a Guided Ace game still on the old widths switches when you open it, and the text you applied is fitted to them.
 - **VX Ace:** translated map names now reach the packed game.

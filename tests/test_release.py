@@ -218,12 +218,12 @@ class ReleaseTests(unittest.TestCase):
                 ),
             }
             # A receipt from before packing wrote Game.ini's title would ship
-            # the original caption.
-            write_json(work / "ace-packing.json", receipt)
-            self.assertFalse(packing_state(native, work)["current"])
-            receipt["version"] = 2
-            write_json(work / "ace-packing.json", receipt)
-            self.assertTrue(packing_state(native, work)["current"])
+            # the original caption, and one from before packing wrote text
+            # variables as Ruby strings a game that freezes at them.
+            for version, current in ((None, False), (2, False), (3, True)):
+                receipt["version"] = version
+                write_json(work / "ace-packing.json", receipt)
+                self.assertEqual(packing_state(native, work)["current"], current)
             # A script translated after packing needs packing again too.
             script.write_text("later script translation")
             self.assertFalse(packing_state(native, work)["current"])

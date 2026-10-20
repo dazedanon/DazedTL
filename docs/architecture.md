@@ -1310,6 +1310,7 @@ A title that would keep only a fragment in ASCII, such as a version number witho
 Git holds no original of the converted JSON, so Event text sources reads a translated command's original text from the `_original` the engine keeps, and lists the converted `ace_json/scripts` as dependencies.
 Ace data is translated by the MV/MZ engine, and an Ace project's runs set its `VXACE` option from the project's engine ([phase_workflow](../backend/dazedtl/engine/desktop/backend/workflow.py)), so the frozen plan and Batch runtime profile carry it.
 With it, a translated text variable (code 122) is written as a Ruby double-quoted string, since Ace evaluates the operand with Ruby, where the template literal MV/MZ reads runs a shell command.
+Earlier versions wrote Ace's as template literals, so packing writes each translated one, which keeps its `_original`, as the Ruby string holding the same text and leaves the JSON as it is ([ruby_text_variables](../backend/dazedtl/engine/util/ace/actions.py)); a literal that interpolates or holds a character code is left and logged, and receipts from before count as outdated, so those games pack once more.
 Copied Names & glossary and Line widths tasks tell an Ace assistant where its data and scripts are and that the code-101 nameplate rules, slip check and layout check are MV/MZ only, since VX Ace's Show Text has no nameplate.
 Guided checkpoint manifests derive translation-only additions from the registered original and saved source inventory, retaining previously tracked runtime assets when switching workflows.
 

@@ -89,8 +89,9 @@ _UPDATER_STATE = "gameupdate/previous_patch_sha.txt"
 # Windows refuses these names, so extracting a ZIP that holds one fails there.
 _WINDOWS_DEVICE = re.compile(r"(?:con|prn|aux|nul|(?:com|lpt)[0-9¹²³])(?:\..*)?")
 # Ace packing receipts from version 2 bind Game.ini, whose title packing
-# writes; earlier receipts packed only the data, so they need packing again.
-PACKING_VERSION = 2
+# writes, and from version 3 packing writes text variables translated as
+# template literals as Ruby strings; earlier receipts need packing again.
+PACKING_VERSION = 3
 
 
 def _windows_unsafe(name):

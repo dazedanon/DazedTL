@@ -1591,12 +1591,15 @@ def update(
     json_dir: str = "ace_json",
     out: str | None = None,
     skip_backup: bool = False,
+    edit: Callable[[str, Any], None] | None = None,
     log: Log = print,
 ) -> list[Path]:
     """Writes the data from the JSON folder, as ``RV2JSON -u`` does.
 
     Without ``out`` the data is updated in place, and each replaced file is
     first copied to ``backups`` inside the data folder unless a copy exists.
+    ``edit`` changes each file's JSON, by the file's name, before it is
+    written, leaving the JSON folder as it is.
     """
     folder = data_dir(root, data)
     source = root / json_dir
@@ -1625,6 +1628,8 @@ def update(
             raise ConversionError(
                 f"{json_path.name} is not valid JSON ({exc})."
             ) from None
+        if edit:
+            edit(json_path.name, edited)
         try:
             update_value(updater, value, edited)
         except ConversionError as exc:

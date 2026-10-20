@@ -148,6 +148,31 @@ def ruby_text(value: str) -> str:
     )
 
 
+def ruby_from_template(inside: str) -> str | None:
+    """*inside*, a JavaScript template literal's inside, as the inside of a
+    Ruby double-quoted string that holds the same text, or None when the
+    literal holds more than text: it interpolates, or has an escape that
+    stands for a character code, such as ``\\t`` or ``\\u0041``.
+
+    JavaScript reads ``\\n`` as a line break and any other escaped
+    character, such as a backslash, a backtick or "$", as itself."""
+    value, index = [], 0
+    while index < len(inside):
+        char = inside[index]
+        if char in "`\r" or inside.startswith("${", index):
+            return None
+        if char == "\\":
+            escaped = inside[index + 1 : index + 2]
+            if not escaped or escaped in "bfrtvxu0123456789\r\n\u2028\u2029":
+                return None
+            value.append("\n" if escaped == "n" else escaped)
+            index += 2
+            continue
+        value.append(char)
+        index += 1
+    return ruby_text("".join(value))
+
+
 def escape(text: str, quote: str, own: frozenset[str] = frozenset()) -> str:
     """*text*, a string's inside, as translation writes it between *quote*
     marks, keeping its line breaks: MV/MZ's template literal between
