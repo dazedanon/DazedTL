@@ -170,6 +170,27 @@ class QAEngineTests(unittest.TestCase):
         )
         self.assertEqual(evidence["source_visible_numbers"], ["30"])
 
+    def test_wrapped_rows_may_repeat_their_row_start_codes(self):
+        # Fuuma's banner: fitting the second row to its window repeats its \>,
+        # which refused every correction that wrapped it.
+        source = "\\>\\ac\\i[322]種付けプレス追加\n\\>\\C[27]解放条件:\\C[0]イベント2を見る。"
+        for live, flagged in (
+            ("\\>\\ac\\i[322]Added\n\\>\\C[27]Unlock:\\C[0]See\n\\>Event 2.", False),
+            ("\\>\\ac\\i[322]Added \\C[27]Unlock:\\C[0]See Event 2.", False),
+            # A row that loses its code, or a code anywhere else, still counts.
+            ("\\>\\ac\\i[322]Added\n\\C[27]Unlock:\\C[0]See Event 2.", True),
+            ("\\>\\ac\\i[322]Added\n\\>\\C[27]Unlock:\\C[0]See\n\\>\\>Event 2.", True),
+            (
+                "\\>\\ac\\i[322]Added\n\\>\\C[27]Unlock:\\C[0]See\n\\>\\i[1]Event 2.",
+                True,
+            ),
+        ):
+            evidence = manifest._mechanical_evidence(source, live, 401)
+            self.assertEqual(
+                "runtime-token-mismatch" in evidence["flags"], flagged, live
+            )
+            self.assertEqual(verify._mechanical(source, live, 401), evidence)
+
     def test_header_check_flags_slips_but_not_the_games_conventions(self):
         game = header_game()
         with tempfile.TemporaryDirectory() as folder:

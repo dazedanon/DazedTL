@@ -799,7 +799,7 @@ leaked scaffolding: re.search(r"(?:^|[}\]])\s*Line\d+\s*:", trans, re.I)
 | `empty-live` | `not live.strip()` |
 | `unchanged-source` | `source == live` byte-for-byte (silently skipped unit) |
 | `source-language-residue` | `[一-龠々〆〤ぁ-ゔァ-ヴー]` anywhere in the live string |
-| `runtime-token-mismatch` | `Counter(src_tokens) != Counter(live_tokens)` |
+| `runtime-token-mismatch` | `Counter(src_tokens) != Counter(live_tokens)`, unless the only change is a row-start code (`\>`, `\px[n]`) repeated on the rows wrapping adds |
 | `missing-center-alignment` | see control-code section |
 | `unsafe-bare-center-code` | see control-code section |
 | `visible-number-mismatch` | ordered list diff, below |

@@ -253,6 +253,41 @@ def _decode_pointer(json_pointer: str) -> list[str]:
     ]
 
 
+# Codes translation repeats at the start of every row of a message, such as
+# instant lines and an indent (see rpgmaker_rewrap._PER_LINE): fitting a row
+# to its window repeats them on each new row.
+_PER_LINE_RE = re.compile(
+    r"^(?:\\+a[clr](?![A-Za-z])|\\+>|\\+px\[\d+\])+ ?", re.IGNORECASE
+)
+
+
+def _row_codes(text: str) -> tuple[list[tuple[str, ...]], Counter]:
+    """*text*'s runtime codes with the ones each row starts with counted once
+    for a run of rows that start with the same ones: the row-start codes of
+    each run in order, and the other codes."""
+    runs: list[tuple[str, ...]] = []
+    others: Counter = Counter()
+    for row in re.split(r"\n|<br>", text):
+        if not row.strip():
+            continue
+        match = _PER_LINE_RE.match(row)
+        start = tuple(_RUNTIME_TOKEN_RE.findall(match.group(0))) if match else ()
+        if not runs or runs[-1] != start:
+            runs.append(start)
+        others.update(_RUNTIME_TOKEN_RE.findall(row[match.end():] if match else row))
+    return runs, others
+
+
+def _runtime_tokens_match(source: str, live: str) -> bool:
+    """Whether *live* keeps *source*'s runtime codes. A row wrapping adds may
+    repeat the codes its row starts with; any other change still counts."""
+    if Counter(_RUNTIME_TOKEN_RE.findall(source)) == Counter(
+        _RUNTIME_TOKEN_RE.findall(live)
+    ):
+        return True
+    return _row_codes(source) == _row_codes(live)
+
+
 def _mechanical(source: str, live: str, code: int | None) -> dict[str, Any]:
     source_tokens = _RUNTIME_TOKEN_RE.findall(source)
     live_tokens = _RUNTIME_TOKEN_RE.findall(live)
@@ -271,7 +306,7 @@ def _mechanical(source: str, live: str, code: int | None) -> dict[str, Any]:
         flags.append("unchanged-source")
     if _JAPANESE_RE.search(live):
         flags.append("source-language-residue")
-    if Counter(source_tokens) != Counter(live_tokens):
+    if not _runtime_tokens_match(source, live):
         flags.append("runtime-token-mismatch")
     live_lines = [line for line in live.splitlines() if line.strip()]
     safe_centered_live = bool(live_lines) and all(
