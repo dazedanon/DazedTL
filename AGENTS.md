@@ -7,6 +7,8 @@
 - Keep changes focused; preserve engine parsing, context, and translation behavior.
 - Land one feature or fix at a time: merge it into `dev` and verify it there before starting the next.
   Run sessions in parallel only for areas that share no files, and never collect several feature branches to merge together at release time.
+- When a change is done, land it yourself with the `dazedtl-land` skill instead of waiting to be asked.
+- Put problems you notice outside the task under New in the bug list (`~/DazedTranslations/DazedTL-bugs.md`) instead of fixing them; the `dazedtl-triage` skill works through it.
 - Match the model and effort to the job: design and hard debugging on the strongest model at high effort; reviews, probes, merges, pushes and mechanical edits on a cheaper model or lower effort.
 - Before fixing a bug, read the git history of the code involved.
   If the same behavior was fixed before, stop and report the root cause with a proposed rework instead of patching it again.
