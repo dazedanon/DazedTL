@@ -6,6 +6,10 @@ __pycache__/
 .env
 .env.*
 *.log
+# The engine keeps logs and caches in log/ under its working directory: the
+# app's backend runs in the workspace and each run in its own folder, so only
+# engine code started from a checkout writes one here.
+log/
 .DS_Store
 .local/
 .runtime/
