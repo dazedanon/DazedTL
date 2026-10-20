@@ -2972,7 +2972,10 @@ BASELINE_FOLDER = "baselines"
 # derived, which may keep lines this one leaves out or lack lines it keeps, is
 # derived again. A baseline holds the game's text as Git had it, which no
 # version reads differently.
-TASK_LEDGER_VERSION = 2
+TASK_LEDGER_VERSION = 3
+# Deep reviews that judge a line's observation for good: the line is right, or
+# no correction can fix it.
+JUDGED_DISPOSITIONS = frozenset({"clean", "not-corrected"})
 
 
 def _pair_key(source: Any, translation: Any) -> str:
@@ -3144,6 +3147,12 @@ def _derive_ledger(
             if review["disposition"] == "clean":
                 reviewed.add(pair)
                 cleared[pair].update(item.get("deep_reasons") or [])
+            # An observation is judged where the reviewer left the line as it
+            # is on purpose; one they corrected is a problem still while the
+            # line keeps that text, as when editorial left the correction
+            # unverified, so the next playtest's report brings it back.
+            if review["disposition"] not in JUDGED_DISPOSITIONS:
+                continue
             observed.update(
                 _sha256(f"{pair}\0{evidence['note']}")[:32]
                 for evidence in item.get("screen_evidence") or []

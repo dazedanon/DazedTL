@@ -242,6 +242,18 @@ aside = first.rename(first.with_name(first.name + "-unreadable"))
 assert len(targets(prepare())) == 7
 shutil.rmtree(first)
 aside.rename(first)
+# Deep review judged the playtest's first line right as it is, and corrected
+# the second: until that correction is in the game, a new task takes the
+# second line's observation again. On Fuuma, editorial left two corrected
+# descriptions unverified, and the next round left them out as judged.
+earlier = qa._earlier_reviews(
+    storage / qa._slug(game.name),
+    json.loads((first / "context.json").read_text(encoding="utf-8")),
+    json.loads((first / "task.json").read_text(encoding="utf-8"))["layout"],
+)
+assert [
+    earlier.observed(source, text, found[0]["note"]) for source, text in LINES[:2]
+] == [True, False]
 
 # The correction is applied as the app applies it, its rows spread over the
 # message's commands, and the glossary entries for 剣 and ミナ gain notes:
