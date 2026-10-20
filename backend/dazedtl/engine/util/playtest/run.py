@@ -322,7 +322,7 @@ def merge(static: dict[str, Any], runtime: dict[str, Any], data_prefix: str) -> 
         target = next(
             (
                 problem for problem in problems
-                if identity and problem.get("identity", "").startswith(identity)
+                if identity and _within(problem.get("identity", ""), identity)
                 or problem["check"] in {"visible-text", "placeholder-glyph"}
                 and problem.get("text") and problem["text"] in event["text"]
             ),

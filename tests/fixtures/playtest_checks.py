@@ -394,6 +394,21 @@ assert (comment["check"], comment["fix"]) == ("untranslated-comment", "translate
     comment
 )
 help_rows = problems[("help-rows", "data/Items.json", "/1/description")]
+# A line seen at list/9 is not the one at list/92.
+apart = merge(
+    {"gaps": [], "problems": [{**comment, "identity": comment["identity"] + "2"}]},
+    {
+        "japanese": [
+            {
+                **seen,
+                "text": "別の行",
+                "data": {"file": "Map001.json", "pointer": "/events/1/pages/0/list/9"},
+            }
+        ]
+    },
+    "data",
+)
+assert len(apart["problems"]) == 2, apart["problems"]
 assert help_rows["seen"] == seen, help_rows
 # A description's line count counts only where the tour saw it run past the
 # bottom of its window: one the tour showed otherwise fits, though a line of
