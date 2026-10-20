@@ -353,4 +353,22 @@ test("the playtest names the event command whose text a window draws", async () 
     "所要時間:20分": help,
     推奨: help,
   });
+  // A placeholder glyph in the choice's help, then the same glyph in the
+  // message's own line: two lines to fix, so two records.
+  list[5].parameters[0] = "\\>所要時間:20分◯";
+  texts = list.slice(5).map((command) => String(command.parameters[0]));
+  message.startMessage();
+  message.contents.drawText("◯");
+  await playtest.look();
+  list[1].parameters[0] = "Pick one. ◯";
+  texts = ["Pick one. ◯"];
+  message.startMessage();
+  message.contents.drawText("◯");
+  await playtest.look();
+  assert.deepEqual(
+    sent
+      .filter((event) => event.type === "japanese" && event.value.glyph)
+      .map((event) => event.value.data?.pointer),
+    [`/events/1/pages/0/list/5`, `/events/1/pages/0/list/1`],
+  );
 });
