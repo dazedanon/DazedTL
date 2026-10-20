@@ -3411,6 +3411,22 @@ class _Reviewed:
         key = _sha256(f"{_pair_key(source, translation)}\0{note}")[:32]
         return any(key in sets["observed"] for _ledger, sets in self._standing(str(source)))
 
+    def decisions(self) -> list[dict[str, Any]]:
+        """The decisions earlier tasks recorded that still stand, the latest
+        one per key: one no longer counts once a glossary entry or quirk for
+        Japanese it names changed since, as its reviews would not."""
+        latest: dict[str, dict[str, Any]] = {}
+        for ledger, _sets, changed in self.ledgers:
+            for entry in ledger.get("decisions") or []:
+                named = f"{entry.get('source') or ''}\n{entry['choice']}"
+                if changed is not None and changed.search(named):
+                    continue
+                if str(entry["at"]) >= str((latest.get(entry["key"]) or {}).get("at") or ""):
+                    latest[entry["key"]] = {
+                        **entry, "from": entry.get("from") or ledger["origin"],
+                    }
+        return sorted(latest.values(), key=lambda entry: entry["key"])
+
 
 # A task's folder is named by its key; the app sets aside a task it can't
 # trust under another name, and a task being prepared has a staging name.
@@ -3480,9 +3496,10 @@ def _earlier_reviews(
     origins: set[str] | None = None,
 ) -> _Reviewed:
     """The reviews a new task builds on: every complete task of this game and
-    every baseline the user named, or only those *origins* names."""
+    every baseline the user named, or only those *origins* names, each task's
+    with the decisions its reviewers recorded."""
     ledgers = [
-        ledger
+        {**ledger, "decisions": _decisions(task.parent)}
         for task in sorted(games.glob("*/*/task.json"))
         if _TASK_FOLDER_RE.fullmatch(task.parent.name)
         and (origins is None or f"task {task.parent.name}" in origins)
@@ -3695,8 +3712,15 @@ def prepare_task(
                         forced_candidates, clusters[flag["identity"]],
                         ["show-text-header"], [flag["identity"]],
                     )
+            # Choices earlier QA of this game settled stay settled: reviewers
+            # follow them, and no glossary fix undoes a decided rendering.
+            if carried := reviewed.decisions():
+                _atomic_write_json(
+                    staging / DECISIONS_FILE,
+                    {"schema": DECISIONS_SCHEMA, "decisions": carried},
+                )
             lint_items, lint_fixes = _lint_items(
-                manifest, layout, _game(manifest, context), reviewed
+                manifest, layout, _lint_game(staging, manifest), reviewed
             )
             items, screen_index = _screen_items(
                 manifest, context, data, lint_fixes, reviewed
@@ -8946,9 +8970,14 @@ def _follow_up(root: Path, checkpoint: dict[str, Any]) -> bool:
     return True
 
 
+DECISIONS_FILE = "decisions.json"
+DECISIONS_SCHEMA = "rpgmaker-qa-decisions-v1"
+
+
 def _decisions(root: Path) -> list[dict[str, Any]]:
-    """The decision log's current entries, the latest one per key."""
-    path = root / "decisions.json"
+    """The decision log's current entries, the latest one per key, those
+    carried from earlier tasks included."""
+    path = root / DECISIONS_FILE
     if not path.is_file():
         return []
     latest: dict[str, dict[str, Any]] = {}
@@ -8975,10 +9004,10 @@ def record_decision(
         raise ValueError("A checked decision needs both its source and translation")
     with _task_lock(root):
         _load_task(root)
-        path = root / "decisions.json"
+        path = root / DECISIONS_FILE
         document = (
             _read_json(path) if path.is_file()
-            else {"schema": "rpgmaker-qa-decisions-v1", "decisions": []}
+            else {"schema": DECISIONS_SCHEMA, "decisions": []}
         )
         document["decisions"].append({
             "key": key,
