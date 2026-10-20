@@ -42,7 +42,9 @@
   [Checks](docs/development.md#checks) lists what each covers, focused test commands, and the formatter.
 - Run the [live test](docs/development.md#live-test) for changes to setup, launching, updates, file or process handling, or other platform-specific behavior; CI runs it on Windows and Linux.
 - Test every new feature end to end on Linux, as a user would, before reporting it done.
-  Run it on a real Windows install or VM too when it touches files, paths, processes, setup, launching, updates or other platform-specific behavior; otherwise CI's Windows checks are enough, and report the feature as tested on Linux only.
+- Windows CI on the branch must pass before landing: push the branch to GitHub and wait for every job, as the `dazedtl-land` skill does.
+  To reproduce a Windows problem, use the [Windows run](docs/development.md#live-test) workflow first.
+  Keep the Windows VM for what CI cannot show: a fresh Windows without the Visual C++ runtime or Git, Defender behavior, real games that need Windows to run, and one real-game run per release.
 - Reproduce bugs and test features end to end from a [test scenario](docs/development.md#test-scenarios).
   When none fits, add a scenario, game variant or stand-in mode there instead of building a private kit of games, profiles, providers or drivers.
 - UI changes require visual review of affected layouts against the [responsive layout guidance](docs/architecture.md#workflow-and-shared-presentation). Check resizing and reflow where relevant. Exercise long labels/paths and idle, pending, success, and error states; check alignment, text-to-action gaps, clipping, overflow, and redundant status text. Report unverified states.

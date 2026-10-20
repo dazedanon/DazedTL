@@ -1,0 +1,23 @@
+# Installs the pinned Node and runs scripts/setup.mjs, starting from the
+# install an earlier run left for the same runner system. Setup repeats only
+# the steps whose pinned versions or locks changed since, so a restored older
+# install is brought up to date rather than trusted.
+name: Set up DazedTL
+description: The pinned Node, then node scripts/setup.mjs on a cached install.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v7
+      with:
+        node-version-file: .node-version
+    - uses: actions/cache@v6
+      with:
+        path: |
+          .runtime
+          !.runtime/checkouts
+          .venv
+          app/node_modules
+        key: setup-${{ runner.os }}-${{ hashFiles('.node-version', '.python-version', '.mingit-version', 'scripts/runtimes.lock', 'backend/requirements*.lock', 'app/package-lock.json') }}
+        restore-keys: setup-${{ runner.os }}-
+    - run: node scripts/setup.mjs
+      shell: bash
