@@ -152,8 +152,8 @@ def _prepared(plan):
         raise ValueError(
             "The immutable QA task evidence changed. Prepare current QA before using these reports."
         )
-    # A task from before an update still shows what it found and applied,
-    # though only a task prepared with the current rules can continue.
+    # A task from before an update still shows what it found and applies it;
+    # only one in review under an older rules version stops.
     root, task, checkpoint = qa._read_task(task_path)
     if (
         task["game_root"] != plan["project"]["source"]
