@@ -534,9 +534,12 @@ class TranslationTests(unittest.TestCase):
                 command(
                     401, ["Yes...\n[Not translated: sexual content]"], "はい…\n続き"
                 ),
-                # A scrolling message's later lines are ones the engine added.
+                # A message keeps every row its translation was laid over.
+                command(401, ["(Not translated)"], "一行目\n二行目\n三行目"),
+                command(401, ["second line"]),
                 command(405, ["(Line left untranslated)"], "一行目\n二行目"),
                 command(405, ["second line"]),
+                command(405, ["third line"]),
                 command(102, [["Go", "[Omitted]"], -1, 0, 1, 0], ["行く", "えっち"]),
                 # The source explains this note, so it is a translation.
                 command(102, [["(Omitted)"], -1, 0, 1, 0], ["（中略）"]),
@@ -546,7 +549,7 @@ class TranslationTests(unittest.TestCase):
             ],
         )
         original = game("ちん嗅ぎ", [])
-        self.assertEqual(restore(saved, lambda: original), 6)
+        self.assertEqual(restore(saved, lambda: original), 7)
         self.assertEqual(
             saved,
             game(
@@ -554,7 +557,11 @@ class TranslationTests(unittest.TestCase):
                 [
                     command(101, ["", 0, 0, 2, "小町"], "小町"),
                     command(401, ["はい…\n続き"], "はい…\n続き"),
-                    command(405, ["一行目\n二行目"], "一行目\n二行目"),
+                    command(401, ["一行目"], "一行目\n二行目\n三行目"),
+                    command(401, ["二行目\n三行目"]),
+                    command(405, ["一行目"], "一行目\n二行目"),
+                    command(405, ["二行目"]),
+                    command(405, [""]),
                     command(102, [["Go", "えっち"], -1, 0, 1, 0], ["行く", "えっち"]),
                     command(102, [["(Omitted)"], -1, 0, 1, 0], ["（中略）"]),
                     command(122, [1, 1, 0, 4, '"名前"'], "名前"),

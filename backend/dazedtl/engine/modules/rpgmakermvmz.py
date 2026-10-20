@@ -1068,6 +1068,17 @@ def _group_source(codeList, start: int, end: int) -> str:
     return "\n".join(parts)
 
 
+def _message_entry(text: str, speaker: str) -> str | None:
+    """The line pass 1 sends for a message's text and speaker, or None for
+    none; pass 2 reads a reply that is this line as untranslated."""
+    if FIXTEXTWRAP:
+        text = text.replace("\n", " ")
+    text = text.replace("\\px[200]", "")
+    if not text:
+        return None
+    return f"[{speaker}]: {text}" if speaker else text
+
+
 def _group_raw_source(codeList, group_start: int, source_parts: list[str]) -> str:
     """Batch source for merged 401/405; anchor _original wins on re-run."""
     if group_start < len(codeList):
@@ -4092,9 +4103,6 @@ def _searchCodes(page, pbar, jobList, filename):
                 # Join Up 401's into single string
                 if len(codeList) > i + 1:
                     while codeList[i + 1]["code"] in [401, 405, -1] and len(codeList[i]["parameters"]) > 0 and len(codeList[i + 1]["parameters"]) > 0 and not re.match(r"^(\s*[\\]+[aAbBdDeEfFgGhHjJlLmMoOpPqQrRsStTuUwWxXyYzZ]+\[[\w\d\[\]\\]+\])", codeList[i+1]["parameters"][0]) and (not SPEAKER_CONTEXT or _scalar_original(codeList[i + 1]) is None):
-                        if not setData:
-                            codeList[i]["parameters"] = []
-                            codeList[i]["code"] = -1
                         i += 1
                         j = i
 
@@ -4133,10 +4141,6 @@ def _searchCodes(page, pbar, jobList, filename):
                     centerLineFlag = bool(
                         re.search(r"\\ac", finalJAString, re.IGNORECASE)
                     )
-
-                    # Set Back
-                    if not setData:
-                        codeList[i]["parameters"] = [finalJAString]
 
                     ### \\n<Speaker>
                     regex = r"([\\]+[kKnN][wWcCrRrEe]?[\[<](?:[\\]*\w\[\d+\])?(.*?)(?:[\\]*\w\[\d+\])?[>])"
@@ -4212,30 +4216,15 @@ def _searchCodes(page, pbar, jobList, filename):
                     # Check if Empty
                     if finalJAString == "":
                         if nametag and match:
-                            codeList[j]["parameters"][0] = codeList[j]["parameters"][0].replace(match.group(2), tledSpeaker)
-                            _apply_original(codeList[j], oldjaString)
+                            codeList[groupStart]["parameters"][0] = codeList[groupStart]["parameters"][0].replace(match.group(2), tledSpeaker)
+                            _apply_original(codeList[groupStart], oldjaString)
                         i += 1
                         continue
 
                     # Pass 1 (Grabbing Data)
                     if setData:
-                        # Remove Textwrap
-                        if FIXTEXTWRAP:
-                            finalJAString = finalJAString.replace("\n", " ")
-                        if "\\px[200]" in finalJAString:
-                            finalJAString = finalJAString.replace("\\px[200]", "")
-
                         # Append
-                        if finalJAString != "":
-                            if speaker == "" and finalJAString != "":
-                                list401.append(finalJAString)
-                                historyEntry = finalJAString
-                            elif finalJAString != "":
-                                list401.append(f"[{speaker}]: {finalJAString}")
-                                historyEntry = f"[{speaker}]: {finalJAString}"
-                            else:
-                                list401.append(speaker)
-                                historyEntry = speaker
+                        historyEntry = _message_entry(finalJAString, speaker)
                         speaker = ""
                         match = []
                         nametag = ""
@@ -4244,15 +4233,31 @@ def _searchCodes(page, pbar, jobList, filename):
                         currentSourceGroup = []
                         syncIndex = i + 1
 
-                        # Keep textHistory list at length maxHistory
-                        textHistory.append('"' + historyEntry + '"')
-                        if len(textHistory) > maxHistory:
-                            textHistory.pop(0)
+                        if historyEntry is not None:
+                            list401.append(historyEntry)
+                            # Keep textHistory list at length maxHistory
+                            textHistory.append('"' + historyEntry + '"')
+                            if len(textHistory) > maxHistory:
+                                textHistory.pop(0)
 
                     # Pass 2 (Setting Data)
                     else:
                         # Grab Translated String
-                        if len(list401) > 0:
+                        sent = _message_entry(finalJAString, speaker)
+                        if sent is None:
+                            # Pass 1 sent nothing, so no reply is this text's.
+                            speaker = ""
+                            nametag = ""
+                        elif len(list401) > 0 and rpgmaker_blocks.untranslated(list401[0], sent):
+                            # Its rows stay as the game has them.
+                            syncIndex = i + 1
+                            reduceWidthFlag = False
+                            speaker = ""
+                            match = []
+                            nametag = ""
+                            endtag = ""
+                            list401.pop(0)
+                        elif len(list401) > 0:
                             rawSource = _group_raw_source(codeList, groupStart, sourceGroup)
                             translatedText = list401[0]
 
@@ -4328,33 +4333,34 @@ def _searchCodes(page, pbar, jobList, filename):
                                 endtag = ""
 
                             # Set Code
-                            codeList[j]["code"] = code
+                            codeList[groupStart]["code"] = code
 
                             # Handle 405
-                            if codeList[j]["code"] == 405:
+                            if code == 405:
                                 # 1. Split translatedText by newlines
                                 lines = [line for line in translatedText.split('\n') if line.strip() != ""]
-                                
-                                # 2. Set the first string to codeList[j]["parameters"]
-                                codeList[j]["parameters"] = [lines[0]]
-                                
+
+                                # 2. The first string replaces the rows
+                                rpgmaker_blocks.write_text(
+                                    codeList, tuple(range(groupStart, i + 1)), lines[0]
+                                )
+
                                 # 3. Make copies for each additional line and insert them
                                 for idx, line in enumerate(lines[1:]):
-                                    new_item = copy.deepcopy(codeList[j])
+                                    new_item = copy.deepcopy(codeList[groupStart])
                                     new_item.pop("_original", None)
                                     new_item["parameters"] = [line]
-                                    codeList.insert(j + idx + 1, new_item)
-                                
-                                # 4. Update syncIndex to the last modified/added position
-                                syncIndex = j + len(lines)
+                                    codeList.insert(groupStart + idx + 1, new_item)
+                                i += len(lines) - 1
 
                             # Handle 401
                             else:
-                                codeList[j]["parameters"] = [translatedText]
-                                codeList[j]["code"] = code
-                                syncIndex = i + 1
+                                rpgmaker_blocks.write_text(
+                                    codeList, tuple(range(groupStart, i + 1)), translatedText
+                                )
+                            syncIndex = i + 1
 
-                            _apply_original(codeList[j], rawSource)
+                            _apply_original(codeList[groupStart], rawSource)
 
                             # Reset
                             speaker = ""

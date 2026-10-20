@@ -1,8 +1,9 @@
 # Runs the build checks, behavior tests and previous-release QA check, then
 # installs DazedTL the way a downloaded ZIP is installed and drives it through
-# a translation, on Windows and Linux, and updates the previous release's
-# translated project to this commit. See "Checks", "Previous-release QA
-# check" and "Live test" in docs/development.md.
+# a translation, on Windows and Linux, updates the previous release's
+# translated project to this commit and builds every test scenario. See
+# "Checks", "Previous-release QA check", "Live test" and "Test scenarios" in
+# docs/development.md.
 name: CI
 
 on:
@@ -36,10 +37,7 @@ jobs:
       # Downloaded ZIPs hold the committed line endings.
       - run: git config --global core.autocrlf false
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .node-version
-      - run: node scripts/setup.mjs
+      - uses: ./.github/actions/setup
       - run: node scripts/build.mjs
       - run: node scripts/test.mjs
         env:
@@ -61,10 +59,7 @@ jobs:
         with:
           # The release tags, whose code makes the QA tasks this continues.
           fetch-depth: 0
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .node-version
-      - run: node scripts/setup.mjs
+      - uses: ./.github/actions/setup
       - run: node scripts/qa-upgrade.mjs
 
   live:
@@ -132,4 +127,53 @@ jobs:
           path: |
             ${{ runner.temp }}/upgrade/logs
             ${{ runner.temp }}/upgrade/previous/logs
+          if-no-files-found: ignore
+
+  scenarios:
+    name: Scenarios ${{ matrix.scenarios }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, ubuntu-24.04]
+        # Groups of about the same length, so the jobs end together.
+        scenarios:
+          - playtested
+          - fresh opened set-up translated qa-done
+          - assistant-led batch-waiting upgraded
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v7
+        with:
+          # The previous release, which builds the upgraded scenario.
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
+      # Ubuntu restricts the browser sandbox to apps with an AppArmor profile,
+      # which START offers to add for an install; scenarios run the checkout.
+      - if: runner.os == 'Linux'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Scenarios
+        shell: bash
+        env:
+          SCENARIOS: ${{ matrix.scenarios }}
+        run: |
+          # On Linux the app needs a display; on Windows it opens on the
+          # runner's desktop.
+          screen() {
+            if [ "$RUNNER_OS" = Linux ]; then
+              xvfb-run --auto-servernum --server-args="-screen 0 1600x1000x24" "$@"
+            else "$@"; fi
+          }
+          failed=""
+          for scenario in $SCENARIOS; do
+            screen node scripts/scenario.mjs "$scenario" \
+              --work "$RUNNER_TEMP/scenarios/$scenario" || failed="$failed $scenario"
+          done
+          if [ -n "$failed" ]; then echo "Failed:$failed"; exit 1; fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: scenarios-${{ matrix.os }}-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/scenarios/*/logs
           if-no-files-found: ignore
