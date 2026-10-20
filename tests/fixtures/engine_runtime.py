@@ -629,6 +629,12 @@ try:
         assert notes[1]["description"] == "・Light blade ・Easy\nto swing in a fight", (
             notes
         )
+        # Flowed, its items still start a line where the rows allow it; the
+        # even lines broke inside the first item and ran the next one on.
+        from util.rpgmaker_rewrap import wrap_lines
+
+        flowed = wrap_lines("Effect:\n・Attack up by a lot\n・Defense up", 30, 2)
+        assert flowed == "Effect: ・Attack up by a lot\n・Defense up", flowed
         assert [row["pointer"] for row in report.misfits] == ["/2/description"], (
             report.misfits
         )

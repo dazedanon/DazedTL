@@ -152,9 +152,18 @@ def wrapLines(text: str, width: int, rows: int | None = None, measure=None) -> s
     if rows is None or kept.count("\n") < rows:
         return kept
     # A row past the window's last is cut off in game, so text that needs
-    # more rows than the window shows flows together, a list's items too:
-    # its items still start a line where they can.
-    flowed = wrapShaped(text.replace("\n", " "), width, measure=measure)
+    # more rows than the window shows flows together, a list's items too.
+    # Its items and sentences still start a line where the rows allow it,
+    # on as few lines as that takes; otherwise the lines run even.
+    words = text.split()
+    sizes = [measure(word) for word in words]
+    flowed = None
+    for count in range(_rows_needed(sizes, width), rows + 1):
+        lines = _sentence_lines(words, sizes, width, count, False)
+        if lines:
+            flowed = "\n".join(lines)
+            break
+    flowed = flowed or wrapShaped(text.replace("\n", " "), width, measure=measure)
     return flowed if flowed.count("\n") < kept.count("\n") else kept
 
 
