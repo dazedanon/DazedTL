@@ -513,7 +513,12 @@ def run_ace(plan, log):
         # JSON just converted from Data holds what Data does, so the game's
         # data starts out current without packing it.
         native = {**plan["project"], "data": str(exports)}
-        _save_receipt(native, plan["folder"], actions.packed_files(root))
+        try:
+            _save_receipt(native, plan["folder"], actions.packed_files(root))
+        except ValueError as error:
+            # A data file the game lacks has JSON but nothing to pack into;
+            # without a receipt, writes pack only what they touch.
+            log("No packing receipt was saved: " + str(error))
     return {"completed": action}
 
 
