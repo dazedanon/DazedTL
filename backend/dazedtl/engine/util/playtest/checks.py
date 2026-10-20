@@ -29,6 +29,7 @@ from util.rpgmaker_qa_preflight import (
     visible_texts,
 )
 from util.rpgmaker_qa_reach import Reach
+from util.runtime_text import without_control_codes
 
 SCHEMA = "rpgmaker-playtest-static-v1"
 TEXT_LIMIT = 160
@@ -166,10 +167,13 @@ class _Checks:
                 if not isinstance(value, str) or not translated:
                     continue
                 location = pointer(parts)
-                if japanese(value):
+                # A code's argument, such as the font of \fn[和風], is not
+                # drawn; a name window's <名前> is.
+                shown = without_control_codes(value)
+                if japanese(shown):
                     note = "Japanese is left in this translated text."
                     check = "visible-text"
-                elif _PLACEHOLDER_RE.search(value):
+                elif _PLACEHOLDER_RE.search(shown):
                     note = (
                         "A Japanese placeholder glyph is left in this English text; "
                         "English readers take it for a missing character."

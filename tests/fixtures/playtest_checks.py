@@ -170,6 +170,8 @@ write(
                             line("\\N[1]、よく来た！", "Welcome!"),
                             line("今日は晴れだ", "Today is 晴れ."),
                             line("◯日目", "Day ◯"),
+                            # A font name is no text the player reads.
+                            line("\\fn[和風]晴れの日", "\\fn[和風]A sunny day."),
                             {
                                 "code": 401,
                                 "indent": 0,

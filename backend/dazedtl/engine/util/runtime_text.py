@@ -48,6 +48,12 @@ def extract_control_codes(text):
     return _CONTROL_CODE_RE.findall(text)
 
 
+def without_control_codes(text):
+    """Return text without its runtime control tokens and their arguments,
+    such as a font name in ``\\fn[和風]``, which translation leaves alone."""
+    return _CONTROL_CODE_RE.sub("", str(text))
+
+
 def _mask_mapped_control_codes(text, replacements):
     """Mask restored placeholder codes regardless of their translated order."""
     masked = str(text)
