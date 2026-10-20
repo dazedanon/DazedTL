@@ -439,6 +439,22 @@ assert (
     b"        " + fixes.LOADER.encode() + b"\n        PluginManager"
     in fixes.with_loader(mz)
 )
+# The game still runs older fixes after the working copy changed or was
+# emptied, which writes nothing into it.
+from dazedtl.compatibility.playtest import fixes_state
+
+fixed = temporary / "fixed"
+(fixed / "js/plugins").mkdir(parents=True)
+(fixed / "js/main.js").write_bytes(fixes.with_loader(mz))
+write(fixed / fixes.PLUGIN, "// An older fix\n")
+# The working copy starts as the game's.
+assert fixes_state(temporary, fixed, fixed) == {
+    "file": str(fixed / ".dazedtl/playtest/DazedTL_Fixes.js"),
+    "in_game": True,
+}
+(fixed / ".dazedtl/playtest/DazedTL_Fixes.js").write_text("", encoding="utf-8")
+state = fixes_state(temporary, fixed, fixed)
+assert not state["in_game"] and state["other_in_game"], state
 for broken in (b"run();\n", mz + mz):
     try:
         fixes.with_loader(broken)

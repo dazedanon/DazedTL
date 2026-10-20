@@ -43,7 +43,8 @@ def game_fixes(playtest, kept):
         f"`{playtest} --fix --wait 20`: DazedTL plays the game with the plugin in "
         "place and writes it into the game only when nothing new breaks and "
         "something the last playtest found is gone; otherwise it says why and "
-        "writes nothing, so revise and run it again. That play becomes the latest "
+        "writes nothing, so revise and run it again. Editing or emptying the "
+        "working copy alone changes nothing in the game. That play becomes the latest "
         f"report, and {kept} Fix crashes the translation causes; one the original "
         "game's own code causes stays as it is, in your report."
     )
@@ -347,6 +348,20 @@ class Playtest:
             following = (
                 "The fixes are in the game but in no checkpoint; save them with "
                 "playtest --checkpoint."
+            )
+        elif fixes.get("other_in_game"):
+            following = (
+                "The game runs other fixes than the working copy fixes.file names, "
+                "such as an older copy; changing or emptying the working copy alone "
+                "changes nothing in the game. To put the working copy in, run "
+                "playtest --fix. To take the game's fixes out, "
+                + (
+                    "remove the fixes plugin and its loading line in js/main.js "
+                    "from the game and save a checkpoint."
+                    if assistant
+                    else "the user restores their batch, Apply playtest fixes, in "
+                    "the project's History; say so in your report."
+                )
             )
         elif not state.get("report"):
             following = "Run playtest --run."

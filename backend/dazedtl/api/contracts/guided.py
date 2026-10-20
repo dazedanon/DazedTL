@@ -628,6 +628,12 @@ class PlaytestFixes(TypedDict):
     in_game: Annotated[
         bool, "The game has the working copy as it is, and its main.js loads it."
     ]
+    other_in_game: NotRequired[
+        Annotated[
+            bool,
+            "The game's main.js loads fixes other than the working copy, such as an older copy.",
+        ]
+    ]
     check: NotRequired[PlaytestFixCheck]
     saved: NotRequired[
         Annotated[
