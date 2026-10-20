@@ -2432,9 +2432,13 @@ def _bundle_deep(items: list[dict], first: int = 1) -> list[dict]:
             motif for motif in motifs if motif["id"] not in seen
         ]
         extra = len(_canonical_bytes(item)) + len(_canonical_bytes(new))
+        # An item whose scene the bundle prints already stays with it, since
+        # another bundle would print that scene again: on Fuuma Chronicle,
+        # two items of one 1,117-line scene printed it twice.
+        shared = any(scene["scene_id"] in seen for scene in scenes)
         if current and (
             len(current) >= DEFAULT_DEEP_ITEM_LIMIT
-            or size + extra > DEFAULT_DEEP_CHAR_BUDGET
+            or not shared and size + extra > DEFAULT_DEEP_CHAR_BUDGET
         ):
             groups.append(current)
             current, size, seen = [], 0, set()

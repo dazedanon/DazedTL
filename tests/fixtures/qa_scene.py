@@ -359,4 +359,29 @@ assert (
     == [original["parameters"][0] for original in (DOOR, INSIDE, ROOM)]
 )
 assert text(4, INSIDE) == "She steps inside."
+
+# Items of a scene larger than a deep bundle share the bundle that prints
+# it, instead of one bundle each printing the scene again.
+long_scene = {
+    "scene_id": "Map002.json#/events/1/pages/0/list",
+    "lines": [
+        {
+            "id": f"line-{n}",
+            "source": "扉が開く" * 10,
+            "translation": "The door opens. " * 6,
+        }
+        for n in range(qa.DEFAULT_DEEP_CHAR_BUDGET // 100)
+    ],
+}
+deep_items = [
+    {
+        "id": name,
+        "ordinal": ordinal,
+        "screen_scene_contexts": [long_scene],
+        "locators": [{"identity": name, "live_pointers": ["/"]}],
+    }
+    for ordinal, name in enumerate(("first", "second"), start=1)
+]
+(only,) = qa._bundle_deep(deep_items)
+assert [item["id"] for item in only["items"]] == ["first", "second"], only["items"]
 print("ok")
