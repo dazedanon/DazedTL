@@ -105,6 +105,7 @@ function game(globals: Record<string, unknown> = {}) {
   }
   class Window_Message extends Window_Base {
     startMessage() {}
+    newPage(_state: object) {}
   }
   class Window_ChoiceList extends Window_Selectable {
     start() {}
@@ -115,13 +116,21 @@ function game(globals: Record<string, unknown> = {}) {
   const help = new Window_Help();
   const hidden = new Window_Help();
   const action = new Window_ActView();
+  const message = new Window_Message();
   const shown = new Sprite(help.contents);
   const unseen = new Sprite(hidden.contents);
   unseen.worldVisible = false;
   const scene = Object.assign(new Sprite(), {
     constructor: { name: "Scene_Item" },
-    children: [shown, unseen, new Sprite(action.contents)],
+    children: [
+      shown,
+      unseen,
+      new Sprite(action.contents),
+      new Sprite(message.contents),
+    ],
   });
+  // A choice open with help (MPP_ChoiceEX), which the message window shows.
+  const $gameMessage = { isBusy: () => false, isChoiceHelp: () => true };
   // What the page sends the main process, as plain data the way IPC copies
   // it; a plan without stops leaves only the hooks running.
   const sent: { type: string; value: Record<string, unknown> }[] = [];
@@ -142,6 +151,7 @@ function game(globals: Record<string, unknown> = {}) {
     Window_Message,
     Window_ChoiceList,
     Window_BattleLog,
+    $gameMessage,
     Spriteset_Battle: class {},
     SceneManager: {
       _scene: scene,
@@ -185,6 +195,7 @@ function game(globals: Record<string, unknown> = {}) {
     help,
     hidden,
     action,
+    message,
     show,
     Window_Base,
     Window_Message,
@@ -193,7 +204,7 @@ function game(globals: Record<string, unknown> = {}) {
 }
 
 test("the playtest records text that runs past a window players see", async () => {
-  const { playtest, sent, help, hidden, action, Window_Base } = game();
+  const { playtest, sent, help, hidden, action, message, Window_Base } = game();
   // A three-line description in a two-line help window, attributed to its
   // database entry, and a sentence too wide for it.
   help.setItem({
@@ -214,6 +225,11 @@ test("the playtest records text that runs past a window players see", async () =
   measure.drawTextEx("One\nTwo\nThree", 0, 72);
   // Glyphs that fit a window sized to them, and the empty line after them.
   action.drawTextEx("Attack\n", 0, 0);
+  // A choice's help starts its first page, then needs another: its first
+  // rows are gone before the player reads them.
+  const helpText = "Row one\nRow two\nRow three";
+  message.newPage({ index: 0, x: 0, y: 0, height: 36, text: helpText });
+  message.newPage({ index: 16, x: 0, y: 72, height: 36, text: helpText });
   await playtest.look();
   const events = (type: string) =>
     sent.filter((event) => event.type === type).map((event) => event.value);
@@ -231,6 +247,7 @@ test("the playtest records text that runs past a window players see", async () =
       ],
       ["right", null, "001-overflow"],
       ["right", null, "001-overflow"],
+      ["bottom", null, "001-overflow"],
     ],
   );
   // Which entries a help window showed, for the static line count; routine,

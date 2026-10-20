@@ -711,6 +711,20 @@ def verify_manifest(data_root: str | Path, manifest: dict[str, Any]) -> dict[str
                     raise ValueError("choice context mismatch")
             elif "choice_context" in record:
                 raise ValueError("unexpected choice context")
+            if code == 408:
+                from util.rpgmaker_rewrap import choice_help_branch, choice_help_face
+
+                command_index = int(owner_parts[-1])
+                command_list = _resolve(document, _pointer(tuple(owner_parts[:-1])))
+                expected_help = (
+                    {"face": choice_help_face(command_list, command_index)}
+                    if choice_help_branch(command_list, command_index) is not None
+                    else None
+                )
+                if record.get("choice_help") != expected_help:
+                    raise ValueError("choice help facet mismatch")
+            elif "choice_help" in record:
+                raise ValueError("unexpected choice help facet")
             if code in DIALOGUE:
                 speaker = _speaker_from_document(document, record["source_pointer"], code)
                 if speaker != record.get("speaker"):

@@ -57,8 +57,12 @@
     help: null,
     item: null,
     message: null,
+    // The choice list window on screen.
     choices: null,
     messages: 0,
+    // Choice lists shown, and the last one whose help the tour showed.
+    choiceLists: 0,
+    helped: 0,
     pending: [],
     backdrop: null,
     // Game updates a frame: the tour plays text and battles faster.
@@ -712,7 +716,20 @@
     before(Window_ChoiceList.prototype, "start", function () {
       state.choices = this;
     });
+    // A choice's help (MPP_ChoiceEX) shows in the message window, which
+    // starts a new page when the help needs more rows than it shows: the
+    // rows before it are gone before the player reads them.
+    before(Window_Message.prototype, "newPage", function ([textState]) {
+      if (
+        textState &&
+        textState.index > 0 &&
+        $gameMessage.isChoiceHelp &&
+        $gameMessage.isChoiceHelp()
+      )
+        overflow(this, textState, "bottom");
+    });
     after(Window_ChoiceList.prototype, "start", () => {
+      state.choiceLists++;
       if (state.stop !== "resume")
         send("choice", where({ choices: $gameMessage.choices().map(clip) }));
     });
@@ -1061,6 +1078,31 @@
     }
   }
 
+  /** Rests on each choice of a list that shows help (MPP_ChoiceEX) until
+   * its help has drawn, once a list, so the help is seen and its fit checked:
+   * picking a choice at once shows none. */
+  async function showHelp(list) {
+    if (
+      state.helped === state.choiceLists ||
+      !$gameMessage.isChoiceHelp ||
+      !$gameMessage.isChoiceHelp()
+    )
+      return;
+    state.helped = state.choiceLists;
+    const box = scene()._messageWindow;
+    for (let index = 0; index < list.maxItems(); index++) {
+      list.select(index);
+      // Drawn once it ends, or stays where it is, as at a pause.
+      for (let wait = 0, still = 0, at = -1; wait < 120 && still < 10; wait++) {
+        await frames(1);
+        const now = box && box._textState ? box._textState.index : -1;
+        still = now === at ? still + 1 : 0;
+        at = now;
+      }
+      await flush();
+    }
+  }
+
   function play(seconds, quiet = 60) {
     return fast(() => playing(seconds, quiet));
   }
@@ -1093,7 +1135,10 @@
         const list = activeWindows().find((window_) =>
           /Choice/.test(window_.constructor.name),
         );
-        if (list) list.select(0);
+        if (list) {
+          await showHelp(list);
+          list.select(0);
+        }
         await press("ok");
       } else if (
         name === "Scene_Map" &&

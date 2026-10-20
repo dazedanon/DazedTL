@@ -3711,6 +3711,33 @@ class GuidedTests(unittest.TestCase):
         self.assertEqual(self.native["manual_job"], "existing-run")
         self.assertEqual(self.native["selected"], [])
 
+    def test_comment_text_turns_on_once_for_plugin_shown_comments(self):
+        # MPP_ChoiceEX shows the comment lines under a marker its settings
+        # list as each choice's help. A project's next look turns Comment
+        # text on; turned off afterwards, it stays off.
+        plugin = {
+            "name": "MPP_ChoiceEX",
+            "status": True,
+            "parameters": {"Choice Help Commands": '["ChoiceHelp"]'},
+        }
+        plugins = self.source / "js/plugins.js"
+        plugins.parent.mkdir(parents=True)
+        plugins.write_text(f"var $plugins =\n[{json.dumps(plugin)}];\n", "utf-8")
+        help_lines = [
+            {"code": 108, "indent": 0, "parameters": ["ChoiceHelp"]},
+            {"code": 408, "indent": 0, "parameters": ["所要時間:20分"]},
+        ]
+        write_json(
+            self.source / "Map001.json", {"events": [{"pages": [{"list": help_lines}]}]}
+        )
+        self.native["plugins"] = str(plugins)
+        self.guided.comment_text(self.identity)
+        native = self.backend.workflows.projects["native"]
+        self.assertTrue(native["phase1_comments"])
+        native.update(phase1_comments=False, revision=native["revision"] + 1)
+        self.guided.comment_text(self.identity)
+        self.assertFalse(self.backend.workflows.projects["native"]["phase1_comments"])
+
     def test_deleted_backup_can_be_replaced_but_cannot_authorize_preparation(self):
         with self.assertRaises(ValueError):
             self.guided.preview(self.identity, "backup_source")

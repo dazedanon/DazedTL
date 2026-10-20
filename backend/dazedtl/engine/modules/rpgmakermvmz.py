@@ -44,7 +44,7 @@ from util.paths import (
     active_glossary_path,
     read_active_glossary,
 )
-from util.rpgmaker_markers import SUPPORTED_CODE408_MARKERS
+from util.rpgmaker_markers import comment_markers, game_plugins
 from util.rpgmaker_files import mvmz_file_kind
 from util.id_ranges import id_in_ranges
 
@@ -105,6 +105,7 @@ _VAR_ACTOR_RE = re.compile(r"\\n\[(\d+)\]", re.IGNORECASE)
 _VAR_GAME_RE = re.compile(r"\\v\[(\d+)\]", re.IGNORECASE)
 _VAR_ACTOR_MAP_CACHE: dict | None = None
 _AUTONAMEPOPUP_CACHE: tuple[str, dict] | None = None
+_CODE408_MARKERS_CACHE: tuple[str, frozenset[str]] | None = None
 _ACTOR_NAME_SCRIPT_RE = re.compile(
     r"\$gameActors\.actor\s*\(\s*(\d+)\s*\)\.name\s*\(\s*\)",
     re.IGNORECASE,
@@ -1124,7 +1125,54 @@ def _code408_has_supported_marker(codeList, index: int) -> bool:
         return False
 
     marker = _param_source(codeList[marker_index], 0).strip()
-    return marker in SUPPORTED_CODE408_MARKERS
+    return marker in _code408_markers()
+
+
+def _code408_markers() -> frozenset[str]:
+    """The comment markers whose lines the selected game's plugins show."""
+    global _CODE408_MARKERS_CACHE
+    root = os.getenv("DAZED_GAME_ROOT", "").strip()
+    with _ACTOR_MAP_CACHE_LOCK:
+        if _CODE408_MARKERS_CACHE is None or _CODE408_MARKERS_CACHE[0] != root:
+            plugins = game_plugins(root) if root else ()
+            _CODE408_MARKERS_CACHE = (root, comment_markers(plugins))
+        return _CODE408_MARKERS_CACHE[1]
+
+
+def _code408_group_end(codeList, start: int) -> int:
+    """The last comment line (408) translated with the one at *start*. A
+    translated line goes on over the lines its translation was written to,
+    which hold no translation of their own and no Japanese; under JOIN408 an
+    untranslated line takes the untranslated lines after it."""
+    end = start
+    if _scalar_original(codeList[start]) is not None:
+        while (
+            end + 1 < len(codeList)
+            and codeList[end + 1].get("code") == 408
+            and "_original" not in codeList[end + 1]
+            and not _has_japanese_text(_param_current(codeList[end + 1], 0))
+        ):
+            end += 1
+        return end
+    if JOIN408 is not True:
+        return start
+    for index in range(start + 1, _text_group_end(codeList, start, (408,)) + 1):
+        if "_original" in codeList[index]:
+            break
+        end = index
+    return end
+
+
+def _code408_lines(text: str, source: str, face: bool = False) -> list[str]:
+    """A comment's translation as the comment lines (408) plugins show one
+    per row, wrapped like its Japanese to the message window, beside a face
+    when the message before its choice has one (see
+    rpgmaker_rewrap.choice_help_face)."""
+    if FIXTEXTWRAP is True:
+        text = rpgmaker_rewrap.wrap_message(
+            text, FACEWIDTH if face else WIDTH, source=source
+        )
+    return [line for line in text.split("\n") if line.strip()] or [text]
 
 
 def _code408_progress_units(codeList) -> int:
@@ -1149,9 +1197,7 @@ def _code408_progress_units(codeList) -> int:
             index += 1
             continue
 
-        group_end = (
-            _text_group_end(codeList, index, (408,)) if JOIN408 is True else index
-        )
+        group_end = _code408_group_end(codeList, index)
         if _text_needs_translation(_group_current(codeList, index, group_end)):
             count += 1
         index = group_end + 1
@@ -5364,40 +5410,31 @@ def _searchCodes(page, pbar, jobList, filename):
                     continue
 
                 groupStart408 = i
-                source408Parts = []
-                current408Parts = []
                 rawSource = _param_source(codeList[i], 0)
-                ojaString = rawSource
-                anchor408HasOrig = _scalar_original(codeList[groupStart408]) is not None
-                source408Parts.append(rawSource)
-                current408Parts.append(_param_current(codeList[i], 0))
-
                 if not rawSource.strip():
                     i += 1
                     continue
 
-                # Join Up 408's into single string
-                groupEnd408 = (
-                    _text_group_end(codeList, i, (408,))
-                    if JOIN408 is True
-                    else i
-                )
-                while i < groupEnd408:
-                    if not setData:
-                        codeList[i]["parameters"] = []
-                        codeList[i]["code"] = -1
-                    i += 1
-
-                    lineSource = _param_source(codeList[i], 0)
-                    current408Parts.append(_param_current(codeList[i], 0))
-                    if lineSource.strip() and not anchor408HasOrig:
-                        source408Parts.append(lineSource)
-
-                rawSource = _group_raw_source(codeList, groupStart408, source408Parts)
-                if not _text_needs_translation("\n".join(current408Parts)):
+                # A comment's translation is written back one line per 408,
+                # wrapped like its Japanese, as plugins read them; JOIN408
+                # translates its lines as one text. The first line keeps the
+                # Japanese of them all.
+                groupEnd408 = _code408_group_end(codeList, i)
+                if _scalar_original(codeList[groupStart408]) is None:
+                    rawSource = "\n".join(
+                        source
+                        for source in (
+                            _param_source(codeList[index], 0)
+                            for index in range(groupStart408, groupEnd408 + 1)
+                        )
+                        if source.strip()
+                    )
+                i = groupEnd408
+                if not _text_needs_translation(
+                    _group_current(codeList, groupStart408, groupEnd408)
+                ):
                     i += 1
                     continue
-                ojaString = rawSource
                 jaString = rawSource.replace("\n", " ")
 
                 # Pass 1
@@ -5405,26 +5442,30 @@ def _searchCodes(page, pbar, jobList, filename):
                     list408.append(jaString)
 
                 # Pass 2
-                else:
-                    if len(list408) > 0:
-                        translatedText = list408[0]
-                        list408.pop(0)
+                elif len(list408) > 0:
+                    translatedText = list408.pop(0)
 
-                        merged408 = len(source408Parts) > 1
-                        if merged408:
-                            codeList[i]["parameters"] = [translatedText]
-                        else:
-                            param0 = codeList[i]["parameters"][0]
-                            if ojaString in param0:
-                                codeList[i]["parameters"][0] = param0.replace(ojaString, translatedText)
-                            else:
-                                flatSource = ojaString.replace("\n", " ")
-                                if flatSource in param0:
-                                    codeList[i]["parameters"][0] = param0.replace(flatSource, translatedText)
-                                else:
-                                    codeList[i]["parameters"][0] = translatedText
+                    lines = _code408_lines(
+                        translatedText,
+                        rawSource,
+                        rpgmaker_rewrap.choice_help_face(codeList, groupStart408),
+                    )
+                    slots = range(groupStart408, groupEnd408 + 1)
+                    for line, index in zip(lines, slots):
+                        codeList[index]["parameters"] = [line]
+                    # Lines it no longer needs go when the list is written.
+                    for index in slots[len(lines) :]:
+                        codeList[index]["parameters"] = []
+                        codeList[index]["code"] = -1
+                    indent = codeList[groupEnd408].get("indent", 0)
+                    for extra, line in enumerate(lines[len(slots) :], 1):
+                        codeList.insert(
+                            groupEnd408 + extra,
+                            {"code": 408, "indent": indent, "parameters": [line]},
+                        )
+                    i = groupEnd408 + max(0, len(lines) - len(slots))
 
-                        _apply_original(codeList[i], rawSource)
+                    _apply_original(codeList[groupStart408], rawSource)
 
             ## Event Code: 108 (Script)
             if "code" in codeList[i] and (codeList[i]["code"] == 108) and CODE108 is True:

@@ -1098,6 +1098,129 @@ try:
                 {"list": result}, "Map001.json", Layout.from_widths(widths)
             )
             assert not report.changes, report.changes
+            # A choice plugin shows each comment line (408) under its help
+            # marker as a row. JOIN408 translates the block as one text; it is
+            # written back a line per row, laid out like the Japanese, and a
+            # later run keeps them, and lines translated one by one too.
+            help_lines = [
+                command(108, ["選択肢ヘルプ"]),
+                command(408, ["所要時間:20分"]),
+                command(408, ["初回は見ることを推奨します。"]),
+            ]
+            english = "Takes about 20 minutes. We recommend watching it the first time."
+            with patch.multiple(
+                parser,
+                CODE408=True,
+                JOIN408=True,
+                FIXTEXTWRAP=True,
+                WIDTH=55,
+                translateAI=extensions.point(
+                    lambda text, *_: [[english for _value in text], [0, 0]]
+                ),
+            ):
+                result = parse(help_lines)
+                assert result[:3] == [
+                    help_lines[0],
+                    command(
+                        408,
+                        ["Takes about 20 minutes."],
+                        _original="所要時間:20分\n初回は見ることを推奨します。",
+                    ),
+                    command(408, ["We recommend watching it the first time."]),
+                ], result
+                assert parse(result[:-1]) == result, result
+                # One line at a time, a line too wide for the window wraps
+                # into lines of its own.
+                with patch.object(parser, "JOIN408", False):
+                    result = parse(help_lines[:2])
+                    assert result[1:3] == [
+                        command(
+                            408, ["Takes about 20 minutes."], _original="所要時間:20分"
+                        ),
+                        command(408, ["We recommend watching it the first time."]),
+                    ], result
+                    assert parse(result[:-1]) == result, result
+                lines = [
+                    help_lines[0],
+                    command(408, ["Line one."], _original="一行目"),
+                    command(408, ["Line two."], _original="二行目"),
+                ]
+                assert parse(lines)[:-1] == lines
+                # A marker the game's choice plugin lists in its settings counts.
+                choice = temporary / "choice"
+                (choice / "js").mkdir(parents=True)
+                plugin = {
+                    "name": "MPP_ChoiceEX",
+                    "status": True,
+                    "parameters": {"Choice Help Commands": '["ChoiceHelp"]'},
+                }
+                (choice / "js/plugins.js").write_text(
+                    f"var $plugins =\n[{json.dumps(plugin)}];\n", encoding="utf-8"
+                )
+                with patch.dict(os.environ, {"DAZED_GAME_ROOT": str(choice)}):
+                    result = parse([command(108, ["ChoiceHelp"]), help_lines[1]])
+                assert result[1] == command(
+                    408, ["Takes about 20 minutes."], _original="所要時間:20分"
+                ), result
+                # A choice's help shows beside the face of the message the
+                # choice follows, joined choices included, so it wraps to the
+                # portrait width there.
+                from util.rpgmaker_rewrap import Layout, fit_document, widest_line
+
+                def choosing(face):
+                    return [
+                        command(101, [face, 0, 0, 2, ""]),
+                        command(401, ["Pick one."]),
+                        command(102, [["Stay"], -1, 0, 2, 0]),
+                        command(402, [0, "Stay"]),
+                        command(404, []),
+                        command(102, [["Watch"], -1, 0, 2, 0]),
+                        command(402, [0, "Watch"]),
+                        *(dict(line, indent=1) for line in help_lines),
+                        command(404, []),
+                    ]
+
+                with patch.object(parser, "FACEWIDTH", 30):
+                    beside, alone = (
+                        [row["parameters"][0] for row in parse(choosing(face))[8:-2]]
+                        for face in ("Actor1", "")
+                    )
+                assert max(map(widest_line, beside)) <= 30, beside
+                assert max(map(widest_line, alone)) > 30, alone
+            # Narrower Line widths fit translated help again over its own
+            # comment lines, beside the face; a comment that is no choice's
+            # help, such as a plugin's setting, stays as written.
+            helped = choosing("Actor1")[:7] + [
+                command(108, ["選択肢ヘルプ"], indent=1),
+                command(
+                    408,
+                    ["Takes about 20 minutes. Watch it once."],
+                    indent=1,
+                    _original="所要時間:20分",
+                ),
+                command(408, ["We recommend it."], indent=1),
+                command(404, []),
+                command(108, ["<Popup>"]),
+                command(408, ["A note wider than any window shows."], _original="メモ"),
+            ]
+
+            def fit(face_width):
+                layout = Layout(20, face_width, 74, 45, 4)
+                report = fit_document({"list": helped}, "Map001.json", layout)
+                rows = "\n".join(row["parameters"][0] for row in helped[8:10])
+                return report.misfits, rows.split("\n")
+
+            misfits, rows = fit(16)
+            assert not misfits and len(rows) == 4, rows
+            assert max(map(widest_line, rows)) <= 16, rows
+            assert len(helped) == 13 and helped[-1]["parameters"] == [
+                "A note wider than any window shows."
+            ], helped
+            # Rows past the message window's are a page the player never sees.
+            misfits, rows = fit(10)
+            assert [row["reason"] for row in misfits] == [
+                f"needs {len(rows)} rows; its window shows 4"
+            ], (misfits, rows)
             # Plugins split 356 commands on spaces, so each handler joins a
             # translation's words its own way. A kept placeholder stays, and
             # must not shift the next translation onto the wrong command.

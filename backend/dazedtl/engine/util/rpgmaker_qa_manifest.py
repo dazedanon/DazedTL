@@ -299,6 +299,15 @@ def _speaker(command_list: list[Any], index: int, code: int) -> dict[str, str]:
     return {"display_name": display, "face_name": face, "provenance": provenance}
 
 
+def _choice_help(record: dict[str, Any], command_list: list[Any], index: int) -> None:
+    """Mark a comment line (408) that is a choice's help, which shows in the
+    message window beside the face of the choice's message."""
+    from util.rpgmaker_rewrap import choice_help_branch, choice_help_face
+
+    if choice_help_branch(command_list, index) is not None:
+        record["choice_help"] = {"face": choice_help_face(command_list, index)}
+
+
 def _live_mapping(
     owner: dict[str, Any],
     owner_path: tuple[object, ...],
@@ -618,6 +627,8 @@ def build_manifest(data_root: str | Path, focus: str) -> dict[str, Any]:
                                 "length_band": _length_band(live),
                                 "mechanical": _mechanical_evidence(source, live, code),
                             }
+                            if code == 408 and command_list is not None:
+                                _choice_help(record, command_list, int(command_index))
                             if code in DIALOGUE_CODES and command_list is not None:
                                 record["speaker"] = _speaker(
                                     command_list, int(command_index), code

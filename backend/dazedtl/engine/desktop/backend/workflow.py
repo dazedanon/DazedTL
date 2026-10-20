@@ -127,7 +127,7 @@ class Workflows:
         project = self.projects[project_id]
         if revision != project["revision"]:
             raise ValueError("The guided project changed elsewhere. Reload before saving.")
-        allowed = {"step", "done", "selected", "engine_options", "mode", "phase1_comments", "widths", "wolf"}
+        allowed = {"step", "done", "selected", "engine_options", "mode", "phase1_comments", "comment_text_checked", "widths", "wolf"}
         if not isinstance(values, dict) or set(values) - allowed:
             raise ValueError("Unknown guided workflow setting.")
         updated = dict(project)
@@ -153,7 +153,7 @@ class Workflows:
                 value = normalize_wrap_widths(value, defaults=project["widths"])
             if key == "mode" and value not in {"translate", "batch", "estimate"}:
                 raise ValueError("Choose a translation mode.")
-            if key == "phase1_comments" and type(value) is not bool:
+            if key in {"phase1_comments", "comment_text_checked"} and type(value) is not bool:
                 raise ValueError("Comment translation must be enabled or disabled.")
             updated[key] = value
         if "wolf" in values:

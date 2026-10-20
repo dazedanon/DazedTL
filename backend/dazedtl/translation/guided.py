@@ -6,7 +6,7 @@ from pathlib import Path
 
 from dazedtl.storage import write_json
 
-from . import context_setup, preparation, reference_folders, speaker_setup
+from . import comment_text, context_setup, preparation, reference_folders, speaker_setup
 from .event_text import EventText
 from .files import Digests, digest, project_path, read_json, settled
 from .full_estimate import FullEstimate
@@ -281,6 +281,17 @@ class Guided:
         self.text_fit.request(
             project_id, native, native["widths"], result["project"]["widths"]
         )
+
+    def comment_text(self, project_id):
+        """Comment text on, once, for a game whose plugins show players
+        comment lines in Japanese (see :mod:`.comment_text`)."""
+        _, native = self.record(project_id)
+        try:
+            comment_text.check(self.backend.workflows, native)
+        except OSError, ValueError:
+            # The project can't be saved now, such as during another save;
+            # the next look tries again.
+            return
 
     def path(self, project_id, name):
         self.projects.get(project_id)
@@ -645,6 +656,7 @@ class Guided:
 
     def state(self, project_id):
         self.ace_widths(project_id)
+        self.comment_text(project_id)
         with self.observations.read():
             return self._state(project_id)
 

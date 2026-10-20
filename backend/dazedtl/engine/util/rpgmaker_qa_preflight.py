@@ -19,6 +19,11 @@ import re
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+from util.rpgmaker_markers import (
+    MARKER_SETTINGS,
+    SUPPORTED_CODE408_MARKERS,
+    comment_markers,
+)
 from util.rpgmaker_qa_reach import MAY_SHOW, Reach
 
 _JAPANESE_RE = re.compile(r"[ぁ-ゔァ-ヴ一-龠々〆〤]")
@@ -120,16 +125,45 @@ def _entry(rows: list, file: str, path: tuple, text: str, kind: str) -> None:
     })
 
 
-def visible_texts(name: str, document: Any):
+def _comment_marker(command: dict) -> str:
+    """A comment's (108) first line as the game wrote it."""
+    original = command.get("_original")
+    if isinstance(original, str) and original.strip():
+        return original.strip()
+    parameters = command.get("parameters")
+    return str(parameters[0]).strip() if parameters else ""
+
+
+def visible_texts(
+    name: str, document: Any, markers: frozenset[str] = SUPPORTED_CODE408_MARKERS
+):
     """Each text players read in one data file: its pointer's parts, its
     value, its kind and whether the engine translated it, keeping its
-    Japanese in `_original`. Map names keep no `_original`."""
+    Japanese in `_original`. Map names keep no `_original`.
+
+    Comment lines (408) count under the *markers* the game's plugins show,
+    such as a choice's help; a joined translation keeps its `_original` on the first
+    line and the lines after it continue that translation."""
     for list_path, commands in _command_lists(document):
+        marker = ""
+        joined = False
         for index, command in enumerate(commands):
             if not isinstance(command, dict):
                 continue
             code = command.get("code")
             parameters = command.get("parameters")
+            if code == 108:
+                marker, joined = _comment_marker(command), False
+            elif code == 408:
+                joined = joined or "_original" in command
+                if marker in markers and parameters:
+                    base = list_path + (index, "parameters", 0)
+                    yield base, parameters[0], "comment text", joined
+                continue
+            elif code != -1 or parameters:
+                # The engine empties joined lines into -1 commands until it
+                # writes the list back.
+                marker = ""
             if code not in COMMAND_TEXT or not isinstance(parameters, list):
                 continue
             translated = "_original" in command
@@ -158,8 +192,10 @@ def visible_texts(name: str, document: Any):
                 yield path, value, "system term", translated
 
 
-def _untranslated(name: str, document: Any, covered: set[str], rows: list) -> None:
-    for path, value, kind, translated in visible_texts(name, document):
+def _untranslated(
+    name: str, document: Any, covered: set[str], markers: frozenset[str], rows: list
+) -> None:
+    for path, value, kind, translated in visible_texts(name, document, markers):
         if not translated and japanese(value) and pointer(path) not in covered:
             _entry(rows, name, path, value, kind)
 
@@ -179,14 +215,16 @@ def _text(value: str) -> str:
 
 def _settings(entries: list[Any]) -> list[tuple[tuple, str]]:
     """Each turned-on plugin's Japanese settings that may be text players
-    read, rather than code or an asset path, by where they are."""
+    read, rather than code, an asset path or the comment markers it looks
+    for, by where they are."""
     found = []
     for plugin in entries:
         if not isinstance(plugin, dict) or plugin.get("status") is not True:
             continue
         for parts, value in _leaves(plugin.get("parameters") or {}):
             if (
-                japanese(value)
+                parts[0] not in MARKER_SETTINGS
+                and japanese(value)
                 and not _SCRIPT_RE.search(value)
                 and not _ASSET_PATH_RE.match(value)
             ):
@@ -237,6 +275,7 @@ def preflight(
         covered.setdefault(record["file"], set()).update(record["live_pointers"])
     entries = _plugin_entries(data.parent / "js" / "plugins.js")
     reach = Reach(data, entries)
+    markers = comment_markers(entries)
     rows: dict[str, list[dict[str, Any]]] = {"untranslated": [], "custom_data": []}
     for path in sorted(data.glob("*.json"), key=lambda item: item.name):
         try:
@@ -245,7 +284,11 @@ def preflight(
             continue
         if path.name in STANDARD_FILES or _MAP_RE.fullmatch(path.name):
             _untranslated(
-                path.name, document, covered.get(path.name, set()), rows["untranslated"]
+                path.name,
+                document,
+                covered.get(path.name, set()),
+                markers,
+                rows["untranslated"],
             )
             reach.scan(path.name, document)
         else:
