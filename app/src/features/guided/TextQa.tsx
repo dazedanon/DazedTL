@@ -94,10 +94,7 @@ export function TextQaWork({
     ? qa.questions.filter((row) => row.choice === "use")
     : qa.questions;
   // Corrections in the game; with every one undone, QA reads as done.
-  const { applied, undone } = qaCorrections(qa);
-  // New QA rules leave applied corrections without Undo, and undone ones
-  // without Apply again; the page says so once, above the rows.
-  const unavailable = !!qa.rules_changed && applied + undone > 0;
+  const { applied } = qaCorrections(qa);
   const state: AssistantTaskState =
     phase === "applied"
       ? applied
@@ -134,7 +131,7 @@ export function TextQaWork({
               ? "The game's plugins changed during QA; your assistant prepares it again, which keeps the review done so far."
               : phase === "outdated"
                 ? (qa.rules_changed
-                    ? "An update changed QA's rules after this task was prepared. "
+                    ? "An update changed QA's rules while this task was in review. "
                     : qa.plugins_changed
                       ? "The game's plugins changed after QA. "
                       : "The game text changed after QA. ") + rerun
@@ -165,22 +162,10 @@ export function TextQaWork({
         )}
       </AssistantTask>
       {beside}
-      {unavailable && (
-        <Notice>
-          An update changed QA's rules after these corrections were applied, so{" "}
-          {applied && undone
-            ? "Undo and Apply again are"
-            : applied
-              ? "Undo is"
-              : "Apply again is"}{" "}
-          no longer available. {rerun}
-        </Notice>
-      )}
       {questions.length > 0 && phase !== "outdated" && (
         <QaQuestions
           questions={questions}
           disabled={disabled}
-          unavailable={unavailable}
           feedback={feedback}
           choose={(question, choice) =>
             run(`qa-${choice}:` + question, "choose", { question, choice })
@@ -201,7 +186,6 @@ export function TextQaWork({
         <QaAuditLog
           findings={qa.findings}
           disabled={disabled}
-          unavailable={unavailable}
           feedback={feedback}
           undo={undo}
           reapply={reapply}
@@ -261,15 +245,12 @@ function Change({
 function AppliedControl({
   row,
   disabled,
-  unavailable,
   feedback,
   undo,
   reapply,
 }: {
   row: { id: string; state?: "applied" | "undone" };
   disabled: boolean;
-  /** Neither can run; the page says why once, above the rows. */
-  unavailable: boolean;
   feedback: Feedback;
   undo: (id: string) => void;
   reapply: (id: string) => void;
@@ -279,7 +260,7 @@ function AppliedControl({
       <ActionControl
         label="Undo"
         variant="link"
-        disabled={disabled || unavailable}
+        disabled={disabled}
         {...feedback("qa-undo:" + row.id, "Undoing…")}
         onClick={() => undo(row.id)}
       />
@@ -290,7 +271,7 @@ function AppliedControl({
       <ActionControl
         label="Apply again"
         variant="link"
-        disabled={disabled || unavailable}
+        disabled={disabled}
         {...feedback("qa-reapply:" + row.id, "Applying…")}
         onClick={() => reapply(row.id)}
       />
@@ -306,7 +287,6 @@ function AppliedControl({
 export function QaQuestions({
   questions,
   disabled,
-  unavailable,
   choose,
   undo,
   reapply,
@@ -314,8 +294,6 @@ export function QaQuestions({
 }: {
   questions: QaQuestion[];
   disabled: boolean;
-  /** Undo and Apply again cannot run; the page says why once, above the rows. */
-  unavailable: boolean;
   choose: (question: string, choice: "keep" | "use") => void;
   undo: (id: string) => void;
   reapply: (id: string) => void;
@@ -355,7 +333,6 @@ export function QaQuestions({
               <AppliedControl
                 row={row}
                 disabled={disabled}
-                unavailable={unavailable}
                 feedback={feedback}
                 undo={undo}
                 reapply={reapply}
@@ -466,15 +443,12 @@ function FindingChange({ row }: { row: QaFinding }) {
 export function QaAuditLog({
   findings,
   disabled,
-  unavailable,
   undo,
   reapply,
   feedback,
 }: {
   findings: QaFinding[];
   disabled: boolean;
-  /** Undo and Apply again cannot run; the page says why once, above the rows. */
-  unavailable: boolean;
   undo: (id: string) => void;
   reapply: (id: string) => void;
   feedback: Feedback;
@@ -514,7 +488,6 @@ export function QaAuditLog({
                   <AppliedControl
                     row={row}
                     disabled={disabled}
-                    unavailable={unavailable}
                     feedback={feedback}
                     undo={undo}
                     reapply={reapply}

@@ -14,6 +14,7 @@ from typing import cast
 from dazedtl.translation.files import digest
 
 from . import transmission
+from .batch_evidence import joined
 from .process_view import source_values
 from .request_scope import columns, identities, source_locations
 
@@ -322,16 +323,26 @@ class Evidence:
     def install(self, translation, module=None):
         """Records each request, response and validation outcome of this run."""
         self.translation_local = getattr(translation, "_thread_local", None)
+        # Identical requests of several files, such as a scene two maps
+        # repeat, are queued once; each file asking for one, first asker first.
+        askers = {}
 
         def queued(native, *args, **kwargs):
             key = native(*args, **kwargs)
             with translation.BATCH_LOCK:
                 entry = translation._batch_queue_pending.get(key)
                 if entry is not None:
+                    filename = getattr(self.local, "filename", None)
                     entry.update(
                         dazedtl_sources=getattr(self.local, "sources", []),
-                        dazedtl_file=getattr(self.local, "filename", None),
+                        dazedtl_file=filename,
                     )
+                    served = askers.setdefault(key, [])
+                    if filename not in served:
+                        served.append(filename)
+                    # The response is used in every file that asked for it.
+                    if len(served) > 1:
+                        entry["dazedtl_files"] = list(served)
                     # A request gathering several files' lines, such as map
                     # display names, records the files of each line.
                     files = getattr(self.local, "line_files", None)
@@ -342,6 +353,14 @@ class Evidence:
             return key
 
         translation.queue_batch_request.layer(LAYER, queued)
+
+        def join(native, kept, entry):
+            # A fragment written before another file asked for the request
+            # names fewer of the files it serves.
+            kept = native(kept, entry)
+            return joined(kept, entry) or kept
+
+        translation._join_queued_request.layer(LAYER, join)
 
         def received(native, provider, params, usage):
             current = getattr(self.local, "current", None)

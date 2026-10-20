@@ -532,8 +532,8 @@ class QaState(TypedDict):
     questions: list[QaQuestion]
     coverage: NotRequired[QaCoverage]
     activity: NotRequired[QaActivity]
-    # An update changed QA's rules after this task was prepared: it is
-    # outdated, and its applied corrections can no longer be undone here.
+    # An update changed QA's rules while this task was in review: it is
+    # outdated and QA is prepared again. A finished task stays current.
     rules_changed: NotRequired[bool]
     # Only the game's plugins changed since this task was prepared, as after
     # a playtest fix: it is not current, and preparing again keeps its review.

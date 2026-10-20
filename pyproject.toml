@@ -43,4 +43,5 @@ root = "backend"
 
 [[tool.pyright.executionEnvironments]]
 root = "scripts"
-extraPaths = ["backend"]
+# qa_upgrade.py loads the engine's util package too.
+extraPaths = ["backend", "backend/dazedtl/engine"]

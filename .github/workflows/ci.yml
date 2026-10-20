@@ -1,7 +1,8 @@
-# Runs the build checks and behavior tests, then installs DazedTL the way a
-# downloaded ZIP is installed and drives it through a translation, on Windows
-# and Linux, and updates the previous release's translated project to this
-# commit. See "Live test" in docs/development.md.
+# Runs the build checks, behavior tests and previous-release QA check, then
+# installs DazedTL the way a downloaded ZIP is installed and drives it through
+# a translation, on Windows and Linux, and updates the previous release's
+# translated project to this commit. See "Checks", "Previous-release QA
+# check" and "Live test" in docs/development.md.
 name: CI
 
 on:
@@ -45,6 +46,26 @@ jobs:
           # The runners are several times slower than a development machine,
           # Windows most of all; about twice their measured runtimes.
           DAZEDTL_TEST_BUDGET: ${{ runner.os == 'Windows' && 180 || 30 }}
+
+  qa-upgrade:
+    name: Previous-release QA check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, ubuntu-24.04]
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v7
+        with:
+          # The release tags, whose code makes the QA tasks this continues.
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+      - run: node scripts/setup.mjs
+      - run: node scripts/qa-upgrade.mjs
 
   live:
     name: Live test (${{ matrix.os }})

@@ -339,6 +339,6 @@ class GuidedRelease:
         return {"files": entries, "inputs": inputs}
 
     def ace_packing(self, native):
-        from .release import packing_state
-
-        return packing_state(native, self.guided.backend.workflows.folder(native["id"]))
+        return self.guided.backend.guided_ace_packing(
+            native, self.guided.backend.workflows.folder(native["id"])
+        )

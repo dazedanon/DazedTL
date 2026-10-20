@@ -88,7 +88,10 @@ export function completedTasks(
   const ownImages =
     images && images.projectId === state.projectId ? images : null;
   return new Set<string>([
-    ...(baseline ? ["setup"] : []),
+    // An Ace game reads only its archive while one sits beside Game.exe.
+    ...(baseline && !(state.engine === "ACE" && state.encrypted.length)
+      ? ["setup"]
+      : []),
     ...(phaseComplete("database") ? ["database"] : []),
     ...(phaseComplete("dialogue") ? ["dialogue"] : []),
     ...((nothingToTranslate(state.eventText, values.engine_options) ||

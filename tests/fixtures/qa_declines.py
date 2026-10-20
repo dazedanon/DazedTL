@@ -258,13 +258,12 @@ checkpoint = json.loads((task / "checkpoint.json").read_text(encoding="utf-8"))
 assert (
     checkpoint["screen"]["accepted_items"] + 5 == checkpoint["screen"]["total_items"]
 ), checkpoint["screen"]
-# An update that changes QA's rules keeps this screen, declines and all: the
-# coordinator's and reviewers' declines move the same items to the same
-# bundles, and what was set aside is set aside again.
-fingerprint = qa._engine_fingerprint
-qa._engine_fingerprint = lambda: "updated rules"
+# An update that bumps QA's rules version keeps this screen, declines and
+# all: the coordinator's and reviewers' declines move the same items to the
+# same bundles, and what was set aside is set aside again.
+qa.QA_RULES_VERSION += 1
 rebuilt, state = qa.rebuild_deep_from_screen(task)
-qa._engine_fingerprint = fingerprint
+qa.QA_RULES_VERSION -= 1
 assert state["declined"] == {"waiting": 0, "set_aside": 5}, state
 again = json.loads((rebuilt / "checkpoint.json").read_text(encoding="utf-8"))
 assert [(row["id"], row["status"]) for row in again["screen"]["bundles"]] == [

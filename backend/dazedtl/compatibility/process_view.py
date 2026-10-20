@@ -338,6 +338,8 @@ def attempt_root(rows, index):
 
 
 def queue(root):
+    from .batch_evidence import ARCHIVE, joined, merge
+
     root = evidence_root(root)
     for name in ("batch_requests.json", "estimate_requests.json"):
         result = dict(saved(root, name))
@@ -353,14 +355,15 @@ def queue(root):
                 if path.suffix != ".json" or path.is_symlink():
                     raise ValueError("Saved request fragments are invalid.")
                 for key, value in _read_cached(str(path), file_stamp(path)).items():
-                    if key in result and result[key] != value:
+                    # Another file's copy of a request joins its files, as
+                    # the engine's own reader joins them.
+                    kept = joined(result[key], value) if key in result else value
+                    if kept is None:
                         raise ValueError(
                             "Saved request fragments conflict; no submission was made."
                         )
-                    result[key] = value
+                    result[key] = kept
         if name == "batch_requests.json":
-            from .batch_evidence import ARCHIVE, merge
-
             result = merge(saved(root, ARCHIVE).get("requests", {}), result)
         if result:
             return result
@@ -624,14 +627,15 @@ REQUEST_PAGE = 100
 def file_lines(item):
     """Each file's lines in a saved request, in line order. A request
     gathering several files' lines, such as map display names, records the
-    files of each line; a name two maps share is a line of both."""
+    files of each line; a name two maps share is a line of both. A Batch
+    request several files asked for alike holds lines of each of them."""
     files, lines = item.get("lineFiles"), len(item["source"])
     result = {}
     if isinstance(files, list) and len(files) == lines:
         for names in files:
             for name in names:
                 result[name] = result.get(name, 0) + 1
-    return result or {item["file"]: lines}
+    return result or dict.fromkeys(item.get("servedFiles") or [item["file"]], lines)
 
 
 def request_files(row):

@@ -459,11 +459,10 @@ class PublicationTests(unittest.TestCase):
             "game_root": str(self.root),
             "data_root": str(self.root / "data"),
             "created_at": "2026-10-07T10:00:00+00:00",
-            "engine_fingerprint": "rules",
         }
         engine = ModuleType("util.rpgmaker_qa")
         engine._read_task = lambda path: (Path(path), task, {"stage": "complete"})
-        engine._engine_fingerprint = lambda: "rules"
+        engine.rules_changed = lambda task, checkpoint: False
         engine.FINDINGS_SCHEMA = "findings"
         engine._sha256 = lambda value: "task"
         engine._canonical_bytes = lambda value: b""

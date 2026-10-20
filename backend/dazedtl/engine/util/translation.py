@@ -1682,6 +1682,16 @@ def batchQueueDigest(queue):
                                      ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
+@extensions.point
+def _join_queued_request(kept, entry):
+    """The queue entry kept for a request two fragments both hold: the first.
+
+    Identical payloads are queued once, so a later file's copy of a request
+    carries nothing a submission needs; a host may join what it records about
+    each copy, such as the files the request serves."""
+    return kept
+
+
 def _read_batch_queue(*, strict=False, queue_file=None):
     """Read the compact queue snapshot plus all durable collect fragments.
 
@@ -1727,7 +1737,9 @@ def _read_batch_queue(*, strict=False, queue_file=None):
             continue
         fragment = _read_batch_file(path, strict=strict)
         for key, entry in fragment.items():
-            queue.setdefault(key, entry)
+            queue[key] = (
+                _join_queued_request(queue[key], entry) if key in queue else entry
+            )
     return queue
 
 
