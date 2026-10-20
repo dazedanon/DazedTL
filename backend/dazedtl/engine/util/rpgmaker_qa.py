@@ -39,6 +39,7 @@ from util.rpgmaker_qa_manifest import (
     QUOTED_TRANSFORMS,
     SCRIPT_STRINGS,
     _mechanical_evidence,
+    _row_codes,
     build_manifest,
     resolve_pointer,
     write_manifest,
@@ -792,8 +793,38 @@ def correction_problems(
         source, written,
     ))
     if introduced:
-        problems.append("introduces " + ", ".join(introduced))
+        problems.append("introduces " + _flag_details(introduced, source, written))
     return problems
+
+
+def _flag_details(flags: Iterable[str], source: str, text: str) -> str:
+    """*flags* for a reviewer, with the runtime codes a token mismatch
+    changes, so the next correction can keep them."""
+    return ", ".join(
+        f"{flag} ({_token_difference(source, text)})"
+        if flag == "runtime-token-mismatch" else flag
+        for flag in flags
+    )
+
+
+def _token_difference(source: str, text: str) -> str:
+    """How *text* changes *source*'s runtime codes, as the token check
+    compares them (see rpgmaker_qa_manifest._runtime_tokens_match)."""
+    source_starts, source_codes = _row_codes(source)
+    starts, codes = _row_codes(text)
+    parts = []
+    for verb, difference in (
+        ("drops", source_codes - codes), ("adds", codes - source_codes)
+    ):
+        if difference:
+            parts.append(f"{verb} " + " ".join(sorted(difference.elements())))
+    if starts != source_starts:
+        shown = lambda runs: " / ".join("".join(run) or "no code" for run in runs)
+        parts.append(
+            f"its rows start with {shown(starts)} where the source's start "
+            f"with {shown(source_starts)}"
+        )
+    return "; ".join(parts)
 
 
 def _adds_only_battler_name(source: str, text: str) -> bool:
@@ -9220,7 +9251,8 @@ def _regression_check_loaded(
             if blocking_flags:
                 errors.append(
                     "approved correction introduced mechanical flags: "
-                    f"{operation['identity']} " + ", ".join(blocking_flags)
+                    f"{operation['identity']} "
+                    + _flag_details(blocking_flags, record["source"], record["live"])
                 )
     return {
         "schema": REGRESSION_SCHEMA,

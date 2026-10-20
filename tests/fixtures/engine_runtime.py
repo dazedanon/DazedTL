@@ -824,6 +824,36 @@ try:
                 qa._set_pointer(document, pointer, value)
             assert document["list"][1:5] == fitted[1:5], document
 
+            # Fitting repeats a row's instant-line code on the rows it adds,
+            # which keeps the source's codes; a code the correction drops is
+            # named, so the next correction can keep it.
+            banner = "\\>\\i[322]種付けプレス追加\n\\>\\C[27]解放条件:\\C[0]イベント2を見る。"
+            pointers = pointers[:1]
+            live = "\\>\\i[322]Added\n\\>\\C[27]Unlock:\\C[0]See Event 2."
+            box = qa._box({**record, "live_pointers": pointers}, {"widths": tight})
+            correction = (
+                "\\>\\i[322]Mating Press added\n"
+                "\\>\\C[27]Unlock Condition:\\C[0] See the Generic Event 2."
+            )
+            fitted_banner = qa._fit(correction, live, box, banner, 1)
+            assert fitted_banner.count("\\>") == 3, fitted_banner
+            problems = qa.correction_problems(
+                banner, live, correction, 401, pointers, "identity", box=box
+            )
+            assert not problems, problems
+            problems = qa.correction_problems(
+                banner,
+                live,
+                correction.replace("\\C[0]", ""),
+                401,
+                pointers,
+                "identity",
+                box=box,
+            )
+            assert problems == ["introduces runtime-token-mismatch (drops \\C[0])"], (
+                problems
+            )
+
         assistant_led_writes()
 
         # MV and Ace print the battler's name right before a particle-first
