@@ -1152,10 +1152,14 @@ else:
 checks_game = temporary / "checks-game"
 FIRE = "敵全体に大きな火属性ダメージを与え、3ターン燃焼させる。"
 # Text variables as translation writes them: MV/MZ's template literal and VX
-# Ace's Ruby string. The nickname's source interpolates the hero's name.
-NICKNAME, GREETING = "${hero}と村人の名前", "\\\\C[2]村人\\\\C[0]の挨拶"
+# Ace's Ruby string. The nickname interpolates the hero's name, shows the
+# ${name} of a quoted source as text, and opens a name window.
+NICKNAME, GREETING = (
+    "${hero}が${name}を村の老人のあだ名で呼ぶ\\\\nc<アリス>",
+    "\\\\C[2]村人\\\\C[0]の挨拶",
+)
 VARIABLES = [
-    "`${hero} and the villager's \\`nickname\\``",
+    "`${hero}'s \\${name} \\`nickname\\`\\\\nc<Alice>`",
     '"\\\\C[2]Villager\\\\C[0]\'s greeting"',
 ]
 (checks_game / "data").mkdir(parents=True)
@@ -1312,17 +1316,29 @@ fix = {
 variable_fixes = {
     source: {**fix, "category": "meaning", "source_fix": None, "correction": text}
     for source, text in (
-        (NICKNAME, "${hero}'s `nickname` is ${name}"),
+        (
+            NICKNAME,
+            "${hero} calls the old villager by the `nickname` ${name}\\nc<Alice>",
+        ),
         (GREETING, '\\C[2]Villager\\C[0] says "hi" #{name}'),
     )
 }
-unescaped = {
-    **variable_fixes[NICKNAME],
-    "correction": "${hero} and the villager's `nickname`",
-}
+
+
+def nickname(text):
+    return {NICKNAME: {**variable_fixes[NICKNAME], "correction": text}}
+
+
 for name, fixes, refusal in (
     # A correction that differs only by escapes changes nothing.
-    ("unescaped", {NICKNAME: unescaped}, "matches the current text"),
+    (
+        "unescaped",
+        nickname("${hero}'s ${name} `nickname`\\nc<Alice>"),
+        "matches the current text",
+    ),
+    # Written as "\n", a break before "<" would open a name window.
+    ("break", nickname("${hero} and the\n<old> villager\\nc<Alice>"), "name code"),
+    ("name-window", nickname("${hero}'s nickname"), "runtime-token"),
     ("plain", {"の幻惑が解けた": {**fix, "source_fix": None}}, "runtime-token"),
     (
         "other-code",
@@ -1361,15 +1377,20 @@ assert qa.next_bundle(checked, "editor-a") is None
 findings = json.loads((checked / "findings.json").read_text())["findings"]
 (finding,) = [row for row in findings if row["source"] == "の幻惑が解けた"]
 assert finding["source_fix"] == "battler-name", finding
-# The text variables' corrections are stored as the game gets them, escaped
-# as translation writes each string, so none ends early or interpolates
-# except where the game's own text does: the hero's name still shows.
+# Findings keep the text variables' corrections as their reviewers wrote
+# them. The game gets each escaped once, as translation writes the string, so
+# none ends early or interpolates except where the game's text runs (the
+# hero's name still shows, while ${name} stays text), and wrapped to the list
+# width as the fitter wraps it.
+corrections = {row["source"]: row["correction"] for row in findings}
+assert {source: corrections[source] for source in variable_fixes} == {
+    source: review["correction"] for source, review in variable_fixes.items()
+}, corrections
 WRITTEN = {
-    NICKNAME: "${hero}'s \\`nickname\\` is \\${name}",
+    NICKNAME: "${hero} calls the old villager\\nby the \\`nickname\\`"
+    " \\${name}\\\\nc<Alice>",
     GREETING: '\\\\C[2]Villager\\\\C[0] says \\"hi\\" \\#{name}',
 }
-corrections = {row["source"]: row["correction"] for row in findings}
-assert {source: corrections[source] for source in WRITTEN} == WRITTEN, corrections
 
 
 def message4():

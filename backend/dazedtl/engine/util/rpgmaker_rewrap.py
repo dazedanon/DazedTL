@@ -545,6 +545,12 @@ def note_box(layout: Layout) -> Box:
     return Box(layout.note_width, None, False, "note", "noteWidth")
 
 
+def variable_box(layout: Layout) -> Box:
+    """A text variable (122), whose script string translation wraps to the
+    list width (see :func:`wrap_variable`)."""
+    return Box(layout.list_width, None, False, "variable", "listWidth")
+
+
 def fit_value(
     text: str,
     box: Box,
@@ -800,8 +806,7 @@ def _command_slots(commands: list, pointer: str, layout: Layout) -> Iterator[_Sl
             and _original(command) is not None
             and _script_string(params[4]) is not None
         ):
-            box = Box(layout.list_width, None, False, "variable", "listWidth")
-            yield _Slot(f"{at}/4", box, None, params, 4)
+            yield _Slot(f"{at}/4", variable_box(layout), None, params, 4)
         elif code == 324 and len(params) > 1 and isinstance(params[1], str):
             yield _Slot(f"{at}/1", nickname_box(layout), None, params, 1)
         elif code == 325 and len(params) > 1 and isinstance(params[1], str):

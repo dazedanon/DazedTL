@@ -91,6 +91,9 @@ CODE357_TEXT_ARGUMENTS = {
 }
 _RUNTIME_TOKEN_RE = re.compile(
     r"\\(?:[A-Za-z]+\[[^\]\r\n]*\]|[{}.!|^><])"
+    # A name window code such as \n<Alice> or \nc<Alice>, counted without its
+    # name, which translation changes.
+    r"|\\n[A-Za-z]?<(?=[^<>\r\n]*>)"
     r"|__PROTECTED_\d+__"
     r"|%(?:\d+\$)?[-+#0]*(?:\d+|\*)?(?:\.\d+)?[A-Za-z]"
     # RPG Maker's numbered placeholders, as in "%1 uses %2!".

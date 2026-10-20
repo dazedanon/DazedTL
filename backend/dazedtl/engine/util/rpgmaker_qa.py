@@ -509,6 +509,8 @@ def _window(record: dict[str, Any], layout: dict[str, Any]) -> rewrap.Box | None
         return rewrap.scrolling_box(widths)
     if code == 324:
         return rewrap.nickname_box(widths)
+    if code == 122 and record["live_transform"] in _SCRIPT_QUOTES:
+        return rewrap.variable_box(widths)
     if code == 325:
         return rewrap.help_box(widths, source, dialogue=True)
     if code == 357:
@@ -539,9 +541,11 @@ def _box(record: dict[str, Any], layout: dict[str, Any]) -> dict[str, Any] | Non
         box["pages"] = True
     # A message spread over several commands is fitted and spread over them
     # again (rpgmaker_rewrap.spread); other text spread over several commands,
-    # such as a comment or a script, keeps its line structure.
-    box["wraps"] = record["live_transform"] == "identity" and (
-        len(record["live_pointers"]) == 1 or _message_code(record.get("event_code"))
+    # such as a comment or a script, keeps its line structure. A text
+    # variable's script string is wrapped once escaped (see _as_written).
+    box["wraps"] = window.kind == "variable" or (
+        record["live_transform"] == "identity"
+        and (len(record["live_pointers"]) == 1 or _message_code(record.get("event_code")))
     )
     return box
 
@@ -583,26 +587,39 @@ def _fit(
 
 # The quote mark of each script string transform.
 _SCRIPT_QUOTES = {transform: quote for quote, transform in SCRIPT_STRINGS.items()}
+# A line break a script string's text would read as the start of a name code,
+# such as \n[1] or \n<name>, once written as "\n" (see
+# rpgmaker_script_strings.BREAK).
+_BREAK_BEFORE_CODE = re.compile(r"\n(?=\[|[a-zA-Z]?<)")
 
 
-def _script_text(correction: str, transform: str, *own: str) -> str:
-    """A correction as DazedTL writes it into a script string: with the
+def _as_written(
+    correction: str,
+    live: str,
+    box: dict[str, Any] | None,
+    source: str | None,
+    commands: int,
+    transform: str,
+) -> str:
+    """A correction as DazedTL writes it in place of *live*. Plain text is
+    fitted to its box (see _fit). Into a script string it goes with the
     escapes translation writes there, so it can't end the string early or
-    interpolate in it, except in an interpolation the target already runs
-    in *own*, its current text or source, such as the hero's name; other
-    text as it is."""
+    interpolate in it, except in an interpolation the target's current text
+    runs, such as the hero's name; then it is wrapped to its box as the
+    fitter wraps a text variable.
+
+    The source's own interpolations don't count: a source between quote
+    marks that don't interpolate, such as '${x}', shows its ${x} as text,
+    which translation wrote escaped, and running it would stop the game."""
     quote = _SCRIPT_QUOTES.get(transform)
     if not quote:
-        return correction
-    return script_strings.escape(
-        correction, quote, script_strings.interpolated(quote, *own)
+        return _fit(correction, live, box, source, commands)
+    text = script_strings.escape(
+        correction, quote, script_strings.interpolated(quote, live)
     )
-
-
-def _own(record: dict[str, Any]) -> tuple[str, str]:
-    """The texts whose interpolations a record's script string runs: its
-    current text and its source."""
-    return str(record.get("live") or ""), str(record.get("source") or "")
+    if box and box.get("wraps"):
+        text = rewrap.wrap_variable(quote + text + quote, box["width"])[1:-1]
+    return text
 
 
 def _fitted(
@@ -611,17 +628,13 @@ def _fitted(
     targets: list[dict[str, Any]],
     layout: dict[str, Any],
 ) -> str:
-    """One correction for every target it reaches, as DazedTL writes it when
-    each target takes the same text: escaped into one kind of script string,
-    or fitted to the narrowest box when each target takes a rewrapped
-    value."""
-    transforms = {target["live_transform"] for target in targets}
-    if len(transforms) == 1 and transforms <= _SCRIPT_QUOTES.keys():
-        return _script_text(
-            correction,
-            *transforms,
-            *(text for target in targets for text in _own(target)),
-        )
+    """One correction for every target it reaches, as findings keep it:
+    fitted to the narrowest box when each target is plain text DazedTL
+    rewraps, so the page shows the rows the game gets; otherwise as its
+    reviewer wrote it. Each target gets it as DazedTL writes it there (see
+    _written), so a script string's escapes go in once, as it is written."""
+    if any(target["live_transform"] != "identity" for target in targets):
+        return correction
     boxes = [_box(target, layout) for target in targets]
     if not boxes or not all(box and box.get("wraps") for box in boxes):
         return correction
@@ -694,18 +707,21 @@ def correction_problems(
     the box, which may not need more rows than the box shows or the current
     text uses; a correction it cannot rewrap may not have a line wider than
     both the box and the current text. Into a script string it writes the
-    correction escaped as translation writes the string.
+    correction escaped as translation writes the string (see _as_written).
     """
     problems = []
-    written = _script_text(
-        _fit(correction, live, box, source, len(live_pointers)),
-        live_transform,
-        live,
-        source,
+    written = _as_written(
+        correction, live, box, source, len(live_pointers), live_transform
     )
     if written == live:
         problems.append("the correction matches the current text")
     lines = correction.split("\n")
+    if live_transform in _SCRIPT_QUOTES and _BREAK_BEFORE_CODE.search(correction):
+        # Written as "\n", the break would start a code such as \n[1] instead.
+        problems.append(
+            'a line break right before "[" or "<" reads as a name code in a '
+            "script string; move or drop the break"
+        )
     if live_transform == "quoted-string":
         # The text sits between quote marks in a script parameter whose
         # escapes are unknown, so a new kind of quote mark could end the
@@ -2016,8 +2032,8 @@ def _interface_after(
                     "live_pointers": record["live_pointers"],
                     "live_transform": record["live_transform"],
                     "expected": record["live"],
-                    "replacement": _script_text(
-                        change["correction"], record["live_transform"], *_own(record)
+                    "replacement": _written(
+                        record, change["correction"], task.get("layout")
                     ),
                 }
                 try:
@@ -2900,15 +2916,25 @@ def _layout_key(layout: Any) -> str:
     return _sha256(_canonical_bytes(layout))[:32]
 
 
-def _written(record: dict[str, Any], text: str) -> str:
-    """The text a correction leaves in a record: escaped as translation
-    writes a script string, and a message's rows spread over the commands
-    that hold them.
+def _written(
+    record: dict[str, Any], text: str, layout: dict[str, Any] | None
+) -> str:
+    """The text a correction leaves in a record under the task's Line widths
+    *layout*, as DazedTL writes it there (see _as_written), and a message's
+    rows spread over the commands that hold them.
 
-    A correction that reaches only one kind of script string is stored
-    escaped, which escaping again keeps; one that reaches other text too is
-    escaped here for each script string."""
-    text = _script_text(text, record["live_transform"], *_own(record))
+    Findings keep a correction as its reviewer wrote it, fitted only to the
+    boxes all its targets share, so it is escaped once, here: escaping
+    escaped text again would turn a line break before "<" into a name
+    code."""
+    text = _as_written(
+        text,
+        str(record.get("live") or ""),
+        _box(record, layout) if layout else None,
+        record.get("source"),
+        len(record["live_pointers"]),
+        record["live_transform"],
+    )
     if len(record["live_pointers"]) > 1 and _message_code(record.get("event_code")):
         return "\n".join(rewrap.spread(text, len(record["live_pointers"])))
     return text
@@ -2992,7 +3018,7 @@ def _derive_ledger(
             # Editorial confirmed the correction, which passed every check,
             # as the game holds it once applied.
             for written in {
-                _written(records[identity], change["correction"])
+                _written(records[identity], change["correction"], task.get("layout"))
                 for identity in change["identities"]
             }:
                 corrected = _pair_key(change["source"], written)
@@ -8600,7 +8626,7 @@ def correction_map(
                 targets[target] = change["correction"]
                 # The replacement reads as it will once written, so undoing
                 # it finds it there.
-                replacement = _written(record, change["correction"])
+                replacement = _written(record, change["correction"], task["layout"])
                 message = len(record["live_pointers"]) > 1 and _message_code(
                     record.get("event_code")
                 )
