@@ -70,7 +70,7 @@ Help wraps beside the face of the message its choice follows, even while the eng
 Guided main text shares configuration while retaining independent database and event selections.
 Each phase binds its estimate to source, scope, provider and pricing, guidance, and layout.
 New estimate and Batch preparation workspaces are temporary until approval; they do not enter saved history or contribute translated outputs.
-Each Translate click discards that phase’s unapproved preparation and creates a fresh estimate, unless the phase's latest finished estimate still binds to exactly the current inputs, or to inputs a model switch only prices differently: Translate then reopens it ([unchanged_estimate](../backend/dazedtl/translation/guided_actions.py)) and its dialog marks Estimate cost as reused, so declining or closing a review costs no second estimate.
+Each Translate click discards that phase’s unapproved preparation and creates a fresh estimate, unless the phase's latest finished estimate is still current ([freshness](../backend/dazedtl/engine/util/freshness.py)), or its inputs differ only in what a model switch prices differently: Translate then reopens it ([unchanged_estimate](../backend/dazedtl/translation/guided_actions.py)) and its dialog marks Estimate cost as reused, so declining or closing a review costs no second estimate.
 A model switch only prices an estimate differently ([repricing](../backend/dazedtl/translation/repricing.py)) when the connection and request settings stay the same, a sample request built for each model carries the same messages ([request_text](../backend/dazedtl/compatibility/request_text.py)), and the provider counts tokens the same way for every model, which leaves out Claude.
 Each estimate records the shape of its inputs without what such a switch changes, and its counts are then priced with the new model's rates by the engine's own formulas and DazedTL's pricing layers ([estimate_prices](../backend/dazedtl/compatibility/estimate_prices.py)), which a test holds to the engine's estimate for that model.
 A review's model can be switched in its dialog: the reviewed preparation is discarded first, since settings wait for its worker to end, and a Batch then prepares its requests again for the new model while the dialog shows the estimate at its prices.
@@ -171,7 +171,7 @@ The [worker](../backend/dazedtl/compatibility/full_estimate.py) builds each task
 A Claude estimate is then counted again as a Translate estimate is (see [Estimates and approval](#estimates-and-approval)); a failed count keeps the approximate figures, which the task says.
 The tasks run side by side, each with its own workers and count and with its inputs linked to the operation's one staged copy; the first task that fails stops the others.
 The newest finished operation holds the saved estimate.
-It reads current while every task's estimate inputs match: files, sources, guidance, options, layout, connection and prices, and the DazedTL release that made it, since another may estimate differently.
+It reads current while every task's estimate inputs match: files, sources, guidance, options, layout, connection and prices ([freshness](../backend/dazedtl/engine/util/freshness.py)).
 A model switch that only prices its requests differently (see [Estimates and approval](#estimates-and-approval)) keeps it current at the new model's prices, from the counts the result keeps beside each task.
 Estimating again while it reads current would only repeat it, so the action waits for a change, except to retry a failed Claude count.
 They are computed with the Live configuration, since one estimate prices both Batch and Live; switching between them only changes which total leads.
@@ -1156,8 +1156,8 @@ Renderer diagnostics contain fixed error types and source locations resolved thr
 ### Persistence and settings
 
 Project-format changes increment `SCHEMA_VERSION` and register consecutive upgrades in [projects/store.py](../backend/dazedtl/projects/store.py).
-Saved work goes stale only when its inputs change or when a version kept beside the code that reads it is bumped on purpose, never because DazedTL's code changed: it is keyed on what it was made from and that version, never on hashes of source files, which nearly every release changes.
-[Text QA tasks](#workflow-and-shared-presentation) follow this, and the [previous-release QA check](development.md#previous-release-qa-check) fails when a change breaks the previous release's tasks without bumping their version.
+Whether saved work is still current has one rule, explained in [freshness](../backend/dazedtl/engine/util/freshness.py), and every kind of saved work decides it there.
+The [previous-release QA check](development.md#previous-release-qa-check) fails when a change breaks the previous release's Text QA tasks without bumping their version.
 The storage helper validates the result, retains the original bytes in a backup, and replaces the file atomically; unsupported or invalid formats are left untouched.
 Project opening and selection publish their in-memory ownership only after backend persistence succeeds; presentation-only navigation does not change that ownership.
 Removing a game from the recent list hides its registry record instead of deleting it, so its runs, Batches and assistant reports keep their owner, and opening or selecting the game again shows it with its work; older versions ignore the flag and list the game, so it needs no new format version.
