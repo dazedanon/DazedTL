@@ -26,4 +26,4 @@ export const speakerOptions: Record<string, { label: string; help: string }> = {
 };
 
 export const commentTextHelp =
-  "Include supported comment continuations (event code 408) in the speaker pass. Enable only when the game displays this comment text to the player.";
+  "Translate supported comment continuations (event code 408), such as the choice help MPP_ChoiceEX shows, in Maps & events and the speaker pass. Enable only when the game displays this comment text to the player.";

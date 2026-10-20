@@ -324,6 +324,27 @@ runtime = {
             "text": "罠にかかった！",
             "source": {"file": "js/plugins/Dungeon.js", "line": trap},
         },
+        # Text never translated is translation's: a line the static check
+        # lists, and a choice's help a plugin shows from an event comment.
+        {
+            **seen,
+            "text": "まだ訳していない",
+            "data": {
+                "file": "Map001.json",
+                "pointer": "/events/1/pages/1/list/5",
+                "untranslated": True,
+            },
+        },
+        {
+            **seen,
+            "text": "所要時間:20分～",
+            "data": {
+                "file": "Map001.json",
+                "pointer": "/events/1/pages/0/list/9",
+                "untranslated": True,
+                "comment": "選択肢ヘルプ",
+            },
+        },
     ],
     "overflow": [
         {
@@ -362,6 +383,16 @@ group = problems[("plugin-text", "js/plugins/Dungeon.js", "Dungeon")]
 assert group["seen"] == seen and [
     row.get("seen") for row in group["texts"] if row["line"] == trap
 ] == [seen], group
+never = problems[("untranslated", "data/Map001.json", "")]
+assert never["seen"] == seen and [
+    row.get("seen") for row in never["texts"] if row["text"] == "まだ訳していない"
+] == [seen], never
+comment = next(
+    row for row in report["problems"] if row.get("text") == "所要時間:20分～"
+)
+assert (comment["check"], comment["fix"]) == ("untranslated-comment", "translate"), (
+    comment
+)
 help_rows = problems[("help-rows", "data/Items.json", "/1/description")]
 assert help_rows["seen"] == seen, help_rows
 # A description's line count counts only where the tour saw it run past the
@@ -389,6 +420,7 @@ observed = {row["identity"]: row for row in observations(report)}
 assert observed["Items.json#/1/description"]["categories"] == ["ui"], observed
 assert "Seen on Scene_Item" in observed["Items.json#/1/description"]["note"], observed
 assert "Items.json#/4/description" not in observed, observed
+assert comment["identity"] not in observed, observed
 # A note cut short at a space is kept as QA keeps it, without the space, or
 # its problem's label never finds it in QA's review.
 (cut,) = observations(

@@ -147,14 +147,17 @@ const reviews = {
 
 /**
  * The task that fixes a problem, and for Text QA where it stands. A line
- * QA can't take is outside a narrower focus than the full game text.
+ * QA can't take is outside a narrower focus than the full game text, and
+ * an event comment never translated waits for Maps & events' comment text.
  */
 export const playtestFix = (problem: PlaytestProblem, focus = "release") =>
   problem.review === "outside" && focus !== "release"
     ? "Outside the QA focus"
     : problem.review
       ? reviews[problem.review]
-      : fixes[problem.fix];
+      : problem.check === "untranslated-comment"
+        ? "Maps & events, with Comment text on in Speaker detection"
+        : fixes[problem.fix];
 
 /** Problems text QA has yet to take, which running QA again reviews. */
 export const playtestWaiting = (playtest: PlaytestState) =>
