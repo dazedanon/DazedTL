@@ -366,8 +366,9 @@ pre {
   padding-inline: var(--frame-inline);
 }
 /* A wide page spans the window: its rows keep only the gutter, so their
-   edges still line up with each other. */
-.page-layout--wide {
+   edges still line up with each other and with the app's messages above. */
+.page-layout--wide,
+main:has(> .page-layout--wide) {
   --frame-inline: var(--frame-gutter);
 }
 .frame-row,
