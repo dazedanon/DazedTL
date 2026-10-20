@@ -70,8 +70,10 @@ TASK_SCHEMA = "rpgmaker-qa-task-v3"
 # The rules a task is reviewed under. Bump it only when a change makes reviews
 # an earlier version saved wrong or unreadable: a task in review then prepares
 # again, while a finished task keeps its results and applies as before. Any
-# other change to DazedTL's code leaves saved QA work current. Tasks from
-# before this version was kept, up to 2.24.0, count as version 1.
+# other change to DazedTL's code leaves saved QA work current, and the
+# previous-release check (scripts/qa-upgrade.mjs) fails on one that breaks it
+# without a bump. Tasks from before this version was kept, up to 2.24.0,
+# count as version 1.
 QA_RULES_VERSION = 1
 CHECKPOINT_SCHEMA = "rpgmaker-qa-checkpoint-v3"
 BUNDLE_SCHEMA = "rpgmaker-qa-bundle-v3"

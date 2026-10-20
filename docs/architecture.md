@@ -1127,7 +1127,7 @@ Renderer diagnostics contain fixed error types and source locations resolved thr
 
 Project-format changes increment `SCHEMA_VERSION` and register consecutive upgrades in [projects/store.py](../backend/dazedtl/projects/store.py).
 Saved work goes stale only when its inputs change or when a version kept beside the code that reads it is bumped on purpose, never because DazedTL's code changed: it is keyed on what it was made from and that version, never on hashes of source files, which nearly every release changes.
-[Text QA tasks](#workflow-and-shared-presentation) follow this.
+[Text QA tasks](#workflow-and-shared-presentation) follow this, and the [previous-release QA check](development.md#previous-release-qa-check) fails when a change breaks the previous release's tasks without bumping their version.
 The storage helper validates the result, retains the original bytes in a backup, and replaces the file atomically; unsupported or invalid formats are left untouched.
 Project opening and selection publish their in-memory ownership only after backend persistence succeeds; presentation-only navigation does not change that ownership.
 Removing a game from the recent list hides its registry record instead of deleting it, so its runs, Batches and assistant reports keep their owner, and opening or selecting the game again shows it with its work; older versions ignore the flag and list the game, so it needs no new format version.
