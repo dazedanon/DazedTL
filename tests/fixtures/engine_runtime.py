@@ -1074,8 +1074,8 @@ try:
             )
             assert not report.changes, report.changes
             # A choice plugin shows each comment line (408) under its help
-            # marker as a row. JOIN408 translates the block as one text and
-            # writes it back a line per row, laid out like the Japanese; a
+            # marker as a row. JOIN408 translates the block as one text; it is
+            # written back a line per row, laid out like the Japanese, and a
             # later run keeps them, and lines translated one by one too.
             help_lines = [
                 command(108, ["選択肢ヘルプ"]),
@@ -1104,6 +1104,17 @@ try:
                     command(408, ["We recommend watching it the first time."]),
                 ], result
                 assert parse(result[:-1]) == result, result
+                # One line at a time, a line too wide for the window wraps
+                # into lines of its own.
+                with patch.object(parser, "JOIN408", False):
+                    result = parse(help_lines[:2])
+                    assert result[1:3] == [
+                        command(
+                            408, ["Takes about 20 minutes."], _original="所要時間:20分"
+                        ),
+                        command(408, ["We recommend watching it the first time."]),
+                    ], result
+                    assert parse(result[:-1]) == result, result
                 lines = [
                     help_lines[0],
                     command(408, ["Line one."], _original="一行目"),
