@@ -170,6 +170,8 @@ write(
                             line("\\N[1]、よく来た！", "Welcome!"),
                             line("今日は晴れだ", "Today is 晴れ."),
                             line("◯日目", "Day ◯"),
+                            # A font name is no text the player reads.
+                            line("\\fn[和風]晴れの日", "\\fn[和風]A sunny day."),
                             {
                                 "code": 401,
                                 "indent": 0,
@@ -215,12 +217,17 @@ write(
     Window_Base.prototype.refresh = function() { trap(); };
     PluginManager.registerCommand("Dungeon", "rest", () => { $gameMessage.add("休んだ。"); });
     if (getParamString(["Title", "タイトル"])) return;
+    const saved = (slot) => $gameMessage.add(`セーブ完了 (Slot ${slot})`);
 })();
 """,
 )
 write(plugins / "Broken.js", 'const message = "壊れた;\n')
 
-report = static_checks(game, data)
+# Plugin files decided players never read this string; one drawn still shows.
+kept = {"file": "js/plugins/Dungeon.js", "line": 20, "kind": "template"}
+report = static_checks(
+    game, data, literals=[kept | {"value": "セーブ完了 (Slot ${slot})"}]
+)
 problems = report["problems"]
 found = {
     (row["check"], row["file"], row.get("pointer") or row.get("plugin") or ""): row
@@ -432,6 +439,22 @@ assert (
     b"        " + fixes.LOADER.encode() + b"\n        PluginManager"
     in fixes.with_loader(mz)
 )
+# The game still runs older fixes after the working copy changed or was
+# emptied, which writes nothing into it.
+from dazedtl.compatibility.playtest import fixes_state
+
+fixed = temporary / "fixed"
+(fixed / "js/plugins").mkdir(parents=True)
+(fixed / "js/main.js").write_bytes(fixes.with_loader(mz))
+write(fixed / fixes.PLUGIN, "// An older fix\n")
+# The working copy starts as the game's.
+assert fixes_state(temporary, fixed, fixed) == {
+    "file": str(fixed / ".dazedtl/playtest/DazedTL_Fixes.js"),
+    "in_game": True,
+}
+(fixed / ".dazedtl/playtest/DazedTL_Fixes.js").write_text("", encoding="utf-8")
+state = fixes_state(temporary, fixed, fixed)
+assert not state["in_game"] and state["other_in_game"], state
 for broken in (b"run();\n", mz + mz):
     try:
         fixes.with_loader(broken)

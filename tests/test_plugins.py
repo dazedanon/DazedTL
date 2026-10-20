@@ -14,7 +14,12 @@ from dazedtl.compatibility.translation import TranslationEngine
 from dazedtl.foreign_work import ForeignWorkError
 from dazedtl.plugins import PluginService, ruby
 from dazedtl.plugins.documents import Documents, occurrences, replace_leaf, validate
-from dazedtl.plugins.service import event_script_keys, kept_settings, safe_name
+from dazedtl.plugins.service import (
+    event_script_keys,
+    kept_literals,
+    kept_settings,
+    safe_name,
+)
 from dazedtl.projects.store import Projects
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.backups import snapshot, store_path
@@ -508,6 +513,21 @@ class PluginTests(unittest.TestCase):
             for index in (0, 1)
         ]
         self.assertEqual(kept_settings(self.game), kept)
+        # The playtest leaves out strings in plugin code kept the same way, by
+        # file, line and value; text still to translate stays in.
+        code = "www/js/plugins/PluginA.js"
+        literals = [
+            {"file": code, "line": 1, "kind": "default", "value": "既定"},
+            {"file": code, "line": 4, "kind": "literal", "value": "開始"},
+            {"file": code, "line": 6, "kind": "literal", "value": "薬草"},
+            {
+                "file": "www/js/plugins/PluginB.js",
+                "line": 1,
+                "kind": "literal",
+                "value": "隠れた文字",
+            },
+        ]
+        self.assertEqual(kept_literals(self.game), literals)
         # A game edit under a translation not applied yet goes back to the
         # assistant, along with what it kept; once applied, later edits are
         # expected.
@@ -517,6 +537,9 @@ class PluginTests(unittest.TestCase):
         self.assertLess(counts["investigated"], counts["files"])
         self.assertEqual(kept_settings(self.game), [])
         write_bytes(self.game / paths[0], before[paths[0]])
+        write_bytes(self.game / code, before[code] + b"\n// edited")
+        self.assertEqual(kept_literals(self.game), literals[3:])
+        write_bytes(self.game / code, before[code])
         # Apply checks each file again; a working copy changed after its
         # checks stays out of the game.
         saved = self.service.load(self.identity)["files"]
@@ -580,6 +603,10 @@ class PluginTests(unittest.TestCase):
         )
         self.assertEqual(kept_settings(self.game), kept)
         write_bytes(self.game / paths[0], applied)
+        settled = (self.game / code).read_bytes()
+        write_bytes(self.game / code, settled + b"\n// edited")
+        self.assertEqual(kept_literals(self.game), literals)
+        write_bytes(self.game / code, settled)
         saved = self.service.load(self.identity)
         original_saved = deepcopy(saved)
         saved["receipts"][-1]["files"][0]["backup"] = saved["files"][paths[0]][

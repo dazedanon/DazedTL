@@ -27,7 +27,7 @@ def run_playtest(plan, log):
     from desktop.backend.workflow_actions import validate_plan
     from util.playtest.run import run
 
-    from dazedtl.plugins.service import kept_settings
+    from dazedtl.plugins.service import kept_literals, kept_settings
 
     validate_plan(plan)
     folder = Path(plan["folder"])
@@ -47,6 +47,7 @@ def run_playtest(plan, log):
         stopped=getattr(log, "stopped", lambda: False),
         previous=before[1] if before else None,
         kept=kept_settings(plan["project"]["source"]),
+        literals=kept_literals(plan["project"]["source"]),
     )
     write_json(
         folder / POINTER,
@@ -125,7 +126,7 @@ def run_fixes(plan, log):
     from util.playtest import fixes
     from util.playtest.run import run
 
-    from dazedtl.plugins.service import kept_settings
+    from dazedtl.plugins.service import kept_literals, kept_settings
     from dazedtl.translation import publication
 
     validate_plan(plan)
@@ -172,6 +173,7 @@ def run_fixes(plan, log):
         stopped=getattr(log, "stopped", lambda: False),
         previous=found[1],
         kept=kept_settings(root),
+        literals=kept_literals(root),
         overlay=served,
     )
     reason = fixes.refusal(found[1], report)
@@ -235,21 +237,19 @@ def _prune(storage, keep):
 
 def fixes_state(folder, root, web):
     """The working copy of the fixes plugin, whether the game has it as it
-    is, and the latest check of it: a check of other fixes, such as those of
-    an attempt started over, is not of this copy."""
+    is or runs other fixes, such as an older copy, and the latest check of
+    it: a check of other fixes, such as those of an attempt started over, is
+    not of this copy."""
     from util.playtest.fixes import MAIN, PLUGIN, loads_fixes
 
     copy = fixes_copy(root, web)
     raw = copy.read_bytes()
     game = web / PLUGIN
     main = web / MAIN
-    result = {
-        "file": str(copy),
-        "in_game": game.is_file()
-        and game.read_bytes() == raw
-        and main.is_file()
-        and loads_fixes(main.read_bytes()),
-    }
+    loaded = game.is_file() and main.is_file() and loads_fixes(main.read_bytes())
+    result = {"file": str(copy), "in_game": loaded and game.read_bytes() == raw}
+    if loaded and not result["in_game"]:
+        result["other_in_game"] = True
     pointer = Path(folder) / FIX_POINTER
     try:
         check = read_json(pointer) if pointer.exists() else None

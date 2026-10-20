@@ -48,6 +48,19 @@ LABELS_STEP = (
 )
 
 
+def _require_fixes_saved(native):
+    """Refuses while the playtest's fixes are in the game but in no version,
+    which QA's version would otherwise take."""
+    from dazedtl.compatibility.playtest import fixes_saved
+
+    if fixes_saved(native["source"]) is False:
+        raise ValueError(
+            "The playtest's fixes are in the game but in no version; save them "
+            "with playtest --checkpoint first, so QA's version holds only its "
+            "corrections."
+        )
+
+
 def _unreadable_step(qa) -> str:
     """What the assistant does about a prepared task the app can't read."""
     problem = qa["unreadable"]
@@ -237,6 +250,7 @@ class TextQA:
             raise ValueError(qa["message"])
         if qa["applied"]:
             raise ValueError("This task's findings are already applied.")
+        _require_fixes_saved(native)
         waiting = [row for row in qa["questions"] if "choice" not in row]
         if waiting:
             raise ValueError(
@@ -287,6 +301,7 @@ class TextQA:
                 "Choose the corrections to "
                 + ("undo." if kind == "undo" else "apply again.")
             )
+        _require_fixes_saved(native)
         questions = {row["id"] for row in qa["questions"]}
         preview = self.guided.preview(
             project_id,
@@ -382,6 +397,22 @@ class TextQA:
                 **({"after": after} if after else {}),
             },
         )
+
+    def require_saved(self, project_id):
+        """Refuses while corrections an apply, undo or apply again wrote wait
+        for their version, which would otherwise take another batch's
+        changes, such as the playtest's fixes."""
+        saved = self.operation(project_id)
+        if saved and (
+            saved["kind"] in {"apply", "undo", "reapply"}
+            and saved["status"] in {"running", "complete"}
+            or saved["kind"] == "checkpoint"
+            and saved["status"] != "complete"
+        ):
+            raise ValueError(
+                "QA's corrections wait for their version; save it with qa "
+                "--checkpoint first, so each version holds only its own changes."
+            )
 
     def operation(self, project_id) -> dict[str, Any] | None:
         """The last QA step the helper started, with its current state."""

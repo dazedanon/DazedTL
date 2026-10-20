@@ -142,6 +142,7 @@ Its behavior is in [architecture](architecture.md#workflow-and-shared-presentati
 - What the tour cannot reach is a coverage gap in the report, never a request for the user to play it or confirm a review.
   The assistant adds stops for what only it can find, such as a dungeon floor with a trap or the recollection room, and the app keeps them for every later run.
 - Text a plugin draws on screen is player text, so Plugin files decides again about such text it kept in Japanese; a screen the tour opened on its own may be one players never reach, as Arina's trial-end screen showed, so the evidence says so.
+  Strings in plugin code Plugin files kept in Japanese, such as notetag and comment keys, count only once drawn: on 2026-10-20 Fuuma Chronicle's playtest listed 20 plugins of them by code reach alone, which reopened a Plugin files run that found nothing visible.
 - A screen the tour opens on its own, without what the game sets up first, an error a plugin raises because it needs NW.js, and a stop that fails, such as one starting an event whose page the game has not turned on, are coverage gaps rather than crashes, because none says anything about the game players run.
 
 ### Why the playtest
@@ -167,6 +168,8 @@ The manual run also showed what a harness must avoid:
 Building the tour added more:
 
 - A window drawn while hidden, or a message's page break, looks like overflow, so a finding counts only once its bitmap is on screen, and message windows go on in a new page.
+- A window may size its contents to its glyphs rather than its lines, as Keke_PredictionSystem's action view does, and MZ flushes an empty line after a closing line break, so text counts as past a window's bottom only where the glyphs it drew reach past it.
+  On 2026-10-20 that empty line made Fuuma Chronicle's battle action labels look cut off, and the assistant spent two fix rounds on them.
 - An opening left mid-message holds the next stops' screens, so the tour plays it until the player can move, four times as fast.
 - A battle the tour starts on a map with no background loads the engine's default, which a game may not ship, so it shows the game's own or none.
 - Chromium's headless platform gives an offscreen window a single pixel unless it has a screen size, and reaches the GPU without a display only through EGL; a game that still never starts, as on a machine without a GPU, plays with SwiftShader.

@@ -963,8 +963,10 @@ export type PlaytestFixes = {
   file: string;
   /** The game has the working copy as it is, and its main.js loads it. */
   in_game: boolean;
+  /** The game's main.js loads fixes other than the working copy, such as an older copy. */
+  other_in_game?: boolean;
   check?: PlaytestFixCheck;
-  /** Assistant-led, once the game has fixes: the latest checkpoint holds them as they are. */
+  /** Once the game has fixes: the latest version or checkpoint holds them as they are. */
   saved?: boolean;
 };
 
