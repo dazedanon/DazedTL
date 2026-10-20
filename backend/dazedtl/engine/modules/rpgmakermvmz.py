@@ -1127,6 +1127,27 @@ def _code408_has_supported_marker(codeList, index: int) -> bool:
     return marker in SUPPORTED_CODE408_MARKERS
 
 
+def _code408_group_end(codeList, start: int) -> int:
+    """The last comment line (408) translated with the one at *start*: under
+    JOIN408 the lines after it up to one holding its own translation."""
+    if JOIN408 is not True:
+        return start
+    end = start
+    for index in range(start + 1, _text_group_end(codeList, start, (408,)) + 1):
+        if "_original" in codeList[index]:
+            break
+        end = index
+    return end
+
+
+def _code408_lines(text: str, source: str) -> list[str]:
+    """A joined comment's translation as the comment lines (408) plugins show
+    one per row, wrapped like its Japanese."""
+    if FIXTEXTWRAP is True:
+        text = rpgmaker_rewrap.wrap_message(text, WIDTH, source=source)
+    return [line for line in text.split("\n") if line.strip()] or [text]
+
+
 def _code408_progress_units(codeList) -> int:
     """Count the batches that the 408 translation pass will actually submit."""
     if CODE408 is not True:
@@ -1149,9 +1170,7 @@ def _code408_progress_units(codeList) -> int:
             index += 1
             continue
 
-        group_end = (
-            _text_group_end(codeList, index, (408,)) if JOIN408 is True else index
-        )
+        group_end = _code408_group_end(codeList, index)
         if _text_needs_translation(_group_current(codeList, index, group_end)):
             count += 1
         index = group_end + 1
@@ -5364,37 +5383,28 @@ def _searchCodes(page, pbar, jobList, filename):
                     continue
 
                 groupStart408 = i
-                source408Parts = []
-                current408Parts = []
                 rawSource = _param_source(codeList[i], 0)
-                ojaString = rawSource
-                anchor408HasOrig = _scalar_original(codeList[groupStart408]) is not None
-                source408Parts.append(rawSource)
-                current408Parts.append(_param_current(codeList[i], 0))
-
                 if not rawSource.strip():
                     i += 1
                     continue
 
-                # Join Up 408's into single string
-                groupEnd408 = (
-                    _text_group_end(codeList, i, (408,))
-                    if JOIN408 is True
-                    else i
-                )
-                while i < groupEnd408:
-                    if not setData:
-                        codeList[i]["parameters"] = []
-                        codeList[i]["code"] = -1
-                    i += 1
-
-                    lineSource = _param_source(codeList[i], 0)
-                    current408Parts.append(_param_current(codeList[i], 0))
-                    if lineSource.strip() and not anchor408HasOrig:
-                        source408Parts.append(lineSource)
-
-                rawSource = _group_raw_source(codeList, groupStart408, source408Parts)
-                if not _text_needs_translation("\n".join(current408Parts)):
+                # JOIN408 translates a comment's lines as one text and writes
+                # it back one line per 408, as plugins read them. The first
+                # line keeps the Japanese of them all.
+                groupEnd408 = _code408_group_end(codeList, i)
+                if _scalar_original(codeList[groupStart408]) is None:
+                    rawSource = "\n".join(
+                        source
+                        for source in (
+                            _param_source(codeList[index], 0)
+                            for index in range(groupStart408, groupEnd408 + 1)
+                        )
+                        if source.strip()
+                    )
+                i = groupEnd408
+                if not _text_needs_translation(
+                    _group_current(codeList, groupStart408, groupEnd408)
+                ):
                     i += 1
                     continue
                 ojaString = rawSource
@@ -5405,26 +5415,37 @@ def _searchCodes(page, pbar, jobList, filename):
                     list408.append(jaString)
 
                 # Pass 2
-                else:
-                    if len(list408) > 0:
-                        translatedText = list408[0]
-                        list408.pop(0)
+                elif len(list408) > 0:
+                    translatedText = list408.pop(0)
 
-                        merged408 = len(source408Parts) > 1
-                        if merged408:
-                            codeList[i]["parameters"] = [translatedText]
+                    if JOIN408 is True:
+                        lines = _code408_lines(translatedText, rawSource)
+                        slots = range(groupStart408, groupEnd408 + 1)
+                        for line, index in zip(lines, slots):
+                            codeList[index]["parameters"] = [line]
+                        # Lines it no longer needs go when the list is written.
+                        for index in slots[len(lines) :]:
+                            codeList[index]["parameters"] = []
+                            codeList[index]["code"] = -1
+                        indent = codeList[groupEnd408].get("indent", 0)
+                        for extra, line in enumerate(lines[len(slots) :], 1):
+                            codeList.insert(
+                                groupEnd408 + extra,
+                                {"code": 408, "indent": indent, "parameters": [line]},
+                            )
+                        i = groupEnd408 + max(0, len(lines) - len(slots))
+                    else:
+                        param0 = codeList[i]["parameters"][0]
+                        if ojaString in param0:
+                            codeList[i]["parameters"][0] = param0.replace(ojaString, translatedText)
                         else:
-                            param0 = codeList[i]["parameters"][0]
-                            if ojaString in param0:
-                                codeList[i]["parameters"][0] = param0.replace(ojaString, translatedText)
+                            flatSource = ojaString.replace("\n", " ")
+                            if flatSource in param0:
+                                codeList[i]["parameters"][0] = param0.replace(flatSource, translatedText)
                             else:
-                                flatSource = ojaString.replace("\n", " ")
-                                if flatSource in param0:
-                                    codeList[i]["parameters"][0] = param0.replace(flatSource, translatedText)
-                                else:
-                                    codeList[i]["parameters"][0] = translatedText
+                                codeList[i]["parameters"][0] = translatedText
 
-                        _apply_original(codeList[i], rawSource)
+                    _apply_original(codeList[groupStart408], rawSource)
 
             ## Event Code: 108 (Script)
             if "code" in codeList[i] and (codeList[i]["code"] == 108) and CODE108 is True:

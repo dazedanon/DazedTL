@@ -1073,6 +1073,43 @@ try:
                 {"list": result}, "Map001.json", Layout.from_widths(widths)
             )
             assert not report.changes, report.changes
+            # A choice plugin shows each comment line (408) under its help
+            # marker as a row. JOIN408 translates the block as one text and
+            # writes it back a line per row, laid out like the Japanese; a
+            # later run keeps them, and lines translated one by one too.
+            help_lines = [
+                command(108, ["選択肢ヘルプ"]),
+                command(408, ["所要時間:20分"]),
+                command(408, ["初回は見ることを推奨します。"]),
+            ]
+            english = "Takes about 20 minutes. We recommend watching it the first time."
+            with patch.multiple(
+                parser,
+                CODE408=True,
+                JOIN408=True,
+                FIXTEXTWRAP=True,
+                WIDTH=55,
+                translateAI=extensions.point(
+                    lambda text, *_: [[english for _value in text], [0, 0]]
+                ),
+            ):
+                result = parse(help_lines)
+                assert result[:3] == [
+                    help_lines[0],
+                    command(
+                        408,
+                        ["Takes about 20 minutes."],
+                        _original="所要時間:20分\n初回は見ることを推奨します。",
+                    ),
+                    command(408, ["We recommend watching it the first time."]),
+                ], result
+                assert parse(result[:-1]) == result, result
+                lines = [
+                    help_lines[0],
+                    command(408, ["Line one."], _original="一行目"),
+                    command(408, ["Line two."], _original="二行目"),
+                ]
+                assert parse(lines)[:-1] == lines
             # Plugins split 356 commands on spaces, so each handler joins a
             # translation's words its own way. A kept placeholder stays, and
             # must not shift the next translation onto the wrong command.
