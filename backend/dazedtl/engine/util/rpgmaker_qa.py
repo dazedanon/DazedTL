@@ -4364,59 +4364,71 @@ def decline_items(
     with _task_lock(root):
         root, _task, checkpoint = _load_task(root)
         helper = _register_worker(checkpoint, worker, helper)
-        stage, row = _bundle_row(checkpoint, bundle_id)
-        holder = str(row.get("assigned_to") or "")
-        if row["status"] == "assigned" and holder != worker:
-            raise ValueError(
-                f"{holder} holds {bundle_id} and declines items in its result"
-            )
-        if row["status"] not in {"pending", "assigned"}:
-            raise ValueError(
-                f"{bundle_id} is {row['status']}; only a waiting bundle's items "
-                "can be declined"
-            )
-        if row.get("check_of"):
-            raise ValueError(
-                f"{bundle_id} checks lines screened already; its reviewer declines "
-                "items in its result"
-            )
-        if helper in (row.get("declined_helpers") or []):
-            raise ValueError(f"A worker on the {helper} helper declined {bundle_id}")
-        bundle = _read_json(Path(row["path"]))
-        reasons = _declined_items(bundle, {"declined": declined})
-        if not reasons:
-            raise ValueError("Name each item to decline with a one-line reason")
-        split, remaining = _split_declined(
-            root, checkpoint, stage, row, bundle, reasons, worker
+        return _decline(root, checkpoint, worker, helper, bundle_id, declined)
+
+
+def _decline(
+    root: Path,
+    checkpoint: dict[str, Any],
+    worker: str,
+    helper: str,
+    bundle_id: str,
+    declined: list[dict[str, str]],
+) -> dict[str, Any]:
+    """decline_items under the task's lock, for a worker on *helper*."""
+    stage, row = _bundle_row(checkpoint, bundle_id)
+    holder = str(row.get("assigned_to") or "")
+    if row["status"] == "assigned" and holder != worker:
+        raise ValueError(
+            f"{holder} holds {bundle_id} and declines items in its result"
         )
-        remainder = None
-        if remaining:
-            origin = row.get("origin") or row["id"]
-            rest = _make_bundle(
-                stage,
-                f"{origin}-r{_next_number(checkpoint, stage, origin)}",
-                remaining,
-                _shared_context(bundle, remaining),
-            )
-            remainder = _add_row(root, checkpoint, stage, rest, {
-                **{
-                    key: row[key]
-                    for key in (
-                        "status", "assigned_to", "assigned_at", "follow_up",
-                        "declined_by", "declined_helpers", "declines", "round",
-                    )
-                    if key in row
-                },
-                "origin": origin,
-            }, after=row)
-        row["status"] = "split"
-        row["remainder"] = remainder["id"] if remainder else ""
-        checkpoint["updated_at"] = _utc_now()
-        _atomic_write_json(root / "checkpoint.json", checkpoint)
-        return {
-            "declined": copy.deepcopy(split),
-            "remainder": copy.deepcopy(remainder),
-        }
+    if row["status"] not in {"pending", "assigned"}:
+        raise ValueError(
+            f"{bundle_id} is {row['status']}; only a waiting bundle's items "
+            "can be declined"
+        )
+    if row.get("check_of"):
+        raise ValueError(
+            f"{bundle_id} checks lines screened already; its reviewer declines "
+            "items in its result"
+        )
+    if helper in (row.get("declined_helpers") or []):
+        raise ValueError(f"A worker on the {helper} helper declined {bundle_id}")
+    bundle = _read_json(Path(row["path"]))
+    reasons = _declined_items(bundle, {"declined": declined})
+    if not reasons:
+        raise ValueError("Name each item to decline with a one-line reason")
+    split, remaining = _split_declined(
+        root, checkpoint, stage, row, bundle, reasons, worker
+    )
+    remainder = None
+    if remaining:
+        origin = row.get("origin") or row["id"]
+        rest = _make_bundle(
+            stage,
+            f"{origin}-r{_next_number(checkpoint, stage, origin)}",
+            remaining,
+            _shared_context(bundle, remaining),
+        )
+        remainder = _add_row(root, checkpoint, stage, rest, {
+            **{
+                key: row[key]
+                for key in (
+                    "status", "assigned_to", "assigned_at", "follow_up",
+                    "declined_by", "declined_helpers", "declines", "round",
+                )
+                if key in row
+            },
+            "origin": origin,
+        }, after=row)
+    row["status"] = "split"
+    row["remainder"] = remainder["id"] if remainder else ""
+    checkpoint["updated_at"] = _utc_now()
+    _atomic_write_json(root / "checkpoint.json", checkpoint)
+    return {
+        "declined": copy.deepcopy(split),
+        "remainder": copy.deepcopy(remainder),
+    }
 
 
 def _split_notice(row: dict[str, Any]) -> str:
@@ -7313,16 +7325,16 @@ def rebuild_deep_from_screen(
     ):
         raise ValueError(f"Unsupported or corrupt source QA task: {source}")
     source_rows = source_checkpoint["screen"]["bundles"]
-    if (
-        not source_rows
-        or any(row.get("status") != "accepted" for row in source_rows)
-        or source_checkpoint["screen"]["accepted_items"]
-        != source_checkpoint["screen"]["total_items"]
+    # Declined items finish a screen too: reviewed on another helper, or set
+    # aside as not reviewed.
+    if not source_rows or any(
+        row.get("status") not in FINISHED_STATUSES for row in source_rows
     ):
-        raise ValueError("The source task must have a fully accepted screen stage")
+        raise ValueError("The source task must have a finished screen stage")
 
     reusable_results: dict[str, Path] = {}
     digests: dict[str, str] = {}
+    items: dict[str, list[str]] = {}
     groups: list[list[str]] = []
     for row in source_rows:
         bundle_path = source / "bundles" / "screen" / f"{row['id']}.json"
@@ -7338,14 +7350,18 @@ def rebuild_deep_from_screen(
             or claimed != _sha256(_canonical_bytes(checksum_value))
         ):
             raise ValueError(f"Source screen bundle checksum is invalid: {row['id']}")
+        digests[row["id"]] = _screen_digest(bundle)
+        items[row["id"]] = [item["id"] for item in bundle["items"]]
+        if _first_screen(row):
+            groups.append(items[row["id"]])
+        if row["status"] != "accepted":
+            continue
         result = _read_json(result_path)
         if result.get("bundle_sha256") != claimed:
             raise ValueError(f"Source screen result checksum is invalid: {row['id']}")
         _validate_screen_result(bundle, result)
         reusable_results[row["id"]] = result_path
-        digests[row["id"]] = _screen_digest(bundle)
-        if _first_screen(row):
-            groups.append([item["id"] for item in bundle["items"]])
+    declines = _source_declines(source_rows, items)
 
     destination_root = (
         Path(output_root).expanduser().resolve()
@@ -7385,7 +7401,13 @@ def rebuild_deep_from_screen(
         raise ValueError("The source task already uses the current QA rules")
     try:
         _replay_screen(
-            source, source_task, source_rows, reusable_results, digests, rebuilt
+            source,
+            source_task,
+            source_checkpoint,
+            reusable_results,
+            digests,
+            declines,
+            rebuilt,
         )
     except ValueError:
         # A task this rebuild made but could not fill is no task to go on with.
@@ -7393,8 +7415,10 @@ def rebuild_deep_from_screen(
             with _task_lock(tasks):
                 shutil.rmtree(rebuilt, ignore_errors=True)
         raise
-    if _stage_finished(_read_task(rebuilt)[2], ["screen"]):
-        return rebuilt, advance(rebuilt)
+    # Declined items the source reported as not reviewed are set aside again.
+    skipped = any(row.get("skipped") for row in source_rows)
+    if _stage_finished(_read_task(rebuilt)[2], ["screen"], skipped):
+        return rebuilt, advance(rebuilt, skipped)
     return rebuilt, status(rebuilt)
 
 
@@ -7427,21 +7451,105 @@ def _inventory_text(root: Path) -> dict[str, Any]:
 
 def _first_screen(row: dict[str, Any]) -> bool:
     """Whether a screen row is one of the bundles a task was prepared with,
-    rather than a check of one or the items a reviewer declined from one."""
-    return not row.get("check_of") and not row.get("origin")
+    rather than a check of one, the items a reviewer declined from one or a
+    follow-up of lines set aside."""
+    return not (row.get("check_of") or row.get("origin") or row.get("follow_up"))
+
+
+def _source_declines(
+    rows: list[dict[str, Any]], items: dict[str, list[str]]
+) -> dict[str, dict[str, Any]]:
+    """Each screen bundle a worker split by declining some of its items
+    unreviewed (see decline_items): the number of the bundle the declined
+    items moved to, that decline (its worker, helper and reasons) and the
+    bundles made before it, which rows list in the order they were made,
+    except a split's remainder, listed in its place. *items* holds each
+    bundle's item IDs."""
+    by_id = {row["id"]: row for row in rows}
+    remainders = {row.get("remainder") for row in rows if row["status"] == "split"}
+    found = {}
+    for row in rows:
+        if row["status"] != "split":
+            continue
+        origin = row.get("origin") or row["id"]
+        if row.get("remainder"):
+            # The rest moved to the bundle numbered right after.
+            number = int(row["remainder"].rsplit("-r", 1)[1]) - 1
+        else:
+            # Every item moved: to the first bundle made after this one from
+            # its origin with its items and earlier declines.
+            own = 0 if row["id"] == origin else int(row["id"].rsplit("-", 1)[1][1:])
+            numbers = [
+                int(match[1])
+                for other in rows
+                if (match := re.fullmatch(re.escape(origin) + r"-d(\d+)", other["id"]))
+                and int(match[1]) > own
+                and items[other["id"]] == items[row["id"]]
+                and (other.get("declines") or [])[:-1] == (row.get("declines") or [])
+            ]
+            number = min(numbers, default=0)
+        declined = by_id.get(f"{origin}-d{number}")
+        if not declined or not declined.get("declines"):
+            raise ValueError(f"Source screen declines are incomplete: {row['id']}")
+        found[row["id"]] = {
+            "number": number,
+            "decline": declined["declines"][-1],
+            "after": [
+                other["id"]
+                for other in rows[: rows.index(declined)]
+                if other["id"] not in remainders
+            ],
+        }
+    return found
+
+
+def _replay_declines(rebuilt: Path, declines: dict[str, dict[str, Any]]) -> None:
+    """Split the rebuilt task's bundles as their source's workers did, each
+    once the bundle waits and the bundles made before it in the source are
+    made, so later bundles are numbered and listed alike. Removes what it
+    replayed from *declines*."""
+    while declines:
+        with _task_lock(rebuilt):
+            _root, _task, checkpoint = _load_task(rebuilt)
+            rows = {row["id"]: row for row in checkpoint["screen"]["bundles"]}
+            ready = [
+                bundle_id
+                for bundle_id, split in declines.items()
+                if bundle_id in rows
+                and rows[bundle_id]["status"] in {"pending", "assigned"}
+                and all(made in rows for made in split["after"])
+                and split["number"] == _next_number(
+                    checkpoint, "screen", rows[bundle_id].get("origin") or bundle_id
+                )
+            ]
+            if not ready:
+                return
+            entry = declines.pop(ready[0])["decline"]
+            _decline(
+                rebuilt,
+                checkpoint,
+                entry["worker"],
+                entry["helper"],
+                ready[0],
+                [{"id": key, "reason": reason} for key, reason in entry["reasons"].items()],
+            )
 
 
 def _replay_screen(
     source: Path,
     source_task: dict[str, Any],
-    source_rows: list[dict[str, Any]],
+    source_checkpoint: dict[str, Any],
     reusable_results: dict[str, Path],
     digests: dict[str, str],
+    declines: dict[str, dict[str, Any]],
     rebuilt: Path,
 ) -> None:
-    """Accept a completed screen's results in a rebuilt task, once its screen
+    """Accept a finished screen's results in a rebuilt task, once its screen
     bundles hold the same lines; *digests* are the source's bundles' (see
-    _screen_digest), as the rebuilt task's hints may read otherwise."""
+    _screen_digest), as the rebuilt task's hints may read otherwise. Items
+    the source's workers declined are declined alike (see _source_declines),
+    and set aside again as the source set them aside."""
+    source_rows = source_checkpoint["screen"]["bundles"]
     _rebuilt_root, rebuilt_task, rebuilt_checkpoint = _load_task(rebuilt)
     if _inventory_text(rebuilt) != _inventory_text(source):
         raise ValueError("Cannot reuse screening after the game's text changed")
@@ -7459,33 +7567,70 @@ def _replay_screen(
     }:
         raise ValueError("Current screen bundles differ; screening cannot be reused")
 
-    if rebuilt_checkpoint["stage"] == "screen":
-        # Accepted in their order under the same reviewers, the results open
-        # the same checks, which take their own results in turn.
-        for source_row in sorted(source_rows, key=lambda row: row.get("accepted_at") or ""):
-            with _task_lock(rebuilt):
+    if rebuilt_checkpoint["stage"] != "screen":
+        return
+    differ = "Current screen checks differ; screening cannot be reused"
+    with _task_lock(rebuilt):
+        # Its workers keep their helpers, which decide who may take what
+        # they declined.
+        _rebuilt_root, _task, checkpoint = _load_task(rebuilt)
+        workers = checkpoint.setdefault("workers", {})
+        for name, record in (source_checkpoint.get("workers") or {}).items():
+            if record.get("helper") not in (None, "", DEFAULT_HELPER):
+                workers.setdefault(name, {"bundles": 0, "seconds": 0.0}).setdefault(
+                    "helper", record["helper"]
+                )
+        _atomic_write_json(rebuilt / "checkpoint.json", checkpoint)
+    skipped = any(row.get("skipped") for row in source_rows)
+    # Accepted in their order under the same reviewers, the results open the
+    # same checks, which take their own results in turn.
+    accepted = sorted(
+        (row for row in source_rows if row["status"] == "accepted"),
+        key=lambda row: row.get("accepted_at") or "",
+    )
+    for source_row in accepted:
+        _replay_declines(rebuilt, declines)
+        with _task_lock(rebuilt):
+            _rebuilt_root, _task, checkpoint = _load_task(rebuilt)
+            if (
+                skipped
+                and source_row["id"] not in {row["id"] for row in checkpoint["screen"]["bundles"]}
+                and _stage_finished(checkpoint, ["screen"], skip_declined=True)
+            ):
+                # The source set declined items aside here, which sent their
+                # lines to follow-up bundles.
+                _advance_unlocked(rebuilt, skip_declined=True)
                 _rebuilt_root, _task, checkpoint = _load_task(rebuilt)
-                try:
-                    _stage, row = _bundle_row(checkpoint, source_row["id"])
-                except QAResultError as error:
-                    raise ValueError(
-                        "Current screen checks differ; screening cannot be reused"
-                    ) from error
-                if _screen_digest(_read_json(Path(row["path"]))) != digests[source_row["id"]]:
-                    raise ValueError(
-                        "Current screen checks differ; screening cannot be reused"
-                    )
-                if row["status"] != "accepted":
-                    row["status"] = "assigned"
-                    row["assigned_to"] = str(source_row.get("assigned_to") or "")
-                    _atomic_write_json(rebuilt / "checkpoint.json", checkpoint)
-                checksum = row["sha256"]
-            # The same review of the same lines, for the bundle as the rebuilt
-            # task words its hints.
-            _accept(
-                rebuilt,
-                {**_read_json(reusable_results[source_row["id"]]), "bundle_sha256": checksum},
-            )
+            try:
+                _stage, row = _bundle_row(checkpoint, source_row["id"])
+            except QAResultError as error:
+                raise ValueError(differ) from error
+            if _screen_digest(_read_json(Path(row["path"]))) != digests[source_row["id"]]:
+                raise ValueError(differ)
+            if row["status"] != "accepted":
+                row["status"] = "assigned"
+                row["assigned_to"] = str(source_row.get("assigned_to") or "")
+                _atomic_write_json(rebuilt / "checkpoint.json", checkpoint)
+            checksum = row["sha256"]
+        # The same review of the same lines, for the bundle as the rebuilt
+        # task words its hints.
+        _accept(
+            rebuilt,
+            {**_read_json(reusable_results[source_row["id"]]), "bundle_sha256": checksum},
+        )
+    _replay_declines(rebuilt, declines)
+    # Every bundle of the source's screen is the rebuilt task's, holding the
+    # same lines and as finished, but for what its source set aside on
+    # request, which waits for that request (see rebuild_deep_from_screen).
+    rows = {row["id"]: row for row in _read_task(rebuilt)[2]["screen"]["bundles"]}
+    if declines or any(
+        row["id"] not in rows
+        or _screen_digest(_read_json(Path(rows[row["id"]]["path"]))) != digests[row["id"]]
+        or rows[row["id"]]["status"]
+        not in {row["status"], "pending" if row.get("skipped") else row["status"]}
+        for row in source_rows
+    ):
+        raise ValueError(differ)
 
 
 def _draft_document(

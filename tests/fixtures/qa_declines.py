@@ -6,6 +6,7 @@ are checked through the engine's own commands.
 """
 
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -257,6 +258,19 @@ checkpoint = json.loads((task / "checkpoint.json").read_text(encoding="utf-8"))
 assert (
     checkpoint["screen"]["accepted_items"] + 5 == checkpoint["screen"]["total_items"]
 ), checkpoint["screen"]
+# An update that changes QA's rules keeps this screen, declines and all: the
+# coordinator's and reviewers' declines move the same items to the same
+# bundles, and what was set aside is set aside again.
+fingerprint = qa._engine_fingerprint
+qa._engine_fingerprint = lambda: "updated rules"
+rebuilt, state = qa.rebuild_deep_from_screen(task)
+qa._engine_fingerprint = fingerprint
+assert state["declined"] == {"waiting": 0, "set_aside": 5}, state
+again = json.loads((rebuilt / "checkpoint.json").read_text(encoding="utf-8"))
+assert [(row["id"], row["status"]) for row in again["screen"]["bundles"]] == [
+    (row["id"], row["status"]) for row in checkpoint["screen"]["bundles"]
+], again["screen"]["bundles"]
+shutil.rmtree(rebuilt)
 
 # A declined deep item waits too, and next sets it aside the same way.
 qa.accept_result(
