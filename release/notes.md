@@ -6,7 +6,7 @@
 
 ### Fixed
 
-- **Maps & events:** a message or scrolling text the translation leaves untranslated or declines now keeps every row as the game has it, instead of being joined into one row, so its event keeps its place for saved games.
+- **Maps & events:** a message or scrolling text the translation leaves untranslated or declines now keeps every row as the game has it, instead of being joined into one row, as does one an older run saved a refusal note for, so its event keeps its place for saved games.
 - **VX Ace:** translations now show in the game right after **Apply**, as do Plugin files, Text QA, Line widths and restores in History, instead of waiting for a separate packing step; a game that came with `ace_json` already converted and `Game.rgss3a` still beside `Game.exe` now has Set up set the archive aside, keeping its translations, instead of releasing the untranslated game.
 - **Maps & events:** in a project translated before **Comment text** came on, choice help still in Japanese now counts as lines left instead of the file looking finished; **Translate** sends only the help.
 - **Database files and Maps & events:** after a rerun that sent only some lines, such as choice help, **Lines** and the project's lines translated no longer drop to that rerun's own lines (for example 2 / 2 instead of 11 / 11).
