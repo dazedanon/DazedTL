@@ -45,6 +45,8 @@ export function LineChange({ rows }: { rows: readonly LineChangeRow[] }) {
         : undefined,
     [before, after],
   );
+  const anyMarked = (diff: NonNullable<typeof words>) =>
+    [...diff.before, ...diff.after].some((run) => run.changed);
   const marked = (row: LineChangeRow): WordRun[] | undefined =>
     !words
       ? undefined
@@ -59,11 +61,19 @@ export function LineChange({ rows }: { rows: readonly LineChangeRow[] }) {
         const diff = marked(row);
         const runs =
           diff || (row.marks?.length ? markedRuns(row.text, row.marks) : null);
+        // When the words that changed are marked, only they take the
+        // color; a change that marks none is tinted whole.
+        const plain =
+          !!words && (anyMarked(words) || removed?.text === added?.text);
         const Mark = !diff ? "mark" : row.change === "added" ? "ins" : "del";
         return (
           <Fragment key={index}>
             <dt data-change={row.change}>{row.label}</dt>
-            <dd data-change={row.change} lang={row.lang}>
+            <dd
+              data-change={row.change}
+              data-plain={plain || undefined}
+              lang={row.lang}
+            >
               {runs
                 ? runs.map((run, part) => (
                     <Fragment key={part}>
