@@ -27,6 +27,7 @@
 ### Fixed
 
 - **History:** **Review restore** for QA corrections no longer stops at "Restore the newer text batch first." when a later batch, such as an **Apply** of other files, can't be restored; a batch restores once no later batch changed its files, and otherwise the button names the later batch to restore first, or says a later Apply replaced those files.
+- **Plugin files:** **Apply to game** and **Review restore** now wait while a game update is stopped on conflicts, saying "The game folder has an unfinished Git cherry-pick. Finish or cancel it under Versions, or in Git, to continue." as **Apply** does; they wrote the game, after which **Cancel update & restore translation** failed with "error: Entry 'js/plugins.js' not uptodate". **Images** waits the same way.
 - **Project:** the **Status** tab of an Assistant-led game shows its latest activity once, in the status card, instead of repeating it below as "Last activity", and building a clean game ZIP reads **Build clean game ZIP** in **History**, as on the Release page, instead of "Build public release ZIP".
 - **Text QA:** running QA again, such as after a plugin change, continues the same review instead of starting a new one when the playtest found something, also once the review is finished; lines a later playtest finds are reviewed on their own.
 - **Text QA:** a correction of a slip found in several lines, such as a quoted title that no longer matches, no longer gives as its reason the note its reviewer wrote on why some of those lines stay as they are.
