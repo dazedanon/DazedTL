@@ -66,11 +66,11 @@ def japanese(value: Any) -> bool:
 
 
 class Line(NamedTuple):
-    """One line a person reads: its kind, the pointers of its values, their
+    """One line a person reads: its kind, the paths of its values, their
     text, and the Japanese source the engine keeps for them."""
 
     kind: str
-    pointers: tuple[str, ...]
+    paths: tuple[tuple, ...]
     texts: tuple[str, ...]
     sources: tuple[str, ...]
 
@@ -125,26 +125,19 @@ def lines(
     file, in file order, whether or not it is in scope. Choice help counts
     under *markers*, the comment markers Comment text translates; none while
     it is off."""
-    from util.rpgmaker_qa_preflight import pointer
-
     if phase == "database":
         return _database(name, document)
     found: list[Line] = []
     if not (_MAP.fullmatch(name) or name in {"CommonEvents.json", "Troops.json"}):
         return found
-    # A map's tiles hold no text; the reader would walk every one of them.
-    readable = (
-        {key: value for key, value in document.items() if key != "data"}
-        if isinstance(document, dict)
-        else document
-    )
+    readable = _events(name, document)
     # The open message, scrolling text or help block: its kind, command list
     # and the position of its last command.
     group: tuple[str, tuple, int] | None = None
     for path, value, kind, _translated in _visible(name, readable, markers):
         if kind == "map name":
             if isinstance(value, str):
-                found.append(Line(kind, (pointer(path),), (value,), ()))
+                found.append(Line(kind, (path,), (value,), ()))
             continue
         if kind == "choice":
             command = _resolve(readable, path[:-3])
@@ -156,7 +149,7 @@ def lines(
                 and isinstance(original[path[-1]], str)
                 else ()
             )
-            found.append(Line(kind, (pointer(path),), (str(value),), source))
+            found.append(Line(kind, (path,), (str(value),), source))
             group = None
             continue
         listed, index = path[:-3], path[-3]
@@ -190,19 +183,79 @@ def lines(
         if joined:
             last = found[-1]
             found[-1] = last._replace(
-                pointers=last.pointers + (pointer(path),),
+                paths=last.paths + (path,),
                 texts=last.texts + (text,),
                 sources=last.sources + sources,
             )
         else:
-            found.append(Line(unit, (pointer(path),), (text,), sources))
+            found.append(Line(unit, (path,), (text,), sources))
         group = (unit, listed, index)
     return found
 
 
-def _database(name: str, document: Any) -> list[Line]:
-    from util.rpgmaker_qa_preflight import pointer
+def _pages(owner: Any, key: str) -> Any:
+    """An event's, or a troop's, pages with their command lists alone."""
+    if not isinstance(owner, dict) or not isinstance(owner.get(key), list):
+        return owner
+    return {
+        key: [
+            {"list": page["list"]}
+            if isinstance(page, dict) and "list" in page
+            else page
+            for page in owner[key]
+        ]
+    }
 
+
+def _events(name: str, document: Any) -> Any:
+    """The parts of an event file the engine reads lines from, at their own
+    paths: a map's name and its events' command lists, a common event's list
+    and a troop's pages. The reader would walk the rest, such as a map's
+    tiles and each page's settings, value by value."""
+    if _MAP.fullmatch(name) and isinstance(document, dict):
+        events = document.get("events")
+        return {
+            "displayName": document.get("displayName"),
+            "events": [_pages(event, "pages") for event in events]
+            if isinstance(events, list)
+            else events,
+        }
+    if not isinstance(document, list):
+        return document
+    if name == "CommonEvents.json":
+        return [
+            {"list": event["list"]}
+            if isinstance(event, dict) and "list" in event
+            else event
+            for event in document
+        ]
+    return [_pages(troop, "pages") for troop in document]
+
+
+def _fields(name: str, document: Any) -> Any:
+    """The database text fields the engine translates, with each entry's
+    `_original`, at their own paths; the reader would walk every effect and
+    trait otherwise."""
+    from util.rpgmaker_qa_preflight import DATABASE_FIELDS, SYSTEM_FIELDS
+
+    fields = (*DATABASE_FIELDS.get(name, ()), "_original")
+    if isinstance(document, list):
+        return [
+            {key: entry[key] for key in fields if key in entry}
+            if isinstance(entry, dict)
+            else entry
+            for entry in document
+        ]
+    if name == "System.json" and isinstance(document, dict):
+        return {
+            key: document[key]
+            for key in (*SYSTEM_FIELDS, "_original")
+            if key in document
+        }
+    return document
+
+
+def _database(name: str, document: Any) -> list[Line]:
     found = []
     if name == _MAP_INFOS:
         entries = (
@@ -218,13 +271,13 @@ def _database(name: str, document: Any) -> list[Line]:
                 found.append(
                     Line(
                         "database field",
-                        (pointer(path),),
+                        (path,),
                         (entry["name"],),
                         _entry_original(document, path),
                     )
                 )
         return found
-    for path, value, kind, _translated in _visible(name, document):
+    for path, value, kind, _translated in _visible(name, _fields(name, document)):
         if kind == "database field" and isinstance(value, str):
             source = _entry_original(document, path)
         elif kind == "system term" and isinstance(value, str):
@@ -233,7 +286,7 @@ def _database(name: str, document: Any) -> list[Line]:
             source = _system_original(document, path)
         else:
             continue
-        found.append(Line(kind, (pointer(path),), (value,), source))
+        found.append(Line(kind, (path,), (value,), source))
     return found
 
 
@@ -241,7 +294,8 @@ def state(line: Line, notes: frozenset[str]) -> str | None:
     """Whether a line is "translated", "untranslated" or holds a refusal
     "note"; None when it is out of scope, and "unknown" for a translated map
     name, whose source only the original game file has."""
-    if any(value in notes for value in line.pointers):
+    # Notes are rare: only then do the lines' paths become pointers.
+    if notes and any(_pointer(path) in notes for path in line.paths):
         return "note"
     if any(japanese(text) for text in line.texts):
         return "untranslated"
@@ -252,14 +306,20 @@ def state(line: Line, notes: frozenset[str]) -> str | None:
     return None
 
 
-def note_pointers(document: Any, original: Callable[[], Any]) -> frozenset[str]:
-    """The pointers of every value holding a refusal note with a known source."""
+def _pointer(path: tuple) -> str:
     from util.rpgmaker_qa_preflight import pointer
 
+    return pointer(path)
+
+
+def note_pointers(document: Any, original: Callable[[], Any]) -> frozenset[str]:
+    """The pointers of every value holding a refusal note with a known source;
+    a pointer reads a list position the same whether a path names it as a
+    number or, as System.json's `_original` does, as text."""
     from .saved_refusals import find
 
     return frozenset(
-        pointer(path) for note in find(document, original) for path in note.paths
+        _pointer(path) for note in find(document, original) for path in note.paths
     )
 
 
@@ -278,7 +338,8 @@ def count(
     counted: set[str] = set()
     result: dict[str, Any] = {"lines": 0, "translated": 0}
     for line in lines(name, document, phase, markers):
-        counted.update(line.pointers)
+        if notes:
+            counted.update(map(_pointer, line.paths))
         found = state(line, notes)
         if found == "unknown":
             result["mapName"] = line.texts[0]
@@ -313,7 +374,7 @@ def left(
             continue
         rows.append(
             {
-                "location": line.pointers[0],
+                "location": _pointer(line.paths[0]),
                 "text": "\n".join(text for text in line.texts if text),
                 "source": "\n".join(line.sources),
                 "reason": "note"
