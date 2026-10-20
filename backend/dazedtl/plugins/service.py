@@ -1634,7 +1634,10 @@ class PluginService:
                     continue
                 result = row.get("result", {})
                 expected = row.get("applied", {}).get("afterHash") or row["sourceHash"]
-                if not settled and fingerprint(row["path"]) != expected:
+                if not settled and freshness.compare(
+                    freshness.Basis(value.get("scanRules"), {"source": expected}),
+                    freshness.Basis(SCAN_RULES, {"source": fingerprint(row["path"])}),
+                ):
                     row["stale"] = True
                     # A file the last scan could not read reads now; the
                     # assistant has to look at it.

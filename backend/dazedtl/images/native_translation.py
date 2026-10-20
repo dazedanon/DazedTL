@@ -6,6 +6,7 @@ from pathlib import Path
 
 from dazedtl.api.views import job as public_job
 from dazedtl.compatibility import image_translation as native
+from dazedtl.freshness import Basis, compare
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, project_path, read_json
 
@@ -188,7 +189,10 @@ class ImageNativeTranslation:
             and current
             and quote["status"] == "complete"
             and quote.get("estimate")
-            and records[quote["id"]]["fingerprint"] == current["fingerprint"]
+            and not compare(
+                Basis(None, {}, records[quote["id"]]["fingerprint"]),
+                Basis(None, {}, current["fingerprint"]),
+            )
         )
         active = self.backend.manual.active if self.backend.manual.running() else None
         return {

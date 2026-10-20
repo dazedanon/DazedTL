@@ -16,7 +16,7 @@ from pathlib import Path
 from dazedtl import foreign_work
 from dazedtl.compatibility.images import ImageCompatibility
 from dazedtl.foreign_work import ForeignWorkError
-from dazedtl.freshness import Digests
+from dazedtl.freshness import Basis, Digests, compare
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import decode_json, digest, project_path, read_json
 from dazedtl.translation.helper_command import windows_note
@@ -1520,21 +1520,39 @@ class ImageService:
         if previous_entry and not previous_entry.get("carried"):
             previous_path = project_path(root, previous_entry["path"])
             previous = read_json(previous_path, limit=48_000_000)
-            current_bindings = [(row["id"], row["sourceHash"]) for row in rows]
-            previous_bindings = [
-                (row["id"], row["sourceHash"]) for row in previous.get("assets", [])
-            ]
-            if (
-                digest(previous) == previous_entry["hash"]
-                and previous.get("kind") == kind
-                and previous.get("scope") == scope
-                and previous.get("inventoryRevision") == value["inventoryRevision"]
-                and previous.get("guidance") == guidance
-                and previous.get("revisionComments", "") == comments
-                and previous_bindings == current_bindings
-                and previous.get("reviewVersion") == REVIEW_VERSION
-                and previous.get("recipeVersion")
-                == (RECIPE_VERSION if kind == "editing" else None)
+
+            def basis(request, assets, versions):
+                return Basis(
+                    versions,
+                    {
+                        "inventory": request.get("inventoryRevision"),
+                        **{row["id"]: row["sourceHash"] for row in assets},
+                    },
+                    digest(
+                        [
+                            request.get(key, "")
+                            for key in ("kind", "scope", "guidance", "revisionComments")
+                        ]
+                    ),
+                )
+
+            if digest(previous) == previous_entry["hash"] and not compare(
+                basis(
+                    previous,
+                    previous.get("assets", []),
+                    (previous.get("reviewVersion"), previous.get("recipeVersion")),
+                ),
+                basis(
+                    {
+                        "inventoryRevision": value["inventoryRevision"],
+                        "kind": kind,
+                        "scope": scope,
+                        "guidance": guidance,
+                        "revisionComments": comments,
+                    },
+                    rows,
+                    (REVIEW_VERSION, RECIPE_VERSION if kind == "editing" else None),
+                ),
             ):
                 value[kind]["copiedAt"] = now()
                 value[kind].pop("rejected", None)
