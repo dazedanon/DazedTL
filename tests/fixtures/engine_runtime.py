@@ -1822,12 +1822,20 @@ try:
         from dazedtl.settings.preferences import GENERATION_PARAMETERS
         from openai import BadRequestError
         from util import translation
-        from util.batch_providers import detect_batch_provider
+        from util.batch_providers import (
+            PROVIDER_OPENAI,
+            detect_batch_provider,
+            get_client,
+        )
 
         with patch.dict(
             os.environ,
             {"API_PROVIDER": "openai", "api": "https://openrouter.ai/api/v1"},
         ):
+            # A Batch client built without an address takes the run's route,
+            # never OpenAI's own address behind it.
+            client = get_client(PROVIDER_OPENAI, api_key="fixture-key")
+            assert str(client.base_url).startswith("https://openrouter.ai/api/v1")
             for _ in range(2):
                 translation.STRICT_STRUCTURED_OUTPUTS = True
                 configure_builders(

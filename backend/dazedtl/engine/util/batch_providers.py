@@ -168,8 +168,11 @@ def get_client(provider: str, *, api_key: str | None = None,
         kwargs = {"api_key": key}
         if max_retries is not None:
             kwargs["max_retries"] = max_retries
-        if (api_url or "").strip():
-            kwargs["base_url"] = str(api_url).strip()
+        # Without an address, the run's own route, as detect_batch_provider
+        # reads it, so a Batch goes where the run's other requests go.
+        url = str(api_url if api_url is not None else os.getenv("api", "")).strip()
+        if url:
+            kwargs["base_url"] = url
         return openai.OpenAI(**kwargs)
     raise ValueError(f"Unsupported batch provider: {provider}")
 
