@@ -581,6 +581,12 @@ class GuidedFilePreviewRequest(TypedDict):
     name: str
     offset: NotRequired[int]
     query: NotRequired[str]
+    left: NotRequired[
+        Annotated[
+            bool,
+            "Only the Database files or Maps & events lines still left in the file.",
+        ]
+    ]
 
 
 class GuidedBatchCancelPreviewRequest(TypedDict):

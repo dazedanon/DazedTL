@@ -57,6 +57,9 @@ type Tab = (typeof tabs)[number]["id"] | "file";
 type InspectorView = { index: number; tab: Tab; batch: string | null };
 export type RequestInspectionTarget = {
   file: string;
+  /** Lines still left in a Database files or Maps & events file; the
+      inspector opens on them. */
+  left?: number;
   index?: number;
   validation?: boolean;
 };
@@ -156,7 +159,9 @@ function RequestProcess({
             ? process.rejected
               ? "response"
               : "json"
-            : "source",
+            : initialRequest.left
+              ? "file"
+              : "source",
           batch: initialRequest.index == null ? "file" : null,
         }
       : savedView(job.id) || issueView(job),
@@ -633,6 +638,11 @@ function RequestProcess({
                   key={selectedFile}
                   projectId={projectId}
                   file={selectedFile}
+                  left={
+                    selectedFile === initialRequest?.file
+                      ? initialRequest.left
+                      : undefined
+                  }
                 />
               )}
             </div>

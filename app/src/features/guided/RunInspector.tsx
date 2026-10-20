@@ -303,7 +303,11 @@ export function RunInspector({
                 No saved request is linked to this file. Showing its current
                 contents.
               </p>
-              <InspectedFile projectId={projectId} file={target.file} />
+              <InspectedFile
+                projectId={projectId}
+                file={target.file}
+                left={target.left}
+              />
             </>
           ) : (
             job && (

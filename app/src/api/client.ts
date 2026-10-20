@@ -271,8 +271,20 @@ export const api = {
     ) => request("guided_requests", { project_id, run_id, group, index }),
     nameResults: (project_id: string, run_id: string, offset = 0) =>
       request("guided_name_results", { project_id, run_id, offset }),
-    filePreview: (project_id: string, name: string, offset = 0, query = "") =>
-      request("guided_file_preview", { project_id, name, offset, query }),
+    filePreview: (
+      project_id: string,
+      name: string,
+      offset = 0,
+      query = "",
+      left = false,
+    ) =>
+      request("guided_file_preview", {
+        project_id,
+        name,
+        offset,
+        query,
+        left,
+      }),
     discardPreparation: (project_id: string, run_id: string) =>
       request("guided_discard_preparation", { project_id, run_id }),
     settleEmptyEstimate: (project_id: string, run_id: string) =>

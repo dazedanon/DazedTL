@@ -357,6 +357,8 @@ export type FileTextRow = {
   text: string;
   source: string | null;
   truncated: boolean;
+  /** Why a line left is: never translated, choice help still in Japanese, or a refusal note. */
+  reason?: "untranslated" | "help" | "note";
 };
 
 export type FileTextPreview = {
@@ -3013,6 +3015,8 @@ export type GuidedFilePreviewRequest = {
   name: string;
   offset?: number;
   query?: string;
+  /** Only the Database files or Maps & events lines still left in the file. */
+  left?: boolean;
 };
 
 export type GuidedBatchCancelPreviewRequest = {

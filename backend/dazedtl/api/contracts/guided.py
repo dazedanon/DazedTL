@@ -17,6 +17,12 @@ class FileTextRow(TypedDict):
     text: str
     source: str | None
     truncated: bool
+    reason: NotRequired[
+        Annotated[
+            Literal["untranslated", "help", "note"],
+            "Why a line left is: never translated, choice help still in Japanese, or a refusal note.",
+        ]
+    ]
 
 
 class FileTextPreview(TypedDict):

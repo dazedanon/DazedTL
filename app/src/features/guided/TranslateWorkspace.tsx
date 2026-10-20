@@ -82,9 +82,11 @@ export function TranslateWorkspace({
       owner(name),
       currentEstimate,
     );
+    const lines = counted ? state.sourceStatus.lines?.[name] : undefined;
     inspect(job || null, {
       file: name,
       index: job?.process?.files?.[name]?.first,
+      left: lines && lines.lines - lines.translated,
     });
   };
   return (
