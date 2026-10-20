@@ -316,8 +316,21 @@ def rebuilt_manifest(*arguments):
     return manifest
 
 
+screen_items = qa._screen_items
+
+
+def hinted(*arguments):
+    """Screen items whose hints the update words otherwise, as one changed
+    which glossary terms they name, at such length that the screen would be
+    packed into other bundles."""
+    items, index = screen_items(*arguments)
+    items[0]["risk"] = ["x" * qa.DEFAULT_SCREEN_CHAR_BUDGET]
+    return items, index
+
+
 qa.build_manifest = rebuilt_manifest
 qa.verify_manifest = lambda *_arguments: {"valid": True, "errors": []}
+qa._screen_items = hinted
 rebuilt, state = qa.rebuild_deep_from_screen(everything)
 assert rebuilt != everything and state["screen"]["accepted"] == 7, state
 # One that can't keep it leaves no task behind.
@@ -332,6 +345,7 @@ else:
 assert set(rebuilt.parent.iterdir()) == tasks
 qa._engine_fingerprint = fingerprint
 qa.build_manifest, qa.verify_manifest = build, verify
+qa._screen_items = screen_items
 write_game(LINES)
 
 

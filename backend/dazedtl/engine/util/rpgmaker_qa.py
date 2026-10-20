@@ -2175,6 +2175,44 @@ def _bundle_items(
     ]
 
 
+def _regrouped(bundles: list[dict], groups: list[list[str]]) -> list[dict]:
+    """Screen *bundles* packed again as *groups*, the items of each bundle,
+    in order; as they are unless the groups hold every item once."""
+    items = {item["id"]: item for bundle in bundles for item in bundle["items"]}
+    named = [identity for group in groups for identity in group]
+    if not all(groups) or len(named) != len(set(named)) or set(named) != set(items):
+        return bundles
+    return [
+        _make_bundle("screen", f"screen-{index:04d}", [items[name] for name in group])
+        for index, group in enumerate(groups, start=1)
+    ]
+
+
+# What a screen item holds only to point its reviewer at a risk, such as the
+# glossary terms its English lacks, which QA's rules may word otherwise for
+# the same lines.
+_SCREEN_HINTS = frozenset({"risk", "glossary"})
+
+
+def _screen_digest(bundle: dict[str, Any]) -> str:
+    """A screen bundle's checksum without its items' hints: the same for a
+    bundle of the same lines, which the same review covers."""
+
+    def plain(entry: dict[str, Any]) -> dict[str, Any]:
+        return {key: value for key, value in entry.items() if key not in _SCREEN_HINTS}
+
+    return _sha256(_canonical_bytes({
+        **{key: value for key, value in bundle.items() if key != "content_sha256"},
+        "items": [
+            plain(item) | (
+                {"lines": [plain(line) for line in item["lines"]]}
+                if isinstance(item.get("lines"), list) else {}
+            )
+            for item in bundle["items"]
+        ],
+    }))
+
+
 def _own_index(
     items: list[dict], screen_index: dict[str, dict[str, str]] | None
 ) -> dict[str, Any]:
@@ -3354,6 +3392,7 @@ def prepare_task(
     since: str | None = None,
     earlier: bool = True,
     origins: Iterable[str] | None = None,
+    screen_groups: list[list[str]] | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     """Create or reuse one immutable QA task and its exhaustive screen bundles.
 
@@ -3388,6 +3427,11 @@ def prepare_task(
     again keeps its review, but reads that report again, since plugin
     settings, custom data files and the plugin task's decisions change it
     without changing the inventory.
+
+    *screen_groups*, the items of each screen bundle another task made, packs
+    a new task's screen the same way when it holds the same items, so that
+    task's screening carries over (see rebuild_deep_from_screen) even where
+    the items' hints changed their size.
     """
     game = Path(game_root).expanduser().resolve()
     data = Path(data_root).expanduser().resolve()
@@ -3556,6 +3600,8 @@ def prepare_task(
                 item_limit=screen_item_limit,
                 first=len(bundles) + 1,
             )
+            if screen_groups is not None:
+                bundles = _regrouped(bundles, screen_groups)
             items += lint_items
             _atomic_write_json(
                 staging / "screen-targets.json", _screen_targets(items, bundles)
@@ -5195,10 +5241,13 @@ def _validate_deep_result(
 
 
 def accept_result(task_dir: str | Path, result_path: str | Path) -> dict[str, Any]:
+    return _accept(task_dir, _read_json(Path(result_path).expanduser().resolve()))
+
+
+def _accept(task_dir: str | Path, result: dict[str, Any]) -> dict[str, Any]:
     root = Path(task_dir).expanduser().resolve()
     with _task_lock(root):
         root, task, checkpoint = _load_task(root)
-        result = _read_json(Path(result_path).expanduser().resolve())
         bundle_id = str(result.get("bundle_id") or "")
         stage, row = _bundle_row(checkpoint, bundle_id)
         if row["status"] == "split":
@@ -7273,7 +7322,8 @@ def rebuild_deep_from_screen(
         raise ValueError("The source task must have a fully accepted screen stage")
 
     reusable_results: dict[str, Path] = {}
-    reusable_summaries: dict[str, tuple[str, int]] = {}
+    digests: dict[str, str] = {}
+    groups: list[list[str]] = []
     for row in source_rows:
         bundle_path = source / "bundles" / "screen" / f"{row['id']}.json"
         result_path = source / "results" / "screen" / f"{row['id']}.json"
@@ -7293,8 +7343,9 @@ def rebuild_deep_from_screen(
             raise ValueError(f"Source screen result checksum is invalid: {row['id']}")
         _validate_screen_result(bundle, result)
         reusable_results[row["id"]] = result_path
-        if not row.get("check_of"):
-            reusable_summaries[row["id"]] = (claimed, int(row["item_count"]))
+        digests[row["id"]] = _screen_digest(bundle)
+        if _first_screen(row):
+            groups.append([item["id"] for item in bundle["items"]])
 
     destination_root = (
         Path(output_root).expanduser().resolve()
@@ -7326,13 +7377,15 @@ def rebuild_deep_from_screen(
         # The earlier reviews its source read, so its screen holds the same
         # lines.
         origins=(source_task.get("reviewed_before") or {}).get("from") or [],
+        # Its screen packed as the source's, whose hints may have been
+        # longer or shorter.
+        screen_groups=groups,
     )
     if rebuilt == source:
         raise ValueError("The source task already uses the current QA rules")
     try:
         _replay_screen(
-            source, source_task, source_rows, reusable_results, reusable_summaries,
-            rebuilt,
+            source, source_task, source_rows, reusable_results, digests, rebuilt
         )
     except ValueError:
         # A task this rebuild made but could not fill is no task to go on with.
@@ -7356,27 +7409,38 @@ def _inventory_text(root: Path) -> dict[str, Any]:
     }
 
 
+def _first_screen(row: dict[str, Any]) -> bool:
+    """Whether a screen row is one of the bundles a task was prepared with,
+    rather than a check of one or the items a reviewer declined from one."""
+    return not row.get("check_of") and not row.get("origin")
+
+
 def _replay_screen(
     source: Path,
     source_task: dict[str, Any],
     source_rows: list[dict[str, Any]],
     reusable_results: dict[str, Path],
-    reusable_summaries: dict[str, tuple[str, int]],
+    digests: dict[str, str],
     rebuilt: Path,
 ) -> None:
     """Accept a completed screen's results in a rebuilt task, once its screen
-    bundles are the same."""
+    bundles hold the same lines; *digests* are the source's bundles' (see
+    _screen_digest), as the rebuilt task's hints may read otherwise."""
     _rebuilt_root, rebuilt_task, rebuilt_checkpoint = _load_task(rebuilt)
     if _inventory_text(rebuilt) != _inventory_text(source):
         raise ValueError("Cannot reuse screening after the game's text changed")
     if rebuilt_task.get("context_sha256") != source_task.get("context_sha256"):
         raise ValueError("Cannot reuse screening after QA's context changed")
     rebuilt_summaries = {
-        row["id"]: (row["sha256"], int(row["item_count"]))
+        row["id"]: (_screen_digest(_read_json(Path(row["path"]))), int(row["item_count"]))
         for row in rebuilt_checkpoint["screen"]["bundles"]
-        if not row.get("check_of")
+        if _first_screen(row)
     }
-    if rebuilt_summaries != reusable_summaries:
+    if rebuilt_summaries != {
+        row["id"]: (digests[row["id"]], int(row["item_count"]))
+        for row in source_rows
+        if _first_screen(row)
+    }:
         raise ValueError("Current screen bundles differ; screening cannot be reused")
 
     if rebuilt_checkpoint["stage"] == "screen":
@@ -7391,7 +7455,7 @@ def _replay_screen(
                     raise ValueError(
                         "Current screen checks differ; screening cannot be reused"
                     ) from error
-                if row["sha256"] != source_row["sha256"]:
+                if _screen_digest(_read_json(Path(row["path"]))) != digests[source_row["id"]]:
                     raise ValueError(
                         "Current screen checks differ; screening cannot be reused"
                     )
@@ -7399,7 +7463,13 @@ def _replay_screen(
                     row["status"] = "assigned"
                     row["assigned_to"] = str(source_row.get("assigned_to") or "")
                     _atomic_write_json(rebuilt / "checkpoint.json", checkpoint)
-            accept_result(rebuilt, reusable_results[source_row["id"]])
+                checksum = row["sha256"]
+            # The same review of the same lines, for the bundle as the rebuilt
+            # task words its hints.
+            _accept(
+                rebuilt,
+                {**_read_json(reusable_results[source_row["id"]]), "bundle_sha256": checksum},
+            )
 
 
 def _draft_document(
