@@ -7,6 +7,30 @@ from dazedtl.storage import write_json
 from .process_view import saved
 
 ARCHIVE = "dazedtl-batch-evidence.json"
+# A queued request's fields naming the files it serves. Identical requests of
+# several files share one queue entry, so two copies of one request can differ
+# here, as each file that asked for it wrote its own.
+ATTRIBUTION = frozenset(
+    {"dazedtl_file", "dazedtl_sources", "dazedtl_line_files", "dazedtl_files"}
+)
+
+
+def served_files(entry):
+    """The files a queued request's response is used in, first asker first."""
+    return entry.get("dazedtl_files") or [entry.get("dazedtl_file")]
+
+
+def joined(kept, entry):
+    """`kept` serving the files of both copies of one queued request, or None
+    when the two are different requests."""
+
+    def request(value):
+        return {key: item for key, item in value.items() if key not in ATTRIBUTION}
+
+    if request(kept) != request(entry):
+        return None
+    files = list(dict.fromkeys([*served_files(kept), *served_files(entry)]))
+    return kept if files == served_files(kept) else {**kept, "dazedtl_files": files}
 
 
 def extends(retained, value):
