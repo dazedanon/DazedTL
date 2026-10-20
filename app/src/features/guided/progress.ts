@@ -17,7 +17,6 @@ import { imageFlow } from "../images/imageFlow.ts";
 import { qaTaskDone } from "./qaView.ts";
 import {
   eventTaskFiles,
-  fileLines,
   savedTranslations,
   translationTaskComplete,
 } from "./translationView.ts";
@@ -219,18 +218,18 @@ export function guidedProgress(
 }
 
 /**
- * The project's amounts from saved engine receipts: lines translated (with a
- * total only when every file's total is known), translated files applied and
- * the cost the engine recorded. Batch charges without a receipt are not
- * included.
+ * The project's amounts: the Database files and Maps & events lines
+ * translated, read from the files (with a total only when every file could
+ * be read), translated files applied and the cost the engine recorded. Batch
+ * charges without a receipt are not included.
  */
 export function projectAmounts(state: GuidedState) {
   let done = 0,
     total: number | null = 0;
   for (const file of state.files) {
-    const lines = fileLines(state, file.group, file.name);
-    done += lines.done;
-    total = total === null || lines.total === null ? null : total + lines.total;
+    const counted = state.sourceStatus.lines?.[file.name];
+    done += counted?.translated ?? 0;
+    total = total === null || !counted ? null : total + counted.lines;
   }
   const { outputs, applied } = savedTranslations(state);
   const cost = state.runs

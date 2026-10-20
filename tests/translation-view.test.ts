@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { historyOutcome } from "../app/src/features/guided/historyView.ts";
 import { textLocation } from "../app/src/features/guided/textLocation.ts";
+import { projectAmounts } from "../app/src/features/guided/progress.ts";
 import type { GuidedState, Job, RunPayload } from "../app/src/api/contracts.ts";
 import {
   requestRows,
@@ -25,9 +26,9 @@ import {
   savedTranslations,
   settledWithoutRequests,
   translatedFiles,
+  translationFileStatus,
   translationTaskComplete,
   unsettledBatches,
-  untranslatedComments,
   needsSubmissionReview,
   unconfirmedSubmission,
   canResumeRun,
@@ -461,7 +462,7 @@ test("opening a file outside the current selection uses that file's retained req
 
 // Clearing selection or finishing in separate runs must not erase task progress;
 // completing only a selected subset must not certify the entire file group.
-test("main-text tasks combine verified files across runs independently of selection", () => {
+test("main-text tasks read each file's own lines, whatever ran or is selected", () => {
   const items: Job = {
     id: "items",
     logicalPhase: "database",
@@ -474,23 +475,6 @@ test("main-text tasks combine verified files across runs independently of select
     availableOutputs: ["Items.json"],
     appliedOutputs: ["Items.json"],
   };
-  const actors = {
-    ...items,
-    id: "actors",
-    keptForHistory: true,
-    files: ["Actors.json"],
-    outputs: { "Actors.json": "hash" },
-    availableOutputs: ["Actors.json"],
-    appliedOutputs: [],
-  };
-  const empty = {
-    ...items,
-    id: "empty",
-    files: ["Armors.json"],
-    outputs: {},
-    availableOutputs: [],
-    process: { noRequestFiles: ["Armors.json"], errors: [] },
-  };
   const state = {
     files: [
       { name: "Items.json", group: "database" },
@@ -498,119 +482,61 @@ test("main-text tasks combine verified files across runs independently of select
       { name: "Armors.json", group: "database" },
       { name: "Map001.json", group: "dialogue" },
     ],
-    runs: [empty, actors, items],
-    sourceStatus: { changed: [], ready: [] },
+    // No run translated Actors.json: the game came with it translated.
+    runs: [items],
+    sourceStatus: {
+      changed: [],
+      ready: [],
+      lines: {
+        "Items.json": { lines: 4, translated: 4 },
+        "Actors.json": { lines: 2, translated: 2 },
+        "Armors.json": { lines: 0, translated: 0 },
+        "Map001.json": { lines: 9, translated: 7, help: 2 },
+      },
+    },
     preferences: { values: { selected: [] } },
   } as unknown as GuidedState;
-  for (const selected of [
-    [],
-    ["Items.json"],
-    ["Items.json", "Actors.json", "Armors.json"],
-    ["Map001.json"],
-  ]) {
+  for (const selected of [[], ["Items.json"], ["Map001.json"]]) {
     state.preferences.values.selected = selected;
     assert.equal(translationTaskComplete(state, "database"), true);
     assert.equal(translationTaskComplete(state, "dialogue"), false);
   }
-  assert.equal(
-    translationTaskComplete({ ...state, runs: [empty, items] }, "database"),
-    false,
-  );
-  // A closed estimate without requests completes a resynced file that has no
-  // run; only an older, idle attempt may coexist with that result.
-  const checked = "2026-10-05T12:00:00+00:00";
-  const settled = {
-    ...state,
-    runs: [actors, items],
-    sourceStatus: {
-      changed: [],
-      ready: [],
-      noRequests: { database: { "Armors.json": checked } },
-    },
-  } as unknown as GuidedState;
-  assert.equal(translationTaskComplete(settled, "database"), true);
-  assert.equal(
-    fileStatus(
-      "Armors.json",
-      undefined,
-      settledWithoutRequests(settled, "database", "Armors.json"),
-    ).label,
-    "Ready to apply",
-  );
-  // Unless no run translated it: then the check found nothing to translate.
-  assert.equal(fileStatus("Armors.json", undefined, true, true).label, "Done");
-  // Output already in the game stays Applied after such a check.
-  assert.equal(
-    fileStatus(
-      "Armors.json",
-      { ...empty, appliedOutputs: ["Armors.json"] },
-      true,
-    ).label,
-    "Applied",
-  );
-  const armors = { ...empty, id: "armors", process: { errors: [] } };
-  for (const [created, status, complete] of [
-    ["2026-10-05T11:00:00+00:00", "failed", true],
-    ["2026-10-05T11:00:00+00:00", "running", false],
-    ["2026-10-05T13:00:00+00:00", "failed", false],
+  const lines = state.sourceStatus.lines!;
+  for (const [file, value] of [
+    // A line left, such as a refusal note, keeps the task open.
+    ["Items.json", { lines: 4, translated: 3, notes: 1 }],
+    // So does a file the backend could not read.
+    ["Items.json", undefined],
   ] as const)
     assert.equal(
       translationTaskComplete(
         {
-          ...settled,
-          runs: [{ ...armors, created, status }, actors, items],
-        },
+          ...state,
+          sourceStatus: {
+            ...state.sourceStatus,
+            lines: { ...lines, [file]: value },
+          },
+        } as GuidedState,
         "database",
       ),
-      complete,
-      `${status} attempt at ${created}`,
+      false,
+      file,
     );
   assert.equal(
     translationTaskComplete(
       {
-        ...settled,
+        ...state,
         sourceStatus: {
-          ...settled.sourceStatus,
-          noRequests: { advanced: { "Armors.json": checked } },
+          ...state.sourceStatus,
+          lines: { ...lines, "Map001.json": { lines: 9, translated: 9 } },
         },
       },
-      "database",
-    ),
-    false,
-  );
-  assert.equal(
-    translationTaskComplete({ ...state, files: [] }, "database"),
-    false,
-  );
-  assert.equal(
-    translationTaskComplete(
-      { ...state, runs: [{ ...items, mode: "estimate" }, ...state.runs] },
-      "database",
+      "dialogue",
     ),
     true,
   );
   assert.equal(
-    translationTaskComplete(
-      {
-        ...state,
-        runs: [actors, items, { ...empty, process: { errors: [] } }],
-      },
-      "database",
-    ),
-    false,
-  );
-  assert.equal(
-    translationTaskComplete(
-      {
-        ...state,
-        runs: [
-          actors,
-          items,
-          { ...empty, outputs: { "Armors.json": "missing" } },
-        ],
-      },
-      "database",
-    ),
+    translationTaskComplete({ ...state, files: [] }, "database"),
     false,
   );
   const maps = {
@@ -621,26 +547,6 @@ test("main-text tasks combine verified files across runs independently of select
     outputs: { "Map001.json": "hash" },
     availableOutputs: ["Map001.json"],
   };
-  assert.equal(
-    translationTaskComplete(
-      { ...state, runs: [maps, ...state.runs] },
-      "dialogue",
-    ),
-    true,
-  );
-  assert.equal(
-    translationTaskComplete(
-      {
-        ...state,
-        runs: [maps, ...state.runs].map((run) => ({
-          ...run,
-          logicalPhase: "advanced",
-        })),
-      },
-      "dialogue",
-    ),
-    false,
-  );
   // Event-code tasks keep finished files when one is re-run or the selection
   // is cleared, and a newly selected file still needs its run.
   const events = {
@@ -679,9 +585,9 @@ test("main-text tasks combine verified files across runs independently of select
   );
 });
 
-// Historical success cannot hide unfinished replacement work, unavailable output,
-// or a source reload, including when the active worker is an older attempt.
-test("main-text completion respects current file ownership and output validity", () => {
+// A finished file is not done while a run still works on it, including an
+// older attempt that resumed, or once it changed in the game.
+test("main-text completion waits for work in progress and source changes", () => {
   const saved: Job = {
     id: "saved",
     logicalPhase: "database",
@@ -697,31 +603,42 @@ test("main-text completion respects current file ownership and output validity",
   const state = {
     files: [{ name: "Items.json", group: "database" }],
     runs: [saved],
-    sourceStatus: { changed: [], ready: [] },
+    sourceStatus: {
+      changed: [],
+      ready: [],
+      lines: { "Items.json": { lines: 4, translated: 4 } },
+    },
   } as Pick<GuidedState, "files" | "runs" | "sourceStatus">;
+  assert.equal(translationTaskComplete(state, "database"), true);
   for (const patch of [
     { status: "running" },
     { status: "waiting" },
-    { temporary: true },
-    { partialOutputs: ["Items.json"] },
-    { availableOutputs: [] },
-    {
-      status: "failed",
-      outputs: {},
-      availableOutputs: [],
-      keptForHistory: true,
-    },
-    { mode: "batch", status: "interrupted", phase: "poll_status" },
+    { status: "running", temporary: true },
+    { status: "waiting", approval: { token: "t" } },
   ]) {
     assert.equal(
       translationTaskComplete(
-        { ...state, runs: [{ ...saved, ...patch, id: "new" }, saved] },
+        { ...state, runs: [{ ...saved, ...patch, id: "new" } as Job, saved] },
         "database",
       ),
       false,
       JSON.stringify(patch),
     );
   }
+  // Receipts of a finished attempt no longer decide it: the file does.
+  for (const patch of [
+    { partialOutputs: ["Items.json"] },
+    { availableOutputs: [] },
+    { status: "failed", outputs: {}, availableOutputs: [] },
+  ])
+    assert.equal(
+      translationTaskComplete(
+        { ...state, runs: [{ ...saved, ...patch, id: "new" }, saved] },
+        "database",
+      ),
+      true,
+      JSON.stringify(patch),
+    );
   assert.equal(
     translationTaskComplete(
       {
@@ -742,23 +659,148 @@ test("main-text completion respects current file ownership and output validity",
     ),
     false,
   );
+});
+
+test("Database files and Maps & events rows read the file's lines and state", () => {
+  const live: Job = {
+    id: "live",
+    logicalPhase: "dialogue",
+    mode: "translate",
+    status: "complete",
+    message: "",
+    log: [],
+    files: ["Map001.json", "Map002.json"],
+    outputs: { "Map001.json": "a", "Map002.json": "b" },
+    availableOutputs: ["Map001.json", "Map002.json"],
+    process: {
+      errors: [],
+      files: { "Map001.json": requested(["validated", "validated"]) },
+    },
+  };
+  const state = (
+    lines: Record<string, { lines: number; translated: number }>,
+    runs: Job[] = [live],
+    applied: string[] = [],
+  ) =>
+    ({
+      files: Object.keys(lines).map((name) => ({ name, group: "dialogue" })),
+      runs,
+      sourceStatus: { changed: [], ready: [], lines },
+      readiness: { outputs: ["Map001.json", "Map002.json"], applied },
+    }) as unknown as GuidedState;
+  const row = (value: GuidedState, name = "Map001.json") => ({
+    lines: fileLines(value, "dialogue", name),
+    ...translationFileStatus(value, "dialogue", name),
+  });
+  // Before any run, the file's own lines; a partial rerun keeps every line
+  // an earlier run translated.
+  const fresh = row(
+    state({ "Map001.json": { lines: 240, translated: 0 } }, []),
+  );
+  assert.deepEqual(fresh.lines, { done: 0, total: 240 });
+  assert.equal(fresh.label, "Not started");
+  const partial = row(
+    state({ "Map001.json": { lines: 13, translated: 11, help: 2 } }),
+  );
+  assert.deepEqual(partial.lines, { done: 11, total: 13 });
+  assert.equal(partial.label, "Needs review");
+  assert.match(partial.detail, /2 lines of choice help .*Comment text/);
+  const noted = row(
+    state({ "Map001.json": { lines: 13, translated: 10, notes: 1 } }),
+  );
+  assert.match(
+    noted.detail,
+    /2 lines never translated\..*1 line holds a refusal note/,
+  );
+  // A file whose only line left holds a refusal note was translated before.
   assert.equal(
-    translationTaskComplete(
-      {
-        ...state,
-        sourceStatus: { ...state.sourceStatus, retired: [saved.id] },
+    row(state({ "Map001.json": { lines: 1, translated: 0, notes: 1 } })).label,
+    "Needs review",
+  );
+  // Nothing left: in the game when its translated copy is, or when it has
+  // no translated copy of its own; nothing in scope reads Done.
+  const done = { "Map001.json": { lines: 13, translated: 13 } };
+  assert.equal(row(state(done)).label, "Ready to apply");
+  assert.equal(row(state(done, [live], ["Map001.json"])).label, "Applied");
+  assert.equal(
+    row(
+      state({ "Map003.json": { lines: 2, translated: 2 } }, [], []),
+      "Map003.json",
+    ).label,
+    "Applied",
+  );
+  const nothing = state({ "Map002.json": { lines: 0, translated: 0 } });
+  assert.equal(row(nothing, "Map002.json").label, "Done");
+  assert.deepEqual(row(nothing, "Map002.json").lines, { done: 0, total: 0 });
+  // A file the backend could not read is no file to finish.
+  const unread = row(state({}));
+  assert.deepEqual(unread.lines, { done: 0, total: null });
+  assert.equal(unread.label, "Blocked");
+  // A Live run still working on the file knows what it saved so far; the
+  // file's count takes over when it ends. A Batch at work shows the count.
+  // A Live run writes a file until it finishes it.
+  const running = {
+    ...live,
+    status: "running",
+    partialOutputs: ["Map001.json"],
+    itemProgress: { file: "Map001.json", current: 1, total: 2 },
+  };
+  const working = row(state(done, [running]));
+  assert.deepEqual(working.lines, { done: 2, total: null, running: true });
+  assert.equal(working.label, "Working");
+  const batch: Job = {
+    ...live,
+    mode: "batch",
+    status: "running",
+    process: {
+      errors: [],
+      files: {
+        "Map001.json": requested(
+          ["submitted"],
+          [{ batches: ["b"], finished: false }],
+        ),
       },
-      "database",
-    ),
-    false,
+      batches: [{ id: "b", status: "in_progress" }],
+    } as Job["process"],
+  };
+  const atProvider = row(
+    state({ "Map001.json": { lines: 13, translated: 11 } }, [batch]),
   );
-  assert.equal(
-    translationTaskComplete(
-      { ...state, runs: [{ ...saved, retiredFiles: ["Items.json"] }] },
-      "database",
-    ),
-    false,
+  assert.deepEqual(atProvider.lines, { done: 11, total: 13 });
+  assert.equal(atProvider.label, "Working");
+  // Paid work in doubt says so before anything is sent again.
+  const uncertain = {
+    ...live,
+    status: "interrupted",
+    process: { errors: [], files: { "Map001.json": requested(["uncertain"]) } },
+  };
+  assert.match(
+    row(state({ "Map001.json": { lines: 13, translated: 11 } }, [uncertain]))
+      .detail,
+    /could not be confirmed/,
   );
+  // The overview adds up the same counts; an unread file leaves no total.
+  const project = {
+    ...state(
+      {
+        "Map001.json": { lines: 13, translated: 11 },
+        "Map002.json": { lines: 0, translated: 0 },
+      },
+      [running],
+    ),
+    files: [
+      { name: "Map001.json", group: "dialogue" },
+      { name: "Map002.json", group: "dialogue" },
+      { name: "Items.json", group: "database" },
+    ],
+  } as GuidedState;
+  project.sourceStatus.lines!["Items.json"] = { lines: 4, translated: 4 };
+  assert.deepEqual(
+    (({ done, total }) => ({ done, total }))(projectAmounts(project)),
+    { done: 15, total: 17 },
+  );
+  delete project.sourceStatus.lines!["Items.json"];
+  assert.equal(projectAmounts(project).total, null);
 });
 
 test("request comparisons reject misaligned or unvalidated Live responses and mismatched Batch keys", () => {
@@ -1323,10 +1365,10 @@ test("file metrics survive unchanged passes and advance only with changed output
   );
 });
 
-test("a pass without requests reads Done only for files no run translated", () => {
+test("an Other event text pass without requests reads Done only for files no run translated", () => {
   const maps: Job = {
     id: "maps",
-    logicalPhase: "dialogue",
+    logicalPhase: "advanced",
     mode: "batch",
     status: "complete",
     message: "",
@@ -1373,9 +1415,12 @@ test("a pass without requests reads Done only for files no run translated", () =
       applied: ["Troops.json"],
     },
   } as unknown as GuidedState;
-  assert.equal(translationTaskComplete(state, "dialogue"), true);
-  // A refusal note an earlier run saved as a line's translation leaves the
-  // file to translate again, however finished its run reads.
+  assert.equal(
+    translationTaskComplete(state, "advanced", ["Map001.json", "Troops.json"]),
+    true,
+  );
+  // A refusal note an earlier run saved in its event text leaves the file
+  // to translate again, however finished its run reads.
   assert.equal(
     fileStatus("Map001.json", rerun, false, false, 2).label,
     "Needs review",
@@ -1386,43 +1431,30 @@ test("a pass without requests reads Done only for files no run translated", () =
         ...state,
         sourceStatus: {
           ...state.sourceStatus,
-          refusalNotes: { "Map001.json": 2 },
+          lines: { "Map001.json": { lines: 0, translated: 0, otherNotes: 2 } },
         },
       },
-      "dialogue",
+      "advanced",
+      ["Map001.json", "Troops.json"],
     ),
     false,
   );
-  // Choice help that Comment text now translates, which a run made with it
-  // off never sent, leaves the file to translate and adds to its known
-  // total; a run made with it on counts its own help lines instead.
-  const help = {
-    ...state,
-    sourceStatus: {
-      ...state.sourceStatus,
-      untranslatedComments: { "Troops.json": 2 },
-    },
-  };
-  assert.equal(
-    fileStatus("Troops.json", rerun, false, true, 0, 2).label,
-    "Needs review",
-  );
-  assert.deepEqual(fileLines(help, "dialogue", "Troops.json"), {
-    done: 0,
-    total: 2,
-  });
-  assert.equal(translationTaskComplete(help, "dialogue"), false);
-  const commented = {
-    ...help,
-    runs: runs.map((run) => ({ ...run, commentText: true })),
-  };
-  assert.equal(untranslatedComments(commented, "dialogue", "Troops.json"), 0);
-  assert.equal(translationTaskComplete(commented, "dialogue"), true);
-  // Saved translation counts leave out the game's own copy.
+  // Saved translation counts leave out the game's own copy, unless its own
+  // lines are translated.
   assert.deepEqual(savedTranslations(state), {
     outputs: ["Map001.json"],
     applied: [],
   });
+  assert.deepEqual(
+    savedTranslations({
+      ...state,
+      sourceStatus: {
+        ...state.sourceStatus,
+        lines: { "Troops.json": { lines: 1, translated: 1 } },
+      },
+    }),
+    { outputs: ["Map001.json", "Troops.json"], applied: ["Troops.json"] },
+  );
   // Requests count before any output is saved, since a rerun may reuse their
   // results; unknown output changes or receipts count as translation.
   const unsaved = { ...maps, outputs: {}, availableOutputs: [] };
@@ -2109,14 +2141,14 @@ test("Live inspection and file progress follow current receipts without Batch co
   assert.equal(observedRun(live, { ...completed, id: "foreign" }), live);
 });
 
-test("file line amounts follow the latest run's saved and prepared lines", () => {
+test("Other event text line amounts follow the latest run's saved and prepared lines", () => {
   // The observed summary counts each source request once, at its latest
   // attempt, without duplicate responses.
   const run = {
     id: "run",
     status: "complete",
     mode: "translate",
-    logicalPhase: "database",
+    logicalPhase: "advanced",
     files: ["Items.json"],
     created: "2026-10-05T10:00:00+00:00",
     log: [],
@@ -2135,13 +2167,18 @@ test("file line amounts follow the latest run's saved and prepared lines", () =>
       },
     },
   } as Job;
-  const state = (runs: Job[], noRequests = {}, refusalNotes = {}) =>
+  const state = (runs: Job[], noRequests = {}, otherNotes = 0) =>
     ({
       runs,
-      sourceStatus: { changed: [], ready: [], noRequests, refusalNotes },
+      sourceStatus: {
+        changed: [],
+        ready: [],
+        noRequests,
+        lines: { "Items.json": { lines: 0, translated: 0, otherNotes } },
+      },
     }) as unknown as GuidedState;
   const lines = (value: GuidedState) =>
-    fileLines(value, "database", "Items.json");
+    fileLines(value, "advanced", "Items.json");
   assert.deepEqual(lines(state([run])), { done: 40, total: 50 });
   const retried = {
     ...run,
@@ -2160,7 +2197,7 @@ test("file line amounts follow the latest run's saved and prepared lines", () =>
   // A later "nothing to translate" check closes the file at what is done.
   assert.deepEqual(
     lines(
-      state([run], { database: { "Items.json": "2026-10-05T12:00:00+00:00" } }),
+      state([run], { advanced: { "Items.json": "2026-10-05T12:00:00+00:00" } }),
     ),
     { done: 40, total: 40 },
   );
@@ -2202,7 +2239,7 @@ test("file line amounts follow the latest run's saved and prepared lines", () =>
     done: 50,
     total: 50,
   });
-  assert.deepEqual(lines(state([rerun, whole], {}, { "Items.json": 3 })), {
+  assert.deepEqual(lines(state([rerun, whole], {}, 3)), {
     done: 47,
     total: 50,
   });
@@ -2211,8 +2248,8 @@ test("file line amounts follow the latest run's saved and prepared lines", () =>
     lines(
       state(
         [run],
-        { database: { "Items.json": "2026-10-05T12:00:00+00:00" } },
-        { "Items.json": 3 },
+        { advanced: { "Items.json": "2026-10-05T12:00:00+00:00" } },
+        3,
       ),
     ),
     { done: 40, total: 50 },

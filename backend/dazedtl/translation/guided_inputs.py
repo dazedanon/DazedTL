@@ -2,19 +2,44 @@
 
 import json
 import os
+import re
 import uuid
 from pathlib import Path
 from typing import Any
 
 from dazedtl.storage import write_bytes, write_json
 
+from .file_lines import japanese
 from .files import decode_json, digest, project_path, read_json
-from .saved_refusals import find, restore
+from .saved_refusals import restore
 
-# Saved refusal notes per working copy, by its path, digest and original.
-NOTE_COUNTS: dict[tuple, int] = {}
-# Untranslated comment lines per working copy, by its path, digest and markers.
-COMMENT_COUNTS: dict[tuple, int] = {}
+# Line counts per file version, by its path, digest, phase scope and original.
+LINE_COUNTS: dict[tuple, dict] = {}
+# The original game file's map display name, by its Git blob.
+ORIGINAL_NAMES: dict[str, str | None] = {}
+# Entries both keep beyond the files they hold now.
+LINE_LIMIT = 50_000
+_DISPLAY_NAME = re.compile(rb'"displayName"\s*:\s*("(?:[^"\\]|\\.)*")')
+
+
+def display_name(raw, ace=False):
+    """A map file's display name: a JSON map's, or a VX Ace map's own
+    (rvdata2); None when it has none it can read."""
+    try:
+        if ace:
+            from util.ace.ruby_marshal import load
+            from util.ace.rv2json import text
+
+            return text(load(raw).get("@display_name"))
+        # The name comes before the events, so the map's tiles and events
+        # need no parse.
+        match = _DISPLAY_NAME.search(raw)
+        events = raw.find(b'"events"')
+        if match and (events < 0 or match.start() < events):
+            return json.loads(match.group(1))
+        return decode_json(raw).get("displayName")
+    except AttributeError, TypeError, ValueError:
+        return None  # A shape the reader does not know holds no name it reads.
 
 
 def original_bindings(record):
@@ -38,11 +63,18 @@ class GuidedInputs:
         bindings,
         original_bytes,
         *,
+        original_blobs=None,
         native_exports=False,
         observations=None,
     ):
         self.folder, self.source, self.data = Path(folder), Path(source), Path(data)
         self.bindings, self.original_bytes = bindings, original_bytes
+        # Many originals at once, through one Git process where it can.
+        self.original_blobs = original_blobs or (
+            lambda source, blobs: (
+                (blob, original_bytes(source, blob)) for blob in blobs
+            )
+        )
         self.native_exports = native_exports
         self.index = self.folder / "source-inputs.json"
         self.observations = observations
@@ -246,65 +278,89 @@ class GuidedInputs:
         )
         return None if group is None else self.path(group, name)
 
-    def refusal_notes(self, names):
-        """Lines per working copy whose saved text is a refusal note with a
-        known source, which the next run sends again (restore_refusals)."""
-        record = self.record()["inputs"]
-        result = {}
-        for name in names:
-            path = self.working_copy(name)
-            if path is None:
-                continue
-            observed = self.observed
-            key = (
-                str(path),
-                observed.digest(path) if observed else digest(path.read_bytes()),
-                record.get(name, {}).get("identity", {}).get("original"),
-            )
-            if key not in NOTE_COUNTS:
-                try:
-                    document = decode_json(path.read_bytes())
-                except OSError, ValueError:
-                    continue
-                if len(NOTE_COUNTS) >= 4096:
-                    NOTE_COUNTS.clear()
-                NOTE_COUNTS[key] = len(
-                    find(document, lambda name=name: self.original_document(name))
-                )
-            if NOTE_COUNTS[key]:
-                result[name] = NOTE_COUNTS[key]
-        return result
+    def newest(self, name):
+        """A file's newest copy: its translated working copy, else its working
+        copy, else the game's own file."""
+        return self.working_copy(name) or self.game_path(
+            (self.data / name).relative_to(self.source).as_posix()
+        )
 
-    def untranslated_comments(self, names, markers):
-        """Comment lines (408) under *markers*, such as a choice's help, that
-        each working copy still holds in Japanese; a Maps & events run with
-        Comment text on sends them."""
-        from .comment_text import untranslated
+    def line_counts(self, phases, markers):
+        """Each file's line counts (file_lines.count) in its newest copy, by
+        file to its phase ("database" or "dialogue"); choice help counts under
+        *markers*. A file read once stays counted until its bytes change, and
+        a file that cannot be read has none."""
+        from .file_lines import count
 
-        result = {}
-        for name in names:
-            path = self.working_copy(name)
-            if path is None:
-                continue
-            observed = self.observed
+        identities = self.record()["inputs"]
+        result, names, used = {}, {}, set()
+        for name, phase in phases.items():
             try:
-                raw = None if observed else path.read_bytes()
+                path = self.newest(name)
                 key = (
                     str(path),
-                    observed.digest(path) if observed else digest(raw),
-                    markers,
+                    self.observed.digest(path)
+                    if self.observed is not None
+                    else digest(path.read_bytes()),
+                    phase,
+                    markers if phase == "dialogue" else None,
+                    identities.get(name, {}).get("identity", {}).get("original"),
                 )
-                if key not in COMMENT_COUNTS:
-                    if len(COMMENT_COUNTS) >= 4096:
-                        COMMENT_COUNTS.clear()
-                    COMMENT_COUNTS[key] = untranslated(
-                        name, raw if raw is not None else path.read_bytes(), markers
+                if key not in LINE_COUNTS:
+                    LINE_COUNTS[key] = count(
+                        name,
+                        decode_json(path.read_bytes()),
+                        phase,
+                        markers,
+                        lambda name=name: self.original_document(name),
                     )
             except OSError, ValueError:
                 continue
-            if COMMENT_COUNTS[key]:
-                result[name] = COMMENT_COUNTS[key]
+            except AttributeError, IndexError, KeyError, TypeError:
+                # Data shaped unlike RPG Maker's, such as a comment whose
+                # parameters are an object, has no lines to count.
+                continue
+            used.add(key)
+            counts = dict(LINE_COUNTS[key])
+            if "mapName" in counts:
+                names[name] = counts.pop("mapName")
+            result[name] = counts
+        if len(LINE_COUNTS) > LINE_LIMIT:
+            # Files change with every run; keep only their current versions.
+            for key in set(LINE_COUNTS) - used:
+                del LINE_COUNTS[key]
+        # A translated map display name keeps no `_original`: it is a line
+        # when the original game file's name holds Japanese.
+        for name, original in self.original_names(names).items():
+            if japanese(original):
+                result[name]["lines"] += 1
+                result[name]["translated"] += 1
         return result
+
+    def original_names(self, names):
+        """The original game file's map display name for each named file,
+        read once per original version; None where no original is known."""
+        identities = self.record()["inputs"]
+        blobs = {}
+        for name in names:
+            identity = identities.get(name, {}).get("identity", {})
+            native = identity.get("native_original") or {}
+            blob = identity.get("original") or native.get("blob")
+            if blob:
+                blobs[name] = (blob, "native_original" in identity)
+        unknown = [blob for blob, _ in blobs.values() if blob not in ORIGINAL_NAMES]
+        if unknown:
+            if len(ORIGINAL_NAMES) > LINE_LIMIT:
+                ORIGINAL_NAMES.clear()
+            native = {blob for blob, ace in blobs.values() if ace}
+            try:
+                for blob, raw in self.original_blobs(self.source, unknown):
+                    ORIGINAL_NAMES[blob] = display_name(raw, blob in native)
+            except OSError, ValueError:
+                pass  # Without Git's originals, the names stay out of scope.
+            for blob in unknown:
+                ORIGINAL_NAMES.setdefault(blob, None)
+        return {name: ORIGINAL_NAMES.get(blobs[name][0]) for name in blobs}
 
     def restore_refusals(self, names):
         """Gives the lines of these working copies that hold a refusal note an

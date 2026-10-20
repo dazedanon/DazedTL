@@ -88,7 +88,6 @@ def job(value):
             "created",
             "updated",
             "logicalPhase",
-            "commentText",
             "scopeComplete",
             "appliedOutputs",
             "process",

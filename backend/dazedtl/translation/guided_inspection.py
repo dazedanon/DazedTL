@@ -87,11 +87,6 @@ class RunInspection:
             ) == len(job["outputs"])
             workflow = plan.get("workflow") or {}
             job["logicalPhase"] = workflow.get("phase")
-            if workflow.get("phase") == "dialogue":
-                # Maps & events sends comment lines only with Comment text on.
-                job["commentText"] = (workflow.get("engine_options") or {}).get(
-                    "CODE408"
-                ) is True
             if job.get("mode") == "estimate":
                 from dazedtl.compatibility.process_view import nothing_to_translate
 

@@ -263,6 +263,31 @@ class Comparisons(TypedDict):
     rows: list[ComparisonRow]
 
 
+class FileLines(TypedDict):
+    """How much of a file is translated, from the file itself (see
+    translation/file_lines.py)."""
+
+    lines: Annotated[int, "Lines whose source holds Japanese."]
+    translated: Annotated[int, "Lines holding no Japanese and no refusal note."]
+    notes: NotRequired[
+        Annotated[
+            int,
+            "Lines holding a refusal note an earlier run saved instead of a translation; the next run sends them again.",
+        ]
+    ]
+    help: NotRequired[
+        Annotated[
+            int, "Choice help blocks still in Japanese, which Comment text translates."
+        ]
+    ]
+    otherNotes: NotRequired[
+        Annotated[
+            int,
+            "Refusal notes in values outside these lines, such as Other event text.",
+        ]
+    ]
+
+
 class SourceStatus(TypedDict):
     ready: list[str]
     changed: list[str]
@@ -273,16 +298,10 @@ class SourceStatus(TypedDict):
             "Estimate start time per phase and file found without text to translate.",
         ]
     ]
-    refusalNotes: NotRequired[
+    lines: NotRequired[
         Annotated[
-            dict[str, int],
-            "Lines per working copy that hold a refusal note an earlier run saved; the next run sends them again.",
-        ]
-    ]
-    untranslatedComments: NotRequired[
-        Annotated[
-            dict[str, int],
-            "Comment lines per Maps & events working copy, such as a choice's help, still in Japanese under a marker Comment text translates.",
+            dict[str, FileLines],
+            "Each Database files and Maps & events file's lines, read from its newest copy; a file that cannot be read has none.",
         ]
     ]
 

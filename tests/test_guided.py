@@ -3735,27 +3735,21 @@ class GuidedTests(unittest.TestCase):
         self.guided.comment_text(self.identity)
         native = self.backend.workflows.projects["native"]
         self.assertTrue(native["phase1_comments"])
-        # A working copy made before then counts its help as untranslated,
-        # under the plugin's marker as the engine reads it, until a run
-        # translates it.
+        # A working copy made before then counts its help as a line still
+        # in Japanese, under the plugin's marker as the engine reads it.
         inputs = self.guided.inputs(self.native)
         inputs.prepare(["Map001.json"])
         markers = comment_text.markers(self.source)
         self.assertEqual(
-            inputs.untranslated_comments(["Map001.json"], markers), {"Map001.json": 1}
+            inputs.line_counts({"Map001.json": "dialogue"}, markers),
+            {"Map001.json": {"lines": 1, "translated": 0, "help": 1}},
         )
-        help_lines[1]["parameters"] = ["Takes about 20 minutes"]
-        write_json(
-            self.folder / "translated/Map001.json",
-            {"events": [{"pages": [{"list": help_lines}]}]},
-        )
-        self.assertEqual(inputs.untranslated_comments(["Map001.json"], markers), {})
-        # A file shaped unlike RPG Maker data holds no help, rather than
+        # A file shaped unlike RPG Maker data has no lines, rather than
         # failing every look at the project; the game's own help still counts.
         odd = [{"code": 108, "parameters": {"text": "ChoiceHelp"}}]
         write_json(self.source / "CustomEvents.json", odd)
         write_json(self.folder / "translated/Map001.json", odd)
-        self.assertEqual(inputs.untranslated_comments(["Map001.json"], markers), {})
+        self.assertEqual(inputs.line_counts({"Map001.json": "dialogue"}, markers), {})
         self.assertTrue(
             comment_text.shows_comment_text(self.source, self.native["plugins"])
         )
