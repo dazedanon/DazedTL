@@ -17,7 +17,12 @@ from dazedtl.compatibility.runtime import activate
 source = activate()
 from desktop.backend import workflow_actions
 
-from dazedtl.compatibility.guided import apply_selected, run_ace, run_release
+from dazedtl.compatibility.guided import (
+    apply_selected,
+    publish_ace,
+    run_ace,
+    run_release,
+)
 from dazedtl.compatibility.translation import TranslationEngine
 from dazedtl.diagnostics import watch_action
 from dazedtl.translation.guided_inputs import GuidedInputs
@@ -26,14 +31,15 @@ original = workflow_actions.run_action
 
 
 def run_action(plan, log):
+    # Every write to the game's text also packs an Ace game's native data.
     if plan["action"] == "fit_text":
         from dazedtl.compatibility.text import run_fit
 
-        return run_fit(plan, log)
+        return publish_ace(plan, log, run_fit)
     if plan.get("publication"):
         from dazedtl.compatibility.text import run_publication
 
-        return run_publication(plan, log)
+        return publish_ace(plan, log, run_publication)
     if plan["action"] in {"qa_prepare", "qa_status"}:
         from dazedtl.compatibility.text import run_qa
 
@@ -75,7 +81,7 @@ def run_action(plan, log):
     if plan["action"] == "release":
         return run_release(plan, log)
     if plan["action"] == "export_selected":
-        return apply_selected(plan, log)
+        return publish_ace(plan, log, apply_selected)
     if plan["action"] == "refresh_sources":
         workflow_actions.validate_plan(plan)
         engine = TranslationEngine(Path(plan["folder"]).parent.parent)

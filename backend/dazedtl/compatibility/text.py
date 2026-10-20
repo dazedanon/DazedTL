@@ -1004,10 +1004,9 @@ def run_fit(plan, log):
 
 def run_publication(plan, log):
     validate_publication(plan)
-    result = publication.publish(
+    return publication.publish(
         plan["folder"], plan["project"]["source"], plan["publication"], log
     )
-    return {**result, "ace_packing_required": plan["project"]["engine"] == "ACE"}
 
 
 def validate_publication(plan):

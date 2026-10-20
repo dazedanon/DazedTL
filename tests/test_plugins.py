@@ -1307,6 +1307,7 @@ class AceScriptTests(unittest.TestCase):
         projects = Projects(profile)
         project = projects.open({"source": str(game), "engine": "ACE"})
         identity = project["id"]
+        packed = []
         service = PluginService(
             projects,
             SimpleNamespace(
@@ -1319,7 +1320,13 @@ class AceScriptTests(unittest.TestCase):
                     ace_script_order=TranslationEngine.ace_script_order,
                 ),
             ),
-            SimpleNamespace(source=root / "engine"),
+            SimpleNamespace(
+                source=root / "engine",
+                guided_ace_blocked=lambda _root: None,
+                guided_ace_pack=lambda source, _native, touched: packed.append(
+                    (source, touched)
+                ),
+            ),
         )
         write_json(
             lifecycle_path(profile, identity),
@@ -1421,6 +1428,8 @@ class AceScriptTests(unittest.TestCase):
         applied = service.action(identity, "apply")
         self.assertFalse(applied["blocked"])
         self.assertEqual((game / script).read_bytes(), good)
+        # The game reads its scripts only from Data/Scripts.rvdata2.
+        self.assertEqual(packed, [(game.resolve(), [script])])
         state = service.state(identity)
         self.assertTrue(state["scripts"])
         self.assertEqual(state["counts"]["applied"], 1)

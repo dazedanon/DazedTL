@@ -948,6 +948,7 @@ def parse(codeList, i, headerString, jaString):
                 )
 
     def test_ace_packing_saves_a_receipt_only_when_every_export_was_packed(self):
+        from dazedtl.compatibility.guided import publish_ace
         from dazedtl.translation.release import packing_state
 
         with TemporaryDirectory() as temporary:
@@ -962,17 +963,32 @@ def parse(codeList, i, headerString, jaString):
                 "engine": "ACE",
             }
             plan = {"action": "ace_pack", "folder": str(folder), "project": native}
-            packed = []
+            packed, calls = [], []
 
-            def pack(_root, _action, _log):
-                for name in packed:
+            def pack(_root, _action, _log, *, only=None):
+                calls.append(only)
+                names = [
+                    name
+                    for name in packed
+                    if only is None or Path(name).stem.casefold() in only
+                ]
+                for name in names:
                     path = game / "Data" / name
                     path.parent.mkdir(exist_ok=True)
                     path.write_bytes(b"\x04\x08generated " + name.encode())
-                return [game / "Data" / name for name in packed]
+                return [game / "Data" / name for name in names]
+
+            def archive_in_root(source):
+                return (
+                    "Run Convert Ace data"
+                    if (source / "Game.rgss3a").exists()
+                    else None
+                )
 
             converter = ModuleType("util.ace")
-            converter.actions = SimpleNamespace(run=pack)
+            converter.actions = SimpleNamespace(
+                run=pack, archive_in_root=archive_in_root
+            )
             workflow = ModuleType("desktop.backend.workflow_actions")
             workflow.validate_plan = lambda _plan: None
             with patch.dict(
@@ -989,6 +1005,36 @@ def parse(codeList, i, headerString, jaString):
                     run_ace(plan, lambda _line: None), {"completed": "ace_pack"}
                 )
                 self.assertTrue(packing_state(native, folder)["current"])
+
+                # A write to the game's text packs the exports changed since
+                # the receipt, and the receipt stays current.
+                def write(name):
+                    def run(plan, _log):
+                        write_json(game / name, [None, {"name": "Potion"}])
+                        plan["publication"] = {"files": [{"path": name}]}
+                        return {"files": 1}
+
+                    return run
+
+                calls.clear()
+                publish_ace(dict(plan), print, write("ace_json/Items.json"))
+                self.assertEqual(calls, [{"items"}])
+                self.assertTrue(packing_state(native, folder)["current"])
+                # Without a current receipt, as after Data changed outside
+                # the app, a write packs only what it touched and leaves the
+                # rest of Data to an explicit pack of everything.
+                (game / "Data/Items.rvdata2").write_bytes(b"edited")
+                calls.clear()
+                publish_ace(dict(plan), print, write("ace_json/CommonEvents.json"))
+                self.assertEqual(calls, [{"commonevents"}])
+                self.assertFalse(packing_state(native, folder)["current"])
+                run_ace(plan, lambda _line: None)
+                self.assertEqual(calls, [{"commonevents"}, None])
+                self.assertTrue(packing_state(native, folder)["current"])
+                # An archive the game still reads refuses before the write.
+                (game / "Game.rgss3a").write_bytes(b"RGSSAD")
+                with self.assertRaisesRegex(ValueError, "Convert Ace data"):
+                    publish_ace(dict(plan), print, self.fail)
 
     def test_phased_worker_launcher_preserves_pipe_controls_and_isolates_the_child(
         self,

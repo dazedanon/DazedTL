@@ -348,6 +348,45 @@ class AceConversionTests(unittest.TestCase):
             )
             self.assertIsNone(actions.patch_archive(root, root / "none", tracked))
 
+            # A game that arrives converted, its archive still beside Game.exe
+            # (as DazedMTLTool left it), shows none of the translation.
+            arrived = root / "arrived"
+            shutil.copytree(FIXTURE / "ace_json", arrived / "ace_json")
+            shutil.copy(
+                FIXTURE / "translated/Actors.json", arrived / "ace_json/Actors.json"
+            )
+            (arrived / "ace_json/Items.json").unlink()
+            (arrived / "Game.rgss3a").write_bytes(archive_v3(entries, seed=7))
+            with self.assertRaisesRegex(ValueError, "Convert Ace data"):
+                actions.run(arrived, "ace_pack", log=lambda _line: None)
+            # Converting keeps its translation and adds only what it lacks.
+            actions.run(arrived, "ace_extract", log=lambda _line: None)
+            self.assertEqual(rgssad.archives(arrived), [])
+            self.assertEqual(
+                files(arrived / "ace_json"),
+                {
+                    **files(FIXTURE / "ace_json"),
+                    "Actors.json": files(FIXTURE / "translated")["Actors.json"],
+                },
+            )
+            # Packing only the changed exports leaves the other data alone.
+            written = actions.run(
+                arrived, "ace_pack", log=lambda _line: None, only={"actors"}
+            )
+            self.assertEqual(written, [arrived / "Data/Actors.rvdata2"])
+            self.assertEqual(
+                files(arrived / "Data"),
+                {
+                    **original,
+                    "Actors.rvdata2": files(FIXTURE / "packed")["Actors.rvdata2"],
+                },
+            )
+            # Set up's first packing receipt names what packing writes.
+            self.assertEqual(
+                sorted(actions.packed_files(arrived)),
+                sorted(actions.run(arrived, "ace_pack", log=lambda _line: None)),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

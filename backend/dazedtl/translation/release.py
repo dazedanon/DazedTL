@@ -323,20 +323,24 @@ def packing_inputs(native):
     return evidence(Path(native["source"]), paths)
 
 
+def packing_target(name):
+    """The native data file an export packs into, by its case-folded name: a
+    JSON file packs into the data file of its name and a script into
+    Scripts; the game and the converter match names without regard to case."""
+    path = PurePosixPath(name)
+    return "scripts" if path.parent.name == "scripts" else path.stem.casefold()
+
+
 def unpacked(inputs, outputs):
-    """Exports without a packed native file: a JSON file packs into the data
-    file of its name and a script into Scripts; the game and the converter
-    match names without regard to case."""
+    """Exports without a packed native file."""
     packed = {PurePosixPath(name).stem.casefold() for name in outputs}
-
-    def target(name):
-        path = PurePosixPath(name)
-        return "scripts" if path.parent.name == "scripts" else path.stem.casefold()
-
-    return [name for name in inputs if target(name) not in packed]
+    return [name for name in inputs if packing_target(name) not in packed]
 
 
 def packing_state(native, folder):
+    """Whether the game's native data holds its current ace_json, as the
+    receipt every in-app write's packing saves shows. Writes outside the app,
+    to ace_json or Data, leave it outdated."""
     if native["engine"] != "ACE":
         return {"required": False, "current": True, "message": ""}
     try:
@@ -355,9 +359,9 @@ def packing_state(native, folder):
     return {
         "required": True,
         "current": current,
-        "message": "Native data matches the saved packing receipt."
+        "message": "The game's data matches ace_json."
         if current
-        else "Pack the current Ace JSON before building. No matching native packing evidence is saved.",
+        else "The game's data is older than ace_json, such as after an edit outside DazedTL.",
     }
 
 
