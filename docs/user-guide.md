@@ -107,9 +107,12 @@ Translate has five tasks.
 4. Click **Apply** to write the translations into the game.
    Translation wraps each line to your **Line widths**, keeping the Japanese line breaks where the English allows, and Apply wraps again any line still too wide.
 
+**Lines** counts what each file holds right now: lines translated of the lines that hold Japanese, where a message, a choice, a help text or a name each count once.
+A file reads **Needs review** while lines are left; hover its status to see why, or click its eye to list them.
+
 Maps & events also translates the choice help that plugins such as MPP_ChoiceEX show from event comments.
 Guided turns **Comment text** on for this the first time it opens a game that shows such help; you can change it in Context > Names & glossary > Speaker detection > Settings.
-In a project translated before then, each file whose help is still in Japanese reads **Needs review** and counts those lines as untranslated; **Translate** sends only them.
+In a project translated before then, each file whose help is still in Japanese counts it as lines left; **Translate** sends only them.
 The help wraps to the message window, to the **With portrait** width when the message before the choice shows a face, and is rewrapped with the other text when it no longer fits.
 
 Approved Batch work carries on after DazedTL restarts.

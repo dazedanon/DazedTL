@@ -274,7 +274,7 @@ A refusal cannot enter game dialogue, including in older runs without a clarific
 Historical refusal prose is flagged and excluded from validated-result reuse without rewriting saved output or inventing missing response bodies.
 Older runs saved refusal notes as translations, and a run sends only lines still in the game's own words, so a Guided phase puts each such line's source back in its selected working copies before it lists them ([saved_refusals](../backend/dazedtl/translation/saved_refusals.py)).
 The source is the line's `_original`, through QA's inventory mapping, or outside event commands the original game file's value at the same place, which covers names the engine keeps no `_original` for; a note without a known source stays.
-The run records its inputs as restored, so its estimate stays current, and the Translate row reads Needs review with the number of such lines until a run replaces them.
+The run records its inputs as restored, so its estimate stays current, and the file counts such lines as left until a run replaces them.
 Batch workers retain [native validation receipts](../backend/dazedtl/compatibility/batch_validation.py) in the existing process ledger, bound to the consumed request key, source, file and response hash.
 Native cache acceptance records a pass; a normally returned validation call marks its remaining responses failed, while exceptions leave them unresolved.
 These receipts do not depend on refusal wording, text logs or whole-file completion.
@@ -376,7 +376,19 @@ The reader loads only after opening its tab and retains its search, page and scr
 Translate embeds the existing [FileSelection](../app/src/features/guided/FileSelection.tsx) component rather than a second picker.
 Its shared virtual list and selection logic retain Ctrl/Cmd toggles, Shift ranges and keyboard movement.
 A separate Inspect icon does not change scope; the open file is marked independently of selection.
-File status follows that file's request receipts and verified output independently of checkbox selection or the current attempt.
+Database files and Maps & events read each file's status and Lines from the file itself through [file_lines](../backend/dazedtl/translation/file_lines.py), independently of checkbox selection and of the runs that wrote it.
+The backend reads the file's newest copy (its translated working copy, else its working copy, else the game's own file) once per change, by its digest.
+A line is one message (a 101's name box with its 401 rows), scrolling text block, choice, choice help block while Comment text is on, map display name, database field or system term, as Text QA's never-translated report lists them, without what another task or no task translates, such as System's currency unit and actor name changes.
+A line is in scope when its source holds Japanese: the `_original` the engine keeps, or for a translated map name, which keeps none, the original game file's name.
+It is translated when it holds no Japanese letters outside control-code arguments and no refusal note, since the engine sends a value while it holds Japanese whatever its `_original` says; a name box counts only the name the engine translates.
+The engine probe ([engine_runtime](../tests/fixtures/engine_runtime.py)) runs a real pass over the fixtures and checks that the engine sends text for exactly the files with lines left and leaves none.
+Lines shows translated of in scope from the first look; a Live run still working on a file shows the lines it saved so far, and the file's count takes over when it ends.
+A run's work while it is in progress for the file shows Working, or Needs review while a cost approval waits; otherwise the file decides.
+Nothing translated shows Not started, lines left show Needs review with how many and why (never translated, choice help that Comment text now translates, a refusal note), and Inspect opens on them; a submission that could not be confirmed names that instead.
+A file with none left shows Ready to apply, or Applied once it is in the game or has no translated copy of its own, and one with nothing in scope shows Done; one the backend cannot read shows Blocked.
+The task is done when no file in its group has lines left, no run works on one and none changed in the game, and the overview adds up the same counts.
+
+Other event text still follows its runs' request receipts and verified output, independently of checkbox selection or the current attempt.
 The file list uses the shared display states.
 Untouched files show Not started, including files whose requests all failed without returning lines, with that reason in the detail.
 A rerun reads the earlier run's output and reuses its results, so a verified pass with no new requests over a file an earlier run translated shows Ready to apply, or Applied once that output is in the game.
