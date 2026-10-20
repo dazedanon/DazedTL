@@ -3,3 +3,4 @@
 ### Fixed
 
 - **Maps & events:** in a project translated before **Comment text** came on, a file whose choice help is still in Japanese now reads **Needs review** and counts those lines as untranslated, instead of looking finished; **Translate** sends only the help.
+- **Maps & events:** when several maps repeat the same scene, a Batch still sends it once, and now each of those maps counts its lines and shows which request failed validation, instead of "validation mismatches were recorded, but this older run did not retain which request failed".
