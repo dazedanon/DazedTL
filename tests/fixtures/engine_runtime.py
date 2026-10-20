@@ -3027,6 +3027,21 @@ try:
                 engine_japanese.fullmatch(chr(code))
             )
             assert file_lines.japanese(chr(code)) == letter, hex(code)
+        # A refusal note an older run saved in a database note tag, which the
+        # database pass translates, is a line left.
+        noted = [
+            None,
+            {
+                "name": "Potion",
+                "note": "<SG説明:[Not translated]>",
+                "_original": {"name": "薬", "note": "<SG説明:薬です>"},
+            },
+        ]
+        assert file_lines.count("Items.json", noted, "database", frozenset()) == {
+            "lines": 2,
+            "translated": 1,
+            "notes": 1,
+        }, file_lines.count("Items.json", noted, "database", frozenset())
         # A control code's argument names a plugin's asset, never text: the
         # engine sends such a line again on every pass, but it is translated.
         assert not file_lines.japanese(r"\SA[びっくり]Hello") and file_lines.japanese(

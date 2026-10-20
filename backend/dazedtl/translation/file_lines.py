@@ -332,7 +332,8 @@ def count(
 ) -> dict[str, Any]:
     """A file's line counts: lines in scope, those translated, those holding
     a refusal note and the choice help left; `otherNotes` counts refusal notes
-    in values outside these lines, such as Other event text, and `mapName`
+    in a Maps & events file's values outside these lines, such as Other event
+    text (a database file counts them as lines left), and `mapName`
     is a translated map display name whose source decides its scope."""
     notes = note_pointers(document, original)
     counted: set[str] = set()
@@ -354,7 +355,13 @@ def count(
         elif line.kind == "help":
             result["help"] = result.get("help", 0) + 1
     if other := len(notes - counted):
-        result["otherNotes"] = other
+        if phase == "database":
+            # The database pass translates note tags too: a note there is
+            # one more line left.
+            result["lines"] += other
+            result["notes"] = result.get("notes", 0) + other
+        else:
+            result["otherNotes"] = other
     return result
 
 
