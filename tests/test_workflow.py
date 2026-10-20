@@ -950,6 +950,22 @@ class WorkflowTests(unittest.TestCase):
                 self.engine, self.game, DEFAULTS, state, allow_pending=True
             )["configured"]
         )
+        # Saving Line widths fits the text already written to the game, whose
+        # files a stopped merge leaves with conflict markers: it saved the
+        # widths, then failed on them with a raw JSON error.
+        with self.assertRaisesRegex(ValueError, "unfinished Git cherry-pick"):
+            execute(
+                self.engine,
+                self.profile,
+                {"project_id": self.identity},
+                {
+                    "source": str(self.game),
+                    "options": DEFAULTS,
+                    "action": "line_widths",
+                    "arguments": {"widths": "widths.json"},
+                },
+                lambda: False,
+            )
         self.engine.pending = []
         self.engine.branch = "side"
         with self.assertRaises(ValueError) as refused:
