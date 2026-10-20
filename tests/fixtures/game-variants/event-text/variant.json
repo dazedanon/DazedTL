@@ -1,0 +1,40 @@
+{
+  "description": "Plugin commands, a comment and a script notice in the chief's event that only the game's own patterns reach: DTextPicture, CommonPopup, MOG_EventIndicators and a Notice.show script (codes 356, 108 and 355).",
+  "chief": [
+    {
+      "code": 356,
+      "indent": 0,
+      "parameters": [
+        "D_TEXT [マップ表示名] 24"
+      ]
+    },
+    {
+      "code": 356,
+      "indent": 0,
+      "parameters": [
+        "D_TEXT 現在の時刻 24"
+      ]
+    },
+    {
+      "code": 356,
+      "indent": 0,
+      "parameters": [
+        "CommonPopup add text:共鳴度+3 count:60"
+      ]
+    },
+    {
+      "code": 108,
+      "indent": 0,
+      "parameters": [
+        "text_indicator : 世界地図の端"
+      ]
+    },
+    {
+      "code": 355,
+      "indent": 0,
+      "parameters": [
+        "Notice.show('宝箱を見つけた');"
+      ]
+    }
+  ]
+}

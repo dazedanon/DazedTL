@@ -1,0 +1,14 @@
+{
+  "description": "MenuJournal, a plugin whose menu command and message come from Japanese parameters, with a Japanese label in its own code, for Plugin files.",
+  "plugins": [
+    {
+      "name": "MenuJournal",
+      "status": true,
+      "description": "メニューに冒険日誌を追加します。",
+      "parameters": {
+        "command": "冒険日誌の記録",
+        "empty": "まだ何も書かれていない。"
+      }
+    }
+  ]
+}

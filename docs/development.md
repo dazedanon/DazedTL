@@ -74,6 +74,34 @@ When the checkout's `QA_RULES_VERSION` differs from the release's, the task in r
 The phases run in [qa_upgrade.py](../scripts/qa_upgrade.py), the release's own copy for its tasks when it has one; it needs the release tags (`git fetch --tags`) and the setup's `.venv`, and `--work <empty folder>` keeps its files.
 A failure means a change made saved QA work stale: keep what names a task as it was, or bump `QA_RULES_VERSION` when old reviews are wrong now.
 
+## Test scenarios
+
+`node scripts/scenario.mjs <scenario>` builds a known state to reproduce a bug in: a scratch profile and workspace, a copy of a fixture game and a free stand-in provider, never your own profile or games.
+It drives this checkout's app through the same steps a user takes, in a private virtual KWin on Linux (or the `DISPLAY` already set, as under `xvfb-run`), and closes it again; most scenarios build in under 20 seconds.
+`node scripts/scenario.mjs list` describes each scenario and game variant:
+
+- `fresh`, `opened`, `set-up` and `translated`: the Guided journey up to that point, Live translation applied.
+- `qa-done`: Text QA reviewed by a scripted assistant through the project helper, one correction applied.
+- `assistant-led`: an Assistant-led project in agent mode, set up and organized, its first request translated.
+- `batch-waiting`: the database submitted as a Batch that the stand-in holds.
+- `upgraded`: translated by the previous release, then opened in this checkout.
+- `playtested`: translated, then played by the release playtest, which prints its problems.
+
+`--game` lays [game variants](../tests/fixtures/game-variants) over the MZ fixture game, joined with `+`, such as `--game choice-help+hud+playable`; `ace` takes the VX Ace fixture instead.
+`playable` adds RPG Maker MV's open-source engine, downloaded once into `.runtime`, so the playtest and Text QA's screen captures can run the game.
+`--from <ref>` builds the scenario with another commit or tag, from a worktree in `.runtime/checkouts`, such as the commit before a fix: `node scripts/scenario.mjs playtested --from 8ec7da3a` shows the playtest giving a HUD's Japanese the open message's identity.
+`--work <dir>` chooses the folder; otherwise it is printed.
+
+`--app` leaves the app running and prints its DevTools and inspector ports and the project helper command; `node scripts/scenario.mjs app --work <dir>` starts it again later.
+`node scripts/scenario.mjs drive --work <dir>` with `text`, `click <accessible name>`, `call <method> <params>`, `eval` or `shot <file>` drives it, and scripts import the same driver from [scripts/testkit/cdp.mjs](../scripts/testkit/cdp.mjs).
+`node scripts/scenario.mjs provider --work <dir> '<mode>'` changes how the stand-in answers, such as `{"stall":true}` or `{"refuse":["text"]}`; [its header](../scripts/testkit/provider.mjs) lists the modes.
+`node scripts/scenario.mjs clean --work <dir>` stops every process the scenario started and removes its folder.
+Scenario apps reach no provider outside the machine: the OpenAI preset points at the stand-in through `DAZEDTL_TEST_OPENAI_ENDPOINT`, and other requests go to a proxy that is not there.
+
+To add a scenario, add its steps to [scripts/testkit/scenarios.mjs](../scripts/testkit/scenarios.mjs), reusing the steps there and in [journey.mjs](../scripts/testkit/journey.mjs).
+To add a kind of game content, add a folder to [tests/fixtures/game-variants](../tests/fixtures/game-variants) whose `variant.json` describes it; [games.mjs](../scripts/testkit/games.mjs) says what it can change.
+The headless playtest runner, the scripted Text QA reviewer and the scripted Assistant-led assistant sit beside them in [scripts/testkit](../scripts/testkit).
+
 ## GameUpdate
 
 [gameupdate](../backend/dazedtl/engine/gameupdate) is the player updater that Set up copies into each game's root folder; [project_preparation.py](../backend/dazedtl/engine/util/project_preparation.py) decides what is copied and which existing files are kept.

@@ -1,6 +1,7 @@
 """Connection presets and explicit, non-generating access checks."""
 
 import json
+import os
 import re
 import time
 from datetime import UTC, datetime
@@ -12,7 +13,10 @@ PROVIDERS = {
     "openai": {
         "label": "OpenAI",
         "protocol": "openai",
-        "endpoint": "https://api.openai.com/v1",
+        # Test scenarios point OpenAI at a local stand-in to run Batch offline;
+        # see "Test scenarios" in docs/development.md.
+        "endpoint": os.environ.get("DAZEDTL_TEST_OPENAI_ENDPOINT")
+        or "https://api.openai.com/v1",
     },
     "openrouter": {
         "label": "OpenRouter",
