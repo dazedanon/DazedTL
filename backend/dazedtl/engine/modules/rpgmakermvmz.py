@@ -44,7 +44,7 @@ from util.paths import (
     active_glossary_path,
     read_active_glossary,
 )
-from util.rpgmaker_markers import SUPPORTED_CODE408_MARKERS
+from util.rpgmaker_markers import comment_markers, game_plugins
 from util.rpgmaker_files import mvmz_file_kind
 from util.id_ranges import id_in_ranges
 
@@ -105,6 +105,7 @@ _VAR_ACTOR_RE = re.compile(r"\\n\[(\d+)\]", re.IGNORECASE)
 _VAR_GAME_RE = re.compile(r"\\v\[(\d+)\]", re.IGNORECASE)
 _VAR_ACTOR_MAP_CACHE: dict | None = None
 _AUTONAMEPOPUP_CACHE: tuple[str, dict] | None = None
+_CODE408_MARKERS_CACHE: tuple[str, frozenset[str]] | None = None
 _ACTOR_NAME_SCRIPT_RE = re.compile(
     r"\$gameActors\.actor\s*\(\s*(\d+)\s*\)\.name\s*\(\s*\)",
     re.IGNORECASE,
@@ -1124,7 +1125,18 @@ def _code408_has_supported_marker(codeList, index: int) -> bool:
         return False
 
     marker = _param_source(codeList[marker_index], 0).strip()
-    return marker in SUPPORTED_CODE408_MARKERS
+    return marker in _code408_markers()
+
+
+def _code408_markers() -> frozenset[str]:
+    """The comment markers whose lines the selected game's plugins show."""
+    global _CODE408_MARKERS_CACHE
+    root = os.getenv("DAZED_GAME_ROOT", "").strip()
+    with _ACTOR_MAP_CACHE_LOCK:
+        if _CODE408_MARKERS_CACHE is None or _CODE408_MARKERS_CACHE[0] != root:
+            plugins = game_plugins(root) if root else ()
+            _CODE408_MARKERS_CACHE = (root, comment_markers(plugins))
+        return _CODE408_MARKERS_CACHE[1]
 
 
 def _code408_group_end(codeList, start: int) -> int:

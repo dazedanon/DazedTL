@@ -1110,6 +1110,22 @@ try:
                     command(408, ["Line two."], _original="二行目"),
                 ]
                 assert parse(lines)[:-1] == lines
+                # A marker the game's choice plugin lists in its settings counts.
+                choice = temporary / "choice"
+                (choice / "js").mkdir(parents=True)
+                plugin = {
+                    "name": "MPP_ChoiceEX",
+                    "status": True,
+                    "parameters": {"Choice Help Commands": '["ChoiceHelp"]'},
+                }
+                (choice / "js/plugins.js").write_text(
+                    f"var $plugins =\n[{json.dumps(plugin)}];\n", encoding="utf-8"
+                )
+                with patch.dict(os.environ, {"DAZED_GAME_ROOT": str(choice)}):
+                    result = parse([command(108, ["ChoiceHelp"]), help_lines[1]])
+                assert result[1] == command(
+                    408, ["Takes about 20 minutes."], _original="所要時間:20分"
+                ), result
             # Plugins split 356 commands on spaces, so each handler joins a
             # translation's words its own way. A kept placeholder stays, and
             # must not shift the next translation onto the wrong command.

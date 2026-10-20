@@ -180,9 +180,10 @@ write(
                             {"code": 0, "indent": 0, "parameters": []},
                         ]
                     },
-                    # A choice plugin shows comment lines under its marker as
-                    # help: one never translated, one joined translation whose
-                    # second line kept a name, and a note nothing shows.
+                    # A choice plugin shows comment lines under its markers,
+                    # its own setting's too, as help: one never translated, one
+                    # joined translation whose second line kept a name, and a
+                    # note only a turned-off plugin lists.
                     {
                         "list": [
                             {"code": 108, "indent": 1, "parameters": ["選択肢ヘルプ"]},
@@ -192,6 +193,8 @@ write(
                             {"code": 408, "indent": 1, "parameters": ["Ask 店長."]},
                             {"code": 108, "indent": 1, "parameters": ["メモ"]},
                             {"code": 408, "indent": 1, "parameters": ["開発用"]},
+                            {"code": 108, "indent": 1, "parameters": ["ChoiceHelp"]},
+                            {"code": 408, "indent": 1, "parameters": ["報酬あり"]},
                             {"code": 0, "indent": 0, "parameters": []},
                         ]
                     },
@@ -202,10 +205,21 @@ write(
 )
 
 PLUGIN_LIST = [
-    {"name": "Dungeon", "status": True, "parameters": {"ShowGauge": "false"}},
+    {
+        "name": "Dungeon",
+        "status": True,
+        "parameters": {
+            "ShowGauge": "false",
+            "Choice Help Commands": json.dumps(["ChoiceHelp"]),
+        },
+    },
     {"name": "Broken", "status": True, "parameters": {}},
     {"name": "Gone", "status": True, "parameters": {}},
-    {"name": "Retired", "status": False, "parameters": {}},
+    {
+        "name": "Retired",
+        "status": False,
+        "parameters": {"Choice Help Commands": json.dumps(["メモ"])},
+    },
 ]
 write(
     game / "js" / "plugins.js",
@@ -274,6 +288,7 @@ assert [
 ] == [
     "/events/1/pages/1/list/5/parameters/0",
     "/events/1/pages/2/list/1/parameters/0",
+    "/events/1/pages/2/list/8/parameters/0",
 ]
 
 assert found[("plugin-syntax", "js/plugins/Broken.js", "Broken")]["line"] == 1

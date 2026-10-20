@@ -18,6 +18,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
 
+from util.rpgmaker_markers import comment_markers
 from util.rpgmaker_plugin_registry import PluginRegistryError, plugin_entries
 from util.rpgmaker_qa_checks import BATTLE_MESSAGES, battler_name_note, runtime
 from util.rpgmaker_qa_preflight import (
@@ -159,13 +160,14 @@ class _Checks:
         js = (self.data.parent / "js").relative_to(self.game).as_posix()
         return f"{js}/{name}" if js != "." else name
 
-    def japanese(self) -> None:
+    def japanese(self, entries: list[dict[str, Any]]) -> None:
         """Japanese left in translated text players read, and placeholder
         glyphs; text never translated comes from preflight."""
+        markers = comment_markers(entries)
         for name, document in self.documents.items():
             if name not in STANDARD_FILES and not _MAP_RE.fullmatch(name):
                 continue
-            for parts, value, kind, translated in visible_texts(name, document):
+            for parts, value, kind, translated in visible_texts(name, document, markers):
                 if not isinstance(value, str) or not translated:
                     continue
                 location = pointer(parts)
@@ -509,7 +511,7 @@ def static_checks(
     reach = Reach(data, entries)
     for name, document in checks.documents.items():
         reach.scan(name, document)
-    checks.japanese()
+    checks.japanese(entries)
     checks.untranslated(kept)
     checks.codes()
     checks.descriptions()
