@@ -3418,6 +3418,38 @@ _TASK_FOLDER_RE = re.compile(r"[0-9a-f]{16}")
 # Beside a focus's tasks, the scope the user named last: the key of a review
 # of every line, or none once a `since` named earlier text checked.
 SCOPE_FILE = "scope.json"
+# Beside a focus's tasks, the key of the one preparing QA returned last; the
+# others are replaced, and a helper still holding one's path is sent on.
+CURRENT_FILE = "current.json"
+
+
+def replaced_by(task_dir: str | Path) -> Path | None:
+    """The task preparing QA again made current in this one's place, or None
+    while this one is current, or none is recorded or it is gone, as when the
+    app set it aside."""
+    root = Path(task_dir).expanduser().resolve()
+    try:
+        key = str(_read_json(root.parent / CURRENT_FILE).get("task") or "")
+    except (OSError, ValueError, AttributeError):
+        return None
+    current = root.parent / key
+    if (
+        key == root.name
+        or not _TASK_FOLDER_RE.fullmatch(key)
+        or not (current / "task.json").is_file()
+    ):
+        return None
+    return current
+
+
+def require_current(task_dir: str | Path) -> None:
+    """Refuses work on a task a newer one replaced, naming the newer one, so
+    a helper can't review, report or finish the wrong task."""
+    if current := replaced_by(task_dir):
+        raise ValueError(
+            "QA was prepared again, and a newer task replaced this one; run "
+            f"this command with --task {current} and follow {current / 'README.md'}"
+        )
 
 
 def _last_scope(path: Path) -> str | None:
@@ -3606,6 +3638,7 @@ def prepare_task(
                 _recapture(task_dir, data, manifest, progress)
             if observed:
                 _observe_again(task_dir, observed, observer)
+            _atomic_write_json(task_parent / CURRENT_FILE, {"task": task_key})
             return task_dir, status(task_dir)
 
         staging = new_folder(task_parent, f".{task_key}.")
@@ -3803,6 +3836,7 @@ def prepare_task(
             if staging.is_dir() and not staging.is_symlink():
                 shutil.rmtree(staging)
             raise
+        _atomic_write_json(task_parent / CURRENT_FILE, {"task": task_key})
     return task_dir, status(task_dir)
 
 

@@ -267,6 +267,16 @@ assert labels(first) == ["reviewed", "waiting"]
 glossary("剣 (sword) - The hero's only weapon.\nミナ (Mina) - Calls herself Mina.\n")
 second = prepare(observations=found)
 assert second != first
+# The first task's path now refuses work and names the task that replaced
+# it: on Fuuma, a coordinator kept running the old README's commands, read
+# "complete" and never reviewed the new round.
+try:
+    qa.require_current(first)
+except ValueError as error:
+    assert str(second) in str(error), error
+else:
+    raise AssertionError("A replaced task still took work.")
+qa.require_current(second)
 assert targets(second) == ["ミナが来る", "剣を抜け"], targets(second)
 # The next round reviews the corrected line, and leaves out the other, which
 # deep review judged for the same text and reason: it reads as reviewed,

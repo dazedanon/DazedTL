@@ -54,6 +54,7 @@ Run `{{CLI}} status --task {{TASK}}`; read the task's context, {{CONTEXT}}, only
 A task builds on earlier reviews: lines an earlier QA of this game reviewed, unchanged since and with the same glossary entries and quirks, are only context, and `status` counts them under `reviewed_before`.
 When the user says the text up to an update was checked before, such as everything but version 1.10's new text, prepare QA again with the project helper's `qa --prepare --since 1.10` from your handoff, or a Git revision instead of the version, and follow the README of the task it names; the scope stays in effect for the game's later QA.
 `qa --prepare --everything` reviews every line again; a later `qa --prepare` without either goes on with the scope named last while the game's text is the same.
+A task that preparing QA again names replaces this one, as after a playtest: every command on this task then refuses and names the new task, so go on with that task's README.
 Never decline lines to narrow QA's scope.
 
 1. Start four workers that run at the same time, such as background sub-agents, each a fresh session with a name of its own, such as `rev-1` to `rev-4`.

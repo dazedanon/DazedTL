@@ -146,6 +146,10 @@ def main() -> int:
 
 
 def run(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    # Work on a task QA replaced since goes to the task that replaced it; a
+    # rebuild reads an older task on purpose.
+    if args.command not in {"prepare", "rebuild-deep"}:
+        rpgmaker_qa.require_current(args.task)
     if args.command == "prepare":
         task, state = rpgmaker_qa.prepare_task(
             args.game_root, args.data, args.focus, args.output_root,
