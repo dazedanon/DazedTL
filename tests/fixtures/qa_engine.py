@@ -512,6 +512,17 @@ assert checks["added"] == len(FLAGGED) - 1, checks
 # deep review the stage instead of leaving screening current.
 qa.next_bundle(task, "deep-a")
 assert qa.status(task)["stage"] == "deep"
+# A task in review when an update bumps QA's rules version takes no more
+# review, and QA is prepared again.
+qa.QA_RULES_VERSION += 1
+assert qa.status(task)["rules_changed"]
+try:
+    qa.next_bundle(task, "deep-a")
+except ValueError as error:
+    assert "prepare QA again" in str(error), error
+else:
+    raise AssertionError("A task in review went on under other rules.")
+qa.QA_RULES_VERSION -= 1
 # Deep review and the context view leave the set-aside scene out, even its
 # Japanese residue, which would otherwise force deep review, and even for its
 # last reviewer.
@@ -1127,27 +1138,20 @@ assert [
     ("plugin", "Prompt", 1, "unknown"),
     ("custom", "Synopsis.json", 1, "unread"),
 ], untranslated["sources"]
-# The rules are the files that define them, never the values this process
-# loaded: the app keeps the code it started with while QA workers load the
-# updated files, and both must agree on which rules are current.
-fingerprint = qa._engine_fingerprint()
-schema, qa.TASK_SCHEMA = qa.TASK_SCHEMA, "older"
-assert qa._engine_fingerprint() == fingerprint
-qa.TASK_SCHEMA = schema
-policy = temporary / "policy.md"
-policy.write_bytes(qa.rpgmaker_qa_skill_file().read_bytes() + b"\nA new rule.\n")
-qa.rpgmaker_qa_skill_file = lambda: policy
-assert qa._engine_fingerprint() != fingerprint
-# After an update changes the rules, the task still reports where it stood,
-# but nothing made under the old rules can be applied.
-qa._engine_fingerprint = lambda: "updated"
-assert qa.status(task)["rules_changed"]
+# A finished task keeps its results through any update: under another rules
+# version it reads as it stood and its findings still apply, while Undo still
+# needs the game to hold what the apply wrote.
+qa.QA_RULES_VERSION += 1
+assert not qa.status(task)["rules_changed"]
 try:
-    qa.correction_map(task, [stratum])
+    apply(qa.correction_map(task, [stratum], undo=True))
 except ValueError as error:
-    assert "rules changed" in str(error), error
+    assert "Expected value changed" in str(error), error
 else:
-    raise AssertionError("Corrections from older rules were applied.")
+    raise AssertionError("A correction no longer in the game was undone.")
+assert apply(qa.correction_map(task, [stratum]))
+assert message(STRATUM["_original"]) == "Rest on the first stratum"
+qa.QA_RULES_VERSION -= 1
 
 # Database checks send what reviewers read apart to deep review with their
 # evidence: two skills that show one name, an MZ state message that prints

@@ -726,7 +726,6 @@ def build_manifest(data_root: str | Path, focus: str) -> dict[str, Any]:
     manifest: dict[str, Any] = {
         "schema": SCHEMA,
         "extractor": EXTRACTOR,
-        "extractor_source_sha256": _sha256(Path(__file__).read_bytes()),
         "path_grammar": PATH_GRAMMAR,
         "ordering": ORDERING,
         "normalization": NORMALIZATION,

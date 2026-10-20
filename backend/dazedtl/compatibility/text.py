@@ -133,8 +133,8 @@ def qa_unreadable(plan, error):
 
 
 def _prepared(plan):
-    """The task the pointer names and its saved findings, once its evidence
-    checks out; raises when the app can't read or trust it."""
+    """The task the pointer names, its checkpoint and its saved findings,
+    once its evidence checks out; raises when the app can't read or trust it."""
     from util import rpgmaker_qa as qa
 
     saved = read_json(_pointer(plan))
@@ -152,9 +152,9 @@ def _prepared(plan):
         raise ValueError(
             "The immutable QA task evidence changed. Prepare current QA before using these reports."
         )
-    # A task from before an update still shows what it found and applied,
-    # though only a task prepared with the current rules can continue.
-    root, task, _checkpoint = qa._read_task(task_path)
+    # A task from before an update still shows what it found and applies it;
+    # only one in review under an older rules version stops.
+    root, task, checkpoint = qa._read_task(task_path)
     if (
         task["game_root"] != plan["project"]["source"]
         or task["data_root"] != plan["project"]["data"]
@@ -168,7 +168,7 @@ def _prepared(plan):
         or document.get("task_sha256") != qa._sha256(qa._canonical_bytes(task))
     ):
         raise ValueError("Saved findings belong to another QA task.")
-    return saved, root, task, document
+    return saved, root, task, checkpoint, document
 
 
 def _set_aside(plan, log):
@@ -216,8 +216,9 @@ def qa_state(plan):
             "questions": [],
             "message": "No QA task prepared for this focus.",
         }
-    saved, root, task, document = _prepared(plan)
-    rules_changed = task["engine_fingerprint"] != qa._engine_fingerprint()
+    saved, root, task, checkpoint, document = _prepared(plan)
+    # A finished task stays current through any update.
+    rules_changed = qa.rules_changed(task, checkpoint)
     now = binding(plan)
     current = saved["binding"] == now and not rules_changed
     # Only the game's plugins changed, as after a playtest fix or a Plugin
@@ -390,7 +391,7 @@ def qa_state(plan):
         "prepared_at": task["created_at"],
         "message": "Saved results match current project text."
         if current
-        else "An update changed QA's rules after this task was prepared."
+        else "An update changed QA's rules while this task was in review."
         if rules_changed
         else "The game's plugins changed since this QA task was prepared; "
         "preparing it again keeps its review."
@@ -581,11 +582,8 @@ def run_qa(plan, log):
         )
         if observations:
             log(f"QA reviews {len(observations)} line(s) the playtest found")
-        manifest = qa.build_manifest(plan["project"]["data"], focus)
-        descriptor = read_json(task / "task.json")
-        if (
-            descriptor["manifest_sha256"] != manifest["content_sha256"]
-            or read_json(task / "inventory.json") != manifest
+        if not qa.inventory_matches(
+            task, qa.build_manifest(plan["project"]["data"], focus)
         ):
             raise ValueError(
                 "The cached QA inventory changed. Retain it for investigation and prepare a fresh task."
@@ -882,12 +880,7 @@ def prepare_publication(plan):
         again = action == "qa_apply" and set(chosen + proposals) <= undone
         if action == "qa_apply" and not again and not state["current"]:
             raise ValueError(state["message"])
-        if state.get("rules_changed"):
-            raise ValueError(
-                "An update changed QA's rules after these corrections were applied, so "
-                "they can't be undone or applied again. Run QA again to check the text."
-            )
-        task_root, task, _checkpoint = qa._load_task(state["task"])
+        task_root, task, _checkpoint = qa._read_task(state["task"])
         try:
             selected = qa.correction_map(
                 task_root, chosen, proposals, undo=action == "qa_undo"

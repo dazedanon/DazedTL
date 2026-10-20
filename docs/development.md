@@ -62,8 +62,17 @@ On Linux the app needs a display: CI runs it under `xvfb-run`, and on a desktop 
 Without `--no-lockscreen` it starts locked while your own session is locked, and the live test fails at its first screenshot.
 It adds two X displays; set `DISPLAY` to the lower-numbered one, such as `:2` beside `:3`, since KWin keeps the other for its own startup.
 
-[CI](../.github/workflows/ci.yml) runs the build checks, the behavior tests and the live test on Windows and Linux for every pushed branch, every pull request and once a week, and attaches each live test's logs to the run.
+[CI](../.github/workflows/ci.yml) runs the build checks, the behavior tests, the [previous-release QA check](#previous-release-qa-check) and the live test on Windows and Linux for every pushed branch, every pull request and once a week, and attaches each live test's logs to the run.
 GitHub's Windows images include the Visual C++ runtime and other tools a fresh Windows lacks, so a change to what setup downloads or unpacks still needs a check on a fresh Windows.
+
+## Previous-release QA check
+
+`node scripts/qa-upgrade.mjs` checks that a release keeps the [Text QA work](architecture.md#persistence-and-settings) the previous one saved.
+It takes the newest release tag other than the checked-out commit's, or `--tag <tag>`, and with that release's code prepares Text QA tasks on two translated copies of the [fixture game](../tests/fixtures/mz-game): one reviewed to the end with a correction and a question not yet applied, and one stopped in deep review.
+With this checkout's code and a stand-in detector change, which gives every line one more mechanical flag, the finished task must read complete, be the task preparing QA again returns and apply, undo and apply again; the one in review must go on to the end and apply.
+When the checkout's `QA_RULES_VERSION` differs from the release's, the task in review must refuse more review instead, and QA prepares a new one.
+The phases run in [qa_upgrade.py](../scripts/qa_upgrade.py), the release's own copy for its tasks when it has one; it needs the release tags (`git fetch --tags`) and the setup's `.venv`, and `--work <empty folder>` keeps its files.
+A failure means a change made saved QA work stale: keep what names a task as it was, or bump `QA_RULES_VERSION` when old reviews are wrong now.
 
 ## GameUpdate
 

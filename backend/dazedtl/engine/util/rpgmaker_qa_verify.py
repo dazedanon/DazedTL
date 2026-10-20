@@ -488,9 +488,6 @@ def verify_manifest(data_root: str | Path, manifest: dict[str, Any]) -> dict[str
     for key, expected in expected_contract.items():
         if manifest.get(key) != expected:
             errors.append(f"manifest {key} contract mismatch")
-    extractor_path = Path(__file__).with_name("rpgmaker_qa_manifest.py")
-    if manifest.get("extractor_source_sha256") != _hash(extractor_path.read_bytes()):
-        errors.append("extractor source SHA-256 mismatch")
     focus = manifest.get("focus")
     if focus not in {"database", "risky-codes", "dialogue", "release"}:
         errors.append(f"invalid focus: {focus!r}")
@@ -769,7 +766,6 @@ def verify_manifest(data_root: str | Path, manifest: dict[str, Any]) -> dict[str
         errors.append("counts mismatch")
     return {
         "schema": "rpgmaker-qa-validation-v1",
-        "verifier_source_sha256": _hash(Path(__file__).read_bytes()),
         "manifest_sha256": claimed_hash,
         "valid": not errors,
         "errors": errors,
