@@ -530,6 +530,8 @@ def _window(record: dict[str, Any], layout: dict[str, Any]) -> rewrap.Box | None
     if code == 401:
         face = str((record.get("speaker") or {}).get("face_name") or "").strip()
         return rewrap.message_box(widths, face=bool(face))
+    if code == 408 and record.get("choice_help"):
+        return rewrap.choice_help_box(widths, face=record["choice_help"]["face"])
     if code == 405:
         return rewrap.scrolling_box(widths)
     if code == 324:
@@ -564,21 +566,22 @@ def _box(record: dict[str, Any], layout: dict[str, Any]) -> dict[str, Any] | Non
         box["rows"] = window.rows
     if window.paged:
         box["pages"] = True
-    # A message spread over several commands is fitted and spread over them
-    # again (rpgmaker_rewrap.spread); other text spread over several commands,
-    # such as a comment or a script, keeps its line structure. A text
+    # A message or a choice's help spread over several commands is fitted
+    # and spread over them again (rpgmaker_rewrap.spread); other text spread
+    # over several commands, such as a script, keeps its line structure. A text
     # variable's script string is wrapped once escaped (see _as_written).
     box["wraps"] = window.kind == "variable" or (
         record["live_transform"] == "identity"
-        and (len(record["live_pointers"]) == 1 or _message_code(record.get("event_code")))
+        and (len(record["live_pointers"]) == 1 or _message_record(record))
     )
     return box
 
 
-def _message_code(code: int | None) -> bool:
-    """Whether a command holds a row of a message, which DazedTL fits as a
-    whole however many commands hold its rows."""
-    return code in (401, 405)
+def _message_record(record: dict[str, Any]) -> bool:
+    """Whether a record's commands hold the rows of a message or a choice's
+    help, which DazedTL fits as a whole however many commands hold its
+    rows."""
+    return record.get("event_code") in (401, 405) or bool(record.get("choice_help"))
 
 
 def _fit_window(box: dict[str, Any]) -> rewrap.Box:
@@ -3072,7 +3075,7 @@ def _written(
         len(record["live_pointers"]),
         record["live_transform"],
     )
-    if len(record["live_pointers"]) > 1 and _message_code(record.get("event_code")):
+    if len(record["live_pointers"]) > 1 and _message_record(record):
         return "\n".join(rewrap.spread(text, len(record["live_pointers"])))
     return text
 
@@ -9055,9 +9058,7 @@ def correction_map(
                 # The replacement reads as it will once written, so undoing
                 # it finds it there.
                 replacement = _written(record, change["correction"], task["layout"])
-                message = len(record["live_pointers"]) > 1 and _message_code(
-                    record.get("event_code")
-                )
+                message = len(record["live_pointers"]) > 1 and _message_record(record)
                 operations.append({
                     "finding_id": finding["id"],
                     "identity": identity,

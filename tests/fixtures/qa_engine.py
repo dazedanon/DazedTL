@@ -1515,6 +1515,71 @@ skills[3]["name"] = "Hellfire"
 )
 assert forced(prepare_checks({**CHECK_WIDTHS, "width": 56})) == {FIRE: ["text-fit"]}
 
+# A choice's help shows in the message window beside the face of the choice's
+# message: help taller than the window is a check, and a correction to it is
+# fitted and spread over its comment lines, however many rows it takes.
+from util import rpgmaker_qa_manifest, rpgmaker_qa_verify
+
+help_data = temporary / "help-game/data"
+help_data.mkdir(parents=True)
+(help_data / "Map001.json").write_text(
+    json.dumps(
+        {
+            "events": [
+                None,
+                {
+                    "id": 1,
+                    "pages": [
+                        page(
+                            {
+                                "code": 101,
+                                "indent": 0,
+                                "parameters": ["arina", 0, 0, 2],
+                            },
+                            line("選んで。", "Pick one."),
+                            {"code": 102, "indent": 0, "parameters": [["Stay"]]},
+                            {"code": 402, "indent": 0, "parameters": [0, "Stay"]},
+                            {"code": 108, "indent": 1, "parameters": ["選択肢ヘルプ"]},
+                            line(
+                                "所要時間:20分",
+                                "Takes about twenty minutes from start to end,",
+                                408,
+                            ),
+                            {
+                                "code": 408,
+                                "indent": 1,
+                                "parameters": ["so watch it on a first playthrough."],
+                            },
+                        )
+                    ],
+                },
+            ]
+        },
+        ensure_ascii=False,
+    ),
+    encoding="utf-8",
+)
+help_manifest = rpgmaker_qa_manifest.build_manifest(help_data, "release")
+help_verified = rpgmaker_qa_verify.verify_manifest(help_data, help_manifest)
+assert help_verified["valid"], help_verified
+(help_record,) = (
+    record for record in help_manifest["records"] if record["event_code"] == 408
+)
+help_layout = {"widths": {**CHECK_WIDTHS, "faceWidth": 30, "messageRows": 2}}
+assert qa._fit_checks(help_manifest, help_layout) == {
+    help_record["identity"]: [
+        {
+            "check": "text-fit",
+            "note": "Wrapped to the game's Line widths, this text needs 3 rows; "
+            "its window shows 2.",
+        }
+    ]
+}
+help_rows = qa._written(
+    help_record, "Twenty minutes long, so watch it on your first run.", help_layout
+).split("\n")
+assert len(help_rows) == 2 and max(map(len, help_rows)) <= 30, help_rows
+
 
 def pace(lanes):
     """A screen stage that reviewed bundles of ten targets in *lanes* at
