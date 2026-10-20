@@ -3,9 +3,10 @@
 // breaks before users do. CI runs it on both systems; see the live test in
 // docs/development.md.
 //
-//   node scripts/e2e.mjs [--work <folder>] [--upgrade-from <tag>]
+//   node scripts/e2e.mjs [--work <folder>] [--upgrade-from <tag> | previous]
 //
-// With --upgrade-from, the release at that tag runs its own journey on the
+// With --upgrade-from, the release at that tag, or the latest one before
+// this checkout's own with "previous", runs its own journey on the
 // same game, then this checkout updates that install the way the app does and
 // checks that the project reads right and translates what is left.
 //
@@ -16,15 +17,24 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import http from "node:http";
-import net from "node:net";
 import crypto from "node:crypto";
 import { spawn, spawnSync, execFileSync } from "node:child_process";
-import { setTimeout as delay } from "node:timers/promises";
 import { root } from "./dependencies.mjs";
 import { extract } from "./tar.mjs";
 import { writeStaged } from "./update.mjs";
 import { entries } from "./zip.mjs";
+import { Page, until, message } from "./testkit/cdp.mjs";
+import { freePort } from "./testkit/app.mjs";
+import { startProvider, translated } from "./testkit/provider.mjs";
+import { addVariant, makeGame } from "./testkit/games.mjs";
+import { previousRelease } from "./testkit/checkout.mjs";
+import {
+  openGame,
+  setUp,
+  connect,
+  translateTask,
+  applyTask,
+} from "./testkit/journey.mjs";
 
 const windows = process.platform === "win32";
 const option = (name) => {
@@ -37,7 +47,10 @@ const work = path.resolve(
 fs.mkdirSync(work, { recursive: true });
 if (fs.readdirSync(work).length)
   throw new Error(`Choose an empty work folder; ${work} has files.`);
-const upgradeFrom = option("--upgrade-from");
+const upgradeFrom =
+  option("--upgrade-from") === "previous"
+    ? previousRelease()
+    : option("--upgrade-from");
 // The journey's install, profile and game: an upgrade's are the previous
 // release's, which its own journey leaves in a folder of their own.
 const journey = upgradeFrom ? path.join(work, "previous") : work;
@@ -64,29 +77,6 @@ async function step(name, run) {
   } catch (error) {
     steps.push({ name, ok: false, seconds: (Date.now() - started) / 1000 });
     throw error;
-  }
-}
-
-const message = (error) =>
-  error instanceof Error ? error.message : String(error);
-
-/** Polls `check` until it returns a truthy value. */
-async function until(description, check, timeout = 30_000) {
-  const deadline = Date.now() + timeout;
-  let last;
-  for (;;) {
-    try {
-      const value = await check();
-      if (value) return value;
-    } catch (error) {
-      last = error;
-    }
-    if (Date.now() > deadline)
-      throw new Error(
-        `Timed out after ${timeout / 1000}s waiting for ${description}.` +
-          (last ? ` Last error: ${message(last)}` : ""),
-      );
-    await delay(250);
   }
 }
 
@@ -126,237 +116,29 @@ function copyCheckout() {
   return files.length;
 }
 
-// A DTextPicture placeholder for the map's name, a HUD label, a CommonPopup
-// popup, a MOG_EventIndicators label and a script notice no installed
-// handler captures, for Other event text.
-const placeholder = "D_TEXT [マップ表示名] 24";
-const eventCommands = [
-  [356, placeholder],
-  [356, "D_TEXT 現在の時刻 24"],
-  [356, "CommonPopup add text:共鳴度+3 count:60"],
-  [108, "text_indicator : 世界地図の端"],
-  [355, "Notice.show('宝箱を見つけた');"],
-];
+// The event text variant's DTextPicture placeholder for the map's name, an
+// internal value the assistant keeps untranslated.
+const placeholder = JSON.parse(
+  fs.readFileSync(
+    path.join(root, "tests/fixtures/game-variants/event-text/variant.json"),
+    "utf8",
+  ),
+).chief[0].parameters[0];
 
 /**
- * Gives a game a menu whose choices show help from event comments, as
- * MPP_ChoiceEX does, which Maps & events translates with Comment text on.
+ * The MZ fixture game in a folder named like a Japanese release, with plugin
+ * text for Other event text and a menu whose choices show help.
  */
-function addChoiceHelp(folder) {
-  const file = path.join(folder, "data/Map001.json");
-  const map = JSON.parse(fs.readFileSync(file, "utf8"));
-  const command = (code, indent, ...parameters) => ({
-    code,
-    indent,
-    parameters,
-  });
-  const help = (choice, text, help) => [
-    command(402, 0, choice, text),
-    command(108, 1, "選択肢ヘルプ"),
-    command(408, 1, help),
-    command(0, 1),
-  ];
-  map.events.push({
-    ...map.events[1],
-    id: map.events.length,
-    name: "案内",
-    x: 10,
-    pages: [
-      {
-        ...map.events[1].pages[0],
-        list: [
-          command(101, 0, "", 0, 0, 2, ""),
-          command(401, 0, "どちらへ行きますか？"),
-          command(102, 0, ["森", "村"], -1, 0, 2, 0),
-          ...help(0, "森", "魔法の杖を探しに森へ向かいます。"),
-          ...help(1, "村", "村に残って準備をします。"),
-          command(404, 0),
-          command(0, 0),
-        ],
-      },
-    ],
-  });
-  fs.writeFileSync(file, JSON.stringify(map));
-  const plugins = path.join(folder, "js/plugins.js");
-  fs.writeFileSync(
-    plugins,
-    fs
-      .readFileSync(plugins, "utf8")
-      .replace(
-        /\n\];/,
-        ',\n{"name":"MPP_ChoiceEX","status":true,"description":"選択肢の機能拡張","parameters":{"Choice Help Commands":"[\\"選択肢ヘルプ\\"]"}}\n];',
-      ),
-  );
-  // The plugin itself only needs to be there, as players have it.
-  fs.writeFileSync(
-    path.join(folder, "js/plugins/MPP_ChoiceEX.js"),
-    "/*:\n * @target MV MZ\n * @plugindesc 選択肢の機能拡張\n * @param Choice Help Commands\n * @type string[]\n */\n",
-  );
-}
-
-/** Copies the MZ fixture game into a folder named like a Japanese release. */
-function makeGame() {
-  fs.cpSync(path.join(root, "tests/fixtures/mz-game"), game, {
-    recursive: true,
-  });
+async function makeTestGame() {
+  await makeGame(["mz", "event-text", "choice-help"], game);
   // A Japanese file name, which Git, applying and ZIPs must keep intact.
   fs.renameSync(
     path.join(game, "img/pictures/sign.png"),
     path.join(game, "img/pictures/看板.png"),
   );
-  const file = path.join(game, "data/Map001.json");
-  const map = JSON.parse(fs.readFileSync(file, "utf8"));
-  const list = map.events[1].pages[0].list;
-  list.splice(
-    list.findIndex((command) => command.code === 0),
-    0,
-    ...eventCommands.map(([code, text]) => ({
-      code,
-      indent: 0,
-      parameters: [text],
-    })),
-  );
-  fs.writeFileSync(file, JSON.stringify(map));
-  addChoiceHelp(game);
-}
-
-// ----------------------------------------------------------------- provider
-
-/** The balanced JSON objects in `text`, outermost first. */
-function* objects(text) {
-  for (
-    let start = text.indexOf("{");
-    start >= 0;
-    start = text.indexOf("{", start + 1)
-  ) {
-    let depth = 0;
-    let quoted = false;
-    for (let i = start; i < text.length; i++) {
-      const character = text[i];
-      if (quoted) {
-        if (character === "\\") i++;
-        else if (character === '"') quoted = false;
-      } else if (character === '"') quoted = true;
-      else if (character === "{") depth++;
-      else if (character === "}" && --depth === 0) {
-        try {
-          yield JSON.parse(text.slice(start, i + 1));
-        } catch {
-          // Not JSON; keep scanning.
-        }
-        break;
-      }
-    }
-  }
-}
-
-const japanese = /[\u3000-\u303f\u3040-\u30ff\u3400-\u9fff\uff00-\uffef]/g;
-/**
- * Answers like a model that translates every line: Japanese becomes a marker
- * unique to the line, while speaker prefixes, placeholders and numbers stay.
- */
-function translate(value) {
-  const text = String(value);
-  const speaker = /^(\[[^\n]*?\]:\s*)([\s\S]*)$/.exec(text);
-  const [prefix, body] = speaker ? [speaker[1], speaker[2]] : ["", text];
-  const kept = body.replace(japanese, " ").replace(/\s+/g, " ").trim();
-  const marker = crypto
-    .createHash("sha256")
-    .update(text)
-    .digest("hex")
-    .slice(0, 8)
-    .replace(/\d/g, (digit) => "ghijklmnop"[Number(digit)]);
-  return `${prefix}Tested ${marker}${kept ? ` ${kept}` : ""}`;
-}
-
-/** A local OpenAI-compatible chat completions server. */
-async function provider() {
-  const record = fs.createWriteStream(path.join(logs, "provider.jsonl"));
-  const server = http.createServer((request, response) => {
-    let body = "";
-    request.setEncoding("utf8");
-    request.on("data", (chunk) => (body += chunk));
-    request.on("end", () => {
-      const reply = (status, value) => {
-        record.write(
-          JSON.stringify({
-            time: new Date().toISOString(),
-            method: request.method,
-            url: request.url,
-            status,
-          }) + "\n",
-        );
-        response.writeHead(status, { "Content-Type": "application/json" });
-        response.end(JSON.stringify(value));
-      };
-      if (request.method === "GET" && request.url?.endsWith("/models"))
-        return reply(200, {
-          object: "list",
-          data: [{ id: "e2e-model", object: "model" }],
-        });
-      if (
-        request.method !== "POST" ||
-        !request.url?.endsWith("/chat/completions")
-      )
-        return reply(404, { error: { message: "Not found" } });
-      let lines;
-      try {
-        const params = JSON.parse(body);
-        const last = params.messages.at(-1).content;
-        const text = Array.isArray(last)
-          ? last.map((part) => part.text || "").join("\n")
-          : String(last);
-        lines = [...objects(text)].find(
-          (value) =>
-            value &&
-            typeof value === "object" &&
-            Object.keys(value).length &&
-            Object.keys(value).every((key) => /^Line\d+$/.test(key)),
-        );
-      } catch {
-        lines = undefined;
-      }
-      if (!lines)
-        return reply(400, {
-          error: { message: "The request carried no LineN payload." },
-        });
-      const content = JSON.stringify({
-        translations: Object.values(lines).map(translate),
-      });
-      reply(200, {
-        id: `chatcmpl-${crypto.randomUUID()}`,
-        object: "chat.completion",
-        created: Math.floor(Date.now() / 1000),
-        model: "e2e-model",
-        choices: [
-          {
-            index: 0,
-            message: { role: "assistant", content },
-            finish_reason: "stop",
-          },
-        ],
-        usage: {
-          prompt_tokens: body.length,
-          completion_tokens: content.length,
-          total_tokens: body.length + content.length,
-        },
-      });
-    });
-  });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const { port } = /** @type {net.AddressInfo} */ (server.address());
-  return { server, record, url: `http://127.0.0.1:${port}/v1` };
 }
 
 // ------------------------------------------------------------------- launch
-
-async function freePort() {
-  const server = net.createServer();
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const { port } = /** @type {net.AddressInfo} */ (server.address());
-  await new Promise((resolve) => server.close(resolve));
-  return port;
-}
 
 /**
  * The environment START sees on a machine that has none of the developer
@@ -565,202 +347,10 @@ async function closeApp() {
   }
 }
 
-// ---------------------------------------------------------------------- CDP
-
-class Page {
-  /** Connects to the window, or with `node`, to Electron's main process. */
-  static async connect(port, node = false) {
-    const target = await until(
-      "DazedTL to accept DevTools connections",
-      async () => {
-        const targets = await (
-          await fetch(`http://127.0.0.1:${port}/json/list`)
-        ).json();
-        return targets.find((item) =>
-          node
-            ? item.type === "node"
-            : item.type === "page" && item.url.endsWith("/app/dist/index.html"),
-        );
-      },
-      60_000,
-    );
-    const socket = new WebSocket(target.webSocketDebuggerUrl);
-    await new Promise((resolve, reject) => {
-      socket.addEventListener("open", resolve, { once: true });
-      socket.addEventListener(
-        "error",
-        () => reject(new Error("DevTools connection failed.")),
-        { once: true },
-      );
-    });
-    return new Page(socket);
-  }
-
-  constructor(socket) {
-    this.socket = socket;
-    this.serial = 0;
-    this.pending = new Map();
-    socket.addEventListener("message", (event) => {
-      const message = JSON.parse(String(event.data));
-      const task = this.pending.get(message.id);
-      if (!task) return;
-      this.pending.delete(message.id);
-      if (message.error)
-        task.reject(new Error(`${task.method}: ${message.error.message}`));
-      else task.resolve(message.result);
-    });
-    socket.addEventListener("close", () => {
-      for (const task of this.pending.values())
-        task.reject(new Error("The window closed."));
-      this.pending.clear();
-    });
-  }
-
-  /** Sends a DevTools command; with `timeout`, fails with `late` when the
-   * reply takes longer. */
-  send(method, params = {}, { timeout = 0, late = "" } = {}) {
-    const id = ++this.serial;
-    return new Promise((resolve, reject) => {
-      const timer =
-        timeout &&
-        setTimeout(() => {
-          this.pending.delete(id);
-          reject(new Error(late || `${method} got no reply in time.`));
-        }, timeout);
-      const settle = (done) => (value) => {
-        clearTimeout(timer);
-        done(value);
-      };
-      this.pending.set(id, {
-        method,
-        resolve: settle(resolve),
-        reject: settle(reject),
-      });
-      this.socket.send(JSON.stringify({ id, method, params }));
-    });
-  }
-
-  async evaluate(expression) {
-    const { result, exceptionDetails } = await this.send("Runtime.evaluate", {
-      expression,
-      awaitPromise: true,
-      returnByValue: true,
-    });
-    if (exceptionDetails)
-      throw new Error(
-        exceptionDetails.exception?.description || exceptionDetails.text,
-      );
-    return result.value;
-  }
-
-  async shot(name) {
-    // A screenshot waits for the window's next frame, which never comes
-    // while the window can't paint, such as under a lock screen.
-    const { data } = await this.send(
-      "Page.captureScreenshot",
-      { format: "png" },
-      {
-        timeout: 30_000,
-        late: "The window drew no frame to capture within 30 s, as when a lock screen covers the display; start a virtual compositor with --no-lockscreen.",
-      },
-    );
-    fs.writeFileSync(
-      path.join(shots, `${String(steps.length).padStart(2, "0")}-${name}.png`),
-      Buffer.from(data, "base64"),
-    );
-  }
-
-  /** Calls the backend through the window, as the interface does. */
-  async call(method, params = {}) {
-    const reply = await this.evaluate(
-      `window.dazedtl.call(${JSON.stringify(protocol)}, ${JSON.stringify(method)}, ${JSON.stringify(params)})`,
-    );
-    if (!reply.ok) throw new Error(`${method}: ${reply.error.message}`);
-    return reply.value;
-  }
-
-  text() {
-    return this.evaluate("document.body.innerText");
-  }
-
-  waitText(text, timeout = 60_000) {
-    return until(
-      `"${text}" to show`,
-      async () => (await this.text()).includes(text),
-      timeout,
-    );
-  }
-
-  /**
-   * Clicks the enabled control whose accessible name matches, with mouse input
-   * at its center, so a covered or disabled control fails as it would for a user.
-   * @param {string | RegExp} name
-   */
-  async click(name, timeout = 60_000) {
-    const pattern =
-      typeof name === "string"
-        ? `^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`
-        : name.source;
-    const at = await until(
-      `an enabled "${name}" control`,
-      () =>
-        this.evaluate(`(() => {
-          const pattern = new RegExp(${JSON.stringify(pattern)});
-          const label = (element) =>
-            (element.getAttribute("aria-label") || element.textContent).replace(/\\s+/g, " ").trim();
-          const found = [
-            ...document.querySelectorAll("button, a, label, [role=button], [role=tab], [role=radio], [role=option]"),
-          ].find(
-            (element) =>
-              element.getClientRects().length &&
-              pattern.test(label(element)) &&
-              !element.disabled &&
-              element.getAttribute("aria-disabled") !== "true",
-          );
-          if (!found) return null;
-          found.scrollIntoView({ block: "center" });
-          const box = found.getBoundingClientRect();
-          const x = box.x + box.width / 2;
-          const y = box.y + box.height / 2;
-          const top = document.elementFromPoint(x, y);
-          return top && (top === found || found.contains(top)) ? { x, y } : null;
-        })()`),
-      timeout,
-    );
-    for (const type of ["mousePressed", "mouseReleased"])
-      await this.send("Input.dispatchMouseEvent", {
-        type,
-        x: at.x,
-        y: at.y,
-        button: "left",
-        clickCount: 1,
-      });
-  }
-
-  /** Types into a field as keyboard input. */
-  async type(selector, text) {
-    await until(`${selector} to show`, () =>
-      this.evaluate(
-        `!!document.querySelector(${JSON.stringify(selector)})?.getClientRects().length`,
-      ),
-    );
-    await this.evaluate(
-      `document.querySelector(${JSON.stringify(selector)}).focus()`,
-    );
-    await this.send("Input.insertText", { text });
-  }
-
-  close() {
-    this.socket.close();
-  }
-}
-
 // ------------------------------------------------------------------- checks
 
 const readJson = (file) =>
   JSON.parse(fs.readFileSync(path.join(game, file), "utf8"));
-const translated = (value) =>
-  typeof value === "string" && value.startsWith("Tested ");
 /** The fixture chief's plugin command, comment and script texts, in order. */
 const eventTexts = () =>
   readJson("data/Map001.json")
@@ -800,86 +390,39 @@ const shortcut = windows
     )
   : path.join(journey, "home/.local/share/applications/dazedtl.desktop");
 
-/** Runs one Guided translation task: estimate, approve, wait for the run, apply. */
-async function translateTask(page, task, check) {
-  await page.click(task);
-  await page.click("Live");
-  await page.click("Translate");
-  await page.click("Start Live translation", 5 * 60_000);
-  await page.waitText("Run finished.", 5 * 60_000);
-  await page.shot(`${task.toLowerCase().replace(/\W+/g, "-")}-translated`);
-  // Another task's apply must not confirm this one's.
-  if ((await page.text()).includes("Saved translations applied."))
-    throw new Error(`${task} reports applied translations before applying.`);
-  await page.click(/^Apply \(\d+\)$/);
-  await page.click("Apply reviewed files");
-  await page.waitText("Saved translations applied.");
-  await until(`${task} to reach the game files`, check);
-  // Apply's own follow-up work runs on after the files change, and the app
-  // refuses the next action until it ends.
-  await until(
-    `${task} to finish`,
-    async () => !(await page.call("workspace_snapshot")).application.running,
-    5 * 60_000,
+/** Saves a PNG of the window, numbered by the step it shows. */
+const shot = (name) =>
+  page.shot(
+    path.join(shots, `${String(steps.length).padStart(2, "0")}-${name}.png`),
   );
+
+/** Runs one Guided translation task: estimate, approve, wait for the run, apply. */
+async function translateAndApply(task, check) {
+  await translateTask(page, task);
+  await shot(`${task.toLowerCase().replace(/\W+/g, "-")}-translated`);
+  await applyTask(page, task, check);
 }
 
 // --------------------------------------------------------------------- main
 
 const failures = [];
-const stand_in = await provider();
+const stand_in = await startProvider({ folder: path.join(logs, "provider") });
 const port = await freePort();
 const inspect = await freePort();
 const debug = [`--remote-debugging-port=${port}`, `--inspect=${inspect}`];
-let protocol = "";
+/** @type {Page | undefined} */
 let page;
 // The project helper an assistant's copied task runs, without its command.
 let projectHelper = "";
 
 /** Saves and checks a connection to the stand-in provider. */
-async function connectStandIn() {
-  const saved = await page.call("settings_get");
-  // An updated install keeps its earlier stand-in, at an address now gone.
-  const earlier = saved.connections.find((item) => item.name === "Stand-in");
-  let settings = await page.call("connection_save", {
-    revision: saved.revision,
-    ...(earlier && { connection_id: earlier.id }),
-    provider: "custom",
-    name: "Stand-in",
-    secret: "e2e-test-key",
-    endpoint: stand_in.url,
-    protocol: "openai",
-  });
-  const connection = settings.activeConnectionId;
-  settings = await page.call("settings_save", {
-    revision: settings.revision,
-    connection_id: connection,
-    values: { language: "English", model: "e2e-model" },
-    model_options: {
-      "e2e-model": {
-        entriesPerRequest: null,
-        pricing: "custom",
-        inputRate: 0,
-        outputRate: 0,
-      },
-    },
-  });
-  settings = await page.call("connection_check", {
-    revision: settings.revision,
-    connection_id: connection,
-  });
-  const check = settings.connections.find(
-    (item) => item.id === connection,
-  ).check;
-  if (check.status !== "reachable")
-    throw new Error(`Connection check: ${check.message}`);
-}
+const connectStandIn = () => connect(page, stand_in.url);
 
 /** The journey a new user takes, from a downloaded ZIP to a patch. */
 async function liveJourney() {
-  await step("Copy the checkout into a downloaded-ZIP folder", () => {
+  await step("Copy the checkout into a downloaded-ZIP folder", async () => {
     const count = copyCheckout();
-    makeGame();
+    await makeTestGame();
     // A check that just ran keeps the app from installing a newer public
     // release over the files under test.
     fs.mkdirSync(profile, { recursive: true });
@@ -887,12 +430,6 @@ async function liveJourney() {
       path.join(profile, "updates.json"),
       JSON.stringify({ checkedAt: new Date().toISOString() }),
     );
-    protocol = JSON.parse(
-      fs.readFileSync(
-        path.join(install, "backend/dazedtl/api/protocol.json"),
-        "utf8",
-      ),
-    ).version;
     console.log(`${count} files in ${install}`);
   });
 
@@ -919,38 +456,26 @@ async function liveJourney() {
   });
 
   page = await step("The window shows the interface", async () => {
-    const connected = await Page.connect(port);
-    await connected.waitText("App ready");
-    await connected.shot("ready");
-    return connected;
+    page = await Page.connect(port, { root: install });
+    await page.waitText("App ready");
+    await shot("ready");
+    return page;
   });
 
-  await step("Open a game and choose Guided steps", async () => {
-    // The folder dialog is native, so it answers with the game folder the way
-    // a user's choice would.
-    const main = await Page.connect(inspect, true);
-    await main.evaluate(
-      `process.mainModule.require("electron").dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [${JSON.stringify(game)}] })`,
-    );
-    main.close();
-    await page.click("Open a game");
-    await page.click("Start with Guided steps");
-    await page.waitText("Set up this game");
-  });
+  await step("Open a game and choose Guided steps", () =>
+    openGame(page, { root: install, inspect, game }),
+  );
 
   await step("Set up backs up the game and saves its version", async () => {
-    await page.type("#guided-version", "1.0");
-    await page.click("This game is untranslated");
-    await page.click("Set up this game");
-    await page.waitText("Setup complete.", 5 * 60_000);
-    await page.shot("set-up");
+    await setUp(page);
+    await shot("set-up");
   });
 
   await step("Connect the stand-in provider", connectStandIn);
 
   await step("Translate and apply the database", async () => {
     await page.click("3Translate");
-    await translateTask(page, "Database files", () => {
+    await translateAndApply("Database files", () => {
       const [, mika] = readJson("data/Actors.json");
       // A skill's battle message goes out with a note on who learns it, and
       // states name Mika, the party's one actor, in grouped requests.
@@ -967,7 +492,7 @@ async function liveJourney() {
   });
 
   await step("Translate and apply maps and events", () =>
-    translateTask(page, "Maps & events", () => {
+    translateAndApply("Maps & events", () => {
       const events = readJson("data/Map001.json").events;
       const all = (event, code) =>
         events[event].pages[0].list
@@ -1048,18 +573,18 @@ async function liveJourney() {
     const details = `document.querySelector(".translation-source-detail details").open = true`;
     await page.evaluate(details);
     await page.waitText(`Left untranslated: ${placeholder}`);
-    await page.shot("event-text-sources");
+    await shot("event-text-sources");
     await page.click(/^Script text/);
     await page.waitText("1 pattern written for this game.");
     await page.evaluate(details);
     await page.waitText("Custom pattern notice:");
-    await page.shot("event-text-custom");
+    await shot("event-text-custom");
   });
 
   await step("Translate and apply other event text", async () => {
     // A started stage also reads "In progress" to screen readers.
     await page.click(/^3Translate/);
-    await translateTask(page, "Other event text", () => {
+    await translateAndApply("Other event text", () => {
       const [kept, label, popup, comment, notice] = eventTexts();
       const nbsp = String.fromCharCode(0xa0);
       // Only the popup's plugin needs its words held together.
@@ -1103,7 +628,7 @@ async function liveJourney() {
           !(await page.call("workspace_snapshot")).application.running,
         2 * 60_000,
       );
-      await page.shot("playtest");
+      await shot("playtest");
     },
   );
 
@@ -1129,7 +654,7 @@ async function liveJourney() {
       !translated(JSON.parse(actors.data.toString("utf8"))[1].name)
     )
       throw new Error("The patch ZIP lacks the translated database.");
-    await page.shot("released");
+    await shot("released");
     for (const file of fs.readdirSync(path.join(game, "data")))
       if (fs.readFileSync(path.join(game, "data", file)).includes("\r"))
         throw new Error(`data/${file} gained Windows line endings.`);
@@ -1183,12 +708,7 @@ async function liveJourney() {
       page = undefined;
       await closeApp();
       diagnostics();
-      const requests = fs
-        .readFileSync(path.join(logs, "provider.jsonl"), "utf8")
-        .trim()
-        .split("\n")
-        .map((line) => JSON.parse(line));
-      const refused = requests.filter((item) => item.status !== 200);
+      const refused = stand_in.requests().filter((item) => item.status !== 200);
       if (refused.length)
         throw new Error(
           `The stand-in provider refused ${refused.length} requests.`,
@@ -1203,9 +723,9 @@ async function liveJourney() {
       result.output,
     );
     if (repeated) throw new Error(`START repeated setup: ${repeated[0]}`);
-    page = await Page.connect(port);
+    page = await Page.connect(port, { root: install });
     await page.waitText(path.basename(game));
-    await page.shot("restarted");
+    await shot("restarted");
     page.close();
     page = undefined;
     await closeApp();
@@ -1300,7 +820,7 @@ async function upgradeJourney(tag) {
       }),
       previous,
     );
-    addChoiceHelp(path.join(previous, "tests/fixtures/mz-game"));
+    addVariant(path.join(previous, "tests/fixtures/mz-game"), "choice-help");
     // Its live test copies the files Git would commit.
     execFileSync("git", ["init", "-q"], { cwd: previous });
     execFileSync("git", ["add", "-A"], { cwd: previous });
@@ -1325,15 +845,9 @@ async function upgradeJourney(tag) {
     ).version;
     if (installed !== version)
       throw new Error(`START left ${installed} installed, not ${version}.`);
-    protocol = JSON.parse(
-      fs.readFileSync(
-        path.join(install, "backend/dazedtl/api/protocol.json"),
-        "utf8",
-      ),
-    ).version;
-    page = await Page.connect(port);
+    page = await Page.connect(port, { root: install });
     await page.waitText(path.basename(game));
-    await page.shot("updated");
+    await shot("updated");
   });
 
   await step("Each file reads its lines from the file", async () => {
@@ -1358,7 +872,7 @@ async function upgradeJourney(tag) {
       ["dialogue", "Maps & events"],
     ])
       if (left.some((file) => file.group === group))
-        await translateTask(page, task, async () =>
+        await translateAndApply(task, async () =>
           (await fileLines()).every(
             (file) => file.group !== group || file.translated === file.lines,
           ),
@@ -1382,7 +896,7 @@ async function upgradeJourney(tag) {
     await page.waitText(
       `${total.toLocaleString("en-US")} / ${total.toLocaleString("en-US")}`,
     );
-    await page.shot("project");
+    await shot("project");
     page.close();
     page = undefined;
     await closeApp();
@@ -1407,15 +921,14 @@ try {
     // The text first: a window that draws no frames still answers it.
     if (page)
       fs.writeFileSync(path.join(logs, "window.txt"), await page.text());
-    await page?.shot("failure");
+    if (page) await shot("failure");
   } catch {
     // The window may already be gone.
   }
 } finally {
   page?.close();
   for (const item of appProcesses()) killTree(item.pid);
-  stand_in.server.close();
-  stand_in.record.end();
+  await stand_in.close();
   // Electron's output from the detached launch, and the app's own records.
   const hash = crypto
     .createHash("sha256")

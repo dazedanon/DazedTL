@@ -55,7 +55,7 @@ function addPlugins(game, entries) {
 
 /** Lays the variant `name` over the MZ game at `game`, returning what it
  * asks of the stand-in provider. */
-function overlay(game, name) {
+export function addVariant(game, name) {
   const folder = path.join(overlays, name);
   if (!fs.existsSync(folder))
     throw new Error(
@@ -143,7 +143,7 @@ export async function makeGame(names, game) {
   fs.cpSync(path.join(fixtures, "mz-game"), game, { recursive: true });
   const mode = {};
   for (const name of rest)
-    if (name !== "playable") Object.assign(mode, overlay(game, name));
+    if (name !== "playable") Object.assign(mode, addVariant(game, name));
   // The engine goes in last, over every variant's data.
   if (rest.includes("playable")) await makePlayable(game);
   return mode;

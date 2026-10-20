@@ -114,22 +114,16 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
-      - name: Previous release
-        id: previous
-        shell: bash
-        run: >-
-          echo "tag=$(git describe --tags --abbrev=0 --match 'v[0-9]*'
-          --exclude '*-*' HEAD^)" >> "$GITHUB_OUTPUT"
       - name: Upgrade test
         if: runner.os == 'Windows'
         run: >-
-          node scripts/e2e.mjs --upgrade-from ${{ steps.previous.outputs.tag }}
+          node scripts/e2e.mjs --upgrade-from previous
           --work "$env:RUNNER_TEMP\upgrade"
       - name: Upgrade test
         if: runner.os == 'Linux'
         run: >-
           xvfb-run --auto-servernum --server-args="-screen 0 1600x1000x24"
-          node scripts/e2e.mjs --upgrade-from ${{ steps.previous.outputs.tag }}
+          node scripts/e2e.mjs --upgrade-from previous
           --work "$RUNNER_TEMP/upgrade"
       - uses: actions/upload-artifact@v7
         if: always()
