@@ -382,7 +382,7 @@ A line is one message (a 101's name box with its 401 rows), scrolling text block
 A line is in scope when its source holds Japanese: the `_original` the engine keeps, or for a translated map name, which keeps none, the original game file's name.
 It is translated when it holds no Japanese letters outside control-code arguments and no refusal note, since the engine sends a value while it holds Japanese whatever its `_original` says; a name box counts only the name the engine translates.
 The engine probe ([engine_runtime](../tests/fixtures/engine_runtime.py)) runs a real pass over the fixtures and checks that the engine sends text for exactly the files with lines left and leaves none.
-Lines shows translated of in scope from the first look; a Live run still working on a file shows the lines it saved so far, and the file's count takes over when it ends.
+Lines shows the lines translated of those in scope from the first look; a Live run still working on a file shows the lines it saved so far, and the file's count takes over once the run is done with it.
 A run's work while it is in progress for the file shows Working, or Needs review while a cost approval waits; otherwise the file decides.
 Nothing translated shows Not started, lines left show Needs review with how many and why (never translated, choice help that Comment text now translates, a refusal note), and Inspect opens on them; a submission that could not be confirmed names that instead.
 A file with none left shows Ready to apply, or Applied once it is in the game or has no translated copy of its own, and one with nothing in scope shows Done; one the backend cannot read shows Blocked.
