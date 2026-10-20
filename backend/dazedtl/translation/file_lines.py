@@ -53,9 +53,16 @@ def speaker_name(value: Any) -> str:
     return found.group(1).strip() if found else ""
 
 
+# A control code's argument, such as \SA[びっくり], names a plugin's asset or
+# setting: it is never text to translate.
+_CODE_ARGUMENT = re.compile(r"\\+[A-Za-z]+\[[^\]\n]*\]")
+
+
 def japanese(value: Any) -> bool:
-    """Whether a value still holds Japanese letters."""
-    return isinstance(value, str) and bool(_JAPANESE.search(value))
+    """Whether a value still holds Japanese letters outside control codes."""
+    return isinstance(value, str) and bool(
+        _JAPANESE.search(_CODE_ARGUMENT.sub("", value))
+    )
 
 
 class Line(NamedTuple):

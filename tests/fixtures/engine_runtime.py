@@ -10,6 +10,7 @@ from copy import deepcopy
 from importlib import import_module
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import patch
 
 root, temporary = map(Path, sys.argv[1:])
@@ -2945,6 +2946,11 @@ try:
                 engine_japanese.fullmatch(chr(code))
             )
             assert file_lines.japanese(chr(code)) == letter, hex(code)
+        # A control code's argument names a plugin's asset, never text: the
+        # engine sends such a line again on every pass, but it is translated.
+        assert not file_lines.japanese(r"\SA[びっくり]Hello") and file_lines.japanese(
+            r"\SA[びっくり]こんにちは"
+        )
         # A name box counts the name the engine translates, not what follows.
         for value in (
             "村長",
@@ -2957,7 +2963,7 @@ try:
                 value
             )
 
-        def answer(value):
+        def stand_in(value):
             text = str(value)
             prefix = re.match(r"^(\[[^\n]*?\]:\s*)", text)
             body = text[prefix.end() :] if prefix else text
@@ -2966,72 +2972,73 @@ try:
 
         sent = []
 
-        def translate(text, *_args, **_kwargs):
+        def answer_all(text, *_args, **_kwargs):
             values = list(text) if isinstance(text, list) else [text]
             sent.extend(values)
-            answers = [answer(value) for value in values]
+            answers = [stand_in(value) for value in values]
             return [answers if isinstance(text, list) else answers[0], [0, 0]]
 
-        def engine_pass(name, document, vxace):
-            flags = (
-                PHASE0_CONFIG
-                if name in DB_FILES
-                else {**PHASE1_CONFIG, "CODE408": True}
-            )
-            kind = parser.mvmz_file_kind(name)
-            parse = {
+        def engine_pass(file, document, vxace):
+            kind = str(parser.mvmz_file_kind(file))
+            parsers = {
                 "Map": parser.parseMap,
                 "CommonEvents": parser.parseCommonEvents,
                 "Troops": parser.parseTroops,
                 "System": parser.parseSystem,
                 "States": parser.parseSS,
-            }.get(kind, lambda data, name: parser.parseNames(data, name, kind))
+            }
+            options: dict[str, Any] = {
+                "translateAI": extensions.point(answer_all),
+                "VXACE": vxace,
+                "FIXTEXTWRAP": True,
+                **(
+                    PHASE0_CONFIG
+                    if file in DB_FILES
+                    else {**PHASE1_CONFIG, "CODE408": True}
+                ),
+            }
             sent.clear()
             with (
-                patch.multiple(
-                    parser,
-                    translateAI=extensions.point(translate),
-                    VXACE=vxace,
-                    FIXTEXTWRAP=True,
-                    **flags,
-                ),
+                patch.multiple(parser, **options),
                 patch.dict(os.environ, {"DAZED_GAME_ROOT": str(lines_game)}),
             ):
-                assert parse(document, name)[2] is None, name
+                if kind in parsers:
+                    result = parsers[kind](document, file)
+                else:
+                    result = parser.parseNames(document, file, kind)
+                assert result[2] is None, file
             return [value for value in sent if file_lines.japanese(value)]
 
         lines_game = temporary / "lines-game"
         # The parser logs and saves progress beside the files it reads.
         for folder in ("data", "log", "translated"):
             (lines_game / folder).mkdir(parents=True)
-        command = lambda code, *parameters, **extra: {
-            "code": code,
-            "indent": 0,
-            "parameters": list(parameters),
-            **extra,
-        }
+
+        def step(code, *parameters):
+            return {"code": code, "indent": 0, "parameters": list(parameters)}
+
         # What the fixtures lack: a name box with more after its name, a 401
         # label the engine reads as a speaker, a message split at a code,
         # scrolling text, and choice help with Comment text on.
         page = [
-            command(101, "", 0, 0, 2, "【開放条件】\n・レベル：1"),
-            command(401, r"\C[16]【チュートリアル】\C[0]"),
-            command(401, "基本的な操作を説明します。"),
-            command(101, "", 0, 0, 2, "ミカ"),
-            command(401, "前半の文です。"),
-            command(401, r"\C[2]後半の文です。"),
-            command(105, 2, False),
-            command(405, "遠い昔の物語。"),
-            command(405, "村は静かだった。"),
-            command(102, ["森", "村"], 1, 0, 2, 0),
-            command(402, 0, "森"),
-            command(108, "選択肢ヘルプ"),
-            command(408, "森へ向かいます。"),
-            command(402, 1, "村"),
-            command(108, "選択肢ヘルプ"),
-            command(408, "村に残ります。"),
-            command(404),
-            command(0),
+            step(101, "", 0, 0, 2, "【開放条件】\n・レベル：1"),
+            step(401, r"\C[16]【チュートリアル】\C[0]"),
+            step(401, "基本的な操作を説明します。"),
+            step(101, "", 0, 0, 2, "ミカ"),
+            step(401, "前半の文です。"),
+            step(401, r"\C[2]後半の文です。"),
+            step(105, 2, False),
+            step(405, "遠い昔の物語。"),
+            step(405, "村は静かだった。"),
+            step(102, ["森", "村"], 1, 0, 2, 0),
+            step(402, 0, "森"),
+            step(108, "選択肢ヘルプ"),
+            step(408, "森へ向かいます。"),
+            step(402, 1, "村"),
+            step(108, "選択肢ヘルプ"),
+            step(408, "村に残ります。"),
+            step(404),
+            step(0),
         ]
         (lines_game / "data/Map002.json").write_text(
             json.dumps(
@@ -3064,9 +3071,9 @@ try:
                 (lines_game / "data", False),
             ):
                 for path in sorted(folder.glob("*.json")):
-                    name = path.name
-                    phase = "database" if name in DB_FILES else "dialogue"
-                    if phase == "dialogue" and parser.mvmz_file_kind(name) not in {
+                    file = path.name
+                    phase = "database" if file in DB_FILES else "dialogue"
+                    if phase == "dialogue" and parser.mvmz_file_kind(file) not in {
                         "Map",
                         "CommonEvents",
                         "Troops",
@@ -3074,9 +3081,9 @@ try:
                         continue
                     document = json.loads(path.read_text("utf-8-sig"))
                     translated = deepcopy(document)
-                    before = file_lines.count(name, document, phase, markers)
-                    sends = engine_pass(name, translated, vxace)
-                    after = file_lines.count(name, translated, phase, markers)
+                    before = file_lines.count(file, document, phase, markers)
+                    sends = engine_pass(file, translated, vxace)
+                    after = file_lines.count(file, translated, phase, markers)
                     # A translated map name's source is the original's name.
                     if after.pop("mapName", None) is not None and file_lines.japanese(
                         document.get("displayName")
@@ -3084,16 +3091,16 @@ try:
                         after["lines"] += 1
                         after["translated"] += 1
                     left = before["lines"] - before["translated"]
-                    report = (folder.name, name, before, after, sends)
+                    report = (folder.name, file, before, after, sends)
                     assert (left > 0) == bool(sends), report
                     assert after == {
                         "lines": before["lines"],
                         "translated": before["lines"],
                     }, (
                         report,
-                        file_lines.left(name, translated, phase, markers),
+                        file_lines.left(file, translated, phase, markers),
                     )
-                    assert not engine_pass(name, translated, vxace), report
+                    assert not engine_pass(file, translated, vxace), report
             # The help counts only while Comment text translates it.
             help_map = json.loads((lines_game / "data/Map002.json").read_text("utf-8"))
             assert file_lines.count("Map002.json", help_map, "dialogue", markers) == {
