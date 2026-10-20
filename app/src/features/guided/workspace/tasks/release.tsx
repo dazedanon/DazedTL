@@ -80,7 +80,7 @@ export function packageView(w: GuidedWorkspace): TaskView {
           <ActionControl
             label="View files & exclusions"
             // A patch lists packed Ace data, so it waits for packing, which
-            // the Native Ace data section above already asks for.
+            // the Native Ace data section above asks for.
             disabled={
               disabled ||
               !release.directory ||
@@ -123,14 +123,18 @@ export function packageView(w: GuidedWorkspace): TaskView {
           />
         }
         packing={
-          state.engine === "ACE" ? (
+          // Apply packs an Ace game's data; this catches ace_json edited
+          // outside the app. An archive the game still reads has its own
+          // notice on every task.
+          w.acePackShown ? (
             <>
-              <p className="muted">{state.acePacking.message}</p>
+              {/* After a pack from this visit its notice says so. */}
+              {!state.acePacking.current && (
+                <p className="muted">{state.acePacking.message}</p>
+              )}
               {task(
                 "ace_pack",
-                state.acePacking.current
-                  ? "Review native packing again"
-                  : "Review native Ace packing",
+                "Pack outside edits",
                 {},
                 !baseline || !state.files.length,
               )}

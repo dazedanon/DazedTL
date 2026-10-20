@@ -175,6 +175,7 @@ Check has one task, **Text QA**, and it is optional.
 Apply and playtest an early scene before translating everything.
 
 Applying replaces the game's files with the translations.
+In a VX Ace game it also packs them into the `Data` files the game reads, as do Plugin files, Text QA, Line widths and restores in **History**.
 If you edit a file in the game afterwards, applying it again replaces your edits, and the review names those files.
 If applying stops midway, **Review restore** puts the files back.
 
@@ -192,10 +193,14 @@ For an RPG Maker MV/MZ game it reads **Done** once your assistant's validation o
 
 ### RPG Maker VX Ace
 
-Set up's **Convert Ace data** unpacks an encrypted `Game.rgss3a` and converts the game data so it can be translated.
+Set up's **Convert Ace data** unpacks an encrypted `Game.rgss3a` and converts the game data so it can be translated, into the `ace_json` folder.
+The game reads only `Game.rgss3a` while it sits beside `Game.exe`, so Set up moves it into `.dazedtl/ace`.
+A game that comes with `ace_json` already converted, such as from DazedMTLTool, keeps it and its translations; Set up then adds only what's missing and moves the archive aside.
+Until then every task warns about it, and Apply and Release refuse.
 VX Ace keeps menu commands, battle messages and other interface text in its Ruby scripts instead of plugins, so **Plugin files** has your assistant translate the text the scripts show.
-**Review native Ace packing**, in Check or Release, writes the translations back, applied scripts included.
+**Apply** packs the translations into the game's `Data` files in the same step, and Plugin files' **Apply to game** does the same for the scripts.
 It also puts the translated game title into `Game.ini`, which is the title the game window shows, in plain letters (é as e, ♥ left out), since players on Linux, Steam Deck or JoiPlay can't start the game from a title in other letters.
+If you or your assistant edit `ace_json` outside DazedTL, or it came converted, **Pack outside edits**, in Check or Release, puts it all into the game; Release waits for it.
 Name a clean game ZIP with English letters, numbers and symbols only: the name becomes the game's folder, and a VX Ace game doesn't start on English Windows from a folder named in Japanese.
 A patch ZIP for an encrypted game carries a rebuilt `Game.rgss3a`, so players replace one file.
 GameUpdate can't update an encrypted game, so share a new patch for each update instead.

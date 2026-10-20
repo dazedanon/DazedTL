@@ -277,6 +277,15 @@ class GuidedActions:
             run_output, files = self.saved_output(native, options["run_id"], files)
         if action not in NATIVE_ACTIONS | SHARED_ACTIONS.keys() | {"start"}:
             raise ValueError("Choose a supported guided action.")
+        # Writing an Ace game's text packs it into Data, which the game
+        # ignores while an archive sits beside Game.exe.
+        if native["engine"] == "ACE" and action in PUBLICATION_ACTIONS | {
+            "export_selected",
+            "ace_pack",
+        }:
+            blocked = self.guided.backend.guided_ace_blocked(project["source"])
+            if blocked:
+                raise ValueError(blocked)
         self.guided.settings.prepare_engine()
         value = self.guided.backend.workflows.state(native["id"])
         # Readiness checks the source backup itself, reading every saved
@@ -655,6 +664,8 @@ class GuidedActions:
                     "prepare_game",
                     "ace_decrypt",
                     "ace_extract",
+                    # Packing brings Data up to ace_json, as Apply does.
+                    "ace_pack",
                     "format_data",
                     "format_plugins",
                     "gameupdate",

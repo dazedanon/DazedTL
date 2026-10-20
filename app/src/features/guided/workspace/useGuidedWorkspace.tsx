@@ -623,6 +623,15 @@ export function useGuidedWorkspace({
         : undefined,
     saving: () => setWidthsSavedAt(Date.now()),
   };
+  // Apply packs an Ace game's data, so its packing control shows only while
+  // the data is outdated, and after a pack from this visit to confirm it.
+  const packJob = operationJob("ace_pack");
+  const acePackShown =
+    state.engine === "ACE" &&
+    !state.encrypted.length &&
+    (!state.acePacking.current ||
+      (packJob?.status === "complete" &&
+        packJob.id === started[actionKey("ace_pack", {})]?.id));
   // The Project tab that asked for a checkpoint, to return to afterwards.
   const checkpointReturn = useRef<"versions" | null>(null);
   const leaveCheckpoint = (action: string) => {
@@ -902,8 +911,7 @@ export function useGuidedWorkspace({
     // An update leaves the row's status as it was, so a tool change from
     // this visit still confirms beside its button.
     const toolDoneHere = finishedHere && !!toolCounterpart && !superseded;
-    // Packing's label says whether the native data is current; a pack from
-    // this visit also confirms beside its button.
+    // A pack from this visit confirms beside its button.
     const packedHere = name === "ace_pack" && finishedHere;
     const display =
       superseded ||
@@ -975,7 +983,7 @@ export function useGuidedWorkspace({
                     : "Installed.",
               }
             : packedHere
-              ? { notice: "Native data packed." }
+              ? { notice: "Packed into the game." }
               : builtHere
                 ? {
                     notice: `${name === "release" ? "Game" : "Patch"} ZIP saved.`,
@@ -1203,7 +1211,10 @@ export function useGuidedWorkspace({
   ];
   const preparation = state.preparation;
   const preparationComplete = preparation.complete;
-  const aceNeedsExport = state.engine === "ACE" && !state.files.length;
+  // An Ace game reads only its archive while one sits beside Game.exe, even
+  // one that arrived with ace_json converted.
+  const aceNeedsExport =
+    state.engine === "ACE" && (!state.files.length || !!state.encrypted.length);
   // Setting up backs up the original, prepares the game files and saves the
   // version in sequence from one click. Each step keeps its own preview and
   // execution checks, and a replacement backup keeps its review. A step that
@@ -1638,6 +1649,7 @@ export function useGuidedWorkspace({
     setupAction,
     setupWorking,
     startSetup,
+    acePackShown,
     pending,
     openPending,
     reviewPending,

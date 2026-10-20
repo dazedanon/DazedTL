@@ -26,6 +26,7 @@ from dazedtl.translation.files import digest, evidence, read_json
 from dazedtl.translation.guided import Guided, retained_position
 from dazedtl.translation.guided_inputs import GuidedInputs
 from dazedtl.translation.operations import lifecycle_path
+from dazedtl.translation.release import packing_state
 
 from tests.engine import engine_module
 
@@ -243,6 +244,7 @@ class GuidedTests(unittest.TestCase):
                 native, None
             ),
             guided_runtime_files=lambda _source: ["Items.json"],
+            guided_ace_packing=packing_state,
         )
         choices = {
             "CODE357": ["TextPicture", "QuestSystem"],

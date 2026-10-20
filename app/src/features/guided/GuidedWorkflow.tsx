@@ -278,8 +278,6 @@ function Workspace(
               actions={
                 <>
                   {heading?.actions}
-                  {/* Playtesting checks the applied text in the game; an Ace
-                      game reads it once packed into native data. */}
                   {position.step === "check" && state.engine === "MVMZ" && (
                     <Button
                       variant="quiet"
@@ -289,13 +287,13 @@ function Workspace(
                       Playtest tools
                     </Button>
                   )}
+                  {/* Apply packs an Ace game's data; ace_json edited
+                      outside the app still needs packing to reach the game. */}
                   {position.step === "check" &&
-                    state.engine === "ACE" &&
+                    w.acePackShown &&
                     task(
                       "ace_pack",
-                      state.acePacking.current
-                        ? "Review native packing again"
-                        : "Review native Ace packing",
+                      "Pack outside edits",
                       {},
                       !baseline || !state.files.length,
                       "quiet",
@@ -323,6 +321,25 @@ function Workspace(
                 <span>{warning}</span>
               </Notice>
             ))}
+            {/* A converted Ace game still reading its archive shows none of
+                the translation; Set up's own row says so there. */}
+            {state.engine === "ACE" &&
+              !!state.encrypted.length &&
+              !!state.files.length &&
+              position.step !== "setup" && (
+                <Notice tone="warning">
+                  <span>
+                    {state.acePacking.message}{" "}
+                    <Button
+                      variant="link"
+                      disabled={action.busy}
+                      onClick={() => move("setup", "setup")}
+                    >
+                      Open Set up
+                    </Button>
+                  </span>
+                </Notice>
+              )}
             {/* An apply that stopped midway may leave part of it in the
                 game until it is restored. */}
             {state.readiness.publications

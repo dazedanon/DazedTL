@@ -413,13 +413,15 @@ class Workflows:
         return job
 
     def _refresh_files(self, project):
-        """Lists the data files a game update or a hand copy added or removed.
+        """Lists the data files a game update or a hand copy added or removed,
+        and an Ace archive put beside Game.exe or set aside.
 
-        The folder's own modification time changes only when its entries do,
-        so one stat per observation tells when to describe the game again.
+        A folder's own modification time changes only when its entries do,
+        so a stat of the data folder and the game folder per observation
+        tells when to describe the game again.
         """
         try:
-            marker = Path(project["data"]).stat().st_mtime_ns
+            marker = [Path(project["data"]).stat().st_mtime_ns, Path(project["source"]).stat().st_mtime_ns]
         except (KeyError, OSError):
             return
         if project.get("files_marker") == marker:

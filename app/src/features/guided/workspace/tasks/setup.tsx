@@ -69,7 +69,7 @@ export function setupView(w: GuidedWorkspace): TaskView {
     fields,
     advance,
   } = w;
-  const done = preserved && gitConfigured;
+  const done = preserved && gitConfigured && !aceNeedsExport;
   const setupRunning = setupAction.busy || setupWorking;
   // The step setup runs next shows why it stopped until a newer attempt starts.
   const stepStatus = (name: SetupStep, complete: boolean): DisplayState =>
@@ -111,9 +111,11 @@ export function setupView(w: GuidedWorkspace): TaskView {
     ace === "working"
       ? setupJobs.ace_extract!.message || "Converting…"
       : ace === "not_started"
-        ? state.encrypted.length
-          ? "Extracts the encrypted archive and converts the data to JSON."
-          : "Converts the native data to JSON."
+        ? !state.encrypted.length
+          ? "Converts the native data to JSON."
+          : state.files.length
+            ? "The game still reads its original archive. Sets it aside and keeps the converted ace_json."
+            : "Extracts the encrypted archive and converts the data to JSON."
         : undefined;
 
   const prepared = preparationComplete || gitConfigured;

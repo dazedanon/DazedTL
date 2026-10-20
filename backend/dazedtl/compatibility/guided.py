@@ -87,7 +87,6 @@ def run_release(plan, log):
         destination,
         game_folder,
         input_stamps,
-        packing_state,
         publish,
         write_archive,
     )
@@ -100,8 +99,9 @@ def run_release(plan, log):
     output = destination(source, workspace, ENGINE_ROOT, plan["options"]["output"])
     folder = game_folder(output, plan["project"]["engine"])
     expected = plan["release_scope"]
-    if not packing_state(plan["project"], plan["folder"])["current"]:
-        raise ValueError("Pack and verify current Ace data before packaging.")
+    packing = ace_packing_state(plan["project"], plan["folder"])
+    if not packing["current"]:
+        raise ValueError(packing["message"])
     if release_scope(source, expected["known"]) != expected:
         raise ValueError(
             "The package contents or public version changed. Build a new release preview."
@@ -111,7 +111,7 @@ def run_release(plan, log):
         staged = temporary / output.name
         write_archive(source, staged, expected, log, folder=folder)
         validate_plan(plan)
-        if not packing_state(plan["project"], plan["folder"])["current"]:
+        if not ace_packing_state(plan["project"], plan["folder"])["current"]:
             raise ValueError(
                 "Ace packing evidence changed during packaging. Its partial archive was discarded."
             )
@@ -422,11 +422,7 @@ def apply_selected(plan, log):
             },
         },
     )
-    return {
-        "files": count,
-        "destination": str(data),
-        "ace_packing_required": plan["project"]["engine"] == "ACE",
-    }
+    return {"files": count, "destination": str(data)}
 
 
 def runtime_files(source):
@@ -507,27 +503,152 @@ def run_ace(plan, log):
     validate_plan(plan)
     action = plan["action"]
     root = Path(plan["project"]["source"])
+    if action == "ace_pack":
+        pack_ace(plan["project"], plan["folder"], log)
+        return {"completed": action}
+    exports = root / "ace_json"
+    fresh = not (exports.is_dir() and any(exports.glob("*.json", case_sensitive=False)))
+    actions.run(root, action, log)
+    if action == "ace_extract" and fresh:
+        # JSON just converted from Data holds what Data does, so the game's
+        # data starts out current without packing it.
+        native = {**plan["project"], "data": str(exports)}
+        _save_receipt(native, plan["folder"], actions.packed_files(root))
+    return {"completed": action}
+
+
+def ace_blocked(source):
+    """Why packing can't reach an Ace game, or None: an RGSS archive left
+    beside Game.exe, which the game reads instead of its data."""
+    from util.ace import actions
+
+    return actions.archive_in_root(Path(source))
+
+
+def ace_packing_state(native, folder):
+    """Whether the game's native data holds its current ace_json, and why
+    not; an archive left in the game root comes first, since the game reads
+    nothing else while it is there."""
+    from dazedtl.translation.release import packing_state
+
+    blocked = native["engine"] == "ACE" and ace_blocked(native["source"])
+    if blocked:
+        return {"required": True, "current": False, "message": blocked}
+    return packing_state(native, folder)
+
+
+def pack_ace(native, folder, log, touched=None):
+    """Brings an Ace game's native data up to date with its ace_json and
+    saves the packing receipt Release checks; every in-app write to ace_json
+    runs it in the same step with the exports it `touched`, since the game
+    reads only Data. From a current receipt it packs the data files whose
+    exports changed since. Without one, such as for JSON converted by an
+    earlier tool or Data an assistant wrote itself, a write packs only what
+    it touched, so whatever else Data holds stays, and only a pack of
+    everything, Pack outside edits, saves a receipt."""
+    from util.ace import actions
+
+    from dazedtl.translation.files import evidence
+    from dazedtl.translation.release import (
+        PACKING_VERSION,
+        packing_inputs,
+        packing_target,
+        unpacked,
+    )
+
+    root = Path(native["source"])
+    blocked = ace_blocked(root)
+    if blocked:
+        raise ValueError(blocked)
+    inputs = packing_inputs(native)
+    path = Path(folder) / "ace-packing.json"
+    receipt = None
+    try:
+        saved = read_json(path) if path.exists() else {}
+        if (
+            saved.get("version") == PACKING_VERSION
+            and saved.get("source") == native["source"]
+            and saved["outputs"] == evidence(root, list(saved["outputs"]))
+            and isinstance(saved["inputs"], dict)
+        ):
+            receipt = saved
+    except OSError, ValueError, KeyError, TypeError, AttributeError:
+        receipt = None
+    if receipt is not None:
+        outputs = list(receipt["outputs"])
+        only = {
+            packing_target(name)
+            for name, value in inputs.items()
+            if receipt["inputs"].get(name) != value
+        } | {packing_target(name) for name in unpacked(inputs, outputs)}
+        if not only and receipt["inputs"] == inputs:
+            return []
+    elif touched is not None:
+        only, outputs = {packing_target(name) for name in touched}, None
+    else:
+        only, outputs = None, []
+    written = actions.run(root, "ace_pack", log, only=only)
+    if outputs is None:
+        return written
+    if inputs != packing_inputs(native):
+        raise ValueError(
+            "Ace JSON changed during packing. No current packing receipt was saved."
+        )
+    _save_receipt(native, folder, [*map(root.joinpath, outputs), *written], inputs)
+    return written
+
+
+def _save_receipt(native, folder, outputs, inputs=None):
+    """Records that the game's native files hold its current exports."""
     from dazedtl.translation.files import evidence
     from dazedtl.translation.release import PACKING_VERSION, packing_inputs, unpacked
 
-    inputs = packing_inputs(plan["project"]) if action == "ace_pack" else None
-    written = actions.run(root, action, log)
-    if action == "ace_pack":
-        if inputs != packing_inputs(plan["project"]):
-            raise ValueError(
-                "Ace JSON changed during packing. No current packing receipt was saved."
-            )
-        outputs = sorted(path.relative_to(root).as_posix() for path in written)
-        missing = unpacked(inputs, outputs)
-        if missing:
-            raise ValueError(
-                "Ace packing found no native data for: " + ", ".join(missing)
-            )
-        receipt = {
+    root = Path(native["source"])
+    inputs = packing_inputs(native) if inputs is None else inputs
+    outputs = sorted({Path(path).relative_to(root).as_posix() for path in outputs})
+    missing = unpacked(inputs, outputs)
+    if missing:
+        raise ValueError("Ace packing found no native data for: " + ", ".join(missing))
+    write_json(
+        Path(folder) / "ace-packing.json",
+        {
             "version": PACKING_VERSION,
             "source": str(root),
             "inputs": inputs,
             "outputs": evidence(root, outputs),
-        }
-        write_json(Path(plan["folder"]) / "ace-packing.json", receipt)
-    return {"completed": action}
+        },
+    )
+
+
+def publish_ace(plan, log, write):
+    """Runs a write to the game's text, and for an Ace game packs what it
+    wrote to ace_json into the native data the game reads, in the same
+    operation. A game still reading its archive refuses before anything is
+    written."""
+    if plan["project"]["engine"] != "ACE":
+        return write(plan, log)
+    blocked = ace_blocked(plan["project"]["source"])
+    if blocked:
+        raise ValueError(blocked)
+    result = write(plan, log)
+    if not result.get("files"):
+        return result
+    root = Path(plan["project"]["source"])
+    rows = (plan.get("publication") or {}).get("files")
+    touched = (
+        [row["path"] for row in rows]
+        if rows
+        else [
+            (Path(plan["project"]["data"]) / name).relative_to(root).as_posix()
+            for name in plan["options"]["files"]
+        ]
+    )
+    try:
+        pack_ace(plan["project"], plan["folder"], log, touched)
+    except (OSError, ValueError) as error:
+        raise ValueError(
+            "The text is in ace_json, but the game's data could not be updated: "
+            + str(error)
+            + " Pack outside edits, in Release, tries again."
+        ) from error
+    return result

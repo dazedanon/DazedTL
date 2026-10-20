@@ -51,7 +51,7 @@ KEPT = DECIDED - {"visible"}
 # the file has nothing to translate.
 SETTLED = {"applied", "translated", "none"}
 # Where a VX Ace game's Ruby scripts are, one file per script: Set up
-# extracts them from Data/Scripts.rvdata2 and Release packs them back.
+# extracts them from Data/Scripts.rvdata2 and applying packs them back.
 ACE_SCRIPTS = "ace_json/scripts"
 # Database files whose names the game looks up.
 DATABASE = {
@@ -2192,7 +2192,7 @@ class PluginService:
                     'Report every translated occurrence with its exact decoded target: the text Ruby makes of the literal, so "Gold\\\\G" in the source is Gold\\G in the target.\n'
                     "The app rejects bytes outside the listed spans, any change to the script's other strings and stale hashes, and syntax alone does not verify meaning. "
                     "When a check fails, the helper returns a request for the files still needing work, with each failedCheck: repair the same working copies and report them under that request. "
-                    "Applying to the game is a separate step in the app, and Release packs the applied scripts into Data/Scripts.rvdata2; do not claim rendered fit without testing it.\n"
+                    "Applying to the game is a separate step in the app, which also packs the applied scripts into Data/Scripts.rvdata2; do not claim rendered fit without testing it.\n"
                     if ace
                     else ". Fit the space where the plugin draws the text.\n"
                     'Change only the listed literal spans or decoded parameter paths. Preserve quote style, parameter keys, ordering, types and serialization depth, identifiers, interpolation and control codes; keep a leading tag that the file\'s code matches with startsWith or indexOf, such as ア: in line.startsWith("ア:"), exactly as written. '
@@ -3494,10 +3494,17 @@ class PluginService:
 
     def publish(self, project_id, value, preview):
         """Backs up and writes a checked batch, rolling back what it wrote if
-        any file fails."""
+        any file fails. A VX Ace game's scripts are then packed into the
+        Data/Scripts.rvdata2 the game reads."""
         token = preview["token"]
         mode = preview["mode"]
-        _, root = self.record(project_id)
+        project, root = self.record(project_id)
+        scripts = project["engine"] == "ACE" and any(
+            row["path"].startswith(ACE_SCRIPTS + "/") for row in preview["files"]
+        )
+        blocked = scripts and self.backend.guided_ace_blocked(root)
+        if blocked:
+            raise ValueError(blocked)
         publication = deepcopy(preview)
         publication["id"] = token
         prior_manifest = lifecycle(self.translation.workspace, project_id).get(
@@ -3593,6 +3600,18 @@ class PluginService:
                 + failure
                 + (" Recovery conflicts: " + "; ".join(conflicts) if conflicts else "")
             )
+        if scripts:
+            try:
+                self.backend.guided_ace_pack(
+                    root,
+                    project.get("backend_id"),
+                    [row["path"] for row in preview["files"]],
+                )
+            except (OSError, ValueError, KeyError) as error:
+                raise ValueError(
+                    "The scripts are in ace_json, but the game's data could not be "
+                    f"updated: {error} Pack outside edits, in Release, tries again."
+                ) from error
         return {
             "receipt": receipt_view(receipt, value["files"]),
             "state": self.state(project_id),

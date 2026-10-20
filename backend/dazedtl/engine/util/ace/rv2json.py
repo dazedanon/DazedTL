@@ -24,12 +24,16 @@ import math
 import os
 import re
 import shutil
+import stat
 import struct
 import sys
+import tempfile
 import zlib
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Collection, Iterable
 from pathlib import Path
 from typing import Any
+
+from util.paths import replace_with_retry
 
 from . import ruby_marshal as rm
 from .ruby_marshal import RHash, RObject, RString, RUserDef, Symbol
@@ -1540,13 +1544,24 @@ def _interpolated(value: Any) -> str:
 
 
 def create(
-    root: Path, *, data: str | None = None, json_dir: str = "ace_json", log: Log = print
+    root: Path,
+    *,
+    data: str | None = None,
+    json_dir: str = "ace_json",
+    keep: bool = False,
+    log: Log = print,
 ) -> Path:
-    """Writes the JSON folder from the data, as ``RV2JSON -c`` does."""
+    """Writes the JSON folder from the data, as ``RV2JSON -c`` does. With
+    ``keep``, JSON and script files that exist, matched without regard to
+    case, stay as they are, so a translation in them is not lost; only the
+    missing ones are written."""
     folder = data_dir(root, data)
     out = root / json_dir
     out.mkdir(parents=True, exist_ok=True)
+    kept = _existing(out) if keep else set()
     for name in data_files(folder):
+        if (name + ".json").casefold() in kept:
+            continue
         path = data_path(folder, name)
         value = load_data(path)
         if value is None:
@@ -1560,6 +1575,7 @@ def create(
     if isinstance(scripts, list):
         target = out / "scripts"
         target.mkdir(exist_ok=True)
+        kept = _existing(target) if keep else set()
         count = 0
         for script in scripts:
             if not (
@@ -1568,10 +1584,18 @@ def create(
                 and isinstance(script[2], RString)
             ):
                 continue
-            _script_file(target, script).write_bytes(zlib.decompress(script[2].data))
+            path = _script_file(target, script)
+            if path.name.casefold() in kept:
+                continue
+            path.write_bytes(zlib.decompress(script[2].data))
             count += 1
         log(f"Dumping of {count} scripts done")
     return out
+
+
+def _existing(folder: Path) -> set[str]:
+    """The names of the files in a folder, case folded."""
+    return {entry.name.casefold() for entry in folder.iterdir() if entry.is_file()}
 
 
 def _backup(path: Path, backups: Path, log: Log) -> None:
@@ -1592,6 +1616,7 @@ def update(
     out: str | None = None,
     skip_backup: bool = False,
     edit: Callable[[str, Any], None] | None = None,
+    only: Collection[str] | None = None,
     log: Log = print,
 ) -> list[Path]:
     """Writes the data from the JSON folder, as ``RV2JSON -u`` does.
@@ -1599,7 +1624,10 @@ def update(
     Without ``out`` the data is updated in place, and each replaced file is
     first copied to ``backups`` inside the data folder unless a copy exists.
     ``edit`` changes each file's JSON, by the file's name, before it is
-    written, leaving the JSON folder as it is.
+    written, leaving the JSON folder as it is. ``only`` limits the update to
+    the data files of those names, matched without regard to case, with
+    "scripts" for the scripts. Each file is replaced whole, so one the
+    update stops in the middle of keeps its earlier data.
     """
     folder = data_dir(root, data)
     source = root / json_dir
@@ -1611,7 +1639,10 @@ def update(
     target.mkdir(parents=True, exist_ok=True)
     updater = _Updater()
     written = []
+    wanted = None if only is None else {name.casefold() for name in only}
     for name in data_files(folder):
+        if wanted is not None and name.casefold() not in wanted:
+            continue
         path = data_path(folder, name)
         if in_place and not skip_backup:
             _backup(path, target / "backups", log)
@@ -1640,14 +1671,51 @@ def update(
             ) from None
         # The file's own name, so an in-place update replaces it.
         output = target / path.name
-        output.write_bytes(rm.dump(value))
+        _replace(output, rm.dump(value))
         written.append(output)
-    written.extend(
-        _update_scripts(
-            folder, source / "scripts", target, in_place and not skip_backup, log
+    if wanted is None or "scripts" in wanted:
+        written.extend(
+            _update_scripts(
+                folder, source / "scripts", target, in_place and not skip_backup, log
+            )
         )
-    )
     return written
+
+
+def _replace(path: Path, data: bytes) -> None:
+    """Writes a file whole: the new bytes go into a file beside it, which
+    then takes its place with the file's permissions."""
+    try:
+        mode = stat.S_IMODE(path.stat().st_mode)
+    except FileNotFoundError:
+        mode = 0o644
+    descriptor, temporary = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(data)
+        os.chmod(temporary, mode)
+        # Windows refuses a replacement while a reader, such as a virus
+        # scanner, holds the file.
+        replace_with_retry(temporary, path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
+
+
+def update_targets(root: Path, *, json_dir: str = "ace_json") -> list[Path]:
+    """The data files ``update`` would write in place for the JSON folder as
+    it is, without reading or writing them: each data file with its JSON,
+    and the scripts while their folder exists."""
+    folder = data_dir(root)
+    source = root / json_dir
+    found = [
+        data_path(folder, name)
+        for name in data_files(folder)
+        if (source / (name + ".json")).is_file()
+    ]
+    if (source / "scripts").is_dir():
+        found.append(data_path(folder, "Scripts"))
+    return [path for path in found if path.is_file() and path.stat().st_size]
 
 
 def update_value(updater: _Updater, value: Any, json_value: Any) -> None:
@@ -1700,7 +1768,7 @@ def _update_scripts(
             script[2] = RString(zlib.compress(code), None)
             count += 1
     output = target / script_file.name
-    output.write_bytes(rm.dump(scripts))
+    _replace(output, rm.dump(scripts))
     log(f"Updating of {count} scripts done")
     return [output]
 
