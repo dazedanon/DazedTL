@@ -22,24 +22,13 @@ import re
 from collections.abc import Callable, Iterator
 from typing import Any, NamedTuple
 
-# What the engine counts as Japanese still to translate (rpgmakermvmz
-# LANGREGEX with _has_japanese_text's quote and full-width-space handling);
-# the engine probe checks that the two agree.
+# Japanese letters still to translate: the engine's own range
+# (rpgmakermvmz LANGREGEX) without its punctuation and brackets. A
+# translation keeps 【Name】 labels, which the engine reads as names and never
+# sends again; the engine probe checks the two ranges agree on every letter.
 _JAPANESE = re.compile(
-    r"[　。-〉「-〿぀-゚゜-ヺㇰ-ㇿ"
-    r"㐀-䶿一-鿿豈-﫿｡-ﾟ]"
-)
-_QUOTES = str.maketrans(
-    {
-        "「": '"',
-        "」": '"',
-        "『": '"',
-        "』": '"',
-        "〝": '"',
-        "〞": '"',
-        "〟": '"',
-        "　": " ",
-    }
+    r"[\u3005-\u3007\u3040-\u309A\u309C-\u30FA\u31F0-\u31FF\u3400-\u4DBF"
+    r"\u4E00-\u9FFF\uF900-\uFAFF\uFF66-\uFF9F]"
 )
 _MAP = re.compile(r"Map\d+\.json")
 # Database fields the database pass translates, beyond those players read in
@@ -47,13 +36,26 @@ _MAP = re.compile(r"Map\d+\.json")
 _MAP_INFOS = "MapInfos.json"
 # System values the engine leaves as they are.
 _KEPT_SYSTEM = frozenset({"currencyUnit"})
-# Event codes whose lines another task translates (Other event text).
-_OTHER_CODES = frozenset({320, 324, 325})
+
+
+# A 101's name window may wrap its name in colour codes and 【】, and hold
+# more after it; the engine translates only the name (rpgmakermvmz
+# _101_speaker_name).
+_NAME_COLOURS = re.compile(r"^(?:[\\]+[cC]\[\d+\]\s*)+")
+_BRACKETED_NAME = re.compile(r"^【\s*([^】]+?)\s*】")
+_PLAIN_NAME = re.compile(r"^([^\\]+)")
+
+
+def speaker_name(value: Any) -> str:
+    """The part of a 101's name window the engine translates."""
+    name = _NAME_COLOURS.sub("", str(value or "").strip())
+    found = _BRACKETED_NAME.match(name) or _PLAIN_NAME.match(name)
+    return found.group(1).strip() if found else ""
 
 
 def japanese(value: Any) -> bool:
-    """Whether the engine would send this value as Japanese."""
-    return isinstance(value, str) and bool(_JAPANESE.search(value.translate(_QUOTES)))
+    """Whether a value still holds Japanese letters."""
+    return isinstance(value, str) and bool(_JAPANESE.search(value))
 
 
 class Line(NamedTuple):
@@ -175,17 +177,18 @@ def lines(
             )
         )
         text = value if isinstance(value, str) else ""
+        sources = _command_original(command)
+        if code == 101:
+            text, sources = speaker_name(text), tuple(map(speaker_name, sources))
         if joined:
             last = found[-1]
             found[-1] = last._replace(
                 pointers=last.pointers + (pointer(path),),
                 texts=last.texts + (text,),
-                sources=last.sources + _command_original(command),
+                sources=last.sources + sources,
             )
         else:
-            found.append(
-                Line(unit, (pointer(path),), (text,), _command_original(command))
-            )
+            found.append(Line(unit, (pointer(path),), (text,), sources))
         group = (unit, listed, index)
     return found
 
