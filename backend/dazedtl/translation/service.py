@@ -312,6 +312,15 @@ class Translation:
             lifecycle(self.workspace, project_id),
         )
 
+    def writable(self, project_id):
+        """Refuses a change to a game whose Git checkout cannot take one, as
+        every write does: a file written during a game update's stopped
+        merge leaves Versions unable to cancel the update."""
+        _record, project = self.project(project_id)
+        status = self.engine.git_status(project.root, project.read()["options"])
+        if status.get("configured") and (issue := checkout_issue(status)):
+            raise ValueError(issue)
+
     def state(self, project_id):
         record, project = self.project(project_id)
         selected = self.options(project)

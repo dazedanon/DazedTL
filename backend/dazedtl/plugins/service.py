@@ -3327,6 +3327,7 @@ class PluginService:
     def preview(self, project_id, value, mode, options):
         self.translation.idle(project_id)
         self.translation.clean_drafts(project_id)
+        self.translation.writable(project_id)
         included, blocked = self.checked_rows(project_id, value, mode, options)
         token = uuid.uuid4().hex
         prior_manifest = lifecycle(self.translation.workspace, project_id).get(
@@ -3412,6 +3413,7 @@ class PluginService:
         restore the user reviewed."""
         self.translation.idle(project_id)
         self.translation.clean_drafts(project_id)
+        self.translation.writable(project_id)
         preview = self.previews.pop(options.get("token"), None)
         if (
             not preview

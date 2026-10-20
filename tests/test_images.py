@@ -126,7 +126,10 @@ class ImageTests(unittest.TestCase):
         self.identity = self.project["id"]
         self.adapter = FixtureImages()
         self.translation = SimpleNamespace(
-            workspace=self.profile, idle=lambda _: None, clean_drafts=lambda _: None
+            workspace=self.profile,
+            idle=lambda _: None,
+            clean_drafts=lambda _: None,
+            writable=lambda _: None,
         )
         self.backend = SimpleNamespace(source=self.root / "engine", context=nullcontext)
         self.service = ImageService(
@@ -809,6 +812,16 @@ class ImageTests(unittest.TestCase):
         # The review must match the contract the renderer validates.
         check_response("images_action", reviewed)
         preview = reviewed["preview"]
+        # A game update's stopped merge holds the write back, and the review
+        # still applies once the update is finished.
+        with (
+            patch.object(
+                self.translation, "writable", side_effect=ValueError("unfinished Git")
+            ),
+            self.assertRaisesRegex(ValueError, "unfinished Git"),
+        ):
+            self.service.action(self.identity, "apply", {"token": preview["token"]})
+        self.assertEqual((self.game / "img/A.png").read_bytes(), original)
         self.service.action(self.identity, "apply", {"token": preview["token"]})
         self.assertEqual((self.game / "img/A.png").read_bytes(), candidate)
         # The saved receipt then reaches every state read.
@@ -874,7 +887,10 @@ class ImageTests(unittest.TestCase):
             project = projects.open({"source": str(self.game), "engine": "MVMZ"})
             write_json(lifecycle_path(profile, project["id"]), backup)
             translation = SimpleNamespace(
-                workspace=profile, idle=lambda _: None, clean_drafts=lambda _: None
+                workspace=profile,
+                idle=lambda _: None,
+                clean_drafts=lambda _: None,
+                writable=lambda _: None,
             )
             service = ImageService(
                 projects, translation, None, self.backend, adapter=self.adapter

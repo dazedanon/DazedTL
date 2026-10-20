@@ -90,7 +90,10 @@ class PluginTests(unittest.TestCase):
         self.project = self.projects.open({"source": str(self.game), "engine": "MVMZ"})
         self.identity = self.project["id"]
         self.translation = SimpleNamespace(
-            workspace=self.profile, idle=lambda _: None, clean_drafts=lambda _: None
+            workspace=self.profile,
+            idle=lambda _: None,
+            clean_drafts=lambda _: None,
+            writable=lambda _: None,
         )
         self.backend = SimpleNamespace(source=self.root / "engine")
         self.service = PluginService(
@@ -546,6 +549,15 @@ class PluginTests(unittest.TestCase):
         with (
             patch.object(self.service, "_publish_file", side_effect=fail),
             self.assertRaisesRegex(ValueError, "rollback attempted"),
+        ):
+            self.service.action(self.identity, "apply")
+        # A game update's stopped merge holds every write back: one written
+        # then left Versions unable to cancel the update.
+        with (
+            patch.object(
+                self.translation, "writable", side_effect=ValueError("unfinished Git")
+            ),
+            self.assertRaisesRegex(ValueError, "unfinished Git"),
         ):
             self.service.action(self.identity, "apply")
         self.assertTrue(
@@ -1067,7 +1079,10 @@ class PluginTests(unittest.TestCase):
             projects = Projects(profile)
             project = projects.open({"source": str(self.game), "engine": "MVMZ"})
             translation = SimpleNamespace(
-                workspace=profile, idle=lambda _: None, clean_drafts=lambda _: None
+                workspace=profile,
+                idle=lambda _: None,
+                clean_drafts=lambda _: None,
+                writable=lambda _: None,
             )
             service = PluginService(
                 projects, translation, self.backend, documents=self.documents
@@ -1271,6 +1286,7 @@ class AceScriptTests(unittest.TestCase):
                 workspace=profile,
                 idle=lambda _: None,
                 clean_drafts=lambda _: None,
+                writable=lambda _: None,
                 engine=SimpleNamespace(
                     ace_data=TranslationEngine.ace_data,
                     ace_script_order=TranslationEngine.ace_script_order,

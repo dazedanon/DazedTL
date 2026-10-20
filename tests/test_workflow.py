@@ -945,6 +945,9 @@ class WorkflowTests(unittest.TestCase):
         self.engine.pending = ["CHERRY_PICK_HEAD"]
         with self.assertRaises(ValueError):
             require_baseline(self.engine, self.game, DEFAULTS, state)
+        # Plugin files and Images, which need no baseline, refuse it too.
+        with self.assertRaisesRegex(ValueError, "unfinished Git cherry-pick"):
+            self.service.writable(self.identity)
         self.assertTrue(
             require_baseline(
                 self.engine, self.game, DEFAULTS, state, allow_pending=True

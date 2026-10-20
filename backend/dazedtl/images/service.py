@@ -2306,6 +2306,7 @@ class ImageService:
         self.refresh_assets(project_id, identities)
 
     def _preview_mutation(self, project_id, action, options):
+        self.translation.writable(project_id)
         identities = self._chosen(project_id, options)
         self.refresh_assets(project_id, identities)
         root, index = self.record(project_id)[1], self._index(project_id)
@@ -2387,6 +2388,9 @@ class ImageService:
         return {"state": self.state(project_id), "preview": preview}
 
     def _execute(self, project_id, action, options):
+        # Refused before the review is used, so it still applies once the
+        # game's Git operation is finished.
+        self.translation.writable(project_id)
         token = options.get("token")
         plan = self.previews.pop(token, None) if isinstance(token, str) else None
         if (

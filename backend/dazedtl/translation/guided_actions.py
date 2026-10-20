@@ -92,6 +92,7 @@ READY_ACTIONS = {
     "ace_pack",
     "qa_prepare",
     "playtest_install",
+    "playtest_fix",
     "checkpoint",
     "guided_review",
     "guided_package",
