@@ -13,9 +13,11 @@ task translates or no task does.
 A line is in scope when its source holds Japanese: the source the engine keeps
 in `_original`, else the text itself. The engine sends a value while it holds
 Japanese, whatever `_original` says, so a line is translated when no part of
-it holds Japanese, unless it holds a refusal note an earlier run saved in
-place of a translation (`saved_refusals`). A translated map display name keeps
-no `_original`, so whether it had Japanese takes the original game file.
+it holds Japanese letters outside control-code arguments (of a name box, the
+name the engine translates), unless it holds a refusal note an earlier run
+saved in place of a translation (`saved_refusals`). A translated map display
+name keeps no `_original`, so whether it had Japanese takes the original game
+file. The engine probe (tests/fixtures/engine_runtime.py) checks the two agree.
 """
 
 import re
