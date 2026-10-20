@@ -25,37 +25,83 @@ EDITOR_ENCODING = "cp932"
 BOMS = {b"\xff\xfe": "utf-16-le", b"\xfe\xff": "utf-16-be"}
 
 
-# Punctuation with a plain ASCII form that compatibility decomposition, which
-# turns ～ into ~ and … into ..., leaves alone.
-_ASCII_PUNCTUATION = str.maketrans(
+# Letters and punctuation with a plain ASCII form that compatibility
+# decomposition, which turns é into e, ～ into ~ and … into ..., leaves alone.
+_ASCII_FORMS = str.maketrans(
     {
-        "\u00b7": " ",
-        "\u2018": "'",
-        "\u2019": "'",
-        "\u201c": '"',
-        "\u201d": '"',
-        "\u2013": "-",
-        "\u2014": "-",
-        "\u2015": "-",
-        "\u2212": "-",
-        "\u301c": "~",
-        "\u30fb": " ",
+        "Æ": "AE",
+        "æ": "ae",
+        "Œ": "OE",
+        "œ": "oe",
+        "ß": "ss",
+        "ẞ": "SS",
+        "Ø": "O",
+        "ø": "o",
+        "Ł": "L",
+        "ł": "l",
+        "Đ": "D",
+        "đ": "d",
+        "Ð": "D",
+        "ð": "d",
+        "Þ": "Th",
+        "þ": "th",
+        "ı": "i",
+        "·": " ",
+        "‘": "'",
+        "’": "'",
+        "“": '"',
+        "”": '"',
+        "–": "-",
+        "—": "-",
+        "―": "-",
+        "−": "-",
+        "〜": "~",
+        "・": " ",
     }
+)
+# Stands for a character without an ASCII form while the title is tidied.
+_DROPPED = "\x00"
+_GAP = r"[\s\x00]*\x00[\s\x00]*"
+# Brackets that held only dropped text, as in "Title ～ドキドキ～", and a
+# separator between dropped text and either end, as in "ドキドキ - Title".
+_LEFTOVERS = re.compile(
+    "|".join(
+        [
+            *(
+                re.escape(left) + _GAP + re.escape(right)
+                for left, right in ("~~", "()", "[]", "<>", '""')
+            ),
+            "^" + _GAP + "[-~:|/]+",
+            "[-~:|/]+" + _GAP + "$",
+        ]
+    )
 )
 
 
 def ascii_title(title: str) -> str:
     """*title* in plain ASCII, which every reader of Game.ini decodes alike:
-    accented letters lose their accents, full-width forms and typographic
-    punctuation take their ASCII ones, and other characters, such as ♥,
-    become spaces."""
-    text = unicodedata.normalize("NFKD", title).translate(_ASCII_PUNCTUATION)
-    text = "".join(
-        character if character.isascii() else " "
-        for character in text
-        if not unicodedata.combining(character)
-    )
-    return " ".join(text.split())
+    accented letters lose their accents, letters such as Æ and ß, full-width
+    forms and typographic punctuation take their ASCII forms, and other
+    characters, such as ♥, are left out. Empty when that would keep only a
+    fragment, such as "Ver.1.05" of "ドキドキ学園 Ver.1.05": the letters left
+    out take at least as much room as the ones kept (Japanese ones take two)."""
+    text = unicodedata.normalize("NFKD", title).translate(_ASCII_FORMS)
+    characters = []
+    kept = dropped = 0
+    for character in text:
+        if unicodedata.combining(character):
+            continue
+        if character.isascii():
+            kept += character.isalnum()
+            characters.append(character)
+            continue
+        if character.isalnum():
+            dropped += 2 if unicodedata.east_asian_width(character) in "WF" else 1
+        characters.append(_DROPPED)
+    if dropped and dropped >= kept:
+        return ""
+    text = _LEFTOVERS.sub(" ", "".join(characters))
+    return " ".join(text.replace(_DROPPED, " ").split())
 
 
 def find(root: Path) -> Path | None:
@@ -139,7 +185,7 @@ def write_title(path: Path, title: object, log: Callable[[str], None] = print) -
                 pass
         value = ascii_title(value)
         if not value:
-            log(f"{path.name} keeps its title: it has no letters in ASCII")
+            log(f"{path.name} keeps its title: most of the new one has no ASCII form")
             return False
         updated, previous = _with_title(text, value)
         if previous == value:

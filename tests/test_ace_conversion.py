@@ -16,6 +16,7 @@ from tests.engine import engine_package
 
 ace = engine_package("util/ace")
 actions = importlib.import_module(ace.__name__ + ".actions")
+game_ini = importlib.import_module(ace.__name__ + ".game_ini")
 rgssad = importlib.import_module(ace.__name__ + ".rgssad")
 ruby_marshal = importlib.import_module(ace.__name__ + ".ruby_marshal")
 rv2json = importlib.import_module(ace.__name__ + ".rv2json")
@@ -175,6 +176,17 @@ class AceConversionTests(unittest.TestCase):
                 ini.read_bytes(),
                 original.replace("テストゲーム", "Orc Revenge").encode("cp932"),
             )
+            # Æ, Œ and ß were left out with the ♥, and a mostly Japanese
+            # title shrank to its version; it keeps the title it had.
+            for title, shown in [
+                ("Ætherial Œuvre ß ～エーテル～", "AEtherial OEuvre ss"),
+                ("ドキドキ★学園 Ver.1.05", "AEtherial OEuvre ss"),
+            ]:
+                game_ini.write_title(ini, title, log=lambda _line: None)
+                self.assertEqual(
+                    ini.read_bytes(),
+                    original.replace("テストゲーム", shown).encode("cp932"),
+                )
 
     def test_archives_extract_their_files_inside_the_game_and_keep_existing_ones(self):
         long = bytes(range(256)) * 5 + b"tail"
