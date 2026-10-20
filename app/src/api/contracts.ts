@@ -972,6 +972,8 @@ export type PlaytestCapture = {
 
 export type TextFitState = {
   pending: boolean;
+  /** Why a pending fit waits on the game's Git checkout, such as a game update's unfinished merge, or empty. */
+  waiting: string;
   job: string | null;
 };
 

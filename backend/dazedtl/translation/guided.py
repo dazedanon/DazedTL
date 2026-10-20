@@ -574,6 +574,7 @@ class Guided:
             "review_current": current,
             "text_fit": {
                 "pending": self.text_fit.pending(project_id),
+                "waiting": self.text_fit.waiting(project_id),
                 "job": latest["id"] if latest else None,
             },
             "delivery_available": bool(

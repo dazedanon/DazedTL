@@ -669,9 +669,14 @@ class PlaytestCapture(TypedDict):
 
 
 class TextFitState(TypedDict):
-    # New Line widths wait to fit the applied text until nothing else runs;
-    # the job is the newest fit of it.
+    # New Line widths wait to fit the applied text until nothing else runs
+    # and Git can take it; the job is the newest fit of it.
     pending: bool
+    waiting: Annotated[
+        str,
+        "Why a pending fit waits on the game's Git checkout, such as a game "
+        "update's unfinished merge, or empty.",
+    ]
     job: str | None
 
 

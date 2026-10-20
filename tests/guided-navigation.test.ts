@@ -210,7 +210,7 @@ test("the Project page continues with the next step and keeps a later saved posi
     readiness: {
       outputs: [],
       applied: [],
-      text_fit: { pending: false, job: null },
+      text_fit: { pending: false, waiting: "", job: null },
       qa: { current: false, applied: false, findings: [], questions: [] },
       playtest: { current: false, problems: [], gaps: [] },
     },

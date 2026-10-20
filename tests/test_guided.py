@@ -4070,6 +4070,24 @@ class GuidedTests(unittest.TestCase):
             self.guided.text_fit.advance(self.identity, self.native, ["Items.json"])
         )
         self.backend.running = lambda: False
+        # A game update's merge stopped on conflicts leaves their markers in
+        # applied files: the fit failed on them with a raw JSON error and used
+        # up the request. It waits, saying why, until Git is done.
+        git = {
+            "configured": True,
+            "pending_operations": ["MERGE_HEAD"],
+            "current_branch": "main",
+            "translation_branch": "main",
+        }
+        self.translation.engine.git_status = lambda *_: git
+        self.assertIsNone(
+            self.guided.text_fit.advance(self.identity, self.native, ["Items.json"])
+        )
+        self.assertIn(
+            "unfinished Git merge", self.guided.text_fit.waiting(self.identity)
+        )
+        self.backend.operations.start.assert_not_called()
+        git["pending_operations"] = []
         self.guided.text_fit.advance(self.identity, self.native, ["Items.json"])
         started = self.backend.operations.start.call_args.args[0]
         self.assertEqual(

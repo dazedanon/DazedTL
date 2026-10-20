@@ -76,6 +76,7 @@ If your assistant cannot measure the game's windows, its task still finishes and
 If the app cannot use your assistant's report, Line widths says why; copy the measurement task again or keep the current widths.
 Message rows is how many rows one message window shows; a longer message starts its next page after a sentence, and Text QA keeps its corrections within it.
 Saving new widths after you apply translations rewraps the text DazedTL applied that no longer fits, and says so beside **Save line widths**; files you translated another way stay as they are.
+While a game update waits on conflicts, or another Git problem the page names, the widths save and the rewrap waits until it is resolved.
 To undo it, inspect **Fit text to the new Line widths** in the Project page's **History** and choose **Review restore**.
 Notes is the width of note text DazedTL wraps, such as an item's detail panel; other note text, such as a monster book's lore, keeps the game's own line breaks.
 

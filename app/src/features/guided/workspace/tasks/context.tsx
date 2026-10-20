@@ -368,11 +368,17 @@ export function layoutView(w: GuidedWorkspace): TaskView {
       aria-keyshortcuts={shortcutKeys.save}
       disabled={disabled}
       {...saved}
-      job={fitted ? undefined : fit}
+      // A queued fit stands in for an earlier one's report.
+      job={fitted || textFit.pending ? undefined : fit}
       notice={
         fitted ||
         (saved.notice && textFit.pending
-          ? "Line widths saved. Applied text is rewrapped to them once the current work finishes."
+          ? // The page's warning names the Git problem a fit waits for.
+            `Line widths saved. Applied text is rewrapped to them once ${
+              textFit.waiting
+                ? "the Git problem above is resolved"
+                : "the current work finishes"
+            }.`
           : saved.notice)
       }
       onClick={saveLayout}

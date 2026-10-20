@@ -612,6 +612,9 @@ export function useGuidedWorkspace({
   const fitJob = operationJob("fit_text");
   const textFit = {
     pending: state.readiness.text_fit.pending,
+    // A queued fit waits for an unfinished Git operation, such as a game
+    // update's merge, or for the translation branch.
+    waiting: !!state.readiness.text_fit.waiting,
     job:
       fitJob &&
       ((widthsSavedAt && jobTime(fitJob) >= widthsSavedAt) ||
