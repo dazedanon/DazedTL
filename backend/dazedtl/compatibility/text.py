@@ -262,6 +262,11 @@ def qa_state(plan):
             else ""
         )
 
+    def shown(row, key):
+        """A finding's text as the page shows it: a text variable's as it
+        reads rather than as its script holds it."""
+        return (row.get("shown") or {}).get(key, row.get(key, ""))
+
     findings = []
     for row in document.get("findings", []):
         targets = row.get("target_identities") or []
@@ -278,7 +283,9 @@ def qa_state(plan):
             {
                 "id": row["id"],
                 **{
-                    key: "\n".join(line[key] for line in lines) if lines else row[key]
+                    key: "\n".join(line[key] for line in lines)
+                    if lines
+                    else shown(row, key)
                     for key in ("source", "current", "correction")
                 },
                 "category": row["category"],
@@ -305,11 +312,11 @@ def qa_state(plan):
     questions = [
         {
             "id": row["id"],
-            "source": row.get("source", ""),
-            "current": row.get("current", ""),
+            "source": shown(row, "source"),
+            "current": shown(row, "current"),
             "reason": row.get("evidence") or "",
             "places": int(row.get("places") or 1),
-            **({"proposal": row["correction"]} if row.get("correction") else {}),
+            **({"proposal": shown(row, "correction")} if row.get("correction") else {}),
             **({"choice": choices[row["id"]]} if row["id"] in choices else {}),
             **({"state": finding_state(row["id"])} if finding_state(row["id"]) else {}),
         }

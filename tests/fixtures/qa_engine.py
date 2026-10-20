@@ -1391,6 +1391,29 @@ WRITTEN = {
     " \\${name}\\\\nc<Alice>",
     GREETING: '\\\\C[2]Villager\\\\C[0] says \\"hi\\" \\#{name}',
 }
+# The Text QA page shows a text variable's Japanese, current text and
+# correction in one form, as they read, so escapes are no change: the first
+# two without the script string's escapes, and the correction as the game
+# gets it, wrapped to the list width.
+as_read = {row["source"]: row.get("shown") for row in findings}
+assert as_read == {
+    "の幻惑が解けた": None,
+    NICKNAME: {
+        "source": "${hero}が${name}を村の老人のあだ名で呼ぶ\\nc<アリス>",
+        "current": "${hero}'s ${name} `nickname`\\nc<Alice>",
+        "correction": "${hero} calls the old villager\nby the `nickname`"
+        " ${name}\\nc<Alice>",
+    },
+    GREETING: {
+        "source": "\\C[2]村人\\C[0]の挨拶",
+        "current": "\\C[2]Villager\\C[0]'s greeting",
+        "correction": '\\C[2]Villager\\C[0] says "hi" #{name}',
+    },
+}, as_read
+for original, quote in ((NICKNAME, "`"), (GREETING, '"')):
+    assert as_read[original]["correction"] == qa.script_strings.text(
+        WRITTEN[original], quote
+    ), original
 
 
 def message4():

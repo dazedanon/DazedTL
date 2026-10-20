@@ -657,21 +657,47 @@ def _fit_corrections(
         scene = finding.get("kind") == "scene"
         for change in finding["lines"] if scene else [finding]:
             identities = change["identities"] if scene else finding["target_identities"]
+            targets = [records[identity] for identity in identities]
             change["correction"] = _fitted(
-                change["correction"],
-                change["current"],
-                [records[identity] for identity in identities],
-                layout,
+                change["correction"], change["current"], targets, layout
             )
+            if shown := _shown(change, targets, layout):
+                change["shown"] = shown
     for question in questions:
         if question.get("correction"):
-            identities = clusters[question["id"]]["identities"]
+            targets = [
+                records[identity] for identity in clusters[question["id"]]["identities"]
+            ]
             question["correction"] = _fitted(
-                question["correction"],
-                question["current"],
-                [records[identity] for identity in identities],
-                layout,
+                question["correction"], question["current"], targets, layout
             )
+            if shown := _shown(question, targets, layout):
+                question["shown"] = shown
+
+
+def _shown(
+    change: dict[str, Any], targets: list[dict[str, Any]], layout: dict[str, Any]
+) -> dict[str, str] | None:
+    """A text variable's Japanese, current text and correction as the Text
+    QA page shows them, all as their text reads (see script_strings.text):
+    its Japanese and current text hold the script string's escapes, while
+    findings keep its correction as its reviewer wrote it, so the page would
+    show escapes as changes. The correction reads as the game gets it,
+    wrapped to the list width. None for other text, which the page shows as
+    findings keep it."""
+    quotes = {_SCRIPT_QUOTES.get(target["live_transform"], "") for target in targets}
+    if len(quotes) != 1 or "" in quotes:
+        return None
+    (quote,) = quotes
+    return {
+        # The original script's escapes, which JavaScript reads alike in any
+        # string and Ruby in its own.
+        "source": script_strings.text(change["source"], quote),
+        "current": script_strings.text(change["current"], quote),
+        "correction": script_strings.text(
+            _written(targets[0], change["correction"], layout), quote
+        ),
+    }
 
 
 def _record_problems(

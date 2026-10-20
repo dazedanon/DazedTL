@@ -30,6 +30,9 @@ _LONE_BACKSLASH = re.compile(r"(?<![\\])([\\]{1})(?=\w)")
 # backtick, "${" and a backslash ending the text. An escape the text already
 # has, such as \\ or \`, stays as it is.
 _TEMPLATE_SPECIAL = re.compile(r"(\\.)|\\|`|\$\{", re.S)
+# An escape template_text writes: a backslash, a backtick, a "$" and a line
+# break; any other backslash stands for itself, as a message code's does.
+_TEMPLATE_ESCAPE = re.compile(rf"\\(n(?!{NAME_CODE})|[\\`$])")
 # In a Ruby string's text a backslash escapes the next character; a lone one
 # before anything else, such as a translated \C[2], stands for itself.
 _RUBY_ESCAPE = re.compile(rf'\\(n(?!{NAME_CODE})|[\\"#])?')
@@ -159,3 +162,20 @@ def escape(text: str, quote: str, own: frozenset[str] = frozenset()) -> str:
     else:
         written = ruby_text(ruby_value(held, "\n"))
     return release(written, kept)
+
+
+def text(inside: str, quote: str) -> str:
+    """*inside*, a string's inside between *quote* marks as translation
+    writes it (see :func:`escape`), as its text reads: line breaks as
+    breaks, a message code's backslash single and a quote mark or ``${``
+    unescaped, with its interpolations as they are."""
+    if quote not in OPENERS:
+        raise ValueError(f"Translation writes no script string between {quote} marks")
+    held, kept = hold(inside, quote)
+    if quote == "`":
+        value = _TEMPLATE_ESCAPE.sub(
+            lambda match: "\n" if match[1] == "n" else match[1], held
+        )
+    else:
+        value = ruby_value(held, "\n")
+    return release(value, kept)
