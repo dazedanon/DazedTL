@@ -180,7 +180,8 @@ def _merged_list(source: str, text: str, game: Game) -> str:
     if len(starts) >= len(source_items):
         return text
     first = text.index(_BULLET)
-    head = text[:first].rstrip(" \u3000")
+    # A head that already ends its row takes no blank row before the items.
+    head = text[:first].rstrip(" \u3000\n")
     joined = re.sub(r"\s*\n\s*", " ", text[first:])
     items = [part.strip() for part in joined.split(_BULLET) if part.strip()]
     body = "\n".join(_BULLET + item for item in items)
