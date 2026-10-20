@@ -2,13 +2,13 @@
 
 Guided's Database files and Maps & events count each file's lines in its
 newest copy, so the count is right whichever runs wrote it, and a file reads
-finished only when nothing in it is left for the engine to send. Text QA's
-never-translated report lists the text players read (util/rpgmaker_qa_preflight
-`visible_texts`); this groups it into the lines a person reads: one message (a
-101's name box with its 401 rows), scrolling text block (405 rows), choice of
-a 102, choice help block (a 108 marker's 408 rows, with Comment text on), map
-display name, database field and system term, and leaves out what another
-task translates or no task does.
+finished only when nothing in it is left for the engine to send. A line is
+what a person reads as one: an event text block as util/rpgmaker_blocks
+defines it (a message, with its name box; scrolling text; one choice of a
+menu; a choice's help, or another comment a plugin shows, with Comment text
+on), a map display name, and the database fields and system terms Text QA's
+never-translated report lists (util/rpgmaker_qa_preflight `visible_texts`).
+What another task translates, or no task does, is left out.
 
 A line is in scope when its source holds Japanese: the source the engine keeps
 in `_original`, else the text itself. The engine sends a value while it holds
@@ -124,74 +124,72 @@ def lines(
     name: str, document: Any, phase: str, markers: frozenset[str] = frozenset()
 ) -> list[Line]:
     """Each line of a phase's scope ("database" or "dialogue") in one data
-    file, in file order, whether or not it is in scope. Choice help counts
-    under *markers*, the comment markers Comment text translates; none while
-    it is off."""
+    file, in file order, whether or not it is in scope. Event text reads its
+    blocks as util/rpgmaker_blocks defines them; choice help, and other
+    comments a plugin shows, count under *markers*, the comment markers
+    Comment text translates, none while it is off."""
+    from util import rpgmaker_blocks as blocks
+
     if phase == "database":
         return _database(name, document)
     found: list[Line] = []
     if not (_MAP.fullmatch(name) or name in {"CommonEvents.json", "Troops.json"}):
         return found
     readable = _events(name, document)
-    # The open message, scrolling text or help block: its kind, command list
-    # and the position of its last command.
-    group: tuple[str, tuple, int] | None = None
-    for path, value, kind, _translated in _visible(name, readable, markers):
-        if kind == "map name":
-            if isinstance(value, str):
-                found.append(Line(kind, (path,), (value,), ()))
-            continue
-        if kind == "choice":
-            command = _resolve(readable, path[:-3])
-            original = command.get("_original")
-            source = (
-                (original[path[-1]],)
-                if isinstance(original, list)
-                and path[-1] < len(original)
-                and isinstance(original[path[-1]], str)
-                else ()
+    for listed, commands in blocks.command_lists(readable):
+        for block in blocks.blocks(commands):
+            if block.kind == blocks.CHOICE and block.head is not None:
+                command = commands[block.head]
+                choices = command["parameters"][0]
+                original = command.get("_original")
+                for choice, value in enumerate(choices):
+                    source = (
+                        (original[choice],)
+                        if isinstance(original, list)
+                        and choice < len(original)
+                        and isinstance(original[choice], str)
+                        else ()
+                    )
+                    path = (*listed, block.head, "parameters", 0, choice)
+                    found.append(Line(blocks.CHOICE, (path,), (str(value),), source))
+                continue
+            if block.kind in (blocks.HELP, blocks.COMMENT):
+                if not block.shown(markers):
+                    continue
+                kind = blocks.HELP
+            else:
+                kind = block.kind
+            paths: list[tuple] = []
+            texts: list[str] = []
+            sources: list[str] = []
+            head = commands[block.head] if block.head is not None else None
+            parameters = (
+                head.get("parameters")
+                if isinstance(head, dict) and blocks.code(head) == 101
+                else None
             )
-            found.append(Line(kind, (path,), (str(value),), source))
-            group = None
-            continue
-        listed, index = path[:-3], path[-3]
-        command = _resolve(readable, path[:-2])
-        code = command.get("code")
-        if kind == "comment text":
-            unit = "help"
-        elif code in (101, 401):
-            unit = "message"
-        elif code == 405:
-            unit = "scroll"
-        else:
-            # Actor names and profiles are Other event text; a scrolling
-            # text's own command holds none.
-            continue
-        commands = _resolve(readable, listed)
-        joined = (
-            group is not None
-            and group[0] == unit
-            and group[1] == listed
-            and code != 101
-            and all(
-                isinstance(between, dict) and between.get("code") == -1
-                for between in commands[group[2] + 1 : index]
-            )
-        )
-        text = value if isinstance(value, str) else ""
-        sources = _command_original(command)
-        if code == 101:
-            text, sources = speaker_name(text), tuple(map(speaker_name, sources))
-        if joined:
-            last = found[-1]
-            found[-1] = last._replace(
-                paths=last.paths + (path,),
-                texts=last.texts + (text,),
-                sources=last.sources + sources,
-            )
-        else:
-            found.append(Line(unit, (path,), (text,), sources))
-        group = (unit, listed, index)
+            if (
+                head is not None
+                and isinstance(parameters, list)
+                and len(parameters) > 4
+            ):
+                # The name box: only its name is translated.
+                paths.append((*listed, block.head, "parameters", 4))
+                texts.append(speaker_name(parameters[4]))
+                sources.extend(map(speaker_name, _command_original(head)))
+            for row in block.rows:
+                paths.append((*listed, row, "parameters", 0))
+                texts.append(blocks.text(commands[row]))
+            for part in block.parts:
+                source = blocks.source(commands, part)
+                if source is not None:
+                    sources.append(source)
+            if paths:
+                found.append(Line(kind, tuple(paths), tuple(texts), tuple(sources)))
+    if _MAP.fullmatch(name) and isinstance(readable, dict):
+        value = readable.get("displayName")
+        if isinstance(value, str):
+            found.append(Line("map name", (("displayName",),), (value,), ()))
     return found
 
 
