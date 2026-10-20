@@ -273,7 +273,7 @@ def _kept(value, current):
             ),
             item["value"],
         )
-        if item["protected"] or item.get("finding", {}).get("disposition") in KEPT:
+        if _keeps(item):
             kept.add(setting)
         else:
             open_.add(setting)
@@ -281,6 +281,51 @@ def _kept(value, current):
         {"plugin": plugin, "path": list(path), "value": text}
         for plugin, path, text in sorted(kept - open_, key=repr)
     ]
+
+
+def kept_literals(root):
+    """Strings in plugin code whose Japanese Plugin files keeps on purpose,
+    each as its file, line, kind and value: lookup keys and text the
+    assistant decided players never read, which the playtest need not report
+    again unless it sees them drawn.
+
+    A file's findings count while it is the file Plugin files scanned or
+    applied, or once it is settled, as for kept_settings; a string another
+    finding of the same text on its line leaves open stays out."""
+    try:
+        value = read_json(project_path(root, WORK + "/state.json"), limit=64_000_000)
+        files = value["files"]
+    except OSError, ValueError, KeyError, TypeError:
+        return []
+    found = []
+    for name, row in sorted(files.items()):
+        if name == value.get("layout") or row.get("issue"):
+            continue
+        try:
+            current = digest(project_path(root, name).read_bytes())
+            if (
+                current
+                not in {row["sourceHash"], row.get("applied", {}).get("afterHash")}
+                and PluginService.row_status(value, row) not in SETTLED
+            ):
+                continue
+            kept, open_ = set(), set()
+            for item in row["occurrences"]:
+                literal = (item["line"], item["kind"], item["value"])
+                (open_ if undecided(item) or not _keeps(item) else kept).add(literal)
+        except OSError, ValueError, KeyError, TypeError, AttributeError:
+            # The file is gone, or another app version saved state it can't
+            # read.
+            continue
+        found += [
+            {"file": name, "line": line, "kind": kind, "value": text}
+            for line, kind, text in sorted(kept - open_, key=repr)
+        ]
+    return found
+
+
+def _keeps(item):
+    return item["protected"] or item.get("finding", {}).get("disposition") in KEPT
 
 
 def no_context(_project_id):

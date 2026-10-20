@@ -52,6 +52,8 @@ _PAGE_TEXT = {101: 4, 401: 0, 405: 0, 320: 1, 324: 1, 325: 1}
 CODE_SCRIPT = Path(__file__).with_name("code.cjs")
 # A plugin string's reach, from most to least likely to show.
 LITERAL_REACH = ("drawn", "may-show", "disabled", "uncalled")
+# Characters of a plugin string code.cjs reports, as its TEXT_LIMIT.
+LITERAL_LIMIT = 160
 
 
 def _excerpt(text: Any) -> str:
@@ -344,8 +346,14 @@ class _Checks:
                         identity=f"{name}#{location}",
                     )
 
-    def plugin_code(self, plugins: list[dict[str, Any]], reach: Reach) -> None:
-        """Plugins that do not compile, and Japanese strings in their code."""
+    def plugin_code(
+        self,
+        plugins: list[dict[str, Any]],
+        reach: Reach,
+        kept: Iterable[dict[str, Any]] = (),
+    ) -> None:
+        """Plugins that do not compile, and Japanese strings in their code
+        but for those *kept* names."""
         if not plugins:
             return
         node = shutil.which("node")
@@ -386,6 +394,9 @@ class _Checks:
         if not isinstance(results, list):
             self.gaps.append("Plugin code was not checked: the code reader failed.")
             return
+        settled = {
+            (literal["file"], literal["line"], _shown_literal(literal)) for literal in kept
+        }
         for result in results:
             name = result["name"]
             file = self._js(f"plugins/{name}.js")
@@ -410,8 +421,14 @@ class _Checks:
                     f"{file} compiles, but its Japanese strings were not read: "
                     f"{result['unreadable']}."
                 )
-            elif result["literals"]:
-                self._literals(name, file, result["literals"], reach)
+            else:
+                literals = [
+                    literal
+                    for literal in result["literals"]
+                    if (file, literal["line"], literal["text"]) not in settled
+                ]
+                if literals:
+                    self._literals(name, file, literals, reach)
 
     def _literals(self, name, file, literals, reach: Reach) -> None:
         """One problem a plugin for its Japanese strings and one for its
@@ -444,6 +461,26 @@ def _page_text(command: dict[str, Any]) -> str:
     return str(parameters[position]) if len(parameters) > position else ""
 
 
+def _shown_literal(literal: dict[str, Any]) -> str:
+    """A string Plugin files found as code.cjs reports it: a template's
+    expressions as "…", and cut short at its limit."""
+    value = literal["value"]
+    if literal.get("kind") == "template":
+        parts, depth, at = [], 0, 0
+        while at < len(value):
+            if depth:
+                depth += {"{": 1, "}": -1}.get(value[at], 0)
+                at += 1
+            elif value.startswith("${", at):
+                parts.append("…")
+                depth, at = 1, at + 2
+            else:
+                parts.append(value[at])
+                at += 1
+        value = "".join(parts)
+    return value if len(value) <= LITERAL_LIMIT else value[:LITERAL_LIMIT] + "…"
+
+
 def _acorn() -> Path | None:
     """The app's Acorn package, beside the engine in DazedTL's checkout."""
     for parent in Path(__file__).resolve().parents:
@@ -457,10 +494,12 @@ def static_checks(
     game_root: str | Path,
     data_root: str | Path,
     kept: Iterable[dict[str, Any]] = (),
+    literals: Iterable[dict[str, Any]] = (),
 ) -> dict[str, Any]:
     """Every static problem in a game, with what the checks could not read.
     File paths are relative to the game folder; *kept* names the plugin
-    settings the plugin task keeps in Japanese on purpose."""
+    settings and *literals* the strings in plugin code, each as its file,
+    line, kind and value, that the plugin task keeps in Japanese on purpose."""
     game = Path(game_root).expanduser().resolve()
     data = Path(data_root).expanduser().resolve()
     if game not in data.parents:
@@ -475,7 +514,7 @@ def static_checks(
     checks.codes()
     checks.descriptions()
     checks.plugin_code(
-        [entry for entry in entries if entry.get("status") is True], reach
+        [entry for entry in entries if entry.get("status") is True], reach, literals
     )
     return {
         "schema": SCHEMA,

@@ -27,7 +27,7 @@ def run_playtest(plan, log):
     from desktop.backend.workflow_actions import validate_plan
     from util.playtest.run import run
 
-    from dazedtl.plugins.service import kept_settings
+    from dazedtl.plugins.service import kept_literals, kept_settings
 
     validate_plan(plan)
     folder = Path(plan["folder"])
@@ -47,6 +47,7 @@ def run_playtest(plan, log):
         stopped=getattr(log, "stopped", lambda: False),
         previous=before[1] if before else None,
         kept=kept_settings(plan["project"]["source"]),
+        literals=kept_literals(plan["project"]["source"]),
     )
     write_json(
         folder / POINTER,
@@ -125,7 +126,7 @@ def run_fixes(plan, log):
     from util.playtest import fixes
     from util.playtest.run import run
 
-    from dazedtl.plugins.service import kept_settings
+    from dazedtl.plugins.service import kept_literals, kept_settings
     from dazedtl.translation import publication
 
     validate_plan(plan)
@@ -172,6 +173,7 @@ def run_fixes(plan, log):
         stopped=getattr(log, "stopped", lambda: False),
         previous=found[1],
         kept=kept_settings(root),
+        literals=kept_literals(root),
         overlay=served,
     )
     reason = fixes.refusal(found[1], report)

@@ -217,12 +217,17 @@ write(
     Window_Base.prototype.refresh = function() { trap(); };
     PluginManager.registerCommand("Dungeon", "rest", () => { $gameMessage.add("休んだ。"); });
     if (getParamString(["Title", "タイトル"])) return;
+    const saved = (slot) => $gameMessage.add(`セーブ完了 (Slot ${slot})`);
 })();
 """,
 )
 write(plugins / "Broken.js", 'const message = "壊れた;\n')
 
-report = static_checks(game, data)
+# Plugin files decided players never read this string; one drawn still shows.
+kept = {"file": "js/plugins/Dungeon.js", "line": 20, "kind": "template"}
+report = static_checks(
+    game, data, literals=[kept | {"value": "セーブ完了 (Slot ${slot})"}]
+)
 problems = report["problems"]
 found = {
     (row["check"], row["file"], row.get("pointer") or row.get("plugin") or ""): row
