@@ -7399,13 +7399,29 @@ def rebuild_deep_from_screen(
 
 
 def _inventory_text(root: Path) -> dict[str, Any]:
-    """A task's inventory without the hash of the extractor's own source,
-    which any change to the extractor's code changes, or the content hash
-    covering it: the text and where it lives."""
+    """The text a task's inventory holds and where it lives: each line's
+    Japanese, English and places, and whether its English is a script
+    string's inside. Not what QA derives from them, which an update may
+    derive otherwise, such as mechanical evidence or the transform naming a
+    text variable's quote marks, nor the hashes of the extractor's source
+    and of what it made."""
+    manifest = _read_json(root / "inventory.json")
     return {
-        key: value
-        for key, value in _read_json(root / "inventory.json").items()
-        if key not in {"extractor_source_sha256", "content_sha256"}
+        "focus": manifest.get("focus"),
+        "records": [
+            {
+                "identity": record["identity"],
+                "live": record["live"],
+                "live_pointers": record["live_pointers"],
+                "event_code": record.get("event_code"),
+                "quoted": record["live_transform"] in QUOTED_TRANSFORMS,
+            }
+            for record in manifest["records"]
+        ],
+        "unresolved": [
+            (entry.get("file"), entry.get("source_pointer"))
+            for entry in manifest.get("unresolved") or []
+        ],
     }
 
 

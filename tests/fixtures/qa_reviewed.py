@@ -304,7 +304,8 @@ assert prepare() == everything
 finish(everything, set(), {})
 fingerprint = qa._engine_fingerprint
 qa._engine_fingerprint = lambda: "updated rules"
-# The update changed the extractor's code too, which its inventories name.
+# The update changed the extractor's code too, which its inventories name, and
+# what it derives from the text, such as each line's mechanical evidence.
 build, verify = qa.build_manifest, qa.verify_manifest
 
 
@@ -312,6 +313,8 @@ def rebuilt_manifest(*arguments):
     manifest = build(*arguments)
     del manifest["content_sha256"]
     manifest["extractor_source_sha256"] = "0" * 64
+    for record in manifest["records"]:
+        record["mechanical"]["source_runtime_tokens"].append("\\n<")
     manifest["content_sha256"] = qa._sha256(qa._canonical_bytes(manifest))
     return manifest
 
