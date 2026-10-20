@@ -18,7 +18,6 @@
 - **Playtest:** places your assistant adds, such as a recollection room, are kept, and every later playtest visits them.
 - **Assistant-led:** your assistant fixes crashes and windows too small for English that the playtest finds in the same fixes plugin instead of editing the game's code; DazedTL puts each fix into the game only once a play of the game with it in place breaks nothing new, then saves it as a version, so the patch always carries it.
 - **Assistant-led:** your assistant keeps plot spoilers out of the messages it saves translation versions with, which players can read in the patch repository.
-- **Release:** inside a clean game ZIP, the game's folder now takes the archive's name, without `.zip`, instead of the game folder's.
 
 ### Removed
 
@@ -30,6 +29,7 @@
 - **History:** **Review restore** for QA corrections no longer stops at "Restore the newer text batch first." when a later batch, such as an **Apply** of other files, can't be restored; a batch restores once no later batch changed its files, and otherwise the button names the later batch to restore first, or says a later Apply replaced those files.
 - **Project:** the **Status** tab of an Assistant-led game shows its latest activity once, in the status card, instead of repeating it below as "Last activity", and building a clean game ZIP reads **Build clean game ZIP** in **History**, as on the Release page, instead of "Build public release ZIP".
 - **Text QA:** running QA again, such as after a plugin change, continues the same review instead of starting a new one when the playtest found something, also once the review is finished; lines a later playtest finds are reviewed on their own.
+- **Text QA:** a correction of a slip found in several lines, such as a quoted title that no longer matches, no longer gives as its reason the note its reviewer wrote on why some of those lines stay as they are.
 - **Translate:** text an MV or MZ game keeps in a text variable no longer stops the game with "SyntaxError" when its translation holds a backtick, "${" in it shows as written, and a name code such as `\n[1]` or `\nc<Alice>` in it is kept; Text QA writes its corrections there the same way.
 - **Playtest:** **Problems** says where each text problem stands with Text QA: a line QA can't take reads "Not in QA's review" instead of "Text QA corrects it when QA runs again" forever, and a line QA corrected that the playtest still flags goes to QA's next round instead of reading "Text QA reviewed it".
 - **Playtest:** a place your assistant added that the playtest could not play no longer shows as "A script failed" in the game's code; it is listed with what the playtest did not reach.
@@ -39,11 +39,12 @@
 - **Assistant-led:** saving a translation version now stops and names the plugin when the patch's plugin list loads one that neither the patch nor players' game has, such as a plugin your assistant wrote, instead of making a patch that stops their game at start.
 - **Backups:** progress counts one file as "1 file" instead of "1 files", as when Start over puts back its first file.
 - **Windows:** scripts your assistant writes over game text no longer crash with a 'charmap' UnicodeEncodeError: every copied task tells it to run them with DazedTL's own Python.
+- **Release:** a VX Ace game in a clean game ZIP no longer stops on English Windows with "RGSS301.dll File corrupted" when its folder had a Japanese name: the game's folder inside every clean game ZIP now takes the archive's name, without `.zip`, instead of the game folder's, and Release asks for a VX Ace game's ZIP name in English letters.
 - **VX Ace:** **Database files** no longer fails with "KeyError: 0".
 - **VX Ace:** **Images** finds the game's images in `Graphics` instead of asking you to choose a folder.
 - **VX Ace:** your assistant's **Event text sources** findings are no longer refused once the game is translated.
 - **VX Ace:** a patch ZIP with translated images in `Graphics` no longer fails to build.
 - **VX Ace:** the packed game no longer freezes at an event that sets a text variable.
-- **VX Ace:** a clean game ZIP of a game whose folder had a Japanese name made the game stop on English Windows with "RGSS301.dll File corrupted"; the folder inside the ZIP now takes the archive's name, which Release asks for in English letters, and packing puts the translated title into `Game.ini` in plain letters, so the game window shows it instead of the Japanese one.
+- **VX Ace:** the packed game's window shows the translated title instead of the Japanese one; packing puts it into `Game.ini` in plain letters.
 - **VX Ace:** games start with their own windows' widths, 52 characters and 40 beside a face, instead of MV and MZ's 60 and 50, which ran past the window's edge; a Guided Ace game still on the old widths switches when you open it, and the text you applied is fitted to them.
 - **VX Ace:** translated map names now reach the packed game.
