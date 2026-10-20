@@ -382,6 +382,12 @@ observed = {row["identity"]: row for row in observations(report)}
 assert observed["Items.json#/1/description"]["categories"] == ["ui"], observed
 assert "Seen on Scene_Item" in observed["Items.json#/1/description"]["note"], observed
 assert "Items.json#/4/description" not in observed, observed
+# A note cut short at a space is kept as QA keeps it, without the space, or
+# its problem's label never finds it in QA's review.
+(cut,) = observations(
+    {"problems": [{**gallery[0], "identity": "x", "note": "a" * 479 + " b"}]}
+)
+assert cut["note"] == "a" * 479, cut
 # A second run counts what the first found and it no longer does, and marks
 # what is new; a group counts its strings one by one.
 again = json.loads(json.dumps(report))

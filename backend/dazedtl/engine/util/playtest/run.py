@@ -447,7 +447,9 @@ def observation(problem: dict[str, Any]) -> dict[str, Any] | None:
     return {
         "identity": problem["identity"],
         "categories": [category],
-        "note": note[:480],
+        # One line, cut short, as QA keeps an observation's note, so the
+        # problem's label finds it there.
+        "note": " ".join(note.split())[:480].rstrip(),
     }
 
 
