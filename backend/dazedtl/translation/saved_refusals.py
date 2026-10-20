@@ -14,8 +14,8 @@ from typing import NamedTuple
 
 from .refusals import line_refusal
 
-# A message keeps its whole source on its first command, which holds the
-# translation; following lines are ones the engine added after it.
+# A message keeps its whole source on its first command; its translation may
+# be laid over the rows after it.
 MESSAGES = frozenset({401, 405})
 QUOTED = re.compile(r"['\"`](.*)['\"`]")
 
@@ -139,7 +139,6 @@ def restore(document, original=lambda: None):
         return read[0]
 
     notes = find(document, source_document)
-    added = []
     for note in notes:
         first = note.paths[0]
         if note.code == 408:
@@ -160,7 +159,16 @@ def restore(document, original=lambda: None):
                     )
                 )
         parent, key = resolve(document, first[:-1]), first[-1]
-        if note.transform != "identity":
+        if note.code in MESSAGES:
+            # Each line is (..., command list, position, "parameters", 0); the
+            # source goes back over every row, so the event keeps them all.
+            blocks.write_text(
+                resolve(document, first[:-3]),
+                tuple(path[-3] for path in note.paths),
+                note.source,
+                joined=False,
+            )
+        elif note.transform != "identity":
             match = QUOTED.search(parent[key])
             assert match  # find read the note between these quote marks.
             parent[key] = (
@@ -170,10 +178,4 @@ def restore(document, original=lambda: None):
             )
         else:
             parent[key] = note.source
-        if note.code in MESSAGES:
-            # Each following line is (..., command list, position, "parameters", 0).
-            added.extend((path[:-3], path[-3]) for path in note.paths[1:])
-    # Later positions first, so removing a line moves none still to remove.
-    for listed, position in sorted(added, key=lambda item: item[1], reverse=True):
-        del resolve(document, listed)[position]
     return len(notes)
