@@ -14,6 +14,7 @@ from unittest.mock import Mock, patch
 from dazedtl.projects.store import Projects
 from dazedtl.storage import write_json
 from dazedtl.translation import (
+    comment_text,
     context_setup,
     event_text,
     header_review,
@@ -3734,6 +3735,21 @@ class GuidedTests(unittest.TestCase):
         self.guided.comment_text(self.identity)
         native = self.backend.workflows.projects["native"]
         self.assertTrue(native["phase1_comments"])
+        # A working copy made before then counts its help as untranslated,
+        # under the plugin's marker as the engine reads it, until a run
+        # translates it.
+        inputs = self.guided.inputs(self.native)
+        inputs.prepare(["Map001.json"])
+        markers = comment_text.markers(self.source)
+        self.assertEqual(
+            inputs.untranslated_comments(["Map001.json"], markers), {"Map001.json": 1}
+        )
+        help_lines[1]["parameters"] = ["Takes about 20 minutes"]
+        write_json(
+            self.folder / "translated/Map001.json",
+            {"events": [{"pages": [{"list": help_lines}]}]},
+        )
+        self.assertEqual(inputs.untranslated_comments(["Map001.json"], markers), {})
         native.update(phase1_comments=False, revision=native["revision"] + 1)
         self.guided.comment_text(self.identity)
         self.assertFalse(self.backend.workflows.projects["native"]["phase1_comments"])

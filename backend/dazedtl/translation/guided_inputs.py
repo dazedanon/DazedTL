@@ -13,6 +13,8 @@ from .saved_refusals import find, restore
 
 # Saved refusal notes per working copy, by its path, digest and original.
 NOTE_COUNTS: dict[tuple, int] = {}
+# Untranslated comment lines per working copy, by its path, digest and markers.
+COMMENT_COUNTS: dict[tuple, int] = {}
 
 
 def original_bindings(record):
@@ -236,19 +238,23 @@ class GuidedInputs:
         except OSError, ValueError:
             return None
 
+    def working_copy(self, name):
+        """A file's newest saved working copy, translated or not."""
+        group = next(
+            (group for group in ("translated", "files") if self.saved(group, name)),
+            None,
+        )
+        return None if group is None else self.path(group, name)
+
     def refusal_notes(self, names):
         """Lines per working copy whose saved text is a refusal note with a
         known source, which the next run sends again (restore_refusals)."""
         record = self.record()["inputs"]
         result = {}
         for name in names:
-            group = next(
-                (group for group in ("translated", "files") if self.saved(group, name)),
-                None,
-            )
-            if group is None:
+            path = self.working_copy(name)
+            if path is None:
                 continue
-            path = self.path(group, name)
             observed = self.observed
             key = (
                 str(path),
@@ -267,6 +273,37 @@ class GuidedInputs:
                 )
             if NOTE_COUNTS[key]:
                 result[name] = NOTE_COUNTS[key]
+        return result
+
+    def untranslated_comments(self, names, markers):
+        """Comment lines (408) under *markers*, such as a choice's help, that
+        each working copy still holds in Japanese; a Maps & events run with
+        Comment text on sends them."""
+        from .comment_text import untranslated
+
+        result = {}
+        for name in names:
+            path = self.working_copy(name)
+            if path is None:
+                continue
+            observed = self.observed
+            try:
+                raw = None if observed else path.read_bytes()
+                key = (
+                    str(path),
+                    observed.digest(path) if observed else digest(raw),
+                    markers,
+                )
+                if key not in COMMENT_COUNTS:
+                    if len(COMMENT_COUNTS) >= 4096:
+                        COMMENT_COUNTS.clear()
+                    COMMENT_COUNTS[key] = untranslated(
+                        name, raw if raw is not None else path.read_bytes(), markers
+                    )
+            except OSError, ValueError:
+                continue
+            if COMMENT_COUNTS[key]:
+                result[name] = COMMENT_COUNTS[key]
         return result
 
     def restore_refusals(self, names):

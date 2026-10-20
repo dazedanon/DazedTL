@@ -279,6 +279,12 @@ class SourceStatus(TypedDict):
             "Lines per working copy that hold a refusal note an earlier run saved; the next run sends them again.",
         ]
     ]
+    untranslatedComments: NotRequired[
+        Annotated[
+            dict[str, int],
+            "Comment lines per Maps & events working copy, such as a choice's help, still in Japanese under a marker Comment text translates.",
+        ]
+    ]
 
 
 class RestoreBlocker(TypedDict):

@@ -133,6 +133,8 @@ export type Job = {
   partialOutputs?: string[];
   retiredFiles?: string[];
   logicalPhase?: Phase | null;
+  /** A Maps & events run translated comment lines (Comment text on). */
+  commentText?: boolean;
   preparationMode?: "batch" | "translate" | null;
   /** A finished estimate found no source text in any of its files. */
   nothingToTranslate?: boolean;
@@ -606,6 +608,8 @@ export type SourceStatus = {
   noRequests?: Partial<Record<Phase, Record<string, string>>>;
   /** Lines per working copy that hold a refusal note an earlier run saved; the next run sends them again. */
   refusalNotes?: Record<string, number>;
+  /** Comment lines per Maps & events working copy, such as a choice's help, still in Japanese under a marker Comment text translates. */
+  untranslatedComments?: Record<string, number>;
 };
 
 /** The newest later batch still in the game that changed some of a

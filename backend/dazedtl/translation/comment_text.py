@@ -15,12 +15,60 @@ from typing import Any
 CHECKED = "comment_text_checked"
 
 
+# Comment markers per game, by its plugin lists' stat signatures.
+_MARKERS: dict[tuple, frozenset[str]] = {}
+
+
+def _japanese_lines(name: str, document: Any, markers: frozenset[str]):
+    """The comment lines under *markers* that a data file holds in Japanese."""
+    from util.rpgmaker_qa_preflight import japanese, visible_texts
+
+    return (
+        value
+        for _path, value, kind, _translated in visible_texts(name, document, markers)
+        if kind == "comment text" and japanese(value)
+    )
+
+
+def markers(source: str | Path) -> frozenset[str]:
+    """The markers whose comment lines a Maps & events run with Comment text
+    on translates, read from the game's plugin list as the engine reads it."""
+    from util.rpgmaker_markers import comment_markers, game_plugins
+
+    root = Path(source)
+    signature: list[Any] = [str(root)]
+    for path in (root / "js/plugins.js", root / "www/js/plugins.js"):
+        try:
+            info = path.stat()
+            signature.append((info.st_mtime_ns, info.st_size))
+        except OSError:
+            signature.append(None)
+    key = tuple(signature)
+    if key not in _MARKERS:
+        if len(_MARKERS) >= 64:
+            _MARKERS.clear()
+        _MARKERS[key] = comment_markers(game_plugins(root))
+    return _MARKERS[key]
+
+
+def untranslated(name: str, raw: bytes, markers: frozenset[str]) -> int:
+    """The comment lines under *markers* that a data file's bytes still hold
+    in Japanese, which a run with Comment text on sends."""
+    # Most files hold no marker; only those that do are parsed.
+    if not any(marker.encode() in raw for marker in markers):
+        return 0
+    try:
+        document = json.loads(raw.decode("utf-8-sig"))
+    except UnicodeDecodeError, ValueError:
+        return 0
+    return sum(1 for _value in _japanese_lines(name, document, markers))
+
+
 def shows_comment_text(data: str | Path, plugins: str | Path) -> bool:
     """Whether a game's turned-on plugins show comment lines that hold
     Japanese, from its data folder and plugin list."""
     from util.rpgmaker_markers import plugin_markers
     from util.rpgmaker_plugin_registry import plugin_entries
-    from util.rpgmaker_qa_preflight import japanese, visible_texts
 
     try:
         entries = plugin_entries(Path(plugins).read_text(encoding="utf-8-sig"))
@@ -38,12 +86,7 @@ def shows_comment_text(data: str | Path, plugins: str | Path) -> bool:
             document = json.loads(text)
         except OSError, UnicodeDecodeError, ValueError:
             continue
-        if any(
-            kind == "comment text" and japanese(value)
-            for _path, value, kind, _translated in visible_texts(
-                path.name, document, markers
-            )
-        ):
+        if any(_japanese_lines(path.name, document, markers)):
             return True
     return False
 

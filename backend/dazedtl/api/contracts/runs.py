@@ -86,6 +86,11 @@ class Job(TypedDict):
     partialOutputs: NotRequired[list[str]]
     retiredFiles: NotRequired[list[str]]
     logicalPhase: NotRequired[Phase | None]
+    commentText: NotRequired[
+        Annotated[
+            bool, "A Maps & events run translated comment lines (Comment text on)."
+        ]
+    ]
     preparationMode: NotRequired[Literal["batch", "translate"] | None]
     nothingToTranslate: NotRequired[
         Annotated[bool, "A finished estimate found no source text in any of its files."]

@@ -27,6 +27,7 @@ import {
   translatedFiles,
   translationTaskComplete,
   unsettledBatches,
+  untranslatedComments,
   needsSubmissionReview,
   unconfirmedSubmission,
   canResumeRun,
@@ -1392,6 +1393,31 @@ test("a pass without requests reads Done only for files no run translated", () =
     ),
     false,
   );
+  // Choice help that Comment text now translates, which a run made with it
+  // off never sent, leaves the file to translate and adds to its known
+  // total; a run made with it on counts its own help lines instead.
+  const help = {
+    ...state,
+    sourceStatus: {
+      ...state.sourceStatus,
+      untranslatedComments: { "Troops.json": 2 },
+    },
+  };
+  assert.equal(
+    fileStatus("Troops.json", rerun, false, true, 0, 2).label,
+    "Needs review",
+  );
+  assert.deepEqual(fileLines(help, "dialogue", "Troops.json"), {
+    done: 0,
+    total: 2,
+  });
+  assert.equal(translationTaskComplete(help, "dialogue"), false);
+  const commented = {
+    ...help,
+    runs: runs.map((run) => ({ ...run, commentText: true })),
+  };
+  assert.equal(untranslatedComments(commented, "dialogue", "Troops.json"), 0);
+  assert.equal(translationTaskComplete(commented, "dialogue"), true);
   // Saved translation counts leave out the game's own copy.
   assert.deepEqual(savedTranslations(state), {
     outputs: ["Map001.json"],
