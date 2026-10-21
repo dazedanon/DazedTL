@@ -38,7 +38,12 @@ from util.source_text import holds_source
 
 # The number of rows a part's text owns, kept on its anchor beside
 # `_original`. Notes are not game data: whatever copies or compares commands
-# treats both as the translation's.
+# treats both as the translation's. A comment needs the count because
+# translation laid it one Japanese line at a time and a game may follow those
+# lines with its own, such as "(1/3)" or a blank spacer. A message needs none:
+# translation joins its rows into one command, and Assistant-led's rows run up
+# to the next translation (see `run`). Game updates and Assistant-led's writer
+# carry the count with the translation.
 ROWS = "_rows"
 NOTES = frozenset({"_original", ROWS})
 

@@ -35,40 +35,22 @@ Working copies are described under [Workflow and shared presentation](#workflow-
 ## Engine and resources
 
 The adapter retains existing engine behavior while capabilities are extracted incrementally.
-Neither checkout is a runtime dependency.
-The [runtime locator](../backend/dazedtl/compatibility/runtime.py) selects the engine shipped inside this package in the app, workers and standalone helpers, independently of cwd and old engine environment variables.
-There is no external-engine fallback.
-The runtime was imported from `b91bede18fd2bbd5a9b99f1a866f061bc13865c1` with its [license](../backend/dazedtl/engine/LICENSE.md) and component notices.
-Saved manual runs record the [engine version](../backend/dazedtl/engine/desktop/backend/manual.py) that prepared them and resume only on that version; plans from before explicit versions match by their recorded byte hash.
-Raise the version when a change would make a resumed run build requests or parse files differently.
-Their historical Python namespaces are internal to the compatibility boundary; the old UI and application server are not shipped.
-The compatibility layer extends engine behavior only through declared [extension points](../backend/dazedtl/engine/util/extensions.py) and engine settings, never by replacing engine functions.
-Every import alias shares a point's dispatcher, and reconfiguring a named layer replaces it in place.
-Mark an engine function as a point where DazedTL needs to extend it, rather than wrapping it from outside.
+Neither checkout is a runtime dependency: the [runtime locator](../backend/dazedtl/compatibility/runtime.py) selects the engine shipped inside this package, independently of cwd and old engine environment variables, with no external-engine fallback.
+The runtime was imported from `b91bede18fd2bbd5a9b99f1a866f061bc13865c1` with its [license](../backend/dazedtl/engine/LICENSE.md) and component notices; its historical Python namespaces are internal to the compatibility boundary, and the old UI and application server are not shipped.
+Saved manual runs record the [engine version](../backend/dazedtl/engine/desktop/backend/manual.py) that prepared them and resume only on that version; raise it when a change would make a resumed run build requests or parse files differently.
+The compatibility layer extends engine behavior only through declared [extension points](../backend/dazedtl/engine/util/extensions.py) and engine settings, never by replacing engine functions; mark an engine function as a point where DazedTL needs to extend it, rather than wrapping it from outside.
 The base translation rules in [system.md](../backend/dazedtl/engine/data/skills/system.md), the shared prompt templates, field instructions, base glossary and SFX reference live in the engine's [data](../backend/dazedtl/engine/data) directory.
 The base prompt bounds localization to supplied source text to preserve its register without inviting new scene content or assistant responses in game dialogue.
 Existing workspace `engine/shared-data` overrides retain precedence and native path validation.
-Resources are not seeded into profiles, so future default changes reach new preparations without overwriting customizations.
-Frozen run context stays authoritative for execution and recovery.
-Engine parsers, context assembly and Len's maintained methodology/tool bundle are shipped in the owned engine behind the compatibility boundary.
+Resources are not seeded into profiles, so future default changes reach new preparations without overwriting customizations; frozen run context stays authoritative for execution and recovery.
 Existing phased jobs retain their original engine-owned records and recovery path rather than being rewritten into a different request format.
 
 ### RPG Maker text blocks
 
-[rpgmaker_blocks](../backend/dazedtl/engine/util/rpgmaker_blocks.py) is the one definition of how MV/MZ event commands form the text one window shows: a message (101 and its 401 rows), scrolling text (105 and its 405 rows), a choice list (102), a choice's help and other comments.
-A choice's help is a comment (108) right after a choice branch (402), whose 408 rows MPP_ChoiceEX shows while the choice is open; players read a comment's rows only under a marker a plugin shows, read from the plugin list the game loads beside its data folder, as JavaScript reads it ([rpgmaker_markers](../backend/dazedtl/engine/util/rpgmaker_markers.py)).
-Translation, the fitter, Text QA's inventory, verifier and never-translated preflight, Assistant-led's writer and the release playtest all read blocks there.
-The playtest's tour gets an index of them before it plays, so a message it sees and the line the static checks list share one identity, the block's first text row, and a message whose name alone was translated still reads as never translated.
-A translated part keeps its Japanese in `_original` on its anchor and owns the rows its text was written over; rows outside the parts are the game's own, and nothing writes them.
-Translation laid a comment one Japanese line at a time, and a game may follow those lines with its own, such as "(1/3)" or a blank spacer, so a comment's translation records the rows it owns beside `_original` as `_rows`, a note that game updates and Assistant-led's writer carry with it.
-A message is one command once translation joins its rows, and Assistant-led's rows run up to the next translation, so they need no record.
-Help translated before the record existed reads its rows against the original game file where the reader has it, as restoring a refusal note before a run does, and otherwise owns the rows after it that hold text and no Japanese, which is all translation ever wrote there.
-Writers lay text over a block's rows and never add or remove a command, so a saved game's place in an event stays valid: scrolling text puts its lines over its own rows, and help that needs fewer rows than it owns moves the spare ones, empty, past the game's own rows to the end of the comment, stopping before a later translation, whose place Text QA and saved notes know it by.
-Rows of a part that still hold one of its Japanese rows as the game wrote them, such as a page number Assistant-led left as it was, are the game's own and keep their row when the text around them is fitted.
-Assistant-led keeps a comment's Japanese, marker first, on the 108; both forms read as one block.
-Translating a comment never adds or removes a command, so saved games keep their place and Assistant-led's `rebase_rpgmaker` still lines up: the lines go over the rows it owns, extra lines in its last row, and rows it no longer needs move, empty, to the end of the comment, where they show nothing.
-Translation still joins a message's 401 rows into one command on the first pass, as it always has.
-Help wraps beside the face of the message its choice follows, even while the engine has emptied that message's joined rows, and keeps the rows of the Japanese list items ([wrap_help](../backend/dazedtl/engine/util/rpgmaker_rewrap.py)).
+[rpgmaker_blocks](../backend/dazedtl/engine/util/rpgmaker_blocks.py) is the one definition of how MV/MZ event commands form the text one window shows; translation, the fitter, Text QA, Assistant-led's writer and the release playtest all read blocks there, and its docstring defines blocks, parts and the rows each part owns.
+Which comments players read comes from the plugin list the game loads, as JavaScript reads it ([rpgmaker_markers](../backend/dazedtl/engine/util/rpgmaker_markers.py)).
+Writers lay text over a block's rows and never add or remove a command, so a saved game's place in an event stays valid and Assistant-led's `rebase_rpgmaker` still lines up.
+The playtest's tour gets an index of the blocks before it plays, so a message it sees and the line the static checks list share one identity, the block's first text row.
 
 ## Guided runs and paid work
 
