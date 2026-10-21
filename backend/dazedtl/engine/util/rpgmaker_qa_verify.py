@@ -660,7 +660,10 @@ def verify_manifest(data_root: str | Path, manifest: dict[str, Any]) -> dict[str
                 command_index = int(owner_parts[-1])
                 command_list = _resolve(document, _pointer(tuple(owner_parts[:-1])))
                 expected_help = (
-                    {"face": blocks.help_face(command_list, command_index)}
+                    {
+                        "face": blocks.help_face(command_list, command_index),
+                        "comment": blocks.help_layout(command_list, command_index),
+                    }
                     if blocks.help_branch(command_list, command_index) is not None
                     else None
                 )

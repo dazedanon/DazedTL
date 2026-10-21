@@ -679,6 +679,16 @@ def misfit(text: str, box: Box) -> str | None:
     return None
 
 
+def rows_misfit(text: str, box: Box) -> str | None:
+    """Why *text* needs more rows than *box* shows, or None, whatever its
+    lines' widths: the rows of a window showing several texts whose lines
+    are measured where each is written, such as a choice's help in parts
+    (see :func:`util.rpgmaker_blocks.shown`)."""
+    if not isinstance(text, str) or not text.strip():
+        return None
+    return misfit(text, replace(box, width=widest_line(text)))
+
+
 # ------------------------------------------------------------ whole documents
 
 
@@ -964,10 +974,9 @@ def fit_document(
             # own rows too. Spare rows moved to the end show nothing.
             reasons = [misfit(written, replace(slot.box, rows=None))]
             if checks[slot.together] is slot:
-                whole = "\n".join(
-                    blocks.text(slot.commands[at]) for at in slot.together
-                ).rstrip("\n")
-                reasons.append(misfit(whole, replace(slot.box, width=widest_line(whole))))
+                reasons.append(
+                    rows_misfit(blocks.shown(slot.commands, slot.together), slot.box)
+                )
         for reason in filter(None, reasons):
             report.misfits.append({"file": file_name, "pointer": slot.pointer, "reason": reason})
     report.changes.reverse()
