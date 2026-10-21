@@ -366,6 +366,9 @@ class TranslationState(ProjectOptions):
     jobs: list[TranslationJob]
     active: bool
     warnings: list[str]
+    # Why the game's Git checkout refuses every change, also among warnings;
+    # "" when it takes them.
+    checkoutIssue: str
     statusText: str
     providerEnabled: bool
     connection: ConnectionSummary | None

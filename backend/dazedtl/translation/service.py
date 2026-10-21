@@ -361,8 +361,9 @@ class Translation:
                 "Git status is unavailable. Git must be installed and this game's baselines verified before translation."
             )
         # The checkout problem that would refuse every change to the game.
-        if git and git.get("configured") and (issue := checkout_issue(git)):
-            warnings.append(issue)
+        refused = checkout_issue(git) if git and git.get("configured") else ""
+        if refused:
+            warnings.append(refused)
         self.jobs.reconcile()
         saved_jobs = self.jobs.store.list(project_id)[:30]
         warnings.extend(self.jobs.store.warnings)
@@ -445,6 +446,7 @@ class Translation:
             "jobs": self.job_views(saved_jobs, selected["options"]["mode"]),
             "active": self.jobs.running(project_id),
             "warnings": warnings,
+            "checkoutIssue": refused,
             "statusText": status.read_text(encoding="utf-8")[:250_000]
             if status.is_file() and status.stat().st_size <= 5_000_000
             else "",
@@ -1418,7 +1420,10 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
 
     def _operation(self, project_id, action, arguments, specification):
         self.idle(project_id)
-        self.clean_drafts(project_id)
+        # Finishing or cancelling a stopped game update reads no guidance or
+        # options, and drafts can't be saved until it is done.
+        if action not in {"version_continue", "version_abort"}:
+            self.clean_drafts(project_id)
         if not isinstance(arguments, dict) or set(arguments) - specification[1]:
             raise ValueError("Unknown operation or operation fields.")
         required = {

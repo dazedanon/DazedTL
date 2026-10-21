@@ -1043,6 +1043,11 @@ class WorkflowTests(unittest.TestCase):
         self.service.draft(self.identity, "options", {**same, "options": edited})
         with self.assertRaises(ValueError):
             self.service.clean_drafts(self.identity)
+        # A stopped game update refuses saving the draft, so finishing or
+        # cancelling it must not wait for one: the user had to discard it.
+        for action in ("version_continue", "version_abort"):
+            job = self.service.operation(self.identity, action, {})
+            self.assertEqual(job["action"], action)
 
     def test_start_over_restores_the_original_and_sets_the_attempt_aside(self):
         # Starting over must put every original file back and move what the

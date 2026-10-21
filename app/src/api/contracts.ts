@@ -1690,6 +1690,7 @@ export type TranslationState = ProjectOptions & {
   jobs: TranslationJob[];
   active: boolean;
   warnings: string[];
+  checkoutIssue: string;
   statusText: string;
   providerEnabled: boolean;
   connection: ConnectionSummary | null;

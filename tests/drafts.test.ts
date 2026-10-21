@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DraftSession } from "../app/src/state/DraftSession.ts";
+import { saveDocument } from "../app/src/state/documentSave.ts";
 import {
   flushDrafts,
   registerLeaveGuard,
   retainDraft,
 } from "../app/src/state/leaveGuards.ts";
-import type { GuidedPreferences } from "../app/src/api/contracts.ts";
+import type { Documents, GuidedPreferences } from "../app/src/api/contracts.ts";
 import {
   mergeInvestigationSettings,
   onlyInvestigationSettingsChanged,
@@ -117,6 +118,33 @@ test("edits during an explicit save survive with the new saved revision", async 
     committing: false,
   });
   assert.deepEqual(writes.at(-1), { text: "newer edit", revision: "2" });
+  await session.dispose();
+});
+
+test("a refused save of guidance that has no file yet leaves it no draft", async () => {
+  // Saving all guidance created its missing files from drafts, so when the
+  // game refused the write, tabs the user never edited read Draft.
+  const session = new DraftSession<Documents>(async () => {}, unexpected);
+  const edited = { glossary: { text: "薬 (Potion)", revision: "g" } };
+  session.adopt({}, edited);
+  const refuse = () => Promise.reject(new Error("Finish the update first."));
+  await assert.rejects(
+    saveDocument(session, refuse, "quirks", { text: "", revision: "" }),
+    /Finish the update/,
+  );
+  assert.deepEqual(session.getSnapshot().value, edited);
+  const saved: string[] = [];
+  await saveDocument(
+    session,
+    async (name, _revision, text) => {
+      saved.push(text);
+      return { [name]: { text, revision: "q" } };
+    },
+    "quirks",
+    { text: "Plain.", revision: "" },
+  );
+  assert.deepEqual(saved, ["Plain."]);
+  assert.deepEqual(session.getSnapshot().value, edited);
   await session.dispose();
 });
 

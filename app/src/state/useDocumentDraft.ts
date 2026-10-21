@@ -1,4 +1,5 @@
 import type { Documents } from "../api/contracts";
+import { saveDocument } from "./documentSave";
 import { useDraft } from "./useDraft";
 
 export function useDocumentDraft(
@@ -21,31 +22,8 @@ export function useDocumentDraft(
       [name]: { text, revision },
     }));
   }
-  async function save(name: string) {
-    let documents: Documents = {};
-    await draft.session.commit(
-      async (current) => {
-        const document = current[name];
-        if (!document) return { saved: {}, draft: current };
-        documents = await adapter.save(name, document.revision, document.text);
-        const pending = { ...current };
-        delete pending[name];
-        return { saved: {}, draft: pending };
-      },
-      (before, current) => {
-        const pending = { ...current };
-        if (JSON.stringify(before[name]) === JSON.stringify(current[name]))
-          delete pending[name];
-        else if (pending[name] && documents[name])
-          pending[name] = {
-            ...pending[name],
-            revision: documents[name].revision,
-          };
-        return pending;
-      },
-    );
-    return documents;
-  }
+  const save = (name: string, created?: Documents[string]) =>
+    saveDocument(draft.session, adapter.save, name, created);
   async function discard(name: string) {
     draft.session.edit((current) => {
       const pending = { ...current };

@@ -1119,15 +1119,18 @@ export function useGuidedWorkspace({
   const saveDocuments = (names: string[]) =>
     action.run(
       async () => {
-        for (const name of names) {
-          if (!discovery.documents[name]?.exists && !context.drafts[name])
-            context.edit(
-              name,
-              state.documents[name]?.text || "",
-              state.documents[name]?.revision || "",
-            );
-        }
-        await saveGuidanceSet(names, context.save);
+        // A missing file is created from the text shown for it.
+        await saveGuidanceSet(names, (name) =>
+          context.save(
+            name,
+            discovery.documents[name]?.exists
+              ? undefined
+              : {
+                  text: state.documents[name]?.text || "",
+                  revision: state.documents[name]?.revision || "",
+                },
+          ),
+        );
       },
       // Saving creates missing files and writes drafts; otherwise it is a no-op.
       names.some(
