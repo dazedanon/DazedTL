@@ -17,6 +17,8 @@ export interface Observer {
 /**
  * Local action feedback and a synchronous guard against duplicate submissions.
  * An action finishes once its `observer` shows what it wrote, then runs `after`.
+ * An error describes the inputs its action ran with, so callers `clear` it
+ * once the user edits the draft behind it.
  */
 export function useAction({
   observer,

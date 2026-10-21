@@ -242,6 +242,8 @@ class RunProcess(TypedDict):
     files: NotRequired[dict[str, FileRequests]]
     groups: NotRequired[list[RequestGroup]]
     attention: NotRequired[list[ProcessRequest]]
+    # Changes whenever a displayed request does, so an open inspector reads its
+    # page of requests again; request rows themselves stay out of observations.
     requestRevision: NotRequired[str]
     sourceItems: NotRequired[int | None]
     submittedItems: NotRequired[int | None]

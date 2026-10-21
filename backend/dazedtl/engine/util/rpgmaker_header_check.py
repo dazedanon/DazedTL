@@ -19,8 +19,29 @@ Unnamed speech is not flagged on its own: games leave narrators, crowds and
 off-screen voices unnamed on purpose.
 
 It reads the Japanese source, from `_original` where the engine translated a
-value, leaves out headers the translation already gave another speaker, and
-never changes a file. docs/architecture.md says why these rules and no others.
+value, leaves out headers the translation already gave another speaker, so a
+fixed slip does not come back, and never changes a file. Text QA sends each
+flag on a line its inventory holds to deep review as a `show-text-header`
+check, which gives a flag the setup assistant kept this second look after
+translation.
+
+Why these rules and no others, measured on real games:
+
+- On Arina and the Succubus Curse, whose translation, a manual fix and release
+  QA corrected 24 headers, the check raised 14 flags on the Japanese source,
+  all slips: 9 of those 24 and 5 no one had fixed.
+- Across 16 other games in one translator's library it raised 6: three clear
+  slips, two likely ones and a deliberate change of register.
+- Those games ruled out cues that worked on Arina alone: an unnamed spoken box
+  between named ones (15 flags and 11 slips on Arina, but about 200 elsewhere,
+  nearly all narrators, crowds and off-screen voices left unnamed on purpose),
+  a name called out without another speaker using it, a placeholder such as
+  ？？？ and a face shown repeatedly with an alias.
+- Arina ruled out voice files before a box (its voice folders also play before
+  sound effects), every named sound effect (21 flags, 1 slip), narration under
+  a nameplate (33 flags, 2 slips), a reply after someone addressed a third
+  character (4 flags, 1 slip) and identical lines whose nameplates differ (all
+  deliberate labels).
 """
 
 from __future__ import annotations

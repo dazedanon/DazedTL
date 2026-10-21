@@ -119,6 +119,10 @@ export function onMutation(observer: (phase: "begin" | "end") => void) {
 function notify(phase: "begin" | "end") {
   for (const observer of observers) observer(phase);
 }
+/**
+ * Sends one request. A failed write is never retried automatically, because
+ * some actions submit paid work; only the observer retries, and only reads.
+ */
 export async function request<M extends Method>(
   method: M,
   params: RpcContract[M]["request"],

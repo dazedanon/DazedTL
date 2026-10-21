@@ -1,6 +1,6 @@
 # Text QA redesign
 
-This was the plan for the text QA redesign; every part is implemented and described in [architecture](architecture.md#workflow-and-shared-presentation), and its goals, decisions and the evidence behind them remain here as rationale.
+This was the plan for the text QA redesign; every part is implemented, its boundaries are in [architecture](architecture.md#text-qa), and its goals, decisions and the evidence behind them remain here as rationale.
 Current behavior lives in the [QA skill](../backend/dazedtl/engine/data/skills/rpgmaker_translation_qa.md), the [engine](../backend/dazedtl/engine/util/qa/__init__.py), the [copied handoff](../backend/dazedtl/compatibility/text.py) and [the task's view](../app/src/features/guided/TextQa.tsx).
 The [release playtest](#release-playtest) extends the same goals to what text QA cannot see: whether the game starts, what reaches the screen and whether it fits.
 
@@ -113,7 +113,7 @@ Four of its maps, about 450 lines with 20 seeded defects of meaning, negation, n
 
 Text QA reads text; it cannot tell whether the game starts, which text reaches the screen or whether it fits there.
 The release playtest is the last check before Release: it plays the game as DazedTL applied it, with its translations, QA corrections, rewraps and plugin files, and reports what a player would hit.
-Its behavior is in [architecture](architecture.md#workflow-and-shared-presentation); its goals are text QA's, and these are its decisions and the evidence behind them.
+Its behavior is in the [playtest modules](../backend/dazedtl/engine/util/playtest) and its boundaries in [architecture](architecture.md#text-qa); its goals are text QA's, and these are its decisions and the evidence behind them.
 
 ### Where it sits
 

@@ -71,7 +71,11 @@ def copy_files(src: str | Path, dst: str | Path, *, skip_names=frozenset(),
 
 def install_gameupdate(game_root: str | Path, *, wolf: bool = False, source: str | Path | None = None,
                        log=None) -> tuple[int, list[str]]:
-    """Copy the bundled GameUpdate files; only WOLF games get UberWolf and its README section."""
+    """Copy the bundled GameUpdate files; only WOLF games get UberWolf and its README section.
+
+    Installing the files does not mean delivery works: whether the game's
+    patch-config.txt is ready is reported separately by write_gameupdate_config.
+    """
     root = Path(game_root)
     source = Path(source) if source is not None else PROJECT_ROOT / "gameupdate"
     readme = root / "README.md"

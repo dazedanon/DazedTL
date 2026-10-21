@@ -102,7 +102,10 @@ from dazedtl.api.contracts.workspace import (
 class Method:
     request: type
     response: object
-    # Mutations refresh the workspace snapshot after they finish.
+    # Mutations refresh the workspace snapshot after they finish. One that
+    # changes snapshot-backed state, a recovery draft included, must keep this:
+    # a remounted editor would otherwise recover an older draft from the
+    # cached snapshot. Reads and state outside the snapshot turn it off.
     refresh: bool = True
     # Allowed while the window closes, to save drafts and read final state.
     during_close: bool = False

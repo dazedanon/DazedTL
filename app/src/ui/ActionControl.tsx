@@ -40,6 +40,12 @@ export function ActionControl({
   pendingText?: string;
   error?: string;
   notice?: string;
+  /**
+   * The toolbar presentation: pending text replaces the label and the result
+   * appears once beside the action. In a row of related inline steps, such as
+   * a run's buttons, only the last control shows the one result, so a result
+   * never moves the button just clicked.
+   */
   inline?: boolean;
   /** Shown beside the control while it is disabled for this reason. */
   disabledReason?: string;

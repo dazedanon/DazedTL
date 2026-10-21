@@ -1,4 +1,8 @@
-/** Plugin files, hosted in the Guided workspace. */
+/**
+ * Plugin files, hosted in the Guided workspace. Keep it imported statically,
+ * bundled with the other screens: a deferred chunk could be removed by
+ * rebuilding the desktop app while a window still open needs it.
+ */
 import type { ReactNode } from "react";
 import { flushDrafts } from "../../../../state/leaveGuards";
 import { PluginWorkspace } from "../../../plugins/PluginWorkspace";

@@ -1,6 +1,12 @@
 import type { ComponentProps } from "react";
 import { LoaderCircle } from "lucide-react";
 type Props = ComponentProps<"button"> & {
+  /**
+   * `primary` is a screen's one main action. `quiet` belongs in toolbars,
+   * headers and footers, where its padding is the hit area; `link` serves
+   * tertiary actions inside running content, where its label lines up with
+   * the surrounding text.
+   */
   variant?: "default" | "primary" | "quiet" | "danger" | "link";
   pending?: boolean;
 };

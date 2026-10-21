@@ -37,7 +37,10 @@ from dazedtl.watchdog import Watchdog
 RPC_OUTPUT = sys.stdout
 from dazedtl.api import views
 
-# Read-only image previews run on a few workers beside the request loop.
+# Read-only image previews run on a few workers beside the request loop. Every
+# other request, the project helper's included, runs one at a time behind the
+# lock that every snapshot needs, so work that takes seconds on a big game
+# starts an operation worker instead of running inside its request.
 CONCURRENT = frozenset({"images_preview"})
 PREVIEW_WORKERS = 4
 # Every other request waits behind the one running, so one this slow already
@@ -505,6 +508,10 @@ class Application:
         return self.state()
 
     def navigate(self, screen):
+        # "manual" is the former manual screen, kept as a compatibility route
+        # into Translation so a saved project that names it keeps its
+        # identity: it links the game's Guided workspace and lands on the
+        # Translate task.
         if screen in {"guided", "manual"}:
             if not self.projects.current:
                 raise ValueError("Open a game project first.")
@@ -891,6 +898,10 @@ def dispatcher(app, check=False):
     def run(name, params):
         handler, present = methods[name]
         app.prepare_model_pricing(name, params)
+        # These provider lookups run without the engine context lock, so a slow
+        # one cannot hold navigation behind a pending mutation. Price and host
+        # lookups stay read-only; a connection check is the one that refreshes
+        # the shared observations.
         if name in {"connection_check", "openrouter_hosts", "settings_model_defaults"}:
             return present(handler(**params), params)
         # Previews only read image files and run on the preview workers, which

@@ -9,6 +9,11 @@ from urllib.parse import quote, urlsplit
 
 import httpx
 
+# A preset declares its transport protocol independently of its identity. Kimi
+# and OpenRouter keep OpenAI's Live request formats under their own identity,
+# so Kimi's Batches carry its eligible models and price factor (engine
+# batch_providers and provider_costs) and OpenRouter has its own Batch
+# transport (compatibility/openrouter_batch.py).
 PROVIDERS = {
     "openai": {
         "label": "OpenAI",
@@ -151,6 +156,7 @@ def openrouter_hosts(model=""):
             raise ValueError
         hosts = {}
         for row in rows:
+            # An endpoint tag is "host/variant"; variants collapse to the host.
             slug = openrouter_host(row["tag"].split("/")[0] if model else row["slug"])
             name = row["provider_name"] if model else row["name"]
             if (

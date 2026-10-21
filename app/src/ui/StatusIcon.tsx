@@ -40,10 +40,11 @@ const icons = {
 };
 
 /**
- * The one set of status marks. Work items use them through StatusMark and
- * the shared display states; other states, such as a connection check, may
- * use a mark directly. Text beside the mark names the state; pass `label`
- * only when the mark stands alone.
+ * The one set of status marks, drawn as icons rather than text characters so
+ * they keep their shape in every font. Work items use them through
+ * StatusMark and the shared display states; other states, such as a
+ * connection check, may use a mark directly. Text beside the mark names the
+ * state; pass `label` only when the mark stands alone.
  */
 export function StatusIcon({
   status,
