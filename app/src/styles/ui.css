@@ -572,12 +572,12 @@ main:has(> .page-layout--wide) {
   margin-inline-start: auto;
   display: flex;
   flex-wrap: wrap;
+  flex: 1 1 auto;
   min-width: 0;
   max-width: 100%;
   justify-content: flex-end;
   align-items: center;
   gap: var(--space-2);
-  flex-shrink: 1;
 }
 /* In bars, a control's result sits just left of its own button, so the
    buttons keep their place and the bar its height while feedback changes. */
@@ -587,14 +587,18 @@ main:has(> .page-layout--wide) {
   gap: var(--space-2);
   max-width: 100%;
 }
-/* A percentage cap would be ignored while the bar sizes its controls, letting
-   a long result claim a whole row; a fixed cap that can shrink keeps it beside
-   its button. */
-/* The block sits against its button; its lines start at the status icon, so
-   wrapped text never leaves a gap after the icon. */
+.action-bar .action-control:has(> .action-control-feedback:not(:empty)) {
+  flex-grow: 1;
+}
+/* A result counts toward the bar's wrapping only up to 16rem, so a long one
+   wraps beside its button instead of moving the actions to a row of their
+   own; it then takes the room beside its button up to a fixed cap, since a
+   percentage cap would be ignored while the bar sizes its controls. */
 .action-bar .action-control > .action-control-feedback {
+  flex: 1 1 auto;
+  width: calc-size(max-content, min(size, 16rem));
+  min-width: calc-size(max-content, min(size, 16rem));
   max-width: 30rem;
-  min-width: 0;
   text-align: left;
 }
 .action-bar .action-control > .action-control-feedback:not(:empty) {
@@ -603,8 +607,39 @@ main:has(> .page-layout--wide) {
 .action-bar .action-control > .action-control-feedback:empty {
   display: none;
 }
+/* The result sits against its button; its lines start at the status icon, so
+   wrapped text never leaves a gap after the icon. */
+.action-bar .action-control-feedback > * {
+  width: fit-content;
+  margin-inline-start: auto;
+}
 .action-bar .action-control :is(.feedback, .job-status-heading) {
   justify-content: flex-end;
+}
+/* An operation's state and detail read as one sentence, like other results. */
+.action-bar .action-control-feedback > .job-status-status--compact {
+  font-size: var(--font-small);
+}
+.action-bar
+  .action-control-feedback
+  > .job-status-status--compact
+  > .job-status-heading {
+  display: inline-flex;
+  margin-inline-end: var(--space-2);
+}
+.action-bar .action-control-feedback > .job-status-status--compact > p,
+.action-bar
+  .action-control-feedback
+  > .job-status-status--compact
+  > p
+  > .expandable-text {
+  display: inline;
+  line-height: inherit;
+}
+/* Two lines of a result fit beside the button, so a result that wraps keeps
+   the bar's height. */
+.action-bar .action-control :is(.feedback, .job-status-status--compact) {
+  line-height: calc(var(--control-height) / 2);
 }
 .feedback {
   display: flex;

@@ -1,4 +1,4 @@
-import type { LayoutWidths } from "../../api/contracts";
+import type { Job, LayoutWidths } from "../../api/contracts";
 
 /**
  * What saving Line widths reports beside its control: the fit of the applied
@@ -28,4 +28,24 @@ export function widthsSaveNotice({
   return lowered
     ? `${report} With portrait was lowered to ${widths.faceWidth} to match Dialogue.`
     : report;
+}
+
+/**
+ * Whether a fit of the applied text to new Line widths is under way. The
+ * read that starts a fit names it before it lists it among the operations,
+ * so a fit named since this visit opened that no operation shows yet runs,
+ * as does a listed one that has not ended.
+ */
+export function fitRunning({
+  named,
+  opened,
+  listed,
+}: {
+  named: string | null;
+  opened: string | null;
+  listed: Pick<Job, "id" | "status"> | undefined;
+}) {
+  if (listed && listed.id === named)
+    return ["ready", "running", "waiting"].includes(listed.status);
+  return !!named && named !== opened;
 }

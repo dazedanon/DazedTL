@@ -49,6 +49,7 @@ import { type PendingPartId, pendingPart } from "../pending";
 import { usePendingChanges } from "./usePendingChanges";
 import { assistantWaiting, noHandoff } from "../../assistant/assistantTasks";
 import { useAssistantSources } from "../../assistant/useAssistantTasks";
+import { fitRunning } from "../lineWidths";
 import { initialPosition, stagesFor } from "../workflow";
 
 /** The operations setting up a game runs, in order. */
@@ -617,11 +618,24 @@ export function useGuidedWorkspace({
   // The widths that save asked for; saving keeps With portrait within Dialogue.
   const [askedWidths, setAskedWidths] = useState<LayoutWidths | null>(null);
   const fitJob = operationJob("fit_text");
+  const fitState = state.readiness.text_fit;
+  const [openedFit] = useState(fitState.job);
+  const fitting = fitRunning({
+    named: fitState.job,
+    opened: openedFit,
+    listed: fitJob,
+  });
+  // The game holds text fitted to the old widths until the fit rewrites it,
+  // so what did not fit them stays listed until the fit ends.
+  const [heldFit, setHeldFit] = useState(fitState);
+  if (!fitState.pending && !fitting && heldFit !== fitState)
+    setHeldFit(fitState);
   const textFit = {
-    pending: state.readiness.text_fit.pending,
+    pending: fitState.pending,
+    running: fitting,
     // A queued fit waits for an unfinished Git operation, such as a game
     // update's merge, or for the translation branch.
-    waiting: !!state.readiness.text_fit.waiting,
+    waiting: !!fitState.waiting,
     job:
       fitJob &&
       ((widthsSavedAt && jobTime(fitJob) >= widthsSavedAt) ||
@@ -629,8 +643,8 @@ export function useGuidedWorkspace({
         ? fitJob
         : undefined,
     // The text the newest fit could not fit, while the game holds it.
-    misfits: state.readiness.text_fit.misfits,
-    misfitCount: state.readiness.text_fit.misfit_count,
+    misfits: heldFit.misfits,
+    misfitCount: heldFit.misfit_count,
     askedWidths,
     saving: () => {
       setWidthsSavedAt(Date.now());

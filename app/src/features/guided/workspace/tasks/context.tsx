@@ -379,10 +379,11 @@ export function layoutView(w: GuidedWorkspace): TaskView {
   };
   const pending = widthsDirty || !!discovery.layoutMessage;
   const saved = feedback("save-options", "Saving line widths…");
-  // A fit that finished says what it rewrapped; one running or failed shows
-  // as its job.
+  // A fit that finished says what it rewrapped, one running shows pending
+  // and one that failed shows as its job.
   const fit = textFit.job;
-  const fitted = fit?.status === "complete" ? fit.message : "";
+  const fitted =
+    fit?.status === "complete" && !textFit.running ? fit.message : "";
   const saveControl = (
     <ActionControl
       label={
@@ -395,8 +396,12 @@ export function layoutView(w: GuidedWorkspace): TaskView {
       aria-keyshortcuts={shortcutKeys.save}
       disabled={disabled}
       {...saved}
+      pending={saved.pending || textFit.running}
+      pendingText={
+        saved.pending ? saved.pendingText : "Fitting text to the new widths…"
+      }
       // A queued fit stands in for an earlier one's report.
-      job={fitted || textFit.pending ? undefined : fit}
+      job={fitted || textFit.pending || textFit.running ? undefined : fit}
       notice={widthsSaveNotice({
         fitted,
         saved:

@@ -1,5 +1,6 @@
 import { Check, LoaderCircle } from "lucide-react";
 import type { TranslationJob } from "../api/contracts";
+import { ExpandableText } from "./ExpandableText";
 
 import { sentence } from "./displayText";
 
@@ -47,7 +48,23 @@ export function JobStatus({
           {compact && !active ? `Last run: ${state}` : sentence(state)}
         </span>
       </div>
-      {detail && <p>{detail}</p>}
+      {detail && (
+        <p>
+          {compact ? (
+            // Beside a control, a long detail stays an excerpt like an
+            // action's error.
+            <ExpandableText
+              key={detail}
+              text={detail}
+              label={`${job.label} details`}
+              appearance="inline"
+              limit={120}
+            />
+          ) : (
+            detail
+          )}
+        </p>
+      )}
     </div>
   );
 }
