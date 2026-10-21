@@ -17,6 +17,7 @@ from dazedtl.translation.game_update import ABSENT, GameUpdate
 from dazedtl.translation.operations import execute, lifecycle, lifecycle_path
 from dazedtl.translation.release import (
     applied_assets,
+    archive_stem,
     available,
     current,
     destination,
@@ -87,6 +88,15 @@ class ReleaseTests(unittest.TestCase):
             for name, engine in (("逆襲のオーク.zip", "ACE"), ("game..zip", "MVMZ")):
                 with self.assertRaises(ValueError):
                     game_folder(Path(folder) / name, engine)
+            # The default name is the game folder's wherever the check takes
+            # it, else its ASCII form, else a plain one.
+            for name, engine, stem in (
+                ("逆襲のオーク", "MVMZ", "逆襲のオーク"),
+                ("逆襲のオーク", "ACE", "translated"),
+                ("Orcの逆襲 Ver.2 ～Revenge～", "ACE", "Orc Ver.2 ~Revenge~"),
+                ("CON", "MVMZ", "translated"),
+            ):
+                self.assertEqual(archive_stem(name, engine), stem)
             write_archive(root, output, scope, lambda _: None, folder=top)
             with zipfile.ZipFile(output) as archive:
                 self.assertEqual(

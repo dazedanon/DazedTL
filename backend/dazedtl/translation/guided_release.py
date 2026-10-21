@@ -96,13 +96,17 @@ class GuidedRelease:
         }
 
     def release_defaults(self, project_id):
-        source = Path(self.guided.projects.get(project_id)["source"])
+        from .release import archive_stem
+
+        project = self.guided.projects.get(project_id)
+        source = Path(project["source"])
+        stem = archive_stem(source.name, project["engine"])
         return {
             "kind": "game",
-            "name": source.name + "-game.zip",
+            "name": stem + "-game.zip",
             "names": {
-                "game": source.name + "-game.zip",
-                "patch": source.name + "-patch.zip",
+                "game": stem + "-game.zip",
+                "patch": stem + "-patch.zip",
             },
             "assets": [],
             "directory": str(source.parent),

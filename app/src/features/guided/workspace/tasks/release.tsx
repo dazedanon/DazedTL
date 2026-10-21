@@ -48,6 +48,13 @@ export function packageView(w: GuidedWorkspace): TaskView {
   // set below the release's own options.
   const updaterBlocked = translation.gameUpdate.state === "needs_repo";
   const writing = handoff("walkthrough");
+  // Why the destination blocks both reading and building the archive.
+  const destinationReason =
+    destinationField === "name"
+      ? "Choose another archive name."
+      : destinationError
+        ? "Choose a destination the archive can be saved to."
+        : "";
   let content: ReactNode;
   content = (
     <>
@@ -89,6 +96,7 @@ export function packageView(w: GuidedWorkspace): TaskView {
               !!state.readiness.unapplied.length ||
               (release.kind === "patch" && !state.acePacking.current)
             }
+            disabledReason={destinationReason}
             {...feedback("package:inspect", "Reading archive contents…")}
             onClick={() =>
               action.run(
@@ -187,17 +195,14 @@ export function packageView(w: GuidedWorkspace): TaskView {
       ? "Build clean game ZIP"
       : "Review & build patch ZIP",
     { output: releasePath },
-    destinationField === "name"
-      ? "Choose another archive name."
-      : destinationError
-        ? "Choose a destination the archive can be saved to."
-        : updaterBlocked ||
-          !baseline ||
-          !release.directory.trim() ||
-          !release.name.trim() ||
-          destinationPending ||
-          !state.acePacking.current ||
-          !!state.readiness.unapplied.length,
+    destinationReason ||
+      updaterBlocked ||
+      !baseline ||
+      !release.directory.trim() ||
+      !release.name.trim() ||
+      destinationPending ||
+      !state.acePacking.current ||
+      !!state.readiness.unapplied.length,
     "primary",
   );
   // Building with no text applied packages the original text, even with
