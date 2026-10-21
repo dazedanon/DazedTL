@@ -8,3 +8,7 @@
 - **Translate:** the new glossary terms a finished run adds are saved as that run's checkpoint instead of **Edits made outside DazedTL**.
 - **Guided:** one **Save guidance** click saves as one checkpoint naming the documents it saved, and saving options or Line widths you left at the game's defaults no longer adds a **Save Line widths** checkpoint.
 - **Set up:** DazedTL keeps a copy of the original game files in the game folder's Git history before its first change, which you never publish, and takes no more backups, so **Back up the original** is gone; games set up earlier keep using their backups.
+
+### Fixed
+
+- **Release:** building the patch ZIP after a game update no longer fails with "The untranslated source baseline changed. Prepare a new request plan for this game version."
