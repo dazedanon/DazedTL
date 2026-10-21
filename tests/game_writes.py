@@ -49,9 +49,11 @@ OUTSIDE = {
     # Assistant-led's header review writes the corrected nameplates the
     # assistant reviewed straight into the game's data.
     "translation/header_review.py:apply": "Assistant-led",
-    # A restored backup is a new copy of the game, never the game itself.
+    # A restored or materialized backup is a copy of the game, never the
+    # game itself; Windows makes its read-only files writable to remove them.
     "translation/backups.py:_extract": "backups",
     "translation/backups.py:_copy": "backups",
+    "translation/backups.py:materialized": "backups",
 }
 # Whether each folder seen is shaped like a game.
 _games = {}
