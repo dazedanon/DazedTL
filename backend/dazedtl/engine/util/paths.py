@@ -303,7 +303,7 @@ def ensure_game_tool_gitignore(game_root: str | Path) -> bool:
         os.chmod(temporary, original_mode)
         system.replace(temporary, path)
     except Exception:
-        temporary.unlink(missing_ok=True)
+        system.unlink(temporary, ignore_errors=True)
         raise
     return True
 
@@ -407,7 +407,7 @@ def _remove_identical_legacy_glossary(preferred: Path, legacy: Path) -> None:
             f"- {legacy}\n- {preferred}"
         )
     try:
-        legacy.unlink()
+        system.unlink(legacy)
     except OSError as exc:
         raise GameProjectPathError(
             f"Could not remove redundant legacy glossary {legacy}: {exc}"
@@ -562,7 +562,7 @@ def ensure_game_glossary(game_root: str | Path | None) -> Path:
             os.fsync(handle.fileno())
         system.replace(temporary, path)
     finally:
-        temporary.unlink(missing_ok=True)
+        system.unlink(temporary, ignore_errors=True)
     return path
 
 

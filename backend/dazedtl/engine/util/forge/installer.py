@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from util import system
 from util.forge.config import (
     PLUGIN_BY_ENGINE,
     is_legacy_forge_plugin,
@@ -189,7 +190,7 @@ def uninstall(game_root: Path) -> tuple[bool, str]:
             )
             atomic_write_text(plugins_js, registry_content)
         if target.is_file():
-            target.unlink()
+            system.unlink(target)
     except (OSError, ValueError) as exc:
         return False, f"Could not uninstall {plugin_name}: {exc}"
 

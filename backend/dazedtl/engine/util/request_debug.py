@@ -63,7 +63,7 @@ def append_rotating(path: Path, text: str, *, max_bytes: int, backups: int) -> N
         current_size = path.stat().st_size if path.is_file() else 0
         if current_size and current_size + encoded_size > max_bytes:
             oldest = path.with_name(f"{path.name}.{backups}")
-            oldest.unlink(missing_ok=True)
+            system.unlink(oldest, missing_ok=True)
             for index in range(backups - 1, 0, -1):
                 source = path.with_name(f"{path.name}.{index}")
                 if source.is_file():

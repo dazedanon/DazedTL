@@ -470,16 +470,16 @@ def _sync_patch_scope(project: LenProject, document: object, original_game: Path
             _run_git(repo, "update-ref", "refs/heads/original", original_ref, new_original)
         if applied_ignore:
             if before_ignore is None:
-                ignore.unlink()
+                system.unlink(ignore)
             else:
                 _write_atomic(ignore, before_ignore.decode("utf-8", errors="surrogateescape"))
             if before_assets is None:
-                asset_path.unlink(missing_ok=True)
+                system.unlink(asset_path, missing_ok=True)
             else:
                 asset_path.write_bytes(before_assets)
         raise
     finally:
         if acquired:
-            lock.unlink(missing_ok=True)
-        Path(index_name).unlink(missing_ok=True)
-        Path(original_index).unlink(missing_ok=True)
+            system.unlink(lock, missing_ok=True)
+        system.unlink(index_name, ignore_errors=True)
+        system.unlink(original_index, ignore_errors=True)

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 from urllib.parse import urlparse
 
+from util import system
 from util import extensions
 
 
@@ -198,7 +199,7 @@ def _write_jsonl(requests: Iterable[dict]) -> Path:
                 handle.write(json.dumps(request, ensure_ascii=False, separators=(",", ":")))
                 handle.write("\n")
     except Exception:
-        path.unlink(missing_ok=True)
+        system.unlink(path, ignore_errors=True)
         raise
     return path
 
@@ -285,7 +286,7 @@ def submit_batch(provider: str, requests: list[dict], *, client=None,
         )
         return {"id": batch.id, "input_file_id": input_file_id}
     finally:
-        path.unlink(missing_ok=True)
+        system.unlink(path, ignore_errors=True)
 
 
 def _request_counts(batch: Any) -> dict:

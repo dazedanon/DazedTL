@@ -443,12 +443,9 @@ def _atomic_write_text_exact(path: Path, value: str) -> None:
     finally:
         if descriptor != -1:
             os.close(descriptor)
-        try:
-            temporary.unlink(missing_ok=True)
-        except OSError:
-            # Do not hide the original write/replace error if a scanner still
-            # has the abandoned temporary file open.
-            pass
+        # Do not hide the original write/replace error if a scanner still
+        # has the abandoned temporary file open.
+        system.unlink(temporary, ignore_errors=True)
 
 
 def _atomic_write_json(path: Path, value: Any) -> None:
@@ -1667,7 +1664,7 @@ def maintain_evaluation_storage(project_root: str | Path) -> dict:
             run_dir / "manifest.json"
         ).is_file():
             if not any(run_dir.iterdir()):
-                run_dir.rmdir()
+                system.rmdir(run_dir)
                 discarded.append(run_dir)
                 continue
             system.rename(run_dir, target)
@@ -1691,7 +1688,7 @@ def maintain_evaluation_storage(project_root: str | Path) -> dict:
         if not run_dir.is_dir() or run_dir.is_symlink():
             continue
         if not any(run_dir.iterdir()):
-            run_dir.rmdir()
+            system.rmdir(run_dir)
             discarded.append(run_dir)
             continue
         try:
@@ -1715,7 +1712,7 @@ def maintain_evaluation_storage(project_root: str | Path) -> dict:
                 moved.append((run_dir, archived))
     legacy_pointer = archive_root / "latest.json"
     if legacy_pointer.is_file() and not legacy_pointer.is_symlink():
-        legacy_pointer.unlink()
+        system.unlink(legacy_pointer)
     removed = prune_completed_evaluations(project_root)
     return {"moved": moved, "removed": removed, "discarded": discarded}
 
@@ -2851,7 +2848,7 @@ def _submit_candidate(
         persist_candidate(candidate)
         if completed:
             try:
-                checkpoint_path.unlink(missing_ok=True)
+                system.unlink(checkpoint_path, missing_ok=True)
             except OSError as exc:
                 log(f"Could not remove completed live checkpoint: {exc}")
         return

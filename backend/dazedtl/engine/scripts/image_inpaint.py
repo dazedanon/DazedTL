@@ -162,7 +162,7 @@ def _save_png(encoded: bytes, output: Path, *, replace: bool) -> None:
         temporary.write_bytes(encoded)
         system.replace(temporary, output)
     finally:
-        temporary.unlink(missing_ok=True)
+        system.unlink(temporary, ignore_errors=True)
 
 
 def _fill(args) -> dict:

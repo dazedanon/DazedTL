@@ -1998,12 +1998,12 @@ class TranslationTaskCore:
             # Clean up temporary files
             tmp_file = self.project_root / "csv.tmp"
             if tmp_file.exists():
-                tmp_file.unlink()
+                system.unlink(tmp_file)
 
             # Clean up any remaining temporary scripts
             temp_script = self.project_root / "temp_translation_script.py"
             if temp_script.exists():
-                temp_script.unlink()
+                system.unlink(temp_script)
 
             # Ensure all processes are terminated
             if self.running_processes:

@@ -252,7 +252,7 @@ def _save(Image, pixels, mode: str, output: Path) -> str:
             handle.write(data)
         system.replace(temporary, output)
     finally:
-        Path(temporary).unlink(missing_ok=True)
+        system.unlink(temporary, ignore_errors=True)
     return hashlib.sha256(data).hexdigest()
 
 

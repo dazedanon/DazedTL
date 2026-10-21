@@ -311,6 +311,5 @@ def _update_settings(root: Path, update) -> Path:
             os.fsync(handle.fileno())
         system.replace(temporary, path)
     finally:
-        if temporary.exists():
-            temporary.unlink()
+        system.unlink(temporary, ignore_errors=True)
     return path

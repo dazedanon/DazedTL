@@ -51,10 +51,7 @@ def ensure_linux_desktop_entry() -> None:
     try:
         legacy = desktop_path.parent / f"{LEGACY_APP_NAME}.desktop"
         if legacy.is_file() and legacy.resolve() != desktop_path.resolve():
-            try:
-                legacy.unlink()
-            except OSError:
-                pass
+            system.unlink(legacy, ignore_errors=True)
 
         if desktop_path.is_file() and desktop_path.read_text(encoding="utf-8") == content:
             return

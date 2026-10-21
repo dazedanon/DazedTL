@@ -323,7 +323,7 @@ def _atomic_write_bytes(path: Path, payload: bytes, mode: int | None = None) -> 
         os.chmod(temporary, mode)
         system.replace(temporary, path)
     except Exception:
-        temporary.unlink(missing_ok=True)
+        system.unlink(temporary, ignore_errors=True)
         raise
 
 
@@ -352,7 +352,7 @@ def install_plugin_files(
     except Exception as exc:
         try:
             if previous is None:
-                target.unlink(missing_ok=True)
+                system.unlink(target, missing_ok=True)
             else:
                 _atomic_write_bytes(target, previous, previous_mode)
         except Exception as rollback_exc:

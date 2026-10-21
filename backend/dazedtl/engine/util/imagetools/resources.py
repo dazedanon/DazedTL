@@ -516,7 +516,7 @@ def _fetch(
         system.replace(part, dest)
         _log(log, f"{dest.name} ready ({human(done)})")
     except BaseException:
-        part.unlink(missing_ok=True)
+        system.unlink(part, ignore_errors=True)
         raise
 
 

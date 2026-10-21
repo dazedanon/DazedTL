@@ -2,6 +2,7 @@
 import json
 import shutil
 from pathlib import Path
+from util import system
 from .project import atomic_json, digest
 from .image_document import desktop_block, portable_block
 
@@ -84,6 +85,6 @@ def attach(store, project_id, root, entry):
         if paths[key].is_file():
             shutil.copyfile(paths[key], dest)
         else:
-            dest.unlink(missing_ok=True)
+            system.unlink(dest, missing_ok=True)
     atomic_json(folder / 'image.json', data)
     return data['id']

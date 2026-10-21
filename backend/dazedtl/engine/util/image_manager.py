@@ -157,7 +157,7 @@ def _atomic_write(path: Path, data: bytes) -> None:
             handle.write(data)
         system.replace(temp_path, path)
     except Exception:
-        temp_path.unlink(missing_ok=True)
+        system.unlink(temp_path, ignore_errors=True)
         raise
 
 

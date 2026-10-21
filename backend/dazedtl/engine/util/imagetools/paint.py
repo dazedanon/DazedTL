@@ -24,6 +24,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from util import system
+
 # ``render`` imports ``composite`` from here, so the PNG helpers are pulled in
 # where they are used rather than at module scope - the two modules would
 # otherwise import each other.
@@ -138,10 +140,7 @@ def _write(path: Path, layer: np.ndarray | None) -> Path | None:
     from util.imagetools.render import save_rgba
 
     if is_clear(layer):
-        try:
-            path.unlink()
-        except OSError:
-            pass
+        system.unlink(path, ignore_errors=True)
         return None
     save_rgba(np.ascontiguousarray(layer), path)
     return path
