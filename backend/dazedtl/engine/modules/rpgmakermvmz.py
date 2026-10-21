@@ -5426,7 +5426,7 @@ def _searchCodes(page, pbar, jobList, filename):
                     lines = _code408_lines(translatedText, rawSource, block408.face)
                     # Over the lines it owns, adding and removing none.
                     _apply_original(codeList[groupStart408], rawSource)
-                    used = rpgmaker_blocks.write_help(codeList, block408, group408, lines)
+                    used = rpgmaker_blocks.write_help(codeList, group408, lines)
                     i = groupStart408 + used - 1
 
             ## Event Code: 108 (Script)

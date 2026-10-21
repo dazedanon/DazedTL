@@ -1544,16 +1544,20 @@ help_data.mkdir(parents=True)
                             {"code": 102, "indent": 0, "parameters": [["Stay"]]},
                             {"code": 402, "indent": 0, "parameters": [0, "Stay"]},
                             {"code": 108, "indent": 1, "parameters": ["選択肢ヘルプ"]},
-                            line(
-                                "所要時間:20分",
-                                "Takes about twenty minutes from start to end,",
-                                408,
-                            ),
+                            {
+                                **line(
+                                    "所要時間:20分",
+                                    "Takes about twenty minutes from start to end,",
+                                    408,
+                                ),
+                                "_rows": 2,
+                            },
                             {
                                 "code": 408,
                                 "indent": 1,
                                 "parameters": ["so watch it on a first playthrough."],
                             },
+                            {"code": 408, "indent": 1, "parameters": ["(1/3)"]},
                         )
                     ],
                 },
@@ -1583,6 +1587,47 @@ help_rows = qa._written(
     help_record, "Twenty minutes long, so watch it on your first run.", help_layout
 ).split("\n")
 assert len(help_rows) == 2 and max(map(len, help_rows)) <= 30, help_rows
+# A shorter correction leaves the rows it no longer needs empty at the end of
+# the comment, past the game's own page number, as translation writes help
+# (rpgmaker_blocks.write_help); undone, its text comes back.
+help_document = json.loads((help_data / "Map001.json").read_text(encoding="utf-8"))
+help_list = help_document["events"][1]["pages"][0]["list"]
+help_count = len(help_list)
+help_operation = {
+    "identity": help_record["identity"],
+    "live_pointers": help_record["live_pointers"],
+    "live_transform": "identity",
+    "expected": help_record["live"],
+    "replacement": qa._written(help_record, "Twenty minutes.", help_layout),
+    "message": True,
+}
+for undo in (False, True):
+    if undo:
+        help_operation["expected"], help_operation["replacement"] = (
+            help_operation["replacement"],
+            help_operation["expected"],
+        )
+    for help_pointer, help_value in qa._operation_writes(help_document, help_operation):
+        qa._set_pointer(help_document, help_pointer, help_value)
+    (help_data / "Map001.json").write_text(
+        json.dumps(help_document, ensure_ascii=False), encoding="utf-8"
+    )
+    (help_after,) = (
+        record
+        for record in rpgmaker_qa_manifest.build_manifest(help_data, "release")[
+            "records"
+        ]
+        if record["event_code"] == 408
+    )
+    assert help_after["identity"] == help_record["identity"], help_after
+    assert help_after["live"] == help_operation["replacement"], help_after
+    assert len(help_list) == help_count, help_list
+    if not undo:
+        assert [row["parameters"][0] for row in help_list[5:8]] == [
+            "Twenty minutes.",
+            "(1/3)",
+            "",
+        ], help_list
 
 
 def pace(lanes):

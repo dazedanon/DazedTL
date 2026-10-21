@@ -595,6 +595,13 @@ def _widens(correction: str, live: str, width: int) -> bool:
     return widest_line(correction) > max(width, widest_line(live))
 
 
+def _spread_over(event_code: int | None, live_pointers: list[str]) -> int:
+    """The commands a text is laid over as written: a message keeps the rows
+    it no longer needs, empty, while a choice's help (408) moves them out of
+    it (see rpgmaker_blocks.write_help)."""
+    return 1 if event_code == 408 else len(live_pointers)
+
+
 def _fit(
     correction: str,
     live: str,
@@ -771,7 +778,8 @@ def correction_problems(
     """
     problems = []
     written = _as_written(
-        correction, live, box, source, len(live_pointers), live_transform
+        correction, live, box, source, _spread_over(event_code, live_pointers),
+        live_transform,
     )
     if written == live:
         problems.append("the correction matches the current text")
@@ -3060,16 +3068,17 @@ def _written(
     boxes all its targets share, so it is escaped once, here: escaping
     escaped text again would turn a line break before "<" into a name
     code."""
+    rows = _spread_over(record.get("event_code"), record["live_pointers"])
     text = _as_written(
         text,
         str(record.get("live") or ""),
         _box(record, layout) if layout else None,
         record.get("source"),
-        len(record["live_pointers"]),
+        rows,
         record["live_transform"],
     )
-    if len(record["live_pointers"]) > 1 and _message_record(record):
-        return "\n".join(rewrap.spread(text, len(record["live_pointers"])))
+    if rows > 1 and _message_record(record):
+        return "\n".join(rewrap.spread(text, rows))
     return text
 
 
@@ -9338,6 +9347,9 @@ def _operation_writes(document: Any, operation: dict) -> list[tuple[str, Any]]:
                 f"Expected Show Text header changed for {operation['finding_id']}; rebuild QA"
             )
         return [(operation["pointer"], operation["replacement"])]
+    help_rows = _help_rows(document, operation)
+    if help_rows is not None:
+        return help_rows
     values = _operation_values(document, operation)
     current = "\n".join(values)
     if operation["live_transform"] in QUOTED_TRANSFORMS:
@@ -9348,6 +9360,50 @@ def _operation_writes(document: Any, operation: dict) -> list[tuple[str, Any]]:
             f"Expected value changed for {operation['identity']}; rebuild QA"
         )
     return list(zip(operation["live_pointers"], _operation_replacements(values, operation)))
+
+
+def _help_rows(document: Any, operation: dict) -> list[tuple[str, Any]] | None:
+    """The commands a correction of a choice's help writes, as translation
+    writes help (see rpgmaker_blocks.write_help): over the rows its
+    translation owns now, which an earlier correction may have changed,
+    moving the rows it no longer needs past the game's own; None for other
+    text."""
+    pointers = operation.get("live_pointers") or []
+    if operation.get("live_transform") != "identity" or not pointers:
+        return None
+    listed, _slash, place = pointers[0].rpartition("/parameters/0")
+    listed, _slash, index = listed.rpartition("/")
+    if place or not index.isdigit():
+        return None
+    try:
+        commands = resolve_pointer(document, listed)
+    except (KeyError, IndexError, TypeError, ValueError):
+        return None
+    anchor = int(index)
+    if (
+        not isinstance(commands, list)
+        or anchor >= len(commands)
+        or blocks.code(commands[anchor]) != 408
+        or "_original" not in commands[anchor]
+        or blocks.help_branch(commands, anchor) is None
+    ):
+        return None
+    rows = blocks.owned(commands, anchor)
+    if "\n".join(blocks.text(commands[at]) for at in rows) != operation["expected"]:
+        raise ValueError(
+            f"Expected value changed for {operation['identity']}; rebuild QA"
+        )
+    # The rows it writes and moves: its own and the comment's after them.
+    start, stop = rows[0], (blocks.run(commands, rows[-1], 408) or rows)[-1] + 1
+    written = copy.deepcopy(commands[start:stop])
+    blocks.write_help(
+        written, tuple(at - start for at in rows), operation["replacement"].split("\n")
+    )
+    return [
+        (f"{listed}/{start + at}", command)
+        for at, (command, before) in enumerate(zip(written, commands[start:stop]))
+        if command != before
+    ]
 
 
 def _operation_values(document: Any, operation: dict) -> list[str]:

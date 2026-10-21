@@ -536,12 +536,14 @@ def write_text(commands: list, rows: tuple[int, ...], value: str, *, joined: boo
         commands[at]["parameters"] = [row]
 
 
-def write_help(commands: list, block: Block, rows: tuple[int, ...], lines: list[str]) -> int:
-    """Write a comment's translation, *lines*, over the *rows* it owns
-    without adding or removing a command, and record on the first, which
-    keeps its Japanese, how many rows it holds. Rows it no longer needs move
-    to the end of the comment, where an empty row shows nothing, so the
-    comment reads as the translation lays out. Returns the rows it holds."""
+def write_help(commands: list, rows: tuple[int, ...], lines: list[str]) -> int:
+    """Write a comment's text, *lines*, over the *rows* that hold it without
+    adding or removing a command, and record on the first, when it keeps the
+    Japanese, how many rows it holds. Rows it no longer needs move past the
+    game's own rows after it, such as a page number, to the end of the
+    comment or the next translation, where an empty row shows nothing, so
+    the comment reads as the text lays out. A translation keeps its place:
+    Text QA and saved notes know it by it. Returns the rows it holds."""
     used = min(len(rows), max(1, len(lines)))
     for at, value in zip(rows, spread("\n".join(lines), used)):
         commands[at]["parameters"] = [value]
@@ -552,10 +554,8 @@ def write_help(commands: list, block: Block, rows: tuple[int, ...], lines: list[
     else:
         commands[rows[0]].pop(ROWS, None)
     spare = rows[used:]
-    later = [at for at in block.rows if at > rows[-1]]
+    later = run(commands, rows[-1], 408)
     if spare and any(text(commands[at]).strip() for at in later):
-        # The spare rows go past the comment's later rows; every command
-        # stays in the list.
         span = range(spare[0], later[-1] + 1)
         commands[span.start : span.stop] = [commands[at] for at in span if at not in spare] + [
             commands[at] for at in spare

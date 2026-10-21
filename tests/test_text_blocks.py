@@ -7,7 +7,7 @@ from pathlib import Path
 
 from util import rpgmaker_blocks as blocks
 from util.rpgmaker_markers import comment_markers, data_plugins, game_plugins
-from util.rpgmaker_rewrap import wrap_help
+from util.rpgmaker_rewrap import Layout, fit_document, wrap_help
 
 
 def command(code, parameters, indent=0, **extra):
@@ -112,8 +112,7 @@ class TextBlockTests(unittest.TestCase):
             ]
         )
         count = len(listed)
-        block = blocks.block_at(listed, 5)
-        used = blocks.write_help(listed, block, (5, 6, 7), ["Short help."])
+        used = blocks.write_help(listed, (5, 6, 7), ["Short help."])
         self.assertEqual(used, 1)
         self.assertEqual(len(listed), count)
         self.assertEqual(
@@ -122,9 +121,59 @@ class TextBlockTests(unittest.TestCase):
         )
         self.assertEqual(listed[5][blocks.ROWS], 1)
         # Lines past its rows stack in its last one.
-        block = blocks.block_at(listed, 5)
-        blocks.write_help(listed, block, (5,), ["One", "Two"])
+        blocks.write_help(listed, (5,), ["One", "Two"])
         self.assertEqual(listed[5]["parameters"], ["One\nTwo"])
+        # A later translation keeps its place, which Text QA and saved notes
+        # know it by; the spare rows stop before it.
+        listed = choosing(
+            [
+                command(408, ["Long help"], 1, _original="長い説明", _rows=2),
+                command(408, ["in two rows."], 1),
+                command(408, ["(1/3)"], 1),
+                command(408, ["Watch it first."], 1, _original="初回は見て"),
+            ]
+        )
+        blocks.write_help(listed, (5, 6), ["Short help."])
+        self.assertEqual(
+            [row["parameters"][0] for row in listed[5:9]],
+            ["Short help.", "(1/3)", "", "Watch it first."],
+        )
+        self.assertEqual(listed[8]["_original"], "初回は見て")
+
+    def test_help_fitted_shorter_leaves_its_spare_rows_after_the_games_own(self):
+        # Fitted to fewer rows than its translation owns, help reads on into
+        # the page number the game shows below it, with no blank row between.
+        listed = choosing(
+            [
+                command(
+                    408,
+                    [
+                        "Takes about twenty minutes from start to end, so watch it first."
+                    ],
+                    1,
+                    _original="所要時間は二十分です。初回は見てください。",
+                    _rows=3,
+                ),
+                command(408, ["Really."], 1),
+                command(408, ["Yes."], 1),
+                command(408, ["(1/3)"], 1),
+            ]
+        )
+        count = len(listed)
+        layout = Layout(50, 50, 74, 45, 4)
+        self.assertTrue(fit_document({"list": listed}, "Map001.json", layout).changes)
+        self.assertEqual(len(listed), count)
+        self.assertEqual(
+            [row["parameters"][0] for row in listed[5:9]],
+            [
+                "Takes about twenty minutes from start to end,",
+                "so watch it first. Really. Yes.",
+                "(1/3)",
+                "",
+            ],
+        )
+        self.assertEqual(listed[5][blocks.ROWS], 2)
+        self.assertFalse(fit_document({"list": listed}, "Map001.json", layout).changes)
 
     def test_list_items_of_the_japanese_keep_a_row_each_beside_a_face(self):
         help_text = wrap_help(

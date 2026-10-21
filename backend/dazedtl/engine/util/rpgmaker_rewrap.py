@@ -721,7 +721,9 @@ class _Slot:
     """One display value in a document: where it is, its box, its source and
     how to read and write it. A message (*run*, the parameters of the
     commands that hold its rows) reads as one text and is fitted over the
-    same commands (see :func:`fit_run`)."""
+    same commands (see :func:`fit_run`). A choice's help is written over its
+    comment's *rows* in *commands* as translation writes it (see
+    :func:`util.rpgmaker_blocks.write_help`)."""
 
     pointer: str
     box: Box
@@ -729,6 +731,8 @@ class _Slot:
     owner: Any
     key: Any
     run: tuple[list, ...] = ()
+    commands: list | None = None
+    rows: tuple[int, ...] = ()
 
     def read(self):
         if self.run:
@@ -742,8 +746,18 @@ class _Slot:
             return fit_run([parameters[0] for parameters in self.run], self.box, self.source)
         return [fit_value(self.owner[self.key], self.box, source=self.source)]
 
+    def written(self, texts: list[str]) -> str:
+        """The value *texts* leave once written: help without the rows it
+        no longer needs, which move out of it."""
+        lines = "\n".join(texts).split("\n")
+        while self.rows and len(lines) > 1 and not lines[-1].strip():
+            lines.pop()
+        return "\n".join(lines)
+
     def write(self, texts: list[str]) -> None:
-        if self.run:
+        if self.rows:
+            blocks.write_help(self.commands, self.rows, self.written(texts).split("\n"))
+        elif self.run:
             for parameters, value in zip(self.run, texts):
                 parameters[0] = value
         else:
@@ -827,9 +841,10 @@ def _command_slots(commands: list, pointer: str, layout: Layout) -> Iterator[_Sl
             if block.kind == blocks.MESSAGE and _MARKER.match(params[0]):
                 shown = Box(MARKED_WIDTH, box.rows, True, "message")
             run = tuple(commands[at]["parameters"] for at in part.rows)
+            rows = part.rows if block.kind == blocks.HELP else ()
             slots.append((first, _Slot(
                 f"{pointer}/{first}/parameters/0", shown,
-                blocks.source(commands, part), params, 0, run,
+                blocks.source(commands, part), params, 0, run, commands, rows,
             )))
     for index, command in enumerate(commands):
         if not isinstance(command, dict):
@@ -909,17 +924,21 @@ def fit_document(
     widths moved. Japanese left untranslated is never rewrapped. A message
     keeps its commands (see :func:`fit_run`)."""
     report = FitReport()
-    for slot, value in list(_fitted_slots(document, file_name, layout, areas)):
+    # Last first: writing help moves the rows after it (see _Slot).
+    for slot, value in reversed(list(_fitted_slots(document, file_name, layout, areas))):
         texts = slot.fitted()
         written = "\n".join(texts)
         if written != value:
             slot.write(texts)
+            written = slot.written(texts)
             report.changes.append(
                 {"file": file_name, "pointer": slot.pointer, "before": value, "after": written}
             )
         reason = misfit(written, slot.box)
         if reason:
             report.misfits.append({"file": file_name, "pointer": slot.pointer, "reason": reason})
+    report.changes.reverse()
+    report.misfits.reverse()
     return report
 
 
