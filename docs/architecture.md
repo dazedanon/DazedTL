@@ -402,7 +402,7 @@ Ace data is translated by the MV/MZ engine with its `VXACE` option set from the 
 
 Each Windows rule lives where code cannot skip it, because the bugs it prevents never show on Linux.
 Python touches files and starts processes through the [platform layer](../backend/dazedtl/system.py), whose docstring lists its rules; Ruff and [platform_calls](../scripts/platform_calls.py) reject the calls it replaces anywhere else, the engine included, and the Python tests fail on text opened without an encoding ([checks](development.md#checks)).
-`held_open` makes a file look held by another reader, as Windows refuses to replace, rename or delete one then, and a test drives each kind of writer through it.
+`held_open` makes a file look held by another process, as Windows refuses to replace, rename, delete or open one then, and a test drives each kind of writer and reader through it.
 [paths](../scripts/paths.mjs) rejects tracked names that differ only in case, which Windows finds as one file, and paths over the Windows length budget.
 Code on a poll path starts no process: Defender makes each start slow, and one user's jobs froze for 17 seconds while every snapshot ran 22 Git commands.
 A worker's parent on Windows is the virtual environment's launcher stub, so ownership checks use [launched_by](../backend/dazedtl/translation/ownership.py), never `os.getppid`.

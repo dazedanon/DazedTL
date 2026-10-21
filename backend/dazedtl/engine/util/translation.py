@@ -1446,8 +1446,7 @@ def _load_var_map():
     _var_map = {}
     try:
         if VAR_MAP_FILE.exists():
-            with open(VAR_MAP_FILE, "r", encoding="utf-8") as f:
-                _var_map = json.load(f)
+            _var_map = json.loads(system.read_bytes(VAR_MAP_FILE))
     except Exception:
         _var_map = {}
     return _var_map
@@ -1465,8 +1464,7 @@ def _save_var_map():
         disk_map = {}
         try:
             if VAR_MAP_FILE.exists():
-                with open(VAR_MAP_FILE, "r", encoding="utf-8") as f:
-                    disk_map = json.load(f)
+                disk_map = json.loads(system.read_bytes(VAR_MAP_FILE))
         except Exception:
             disk_map = {}
         disk_map.update(_var_map)
@@ -1633,11 +1631,10 @@ def _read_batch_file(path, *, strict=False):
     error = None
     try:
         if path.exists():
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if isinstance(data, dict):
-                    return data
-                error = "document is not a JSON object"
+            data = json.loads(system.read_bytes(path))
+            if isinstance(data, dict):
+                return data
+            error = "document is not a JSON object"
     except Exception as exc:
         error = str(exc)
     if error is not None:

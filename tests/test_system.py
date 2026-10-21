@@ -6,11 +6,13 @@ import os
 import stat
 import subprocess
 import sys
+import threading
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from dazedtl import storage, system
+from dazedtl.translation.files import read_json
 
 from tests.engine import engine_package
 
@@ -118,3 +120,27 @@ class HeldFileTests(unittest.TestCase):
                     else:
                         self.assertEqual(json.loads(path.read_bytes()), "new")
                         self.assertEqual(os.listdir(folder), ["file.json"])
+
+    def test_each_reader_waits_for_a_writer_replacing_its_file(self):
+        # Windows refuses to open a file while it is being replaced, which
+        # failed a Batch estimate reading job.json as its worker saved it.
+        from desktop.backend.manual import ManualJobs
+
+        record = {"id": "run", "version": 2, "status": "done"}
+        readers = {
+            "bytes": system.read_bytes,
+            "text": system.read_text,
+            "checked JSON": read_json,
+            "manual runs": lambda path: ManualJobs(
+                path.parents[3], threading.Lock()
+            ).load_saved(),
+        }
+        with TemporaryDirectory() as root:
+            for name, read in readers.items():
+                with self.subTest(name):
+                    path = Path(root, name, "manual/jobs/run/job.json")
+                    path.parent.mkdir(parents=True)
+                    path.write_text(json.dumps(record), encoding="utf-8")
+                    with system.held_open(path, attempts=3) as reader:
+                        read(path)
+                    self.assertEqual(reader.attempts, 0)
