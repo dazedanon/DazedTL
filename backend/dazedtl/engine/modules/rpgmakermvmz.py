@@ -2304,7 +2304,9 @@ def translateLBNames(events):
     lb_events = []  # List of (event_index, original_name)
     for idx, event in enumerate(events):
         for label in rpgmaker_scope.labels(event):
-            if label.field == "name" and _has_japanese_text(label.text):
+            if label.field == "name" and (
+                _text_needs_translation if SOURCE_TEXT else _has_japanese_text
+            )(label.text):
                 lb_events.append((idx, label.text))
     
     # Batch translate if we have any
