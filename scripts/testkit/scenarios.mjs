@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { python } from "../dependencies.mjs";
+import { until } from "./cdp.mjs";
 import {
   connect,
   openGame,
@@ -67,8 +68,19 @@ const translateAll = [
     async ({ page }) => {
       // Lines a variant has the stand-in refuse fail their run.
       await translateTask(page, "Maps & events", { failed: true });
-      if ((await page.text()).match(/Apply \(\d+\)/))
-        await applyTask(page, "Maps & events");
+      // A run that saved nothing new leaves Apply disabled, or away when it
+      // saved nothing at all.
+      const apply = /^Apply \(\d+\)$/;
+      const next = await until("Maps & events' Apply to settle", async () => {
+        if (await page.locate(apply)) return "apply";
+        const text = await page.text();
+        return (
+          (!/Apply \(\d+\)/.test(text) ||
+            text.includes("Saved translations applied.")) &&
+          "skip"
+        );
+      });
+      if (next === "apply") await applyTask(page, "Maps & events");
     },
   ],
 ];
@@ -136,7 +148,17 @@ const batch = [
       await page.click("Database files");
       await page.click("Batch");
       await page.click("Translate");
-      await page.click("Submit Batch", 5 * 60_000);
+      // An estimate that fails never enables Submit Batch; say why at once.
+      const ready = await until(
+        "an enabled Submit Batch control",
+        async () =>
+          ((await page.locate("Submit Batch")) && "ready") ||
+          /Translation could not start\n+(.+)/.exec(await page.text())?.[1],
+        5 * 60_000,
+      );
+      if (ready !== "ready")
+        throw new Error(`The Batch could not start: ${ready}`);
+      await page.click("Submit Batch");
       await page.waitText("Waiting for provider results");
     },
   ],
@@ -212,6 +234,17 @@ const assistantLed = [
   ],
 ];
 
+const assistantWrite = [
+  "The assistant organizes and translates all the text, then writes it into the game",
+  async ({ page, state }) => {
+    await assistant(page, state, "organize");
+    const run = JSON.parse(await assistant(page, state, "translate"));
+    if (run.status !== "complete")
+      throw new Error(`Run ${run.id}: ${run.status}, ${run.message || ""}`);
+    await assistant(page, state, "write");
+  },
+];
+
 /**
  * @type {Record<string, { description: string, game?: string,
  *   from?: "previous", upgrade?: boolean,
@@ -244,6 +277,12 @@ export const scenarios = {
     description:
       "An Assistant-led project, the assistant translating itself: set up, text organized, the first request translated and the rest waiting.",
     steps: () => assistantLed,
+  },
+  "assistant-written": {
+    description:
+      "An Assistant-led project the assistant translated whole and wrote into the game, its choice labels and help markers kept in Japanese.",
+    game: "choice-help",
+    steps: () => [...assistantLed.slice(0, 2), assistantWrite],
   },
   "batch-waiting": {
     description:

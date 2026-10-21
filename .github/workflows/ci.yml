@@ -141,7 +141,7 @@ jobs:
         scenarios:
           - playtested
           - fresh opened set-up translated qa-done
-          - assistant-led batch-waiting upgraded
+          - assistant-led assistant-written batch-waiting upgraded
     steps:
       - run: git config --global core.autocrlf false
       - uses: actions/checkout@v7

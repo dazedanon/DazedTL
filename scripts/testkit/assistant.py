@@ -7,7 +7,9 @@ tells an assistant to, and game text moves only through DazedTL's operations.
 STEP is setup (identify, back up, prepare, set up Git), organize (list the
 game's Japanese as source units and organize them into a run), translate
 [--requests N] (answer the run's requests in order, the first N only when
-given), write (write every saved translation into the game) or checkpoint.
+given), write (write every saved translation into the game, checking that
+the choice labels and help markers the game finds by their Japanese stay) or
+checkpoint.
 HELPER is a JSON list: the project helper's command without its subcommand.
 """
 
@@ -199,10 +201,11 @@ class Assistant:
             by_file.setdefault(name, {})["/" + pointer] = value
         staged = self.work / "staged" / self.data
         staged.mkdir(parents=True, exist_ok=True)
+        markers = self.help_markers()
         for name, pointers in sorted(by_file.items()):
-            document = json.loads(
-                (self.game / self.data / f"{name}.json").read_text(encoding="utf-8-sig")
-            )
+            game_file = self.game / self.data / f"{name}.json"
+            document = json.loads(game_file.read_text(encoding="utf-8-sig"))
+            before = list(kept(document, markers=markers))
             for pointer, value in pointers.items():
                 set_pointer(document, pointer, value)
             (staged / f"{name}.json").write_text(
@@ -216,6 +219,19 @@ class Assistant:
                     "output": f"{self.data}/{name}.json",
                 },
             )
+            # The labels and markers the game finds by their Japanese stay; a
+            # write may add or remove commands, so they compare in order.
+            after = list(
+                kept(
+                    json.loads(game_file.read_text(encoding="utf-8-sig")),
+                    markers=markers,
+                )
+            )
+            if [value for _, value in after] != [value for _, value in before]:
+                raise SystemExit(
+                    f"write_rpgmaker changed kept text in {name}: "
+                    + json.dumps({"before": before, "after": after}, ensure_ascii=False)
+                )
 
     def checkpoint(self):
         self.operation(
@@ -224,30 +240,33 @@ class Assistant:
         )
 
 
+def kept_parameters(node, markers):
+    """The parameters of a command a structural extractor keeps: a choice
+    branch's label (402), which mirrors its choice while the engine branches
+    on the index, and a choice help comment's head (108), the marker
+    MPP_ChoiceEX finds the help by."""
+    code, parameters = node.get("code"), node.get("parameters")
+    if code == 402:
+        return {1}
+    if code == 108 and parameters and parameters[0] in markers:
+        return {0}
+    return set()
+
+
 def walk(node, pointer="", markers=frozenset()):
-    """Every Japanese string, leaving out what a structural extractor keeps:
-    a choice branch's label (402), which mirrors its choice while the engine
-    branches on the index, a choice help comment's head (108), the marker
-    MPP_ChoiceEX finds the help by, and move routes (205, their steps
-    repeated in 505, and an event page's own), whose scripts players never
-    read."""
+    """Every Japanese string, leaving out the kept parameters and move routes
+    (205, their steps repeated in 505, and an event page's own), whose
+    scripts players never read."""
     if isinstance(node, dict):
-        code, parameters = node.get("code"), node.get("parameters")
-        if code in {205, 505}:
+        if node.get("code") in {205, 505}:
             return
-        kept = (
-            {1}
-            if code == 402
-            else {0}
-            if code == 108 and parameters and parameters[0] in markers
-            else set()
-        )
+        indexes = kept_parameters(node, markers)
         for key, value in node.items():
             if key in {"_original", "moveRoute"}:
                 continue
-            if key == "parameters" and kept:
+            if key == "parameters" and indexes:
                 for index, item in enumerate(value):
-                    if index not in kept:
+                    if index not in indexes:
                         yield from walk(item, f"{pointer}/{key}/{index}", markers)
             else:
                 yield from walk(value, f"{pointer}/{key}", markers)
@@ -256,6 +275,20 @@ def walk(node, pointer="", markers=frozenset()):
             yield from walk(value, f"{pointer}/{index}", markers)
     elif isinstance(node, str) and JAPANESE.search(node):
         yield pointer, node
+
+
+def kept(node, pointer="", markers=frozenset()):
+    """Each kept parameter, by pointer."""
+    if isinstance(node, dict):
+        for index in kept_parameters(node, markers):
+            yield f"{pointer}/parameters/{index}", node["parameters"][index]
+        children = ((key, value) for key, value in node.items() if key != "_original")
+    elif isinstance(node, list):
+        children = enumerate(node)
+    else:
+        return
+    for key, value in children:
+        yield from kept(value, f"{pointer}/{key}", markers)
 
 
 def set_pointer(document, pointer, value):
