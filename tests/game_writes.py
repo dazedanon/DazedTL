@@ -44,9 +44,6 @@ TARGETS = {
 # Writers that change a game's files without the gateway yet, each with why;
 # routing one through it removes its row.
 OUTSIDE = {
-    # Assistant-led's header review writes the corrected nameplates the
-    # assistant reviewed straight into the game's data.
-    "translation/header_review.py:apply": "Assistant-led",
     # A restored backup is a new copy of the game, never the game itself.
     "translation/backups.py:_extract": "backups",
     "translation/backups.py:_copy": "backups",

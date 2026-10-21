@@ -488,7 +488,8 @@ class GuidedContext:
             headers = read_json(artifact).get("headers")
             if not isinstance(headers, dict):
                 raise ValueError("Scan again; this scan did not check headers.")
-            header_review.apply(native["source"], native["data"], headers)
+            with self.guided.backend.game_write(native["source"], native["id"]) as game:
+                header_review.apply(native["source"], native["data"], headers, game)
             return self.speakers(project_id)
         if scan:
             self.guided.clean_options(project_id)

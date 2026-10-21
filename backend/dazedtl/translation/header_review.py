@@ -12,7 +12,7 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 
-from dazedtl.storage import write_bytes, write_json
+from dazedtl.storage import write_json
 
 from .files import decode_json, digest, project_path, read_json
 
@@ -212,8 +212,9 @@ def _reviews(report, flags, faces):
     return reviews
 
 
-def apply(source, data, headers):
-    """Fix the headers the assistant's report fixes and record every decision."""
+def apply(source, data, headers, game):
+    """Fix the headers the assistant's report fixes, writing them through
+    `game`, the game-write gateway's write, and record every decision."""
     source, data = Path(source), Path(data)
     report = read_json(project_path(source, REPORT), limit=2_000_000)
     flags = {(flag["file"], flag["pointer"]): flag for flag in headers["flags"]}
@@ -265,7 +266,7 @@ def apply(source, data, headers):
         for path, (raw, document, values) in writes.items()
     }
     for path, payload in payloads.items():
-        write_bytes(path, payload)
+        game.put(path.relative_to(source).as_posix(), payload)
     # Fixes stay listed after a later scan stops flagging them; keeps
     # describe the latest review.
     earlier = recorded(source)
