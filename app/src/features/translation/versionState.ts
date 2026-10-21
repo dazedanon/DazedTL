@@ -139,8 +139,11 @@ export function versionSession(
     (!git?.original_version ||
       typeof mutation.result?.version !== "string" ||
       mutation.result.version === git.original_version);
+  // A comparison made after a canceled update offers that update again.
   const aborted =
-    mutation?.action === "version_abort" && mutation.status === "complete";
+    mutation?.action === "version_abort" &&
+    mutation.status === "complete" &&
+    !(candidate && current.indexOf(candidate) < current.indexOf(mutation));
   const matchesStage =
     !stage ||
     (stage.status === "complete" &&

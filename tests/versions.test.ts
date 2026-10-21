@@ -91,10 +91,13 @@ test("a new or failed release attempt cannot offer an older comparison for appli
     undefined,
   );
   assert.equal(versionSession([applied, preview, stage], git).finished, true);
+  const abort = job("abort", "version_abort");
+  assert.equal(versionSession([abort, preview, stage], git).preview, undefined);
+  // Comparing again after the cancel offers the update again.
+  const again = { ...preview, id: "preview-2" };
   assert.equal(
-    versionSession([job("abort", "version_abort"), preview, stage], git)
-      .preview,
-    undefined,
+    versionSession([again, abort, preview, stage], git).preview?.id,
+    again.id,
   );
   assert.equal(
     versionSession(

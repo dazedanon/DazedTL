@@ -17,7 +17,11 @@ from util.len_git import setup_git
 from util.len_translation import LenProject
 from util.project_preparation import prepare_rpgmaker_patch
 from util.rpgmaker_plugin_registry import plugin_entries
-from util.version_update import apply_official_update, preview_official_update
+from util.version_update import (
+    abort_update,
+    apply_official_update,
+    preview_official_update,
+)
 from util.version_update.release_layout import inspect_release, stage_release
 from util.version_update.text_changes import text_changes
 
@@ -324,17 +328,30 @@ for path in ("js/plugins.js", "js/plugins/TitleMessage.js"):
         0,
         1,
     ), text[path]
-result = apply_official_update(
-    game,
-    newer.parent,
-    "1.03",
-    expected_tree=preview.proposed_tree,
-    expected_original_commit=preview.original_commit,
-    expected_translation_commit=preview.translation_commit,
-    expected_asset_manifest=preview.proposed_asset_manifest,
-    expected_baseline_asset_manifest=preview.baseline_asset_manifest,
-    patch_overlay=True,
+applying = {
+    "expected_tree": preview.proposed_tree,
+    "expected_original_commit": preview.original_commit,
+    "expected_translation_commit": preview.translation_commit,
+    "expected_asset_manifest": preview.proposed_asset_manifest,
+    "expected_baseline_asset_manifest": preview.baseline_asset_manifest,
+    "patch_overlay": True,
+}
+# An apply stopped at Git's conflict, then cancelled: the original branch kept
+# the release and its asset record waited, so the game read 1.03 and refused
+# every write. Cancelling leaves the game as before, and it applies again.
+stopped = apply_official_update(
+    game, newer.parent, "1.03", auto_resolve=False, **applying
 )
+assert stopped.pending_conflicts, stopped
+status = abort_update(game)
+assert (
+    status.pending_cherry_pick,
+    status.asset_sync_pending,
+    status.original_commit,
+    status.original_version,
+    status.translation_commit,
+) == (False, False, preview.original_commit, "1.02", preview.translation_commit), status
+result = apply_official_update(game, newer.parent, "1.03", **applying)
 assert result.complete, result
 merged = json.loads(common_events.read_text(encoding="utf-8"))
 translation[3]["list"][-2] = official[3]["list"][-2]

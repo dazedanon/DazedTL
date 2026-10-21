@@ -3238,6 +3238,21 @@ def abort_update(translated_game: str | Path) -> RepositoryStatus:
     status = inspect_repository(game)
     if not status.repo_root or not status.pending_cherry_pick:
         raise GitWorkflowError("There is no pending cherry-pick to abort")
-    _configure_exact_tree_repo(status.repo_root)
-    _run_git(status.repo_root, "cherry-pick", "--abort")
+    repo = status.repo_root
+    _configure_exact_tree_repo(repo)
+    picked = _run_git(repo, "rev-parse", "CHERRY_PICK_HEAD").stdout.strip()
+    # The update being cancelled moved the original branch to its release and
+    # left its assets to synchronize once applied; cancelling puts both back.
+    plan = _load_pending_asset_plan(repo, status.game_prefix)
+    _run_git(repo, "cherry-pick", "--abort")
+    if plan is not None and plan["original_commit"] == picked:
+        if status.original_commit == picked:
+            _run_git(
+                repo,
+                "update-ref",
+                f"refs/heads/{ORIGINAL_BRANCH}",
+                _run_git(repo, "rev-parse", f"{picked}^").stdout.strip(),
+                picked,
+            )
+        _clear_pending_asset_plan(repo, status.game_prefix)
     return inspect_repository(game)
