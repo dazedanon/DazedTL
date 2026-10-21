@@ -24,9 +24,6 @@ ADVANCED_CODES = {
     "CODE355655",
     "CODE657",
     "CODE356",
-    "CODE320",
-    "CODE324",
-    "CODE325",
     "CODE108",
 }
 MANIFEST = ".dazedtl/guided/runtime-manifest.json"

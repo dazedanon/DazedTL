@@ -13,19 +13,21 @@ CODES = (
     "CODE355655",
     "CODE356",
     "CODE657",
-    "CODE320",
-    "CODE324",
-    "CODE325",
     "CODE108",
 )
+# Sources findings saved before Maps & events translated name, nickname and
+# profile changes still report; they are read as covered.
+RETIRED = frozenset({"CODE320", "CODE324", "CODE325"})
 SELECTORS = {"CODE357": "ENABLED_PLUGINS_357", "CODE355655": "ENABLED_PATTERNS_355655"}
-# Each code's built-in handlers keeping spaces or joining words with U+00A0,
-# and its exact commands left untranslated.
+# Plugins split these codes' commands on spaces. Their findings say how each
+# built-in handler joins a translation's words and which exact commands stay
+# untranslated, kept in these options.
 WORDED = {
     "CODE356": ("SPACES_356", "NBSP_356", "KEEP_356"),
     "CODE108": ("SPACES_108", "NBSP_108", "KEEP_108"),
 }
-# Each code's own patterns or handlers for this game; see
+# Findings for these codes can add the game's own patterns or handlers for
+# text nothing installed captures, kept in these options; see
 # engine/util/custom_patterns.py.
 CUSTOM = {
     "CODE357": "CUSTOM_357",
@@ -46,9 +48,6 @@ LABELS = (
     "Script text (355/655)",
     "MV plugin commands (356)",
     "Picture labels (657)",
-    "Actor name changes (320)",
-    "Nickname changes (324)",
-    "Profile changes (325)",
     "Comment labels (108)",
 )
 COVERAGE = {
@@ -57,9 +56,6 @@ COVERAGE = {
     "CODE355655": "Registered patterns translate their captured text. Built-in script handlers also apply. Variable-writing patterns are not restricted by the Code 122 variable IDs. Findings can add this game's own patterns, which take a line before the others.",
     "CODE356": "One switch enables all built-in MV command handlers. Findings can name exact commands to leave untranslated, how each handler joins words, and this game's own patterns, which take a command before the built-in handlers; there is no per-event filter.",
     "CODE657": "Processes the value of メッセージ = ... entries. Other keys are internal and skipped. There is no per-occurrence filter.",
-    "CODE320": "Processes actor-name changes throughout selected files. There is no per-actor filter. AutoNamePopup can also process supported actor names independently.",
-    "CODE324": "Processes nickname changes throughout selected files. There is no per-actor filter.",
-    "CODE325": "Processes profile changes throughout selected files. There is no per-actor filter.",
     "CODE108": "Processes the installed comment/notetag patterns throughout selected files. Findings can name exact comments to leave untranslated, how each marker joins words, and this game's own patterns, which take a comment before the installed ones; there is no per-pattern checkbox.",
 }
 

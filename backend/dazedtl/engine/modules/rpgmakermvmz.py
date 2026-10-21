@@ -5795,8 +5795,10 @@ def _searchCodes(page, pbar, jobList, filename):
             ### Event Code: 320 Change Actor Name
             if codeList[i].get("code") == 320 and (AUTONAMEPOPUP101 or CODE320):
                 params = codeList[i].get("parameters") or []
+                # Maps & events translates every name change; AutoNamePopup
+                # alone, those of the actors it shows.
                 if len(params) < 2 or (
-                    AUTONAMEPOPUP101 and params[0] not in _autonamepopup_actor_ids()
+                    not CODE320 and params[0] not in _autonamepopup_actor_ids()
                 ):
                     i += 1
                     continue
@@ -5805,8 +5807,8 @@ def _searchCodes(page, pbar, jobList, filename):
                     i += 1
                     continue
 
-                # Definitely don't want to mess with files
-                if "■" in jaString or "_" in jaString:
+                # A name some games read as a file name (util/rpgmaker_scope).
+                if rpgmaker_scope.FILE_NAME.search(_param_source(codeList[i], 1)):
                     i += 1
                     continue
 

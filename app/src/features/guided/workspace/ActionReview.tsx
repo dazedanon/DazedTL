@@ -262,14 +262,6 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
             )}
           </>
         )}
-        {paid &&
-          preview.options.phase === "advanced" &&
-          values.engine_options.AUTONAMEPOPUP101 === true && (
-            <p>
-              Saved AutoNamePopup handling also processes supported actor-name
-              changes independently of source 320.
-            </p>
-          )}
         {paid && preview.options.phase === "variables" && (
           <p>
             Reviewed literal-based updates apply to all matching quoted literals

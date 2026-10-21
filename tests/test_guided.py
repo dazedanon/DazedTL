@@ -3415,7 +3415,9 @@ class GuidedTests(unittest.TestCase):
                 **({"spacing": {}, "keep": []} if key in event_text.WORDED else {}),
                 **({"custom": []} if key in event_text.CUSTOM else {}),
             }
-            for key in event_text.CODES
+            # As an earlier release saved them, with the name, nickname and
+            # profile changes Maps & events now translates.
+            for key in (*event_text.CODES, *sorted(event_text.RETIRED))
         }
         report["sources"]["CODE357"].update(
             decision="enable",

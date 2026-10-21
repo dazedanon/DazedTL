@@ -75,12 +75,6 @@ export function EventTextSources({
           />
         </ActionRow>
       </ActionList>
-      {values.AUTONAMEPOPUP101 === true && (
-        <p className="muted">
-          Saved AutoNamePopup speaker handling also processes supported
-          actor-name changes, even with source 320 off.
-        </p>
-      )}
       <div className="translation-sources-grid">
         <fieldset
           disabled={disabled}

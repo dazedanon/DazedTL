@@ -19,9 +19,6 @@ export const advanced = [
   "ENABLED_PATTERNS_355655",
   "CODE657",
   "CODE356",
-  "CODE320",
-  "CODE324",
-  "CODE325",
   "CODE108",
 ];
 export const advancedCodes = advanced.filter(

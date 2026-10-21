@@ -30,6 +30,11 @@ PHASE1_CONFIG = {
     "CODE401": True,
     "CODE405": True,
     "CODE102": True,
+    # Actor name, nickname and profile changes, which players read as they
+    # read the database's own (util/rpgmaker_scope).
+    "CODE320": True,
+    "CODE324": True,
+    "CODE325": True,
     # Comment continuations are project-dependent: plugins sometimes display
     # them, but most games use them only as internal editor notes.
     "CODE408": False,
@@ -39,9 +44,6 @@ PHASE1_CONFIG = {
     "CODE357": False,
     "CODE657": False,
     "CODE356": False,
-    "CODE320": False,
-    "CODE324": False,
-    "CODE325": False,
     "CODE111": False,
     "CODE108": False,
 }
@@ -73,6 +75,10 @@ PHASE2_CONFIG = {
     "CODE405": False,
     "CODE102": False,
     "CODE408": False,
+    # Name, nickname and profile changes OFF (handled by Phase 1)
+    "CODE320": False,
+    "CODE324": False,
+    "CODE325": False,
     # Risky codes ON (111 OFF — cache already built by Phase 1b)
     "CODE122": True,
     "CODE357": True,

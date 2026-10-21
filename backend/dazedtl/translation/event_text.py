@@ -9,46 +9,20 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from dazedtl.compatibility.event_text import (
+    CODES,
+    CUSTOM,
+    FIELDS,
+    RETIRED,
+    SELECTORS,
+    WORDED,
+)
 from dazedtl.freshness import Basis, compare
 from dazedtl.storage import write_json
 
 from .files import digest, project_path, read_json
 
-CODES = (
-    "CODE122",
-    "CODE357",
-    "CODE355655",
-    "CODE356",
-    "CODE657",
-    "CODE320",
-    "CODE324",
-    "CODE325",
-    "CODE108",
-)
-SELECTORS = {"CODE357": "ENABLED_PLUGINS_357", "CODE355655": "ENABLED_PATTERNS_355655"}
-# Plugins split these codes' commands on spaces. Their findings say how each
-# built-in handler joins a translation's words and which exact commands stay
-# untranslated, kept in these options.
-WORDED = {
-    "CODE356": ("SPACES_356", "NBSP_356", "KEEP_356"),
-    "CODE108": ("SPACES_108", "NBSP_108", "KEEP_108"),
-}
 SPACING = {"space", "nbsp", "underscore"}
-# Findings for these codes can add the game's own patterns or handlers for
-# text nothing installed captures, kept in these options.
-CUSTOM = {
-    "CODE357": "CUSTOM_357",
-    "CODE355655": "CUSTOM_355655",
-    "CODE356": "CUSTOM_356",
-    "CODE108": "CUSTOM_108",
-}
-FIELDS = (
-    *CODES,
-    "CODE122_VAR_RANGES",
-    *SELECTORS.values(),
-    *(key for keys in WORDED.values() for key in keys),
-    *CUSTOM.values(),
-)
 FINDING = {
     "decision",
     "confidence",
@@ -308,7 +282,7 @@ Read immutable original game bytes when an original blob is supplied (`git cat-f
 Inspect all matching occurrences in selected event files. Read the wider event corpus, Actors/System, enabled plugins and their implementations as dependencies to check internal references. These reads do not expand the files selected for translation.
 For 122, check the entire start/end assignment range, operation and expression, all variable uses, comparisons, internal keys, IDs, filenames, and plugin/script consumers. The parser checks only the starting ID and replaces the expression; keep mixed, unproven or internally used assignments off.
 For 357, report actual installed plugin names, commands and argument keys. Registered selections use fixed keys and substring header matches, plus the built-ins listed in the request. For 355/655, report capture boundaries and multiline behavior, plus every built-in match. Its variable-writing patterns are not protected by 122 IDs.
-For 356, one switch enables every built-in handler; found command names are evidence, not individual configurable filters. Check 657 message values, 108 supported notetags, and 320/324/325 display changes against actual actor context.
+For 356, one switch enables every built-in handler; found command names are evidence, not individual configurable filters. Check 657 message values and 108 supported notetags.
 356 and 108 translations join their words with "_" by default, since plugins split commands on spaces. For each built-in handler or marker found, read how its plugin parses and draws the text, and set its spacing: "space" when the plugin reads the rest of the text or joins the words back, and a space cannot change how it reads its other arguments (such as a trailing number read as a size); "nbsp" (U+00A0, drawn as a space) when it splits only on the plain space, as MV's command356 split(" ") does, and uses one argument whole; "underscore" only when it splits on any whitespace, such as a \\s pattern, which U+00A0 also matches. Underscores a plugin draws as they are do not hold a source off; note them in observations.
 keep lists the exact original parameters[0] of each 356 command or 108 comment holding an internal value, such as a placeholder, key or file name; the engine leaves those untranslated.
 When players see text in 355/655 scripts, 356 commands, 108 comments or 357 plugin commands that no registered entry or built-in handler captures, add this game's own entry to that source's custom list rather than leaving the text out. 355/655, 356 and 108 entries are patterns {{"name": "short label", "regex": "..."}}: a Python regular expression searched in each command's original text, each 355 or 655 line on its own, whose last capturing group is the text translated; a capture without Japanese stays as it is. A 355/655 pattern may add "script", exact text in its script's first (355) line, to read only that script's lines; capture the text inside its quotes, and the engine escapes the translation for them. 356 and 108 patterns also take "spacing", chosen as above. 357 entries are handlers {{"plugin": "exact plugin name", "command": "exact command name", "args": ["argument keys holding plain text"]}}; a struct or list argument cannot be translated in place. A custom entry takes its command before registered entries and built-in handlers, so match only text they miss and nothing internal. Bound an outer repeat around another repeat, as in (a+){1, 5}, never (a+)+. Custom entries count only for a source reported enable/high/safe; --apply refuses one that captures no Japanese in the selected event files, or two patterns capturing one command.
@@ -425,9 +399,9 @@ After saving, run `{command} --apply`. It validates the report and saves its rec
                     "status": "stale",
                     "message": "Findings belong to another project or investigation request.",
                 }
-            if not isinstance(report["sources"], dict) or set(report["sources"]) != set(
-                CODES
-            ):
+            if not isinstance(report["sources"], dict) or set(
+                report["sources"]
+            ) - RETIRED != set(CODES):
                 raise ValueError(
                     "Findings must cover every requested code family and no additional settings."
                 )

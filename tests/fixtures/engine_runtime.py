@@ -3111,6 +3111,7 @@ try:
         from dazedtl.translation import file_lines
         from modules import rpgmakermvmz as parser
         from util import extensions
+        from util import rpgmaker_blocks as blocks
         from util.rpgmaker_markers import comment_markers
         from util.rpgmaker_profiles import DB_FILES, PHASE0_CONFIG, PHASE1_CONFIG
         from util.runtime_text import _CONTROL_CODE_RE
@@ -3215,8 +3216,10 @@ try:
 
         # What the fixtures lack: a name box with more after its name, a 401
         # label the engine reads as a speaker, a message split at a code,
-        # scrolling text, and choice help with Comment text on.
+        # scrolling text, choice help with Comment text on, and a name change
+        # to a name the game reads as a file name.
         page = [
+            step(320, 2, "立ち絵_笑顔"),
             step(101, "", 0, 0, 2, "【開放条件】\n・レベル：1"),
             step(401, r"\C[16]【チュートリアル】\C[0]"),
             step(401, "基本的な操作を説明します。"),
@@ -3321,6 +3324,18 @@ try:
                         for row in file_lines.left(file, document, phase, markers)
                     )
                     sends = engine_pass(file, translated, vxace)
+                    # Players read the names, nicknames and profiles events
+                    # change, as the Ace fixture's common event does.
+                    changed = [
+                        command["parameters"]
+                        for _listed, commands in blocks.command_lists(translated)
+                        for command in commands
+                        if isinstance(command, dict)
+                        and command.get("code") in {320, 324, 325}
+                        and "_" not in str(command["parameters"])
+                        and holds_source(str(command["parameters"]))
+                    ]
+                    assert not changed, (folder.name, file, changed)
                     after = file_lines.count(
                         file, translated, phase, markers, lambda: document
                     )

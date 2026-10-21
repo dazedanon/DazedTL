@@ -372,7 +372,7 @@ class Workflows:
         settings = dict(project["engine_options"])
         profile = {"database": PHASE0_CONFIG, "dialogue": PHASE1_CONFIG, "variables": PHASE1B_CONFIG, "advanced": PHASE2_CONFIG}.get(phase, {})
         if phase == "advanced":
-            advanced_codes = {"CODE122", "CODE357", "CODE355655", "CODE657", "CODE356", "CODE320", "CODE324", "CODE325", "CODE108"}
+            advanced_codes = {"CODE122", "CODE357", "CODE355655", "CODE657", "CODE356", "CODE108"}
             profile = {**profile, **{key: value for key, value in settings.items() if key in advanced_codes}}
         settings.update(profile)
         # The game decides how scripts are written, whatever the options say.

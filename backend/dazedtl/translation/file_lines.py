@@ -7,7 +7,8 @@ what a person reads as one: in an event file, the game text
 util/rpgmaker_scope lists (an event text block as util/rpgmaker_blocks
 defines it: a message, with its name box; scrolling text; one choice of a
 menu; a choice's help, or another comment a plugin shows, with Comment text
-on; a map display name; an event's note label), and the database fields and
+on; an actor name, nickname or profile an event changes; a map display
+name; an event's note label), and the database fields and
 system terms Text QA's never-translated report lists
 (util/rpgmaker_qa_preflight `visible_texts`). What another task translates,
 or no task does, is left out.
@@ -112,6 +113,7 @@ def lines(
     comments a plugin shows, count under *markers*, the comment markers
     Comment text translates, none while it is off."""
     from util import rpgmaker_blocks as blocks
+    from util.rpgmaker_scope import changes
 
     if phase == "database":
         return _database(name, document)
@@ -120,6 +122,18 @@ def lines(
         return found
     readable = _events(name, document)
     for listed, commands in blocks.command_lists(readable):
+        listing: list[Line] = []
+        for change in changes(commands):
+            command = commands[change.index]
+            path = (*listed, change.index, "parameters", 1)
+            listing.append(
+                Line(
+                    change.kind,
+                    (path,),
+                    (command["parameters"][1],),
+                    _command_original(command),
+                )
+            )
         for block in blocks.blocks(commands):
             if block.kind == blocks.CHOICE and block.head is not None:
                 command = commands[block.head]
@@ -134,7 +148,7 @@ def lines(
                         else ()
                     )
                     path = (*listed, block.head, "parameters", 0, choice)
-                    found.append(Line(blocks.CHOICE, (path,), (str(value),), source))
+                    listing.append(Line(blocks.CHOICE, (path,), (str(value),), source))
                 continue
             if block.kind in (blocks.HELP, blocks.COMMENT):
                 if not block.shown(markers):
@@ -168,7 +182,10 @@ def lines(
                 if source is not None:
                     sources.append(source)
             if paths:
-                found.append(Line(kind, tuple(paths), tuple(texts), tuple(sources)))
+                listing.append(Line(kind, tuple(paths), tuple(texts), tuple(sources)))
+        # In file order: by the command each line starts at.
+        listing.sort(key=lambda line: line.paths[0][len(listed)])
+        found.extend(listing)
     if _MAP.fullmatch(name) and isinstance(readable, dict):
         value = readable.get("displayName")
         if isinstance(value, str):

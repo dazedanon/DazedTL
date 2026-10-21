@@ -6,6 +6,8 @@ The engine (modules/rpgmakermvmz.py) translates, and Guided's line counts
 - the text blocks of every event command list (util/rpgmaker_blocks):
   messages, scrolling text, choices, and the comments a plugin shows while
   Comment text is on
+- the actor name, nickname and profile an event changes (:func:`changes`),
+  which players read as they read the database's own
 - a map's display name
 - the labels a map's events show from their notes (:func:`labels`), such as
   EventLabel's ``<LB:...>``
@@ -25,6 +27,40 @@ NOTE_TAGS = (
 )
 # EventLabel shows the event's own name over an event whose note holds <LB>.
 NAME_TAG = "<LB>"
+# Change Name, Change Nickname and Change Profile: each sets an actor's text
+# from its second parameter.
+CHANGES = {320: "name change", 324: "nickname change", 325: "profile change"}
+# A name change holding these sets a name some games read as a file name.
+FILE_NAME = re.compile(r"[■_]")
+
+
+class Change(NamedTuple):
+    """An actor text an event command sets: its kind and its position in the
+    command list."""
+
+    kind: str
+    index: int
+
+
+def changes(commands: Any) -> list[Change]:
+    """The actor names, nicknames and profiles a command list sets, in order;
+    a name holding what :data:`FILE_NAME` matches stays as it is."""
+    found = []
+    for index, command in enumerate(commands if isinstance(commands, list) else ()):
+        code = command.get("code") if isinstance(command, dict) else None
+        parameters = command.get("parameters") if code in CHANGES else None
+        if not isinstance(parameters, list) or len(parameters) < 2:
+            continue
+        text = parameters[1]
+        if not isinstance(text, str):
+            continue
+        source = command.get("_original")
+        if code == 320 and FILE_NAME.search(
+            source if isinstance(source, str) else text
+        ):
+            continue
+        found.append(Change(CHANGES[code], index))
+    return found
 
 
 class Label(NamedTuple):
