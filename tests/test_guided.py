@@ -680,33 +680,40 @@ class GuidedTests(unittest.TestCase):
         self.assertAlmostEqual(repriced["result"]["tasks"][0]["liveCost"], 0.008)
         self.configuration.update(model="fixture-model")
         self.configuration["rates"].update(input=1)
-        # An estimate the previous release saved stays current after an upgrade.
-        estimate = self.guided.full_estimate
-        with self.guided.observations.read():
-            tasks = estimate.scope(
-                self.identity,
-                self.native,
-                self.guided.event_text.status(self.identity, self.native),
-                guard=self.guided.runs.poll_guard(self.native),
-                cached_only=True,
+        # An estimate a listed release saved reads as made under version 1,
+        # current until the version is raised.
+        from dazedtl.translation import full_estimate
+
+        with patch.object(full_estimate, "ESTIMATE_VERSION", 1):
+            estimate = self.guided.full_estimate
+            with self.guided.observations.read():
+                tasks = estimate.scope(
+                    self.identity,
+                    self.native,
+                    self.guided.event_text.status(self.identity, self.native),
+                    guard=self.guided.runs.poll_guard(self.native),
+                    cached_only=True,
+                )
+            self.backend.operations.jobs["estimate"]["result"].update(
+                {
+                    key: estimate.fingerprint(tasks, key, "2.24.0")
+                    for key in ("fingerprint", "shape")
+                }
             )
-        self.backend.operations.jobs["estimate"]["result"].update(
-            {
-                key: estimate.fingerprint(tasks, key, "2.24.0")
-                for key in ("fingerprint", "shape")
-            }
-        )
-        self.assertTrue(current())
-        # Estimating again would only repeat it, unless Claude's count failed.
-        with self.assertRaisesRegex(ValueError, "Nothing changed"):
+            self.assertTrue(current())
+            # Raising the version outdates it; pricing it again does not help.
+            with patch.object(full_estimate, "ESTIMATE_VERSION", 2):
+                self.assertFalse(current())
+            # Estimating again would only repeat it, unless Claude's count failed.
+            with self.assertRaisesRegex(ValueError, "Nothing changed"):
+                self.guided.full_estimate.start(self.identity)
+            self.backend.operations.jobs["estimate"]["result"]["tasks"] = [
+                {"approximateInput": True}
+            ]
             self.guided.full_estimate.start(self.identity)
-        self.backend.operations.jobs["estimate"]["result"]["tasks"] = [
-            {"approximateInput": True}
-        ]
-        self.guided.full_estimate.start(self.identity)
-        # Raising the estimate version outdates every saved estimate.
-        with patch("dazedtl.translation.full_estimate.ESTIMATE_VERSION", 2):
-            self.assertFalse(current())
+            # Raising the estimate version outdates every saved estimate.
+            with patch.object(full_estimate, "ESTIMATE_VERSION", 2):
+                self.assertFalse(current())
         self.native["engine_options"]["CODE356"] = True
         self.assertFalse(current())
 

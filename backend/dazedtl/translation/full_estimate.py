@@ -147,8 +147,10 @@ class FullEstimate:
         from dazedtl.compatibility.full_estimate import prices
 
         configuration = self.configuration(tasks)
+        saved = self.basis(tasks, result)
         if (
-            self.basis(tasks, result).shape != self.fingerprint(tasks, "shape")
+            saved.version != ESTIMATE_VERSION
+            or saved.shape != self.fingerprint(tasks, "shape")
             or not repricing.priced(configuration)
             or not repricing.same_requests(result["configuration"], configuration)
         ):
