@@ -190,7 +190,14 @@ def _paired(target, value):
 
 
 def _names(target):
-    return {node.id for node in ast.walk(target) if isinstance(node, ast.Name)}
+    """The names a target binds; an attribute or item it sets binds none."""
+    if isinstance(target, ast.Name):
+        return {target.id}
+    if isinstance(target, ast.Starred):
+        return _names(target.value)
+    if isinstance(target, (ast.Tuple, ast.List)):
+        return {name for element in target.elts for name in _names(element)}
+    return set()
 
 
 def read_by(call, records):

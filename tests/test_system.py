@@ -125,12 +125,14 @@ class HeldFileTests(unittest.TestCase):
         # Windows refuses to open a file while it is being replaced, which
         # failed a Batch estimate reading job.json as its worker saved it.
         from desktop.backend.manual import ManualJobs
+        from util.freshness import Digests
 
         record = {"id": "run", "version": 2, "status": "done"}
         readers = {
             "bytes": system.read_bytes,
             "text": system.read_text,
             "checked JSON": read_json,
+            "digests": lambda path: Digests().file(path),
             "manual runs": lambda path: ManualJobs(
                 path.parents[3], threading.Lock()
             ).load_saved(),
