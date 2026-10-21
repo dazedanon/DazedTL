@@ -581,6 +581,7 @@ class Guided:
                 "pending": self.text_fit.pending(project_id),
                 "waiting": self.text_fit.waiting(project_id),
                 "job": latest["id"] if latest else None,
+                **self.text_fit.misfits(native),
             },
             "delivery_available": bool(
                 state.get("delivery") and Path(state["delivery"]["path"]).is_file()

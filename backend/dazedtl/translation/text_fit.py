@@ -9,13 +9,16 @@ can restore.
 
 from copy import deepcopy
 
-from dazedtl.actions import label
+from dazedtl.actions import label, named
 from dazedtl.storage import write_json
 from dazedtl.translation.files import read_json
 from dazedtl.translation.operations import checkout_issue
 
 ACTION = "fit_text"
 LABEL = label(ACTION)
+# The actions whose writes replace the game's text, after which a fit's list
+# of what it could not fit no longer holds.
+WRITES = named(writes_text=True)
 # The Line widths entries that move where text wraps. Message rows only
 # change where a long message goes on to its next page.
 AREAS = ("width", "faceWidth", "listWidth", "noteWidth")
@@ -125,3 +128,27 @@ class TextFit:
             if job.get("project_id") == native["id"] and job.get("action") == ACTION
         ]
         return max(jobs, key=lambda job: job.get("created", 0), default=None)
+
+    def misfits(self, native):
+        """The text the newest fit could not fit, first ones, and how much,
+        while the game holds the text it fitted: until new widths or another
+        write of the game's text."""
+        latest = self.latest(native)
+        result = latest.get("result") or {} if latest else {}
+        current = (
+            latest
+            and latest.get("status") == "complete"
+            and result.get("widths") == native["widths"]
+            and not any(
+                job.get("project_id") == native["id"]
+                and job.get("action") in WRITES
+                and job.get("created", 0) > latest.get("created", 0)
+                for job in self.guided.backend.operations.jobs.values()
+            )
+        )
+        if not current:
+            return {"misfits": [], "misfit_count": 0}
+        return {
+            "misfits": result.get("misfits", []),
+            "misfit_count": result.get("misfit_count", 0),
+        }

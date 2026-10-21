@@ -1018,11 +1018,22 @@ export type PlaytestCapture = {
   url: string;
 };
 
+export type TextMisfit = {
+  file: string;
+  /** The text's JSON pointer in the file. */
+  pointer: string;
+  /** Why it does not fit, such as needs 5 rows; its window shows 4. */
+  reason: string;
+};
+
 export type TextFitState = {
   pending: boolean;
   /** Why a pending fit waits on the game's Git checkout, such as a game update's unfinished merge, or empty. */
   waiting: string;
   job: string | null;
+  /** The first texts the newest fit could not fit even wrapped again, while the game holds its text: until new widths or another write. */
+  misfits: TextMisfit[];
+  misfit_count: number;
 };
 
 export type Readiness = {

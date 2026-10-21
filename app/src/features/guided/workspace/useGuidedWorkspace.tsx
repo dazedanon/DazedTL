@@ -613,6 +613,8 @@ export function useGuidedWorkspace({
   // them that started since then reports beside the Save control, and so
   // does one that runs or failed after measured widths saved themselves.
   const [widthsSavedAt, setWidthsSavedAt] = useState(0);
+  // The portrait width that save asked for; saving keeps it within Dialogue.
+  const [askedPortrait, setAskedPortrait] = useState(0);
   const fitJob = operationJob("fit_text");
   const textFit = {
     pending: state.readiness.text_fit.pending,
@@ -625,7 +627,14 @@ export function useGuidedWorkspace({
         fitJob.status !== "complete")
         ? fitJob
         : undefined,
-    saving: () => setWidthsSavedAt(Date.now()),
+    // The text the newest fit could not fit, while the game holds it.
+    misfits: state.readiness.text_fit.misfits,
+    misfitCount: state.readiness.text_fit.misfit_count,
+    askedPortrait,
+    saving: () => {
+      setWidthsSavedAt(Date.now());
+      setAskedPortrait(values.widths.faceWidth);
+    },
   };
   // Apply packs an Ace game's data, so its packing control shows only while
   // the data is outdated, and after a pack from this visit to confirm it.

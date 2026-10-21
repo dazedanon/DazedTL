@@ -815,6 +815,15 @@ def fit_output(document, name, layout, areas=None, *, newline=False):
     return (text + "\n" if newline else text).encode("utf-8"), changes
 
 
+def unfitted(document, name, layout):
+    """The translated values in *document* that do not fit the Line widths
+    even wrapped again, such as help that needs more rows than its window
+    shows; fits *document* in place."""
+    from util.rpgmaker_rewrap import fit_document
+
+    return fit_document(document, name, layout).misfits
+
+
 def prepare_publication(plan):
     from desktop.backend.workflow_actions import validate_plan
 
@@ -859,8 +868,11 @@ def prepare_publication(plan):
         # New Line widths: the translated text of the files DazedTL applied,
         # in the areas the widths changed, wherever a line no longer fits.
         # Files it never applied, such as ones translated by hand, stay.
+        from util.len_originals import LISTED_MISFITS
+
         layout = fitting_layout(plan)
         plan["fitted_lines"] = 0
+        plan["misfits"], plan["misfit_count"] = [], 0
         receipt = (
             read_json(folder / "applied-outputs.json")
             if (folder / "applied-outputs.json").exists()
@@ -872,13 +884,19 @@ def prepare_publication(plan):
         for name in sorted(set(options["files"]) & set(applied), key=str.casefold):
             relative = (prefix / name).as_posix()
             raw = project_path(root, relative).read_bytes()
+            document = decode_json(raw)
             fitted, changes = fit_output(
-                decode_json(raw),
+                document,
                 name,
                 layout,
                 set(options["areas"]),
                 newline=raw.endswith(b"\n"),
             )
+            # What no wrap fits at these widths, in every area, as the game
+            # will hold it once this fit is written.
+            misfits = unfitted(document, name, layout)
+            plan["misfits"] += misfits[: LISTED_MISFITS - len(plan["misfits"])]
+            plan["misfit_count"] += len(misfits)
             if fitted is None:
                 continue
             candidates[relative] = fitted
@@ -1021,9 +1039,21 @@ def run_fit(plan, log):
     """Fit the game's translated text to new Line widths in one backed-up
     publication."""
     log(plan["label"])
-    if not prepare_publication(plan)["files"]:
-        message = "Every line already fits the new Line widths."
-        return {"files": 0, "lines": 0, "message": message}
+    files = prepare_publication(plan)["files"]
+    # The text the widths leave too long, which Guided lists while the
+    # game holds this fit's text.
+    unfit = {
+        "misfits": plan["misfits"],
+        "misfit_count": plan["misfit_count"],
+        "widths": plan["project"]["widths"],
+    }
+    if not files:
+        message = (
+            "No lines needed rewrapping."
+            if unfit["misfit_count"]
+            else "Every line already fits the new Line widths."
+        )
+        return {"files": 0, "lines": 0, "message": message, **unfit}
     lines = plan["fitted_lines"]
     counted = f"{lines:,} {'line' if lines == 1 else 'lines'}"
     log(f"Rewrapping {counted}.")
@@ -1031,6 +1061,7 @@ def run_fit(plan, log):
         **run_publication(plan, log),
         "lines": lines,
         "message": f"Rewrapped {counted} to the new Line widths.",
+        **unfit,
     }
 
 

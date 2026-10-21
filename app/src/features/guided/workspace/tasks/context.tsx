@@ -8,6 +8,7 @@ import {
   AssistantTask,
   type AssistantTaskState,
 } from "../../../../ui/AssistantTask";
+import { ActionList, ActionRow } from "../../../../ui/ActionList";
 import { Message } from "../../../../ui/Feedback";
 import { CheckField } from "../../../../ui/FieldRow";
 import { Section } from "../../../../ui/Section";
@@ -16,6 +17,8 @@ import { CostEstimate } from "../../CostEstimate";
 import { ModelMenu } from "../../../settings/ModelMenu";
 import { GuidanceEditor } from "../../GuidanceEditor";
 import { LayoutMeasurements } from "../../LayoutMeasurements";
+import { widthsSaveNotice } from "../../lineWidths";
+import { textLocation } from "../../textLocation";
 import { sinceLabel } from "../../../assistant/assistantTasks";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import { shortcutKeys, shortcutLabel } from "../../../../state/useShortcut";
@@ -290,6 +293,30 @@ export function layoutView(w: GuidedWorkspace): TaskView {
         >
           {widths}
         </Section>
+        {textFit.misfitCount > 0 && (
+          <Section
+            title="Too long to fit"
+            hint={`${textFit.misfitCount.toLocaleString()} ${textFit.misfitCount === 1 ? "text" : "texts"}`}
+          >
+            <ActionList compact>
+              {textFit.misfits.map((misfit) => (
+                <ActionRow
+                  key={misfit.file + misfit.pointer + misfit.reason}
+                  title={`${misfit.file} · ${textLocation(misfit.pointer)}`}
+                  description={`Wrapped to the Line widths, this text ${misfit.reason}.`}
+                />
+              ))}
+            </ActionList>
+            {textFit.misfitCount > textFit.misfits.length && (
+              <p className="muted">
+                {(
+                  textFit.misfitCount - textFit.misfits.length
+                ).toLocaleString()}{" "}
+                more not listed.
+              </p>
+            )}
+          </Section>
+        )}
         <AssistantTask
           state={taskState}
           progress={sinceLabel(measuring.since)}
@@ -370,17 +397,20 @@ export function layoutView(w: GuidedWorkspace): TaskView {
       {...saved}
       // A queued fit stands in for an earlier one's report.
       job={fitted || textFit.pending ? undefined : fit}
-      notice={
-        fitted ||
-        (saved.notice && textFit.pending
-          ? // The page's warning names the Git problem a fit waits for.
-            `Line widths saved. Applied text is rewrapped to them once ${
-              textFit.waiting
-                ? "the Git problem above is resolved"
-                : "the current work finishes"
-            }.`
-          : saved.notice)
-      }
+      notice={widthsSaveNotice({
+        fitted,
+        saved:
+          saved.notice && textFit.pending
+            ? // The page's warning names the Git problem a fit waits for.
+              `Line widths saved. Applied text is rewrapped to them once ${
+                textFit.waiting
+                  ? "the Git problem above is resolved"
+                  : "the current work finishes"
+              }.`
+            : saved.notice || "",
+        askedPortrait: textFit.askedPortrait,
+        widths: w.state.preferences.values.widths,
+      })}
       onClick={saveLayout}
     />
   );

@@ -4098,6 +4098,13 @@ class GuidedTests(unittest.TestCase):
                 "name": "薬草",
                 "description": "体力をとても少しだけ回復する草です",
             },
+            # A word wider than any help window, which no wrap can fit.
+            {
+                "id": 3,
+                "name": "Elixir",
+                "description": "Supercalifragilisticexpialidocious",
+                "_original": {"description": "万能薬"},
+            },
         ]
         write_json(self.folder / "translated/Items.json", output)
         self.native["widths"] = {**self.native["widths"], "listWidth": 24}
@@ -4133,12 +4140,28 @@ class GuidedTests(unittest.TestCase):
             # Weapons.json counts as applied where its bytes equal a run's
             # output, but no Apply wrote it.
             fit = {"files": ["Items.json", "Weapons.json"]}
-            self.assertEqual(
-                run_fit(plan("fit_text", {"areas": ["width"], **fit}), lambda _: None)[
-                    "lines"
-                ],
-                0,
+            # A fit that rewraps nothing still lists the text it cannot fit,
+            # in every area, with the widths it fitted to.
+            result = run_fit(
+                plan("fit_text", {"areas": ["width"], **fit}), lambda _: None
             )
+            self.assertEqual(result["lines"], 0)
+            self.assertEqual(
+                (result["misfits"], result["misfit_count"]),
+                (
+                    [
+                        {
+                            "file": "Items.json",
+                            "pointer": "/3/description",
+                            "reason": "has a line 34 characters wide; "
+                            "its line width is 24",
+                        }
+                    ],
+                    1,
+                ),
+            )
+            self.assertEqual(result["widths"], self.native["widths"])
+            self.assertNotIn("Every line", result["message"])
             self.native["widths"] = {**self.native["widths"], "listWidth": 20}
             # A file DazedTL never applied, such as one translated by hand,
             # stays as it is.
@@ -4211,6 +4234,26 @@ class GuidedTests(unittest.TestCase):
         same = {"listWidth": 30}
         self.guided.text_fit.request(self.identity, self.native, same, same)
         self.assertTrue(self.guided.text_fit.pending(self.identity))
+        # The newest fit's misfits show while its text is the game's: until
+        # another write to the game's text or new widths.
+        listed = {"misfits": result["misfits"], "misfit_count": 1}
+        jobs = self.backend.operations.jobs
+        jobs["fit"].update(
+            status="complete", result={**listed, "widths": self.native["widths"]}
+        )
+        self.assertEqual(self.guided.text_fit.misfits(self.native), listed)
+        jobs["apply"] = {
+            "id": "apply",
+            "project_id": "native",
+            "action": "export_selected",
+            "status": "complete",
+            "created": 2,
+        }
+        unlisted = {"misfits": [], "misfit_count": 0}
+        self.assertEqual(self.guided.text_fit.misfits(self.native), unlisted)
+        del jobs["apply"]
+        self.native["widths"] = {**self.native["widths"], "listWidth": 40}
+        self.assertEqual(self.guided.text_fit.misfits(self.native), unlisted)
 
     def test_edits_after_apply_do_not_request_reapplication_and_changed_review_or_missing_output_is_pending(
         self,

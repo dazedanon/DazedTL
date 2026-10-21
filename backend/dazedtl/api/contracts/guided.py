@@ -737,6 +737,14 @@ class PlaytestCapture(TypedDict):
     url: Annotated[str, "A data URL of the JPEG."]
 
 
+class TextMisfit(TypedDict):
+    file: str
+    pointer: Annotated[str, "The text's JSON pointer in the file."]
+    reason: Annotated[
+        str, "Why it does not fit, such as needs 5 rows; its window shows 4."
+    ]
+
+
 class TextFitState(TypedDict):
     # New Line widths wait to fit the applied text until nothing else runs
     # and Git can take it; the job is the newest fit of it.
@@ -747,6 +755,12 @@ class TextFitState(TypedDict):
         "update's unfinished merge, or empty.",
     ]
     job: str | None
+    misfits: Annotated[
+        list[TextMisfit],
+        "The first texts the newest fit could not fit even wrapped again, "
+        "while the game holds its text: until new widths or another write.",
+    ]
+    misfit_count: int
 
 
 class Readiness(TypedDict):
