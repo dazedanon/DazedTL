@@ -20,6 +20,32 @@ from dazedtl.translation.files import digest, live_path, project_path
 
 
 class ObservationTests(unittest.TestCase):
+    def test_plan_headers_of_a_long_history_survive_between_polls(self):
+        # A poll checks every saved run, so a history past the old 128-run
+        # cache rebuilt every plan header on every poll.
+        with TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            runs = {}
+            for index in range(150):
+                folder = base / f"run{index}"
+                write_json(folder / "plan.json", {"workflow": {"id": "w"}})
+                runs[f"run{index}"] = {
+                    "plan_hash": digest((folder / "plan.json").read_bytes())
+                }
+            backend = ExistingBackend.__new__(ExistingBackend)
+            backend.manual = SimpleNamespace(folder=lambda i: base / i, jobs=runs)
+            cache = RunObservations()
+            with patch.object(
+                backend,
+                "saved_run_configuration",
+                wraps=backend.saved_run_configuration,
+            ) as read:
+                for _ in range(2):
+                    with cache.read():
+                        for identity in runs:
+                            cache.configuration(backend, identity)
+                self.assertEqual(read.call_count, 150)
+
     def test_plan_observations_follow_replacements_and_never_replace_execution_validation(
         self,
     ):
