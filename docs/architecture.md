@@ -418,41 +418,18 @@ The independent scripts/backups.py reader can recover a moved game without its f
 ## Distribution and updates
 
 Users download the repository as a ZIP and run a START launcher; there is no installer or build pipeline.
-The launchers only fetch the Node pinned in [runtimes.lock](../scripts/runtimes.lock) and checked against its published checksum, then hand over to [start.mjs](../scripts/start.mjs).
-[setup.mjs](../scripts/setup.mjs) installs the pinned standalone Python the same way, creates `.venv` from it and installs the hash-locked packages and Electron.
-Electron's binary is downloaded with its package's checksums but unpacked by [zip.mjs](../scripts/zip.mjs), because Electron's own installer extracts with a native module that needs the Visual C++ runtime, which a fresh Windows lacks.
-Each download, the launchers' Node included, is tried three times when the connection drops or the server is busy; a missing file or a wrong checksum stops at once.
+The launchers only fetch the Node pinned in [runtimes.lock](../scripts/runtimes.lock), checked against its published checksum, then hand over to [start.mjs](../scripts/start.mjs); [setup.mjs](../scripts/setup.mjs) installs the pinned standalone Python the same way, creates `.venv` and installs the hash-locked packages and Electron.
+Electron's binary is unpacked by [zip.mjs](../scripts/zip.mjs), because Electron's own installer extracts with a native module that needs the Visual C++ runtime, which a fresh Windows lacks.
 Each step records its inputs in `.runtime/state.json` and reruns only when they change, so an update that changes a lockfile, a version file or the folder location repairs the install on the next start.
-User installs omit the development tools; a Git checkout defaults to the development set.
-npm comes from the pinned Node whenever it is installed, because the system Node may have none or a different version.
-Translation projects are Git repositories, and Windows ships no Git, so setup installs Git for Windows' portable MinGit there, pinned in the same lock; other systems must provide `git`, and setup stops with the install command when they do not.
-MinGit's system config sets `core.autocrlf=true` as a Git for Windows install does, which the engine's repo-local line-ending settings already override.
-The launcher puts its Node and, on Windows, that Git first on the app's `PATH`, since the backend validates plugin scripts with `node` and runs `git`.
-Detached launches log Electron's output to a temporary file and wait for its "shown" line, so the console stays open with the error when the app fails to start.
-Shortcuts are written once per folder location, and a deleted desktop shortcut stays deleted.
-A second install leaves them with the install they open while that one is still there and not older, and asks again on each start.
+Translation projects are Git repositories and Windows ships no Git, so setup installs the pinned portable MinGit there; the launcher puts its Node and that Git first on the app's `PATH`, since the backend runs `node` and `git`.
 Ubuntu's AppArmor rules block the Chromium sandbox of unregistered binaries, so the launcher stops with a one-time profile command instead of letting Electron exit silently.
 
 A release is a `v` tag on every mirror in [mirrors.json](../release/mirrors.json), whose commit carries `release/manifest.json`, the SHA-256 of every tracked file, signed with Ed25519 in `release/manifest.sig`.
-[update.mjs](../scripts/update.mjs) lists tags through each mirror's Git smart HTTP ref advertisement, which every forge serves the same way and without API rate limits, and takes the newest version any reachable mirror has.
+[update.mjs](../scripts/update.mjs) lists tags through each mirror's Git smart HTTP ref advertisement and takes the newest version any reachable mirror has.
 An archive is accepted only when the signature verifies with a key from the installed `release/keys` and its files match the manifest exactly, so a compromised or stale mirror can withhold releases but never alter one.
 The manifest hashes committed blobs, which is what forges archive; [release.mjs](../scripts/release.mjs) proves each tag against its own `git archive` before pushing.
-The [update controller](../app/electron/updates.cjs) runs the updater in Electron's Node as a child process, so verifying an archive never blocks the window, and stages the files in `.runtime/update/next`.
-The launcher applies a staged update before setup and before anything loads the files it replaces.
-It backs up every file the swap touches to `.runtime/update/previous`, journals the swap, replaces changed files by atomic rename and removes files the release dropped, writing the manifest last.
-A swap stopped by a crash finishes on the next start; a failed one restores the backup; Settings reports the outcome once.
-After a successful swap the old launcher hands over to the new START launcher, so a release's own setup code and runtime pins apply from its first start.
-START.bat is one line, because cmd reads a batch file as it runs and the swap replaces it; that line ends with the launcher's result as an explicit exit code, since a bare `exit /b` would report success to `cmd /c` callers such as the live test.
-Releases still keep `.node-version`, `.python-version` and the other files 2.0.0's launcher reads after its swap, since that launcher continues in place.
+The [update controller](../app/electron/updates.cjs) runs the updater in Electron's Node as a child process, so verifying an archive never blocks the window.
+The launcher applies a staged update before setup and before anything loads the files it replaces, as a journaled, backed-up swap that finishes after a crash and restores on failure, then hands over to the new START launcher so a release's own setup code applies from its first start.
+START.bat stays one line ([bootstrap.ps1](../scripts/bootstrap.ps1) says why), and releases keep the files 2.0.0's launcher reads after its swap ([start.mjs](../scripts/start.mjs)).
 Files outside the manifest, such as `.venv`, `.runtime` and downloaded models, are never touched, and Git checkouts are left to Git.
-"Restart to update" closes through the usual save handshake, refuses while a run is active, and relaunches through START with the app's switches, which waits for the old process to exit.
-The backup also serves "Go back"; automatic checks skip the version the user went back from.
-Settings > Updates shows the whole [changelog](../CHANGELOG.md), newest first and a few versions at a time, from the staged copy, which its manifest covers, or else from the install.
-It leads with what's new: the versions after the installed one, after an update those since the version it replaced, or else the installed version's own entry.
-
-Every tracked path stays within 185 characters, checked by [paths.mjs](../scripts/paths.mjs).
-Windows Explorer and Python stop at 260 characters unless long paths are enabled, and Explorer unpacks a GitHub ZIP into a doubled top folder.
-The budget leaves room for an install folder like `C:\Users\<26 characters>\Downloads\DazedTL-2.0.0\DazedTL-2.0.0\`.
-The same check rejects paths, and module names without their import extension, that differ only in letter case.
-Windows treats such names as one file, so an import of `./GuidanceReview` loaded `guidanceReview.ts` instead of `GuidanceReview.tsx` and broke the renderer build.
-When a clash needs a rename, rename the file whose old copy would be harmless, because a ZIP unpacked over an older install keeps files the release dropped.
+Every tracked path stays within the Windows path budget of 185 characters, checked by [paths.mjs](../scripts/paths.mjs), which says why.

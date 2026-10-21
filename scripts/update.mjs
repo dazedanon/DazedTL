@@ -201,7 +201,10 @@ function get(url, options, redirects = 0) {
   });
 }
 
-/** Reads the release versions from a Git smart HTTP ref advertisement. */
+/**
+ * Reads the release versions from a Git smart HTTP ref advertisement, which
+ * every forge serves the same way and without API rate limits.
+ */
 export function tags(advertisement) {
   const versions = new Set();
   let offset = 0;
@@ -287,7 +290,9 @@ export function archiveUrl(mirror, version) {
 
 /**
  * Checks a release archive against its signed manifest: every file it holds
- * must be listed with its hash, and every listed file must be there.
+ * must be listed with its hash, and every listed file must be there. A
+ * compromised or stale mirror can therefore withhold releases but never alter
+ * one.
  */
 export function verifyArchive(archive, version, keys) {
   /** @type {Map<string, Buffer>} */
