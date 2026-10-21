@@ -6,7 +6,7 @@
 
 ### Fixed
 
-- **Context:** updating DazedTL no longer makes the whole-game **Cost estimate** read outdated; one made with 2.13.2 to 2.24.0 stays current while the game and settings are unchanged.
+- **Context:** updating DazedTL no longer makes the whole-game **Cost estimate** read outdated by itself, only when the update changes what a run sends, as this one does for Maps & events.
 - **Images:** **Apply** on an image whose edited copy was saved without preparing it now says "Prepare this image first so its original is kept" instead of failing with "Nothing was applied - The operation could not finish."
 - **Maps & events:** a message or scrolling text the translation leaves untranslated or declines now keeps every row as the game has it, instead of being joined into one row, as does one an older run saved a refusal note for, so its event keeps its place for saved games.
 - **VX Ace:** translations now show in the game right after **Apply**, as do Plugin files, Text QA, Line widths and restores in History, instead of waiting for a separate packing step; a game that came with `ace_json` already converted and `Game.rgss3a` still beside `Game.exe` now has Set up set the archive aside, keeping its translations, instead of releasing the untranslated game.
@@ -24,3 +24,4 @@
 - **Maps & events:** translated scrolling text now lays its lines over its own rows instead of adding a row per line, so translating it again no longer changes its event and saved games stay at their place.
 - **Text QA:** a correction that makes choice help shorter, or fitting it to narrower Line widths, no longer leaves an empty line above the game's own rows such as "(1/3)".
 - **Assistant-led:** fitting choice help to Line widths now keeps a row the assistant left as the game wrote it, such as "(1/3)", on its own line instead of running it into the text around it.
+- **Maps & events:** text that is already finished is no longer sent again on every run: a line the game wrote in English inside 【】, whose translation replaced the game's own English, a translated message whose only Japanese is inside a plugin code such as `\SA[...]`, map names and event labels from map notes; those labels (`<LB>`, `<LB:...>`, `<namePop:...>`, `<dn:...>`) now count in **Lines**, so a map no longer reads done with them still in Japanese.
