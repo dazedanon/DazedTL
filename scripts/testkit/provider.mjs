@@ -5,13 +5,15 @@
 //
 //   { "refuse": ["text"], "decline": ["text"], "fail": ["text"],
 //     "failFirst": false, "stall": false, "answer": null, "hold": false,
-//     "batchSeconds": 0 }
+//     "batchSeconds": 0, "long": ["text"] }
 //
 // - refuse: lines holding the text come back as a refusal note until the
 //   app sends its clarification; decline: they always do.
 // - fail: requests holding the text get HTTP 400.
 // - failFirst: each request's first attempt keeps its Japanese, so the app's
 //   validation retries it.
+// - long: lines holding the text come back as a long English message, the
+//   same sentences for every line, so a game can page one at narrow widths.
 // - stall: chat requests get no answer until stall is turned off; with
 //   answer: N, the first N requests are still answered.
 // - hold: a Batch stays in progress until hold is turned off; otherwise it
@@ -81,6 +83,10 @@ export function translate(value) {
     .replace(/\d/g, (digit) => "ghijklmnop"[Number(digit)]);
   return `${prefix}Tested ${marker}${kept ? ` ${kept}` : ""}`;
 }
+
+/** What the `long` mode adds to a translation: fixed, so runs repeat. */
+export const longText =
+  "The road through the forest is long and the nights are cold, so pack warm clothes and bring plenty of food. Keep to the trail, never wander off alone, and send word to the village as soon as you reach the old shrine.";
 
 /** Whether a game value is one the stand-in translated. */
 export const translated = (value) =>
@@ -193,7 +199,10 @@ export async function startProvider({ folder, port = 0 }) {
       )
         return "[Not translated: explicit content]";
       if (settings.failFirst && attempt === 1) return source;
-      return translate(source);
+      const english = translate(source);
+      return (settings.long || []).some((item) => source.includes(item))
+        ? `${english} ${longText}`
+        : english;
     });
     const content = JSON.stringify({ translations });
     const body = JSON.stringify(params);
