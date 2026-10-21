@@ -41,15 +41,13 @@ TARGETS = {
     "os.truncate": 0,
     "shutil.rmtree": 0,
 }
-# Writers that change a game's files without the gateway yet, each with why;
-# routing one through it removes its row.
+# Writers that change a game's files without the gateway, each with why.
 OUTSIDE = {
-    # Preparation formats the game's data and writes GameUpdate's files
-    # before the game has version tracking.
-    "translation/preparation.py:run": "preparation",
-    # Assistant-led's header review writes the corrected nameplates the
-    # assistant reviewed straight into the game's data.
-    "translation/header_review.py:apply": "Assistant-led",
+    # Start over puts back the original game whole and sets its Git history
+    # aside, so it must run whatever state the checkout is in, and the Data
+    # it restores is the original's, with nothing to pack.
+    "translation/backups.py:reset": "Start over",
+    "translation/start_over.py:_move": "Start over",
     # A restored backup is a new copy of the game, never the game itself.
     "translation/backups.py:_extract": "backups",
     "translation/backups.py:_copy": "backups",

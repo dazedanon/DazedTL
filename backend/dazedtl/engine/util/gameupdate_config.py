@@ -14,10 +14,11 @@ import hashlib
 import os
 import re
 import subprocess
-import tempfile
 from pathlib import Path
 
 from dotenv import dotenv_values
+
+from util import system
 
 CONFIG = "gameupdate/patch-config.txt"
 FIELDS = ("forge", "host", "username", "repo", "branch")
@@ -389,15 +390,7 @@ def _write(game_root: Path, values: dict[str, str]) -> str:
         if path.is_symlink():
             raise ValueError(f"GameUpdate's config cannot be written through a link: {path}")
     data = format_patch_config(values).encode("utf-8")
-    folder.mkdir(exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(prefix=".patch-config-", dir=folder)
-    try:
-        with os.fdopen(descriptor, "wb") as handle:
-            handle.write(data)
-        os.replace(temporary, folder / "patch-config.txt")  # noqa: TID251 - B5 moves this onto the game-write gateway
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
+    system.write_bytes(folder / "patch-config.txt", data, 0o644)
     return digest(data)
 
 

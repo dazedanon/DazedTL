@@ -469,9 +469,14 @@ class TranslationEngine:
         """GameUpdate's config status, or the result of reconciling it."""
         from util import gameupdate_config
 
+        from .game_write import write_game
+
         root = Path(source)
         if action is not None:
-            return gameupdate_config.reconcile(root, defaults, action, repo)
+            # It writes the config and the game's settings, never ace_json.
+            paths = [gameupdate_config.CONFIG, ".dazedtl/settings.json"]
+            with write_game(root, paths=paths):
+                return gameupdate_config.reconcile(root, defaults, action, repo)
         # Each poll reads it; it changes only with Git's metadata, the config,
         # GameUpdate's scripts, the game's settings and the defaults.
         files = (
@@ -690,6 +695,22 @@ class TranslationEngine:
         return rv2json.script_names(Path(root))
 
     def rpgmaker_prepare(self, source, options, data_path=None, log=None):
+        """Prepares a game's RPG Maker files for translation, in one write
+        to the game."""
+        from .game_write import write_game
+
+        with write_game(source, log=log or (lambda _line: None)) as game:
+            # Formatting changes a VX Ace game's exports, which it reads once
+            # packed into Data.
+            game.watch(data_path or "ace_json")
+            return self._prepare(source, options, data_path, log)
+
+    def rpgmaker_prepare_release(self, staged, options, log=None):
+        """Prepares a new version's copy staged for a game update, which is
+        not the game, as the game's files were."""
+        return self._prepare(staged, options, None, log)
+
+    def _prepare(self, source, options, data_path, log):
         from desktop.backend.cli_environment import public_values
         from util.len_translation import setup_forge
         from util.project_preparation import prepare_rpgmaker
@@ -777,15 +798,13 @@ class TranslationEngine:
         write_rpgmaker already wrote to them, in one write to the game."""
         from .game_write import write_game
 
-        # Assistant-led's writes leave a VX Ace game's Data as it is; its
-        # patch rebuilds the game's archive.
-        with write_game(root, pack=False):
+        with write_game(root) as game:
             return {
                 "widths": self.save_line_widths(root, widths),
-                **self.fit_rpgmaker(root),
+                **self.fit_rpgmaker(root, game),
             }
 
-    def fit_rpgmaker(self, root):
+    def fit_rpgmaker(self, root, game):
         """Fits the text write_rpgmaker wrote into a game's data to its Line
         widths as they are now, and says what changed and what still does
         not fit; text written before the widths changed was fitted to the
@@ -796,7 +815,10 @@ class TranslationEngine:
         layout = rpgmaker_layout(Path(root))
         if layout is None or not Path(layout["data_path"]).is_dir():
             return {"fitted": 0, "files": [], "misfits": [], "misfit_count": 0}
-        return fit_game(layout["data_path"], self.line_layout(root))
+        result = fit_game(layout["data_path"], self.line_layout(root))
+        data = Path(layout["data_path"]).resolve().relative_to(game.root)
+        game.wrote(*((data / name).as_posix() for name in result["files"]))
+        return result
 
     def write_rpgmaker(self, root, source, translated, output):
         """Writes staged game JSON with its sources kept, fitted to the
@@ -805,11 +827,16 @@ class TranslationEngine:
 
         from dazedtl.translation.files import read_json
 
+        from .game_write import write_game
+
         read_json(source)
         read_json(translated)
-        result = write_rpgmaker_json(
-            Path(source), Path(translated), Path(output), self.line_layout(root)
-        )
+        relative = Path(output).resolve().relative_to(Path(root).resolve())
+        with write_game(root, paths=[relative.as_posix()]) as game:
+            result = write_rpgmaker_json(
+                Path(source), Path(translated), Path(output), self.line_layout(root)
+            )
+            game.wrote(relative.as_posix())
         return {**result, "path": str(result["path"])}
 
     def rebase_rpgmaker(
@@ -820,6 +847,8 @@ class TranslationEngine:
         from util.version_update.git_workflow import _run_git
 
         from dazedtl.translation.files import read_json
+
+        from .game_write import write_game
 
         root, source, output = Path(root), Path(source), Path(output)
         if output.suffix.lower() != ".json":
@@ -862,9 +891,11 @@ class TranslationEngine:
             filename=output.name,
         )
         fit = fit_written(result, output.name, self.line_layout(root))
-        if _run_git(root, "rev-parse", "original").stdout.strip() != commit:
-            raise ValueError("The original branch changed during source rebasing.")
-        write_json(output, result)
+        with write_game(root, paths=[relative]) as game:
+            if _run_git(root, "rev-parse", "original").stdout.strip() != commit:
+                raise ValueError("The original branch changed during source rebasing.")
+            write_json(output, result)
+            game.wrote(relative)
         return {
             "path": str(output),
             "original_commit": commit,

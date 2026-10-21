@@ -1,5 +1,6 @@
 """Preparation must retain completed stages without letting failures create a baseline."""
 
+import shutil
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -140,3 +141,45 @@ class PreparationTests(unittest.TestCase):
                 "changed helper file", encoding="utf-8"
             )
             self.assertFalse(preparation.state(native, root / "profile")["complete"])
+
+    def test_formatting_a_vx_ace_games_exports_packs_them_into_its_data(self):
+        # The game reads only Data, and Release waits for a pack once the
+        # exports change; formatting them once left both to the user.
+        from dazedtl.compatibility.game_write import write_game
+        from dazedtl.translation.release import packing_state
+        from util.dazedformat import format_json_files
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            game, folder = root / "game", root / "profile"
+            fixture = Path(__file__).resolve().parent / "fixtures/ace"
+            for name in ("Data", "ace_json"):
+                shutil.copytree(fixture / name, game / name)
+            folder.mkdir()
+            native = {
+                "id": "one",
+                "source": str(game),
+                "data": str(game / "ace_json"),
+                "plugins": "",
+                "engine": "ACE",
+            }
+            with write_game(game, folder) as written:
+                written.repack()
+            self.assertTrue(packing_state(native, folder)["current"])
+
+            def execute(_plan, _log):
+                return {"formatted": format_json_files(game / "ace_json")[0]}
+
+            def stop(message):
+                if message.startswith("Packing"):
+                    raise InterruptedError("Stopped")
+
+            plan = {"action": "format_data", "project": native, "folder": str(folder)}
+            # A stop while packing reads as a stop, not as a failed pack.
+            with self.assertRaises(InterruptedError):
+                preparation.run(plan, stop, execute, lambda *_: {})
+            self.assertEqual(
+                preparation.state(native, folder)["stages"][0]["status"], "stopped"
+            )
+            preparation.run(plan, lambda _: None, execute, lambda *_: {})
+            self.assertTrue(packing_state(native, folder)["current"])

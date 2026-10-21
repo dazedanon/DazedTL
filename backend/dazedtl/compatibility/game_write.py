@@ -15,7 +15,8 @@ skills), runs inside `write_game`, which holds the rules such writes share:
   Game.exe, so a write that packs refuses before writing anything then.
 
 Writers change files through the `GameWrite` it yields, or run an engine tool
-inside it and name what the tool wrote with `wrote`. The suite's write check
+inside it and name what the tool wrote with `wrote`, or have the write find
+what it changed in a folder with `watch`. The suite's write check
 (tests/game_writes.py) fails a test whose app code writes a game file
 anywhere else.
 """
@@ -25,7 +26,7 @@ from contextvars import ContextVar
 from pathlib import Path
 
 from dazedtl.system import unlink, write_bytes
-from dazedtl.translation.files import project_path
+from dazedtl.translation.files import digest, project_path
 
 # The game folders a gateway is writing to in this context.
 writing = ContextVar("game_writes", default=frozenset())
@@ -34,10 +35,12 @@ writing = ContextVar("game_writes", default=frozenset())
 class GameWrite:
     """The game files one write changes."""
 
-    def __init__(self, root):
+    def __init__(self, root, packs=False):
         self.root = Path(root).resolve()
         self.touched = []
         self.everything = False
+        self.packs = packs
+        self.watched = {}
 
     def put(self, relative, raw, mode=None):
         """Writes one game file whole, with `mode` when given, or takes it
@@ -55,6 +58,31 @@ class GameWrite:
     def wrote(self, *relative):
         """Names files a tool run inside the write changed itself."""
         self.touched.extend(relative)
+
+    def watch(self, folder):
+        """Names the files a tool run inside the write changes in `folder`,
+        a game folder, itself, by their content before and after, for a tool
+        that rewrites only some of them, such as a formatter. Only a write
+        that packs needs their names; with the packing receipt, it also packs
+        what the receipt finds changed since."""
+        if self.packs:
+            base = (self.root / folder).resolve()
+            self.watched[base] = self._contents(base)
+
+    def _contents(self, base):
+        if not base.is_relative_to(self.root):
+            raise ValueError(f"{base} is outside the game folder.")
+        return {
+            path.relative_to(self.root).as_posix(): digest(path.read_bytes())
+            for path in sorted(base.rglob("*") if base.is_dir() else ())
+            if path.is_file()
+        }
+
+    def _settle(self):
+        for folder, before in self.watched.items():
+            after = self._contents(folder)
+            changed = after.keys() | before.keys()
+            self.wrote(*(n for n in sorted(changed) if before.get(n) != after.get(n)))
 
     def repack(self):
         """Packs every export whose Data is out of date, as Pack outside
@@ -87,7 +115,10 @@ def _pack(native, folder, game, log):
     if game.everything:
         return pack_ace(native, folder, log)
     touched = [name for name in game.touched if name.startswith("ace_json/")]
-    if not touched:
+    # A write that watched its exports lets the packing receipt find what
+    # changed even when it changed nothing itself, such as a format run
+    # again after one stopped before its pack.
+    if not touched and (folder is None or not game.watched):
         return []
     if folder is None:
         # Without a Guided workspace, which keeps the packing receipt, a
@@ -128,7 +159,7 @@ def write_game(
     )
     if packs and (blocked := ace_blocked(root)):
         raise ValueError(blocked)
-    game = GameWrite(root)
+    game = GameWrite(root, packs=ace)
     token = writing.set(writing.get() | {str(root)})
     try:
         yield game
@@ -136,9 +167,13 @@ def write_game(
         writing.reset(token)
     if not ace:
         return
+    game._settle()
     token = writing.set(writing.get() | {str(root)})
     try:
         _pack(native, folder, game, log)
+    except InterruptedError:
+        # A stop, which the log raises, stays a stop.
+        raise
     except (OSError, ValueError, KeyError) as error:
         if game.everything:
             raise

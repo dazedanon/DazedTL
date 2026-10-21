@@ -1,6 +1,7 @@
 """Focused contracts at the maintained-engine boundary, without importing a sibling checkout."""
 
 import json
+import shutil
 import subprocess
 import sys
 import unittest
@@ -1045,6 +1046,128 @@ def parse(codeList, i, headerString, jaString):
                     write_game(game, folder),
                 ):
                     self.fail("The write ran beside the archive.")
+
+    def test_game_update_writes_its_config_only_once_git_can_take_it(self):
+        # The Project page syncs GameUpdate's config as it polls; a config
+        # written during a game update's stopped merge left Versions unable
+        # to cancel the update.
+        with TemporaryDirectory() as temporary:
+            game = Path(temporary)
+            for folder in ("data", "gameupdate", ".git"):
+                (game / folder).mkdir()
+            (game / "gameupdate/patch.ps1").write_text(
+                "# GameUpdate\n", encoding="utf-8"
+            )
+            status = {
+                "configured": True,
+                "pending_operations": ["MERGE_HEAD"],
+                "current_branch": "translation",
+                "translation_branch": "translation",
+            }
+            defaults = {
+                "forge": "gitlab",
+                "host": "gitgud.io",
+                "username": "dazed-translations",
+                "branch": "main",
+            }
+            engine = TranslationEngine.__new__(TranslationEngine)
+            with (
+                patch("util.len_git.git_status", return_value=status),
+                patch("util.gameupdate_config.remote_urls", return_value={}),
+                patch("util.gameupdate_config.committed_values", return_value=None),
+            ):
+                with self.assertRaisesRegex(ValueError, "unfinished Git merge"):
+                    engine.game_update(game, defaults, "save", "fixture-patch")
+                self.assertEqual(
+                    sorted(path.name for path in game.rglob("*")),
+                    [".git", "data", "gameupdate", "patch.ps1"],
+                )
+                status["pending_operations"] = []
+                saved = engine.game_update(game, defaults, "save", "fixture-patch")
+            self.assertEqual(saved["state"], "ready")
+            self.assertIn(
+                "repo=fixture-patch",
+                (game / "gameupdate/patch-config.txt").read_text(encoding="utf-8"),
+            )
+
+    def test_assistant_led_writes_to_ace_json_pack_the_games_data(self):
+        # The game reads only Data: Assistant-led's preparation, writes and
+        # Line widths refits once left it as it was while ace_json and the
+        # patch moved on.
+        def events(document):
+            # The JSON lists a map's events, Ruby's Hash maps them by ID.
+            found = document["events"]
+            return [*filter(None, getattr(found, "values", lambda: found)())]
+
+        def messages(document):
+            return [
+                command["parameters"][0]
+                for event in events(document)
+                for page in event["pages"]
+                for command in page["list"]
+                if command["code"] == 401
+            ]
+
+        with TemporaryDirectory() as temporary:
+            game = Path(temporary) / "game"
+            fixture = Path(__file__).resolve().parent / "fixtures/ace"
+            for folder in ("Data", "ace_json"):
+                shutil.copytree(fixture / folder, game / folder)
+            engine = TranslationEngine.__new__(TranslationEngine)
+            engine.profile = Path(temporary) / "profile"
+            engine.profile.mkdir()
+            options = {
+                "mode": "agent",
+                "include_images": False,
+                "instructions": "",
+                "include_glossary_base": False,
+                "install_forge": False,
+            }
+            engine.rpgmaker_prepare(game, options)
+            exports = game / "ace_json/Map001.json"
+            document = json.loads(exports.read_text(encoding="utf-8"))
+            for event in events(document):
+                for command in event["pages"][0]["list"]:
+                    if command["code"] == 401:
+                        command["parameters"][0] = "Lovely weather today, isn't it?"
+            staged = game / ".dazedtl/len-method/work/Map001.json"
+            write_json(staged, document)
+
+            def played():
+                data = TranslationEngine.ace_data(game, ["Data/Map001.rvdata2"])
+                return messages(data["Data/Map001.rvdata2"])
+
+            engine.write_rpgmaker(game, exports, staged, exports)
+            self.assertEqual(played(), ["Lovely weather today, isn't it?"])
+            narrow = {
+                "width": 20,
+                "faceWidth": 20,
+                "listWidth": 40,
+                "noteWidth": 40,
+                "messageRows": 4,
+            }
+            engine.line_widths(game, narrow)
+            written = messages(json.loads(exports.read_text(encoding="utf-8")))
+            self.assertEqual(played(), written)
+            self.assertEqual(written, ["Lovely weather\ntoday, isn't it?"])
+
+            # Rebasing onto a new original, whose bytes Git holds.
+            def git(_root, *arguments, **_options):
+                answers = {"rev-parse": "original", "hash-object": "blob"}
+                if arguments[:2] == ("rev-parse", "original:ace_json/Map001.json"):
+                    return SimpleNamespace(stdout="blob\n")
+                return SimpleNamespace(stdout=answers[arguments[0]] + "\n")
+
+            for event in events(document):
+                for command in event["pages"][0]["list"]:
+                    if command["code"] == 401:
+                        command["parameters"][0] = "Fine day."
+            write_json(staged, document)
+            with patch("util.version_update.git_workflow._run_git", git):
+                engine.rebase_rpgmaker(
+                    game, fixture / "ace_json/Map001.json", staged, exports, "original"
+                )
+            self.assertEqual(played(), ["Fine day."])
 
     def test_every_action_handler_is_a_worker_function(self):
         # A misspelt handler would fail only once a user runs the action.

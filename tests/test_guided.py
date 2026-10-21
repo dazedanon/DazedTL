@@ -11,6 +11,7 @@ from tempfile import TemporaryDirectory
 from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock, patch
 
+from dazedtl.compatibility.game_write import write_game
 from dazedtl.projects.store import Projects
 from dazedtl.storage import write_json
 from dazedtl.translation import (
@@ -131,6 +132,11 @@ class HeaderReviewTests(unittest.TestCase):
                 "reason": "She sings her own name.",
             }
             report = game / header_review.REPORT
+
+            def fix_headers():
+                with write_game(game) as written:
+                    header_review.apply(game, data, headers, written)
+
             # Every flag needs a decision, a fix a face the game shows, and
             # nothing is written until the whole review holds.
             for reviews in (
@@ -139,10 +145,10 @@ class HeaderReviewTests(unittest.TestCase):
             ):
                 write_json(report, {"version": 1, "reviews": reviews})
                 with self.assertRaises(ValueError):
-                    header_review.apply(game, data, headers)
+                    fix_headers()
             self.assertEqual(json.loads(path.read_text(encoding="utf-8")), document)
             write_json(report, {"version": 1, "reviews": [fix, keep]})
-            header_review.apply(game, data, headers)
+            fix_headers()
             commands[0]["parameters"][0] = ""
             commands[0]["parameters"][4] = "店主"
             # Only the fixed header's values changed; the layout stays.
@@ -170,7 +176,7 @@ class HeaderReviewTests(unittest.TestCase):
             # A header that changed since the scan is not overwritten.
             write_json(report, {"version": 1, "reviews": [fix, keep]})
             with self.assertRaisesRegex(ValueError, "changed"):
-                header_review.apply(game, data, headers)
+                fix_headers()
 
 
 class GuidedTests(unittest.TestCase):

@@ -12,14 +12,13 @@ Image Manager work stay, and the glossary and notes stay unless the user lets
 them go.
 """
 
-import os
 import re
 import sys
-import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from dazedtl import system
 from dazedtl.foreign_work import ARCHIVE
 
 from . import backups
@@ -53,20 +52,17 @@ def _archive(root):
 
 
 def _move(path, target):
-    """Moves a file or folder aside. Windows refuses while another program,
-    such as the Git status check, holds a file inside, so it retries briefly."""
+    """Moves a file or folder aside, to a path nothing holds yet. Windows
+    refuses while another program, such as the Git status check, holds a
+    file inside, which the platform layer waits out briefly."""
     target.parent.mkdir(parents=True, exist_ok=True)
-    for attempt in range(20):
-        try:
-            os.rename(path, target)  # noqa: TID251 - B5 moves Start over onto the game-write gateway
-            return
-        except PermissionError:
-            if attempt == 19:
-                raise ValueError(
-                    f"{path.name} is in use. Close programs using the game folder, "
-                    "then start over again; what moved so far is in the archive."
-                ) from None
-            time.sleep(0.25)
+    try:
+        system.replace(path, target)
+    except PermissionError:
+        raise ValueError(
+            f"{path.name} is in use. Close programs using the game folder, "
+            "then start over again; what moved so far is in the archive."
+        ) from None
 
 
 def _shown(path):

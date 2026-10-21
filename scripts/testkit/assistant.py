@@ -18,7 +18,11 @@ import hashlib
 import json
 import re
 import subprocess
+import sys
 from pathlib import Path
+
+# DazedTL's own VX Ace converter, which an assistant may run as its tool.
+ENGINE = Path(__file__).resolve().parents[2] / "backend/dazedtl/engine"
 
 JAPANESE = re.compile(r"[぀-ヿ一-鿿]")
 WORK = ".dazedtl/len-method/work"
@@ -32,6 +36,9 @@ class Assistant:
         self.work = game / WORK
         self.work.mkdir(parents=True, exist_ok=True)
         self.state = self.work / "scripted-assistant.json"
+        # A VX Ace game's text is translated in its JSON exports.
+        self.ace = any(game.glob("Data/*.rvdata2"))
+        self.data = "ace_json" if self.ace else "data"
 
     def helper(self, *args):
         result = subprocess.run(
@@ -71,18 +78,32 @@ class Assistant:
         self.helper("state")
         evidence = self.work / "engine.md"
         evidence.write_text(
-            "RPG Maker MV/MZ: data/System.json and js/plugins.js.\n", encoding="utf-8"
+            "RPG Maker VX Ace: Data/*.rvdata2 and Game.ini.\n"
+            if self.ace
+            else "RPG Maker MV/MZ: data/System.json and js/plugins.js.\n",
+            encoding="utf-8",
         )
-        self.helper(
-            "identify", "--engine", "RPG Maker MZ", "--evidence", f"{WORK}/engine.md"
-        )
+        engine = "RPG Maker VX Ace" if self.ace else "RPG Maker MZ"
+        self.helper("identify", "--engine", engine, "--evidence", f"{WORK}/engine.md")
         self.operation("backup_source")
+        if self.ace:
+            sys.path.insert(0, str(ENGINE))
+            from util.ace import actions
+
+            actions.run(self.game, "ace_extract", lambda _line: None)
         self.operation("rpgmaker_prepare")
         files = sorted(
-            f"data/{path.name}" for path in (self.game / "data").glob("*.json")
+            f"{self.data}/{path.name}"
+            for path in (self.game / self.data).glob("*.json")
         )
+        if self.ace:
+            files += sorted(
+                f"Data/{path.name}" for path in (self.game / "Data").glob("*.rvdata2")
+            )
+        else:
+            files.append("js/plugins.js")
         (self.game / MANIFEST).write_text(
-            json.dumps({"files": [*files, "js/plugins.js"]}), encoding="utf-8"
+            json.dumps({"files": files}), encoding="utf-8"
         )
         self.operation(
             "git_setup", {"version": "1.0", "untranslated": True, "manifest": MANIFEST}
@@ -108,7 +129,7 @@ class Assistant:
     def units(self):
         rows = []
         markers = self.help_markers()
-        for path in sorted((self.game / "data").glob("*.json")):
+        for path in sorted((self.game / self.data).glob("*.json")):
             document = json.loads(path.read_text(encoding="utf-8-sig"))
             for pointer, text in walk(document, markers=markers):
                 rows.append(
@@ -178,11 +199,11 @@ class Assistant:
         for identity, value in results.get("translations", results).items():
             name, _, pointer = identity.partition("/")
             by_file.setdefault(name, {})["/" + pointer] = value
-        staged = self.work / "staged/data"
+        staged = self.work / "staged" / self.data
         staged.mkdir(parents=True, exist_ok=True)
         markers = self.help_markers()
         for name, pointers in sorted(by_file.items()):
-            game_file = self.game / "data" / f"{name}.json"
+            game_file = self.game / self.data / f"{name}.json"
             document = json.loads(game_file.read_text(encoding="utf-8-sig"))
             before = list(kept(document, markers=markers))
             for pointer, value in pointers.items():
@@ -193,9 +214,9 @@ class Assistant:
             self.operation(
                 "write_rpgmaker",
                 {
-                    "source": f"data/{name}.json",
-                    "translated": f"{WORK}/staged/data/{name}.json",
-                    "output": f"data/{name}.json",
+                    "source": f"{self.data}/{name}.json",
+                    "translated": f"{WORK}/staged/{self.data}/{name}.json",
+                    "output": f"{self.data}/{name}.json",
                 },
             )
             # The labels and markers the game finds by their Japanese stay; a
@@ -233,11 +254,15 @@ def kept_parameters(node, markers):
 
 
 def walk(node, pointer="", markers=frozenset()):
-    """Every Japanese string, leaving out the kept parameters."""
+    """Every Japanese string, leaving out the kept parameters and move routes
+    (205, their steps repeated in 505, and an event page's own), whose
+    scripts players never read."""
     if isinstance(node, dict):
+        if node.get("code") in {205, 505}:
+            return
         indexes = kept_parameters(node, markers)
         for key, value in node.items():
-            if key == "_original":
+            if key in {"_original", "moveRoute"}:
                 continue
             if key == "parameters" and indexes:
                 for index, item in enumerate(value):

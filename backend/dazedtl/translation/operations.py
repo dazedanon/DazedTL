@@ -577,7 +577,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         elif not patch and (
             kind == "MVMZ" or kind == "ACE" and (staged / "ace_json").is_dir()
         ):
-            engine.rpgmaker_prepare(staged, options, log=progress)
+            engine.rpgmaker_prepare_release(staged, options, log=progress)
             prepared = True
         result = {
             "official": str(staged),
