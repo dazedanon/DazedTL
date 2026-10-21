@@ -988,11 +988,14 @@ assert [item["finding"]["source"] for item in bundle_of(row)["items"]] == [
 ], bundle_of(row)
 editorial(row, {})
 # With nothing left to review, next completes QA and the engine has timed it.
+# The check whose reviewer declined its line is done, though it compared none.
 assert qa.next_bundle(task, "editor-a") is None
 state = qa.status(task)
 assert state["stage"] == "complete", state
 assert (
-    state["estimate"]["eta_seconds"] == 0 and "editor-a" in state["estimate"]["workers"]
+    not any(state["estimate"]["remaining"].values())
+    and state["estimate"]["eta_seconds"] == 0
+    and "editor-a" in state["estimate"]["workers"]
 ), state["estimate"]
 findings = json.loads((task / "findings.json").read_text(encoding="utf-8"))
 # Automatic lint families combine into one correction, also in the declined

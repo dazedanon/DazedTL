@@ -153,8 +153,14 @@ def _estimate(checkpoint: dict[str, Any]) -> dict[str, Any]:
         )
         remaining[stage] = max(0, total - int(state.get("accepted_items", 0)) - set_aside)
         if stage == "screen":
+            # Checks still to open, and the targets of those open. An accepted
+            # check is done, even for lines its reviewer declined and so
+            # compared none of.
             checks = _check_counts(state)
-            remaining[stage] += checks["projected"] - checks["accepted"]
+            remaining[stage] += checks["projected"] - checks["total"] + sum(
+                int(row["item_count"]) for row in state.get("bundles", [])
+                if row.get("check_of") and row["status"] != "accepted"
+            )
     seconds = sum(
         remaining[stage] * _seconds_per_item(checkpoint, stage) for stage in remaining
     )
