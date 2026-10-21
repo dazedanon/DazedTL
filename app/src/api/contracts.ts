@@ -1545,6 +1545,7 @@ export type GitStatus = {
   pending_operations: string[];
   git_available: boolean;
   asset_sync_pending: boolean;
+  asset_update_applied: boolean;
   asset_manifest_available: boolean;
   asset_baseline_repair_needed: boolean;
   applied_update_version: string | null;

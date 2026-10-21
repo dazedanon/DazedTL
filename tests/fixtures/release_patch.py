@@ -18,8 +18,12 @@ from util.len_translation import LenProject
 from util.project_preparation import prepare_rpgmaker_patch
 from util.rpgmaker_plugin_registry import plugin_entries
 from util.version_update import (
+    GitWorkflowError,
     abort_update,
     apply_official_update,
+    continue_with_official,
+    git_workflow,
+    inspect_repository,
     preview_official_update,
 )
 from util.version_update.release_layout import inspect_release, stage_release
@@ -336,6 +340,45 @@ applying = {
     "expected_baseline_asset_manifest": preview.baseline_asset_manifest,
     "patch_overlay": True,
 }
+
+
+def stuck(state):
+    return (
+        state.pending_cherry_pick,
+        state.asset_sync_pending,
+        state.original_version,
+        state.translation_version,
+    )
+
+
+def failing(*args, **kwargs):
+    raise GitWorkflowError("The cherry-pick failed.")
+
+
+# An apply whose cherry-pick failed without a conflict, such as a patch that
+# turned out empty, left the release on the original branch and its assets
+# waiting, so every game write refused with no control to end it.
+real_cherry_pick, git_workflow._cherry_pick = git_workflow._cherry_pick, failing
+try:
+    apply_official_update(game, newer.parent, "1.03", **applying)
+    raise AssertionError("The failing cherry-pick applied.")
+except GitWorkflowError:
+    pass
+finally:
+    git_workflow._cherry_pick = real_cherry_pick
+assert stuck(inspect_repository(game)) == (False, False, "1.02", "1.02")
+# A game cancelled before cancelling restored the original branch, or closed
+# before its cherry-pick began, keeps that state; cancelling ends it.
+assert apply_official_update(
+    game, newer.parent, "1.03", auto_resolve=False, **applying
+).pending_conflicts
+subprocess.run(["git", "-C", str(game), "cherry-pick", "--abort"], check=True)
+assert stuck(inspect_repository(game)) == (False, True, "1.03", "1.02")
+status = abort_update(game)
+assert (stuck(status), status.original_commit) == (
+    (False, False, "1.02", "1.02"),
+    preview.original_commit,
+), status
 # An apply stopped at Git's conflict, then cancelled: the original branch kept
 # the release and its asset record waited, so the game read 1.03 and refused
 # every write. Cancelling leaves the game as before, and it applies again.
@@ -351,8 +394,20 @@ assert (
     status.original_version,
     status.translation_commit,
 ) == (False, False, preview.original_commit, "1.02", preview.translation_commit), status
-result = apply_official_update(game, newer.parent, "1.03", **applying)
-assert result.complete, result
+# An apply that stopped once the translation had the update, before its
+# assets were copied: finishing copies them.
+real_assets = git_workflow._complete_pending_asset_plan
+git_workflow._complete_pending_asset_plan = failing
+try:
+    apply_official_update(game, newer.parent, "1.03", **applying)
+    raise AssertionError("The asset copy ran.")
+except GitWorkflowError:
+    pass
+finally:
+    git_workflow._complete_pending_asset_plan = real_assets
+assert stuck(inspect_repository(game)) == (False, True, "1.03", "1.03")
+result = continue_with_official(game)
+assert result.complete and not inspect_repository(game).asset_sync_pending, result
 merged = json.loads(common_events.read_text(encoding="utf-8"))
 translation[3]["list"][-2] = official[3]["list"][-2]
 assert merged == [None, official[1], *translation[2:4], official[4]], merged

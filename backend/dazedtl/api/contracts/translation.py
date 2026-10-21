@@ -199,6 +199,9 @@ class GitStatus(TypedDict):
     pending_operations: list[str]
     git_available: bool
     asset_sync_pending: bool
+    # With assets pending, whether the update reached the translation: Finish
+    # copies the assets, otherwise Cancel restores the version before it.
+    asset_update_applied: bool
     asset_manifest_available: bool
     asset_baseline_repair_needed: bool
     applied_update_version: str | None

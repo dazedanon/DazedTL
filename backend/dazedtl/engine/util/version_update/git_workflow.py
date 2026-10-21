@@ -180,6 +180,10 @@ class RepositoryStatus:
     asset_baseline_repair_needed: bool = False
     translation_branch: str | None = None
     applied_update_version: str | None = None
+    # With assets pending, whether the update reached the translation, so
+    # finishing copies its assets; otherwise cancelling restores the version
+    # before it.
+    asset_update_applied: bool = False
 
     @property
     def ready(self) -> bool:
@@ -627,6 +631,11 @@ def inspect_repository(game_root: str | Path) -> RepositoryStatus:
     translation_commit = (
         _ref_commit(repo, translation_branch) if translation_branch else None
     )
+    original_version = _version_from_history(repo, ORIGINAL_BRANCH, original_commit)
+    translation_version = _version_from_history(
+        repo, translation_branch or TRANSLATION_BRANCH, translation_commit
+    )
+    asset_sync_pending = _asset_state_path(repo, prefix, "pending-assets").exists()
     return RepositoryStatus(
         selected_root=selected,
         repo_root=repo,
@@ -634,17 +643,13 @@ def inspect_repository(game_root: str | Path) -> RepositoryStatus:
         current_branch=current_branch,
         original_exists=original_commit is not None,
         original_commit=original_commit,
-        original_version=_version_from_history(repo, ORIGINAL_BRANCH, original_commit),
+        original_version=original_version,
         translation_exists=translation_commit is not None,
         translation_commit=translation_commit,
-        translation_version=_version_from_history(
-            repo, translation_branch or TRANSLATION_BRANCH, translation_commit
-        ),
+        translation_version=translation_version,
         worktree_clean=worktree_clean(repo),
         pending_cherry_pick=_cherry_pick_path(repo).exists(),
-        asset_sync_pending=_asset_state_path(
-            repo, prefix, "pending-assets"
-        ).exists(),
+        asset_sync_pending=asset_sync_pending,
         asset_manifest_available=_asset_state_path(
             repo, prefix, "official-assets"
         ).exists(),
@@ -653,6 +658,8 @@ def inspect_repository(game_root: str | Path) -> RepositoryStatus:
         applied_update_version=_applied_update_version(
             repo, translation_branch or TRANSLATION_BRANCH, translation_commit
         ),
+        asset_update_applied=asset_sync_pending
+        and translation_version == original_version,
     )
 
 
@@ -1059,6 +1066,18 @@ def _load_pending_asset_plan(
 
 def _clear_pending_asset_plan(repo: Path, game_prefix: str) -> None:
     system.unlink(_asset_state_path(repo, game_prefix, "pending-assets"), missing_ok=True)
+
+
+def _cancel_pending_update(
+    repo: Path, game_prefix: str, moved: str, previous: str
+) -> None:
+    """Put the original branch back from an update that never reached the
+    translation, and drop the assets it left to copy."""
+    if _ref_commit(repo, ORIGINAL_BRANCH) == moved:
+        _run_git(
+            repo, "update-ref", f"refs/heads/{ORIGINAL_BRANCH}", previous, moved
+        )
+    _clear_pending_asset_plan(repo, game_prefix)
 
 
 def _ensure_local_excludes(repo: Path) -> None:
@@ -3185,7 +3204,22 @@ def apply_official_update(
     except Exception:
         _clear_pending_asset_plan(repo, status.game_prefix)
         raise
-    result = _cherry_pick(game, original_commit, version, auto_resolve=auto_resolve)
+    try:
+        result = _cherry_pick(
+            game, original_commit, version, auto_resolve=auto_resolve
+        )
+    except Exception:
+        # A cherry-pick that failed without conflicts to resolve left the
+        # translation as it was, so the original branch goes back with it.
+        if (
+            not _cherry_pick_path(repo).exists()
+            and _ref_commit(repo, status.translation_branch)
+            == status.translation_commit
+        ):
+            _cancel_pending_update(
+                repo, status.game_prefix, original_commit, status.original_commit
+            )
+        raise
     return _complete_pending_asset_plan(game, result) if result.complete else result
 
 
@@ -3228,6 +3262,9 @@ def apply_registered_original(
 def continue_with_official(translated_game: str | Path) -> UpdateResult:
     game = Path(translated_game).expanduser().resolve()
     status = inspect_repository(game)
+    if status.repo_root and not status.pending_cherry_pick and status.asset_update_applied:
+        # The update stopped once the translation had it; its assets remain.
+        return apply_registered_original(game)
     if not status.repo_root or not status.pending_cherry_pick:
         raise GitWorkflowError("There is no pending cherry-pick to continue")
     _configure_exact_tree_repo(status.repo_root)
@@ -3246,23 +3283,28 @@ def continue_with_official(translated_game: str | Path) -> UpdateResult:
 def abort_update(translated_game: str | Path) -> RepositoryStatus:
     game = Path(translated_game).expanduser().resolve()
     status = inspect_repository(game)
-    if not status.repo_root or not status.pending_cherry_pick:
-        raise GitWorkflowError("There is no pending cherry-pick to abort")
+    stopped_before_translation = (
+        status.asset_sync_pending and not status.asset_update_applied
+    )
+    if not status.repo_root or not (
+        status.pending_cherry_pick or stopped_before_translation
+    ):
+        raise GitWorkflowError("There is no pending update to cancel")
     repo = status.repo_root
     _configure_exact_tree_repo(repo)
-    picked = _run_git(repo, "rev-parse", "CHERRY_PICK_HEAD").stdout.strip()
     # The update being cancelled moved the original branch to its release and
     # left its assets to synchronize once applied; cancelling puts both back.
     plan = _load_pending_asset_plan(repo, status.game_prefix)
-    _run_git(repo, "cherry-pick", "--abort")
+    if status.pending_cherry_pick:
+        picked = _run_git(repo, "rev-parse", "CHERRY_PICK_HEAD").stdout.strip()
+        _run_git(repo, "cherry-pick", "--abort")
+    else:
+        picked = plan["original_commit"]
     if plan is not None and plan["original_commit"] == picked:
-        if status.original_commit == picked:
-            _run_git(
-                repo,
-                "update-ref",
-                f"refs/heads/{ORIGINAL_BRANCH}",
-                _run_git(repo, "rev-parse", f"{picked}^").stdout.strip(),
-                picked,
-            )
-        _clear_pending_asset_plan(repo, status.game_prefix)
+        _cancel_pending_update(
+            repo,
+            status.game_prefix,
+            picked,
+            _run_git(repo, "rev-parse", f"{picked}^").stdout.strip(),
+        )
     return inspect_repository(game)

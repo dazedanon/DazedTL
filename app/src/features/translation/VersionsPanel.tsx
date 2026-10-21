@@ -68,6 +68,9 @@ export function VersionsPanel({
     action.busy || state.active || !!application.snapshot?.application.running;
   const pending = !!state.git?.pending_operations.length;
   const assetsPending = !!state.git?.asset_sync_pending;
+  // A stopped update whose assets wait either reached the translation, and
+  // finishing copies them, or never did, and cancelling restores the game.
+  const assetsApplied = assetsPending && !!state.git?.asset_update_applied;
   const active =
     session.latest &&
     ["ready", "running", "waiting"].includes(session.latest.status)
@@ -83,7 +86,7 @@ export function VersionsPanel({
     session.latest &&
     ["failed", "interrupted"].includes(session.latest.status) &&
     !(
-      pending &&
+      (pending || assetsPending) &&
       ["version_continue", "version_abort"].includes(
         session.latest.action || "",
       )
@@ -201,11 +204,13 @@ export function VersionsPanel({
   // What holds the current step, said once beside it.
   const problem = pending
     ? "Conflicts to resolve"
-    : assetsPending
-      ? "Assets to recover"
-      : failedStep
-        ? sentence(failedStep.status)
-        : "";
+    : assetsApplied
+      ? "Assets to copy"
+      : assetsPending
+        ? "Update stopped"
+        : failedStep
+          ? sentence(failedStep.status)
+          : "";
   return (
     <div className="version-panel">
       <div className="version-current">
@@ -239,7 +244,13 @@ export function VersionsPanel({
           </ActionSlot>
         </Section>
       ) : pending || assetsPending ? (
-        <Section title="Finish the interrupted update">
+        <Section
+          title={
+            pending || assetsApplied
+              ? "Finish the interrupted update"
+              : "Cancel the stopped update"
+          }
+        >
           {pending ? (
             <>
               <p>
@@ -260,12 +271,33 @@ export function VersionsPanel({
                 )}
               </ActionSlot>
             </>
+          ) : assetsApplied ? (
+            <>
+              <p>
+                The translation has the update’s files, but the images, sounds
+                and other assets it brings still need copying into the game.
+              </p>
+              <ActionSlot target={actionTarget}>
+                {control(
+                  "version_continue",
+                  "Copy assets & finish",
+                  {},
+                  false,
+                  true,
+                )}
+              </ActionSlot>
+            </>
           ) : (
-            <p className="banner">
-              The file update finished, but game assets still need recovery. Ask
-              your coding assistant to finish asset synchronization in this game
-              folder before starting another update.
-            </p>
+            <>
+              <p>
+                The update stopped before it reached the translation. Cancel it
+                to go back to version {state.git?.translation_version}, then
+                apply it again.
+              </p>
+              <ActionSlot target={actionTarget}>
+                {control("version_abort", "Cancel update", {}, false, true)}
+              </ActionSlot>
+            </>
           )}
           {failedStep && <JobStatus job={failedStep} />}
         </Section>
