@@ -1167,6 +1167,7 @@ They keep only failures the interface reports generically (internal and storage 
 Hangs throw nothing, so a [watchdog](../backend/dazedtl/watchdog.py) records them: a backend request still running after 30 seconds, since every later request waits behind it, and a preparation or tool action without progress for a minute.
 Each record holds where the stuck thread waits, with runs of standard-library frames shortened to the call into them and the wait, and a second record says how long it took once the work moves on.
 Workers open the backend's log only to append each record, so the backend alone rotates it; a backend stopped at close names the oldest request still unanswered.
+A worker's standard error goes to its run log or nowhere, so a worker records its own failures the interface shows generically, and any error nothing in it handled, as a worker error named by its action, through the [diagnostics](../backend/dazedtl/diagnostics.py) hooks and the engine workers' [reported failures](../backend/dazedtl/engine/desktop/backend/worker_failures.py).
 The report names the checkout revision and whether tracked files changed, since code locations resolve only against that revision.
 
 Connections and preferences share one atomic record in workspace `settings/settings.json`.

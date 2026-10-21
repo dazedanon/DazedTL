@@ -28,6 +28,7 @@ const EVENTS = new Set([
   "backend.resumed",
   "operation.stalled",
   "operation.resumed",
+  "worker.error",
 ]);
 const LOGS = ["desktop-failures.jsonl", "backend-failures.jsonl"];
 const identifier = (value) =>

@@ -1,12 +1,16 @@
-"""A hang leaves a record of where it waited, without flooding the report."""
+"""Hangs and worker crashes leave a record of where they happened, without
+flooding the report or copying what the error said."""
 
 import json
+import os
+import subprocess
+import sys
 import threading
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from dazedtl.diagnostics import Diagnostics
+from dazedtl.diagnostics import FOLDER, Diagnostics
 from dazedtl.watchdog import Watchdog
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -77,3 +81,83 @@ class HangTests(unittest.TestCase):
             )
         )
         self.assertNotIn("causes", records[1])
+
+
+class WorkerCrashTests(unittest.TestCase):
+    def test_a_crashing_run_worker_records_where_without_what_it_said(self):
+        temporary = TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        folder = Path(temporary.name)
+        # The error messages hold the run's path, as a provider's can hold a
+        # key or the game's text.
+        run = folder / "sk-ant-api03-FAKEKEY 日本語のテキスト"
+        run.mkdir()
+        (run / "plan.json").write_text(
+            json.dumps({"mode": "estimate", "engine": "No such engine"}),
+            encoding="utf-8",
+        )
+
+        def work():
+            # Launched as the app launches it, its standard error discarded.
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-I",
+                    "-X",
+                    "utf8",
+                    "-B",
+                    str(ROOT / "backend/dazedtl/compatibility/manual_worker.py"),
+                    str(run),
+                ],
+                env={**os.environ, FOLDER: str(folder / "diagnostics")},
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                timeout=30,
+            )
+
+        # Without its attempt the worker crashes before it can report anything;
+        # with one, it reports the unknown engine as a generic failure.
+        work()
+        (run / "attempt.json").write_text(
+            json.dumps({"files": [], "resume": False}), encoding="utf-8"
+        )
+        work()
+
+        log = (folder / "diagnostics/backend-failures.jsonl").read_text(
+            encoding="utf-8"
+        )
+        records = [json.loads(line) for line in log.splitlines()]
+        self.assertEqual(
+            [
+                (record["event"], record["action"], record["causes"][0]["type"])
+                for record in records
+            ],
+            [
+                ("worker.error", "manual_estimate", "FileNotFoundError"),
+                ("worker.error", "manual_estimate", "StopIteration"),
+            ],
+        )
+        self.assertEqual(records[0]["errno"], 2)
+        engine = "app/backend/dazedtl/engine/desktop/backend/"
+        self.assertIn(
+            (engine + "manual_worker.py", "main"),
+            [
+                (frame["file"], frame["function"])
+                for frame in records[0]["causes"][0]["frames"]
+            ],
+        )
+        self.assertEqual(
+            records[1]["causes"][0]["frames"][-1]["file"],
+            engine + "manual_environment.py",
+        )
+        self.assertTrue(
+            all(
+                type(frame["line"]) is int and frame["line"] > 0
+                for record in records
+                for frame in record["causes"][0]["frames"]
+            )
+        )
+        self.assertNotIn("FAKEKEY", log)
+        self.assertNotIn("日本語", log)
+        self.assertNotIn("\\u65e5", log)

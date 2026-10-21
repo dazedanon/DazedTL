@@ -84,8 +84,8 @@ def main():
         task.run()
         return 0
     except Exception as exc:
-        import traceback
-        traceback.print_exc()
+        from desktop.backend.worker_failures import reported
+        reported(exc)
         emit("finished", False, f"{type(exc).__name__}: the engine could not finish. See the run log.")
         return 1
     finally:

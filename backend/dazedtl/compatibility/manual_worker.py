@@ -6,6 +6,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 if __name__ == "__main__":
+    import json
+
+    from dazedtl.diagnostics import record_crashes, worker_failure
+
+    try:
+        mode = json.loads((Path(sys.argv[1]) / "plan.json").read_bytes())["mode"]
+    except OSError, ValueError, KeyError, TypeError, IndexError:
+        mode = "unknown"  # The engine's worker reports the unreadable plan.
+    action = "manual_" + str(mode)
+    record_crashes(action)
     from dazedtl.stdio import private_stdin
 
     # Stop and approval commands arrive on standard input while the per-file
@@ -14,9 +24,16 @@ if __name__ == "__main__":
     from dazedtl.compatibility.runtime import activate
 
     activate()
-    from desktop.backend import manual_worker
+    from desktop.backend import manual_worker, worker_failures
 
     from dazedtl.compatibility.worker_policy import install
+
+    def reported(native, error):
+        # The run shows every failure as a generic message.
+        worker_failure(error, action)
+        native(error)
+
+    worker_failures.reported.layer("dazedtl-diagnostics", reported)
 
     install(coordinator=True)
     # Native main resolves its per-file runner beside __file__. ROOT remains the
