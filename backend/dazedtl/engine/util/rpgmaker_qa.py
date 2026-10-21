@@ -36,6 +36,7 @@ from util.qa.schema import (
     SUMMARY_LIMIT,
     SWEEP_RESULT_SCHEMA,
     TASK_SCHEMA,
+    task_sha256,
 )
 from util.qa.storage import (
     ANSWERS,
@@ -46,8 +47,7 @@ from util.qa.storage import (
     DECISIONS_FILE,
     DECISIONS_SCHEMA,
     JUDGED_BEFORE,
-    _read_json,
-    _read_task,
+    read_task,
     rules_changed,
     _slug,
     _task_lock,
@@ -66,7 +66,6 @@ from util.qa.fitting import (
 from util.qa.selection import (
     FORCED_DEEP_EVENT_CODES,
     FORCED_DEEP_MECHANICAL_FLAGS,
-    _screen_items,
 )
 from util.qa.interface import (
     CAPTURE_RECORD,
@@ -74,13 +73,12 @@ from util.qa.interface import (
     _fit_checks,
     interface_capture,
     INTERFACE_FOLDER,
-    _interface_places,
+    interface_places,
     INTERFACE_PLACES_LISTED,
     RECAPTURE_OBSERVER,
 )
 from util.qa.ledger import (
     BASELINE_FOLDER,
-    _derive_ledger,
     JUDGED_DISPOSITIONS,
     _pair_key,
     REVIEWED_FILE,
@@ -152,7 +150,7 @@ from util.qa.claims import (
 )
 from util.qa.apply import (
     answer,
-    _apply_loaded_correction_map,
+    apply_loaded_correction_map,
     correction_map,
     record_decision,
 )

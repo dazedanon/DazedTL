@@ -141,7 +141,7 @@ def _observation_key(observation: dict[str, Any]) -> tuple[str, str]:
     return observation["identity"], observation["note"]
 
 
-def _read_task(task_dir: str | Path) -> tuple[Path, dict, dict]:
+def read_task(task_dir: str | Path) -> tuple[Path, dict, dict]:
     """The task and its checkpoint for reading, or for applying a finished
     task's findings, whichever rules prepared it."""
     root = Path(task_dir).expanduser().resolve()
@@ -167,7 +167,7 @@ def _rules_moved(task: dict[str, Any]) -> bool:
 def _load_task(task_dir: str | Path) -> tuple[Path, dict, dict]:
     """The task and its checkpoint for review work, which needs the rules
     version that made it."""
-    root, task, checkpoint = _read_task(task_dir)
+    root, task, checkpoint = read_task(task_dir)
     if _rules_moved(task):
         raise ValueError(
             "An update changed QA's rules after this task was prepared, so it "

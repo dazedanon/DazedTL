@@ -251,7 +251,7 @@ def apply(qa, task, undo=False):
     shutil.rmtree(staging, ignore_errors=True)
     shutil.copytree(descriptor["data_root"], staging / "data")
     shutil.copyfile(task / "inventory.json", staging / "inventory.json")
-    regression = qa._apply_loaded_correction_map(
+    regression = qa.apply_loaded_correction_map(
         staging,
         {**descriptor, "data_root": str(staging / "data")},
         selected,

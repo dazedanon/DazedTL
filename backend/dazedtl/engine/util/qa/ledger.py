@@ -20,14 +20,15 @@ from util.qa.schema import (
     FINDINGS_SCHEMA,
     _canonical_bytes,
     _sha256,
+    task_sha256,
 )
 from util.qa.selection import _glossary_entries, _scene_groups
 from util.qa.storage import (
     _atomic_write_json,
     _read_json,
-    _read_task,
     _task_lock,
     answers,
+    read_task,
 )
 from util.rpgmaker_qa_manifest import build_manifest
 
@@ -107,7 +108,7 @@ def _task_ledger(root: Path) -> dict[str, Any] | None:
         # A follow-up round reopens the task and removes its ledger under the
         # task's lock, so the ledger is made and saved under it too.
         with _task_lock(root):
-            _root, task, checkpoint = _read_task(root)
+            _root, task, checkpoint = read_task(root)
             if checkpoint["stage"] != "complete":
                 return None
             ledger = _derive_ledger(root, task, checkpoint)
@@ -132,7 +133,7 @@ def _derive_ledger(
     if (
         report.get("schema") != FINDINGS_SCHEMA
         or report.get("task_sha256") != checkpoint["task_sha256"]
-        or checkpoint["task_sha256"] != _sha256(_canonical_bytes(task))
+        or checkpoint["task_sha256"] != task_sha256(task)
     ):
         raise ValueError(f"QA findings belong to another task: {root}")
     context = _read_json(root / "context.json")

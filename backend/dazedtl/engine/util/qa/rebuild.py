@@ -30,9 +30,9 @@ from util.qa.storage import (
     _atomic_write_json,
     _load_task,
     _read_json,
-    _read_task,
     _slug,
     _task_lock,
+    read_task,
 )
 from util.qa.validation import _validate_screen_result
 
@@ -144,7 +144,7 @@ def rebuild_deep_from_screen(
         raise
     # Declined items the source reported as not reviewed are set aside again.
     skipped = any(row.get("skipped") for row in source_rows)
-    if _stage_finished(_read_task(rebuilt)[2], ["screen"], skipped):
+    if _stage_finished(read_task(rebuilt)[2], ["screen"], skipped):
         return rebuilt, advance(rebuilt, skipped)
     return rebuilt, status(rebuilt)
 
@@ -324,7 +324,7 @@ def _replay_screen(
     # Every bundle of the source's screen is the rebuilt task's, holding the
     # same lines and as finished, but for what its source set aside on
     # request, which waits for that request (see rebuild_deep_from_screen).
-    rows = {row["id"]: row for row in _read_task(rebuilt)[2]["screen"]["bundles"]}
+    rows = {row["id"]: row for row in read_task(rebuilt)[2]["screen"]["bundles"]}
     if declines or any(
         row["id"] not in rows
         or _screen_digest(_read_json(Path(rows[row["id"]]["path"]))) != digests[row["id"]]

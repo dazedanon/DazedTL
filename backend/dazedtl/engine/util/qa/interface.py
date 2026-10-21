@@ -89,7 +89,7 @@ def _capture_round(
     except BaseException:
         system.remove_tree(staging, ignore_errors=True)
         raise
-    places, outside = _interface_places(root / INTERFACE_FOLDER / name, manifest)
+    places, outside = interface_places(root / INTERFACE_FOLDER / name, manifest)
     record = {
         "schema": CAPTURE_SCHEMA,
         "round": number,
@@ -127,7 +127,7 @@ def _capture_interface(
     }
 
 
-def _interface_places(
+def interface_places(
     folder: Path, manifest: dict[str, Any]
 ) -> tuple[dict[str, list[dict[str, Any]]], list[dict[str, Any]]]:
     """Where each cluster's text shows squeezed or cut off in the captures in
@@ -221,7 +221,7 @@ def _interface_checks(
 ) -> dict[str, list[dict[str, str]]]:
     """Text the game squeezes or cuts off on a captured screen, by cluster,
     naming the captures that show it."""
-    places, _outside = _interface_places(folder, manifest)
+    places, _outside = interface_places(folder, manifest)
     checked = {}
     for cluster_id, found in places.items():
         listed = "; ".join(_place_text(place) for place in found[:INTERFACE_PLACES_LISTED])
@@ -243,7 +243,7 @@ def _interface_after(
     """Captures of the screens that squeezed or cut off a finding's text, taken
     again with the corrections in place, by finding."""
     folder = _capture_folder(root)
-    places, _outside = _interface_places(folder, manifest)
+    places, _outside = interface_places(folder, manifest)
     if not places:
         return {}
     records, _clusters = _record_maps(manifest)

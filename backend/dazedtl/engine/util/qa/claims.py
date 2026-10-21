@@ -26,8 +26,8 @@ from util.qa.storage import (
     _decisions,
     _load_task,
     _read_json,
-    _read_task,
     _task_lock,
+    read_task,
 )
 
 # A worker's run reviews this many bundles, then a fresh run of it continues,
@@ -121,7 +121,7 @@ def accept_text(
     text = f"Accepted {bundle_id}.\n"
     if not then_next:
         return text
-    _root, _task, checkpoint = _read_task(root)
+    _root, _task, checkpoint = read_task(root)
     worker = worker or str(_bundle_row(checkpoint, bundle_id)[1].get("assigned_to") or "")
     if not worker:
         return text + "Name your worker to claim the next bundle.\n"

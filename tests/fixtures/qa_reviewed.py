@@ -293,7 +293,7 @@ write_game(LINES)
 # scene reads the shared line again, since one changed only by a confirmed
 # correction and the other only by guidance for other lines.
 (finding,) = json.loads(saved)["findings"]
-assert qa._apply_loaded_correction_map(
+assert qa.apply_loaded_correction_map(
     first,
     json.loads((first / "task.json").read_text(encoding="utf-8")),
     qa.correction_map(first, [finding["id"]]),

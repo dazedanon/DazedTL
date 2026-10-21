@@ -33,8 +33,8 @@ from util.qa.storage import (
     _load_task,
     _observation_key,
     _read_json,
-    _read_task,
     _task_lock,
+    read_task,
 )
 from util.qa.validation import (
     _line_names,
@@ -302,7 +302,7 @@ def observed_lines(
     it was observed for; with *judged*, those it left out instead, since an
     earlier review had judged them for the same text."""
     root = Path(task_dir).expanduser().resolve()
-    _root, _task, checkpoint = _read_task(root)
+    _root, _task, checkpoint = read_task(root)
     notes: dict[str, set[str]] = defaultdict(set)
     for row in checkpoint.get(JUDGED_BEFORE if judged else "observations") or []:
         notes[row["identity"]].add(row["note"])
@@ -338,7 +338,7 @@ def corrected_lines(
     corrected = set((ledger or {}).get("corrected") or [])
     if not corrected:
         return {}
-    _root, _task, checkpoint = _read_task(root)
+    _root, _task, checkpoint = read_task(root)
     notes: dict[str, set[str]] = defaultdict(set)
     for row in checkpoint.get("observations") or []:
         pair = lines.pairs.get(row.get("cluster_id"))

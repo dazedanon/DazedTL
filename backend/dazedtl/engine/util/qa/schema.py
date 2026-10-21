@@ -98,6 +98,11 @@ def _sha256(value: bytes | str) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
+def task_sha256(task: dict[str, Any]) -> str:
+    """The digest a task's checkpoint and findings name their task by."""
+    return _sha256(_canonical_bytes(task))
+
+
 def _normalize_category(value: Any) -> str:
     """Collapse reviewer-specific labels into a stable report taxonomy."""
     label = re.sub(r"[^a-z0-9]+", "-", str(value or "").casefold()).strip("-")

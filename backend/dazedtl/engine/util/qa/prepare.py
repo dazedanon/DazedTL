@@ -48,6 +48,7 @@ from util.qa.schema import (
     _canonical_bytes,
     _sha256,
     _utc_now,
+    task_sha256,
 )
 from util.qa.selection import (
     _cluster_by_identity,
@@ -552,7 +553,7 @@ def prepare_task(
                 }
             checkpoint = {
                 "schema": CHECKPOINT_SCHEMA,
-                "task_sha256": _sha256(_canonical_bytes(task)),
+                "task_sha256": task_sha256(task),
                 "updated_at": _utc_now(),
                 "stage": "screen",
                 "screen": {

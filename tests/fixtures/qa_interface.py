@@ -155,7 +155,7 @@ assert state["interface"] == {"captured": 2, "squeezed": 0, "outside": 1}, state
 
 
 def outside():
-    _places, found = qa._interface_places(
+    _places, found = qa.interface_places(
         qa.interface_capture(task)["folder"],
         json.loads((task / "inventory.json").read_text()),
     )

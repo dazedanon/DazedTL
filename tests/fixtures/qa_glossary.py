@@ -240,7 +240,7 @@ assert [(row["current"], row["correction"], row["category"]) for row in findings
 # The note explains the rejected proposal, so the accepted one goes without it.
 assert findings[0]["evidence"] == 'The glossary gives 存子 as "Aruko".', findings
 inventory = json.loads((task / "inventory.json").read_text(encoding="utf-8"))
-assert qa._apply_loaded_correction_map(
+assert qa.apply_loaded_correction_map(
     task,
     json.loads((task / "task.json").read_text(encoding="utf-8")),
     qa.correction_map(task, [row["id"] for row in findings]),

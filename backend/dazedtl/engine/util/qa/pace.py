@@ -15,8 +15,8 @@ from util.qa.storage import (
     _atomic_write_json,
     _decisions,
     _read_json,
-    _read_task,
     _task_lock,
+    read_task,
     rules_changed,
 )
 from util.rpgmaker_qa_preflight import (
@@ -223,7 +223,7 @@ def _stage_metrics(stage: dict[str, Any], *, active: bool) -> dict[str, Any]:
 
 def status(task_dir: str | Path) -> dict[str, Any]:
     # A task an update made unusable still reports where it stood.
-    root, task, checkpoint = _read_task(task_dir)
+    root, task, checkpoint = read_task(task_dir)
     screen = checkpoint["screen"]
     deep = checkpoint["deep"]
     return {

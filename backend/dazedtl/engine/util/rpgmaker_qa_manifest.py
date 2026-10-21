@@ -125,17 +125,17 @@ def resolve_pointer(document: Any, json_pointer: str) -> Any:
     return current
 
 
-def _string_leaves(value: Any, path: tuple[object, ...] = ()):
+def string_leaves(value: Any, path: tuple[object, ...] = ()):
     if isinstance(value, str):
         if value.strip():
             yield path, value
         return
     if isinstance(value, list):
         for index, child in enumerate(value):
-            yield from _string_leaves(child, path + (index,))
+            yield from string_leaves(child, path + (index,))
     elif isinstance(value, dict):
         for key in sorted(value):
-            yield from _string_leaves(value[key], path + (key,))
+            yield from string_leaves(value[key], path + (key,))
 
 
 def _classification(filename: str, code: int | None) -> str:
@@ -203,7 +203,7 @@ _ROW_MAPPINGS = {
 }
 
 
-def _live_mapping(
+def live_mapping(
     owner: dict[str, Any],
     owner_path: tuple[object, ...],
     original_path: tuple[object, ...],
@@ -272,7 +272,7 @@ def _live_mapping(
     return None
 
 
-def _read_live(
+def read_live(
     document: Any, paths: list[tuple[object, ...]], code: int | None
 ) -> tuple[str, str]:
     values = [resolve_pointer(document, pointer(path)) for path in paths]
@@ -350,7 +350,7 @@ def build_manifest(data_root: str | Path, focus: str) -> dict[str, Any]:
                     classification = _classification(path.name, code)
                     include = focus == "release" or focus == classification
                     if include:
-                        leaves = list(_string_leaves(original))
+                        leaves = list(string_leaves(original))
                         if not leaves:
                             unresolved.append(
                                 {
@@ -367,7 +367,7 @@ def build_manifest(data_root: str | Path, focus: str) -> dict[str, Any]:
                                 pointer(source_path),
                             ) in TOOL_MANAGED_QA_EXCLUSIONS:
                                 continue
-                            mapping = _live_mapping(
+                            mapping = live_mapping(
                                 value,
                                 path_parts,
                                 original_path,
@@ -387,7 +387,7 @@ def build_manifest(data_root: str | Path, focus: str) -> dict[str, Any]:
                                 continue
                             live_paths, mapping_kind = mapping
                             try:
-                                live, live_transform = _read_live(document, live_paths, code)
+                                live, live_transform = read_live(document, live_paths, code)
                             except (KeyError, IndexError, TypeError, ValueError) as exc:
                                 unresolved.append(
                                     {

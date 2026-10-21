@@ -323,7 +323,7 @@ inventory = json.loads((task / "inventory.json").read_text(encoding="utf-8"))
 
 
 def apply(document):
-    return qa._apply_loaded_correction_map(
+    return qa.apply_loaded_correction_map(
         task,
         json.loads((task / "task.json").read_text(encoding="utf-8")),
         document,

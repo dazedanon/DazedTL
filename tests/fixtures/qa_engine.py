@@ -1059,7 +1059,7 @@ inventory = json.loads((task / "inventory.json").read_text(encoding="utf-8"))
 
 
 def apply(document):
-    return qa._apply_loaded_correction_map(
+    return qa.apply_loaded_correction_map(
         task,
         json.loads((task / "task.json").read_text(encoding="utf-8")),
         document,
@@ -1495,7 +1495,7 @@ for undo, expected, written in (
     ),
     (True, "was freed from the Illusion.", VARIABLES[:2]),
 ):
-    assert qa._apply_loaded_correction_map(
+    assert qa.apply_loaded_correction_map(
         checked,
         json.loads((checked / "task.json").read_text(encoding="utf-8")),
         qa.correction_map(checked, [row["id"] for row in findings], undo=undo),
@@ -1509,7 +1509,7 @@ for undo, expected, written in (
 # settled for the same text, including the help text it kept and the text
 # variables as written, while the Line widths are the same; under narrower
 # ones that help text is a check again.
-assert qa._apply_loaded_correction_map(
+assert qa.apply_loaded_correction_map(
     checked,
     json.loads((checked / "task.json").read_text(encoding="utf-8")),
     qa.correction_map(checked, [row["id"] for row in findings]),

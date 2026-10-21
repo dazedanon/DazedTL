@@ -40,9 +40,9 @@ from util.qa.storage import (
     _decisions,
     _load_task,
     _read_json,
-    _read_task,
     _task_lock,
     answers,
+    read_task,
 )
 from util.rpgmaker_qa_manifest import build_manifest
 from util.rpgmaker_qa_verify import verify_manifest
@@ -55,7 +55,7 @@ def answer(task_dir: str | Path, question: str, choice: str) -> dict[str, str]:
     if choice not in ANSWERS:
         raise ValueError("Keep the current text, or use the reviewer's proposal.")
     # The lock would make a folder that is not there.
-    _read_task(root)
+    read_task(root)
     with _task_lock(root):
         saved = {**answers(root), str(question): choice}
         _atomic_write_json(
@@ -116,7 +116,7 @@ def correction_map(
     """
     # A finished task's findings apply under any rules version, since apply
     # checks them with the current rules.
-    root, task, checkpoint = _read_task(task_dir)
+    root, task, checkpoint = read_task(task_dir)
     if checkpoint["stage"] != "complete":
         raise ValueError("QA review must be complete before its findings are applied")
     findings_doc = _read_json(root / "findings.json")
@@ -333,7 +333,7 @@ def _render_json_like(raw: bytes, document: Any) -> bytes:
     return (b"\xef\xbb\xbf" + payload) if has_bom else payload
 
 
-def _apply_loaded_correction_map(
+def apply_loaded_correction_map(
     root: Path,
     task: dict[str, Any],
     correction_map: dict[str, Any],
