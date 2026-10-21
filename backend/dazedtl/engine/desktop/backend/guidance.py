@@ -1,6 +1,7 @@
 """Portable game guidance shared by guided projects and Len handoffs."""
 import json
 from pathlib import Path
+from util import system
 from .project import atomic_json, digest
 from .workflow_actions import regular
 
@@ -52,7 +53,7 @@ def document_save(root, name, revision, text):
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_name(path.name + ".desktop-tmp")
         regular(root, temporary).write_text(text, encoding="utf-8", newline="\n")
-        temporary.replace(path)
+        system.replace(temporary, path)
     return documents(root)
 
 

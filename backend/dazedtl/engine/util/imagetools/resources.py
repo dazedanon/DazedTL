@@ -513,7 +513,7 @@ def _fetch(
                 f"{dest.name} does not match its published checksum. "
                 "Nothing was kept."
             )
-        part.replace(dest)
+        system.replace(part, dest)
         _log(log, f"{dest.name} ready ({human(done)})")
     except BaseException:
         part.unlink(missing_ok=True)

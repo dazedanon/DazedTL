@@ -181,12 +181,12 @@ def run_engine_action(plan, log):
             raise ValueError("; ".join(errors))
         previous = folder / ("previous-import-" + uuid.uuid4().hex)
         if (folder / "files").exists():
-            (folder / "files").rename(previous)
+            system.rename(folder / "files", previous)
         try:
-            staging.rename(folder / "files")
+            system.rename(staging, folder / "files")
         except Exception:
             if previous.exists():
-                previous.rename(folder / "files")
+                system.rename(previous, folder / "files")
             raise
         if previous.exists():
             system.remove_tree(previous)

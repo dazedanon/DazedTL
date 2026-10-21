@@ -24,6 +24,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from util import system
 from util.imagetools.fonts import text_budget
 from util.imagetools.geometry import Box
 from util.imagetools.job import Job, JobError
@@ -140,7 +141,7 @@ def write(job: Job, path: Path | None = None) -> tuple[Path, Path | None]:
     payload = json.dumps(build(job), ensure_ascii=False, indent=2)
     temporary = target.with_name(target.name + ".tmp")
     temporary.write_text(payload, encoding="utf-8", newline="\n")
-    temporary.replace(target)
+    system.replace(temporary, target)
 
     mirror = None
     if path is None:

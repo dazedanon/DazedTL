@@ -25,6 +25,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from util import system
 from util.imagetools.geometry import Box
 from util.imagetools.ocr import Block, Line, Reading, Word
 from util.imagetools.style import Style
@@ -278,7 +279,7 @@ class Job:
         # leave a truncated job file - it is the only copy of the review work.
         temporary = target.with_name(target.name + ".tmp")
         temporary.write_text(payload, encoding="utf-8", newline="\n")
-        temporary.replace(target)
+        system.replace(temporary, target)
         return target
 
     @staticmethod

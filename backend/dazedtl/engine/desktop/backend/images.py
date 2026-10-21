@@ -260,7 +260,7 @@ class ImageStore:
             for name in ("preview.png", "base.png", "overlay.png"):
                 temporary = folder / (name + ".tmp")
                 shutil.copyfile(operation_dir / name, temporary)
-                temporary.replace(folder / name)
+                system.replace(temporary, folder / name)
             current.update(preview_revision=current["revision"], approved_revision=None, notes=rendered["notes"],
                            preview_sha256=digest((folder / "preview.png").read_bytes()))
             current['blocks'] = rendered['blocks']
@@ -290,7 +290,7 @@ class ImageStore:
             data['link']['files'] = file_hashes(files(root, entry['image']))
             temp = paths['editable'].with_suffix('.png.tmp')
             shutil.copyfile(preview, temp)
-            temp.replace(paths['editable'])
+            system.replace(temp, paths['editable'])
             data['link']['files'] = file_hashes(files(root, entry['image']))
             sync(data, approved=True)
         atomic_json(self.folder(project_id, image_id) / "image.json", data)
