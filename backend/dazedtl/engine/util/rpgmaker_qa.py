@@ -3024,7 +3024,7 @@ def _task_ledger(root: Path) -> dict[str, Any] | None:
     """What a complete task reviewed and left standing, kept in its folder:
     lines screened or deep-reviewed, minus any whose finding still waits to be
     applied or whose review was declined, plus the corrections editorial
-    confirmed."""
+    confirmed and the lines the user kept when asked."""
     cached = root / REVIEWED_FILE
     try:
         ledger = _read_json(cached)
@@ -3094,6 +3094,12 @@ def _derive_ledger(
         raise ValueError(f"QA findings belong to another task: {root}")
     context = _read_json(root / "context.json")
     records, _clusters = _record_maps(_read_json(root / "inventory.json"))
+    # Questions the user answered by keeping the line: it reads right as it is.
+    answered = answers(root)
+    kept = {
+        row["id"] for row in report.get("uncertain_playtests") or []
+        if answered.get(row["id"]) == "keep"
+    }
     reviewed: set[str] = set()
     scenes: set[str] = set()
     variants: set[str] = set()
@@ -3144,16 +3150,21 @@ def _derive_ledger(
         for review in _read_json(Path(row["result_path"]))["reviews"]:
             item = items[review["id"]]
             pair = _pair_key(item["source"], item["translation"])
-            if review["disposition"] == "declined":
+            disposition = (
+                "clean"
+                if review["disposition"] == "uncertain-playtest" and review["id"] in kept
+                else review["disposition"]
+            )
+            if disposition == "declined":
                 unsettled.add(pair)
                 continue
-            if review["disposition"] == "clean":
+            if disposition == "clean":
                 reviewed.add(pair)
                 cleared[pair].update(item.get("deep_reasons") or [])
             for evidence in item.get("screen_evidence") or []:
                 if evidence.get("verdict") == "observation":
                     key = _sha256(f"{pair}\0{evidence['note']}")[:32]
-                    verdicts[key] = review["disposition"]
+                    verdicts[key] = disposition
     for finding in report.get("findings") or []:
         for change in _changes(finding):
             unsettled.add(_pair_key(change["source"], change["current"]))
@@ -3167,7 +3178,11 @@ def _derive_ledger(
                 reviewed.add(corrected)
                 cleared[corrected].add("*")
     for row in [
-        *(report.get("uncertain_playtests") or []), *(report.get("not_corrected") or []),
+        *(
+            row for row in report.get("uncertain_playtests") or []
+            if row["id"] not in kept
+        ),
+        *(report.get("not_corrected") or []),
         *(report.get("not_reviewed") or []),
     ]:
         unsettled.add(_pair_key(row.get("source"), row.get("current")))
@@ -9155,6 +9170,46 @@ def _follow_up(root: Path, checkpoint: dict[str, Any]) -> bool:
         if (root / name).is_file():
             unlink_with_retry(root / name)
     return True
+
+
+# The user's answers to a task's questions, which its ledger reads: keep the
+# line as it is, or use the reviewer's proposal.
+ANSWERS_FILE = "answers.json"
+ANSWERS_SCHEMA = "rpgmaker-qa-answers-v1"
+ANSWERS = frozenset({"keep", "use"})
+
+
+def answers(task_dir: str | Path) -> dict[str, str]:
+    """The user's answer to each of a task's questions they answered."""
+    try:
+        document = _read_json(Path(task_dir).expanduser().resolve() / ANSWERS_FILE)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(document, dict) or document.get("schema") != ANSWERS_SCHEMA:
+        return {}
+    return {
+        str(question): choice
+        for question, choice in (document.get("answers") or {}).items()
+        if choice in ANSWERS
+    }
+
+
+def answer(task_dir: str | Path, question: str, choice: str) -> dict[str, str]:
+    """Record the user's answer to one of a task's questions. A kept line is
+    judged as it is, so the task's ledger is derived again with it."""
+    root = Path(task_dir).expanduser().resolve()
+    if choice not in ANSWERS:
+        raise ValueError("Keep the current text, or use the reviewer's proposal.")
+    # The lock would make a folder that is not there.
+    _read_task(root)
+    with _task_lock(root):
+        saved = {**answers(root), str(question): choice}
+        _atomic_write_json(
+            root / ANSWERS_FILE, {"schema": ANSWERS_SCHEMA, "answers": saved}
+        )
+        if (root / REVIEWED_FILE).is_file():
+            unlink_with_retry(root / REVIEWED_FILE)
+    return saved
 
 
 DECISIONS_FILE = "decisions.json"

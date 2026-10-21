@@ -31,7 +31,6 @@ STEPS = (
     "reapply",
     "choose",
 )
-CHOICES = ("keep", "use")
 CHECKPOINT_MESSAGE = "qa: apply text QA corrections"
 UNDO_MESSAGE = "qa: undo text QA corrections"
 # What an Assistant-led assistant does about labels QA can't correct. A
@@ -70,13 +69,6 @@ def _unreadable_step(qa) -> str:
         "shell, restore that access and run qa again; otherwise run qa --prepare, "
         "which sets the task aside and prepares a fresh one."
     )
-
-
-def _save_task_record(folder: Path, name: str, task: str, value) -> None:
-    """Saves one QA task's entry in a per-game record, such as its choices."""
-    path = folder / name
-    document = read_json(path) if path.exists() else {}
-    write_json(path, {**document, task: value})
 
 
 class TextQA:
@@ -321,21 +313,16 @@ class TextQA:
     def choose(self, project_id, native, question, choice):
         """The user's answer to an open question: keep the line, or use the
         proposal the reviewer gave."""
+        from util import rpgmaker_qa
+
         qa = self.qa(project_id, native)
         row = next((row for row in qa["questions"] if row["id"] == question), None)
         if row is None:
             raise ValueError("That question is no longer open.")
-        if choice not in CHOICES:
-            raise ValueError("Keep the current text, or use the reviewer's proposal.")
         # A follow-up round after an apply asks again until its answers apply.
         if qa["applied"] or row.get("state") == "applied":
             raise ValueError("This task's findings are already applied.")
-        folder = self.folder(native)
-        path = folder / "text-qa-choices.json"
-        saved = (read_json(path) if path.exists() else {}).get(qa["task"]) or {}
-        _save_task_record(
-            folder, "text-qa-choices.json", qa["task"], {**saved, question: choice}
-        )
+        rpgmaker_qa.answer(qa["task"], question, choice)
 
     def report(self, project_id):
         from dazedtl.compatibility.text import qa_report

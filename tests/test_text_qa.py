@@ -10,6 +10,7 @@ from dazedtl.api.contracts.guided import TextQaStatus
 from dazedtl.api.contracts.validation import _close_contracts
 from dazedtl.translation.text_qa import CHECKPOINT_MESSAGE, TextQA
 from pydantic import TypeAdapter
+from util import rpgmaker_qa
 
 
 def fake_guided(folder, qa, method="guided"):
@@ -49,6 +50,13 @@ class TextQATests(unittest.TestCase):
         # wrote the game directly, so History could not restore them.
         with TemporaryDirectory() as folder:
             task = Path(folder) / "task"
+            task.mkdir()
+            (task / "task.json").write_text(
+                json.dumps({"schema": rpgmaker_qa.TASK_SCHEMA})
+            )
+            (task / "checkpoint.json").write_text(
+                json.dumps({"schema": rpgmaker_qa.CHECKPOINT_SCHEMA})
+            )
             qa = {
                 "task": str(task),
                 "current": True,
@@ -66,6 +74,8 @@ class TextQATests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Apply or undo"):
                 service.run("project", "checkpoint")
             service.run("project", "choose", question="Map001.json#/1", choice="use")
+            # The task keeps the answer, where its ledger reads it.
+            self.assertEqual(rpgmaker_qa.answers(task), {"Map001.json#/1": "use"})
             qa["questions"][0]["choice"] = "use"
             # A version takes every change in the game, so QA's waits while
             # the playtest's fixes are in none, as Fuuma's took them.

@@ -512,9 +512,12 @@ def reviewing(folder, focus):
     """The focus's QA task as the playtest's problems read it, or None."""
     from util import rpgmaker_qa as qa
 
+    from .text import adopt_answers
+
     pointer = Path(folder) / ("text-qa-" + focus + ".json")
     if not pointer.exists():
         return None
+    adopt_answers(folder)
     task = str(read_json(pointer)["task"])
     try:
         return Review(

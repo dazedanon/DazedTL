@@ -467,6 +467,7 @@ class PublicationTests(unittest.TestCase):
         engine._sha256 = lambda value: "task"
         engine._canonical_bytes = lambda value: b""
         engine.status = lambda root: {"stage": "complete"}
+        engine.answers = lambda root: {}
         refreshed = []
         engine.refresh_kept = lambda root, kept: refreshed.append((root, kept))
         write_json(
