@@ -250,6 +250,8 @@ export function layoutView(w: GuidedWorkspace): TaskView {
     widths,
     textFit,
     handoff,
+    localOperation,
+    stopOperation,
   } = w;
   const measuring = handoff("line_widths");
   // Measured widths save themselves, so a measurement that came back is done,
@@ -421,6 +423,15 @@ export function layoutView(w: GuidedWorkspace): TaskView {
   );
   return {
     content,
+    // The fit shows in this footer, not in a row that moves the page.
+    secondary: localOperation && (
+      <Button
+        disabled={action.busy}
+        onClick={() => stopOperation(localOperation)}
+      >
+        Stop
+      </Button>
+    ),
     action: saveControl,
     next: advance(undefined, undefined, pending ? "quiet" : "primary"),
     save: disabled ? undefined : saveLayout,

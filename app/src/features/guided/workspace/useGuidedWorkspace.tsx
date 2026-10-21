@@ -294,8 +294,9 @@ export function useGuidedWorkspace({
   const activeOperation = activity.find((item) =>
     ["ready", "running", "waiting"].includes(item.status),
   );
-  // Setup and Release show their own operations in the task, so the shared
-  // operation row above the task leaves them out.
+  // Setup, Release and the tasks that start work show it in their own footer,
+  // so the shared operation row above the task, which moves the page, leaves
+  // it out.
   const localOperation =
     !panel &&
     activeOperation &&
@@ -310,7 +311,8 @@ export function useGuidedWorkspace({
       ].includes(activeOperation.action || "")) ||
       (taskId === "package" &&
         ["release", "release_patch"].includes(activeOperation.action || "")) ||
-      (taskId === "estimate" && activeOperation.action === "full_estimate"))
+      (taskId === "estimate" && activeOperation.action === "full_estimate") ||
+      (taskId === "speakers" && activeOperation.action === "fit_text"))
       ? activeOperation
       : null;
   const stopOperation = (current: Job) =>
