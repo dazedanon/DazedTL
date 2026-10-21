@@ -465,13 +465,13 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
                     }
                   >
                     {task(
-                      key + "_install",
+                      `${key}_install` as const,
                       state.tools?.[key].installed ? "Update" : "Install",
                       {},
                       !baseline,
                     )}
                     {state.tools?.[key].present &&
-                      task(key + "_remove", "Remove", {}, !baseline)}
+                      task(`${key}_remove` as const, "Remove", {}, !baseline)}
                   </ActionRow>
                 ))}
               </ActionList>

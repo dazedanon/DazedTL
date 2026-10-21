@@ -385,45 +385,6 @@ def phased_workflows(workspace, lock, operations, manual):
     return ScopedWorkflows(workspace, lock, operations, manual)
 
 
-def apply_selected(plan, log):
-    from desktop.backend.workflow_actions import regular, validate_plan
-    from util.project_scanner import export_to_game
-
-    validate_plan(plan)
-    names = plan["options"]["files"]
-    if (
-        not names
-        or set(names) - set(plan["guard"]["translated"] or {})
-        or set(names) - set(plan["guard"]["files"] or {})
-    ):
-        raise ValueError("The selected saved outputs changed. Review the files again.")
-    root, data, folder = (
-        Path(plan["project"]["source"]),
-        Path(plan["project"]["data"]),
-        Path(plan["folder"]),
-    )
-    for name in names:
-        regular(root, data / name)
-        regular(folder, folder / "translated" / name)
-    log("Applying " + str(len(names)) + " reviewed files.")
-    count, errors = export_to_game(folder / "translated", data, filenames=names)
-    if errors:
-        raise ValueError("; ".join(errors))
-    receipt = folder / "applied-outputs.json"
-    previous = read_json(receipt).get("files", {}) if receipt.exists() else {}
-    write_json(
-        receipt,
-        {
-            "version": 1,
-            "files": {
-                **previous,
-                **{name: plan["guard"]["translated"][name] for name in names},
-            },
-        },
-    )
-    return {"files": count, "destination": str(data)}
-
-
 def runtime_files(source):
     """Propose the standard RPG Maker patch; the user reviews the complete list."""
     from util.len_patch_scope import (
@@ -492,6 +453,45 @@ def ace_archive(source):
 
     found = original_archive(Path(source))
     return found.name if found else None
+
+
+def run_preparation(plan, log):
+    """Preparation's stages, each run by the engine's own implementation."""
+    from desktop.backend import workflow_actions
+
+    from dazedtl.translation.preparation import run
+
+    workflow_actions.validate_plan(plan)
+    return run(
+        plan, log, workflow_actions.run_engine_action, workflow_actions.action_guard
+    )
+
+
+def run_refresh(plan, log):
+    """Reloads the reviewed files' working copies from the game."""
+    from desktop.backend.workflow_actions import validate_plan
+
+    from dazedtl.compatibility.translation import TranslationEngine
+    from dazedtl.translation.guided_inputs import GuidedInputs
+
+    validate_plan(plan)
+    engine = TranslationEngine(Path(plan["folder"]).parent.parent)
+    project = plan["project"]
+    inputs = GuidedInputs(
+        plan["folder"],
+        project["source"],
+        project["data"],
+        engine.source_bindings,
+        engine.original_bytes,
+        native_exports=project["engine"] == "ACE",
+    )
+    return inputs.prepare(
+        plan["options"]["files"],
+        refresh=True,
+        expected=plan["options"]["sources"],
+        retired=plan["options"]["retired"],
+        progress=log,
+    )
 
 
 def run_ace(plan, log):

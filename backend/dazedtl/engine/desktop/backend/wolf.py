@@ -7,18 +7,6 @@ from util.project_preparation import _game_path
 from util.project_scanner import detect_wolf_layout, find_wolf_archives, list_wolf_json_files
 from util.wolf_workflow import WolfWorkflow
 
-LABELS = {
-    "wolf_unpack": "Unpack WOLF archives", "wolf_extract": "Extract WOLF text and preserve originals",
-    "wolf_maps": "Extract missing maps", "wolf_discover": "Discover database sheets",
-    "wolf_profile": "Save database profile", "wolf_names": "Inspect name safety",
-    "wolf_precheck": "Reconcile names and check injection", "wolf_inject": "Apply all translated WOLF files",
-    "wolf_inject_game": "Apply all files from wolf_json", "wolf_restore": "Restore source layout",
-    "wolf_loose": "Back up archives for loose playtest", "wolf_repack": "Repack Data.wolf",
-    "wolf_saves": "Update existing WOLF saves", "wolf_search": "Find translated text",
-    "wolf_wrap_preview": "Preview WOLF wrapping", "wolf_wrap": "Apply WOLF wrapping",
-}
-READ_ONLY = {"wolf_discover", "wolf_names", "wolf_search", "wolf_wrap_preview"}
-
 
 def manifest(root):
     root = Path(root)

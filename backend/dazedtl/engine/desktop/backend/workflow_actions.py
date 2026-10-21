@@ -9,35 +9,17 @@ import stat
 import shutil
 import uuid
 
+from dazedtl.actions import ACTIONS, ENGINE, named
+from util import extensions
 from util.ace import rgssad
 from util.game_settings import without_game_update
 from util.project_preparation import _game_path, rpgmaker_layout
 from .project import digest, file_digest
 from . import wolf
 
-LABELS = {
-    "import": "Import selected files", "format_data": "Format game data", "format_plugins": "Format plugins.js",
-    "gameupdate": "Install GameUpdate", "prepare": "Prepare game files", "git_status": "Inspect Git version tracking",
-    "git_setup": "Set up Git version tracking", "ace_decrypt": "Decrypt Ace archive", "ace_extract": "Convert Ace data to JSON",
-    "ace_pack": "Pack translated Ace data", "export_selected": "Export selected files to game", "export_all": "Export all translated files to game",
-    "qa_prepare": "Prepare or resume translation QA",
-    "qa_status": "Refresh translation QA", "playtest_status": "Refresh playtest plugins",
-    "inspector_install": "Install TL Inspector", "inspector_remove": "Remove TL Inspector", "forge_install": "Install Forge",
-    "forge_remove": "Remove Forge", "playtest_install": "Install both playtest plugins", "playtest_apply": "Apply playtest settings",
-    "release": "Build clean game ZIP", "editors": "Find code editors",
-    "reference_add": "Add DazedTL reference translation", "reference_pair": "Add Japanese / English reference pair",
-    "reference_remove": "Remove reference registration", "reference_build": "Build exact reference matches", "images_status": "Refresh image readiness",
-    "release_playtest": "Play the game for the release playtest",
-    "playtest_fix": "Apply playtest fixes",
-    "layout_capture": "Show test text in the game's windows",
-    "label_capture": "Show shortened plugin labels in the game",
-}
-# The release playtest and the layout and label checks write only their
-# reports, never the game.
-READ_ONLY = {"git_status", "qa_status", "playtest_status", "editors", "images_status", "release_playtest",
-             "layout_capture", "label_capture"}
-LABELS.update(wolf.LABELS)
-READ_ONLY.update(wolf.READ_ONLY)
+# The actions the engine's workflow reviews; the host's registry names them.
+LABELS = {name: ACTIONS[name].label for name in named(family=ENGINE)}
+READ_ONLY = named(family=ENGINE, read_only=True)
 
 
 def json_value(value):
@@ -153,7 +135,13 @@ def validate_plan(plan):
             raise ValueError("The release destination changed after this preview. Preview the action again.")
 
 
+@extensions.point
 def run_action(plan, log):
+    """Runs a reviewed plan; the host layers the handlers of its own actions on."""
+    return run_engine_action(plan, log)
+
+
+def run_engine_action(plan, log):
     validate_plan(plan)
     project, options = plan["project"], plan["options"]
     root, folder = Path(project["source"]), Path(plan["folder"])

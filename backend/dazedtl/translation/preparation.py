@@ -3,17 +3,15 @@
 from copy import deepcopy
 from pathlib import Path
 
+from dazedtl.actions import ACTIONS
 from dazedtl.freshness import Basis, compare
 from dazedtl.storage import write_json
 
 from .files import digest, project_path, read_json
 
 UPDATER_CONFIG = "gameupdate/patch-config.txt"
-LABELS = {
-    "format_data": "Format game data",
-    "format_plugins": "Format plugins.js",
-    "gameupdate": "Create GameUpdate files",
-}
+STEPS = ("format_data", "format_plugins", "gameupdate")
+LABELS = {name: ACTIONS[name].step for name in STEPS}
 
 
 def actions(native):

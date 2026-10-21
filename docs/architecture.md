@@ -25,6 +25,7 @@ App workers own source backup, Git baselines, checkpoints and local patch packag
 The Translation workspace composes file selection, preferences and the preserved phased runner.
 Its [workspace hook](../app/src/features/guided/workspace/useGuidedWorkspace.tsx) owns shared state, navigation and action review; each task's body and footer controls come from its [task view](../app/src/features/guided/workspace/tasks/index.ts), with sheets and dialogs as separate components.
 Its backend, [Guided](../backend/dazedtl/translation/guided.py), composes collaborators for [action review and execution](../backend/dazedtl/translation/guided_actions.py), [run inspection](../backend/dazedtl/translation/guided_inspection.py), the [release form](../backend/dazedtl/translation/guided_release.py) and [context setup](../backend/dazedtl/translation/guided_context.py).
+Each workflow action is one row of the [action registry](../backend/dazedtl/actions.py), which says how it is reviewed and run and what its review and History call it; Guided's checks, the worker and, through the generated contracts, the renderer read it.
 Working-copy ownership and resync behavior are described under [Workflow and shared presentation](#workflow-and-shared-presentation).
 
 ## Engine and resources

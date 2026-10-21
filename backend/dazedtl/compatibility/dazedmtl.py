@@ -6,6 +6,7 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 
+from dazedtl.actions import label
 from dazedtl.storage import WorkspaceError, write_bytes, write_json
 
 
@@ -406,9 +407,7 @@ class ExistingBackend:
         )
         plan = self.workflows.previews[result["token"]]
         plan["action"] = action
-        plan["label"] = (
-            "Prepare game files" if action == "prepare_game" else plan["label"]
-        )
+        plan["label"] = label(action)
         return {**result, "label": plan["label"]}
 
     def guided_configure_tools(self, token, options):
@@ -466,11 +465,7 @@ class ExistingBackend:
         plan.update(
             action=action,
             options=options,
-            label={
-                "runtime_restore": "Restore reviewed text batch",
-                "qa_apply": "Apply QA corrections",
-                "qa_undo": "Undo QA corrections",
-            }[action],
+            label=label(action),
         )
         return {
             **result,
@@ -554,13 +549,13 @@ class ExistingBackend:
         preview = self.workflows.preview(native_id, "export_selected", {})
         plan = self.workflows.previews[preview["token"]]
         options = {"files": list(files)}
-        label = "Apply selected saved outputs"
+        shown = label("export_selected")
         if run_output:
             plan["run_output"] = run_output
             options["run_id"] = run_output["run_id"]
-            label = "Reapply saved run output"
-        plan.update(options=options, label=label)
-        return {**preview, "label": label, "options": options, "files": len(files)}
+            shown = "Reapply saved run output"
+        plan.update(options=options, label=shown)
+        return {**preview, "label": shown, "options": options, "files": len(files)}
 
     def guided_refresh(self, native, files, sources):
         folder = self.workflows.folder(native["id"])
@@ -570,7 +565,7 @@ class ExistingBackend:
                 "project": native,
                 "folder": str(folder),
                 "action": "refresh_sources",
-                "label": "Reload selected files from game",
+                "label": label("refresh_sources"),
                 "options": {"files": files, "sources": sources, "retired": []},
                 "guard": self.guided_guard(native, folder),
             }

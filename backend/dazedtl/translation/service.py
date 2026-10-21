@@ -8,6 +8,7 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
+from dazedtl.actions import history_label
 from dazedtl.freshness import Basis, compare
 from dazedtl.settings.execution import (
     configuration,
@@ -72,8 +73,8 @@ def changed_since(current, frozen_sha256, frozen, *, reprice=True):
 assistant_request = ContextVar("assistant_request", default=False)
 
 OPERATIONS = {
-    "backup_source": ("Back up original game", set()),
-    "use_source_backup": ("Use the game's saved original", {"backup_id"}),
+    "backup_source": (history_label("backup_source"), set()),
+    "use_source_backup": (history_label("use_source_backup"), {"backup_id"}),
     "backup_workspace": ("Back up project files", set()),
     "restore_backup": (
         "Restore backup into a new folder",
@@ -81,7 +82,7 @@ OPERATIONS = {
     ),
     "rpgmaker_prepare": ("Prepare RPG Maker files", {"data_path"}),
     "git_setup": (
-        "Save game version",
+        history_label("git_setup"),
         {"version", "original", "untranslated", "manifest"},
     ),
     "line_widths": ("Save the game's Line widths", {"widths"}),
@@ -94,7 +95,7 @@ OPERATIONS = {
         {"source", "translated", "output", "backup_id", "expected_original_commit"},
     ),
     "census": ("Find the game's Japanese text", {"decoded"}),
-    "checkpoint": ("Save translation version", {"manifest", "message"}),
+    "checkpoint": (history_label("checkpoint"), {"manifest", "message"}),
     "package": ("Package local translation patch", set()),
     "stage_update": (
         "Copy the new release for comparison",
@@ -113,11 +114,11 @@ OPERATIONS = {
 
 GUIDED_OPERATIONS = {
     "guided_review": (
-        "Record guided playtest review",
+        history_label("guided_review"),
         {"manifest", "source_inputs", "source_inputs_sha256"},
     ),
-    "guided_package": ("Package reviewed guided patch", set()),
-    "release_patch": ("Build local patch ZIP", {"plan", "sha256"}),
+    "guided_package": (history_label("guided_package"), set()),
+    "release_patch": (history_label("release_patch"), {"plan", "sha256"}),
 }
 
 # The Image Manager's progress as Len image records, which the app writes.

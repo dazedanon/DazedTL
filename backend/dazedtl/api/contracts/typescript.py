@@ -12,6 +12,7 @@ from importlib import import_module
 
 import typing_extensions
 
+from dazedtl.actions import ROWS
 from dazedtl.api.contracts.methods import METHODS
 
 MODULES = (
@@ -123,11 +124,36 @@ class Renderer:
         )
         return f"export type RpcContract = {{\n{rows}\n}};"
 
+    @staticmethod
+    def actions():
+        """The action registry's rows the renderer reads, as one constant;
+        the engine's own actions never reach it."""
+        rows = {}
+        for row in ROWS:
+            if row.family == "engine":
+                continue
+            view = {
+                "label": row.label,
+                "family": row.family,
+                "restorable": row.restorable,
+                "reports_outcome": row.reports_outcome,
+            }
+            for key in ("step", "counterpart"):
+                if getattr(row, key):
+                    view[key] = getattr(row, key)
+            rows[row.name] = view
+        return (
+            "/** The workflow actions, from backend/dazedtl/actions.py. */\n"
+            f"export const ACTIONS = {json.dumps(rows)} as const satisfies "
+            "Record<string, ActionView>;\n\n"
+            "export type ActionName = keyof typeof ACTIONS;"
+        )
+
 
 def render():
     renderer = Renderer()
     parts = [renderer.declaration(value) for value in declarations()]
-    source = "\n\n".join([*parts, renderer.methods()]) + "\n"
+    source = "\n\n".join([*parts, renderer.methods(), renderer.actions()]) + "\n"
     methods = {
         name: {"refresh": method.refresh, "duringClose": method.during_close}
         for name, method in METHODS.items()

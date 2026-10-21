@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from dazedtl.actions import ACTIONS, GUIDED, spec
 from dazedtl.storage import write_json
 
 from . import backups, preparation
@@ -28,80 +29,7 @@ ADVANCED_CODES = {
     "CODE325",
     "CODE108",
 }
-NATIVE_ACTIONS = {
-    "prepare_game",
-    "import",
-    "format_data",
-    "format_plugins",
-    "gameupdate",
-    "export_selected",
-    "ace_decrypt",
-    "ace_extract",
-    "ace_pack",
-    "qa_prepare",
-    "qa_status",
-    "qa_apply",
-    "qa_undo",
-    "release_playtest",
-    "playtest_fix",
-    "layout_capture",
-    "label_capture",
-    "runtime_restore",
-    "playtest_install",
-    "playtest_status",
-    "playtest_apply",
-    "inspector_install",
-    "inspector_remove",
-    "forge_install",
-    "forge_remove",
-    "editors",
-    "release",
-    "reference_add",
-    "reference_pair",
-    "reference_remove",
-    "reference_build",
-    "images_status",
-}
-TOOL_ACTIONS = {
-    "playtest_install",
-    "playtest_apply",
-    "inspector_install",
-    "inspector_remove",
-    "forge_install",
-    "forge_remove",
-}
-SHARED_ACTIONS = {
-    "backup_source": "Back up original game",
-    "use_source_backup": "Use the game's saved original",
-    "git_setup": "Save game version",
-    "checkpoint": "Save translation version",
-    "guided_review": "Record playtest review",
-    "guided_package": "Build local patch ZIP",
-    "release_patch": "Build local patch ZIP",
-    "refresh_sources": "Reload selected files from game",
-}
 MANIFEST = ".dazedtl/guided/runtime-manifest.json"
-
-
-READY_ACTIONS = {
-    "start",
-    "export_selected",
-    "qa_apply",
-    "qa_undo",
-    "runtime_restore",
-    "ace_pack",
-    "qa_prepare",
-    "playtest_install",
-    "playtest_fix",
-    "checkpoint",
-    "guided_review",
-    "guided_package",
-} | TOOL_ACTIONS
-PUBLICATION_ACTIONS = {
-    "qa_apply",
-    "qa_undo",
-    "runtime_restore",
-}
 
 
 @dataclass
@@ -138,10 +66,10 @@ class GuidedActions:
 
     def require_ready(self, project_id, native, action, changed):
         """Translation readiness and unchanged sources for publishing actions."""
-        if action in READY_ACTIONS:
+        if ACTIONS[action].ready:
             self.guided.translation.ready(project_id)
         if (
-            action in PUBLICATION_ACTIONS
+            ACTIONS[action].family == "text"
             and self.guided.inputs(native).status(
                 sorted(self.guided.supported_files(native))
             )["changed"]
@@ -251,9 +179,9 @@ class GuidedActions:
         self, project_id, action, files=None, options: dict[str, Any] | None = None
     ):
         context = self.preview_context(project_id, action, files, options)
-        if action == "start":
+        if ACTIONS[action].family == "run":
             plan = self.plan_run(context)
-        elif action in SHARED_ACTIONS:
+        elif ACTIONS[action].family == "lifecycle":
             plan = self.plan_lifecycle(context)
         else:
             return self.preview_native(context)
@@ -261,10 +189,11 @@ class GuidedActions:
 
     def preview_context(self, project_id, action, files, options):
         """Checks every action shares before its family prepares a review."""
+        row = spec(action)
+        if row.family not in GUIDED:
+            raise ValueError("Choose a supported guided action.")
         if action != "start":
-            self.guided.idle(
-                isolated_workers=action in {"export_selected", "refresh_sources"}
-            )
+            self.guided.idle(isolated_workers=row.isolated)
         project, native = self.guided.record(project_id)
         self.guided.clean(project_id)
         options = {} if options is None else deepcopy(options)
@@ -275,14 +204,11 @@ class GuidedActions:
             if set(options) != {"run_id"}:
                 raise ValueError("Choose a saved Batch to reapply.")
             run_output, files = self.saved_output(native, options["run_id"], files)
-        if action not in NATIVE_ACTIONS | SHARED_ACTIONS.keys() | {"start"}:
-            raise ValueError("Choose a supported guided action.")
         # Writing an Ace game's text packs it into Data, which the game
         # ignores while an archive sits beside Game.exe.
-        if native["engine"] == "ACE" and action in PUBLICATION_ACTIONS | {
-            "export_selected",
-            "ace_pack",
-        }:
+        if native["engine"] == "ACE" and (
+            row.family in {"apply", "text"} or action == "ace_pack"
+        ):
             blocked = self.guided.backend.guided_ace_blocked(project["source"])
             if blocked:
                 raise ValueError(blocked)
@@ -290,7 +216,7 @@ class GuidedActions:
         value = self.guided.backend.workflows.state(native["id"])
         # Readiness checks the source backup itself, reading every saved
         # file's record, so ready actions skip this separate check.
-        if action not in {"backup_source", "use_source_backup"} | READY_ACTIONS:
+        if not row.source_backup and not row.ready:
             self.guided.source_preserved(project_id)
         self.require_ready(
             project_id,
@@ -304,7 +230,7 @@ class GuidedActions:
             preparation.require_data(native)
         if action == "format_plugins" and native["engine"] == "ACE":
             raise ValueError("Ace does not use plugins.js.")
-        if action in TOOL_ACTIONS | {"playtest_status"} and native["engine"] != "MVMZ":
+        if (row.tools or action == "playtest_status") and native["engine"] != "MVMZ":
             raise ValueError("TL Inspector and Forge support RPG Maker MV/MZ games.")
         if action in {"release", "release_patch"}:
             release_status = self.guided.release_ready(project_id, native, value)
@@ -449,7 +375,7 @@ class GuidedActions:
         options: dict[str, Any] = context.options
         release_status = context.release_status
         paths, expected, manifest = [], None, None
-        label = SHARED_ACTIONS[action]
+        label = ACTIONS[action].label
         allowed = (
             {"version", "original", "untranslated"}
             if action == "git_setup"
@@ -603,23 +529,24 @@ class GuidedActions:
             )
             game_folder(output, native["engine"])
             options["output"] = str(output)
+        family = ACTIONS[action].family
         result = (
             self.guided.backend.guided_text_preview(native["id"], action, options)
-            if action in {"runtime_restore", "qa_apply", "qa_undo"}
+            if family == "text"
             else self.guided.backend.guided_export_preview(
                 native["id"], paths, run_output=run_output
             )
             if run_output
             else self.guided.backend.guided_export_preview(native["id"], paths)
-            if action == "export_selected"
+            if family == "apply"
             else self.guided.backend.guided_preparation_preview(
                 native["id"], action, options
             )
-            if action == "prepare_game"
+            if family == "preparation"
             else self.guided.backend.workflows.preview(native["id"], action, options)
         )
         token = result["token"]
-        if action in TOOL_ACTIONS:
+        if ACTIONS[action].tools:
             configured = self.guided.saved_form(project_id)["release"]["tools"]
             if (
                 not configured["hotkey"].strip()
@@ -658,32 +585,7 @@ class GuidedActions:
             "confirmation": (
                 bool(result.get("overwrite"))
                 if action == "release"
-                else result["confirmation"]
-                and action
-                not in {
-                    "prepare_game",
-                    "ace_decrypt",
-                    "ace_extract",
-                    # Packing brings Data up to ace_json, as Apply does.
-                    "ace_pack",
-                    "format_data",
-                    "format_plugins",
-                    "gameupdate",
-                    "qa_prepare",
-                    # QA applies its finished findings, and undoes one, in
-                    # one click; History restores each batch.
-                    "qa_apply",
-                    "qa_undo",
-                    # The assistant's fixes go in once a play with them in
-                    # place breaks nothing new; History restores them.
-                    "playtest_fix",
-                    "playtest_install",
-                    "playtest_apply",
-                    "inspector_install",
-                    "forge_install",
-                    "reference_build",
-                    "reference_remove",
-                }
+                else result["confirmation"] and not ACTIONS[action].one_click
             ),
         }
 
@@ -759,11 +661,7 @@ class GuidedActions:
                     or backups.original(project["source"])
                 )
                 if action == "backup_source"
-                else False
-                if action == "use_source_backup"
-                # Setup saves the version from the form it shows, right after
-                # backing up and preparing; execution rechecks the same scope.
-                else action != "git_setup"
+                else not ACTIONS[action].one_click
                 and not (action == "start" and options["mode"] == "estimate")
             ),
             "package": {
@@ -811,13 +709,12 @@ class GuidedActions:
         project, native = self.guided.record(project_id)
         self.guided.confirmations.pop(token)
         action = confirmed["action"]
+        row = ACTIONS[action]
         if action != "start":
-            self.guided.idle(
-                isolated_workers=action in {"export_selected", "refresh_sources"}
-            )
+            self.guided.idle(isolated_workers=row.isolated)
         # Readiness checks the source backup itself, reading every saved
         # file's record, so ready actions skip this separate check.
-        if action not in {"backup_source", "use_source_backup"} | READY_ACTIONS:
+        if not row.source_backup and not row.ready:
             self.guided.source_preserved(project_id)
         self.require_ready(
             project_id,

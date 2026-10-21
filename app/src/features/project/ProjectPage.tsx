@@ -1,7 +1,13 @@
 import { useRef, useState } from "react";
 import { ArrowRight, Check, Folder, FolderOpen, X } from "lucide-react";
 import { api } from "../../api/client";
-import type { AppState, Job, Project } from "../../api/contracts";
+import {
+  ACTIONS,
+  type ActionName,
+  type AppState,
+  type Job,
+  type Project,
+} from "../../api/contracts";
 import { useApplication } from "../../app/ApplicationProvider";
 import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
@@ -493,14 +499,13 @@ function ProjectAmounts({ amounts }: { amounts: Amounts }) {
   );
 }
 
-/** Text batches History restores, by the label it lists them under. */
-const RESTORABLE: Record<string, string> = {
-  qa_apply: "Apply QA corrections",
-  qa_undo: "Undo QA corrections",
-  glossary_apply: "Apply glossary fixes",
-  playtest_fix: "Apply playtest fixes",
-  fit_text: "Fit text to the new Line widths",
-};
+/** The label History lists a text batch it restores under, or "". */
+function restorable(kind: string) {
+  const row = Object.hasOwn(ACTIONS, kind)
+    ? ACTIONS[kind as ActionName]
+    : undefined;
+  return row?.restorable ? row.label : "";
+}
 
 function ProjectHistory({
   project,
@@ -537,7 +542,7 @@ function ProjectHistory({
   // glossary over, a playtest fix batch or a fit to new Line widths restores
   // from here, once no later batch in the game changed the same files.
   const publication =
-    Object.hasOwn(RESTORABLE, inspected?.action || "") &&
+    !!restorable(inspected?.action || "") &&
     inspected?.status === "complete" &&
     typeof inspected.result?.publication === "string"
       ? inspected.result.publication
@@ -561,8 +566,8 @@ function ProjectHistory({
       ? "This batch is already restored."
       : !blocker
         ? ""
-        : Object.hasOwn(RESTORABLE, blocker.kind)
-          ? `Restore the later “${RESTORABLE[blocker.kind]}” first; it also changed ${shared}.`
+        : restorable(blocker.kind)
+          ? `Restore the later “${restorable(blocker.kind)}” first; it also changed ${shared}.`
           : `A later Apply replaced ${shared}, so this batch can’t be restored.`;
   return (
     <>

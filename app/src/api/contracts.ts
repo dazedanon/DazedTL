@@ -1252,6 +1252,70 @@ export type PackageSummary = {
   generated?: string[];
 };
 
+export type GuidedAction =
+  | "start"
+  | "backup_source"
+  | "use_source_backup"
+  | "git_setup"
+  | "checkpoint"
+  | "guided_review"
+  | "guided_package"
+  | "release_patch"
+  | "refresh_sources"
+  | "export_selected"
+  | "runtime_restore"
+  | "qa_apply"
+  | "qa_undo"
+  | "prepare_game"
+  | "format_data"
+  | "format_plugins"
+  | "gameupdate"
+  | "import"
+  | "ace_decrypt"
+  | "ace_extract"
+  | "ace_pack"
+  | "qa_prepare"
+  | "qa_status"
+  | "release_playtest"
+  | "playtest_fix"
+  | "layout_capture"
+  | "label_capture"
+  | "playtest_install"
+  | "playtest_status"
+  | "playtest_apply"
+  | "inspector_install"
+  | "inspector_remove"
+  | "forge_install"
+  | "forge_remove"
+  | "editors"
+  | "release"
+  | "reference_add"
+  | "reference_pair"
+  | "reference_remove"
+  | "reference_build"
+  | "images_status";
+
+export type ActionFamily =
+  | "run"
+  | "lifecycle"
+  | "native"
+  | "apply"
+  | "text"
+  | "preparation"
+  | "background"
+  | "engine"
+  | "retired";
+
+/** An action's row in the registry, as the renderer reads it. */
+export type ActionView = {
+  label: string;
+  family: ActionFamily;
+  restorable: boolean;
+  reports_outcome: boolean;
+  step?: string;
+  counterpart?: GuidedAction;
+};
+
 export type Preview = {
   publication?: PublicationChange[];
   run?: PreviewRun | null;
@@ -1264,7 +1328,7 @@ export type Preview = {
   label: string;
   destination: string;
   files: number;
-  action: string;
+  action: GuidedAction;
   paths: string[];
   confirmation: boolean;
   options: Record<string, unknown>;
@@ -2882,7 +2946,7 @@ export type GuidedPhaseSelectRequest = {
 
 export type GuidedPreviewRequest = {
   project_id: string;
-  action: string;
+  action: GuidedAction;
   files?: string[];
   options?: Record<string, unknown>;
 };
@@ -3332,3 +3396,286 @@ export type RpcContract = {
     response: PluginActionResult;
   };
 };
+
+/** The workflow actions, from backend/dazedtl/actions.py. */
+export const ACTIONS = {
+  start: {
+    label: "Translate",
+    family: "run",
+    restorable: false,
+    reports_outcome: false,
+  },
+  backup_source: {
+    label: "Back up original game",
+    family: "lifecycle",
+    restorable: false,
+    reports_outcome: false,
+  },
+  use_source_backup: {
+    label: "Use the game's saved original",
+    family: "lifecycle",
+    restorable: false,
+    reports_outcome: false,
+  },
+  git_setup: {
+    label: "Save game version",
+    family: "lifecycle",
+    restorable: false,
+    reports_outcome: false,
+  },
+  checkpoint: {
+    label: "Save translation version",
+    family: "lifecycle",
+    restorable: false,
+    reports_outcome: false,
+  },
+  guided_review: {
+    label: "Record playtest review",
+    family: "lifecycle",
+    restorable: false,
+    reports_outcome: false,
+  },
+  guided_package: {
+    label: "Build local patch ZIP",
+    family: "lifecycle",
+    restorable: false,
+    reports_outcome: false,
+  },
+  release_patch: {
+    label: "Build local patch ZIP",
+    family: "lifecycle",
+    restorable: false,
+    reports_outcome: true,
+  },
+  refresh_sources: {
+    label: "Reload selected files from game",
+    family: "lifecycle",
+    restorable: false,
+    reports_outcome: false,
+  },
+  export_selected: {
+    label: "Apply selected saved outputs",
+    family: "apply",
+    restorable: false,
+    reports_outcome: true,
+  },
+  runtime_restore: {
+    label: "Restore reviewed text batch",
+    family: "text",
+    restorable: false,
+    reports_outcome: false,
+  },
+  qa_apply: {
+    label: "Apply QA corrections",
+    family: "text",
+    restorable: true,
+    reports_outcome: true,
+  },
+  qa_undo: {
+    label: "Undo QA corrections",
+    family: "text",
+    restorable: true,
+    reports_outcome: false,
+  },
+  prepare_game: {
+    label: "Prepare game files",
+    family: "preparation",
+    restorable: false,
+    reports_outcome: false,
+  },
+  format_data: {
+    label: "Format game data",
+    family: "native",
+    restorable: false,
+    reports_outcome: true,
+    step: "Format game data",
+  },
+  format_plugins: {
+    label: "Format plugins.js",
+    family: "native",
+    restorable: false,
+    reports_outcome: true,
+    step: "Format plugins.js",
+  },
+  gameupdate: {
+    label: "Install GameUpdate",
+    family: "native",
+    restorable: false,
+    reports_outcome: true,
+    step: "Create GameUpdate files",
+  },
+  import: {
+    label: "Import selected files",
+    family: "native",
+    restorable: false,
+    reports_outcome: false,
+  },
+  ace_decrypt: {
+    label: "Decrypt Ace archive",
+    family: "native",
+    restorable: false,
+    reports_outcome: false,
+  },
+  ace_extract: {
+    label: "Convert Ace data to JSON",
+    family: "native",
+    restorable: false,
+    reports_outcome: false,
+  },
+  ace_pack: {
+    label: "Pack translated Ace data",
+    family: "native",
+    restorable: false,
+    reports_outcome: true,
+  },
+  qa_prepare: {
+    label: "Prepare or resume translation QA",
+    family: "native",
+    restorable: false,
+    reports_outcome: true,
+  },
+  qa_status: {
+    label: "Refresh translation QA",
+    family: "native",
+    restorable: false,
+    reports_outcome: false,
+  },
+  release_playtest: {
+    label: "Play the game for the release playtest",
+    family: "native",
+    restorable: false,
+    reports_outcome: false,
+  },
+  playtest_fix: {
+    label: "Apply playtest fixes",
+    family: "native",
+    restorable: true,
+    reports_outcome: false,
+  },
+  layout_capture: {
+    label: "Show test text in the game's windows",
+    family: "native",
+    restorable: false,
+    reports_outcome: false,
+  },
+  label_capture: {
+    label: "Show shortened plugin labels in the game",
+    family: "native",
+    restorable: false,
+    reports_outcome: false,
+  },
+  playtest_install: {
+    label: "Install both playtest plugins",
+    family: "native",
+    restorable: false,
+    reports_outcome: false,
+  },
+  playtest_status: {
+    label: "Refresh playtest plugins",
+    family: "native",
+    restorable: false,
+    reports_outcome: false,
+  },
+  playtest_apply: {
+    label: "Apply playtest settings",
+    family: "native",
+    restorable: false,
+    reports_outcome: false,
+  },
+  inspector_install: {
+    label: "Install TL Inspector",
+    family: "native",
+    restorable: false,
+    reports_outcome: true,
+    counterpart: "inspector_remove",
+  },
+  inspector_remove: {
+    label: "Remove TL Inspector",
+    family: "native",
+    restorable: false,
+    reports_outcome: true,
+    counterpart: "inspector_install",
+  },
+  forge_install: {
+    label: "Install Forge",
+    family: "native",
+    restorable: false,
+    reports_outcome: true,
+    counterpart: "forge_remove",
+  },
+  forge_remove: {
+    label: "Remove Forge",
+    family: "native",
+    restorable: false,
+    reports_outcome: true,
+    counterpart: "forge_install",
+  },
+  editors: {
+    label: "Find code editors",
+    family: "native",
+    restorable: false,
+    reports_outcome: true,
+  },
+  release: {
+    label: "Build clean game ZIP",
+    family: "native",
+    restorable: false,
+    reports_outcome: true,
+  },
+  reference_add: {
+    label: "Add DazedTL reference translation",
+    family: "native",
+    restorable: false,
+    reports_outcome: false,
+  },
+  reference_pair: {
+    label: "Add Japanese / English reference pair",
+    family: "native",
+    restorable: false,
+    reports_outcome: false,
+  },
+  reference_remove: {
+    label: "Remove reference registration",
+    family: "native",
+    restorable: false,
+    reports_outcome: false,
+  },
+  reference_build: {
+    label: "Build exact reference matches",
+    family: "native",
+    restorable: false,
+    reports_outcome: false,
+  },
+  images_status: {
+    label: "Refresh image readiness",
+    family: "native",
+    restorable: false,
+    reports_outcome: false,
+  },
+  fit_text: {
+    label: "Fit text to the new Line widths",
+    family: "background",
+    restorable: true,
+    reports_outcome: false,
+  },
+  full_estimate: {
+    label: "Estimate the translation cost",
+    family: "background",
+    restorable: false,
+    reports_outcome: false,
+  },
+  speaker_scan: {
+    label: "Scan speaker names",
+    family: "background",
+    restorable: false,
+    reports_outcome: false,
+  },
+  glossary_apply: {
+    label: "Apply glossary fixes",
+    family: "retired",
+    restorable: true,
+    reports_outcome: false,
+  },
+} as const satisfies Record<string, ActionView>;
+
+export type ActionName = keyof typeof ACTIONS;

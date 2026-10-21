@@ -6,6 +6,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from dazedtl.actions import label
 from dazedtl.freshness import Basis, compare
 from dazedtl.storage import write_json
 
@@ -519,7 +520,7 @@ class GuidedContext:
                     "project": deepcopy(native),
                     "folder": str(self.guided.backend.workflows.folder(native["id"])),
                     "action": "speaker_scan",
-                    "label": "Scan speaker names",
+                    "label": label("speaker_scan"),
                     "guard": self.guided.backend.guided_guard(
                         native, self.guided.backend.workflows.folder(native["id"])
                     ),

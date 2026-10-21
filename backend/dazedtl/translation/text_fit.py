@@ -9,12 +9,13 @@ can restore.
 
 from copy import deepcopy
 
+from dazedtl.actions import label
 from dazedtl.storage import write_json
 from dazedtl.translation.files import read_json
 from dazedtl.translation.operations import checkout_issue
 
 ACTION = "fit_text"
-LABEL = "Fit text to the new Line widths"
+LABEL = label(ACTION)
 # The Line widths entries that move where text wraps. Message rows only
 # change where a long message goes on to its next page.
 AREAS = ("width", "faceWidth", "listWidth", "noteWidth")
