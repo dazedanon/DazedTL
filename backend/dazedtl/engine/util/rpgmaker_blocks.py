@@ -188,6 +188,18 @@ def source(commands: list, part: Part) -> str | None:
     return original
 
 
+def kept(commands: list, part: Part) -> tuple[int, ...]:
+    """The rows of a translated part that hold one of the rows of the
+    Japanese it was translated from as the game wrote it: the game's own,
+    though the part holds them, such as a page number "(1/3)" Assistant-led
+    left as it was when it wrote a comment's rows one by one."""
+    original = source(commands, part)
+    if original is None:
+        return ()
+    theirs = {line for line in original.split("\n") if line.strip()}
+    return tuple(at for at in part.rows if text(commands[at]) in theirs)
+
+
 def recorded(command: Any) -> int | None:
     """The rows a part's anchor records it owns, or None."""
     rows = command.get(ROWS) if isinstance(command, dict) else None

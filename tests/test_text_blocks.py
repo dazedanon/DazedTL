@@ -175,6 +175,48 @@ class TextBlockTests(unittest.TestCase):
         self.assertEqual(listed[5][blocks.ROWS], 2)
         self.assertFalse(fit_document({"list": listed}, "Map001.json", layout).changes)
 
+    def test_help_rows_assistant_led_left_as_the_game_wrote_them_keep_their_row(self):
+        # Assistant-led keeps the comment's Japanese on its 108 and writes
+        # each row; the page number it left as it was is the game's own, so
+        # fitting never flows it into the prose around it.
+        listed = choosing(
+            [
+                command(
+                    408,
+                    [
+                        "Watching the opening takes about twenty minutes from start to end."
+                    ],
+                    1,
+                ),
+                command(408, ["(1/3)"], 1),
+                command(
+                    408, ["We strongly recommend watching it on your first run."], 1
+                ),
+            ]
+        )
+        listed[4]["_original"] = (
+            "選択肢ヘルプ\n所要時間は二十分です。\n(1/3)\n初回は見ることを推奨します。"
+        )
+        (part,) = blocks.block_at(listed, 5).parts
+        self.assertEqual(blocks.kept(listed, part), (6,))
+        count = len(listed)
+        layout = Layout(40, 40, 74, 45, 4)
+        report = fit_document({"list": listed}, "Map001.json", layout)
+        self.assertTrue(report.changes)
+        self.assertEqual(len(listed), count)
+        rows = [row["parameters"][0] for row in listed[5:8]]
+        self.assertEqual(rows[1], "(1/3)", rows)
+        # The window shows the whole help, its page number included.
+        shown = "\n".join(rows).count("\n") + 1
+        self.assertEqual(
+            [misfit["reason"] for misfit in report.misfits],
+            [f"needs {shown} rows; its window shows 4"],
+        )
+        self.assertTrue(
+            all(len(line) <= 40 for row in rows for line in row.split("\n"))
+        )
+        self.assertFalse(fit_document({"list": listed}, "Map001.json", layout).changes)
+
     def test_list_items_of_the_japanese_keep_a_row_each_beside_a_face(self):
         help_text = wrap_help(
             "Effects: ・Attack power rises greatly for the rest of the battle "

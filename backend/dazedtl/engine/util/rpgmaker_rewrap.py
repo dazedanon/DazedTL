@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass, field
+from itertools import groupby
 from typing import Any, Iterator
 
 from util import dazedwrap
@@ -733,6 +734,9 @@ class _Slot:
     run: tuple[list, ...] = ()
     commands: list | None = None
     rows: tuple[int, ...] = ()
+    # The rows a window shows with this text, checked as one once all are
+    # written; () when another slot checks them.
+    together: tuple[int, ...] | None = None
 
     def read(self):
         if self.run:
@@ -835,17 +839,30 @@ def _command_slots(commands: list, pointer: str, layout: Layout) -> Iterator[_Sl
         else:
             continue
         for part in parts:
-            first = part.rows[0]
-            params = commands[first]["parameters"]
-            shown = box
-            if block.kind == blocks.MESSAGE and _MARKER.match(params[0]):
-                shown = Box(MARKED_WIDTH, box.rows, True, "message")
-            run = tuple(commands[at]["parameters"] for at in part.rows)
-            rows = part.rows if block.kind == blocks.HELP else ()
-            slots.append((first, _Slot(
-                f"{pointer}/{first}/parameters/0", shown,
-                blocks.source(commands, part), params, 0, run, commands, rows,
-            )))
+            runs = [part.rows]
+            if block.kind == blocks.HELP and part.on_head:
+                # Assistant-led writes the comment's rows one by one: the
+                # game's own keep their row, and the text around them is
+                # fitted on its own. Translation records the rows it owns.
+                kept = blocks.kept(commands, part)
+                runs = [
+                    tuple(rows)
+                    for own, rows in groupby(part.rows, lambda at: at in kept)
+                    if not own
+                ]
+            source = blocks.source(commands, part) if len(runs) == 1 else None
+            for number, rows in enumerate(runs):
+                first = rows[0]
+                params = commands[first]["parameters"]
+                shown = box
+                if block.kind == blocks.MESSAGE and _MARKER.match(params[0]):
+                    shown = Box(MARKED_WIDTH, box.rows, True, "message")
+                run = tuple(commands[at]["parameters"] for at in rows)
+                slots.append((first, _Slot(
+                    f"{pointer}/{first}/parameters/0", shown, source, params, 0, run,
+                    commands, rows if block.kind == blocks.HELP else (),
+                    None if len(runs) == 1 else () if number else part.rows,
+                )))
     for index, command in enumerate(commands):
         if not isinstance(command, dict):
             continue
@@ -934,6 +951,9 @@ def fit_document(
             report.changes.append(
                 {"file": file_name, "pointer": slot.pointer, "before": value, "after": written}
             )
+        if slot.together is not None:
+            # Fitted around the game's own rows, the text shows with them.
+            written = "\n".join(blocks.text(slot.commands[at]) for at in slot.together)
         reason = misfit(written, slot.box)
         if reason:
             report.misfits.append({"file": file_name, "pointer": slot.pointer, "reason": reason})
