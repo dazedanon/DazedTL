@@ -18,11 +18,7 @@ import hashlib
 import json
 import re
 import subprocess
-import sys
 from pathlib import Path
-
-# DazedTL's own VX Ace converter, which an assistant may run as its tool.
-ENGINE = Path(__file__).resolve().parents[2] / "backend/dazedtl/engine"
 
 JAPANESE = re.compile(r"[぀-ヿ一-鿿]")
 WORK = ".dazedtl/len-method/work"
@@ -86,11 +82,6 @@ class Assistant:
         engine = "RPG Maker VX Ace" if self.ace else "RPG Maker MZ"
         self.helper("identify", "--engine", engine, "--evidence", f"{WORK}/engine.md")
         self.operation("backup_source")
-        if self.ace:
-            sys.path.insert(0, str(ENGINE))
-            from util.ace import actions
-
-            actions.run(self.game, "ace_extract", lambda _line: None)
         self.operation("rpgmaker_prepare")
         files = sorted(
             f"{self.data}/{path.name}"

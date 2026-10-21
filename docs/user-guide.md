@@ -203,6 +203,7 @@ Set up's **Convert Ace data** unpacks an encrypted `Game.rgss3a` and converts th
 The game reads only `Game.rgss3a` while it sits beside `Game.exe`, so Set up moves it into `.dazedtl/ace`.
 A game that comes with `ace_json` already converted, such as from DazedMTLTool, keeps it and its translations; Set up then adds only what's missing and moves the archive aside.
 Until then every task warns about it, and Apply and Release refuse.
+In Assistant-led, your assistant's first preparation of the game does the same conversion.
 VX Ace keeps menu commands, battle messages and other interface text in its Ruby scripts instead of plugins, so **Plugin files** has your assistant translate the text the scripts show.
 **Apply** packs the translations into the game's `Data` files in the same step, and Plugin files' **Apply to game** does the same for the scripts.
 It also puts the translated game title into `Game.ini`, which is the title the game window shows, in plain letters (é as e, ♥ left out), since players on Linux, Steam Deck or JoiPlay can't start the game from a title in other letters.

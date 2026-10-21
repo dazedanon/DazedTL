@@ -696,9 +696,22 @@ class TranslationEngine:
 
     def rpgmaker_prepare(self, source, options, data_path=None, log=None):
         """Prepares a game's RPG Maker files for translation, in one write
-        to the game."""
-        from .game_write import write_game
+        to the game. A VX Ace game is first converted as Set up's Convert Ace
+        data does, while it lacks ace_json or still reads an archive beside
+        Game.exe, since Assistant-led has no Set up."""
+        from util.ace.actions import archive_in_root
+        from util.project_preparation import rpgmaker_layout
 
+        from .game_write import write_game
+        from .guided import ace_converted, convert_ace
+
+        layout = rpgmaker_layout(source)
+        if (
+            layout
+            and layout["engine"] == "ACE"
+            and (archive_in_root(Path(source)) or not ace_converted(source))
+        ):
+            convert_ace(source, log or (lambda _line: None))
         with write_game(source, log=log or (lambda _line: None)) as game:
             # Formatting changes a VX Ace game's exports, which it reads once
             # packed into Data.

@@ -1,7 +1,6 @@
 """Focused contracts at the maintained-engine boundary, without importing a sibling checkout."""
 
 import json
-import shutil
 import subprocess
 import sys
 import unittest
@@ -1093,7 +1092,8 @@ def parse(codeList, i, headerString, jaString):
     def test_assistant_led_writes_to_ace_json_pack_the_games_data(self):
         # The game reads only Data: Assistant-led's preparation, writes and
         # Line widths refits once left it as it was while ace_json and the
-        # patch moved on.
+        # patch moved on. Preparing converts the game, which has no Set up:
+        # an encrypted game read only its archive, so writes refused.
         def events(document):
             # The JSON lists a map's events, Ruby's Hash maps them by ID.
             found = document["events"]
@@ -1109,10 +1109,20 @@ def parse(codeList, i, headerString, jaString):
             ]
 
         with TemporaryDirectory() as temporary:
+            from tests.test_ace_conversion import archive_v3
+
             game = Path(temporary) / "game"
             fixture = Path(__file__).resolve().parent / "fixtures/ace"
-            for folder in ("Data", "ace_json"):
-                shutil.copytree(fixture / folder, game / folder)
+            game.mkdir()
+            (game / "Game.rgss3a").write_bytes(
+                archive_v3(
+                    [
+                        ("Data\\" + path.name, path.read_bytes())
+                        for path in sorted((fixture / "Data").iterdir())
+                    ],
+                    seed=7,
+                )
+            )
             engine = TranslationEngine.__new__(TranslationEngine)
             engine.profile = Path(temporary) / "profile"
             engine.profile.mkdir()
@@ -1124,6 +1134,8 @@ def parse(codeList, i, headerString, jaString):
                 "install_forge": False,
             }
             engine.rpgmaker_prepare(game, options)
+            self.assertEqual(sorted(path.name for path in game.glob("Game.rgss*")), [])
+            self.assertTrue((game / ".dazedtl/ace/Game.rgss3a").is_file())
             exports = game / "ace_json/Map001.json"
             document = json.loads(exports.read_text(encoding="utf-8"))
             for event in events(document):

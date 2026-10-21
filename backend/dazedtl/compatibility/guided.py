@@ -535,23 +535,46 @@ def run_ace(plan, log):
     if action == "ace_pack":
         with write_game(root, plan["folder"], log=log) as game:
             game.repack()
-        return {"completed": action}
-    exports = root / "ace_json"
-    fresh = not (exports.is_dir() and any(exports.glob("*.json", case_sensitive=False)))
+    elif action == "ace_extract":
+        convert_ace(root, log, plan["folder"])
+    else:
+        # Converting between Data and ace_json packs nothing.
+        with write_game(root, log=log, pack=False):
+            actions.run(root, action, log)
+    return {"completed": action}
+
+
+def ace_converted(root):
+    """Whether an Ace game has its ace_json, which DazedTL translates."""
+    exports = Path(root) / "ace_json"
+    return exports.is_dir() and any(exports.glob("*.json", case_sensitive=False))
+
+
+def convert_ace(root, log, folder=None):
+    """Convert Ace data: converts the game's Data into ace_json, extracting
+    an encrypted game's archive and setting it aside so the game reads its
+    data (util/ace/actions `ace_extract`). With the Guided workspace
+    `folder`, JSON just converted saves the packing receipt."""
+    from util.ace import actions
+
+    from .game_write import write_game
+
+    root = Path(root)
+    fresh = not ace_converted(root)
     # Converting between Data and ace_json packs nothing.
     with write_game(root, log=log, pack=False):
-        actions.run(root, action, log)
-    if action == "ace_extract" and fresh:
-        # JSON just converted from Data holds what Data does, so the game's
-        # data starts out current without packing it.
-        native = {**plan["project"], "data": str(exports)}
-        try:
-            _save_receipt(native, plan["folder"], actions.packed_files(root))
-        except ValueError as error:
-            # A data file the game lacks has JSON but nothing to pack into;
-            # without a receipt, writes pack only what they touch.
-            log("No packing receipt was saved: " + str(error))
-    return {"completed": action}
+        actions.run(root, "ace_extract", log)
+    if folder is None or not fresh:
+        return
+    # JSON just converted from Data holds what Data does, so the game's
+    # data starts out current without packing it.
+    native = {"source": str(root), "data": str(root / "ace_json"), "engine": "ACE"}
+    try:
+        _save_receipt(native, folder, actions.packed_files(root))
+    except ValueError as error:
+        # A data file the game lacks has JSON but nothing to pack into;
+        # without a receipt, writes pack only what they touch.
+        log("No packing receipt was saved: " + str(error))
 
 
 def ace_blocked(source):

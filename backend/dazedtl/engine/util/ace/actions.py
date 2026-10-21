@@ -41,8 +41,8 @@ def archive_in_root(root: Path) -> str | None:
         return None
     return (
         f"The game still reads its original {found[0].name}, so it shows none "
-        "of the translation. Run Convert Ace data in Set up, which sets the "
-        "archive aside."
+        "of the translation. Run Convert Ace data in Set up, or operation "
+        "rpgmaker_prepare in Assistant-led, which sets the archive aside."
     )
 
 
