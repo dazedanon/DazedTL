@@ -145,104 +145,24 @@ Neither Apply nor packaging manufactures a user-review record or completes Len's
 
 ## Plugins and images
 
-Guided Plugin files and Images are Translate tasks; positions saved by earlier stage layouts open them without rewriting saved run records.
-The [plugin service](../backend/dazedtl/plugins/service.py) owns retained investigation, working copies and checked publication for MV/MZ root and `www` layouts, and for VX Ace's Ruby scripts in `ace_json/scripts`.
-The assistant decides which plugin text players see, and the user reviews neither files nor strings.
-Apply to game writes every checked file in one click, because a list of files could not show what changed; it checks each file again and backs it up first, and Recovery restores an application after a review of its own.
-An Acorn AST inventory and recursive decoded parameter paths bind reports to exact source bytes without evaluating plugin code.
-Original Japanese database fields, notetags, command arguments and parameter evidence come from a verified source backup even after runtime JSON has been translated, so a task cannot start without it.
-Known lookup values, code keys, embedded expressions, serialization structure and control tokens remain protected by the app and are never asked about; a file with nothing else, and no JSON it loads, needs no investigation.
-A translated line may keep only a leading Japanese tag that unchanged code in its file matches with `startsWith` or `indexOf`, such as a script parser's `ア:` speaker tag; any other Japanese left in a target fails the check.
-VX Ace has no plugins: its menus, battle messages and other interface text are string literals in the Ruby scripts Set up extracts, and the task covers those.
-The [Ruby reader](../backend/dazedtl/plugins/ruby.py) gives them the inventory Acorn gives JavaScript, in Python so no Ruby ships: exact byte spans and the text Ruby makes of each literal, deciding from the code before it, as Ruby's lexer does, whether `/`, `%`, `?` and `<<` start a literal.
-It skips comments, regular expressions and plain symbols, protects hash keys, index lookups, compared values and `when` clauses, and treats a translation that adds a literal, such as an unescaped quote or a new `#{`, as changed code.
-A VX Ace game's originals are its database names, note tags and the strings its event scripts compare, read through the compatibility boundary from the preserved archive's or Data files' Marshal data; applying packs the scripts into `Data/Scripts.rvdata2`, as every write to `ace_json` does (see [Ace packing](#translation-execution-and-the-agent-boundary)), and labels too long for the screen come only from MV/MZ captures.
-Dynamic configuration, malformed data and unreadable sources remain explicit blockers.
-A parameter value that looks like JSON but does not decode, such as a script, stays one leaf the app protects and does not block the rest of its file; saved scans are redone once when these scanning rules change.
-The user can keep an unreadable file unchanged so the required task can finish; the choice lapses when the file fails for a different reason, and a listed plugin whose file is gone has nothing to translate.
-Only independently investigated static plugin-loaded JSON dependencies enter this scope; ordinary event and database files retain their existing text phase.
-The clipboard task edits owned working copies, while runtime Apply stays behind an app-only, one-use exact-file preview.
-Request hashes and publication journals retain authority in the app profile, with candidate freezing, verified backups, failure rollback, restart reconciliation and another review for restore.
-One copied plugin task covers every plugin file, from investigation through translation and validation, using the [project helper](translation-contract.md#project-helper).
-Each request asks only about what is left: undecided text in files not yet settled, then the chosen text of files without a checked translation, with the reason a file's last translation failed.
-A report settles exactly what it answers, so the assistant can report part of a request and continue with the remainder; an undecided occurrence cannot inherit an earlier finding's safety.
-Confirmed active display text is chosen automatically; inactive and default-only text stays excluded.
-Translation requests carry the game's established English: guidance files, the Translate stage's output, the game's applied data and the reference games.
-Each result stays bound to the request that asked for it, and publication checks the file against that request.
-The helper cannot preview or publish runtime files, and only app-issued automatic tasks can continue.
-Repeated continuation of the immediately preceding request returns its existing successor; stale tasks cannot replace newer work.
-Copying the task again while work is left returns the open request when its scope still matches the scanned sources, guidance and originals, so a saved partial report is extended rather than orphaned.
-Then it hands out the labels the latest Text QA capture, of any focus, found squeezed or cut off that QA holds no line of, with each label's screen, capture and how short of room it is, because QA never writes plugin files.
-A label's candidates are the text in the bytes each file gets, its working copy until it is applied and the game's file after, edits since included, that a loaded plugin can draw, whole or as an item of a short list, and that is no lookup value, code key or default; a label with none stays with QA as found in no plugin file.
-The assistant shortens it in a copy of its own, so the translation's working copy keeps its checks; an accepted copy is checked against the bytes it started from, then as the whole working copy against the frozen original, with the shortened text as approved text that later translation of the file keeps.
-The assistant confirms a shorter label on screen with the label check: the app plays the game in the [game window](../backend/dazedtl/engine/util/rpgmaker_window/launcher.cjs) with the request's shortening copies, frozen as they are, served in place of the game's files, capturing only the labels' screens, and [measures](../backend/dazedtl/engine/util/rpgmaker_screens/__init__.py) each label there as the text its changed candidates now draw in its place, which fits only when drawn in full while the old text is not drawn; it keeps its own last three reports beside the playtest's.
-A label counts as shortened only when the latest check of exactly the reported copies shows it fitting, or could not run the game, which its decision records; otherwise the copy goes back with that as its failed check.
-A label counts as shortened for the capture that found it, and a newer capture that still shows it, a capture QA takes again included, hands it out again; one the assistant keeps stays kept with its reason.
-Once nothing is left, a copy asks the assistant to recheck every decision with its earlier findings, for text the user found untranslated in the game.
-Apply and restore reviews omit hashes, working-copy and backup paths; execution rechecks the exact reviewed files.
+The [plugin service](../backend/dazedtl/plugins/service.py) owns retained investigation, working copies and checked publication for MV/MZ plugins and VX Ace's Ruby scripts in `ace_json/scripts`.
+The assistant decides which plugin text players see and the user reviews neither files nor strings, so Apply to game writes every checked file in one click, checking and backing up each first.
+An Acorn AST inventory binds reports to exact source bytes without evaluating plugin code; the [Ruby reader](../backend/dazedtl/plugins/ruby.py) gives Ace's script literals the same inventory in Python, so no Ruby ships.
+Original Japanese comes from a verified source backup even after runtime JSON has been translated, so a task cannot start without it.
+Lookup values, code keys, expressions, serialization structure and control tokens stay protected by the app and are never asked about.
+One copied task covers every plugin file through the [project helper](translation-contract.md#project-helper); each result stays bound to the request that asked for it, and the helper cannot preview or restore runtime files; only the final check's assistant may apply, through the same Apply to game path.
+Labels Text QA's capture found squeezed in a plugin file come to Plugin files, because QA never writes plugin files; the assistant shortens each in a copy of its own and confirms it on screen in the [game window](../backend/dazedtl/engine/util/rpgmaker_window/launcher.cjs) with the copies served in place of the game's files.
 
-The [image service](../backend/dazedtl/images/service.py) owns a project-scoped SQLite inventory, retained selection, discovery and editing contracts, saved reports, and runtime application receipts shared by Guided and Image Manager.
-Indexing runs incrementally with cancellation; the renderer reads metadata in bounded windows and thumbnails through a [queue](../app/src/features/images/thumbnails.ts) with a cache bounded by size.
-Windows and thumbnails on screen load first, and the rest of the view follows, nearest first, so scrolling finds its images ready.
-Thumbnails are WebP at the screen's pixel density.
-Previews decode each image once and hold the service lock only for the inventory lookup; the [server](../backend/dazedtl/api/server.py) answers them on a few workers outside the engine context, which redirects stdout process-wide, while every other request still runs in turn.
-The observation revision leaves out the user's choices, so saving the selection or scroll position reloads no window; the selected images the filters hide are counted on their own, and a reload keeps each window on screen until it is replaced.
-A save sends only what changed, and only an unsaved list holds the footer's actions, since their counts come from the saved list; the scroll position, filters, thumbnail size and previewed image save quietly behind them.
-The selection is the list to translate, and the manager walks it through four steps derived in [imageFlow](../app/src/features/images/imageFlow.ts): the assistant investigates, the user chooses, the assistant translates, the user applies.
-A click only previews, so looking never changes the list; the tick box, Ctrl/Cmd and Space toggle an image and Shift only adds, with [selectItem](../app/src/ui/selection.ts), and a Shift range that reaches past the loaded windows reads the images between in bounded runs.
-The [viewer](../app/src/features/images/ImageViewer.tsx) fills a full-height column beside the task, toolbar and grid, because the preview is limited by height more than width; it reads the last clicked image at full size, unscaled when it fits the backend's largest preview, while its tile's thumbnail stands in; the saved view remembers which image it shows, as it does Compare's.
-Discovery reports bind project, inventory revision, exact scope and source hashes, with per-image examination evidence.
-Unexamined, failed, unreadable and changed sources remain unresolved; detector misses alone cannot certify no text.
-Sound effects lettered into scene art are flavor, often hundreds per game: an image with nothing else is found Sound effects only and stays out of the list like a text-free one, and the image skill leaves them as they are in an image translated for its other text.
-Manual choices survive recommendations and filtering, and only byte-identical sources can reuse discovery evidence.
-An investigation report ticks each image it newly recommends once and opens the grid on the list, so an image the user took out stays out when the same request saves again; a report whose every image has a result completes the request even without its flag.
-Until a report sets that flag, an image it holds as not examined is still to come, because the assistant saves its partial reports with those placeholders; the copied task keeps waiting instead of reading finished and calling the user back.
-The translation task covers the list's images not yet in the game and makes their editable copies first, leaving out images that cannot be edited.
-Applied images stay ticked, so a finished list still reads done and Edit text still reaches them, but the list's Recommended view and Unsure leave them to Applied.
-Apply to game applies the list's translated images; a list that a click replaced in earlier versions gets its copied translation task's images back once.
-Editing reports bind original and candidate hashes and a review version; changing either invalidates review.
-Every image an assistant changes needs a [recipe](../backend/dazedtl/images/recipes.py) in the game's resource manifest: the command and hashed inputs that render it again and the regions its edit may change, so a later sibling starts from that recipe instead of pixels.
-Reading a report checks each changed image's recipe against its exact candidate and runs the same [validation](../backend/dazedtl/images/validation.py) as the validator command the task hands the assistant, bound to the source and candidate hashes and kept while its inputs are unchanged.
-A missing or stale recipe or a failed check holds the assistant's review, so the image reads Needs review with the reason, Apply never takes it and Assistant-led cannot apply it; the user's own review still counts, because only the user can accept an image the assistant cannot prove, and a copied task lists what to fix.
-Requests from before recipes keep their accepted reviews, and copying a task again hands out a new request under the current contract.
-The app never runs a recipe's command; the assistant's validator run does, so code in the game folder runs only in the assistant's own process.
-Compare shows the discovery finding, current AI-review evidence and what holds a review; hashes and backup paths stay out of reviews because Apply rechecks the exact reviewed bytes.
-Apply freezes the included batch and blocked reasons in a one-use preview, preflights every included asset before publication, and attempts runtime and metadata rollback on publication failure.
-Publication freezes candidate bytes and journals the reviewed source, output and original-backup hashes before writing runtime files.
-Restart reconciles only those exact authorized bytes, records partial or conflicting publication honestly, and retains reviewed restore for recovered outputs.
-Preserved originals and durable receipts support reviewed restore without removing editable copies or editor work.
-Indexing also records each image's untranslated original, its frozen copy, the Qt publisher's backup or the runtime file, with a tile signature kept in its own table.
-The signature samples a grid from the decode the scan already makes, and is computed again only when that file changes.
-[Families](../backend/dazedtl/images/families.py) groups same-size images that share most non-flat tiles, such as name cards or area banners that differ only in their lettering, with the region where they differ and how far each member is translated.
-It checks only pairs that share one of each image's smallest tile keys, never every pair, and a complete scan groups again only after a signature changed.
-The [background solver](../backend/dazedtl/images/background.py) rebuilds a member's text-free backdrop from its family instead of inpainting it, never changing pixels the whole family agrees on: consensus from members the lettering does not reach, then a fitted glow inversion or a Laplace fill, whichever wins a leave-one-out test on the consensus pixels.
-Agents run it through [image_family.py](../backend/dazedtl/engine/scripts/image_family.py), which also checks a saved background for ghosts of a member's lettering.
-A complete scan regroups the families, and each request asset carries its family, so the editing task rebuilds a member's background before any inpainting and fits an accepted sibling's text recipe with [image_recipe.py](../backend/dazedtl/engine/scripts/image_recipe.py) instead of measuring lettering by hand.
-The solver uses the image tools' exact harmonic fill through the compatibility boundary, the same fill as the inpainting bridge and the image text editor.
-Recipe commands name DazedTL's tools by placeholder (`{python}`, `{recipe_cli}`, `{family_cli}`, `{inpaint_cli}`), so a recipe survives an update or a move of the app.
-The authenticated project helper exposes read-only image state, listing and previews; image application remains an app review.
-Clipboard handoffs never claim an external assistant is running.
+The [image service](../backend/dazedtl/images/service.py) owns a project-scoped SQLite inventory, selection, discovery and editing contracts, saved reports and application receipts shared by Guided and Image Manager.
+The renderer reads metadata in bounded windows and thumbnails through a [queue](../app/src/features/images/thumbnails.ts); the [server](../backend/dazedtl/api/server.py) answers previews on a few workers outside the engine context, which redirects stdout process-wide, while every other request runs in turn.
+The selection is the list to translate, walked through the four steps of [imageFlow](../app/src/features/images/imageFlow.ts): the assistant investigates, the user chooses, the assistant translates, the user applies.
+Detector misses alone cannot certify that an image has no text, and only byte-identical sources reuse discovery evidence; lettered sound effects are flavor, often hundreds per game, so an image with nothing else stays out of the list.
+Every image an assistant changes needs a [recipe](../backend/dazedtl/images/recipes.py), so a later sibling starts from it instead of pixels, and reading a report runs the same [validation](../backend/dazedtl/images/validation.py) as the assistant's validator; only the user can accept an image the assistant cannot prove.
+The app never runs a recipe's command, so code in the game folder runs only in the assistant's own process.
+Apply freezes the batch in a one-use preview, journals the reviewed hashes before writing and attempts rollback on failure; preserved originals support reviewed restore.
+The [background solver](../backend/dazedtl/images/background.py) rebuilds a backdrop from its [family](../backend/dazedtl/images/families.py) of same-size images instead of inpainting it, and the [image text editor](../backend/dazedtl/images/editor.py) uses only installed offline resources and deterministic fills, never a hosted fallback or model download.
 
-Plugin and image progress in the game folder belongs to the project that saved it, and projects are keyed by source path, so a moved or copied game, a new profile or a reinstall opens that work under a new project.
-[Foreign work](../backend/dazedtl/foreign_work.py) reports it in the snapshot instead of failing, and the shared [ForeignWork](../app/src/ui/ForeignWork.tsx) panel offers the choice in Plugin files and both Image Manager hosts.
-Nothing is used or moved until the user chooses, and each choice binds the hash of the saved state it was shown.
-Using it rebinds the state after rechecking what the new project can verify.
-Findings, choices, working copies, reviews and application records carry over; copied requests do not, because their authority (plugin request hashes in the old profile, image requests bound to the old project) cannot be checked here.
-Their reports are never accepted, plugin results not yet applied need a new check, and image tasks resume from them through a new request.
-A plugin application journal is authorized again only while a file still carries that application and its journal and backups match the receipt exactly.
-Image restores need only the originals saved in the game folder, so they carry over unchanged.
-An interrupted publication blocks the takeover, because only the profile that authorized it can reconcile it.
-Starting over moves the work folder to `.dazedtl/archived` under a dated name with every file kept; editable image copies and preserved originals outside it stay in place.
-
-The optional [image text editor](../backend/dazedtl/images/editor.py) retains the toolkit's boxes, target-only exchange import, rendering and undo process behind compatibility adapters.
-Its local OCR capability is limited to installed offline resources, with no hosted fallback or model download.
-Its background repair runs only the deterministic local reconstructions (the harmonic fill by default, or Telea or Navier-Stokes), never an installed model.
-A render replaces only the source PNG's pixels and keeps its header and ancillary chunks, so gamma, colour profiles and text reach the game unchanged.
-Its text styles share the effect model of fitted [text recipes](../backend/dazedtl/engine/util/imagetools/effects.py), so a recipe's slot style is a valid editor style and the panel edits every effect in it.
-Its font list puts the faces a game ships in `fonts` or `www/fonts` ahead of installed ones, because recipes draw with them; a style saves only the list's id, which for a game font comes from its path inside the game, so a moved copy keeps it and no file path reaches the renderer from a style.
-Native Image Text translation uses the preserved isolated manual runner with project-owned frozen inputs, a current estimate and one-use paid approval, independently of JSON translation runs and image application.
-These runs have no run inspector, so a failed run's log tail appears beside its status.
-Import revalidates the exported source scope and copies targets only; rendering still requires structural validation and image review before runtime application.
+Plugin and image progress in the game folder belongs to the project that saved it, and projects are keyed by source path, so a moved or copied game, a new profile or a reinstall opens that work under a new project; [foreign_work](../backend/dazedtl/foreign_work.py) reports it, and nothing is used or moved until the user chooses.
 
 ## UI and state decisions
 
