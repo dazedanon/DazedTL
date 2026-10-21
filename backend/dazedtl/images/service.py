@@ -2253,7 +2253,11 @@ class ImageService:
             # The editable copies are DazedTL's own records, but making them
             # may add DazedTL's rules to the game's .gitignore.
             with self.backend.game_write(
-                root, self.projects.get(project_id).get("backend_id"), pack=False
+                root,
+                self.projects.get(project_id).get("backend_id"),
+                pack=False,
+                summary="Prepare images for editing",
+                stage="Translate",
             ):
                 result = self.adapter.prepare(
                     root, profile, allowed, self.adapter.key(root, profile)
@@ -2504,6 +2508,10 @@ class ImageService:
                 root,
                 self.projects.get(project_id).get("backend_id"),
                 paths=[row["runtime"] for row in current],
+                summary="Apply translated images"
+                if action == "apply"
+                else "Restore original images",
+                stage="Translate",
             ):
                 result = (
                     self.adapter.apply(root, profile, current, key)

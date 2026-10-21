@@ -286,21 +286,3 @@ export function qaOrigin(row: QaFinding) {
     scene: "One correction across a scene",
   }[row.kind];
 }
-
-/**
- * An apply, undo or reapply whose checkpoint failed has no control left to
- * report it; saving the version again takes its place and reports its own
- * result, under the "qa-save" key.
- */
-export function qaUnsaved(qa: QaState, action: { key: string; error: string }) {
-  return (
-    action.key === "qa-save" ||
-    (!!action.error &&
-      ((action.key === "qa-apply" && qaPhase(qa) === "applied") ||
-        [...qa.findings, ...qa.questions].some(
-          (row) =>
-            (action.key === "qa-undo:" + row.id && row.state === "undone") ||
-            (action.key === "qa-reapply:" + row.id && row.state === "applied"),
-        )))
-  );
-}

@@ -8,13 +8,8 @@ import { api } from "../../../../api/client";
 import { jobTime } from "../model";
 import { ActionControl } from "../../../../ui/ActionControl";
 import { TextQaWork } from "../../TextQa";
-import {
-  runQaStep,
-  saveQaVersion,
-  type QaStepDetails,
-  type QaStepName,
-} from "../../qaSteps";
-import { qaPhase, qaTaskDone, qaUnsaved } from "../../qaView";
+import { runQaStep, type QaStepDetails, type QaStepName } from "../../qaSteps";
+import { qaPhase, qaTaskDone } from "../../qaView";
 import { PlaytestWork } from "../../Playtest";
 import { playtestFailure, playtestWaiting } from "../../playtestView";
 
@@ -89,7 +84,6 @@ export function qaView(w: GuidedWorkspace): TaskView {
       success,
       key,
     );
-  const unsaved = qaUnsaved(qa, action);
   // "Paste it into your coding assistant" stops describing a next step once
   // the QA it handed over finishes, goes out of date or can't be read; a copy
   // of QA that had already finished keeps it as that click's acknowledgment.
@@ -212,56 +206,38 @@ export function qaView(w: GuidedWorkspace): TaskView {
       </TextQaWork>
     </>
   );
-  const footer = unsaved ? (
-    <ActionControl
-      label="Save version"
-      variant="primary"
-      disabled={disabled || (action.key === "qa-save" && !!action.notice)}
-      {...(action.key === "qa-save"
-        ? feedback("qa-save", "Saving…")
-        : { feedbackKey: action.key, error: action.error })}
-      onClick={() =>
-        action.run(
-          async () => {
-            await save();
-            await saveQaVersion(project.id, whenFinished);
-          },
-          "Version saved.",
-          "qa-save",
-        )
-      }
-    />
-  ) : phase === "not_started" ? (
-    start("Start text QA")
-  ) : phase === "outdated" || phase === "blocked" ? (
-    // Preparing again sets aside a task the app can't read. The assistant
-    // prepares again itself once its own fixes change the game's plugins.
-    start(
-      "Run QA again",
-      assisted && qa.plugins_changed && phase === "outdated"
-        ? "default"
-        : "primary",
-    )
-  ) : phase === "applied" || phase === "clean" ? (
-    // Text edited since, such as new translation, or the playtest's
-    // findings can take another pass, which the assistant takes itself.
-    start("Run QA again", unsettled ? "primary" : "default")
-  ) : phase === "ready" ? (
-    <ActionControl
-      label={applyFailed ? "Try again" : "Apply corrections"}
-      variant="primary"
-      disabled={disabled}
-      {...feedback("qa-apply", "Applying…")}
-      onClick={() => step("qa-apply", "apply", {}, "Corrections applied.")}
-    />
-  ) : phase === "running" ? (
-    copyTask(
-      "qa",
-      "Copy QA task",
-      "default",
-      "QA task copied. Paste it into your coding assistant.",
-    )
-  ) : undefined;
+  const footer =
+    phase === "not_started" ? (
+      start("Start text QA")
+    ) : phase === "outdated" || phase === "blocked" ? (
+      // Preparing again sets aside a task the app can't read. The assistant
+      // prepares again itself once its own fixes change the game's plugins.
+      start(
+        "Run QA again",
+        assisted && qa.plugins_changed && phase === "outdated"
+          ? "default"
+          : "primary",
+      )
+    ) : phase === "applied" || phase === "clean" ? (
+      // Text edited since, such as new translation, or the playtest's
+      // findings can take another pass, which the assistant takes itself.
+      start("Run QA again", unsettled ? "primary" : "default")
+    ) : phase === "ready" ? (
+      <ActionControl
+        label={applyFailed ? "Try again" : "Apply corrections"}
+        variant="primary"
+        disabled={disabled}
+        {...feedback("qa-apply", "Applying…")}
+        onClick={() => step("qa-apply", "apply", {}, "Corrections applied.")}
+      />
+    ) : phase === "running" ? (
+      copyTask(
+        "qa",
+        "Copy QA task",
+        "default",
+        "QA task copied. Paste it into your coding assistant.",
+      )
+    ) : undefined;
   return {
     content,
     action: footer,
@@ -270,11 +246,7 @@ export function qaView(w: GuidedWorkspace): TaskView {
     next: advance(
       undefined,
       undefined,
-      qaTaskDone(state) &&
-        !assisted &&
-        (!unsaved || (action.key === "qa-save" && !!action.notice))
-        ? "primary"
-        : "quiet",
+      qaTaskDone(state) && !assisted ? "primary" : "quiet",
     ),
     heading: {
       title: "Text QA",

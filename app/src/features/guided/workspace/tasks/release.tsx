@@ -42,7 +42,6 @@ export function packageView(w: GuidedWorkspace): TaskView {
     handoff,
     translation,
     settings,
-    review,
   } = w;
   // GameUpdate's config must be complete before a release; its repository is
   // set below the release's own options.
@@ -180,12 +179,6 @@ export function packageView(w: GuidedWorkspace): TaskView {
         status={translation.gameUpdate}
         disabled={disabled}
         openSettings={() => settings("gameupdate")}
-        // A changed tracked file waits for the checkpoint review, which commits it.
-        onCheckpoint={
-          translation.git?.worktree_clean === false
-            ? undefined
-            : () => review("checkpoint")
-        }
       />
     </>
   );

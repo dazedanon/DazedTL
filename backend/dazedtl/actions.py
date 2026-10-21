@@ -16,6 +16,7 @@ one row here plus its handler.
   export review: `apply` saved run output, `text` QA batches and restores.
 - `preparation` runs the preparation stages one after another.
 - `background` is started by the app itself, never through a review.
+- `helper` is run by an assistant's project helper, never offered by Guided.
 - `engine` is the engine's own and not offered by Guided.
 - `retired` is no longer run; its rows name the records History still holds.
 
@@ -42,6 +43,8 @@ Flags:
   a tool row, the archive panel), so its control leaves the finished status
   out.
 
+`stage` is the workflow stage whose checkpoints the action's writes to the
+game make ([checkpoint_commits](compatibility/checkpoint_commits.py)).
 `history` is History's name when it differs from the review's, `step` the
 name of a preparation stage, `counterpart` the action that undoes a tool
 change, and `handler` the `module:function` the worker runs the plan with;
@@ -62,6 +65,7 @@ Family = Literal[
     "text",
     "preparation",
     "background",
+    "helper",
     "engine",
     "retired",
 ]
@@ -82,6 +86,7 @@ class ActionSpec:
     name: str
     label: str
     family: Family
+    stage: str
     history: str | None = None
     step: str | None = None
     counterpart: str | None = None
@@ -102,26 +107,38 @@ class ActionSpec:
 
 
 ROWS = (
-    ActionSpec("start", "Translate", "run", ready=True),
+    ActionSpec("start", "Translate", "run", stage="Translate", ready=True),
     # Lifecycle
     ActionSpec(
-        "backup_source", "Back up original game", "lifecycle", source_backup=True
+        "backup_source",
+        "Back up original game",
+        "lifecycle",
+        stage="Set up",
+        source_backup=True,
     ),
     ActionSpec(
         "use_source_backup",
         "Use the game's saved original",
         "lifecycle",
+        stage="Set up",
         source_backup=True,
         one_click=True,
     ),
     # Setup saves the version from the form it shows, right after backing up
     # and preparing; execution rechecks the same scope.
-    ActionSpec("git_setup", "Save game version", "lifecycle", one_click=True),
-    ActionSpec("checkpoint", "Save translation version", "lifecycle", ready=True),
+    ActionSpec(
+        "git_setup", "Save game version", "lifecycle", stage="Set up", one_click=True
+    ),
+    # Every write is its own checkpoint; an assistant's own edits are saved
+    # by the helper's checkpoint.
+    ActionSpec(
+        "checkpoint", "Save a checkpoint", "helper", stage="Assistant-led", ready=True
+    ),
     ActionSpec(
         "guided_review",
         "Record playtest review",
         "lifecycle",
+        stage="Release",
         history="Record guided playtest review",
         ready=True,
     ),
@@ -129,16 +146,22 @@ ROWS = (
         "guided_package",
         "Build local patch ZIP",
         "lifecycle",
+        stage="Release",
         history="Package reviewed guided patch",
         ready=True,
     ),
     ActionSpec(
-        "release_patch", "Build local patch ZIP", "lifecycle", reports_outcome=True
+        "release_patch",
+        "Build local patch ZIP",
+        "lifecycle",
+        stage="Release",
+        reports_outcome=True,
     ),
     ActionSpec(
         "refresh_sources",
         "Reload selected files from game",
         "lifecycle",
+        stage="Translate",
         handler="dazedtl.compatibility.guided:run_refresh",
         isolated=True,
     ),
@@ -147,6 +170,7 @@ ROWS = (
         "export_selected",
         "Apply selected saved outputs",
         "apply",
+        stage="Translate",
         handler=PUBLISH,
         ready=True,
         writes_text=True,
@@ -157,6 +181,7 @@ ROWS = (
         "runtime_restore",
         "Restore reviewed text batch",
         "text",
+        stage="Translate",
         handler=PUBLISH,
         ready=True,
         writes_text=True,
@@ -167,6 +192,7 @@ ROWS = (
         "qa_apply",
         "Apply QA corrections",
         "text",
+        stage="Check",
         handler=PUBLISH,
         one_click=True,
         ready=True,
@@ -178,6 +204,7 @@ ROWS = (
         "qa_undo",
         "Undo QA corrections",
         "text",
+        stage="Check",
         handler=PUBLISH,
         one_click=True,
         ready=True,
@@ -189,6 +216,7 @@ ROWS = (
         "prepare_game",
         "Prepare game files",
         "preparation",
+        stage="Set up",
         handler=PREPARE,
         one_click=True,
     ),
@@ -196,6 +224,7 @@ ROWS = (
         "format_data",
         "Format game data",
         "native",
+        stage="Set up",
         step="Format game data",
         handler=PREPARE,
         one_click=True,
@@ -205,6 +234,7 @@ ROWS = (
         "format_plugins",
         "Format plugins.js",
         "native",
+        stage="Set up",
         step="Format plugins.js",
         handler=PREPARE,
         one_click=True,
@@ -214,20 +244,27 @@ ROWS = (
         "gameupdate",
         "Install GameUpdate",
         "native",
+        stage="Set up",
         step="Create GameUpdate files",
         handler=PREPARE,
         one_click=True,
         reports_outcome=True,
     ),
-    ActionSpec("import", "Import selected files", "native"),
+    ActionSpec("import", "Import selected files", "native", stage="Set up"),
     # VX Ace
     ActionSpec(
-        "ace_decrypt", "Decrypt Ace archive", "native", handler=ACE, one_click=True
+        "ace_decrypt",
+        "Decrypt Ace archive",
+        "native",
+        stage="Set up",
+        handler=ACE,
+        one_click=True,
     ),
     ActionSpec(
         "ace_extract",
         "Convert Ace data to JSON",
         "native",
+        stage="Set up",
         handler=ACE,
         one_click=True,
     ),
@@ -236,6 +273,7 @@ ROWS = (
         "ace_pack",
         "Pack translated Ace data",
         "native",
+        stage="Release",
         handler=ACE,
         one_click=True,
         ready=True,
@@ -247,13 +285,19 @@ ROWS = (
         "qa_prepare",
         "Prepare or resume translation QA",
         "native",
+        stage="Check",
         handler=QA,
         one_click=True,
         ready=True,
         reports_outcome=True,
     ),
     ActionSpec(
-        "qa_status", "Refresh translation QA", "native", handler=QA, read_only=True
+        "qa_status",
+        "Refresh translation QA",
+        "native",
+        stage="Check",
+        handler=QA,
+        read_only=True,
     ),
     # The release playtest and the layout and label checks write only their
     # reports, never the game.
@@ -261,6 +305,7 @@ ROWS = (
         "release_playtest",
         "Play the game for the release playtest",
         "native",
+        stage="Check",
         handler=PLAYTEST + ":run_playtest",
         read_only=True,
     ),
@@ -270,6 +315,7 @@ ROWS = (
         "playtest_fix",
         "Apply playtest fixes",
         "native",
+        stage="Check",
         handler=PLAYTEST + ":run_fixes",
         one_click=True,
         ready=True,
@@ -279,6 +325,7 @@ ROWS = (
         "layout_capture",
         "Show test text in the game's windows",
         "native",
+        stage="Check",
         handler=PLAYTEST + ":run_layout",
         read_only=True,
     ),
@@ -286,6 +333,7 @@ ROWS = (
         "label_capture",
         "Show shortened plugin labels in the game",
         "native",
+        stage="Check",
         handler=PLAYTEST + ":run_labels",
         read_only=True,
     ),
@@ -294,15 +342,23 @@ ROWS = (
         "playtest_install",
         "Install both playtest plugins",
         "native",
+        stage="Check",
         one_click=True,
         ready=True,
         tools=True,
     ),
-    ActionSpec("playtest_status", "Refresh playtest plugins", "native", read_only=True),
+    ActionSpec(
+        "playtest_status",
+        "Refresh playtest plugins",
+        "native",
+        stage="Check",
+        read_only=True,
+    ),
     ActionSpec(
         "playtest_apply",
         "Apply playtest settings",
         "native",
+        stage="Check",
         one_click=True,
         ready=True,
         tools=True,
@@ -311,6 +367,7 @@ ROWS = (
         "inspector_install",
         "Install TL Inspector",
         "native",
+        stage="Check",
         counterpart="inspector_remove",
         one_click=True,
         ready=True,
@@ -321,6 +378,7 @@ ROWS = (
         "inspector_remove",
         "Remove TL Inspector",
         "native",
+        stage="Check",
         counterpart="inspector_install",
         ready=True,
         tools=True,
@@ -330,6 +388,7 @@ ROWS = (
         "forge_install",
         "Install Forge",
         "native",
+        stage="Check",
         counterpart="forge_remove",
         one_click=True,
         ready=True,
@@ -340,6 +399,7 @@ ROWS = (
         "forge_remove",
         "Remove Forge",
         "native",
+        stage="Check",
         counterpart="forge_install",
         ready=True,
         tools=True,
@@ -349,6 +409,7 @@ ROWS = (
         "editors",
         "Find code editors",
         "native",
+        stage="Check",
         read_only=True,
         reports_outcome=True,
     ),
@@ -357,24 +418,47 @@ ROWS = (
         "release",
         "Build clean game ZIP",
         "native",
+        stage="Release",
         handler="dazedtl.compatibility.guided:run_release",
         reports_outcome=True,
     ),
     # Context
-    ActionSpec("reference_add", "Add DazedTL reference translation", "native"),
-    ActionSpec("reference_pair", "Add Japanese / English reference pair", "native"),
     ActionSpec(
-        "reference_remove", "Remove reference registration", "native", one_click=True
+        "reference_add", "Add DazedTL reference translation", "native", stage="Context"
     ),
     ActionSpec(
-        "reference_build", "Build exact reference matches", "native", one_click=True
+        "reference_pair",
+        "Add Japanese / English reference pair",
+        "native",
+        stage="Context",
     ),
-    ActionSpec("images_status", "Refresh image readiness", "native", read_only=True),
+    ActionSpec(
+        "reference_remove",
+        "Remove reference registration",
+        "native",
+        stage="Context",
+        one_click=True,
+    ),
+    ActionSpec(
+        "reference_build",
+        "Build exact reference matches",
+        "native",
+        stage="Context",
+        one_click=True,
+    ),
+    ActionSpec(
+        "images_status",
+        "Refresh image readiness",
+        "native",
+        stage="Translate",
+        read_only=True,
+    ),
     # Started by the app
     ActionSpec(
         "fit_text",
         "Fit text to the new Line widths",
         "background",
+        stage="Context",
         handler="dazedtl.compatibility.text:run_fit",
         writes_text=True,
         restorable=True,
@@ -383,36 +467,91 @@ ROWS = (
         "full_estimate",
         "Estimate the translation cost",
         "background",
+        stage="Context",
         handler="dazedtl.compatibility.full_estimate:run",
     ),
     ActionSpec(
         "speaker_scan",
         "Scan speaker names",
         "background",
+        stage="Context",
         handler="dazedtl.compatibility.speaker_scan:run_scan",
     ),
     # A glossary fix batch from before Text QA took the glossary over.
-    ActionSpec("glossary_apply", "Apply glossary fixes", "retired", restorable=True),
+    ActionSpec(
+        "glossary_apply",
+        "Apply glossary fixes",
+        "retired",
+        stage="Context",
+        restorable=True,
+    ),
     # The engine's own
-    ActionSpec("prepare", "Prepare game files", "engine"),
-    ActionSpec("export_all", "Export all translated files to game", "engine"),
-    ActionSpec("git_status", "Inspect Git version tracking", "engine", read_only=True),
-    ActionSpec("wolf_unpack", "Unpack WOLF archives", "engine"),
-    ActionSpec("wolf_extract", "Extract WOLF text and preserve originals", "engine"),
-    ActionSpec("wolf_maps", "Extract missing maps", "engine"),
-    ActionSpec("wolf_discover", "Discover database sheets", "engine", read_only=True),
-    ActionSpec("wolf_profile", "Save database profile", "engine"),
-    ActionSpec("wolf_names", "Inspect name safety", "engine", read_only=True),
-    ActionSpec("wolf_precheck", "Reconcile names and check injection", "engine"),
-    ActionSpec("wolf_inject", "Apply all translated WOLF files", "engine"),
-    ActionSpec("wolf_inject_game", "Apply all files from wolf_json", "engine"),
-    ActionSpec("wolf_restore", "Restore source layout", "engine"),
-    ActionSpec("wolf_loose", "Back up archives for loose playtest", "engine"),
-    ActionSpec("wolf_repack", "Repack Data.wolf", "engine"),
-    ActionSpec("wolf_saves", "Update existing WOLF saves", "engine"),
-    ActionSpec("wolf_search", "Find translated text", "engine", read_only=True),
-    ActionSpec("wolf_wrap_preview", "Preview WOLF wrapping", "engine", read_only=True),
-    ActionSpec("wolf_wrap", "Apply WOLF wrapping", "engine"),
+    ActionSpec("prepare", "Prepare game files", "engine", stage="Set up"),
+    ActionSpec(
+        "export_all", "Export all translated files to game", "engine", stage="Translate"
+    ),
+    ActionSpec(
+        "git_status",
+        "Inspect Git version tracking",
+        "engine",
+        stage="Set up",
+        read_only=True,
+    ),
+    ActionSpec("wolf_unpack", "Unpack WOLF archives", "engine", stage="Set up"),
+    ActionSpec(
+        "wolf_extract",
+        "Extract WOLF text and preserve originals",
+        "engine",
+        stage="Set up",
+    ),
+    ActionSpec("wolf_maps", "Extract missing maps", "engine", stage="Set up"),
+    ActionSpec(
+        "wolf_discover",
+        "Discover database sheets",
+        "engine",
+        stage="Set up",
+        read_only=True,
+    ),
+    ActionSpec("wolf_profile", "Save database profile", "engine", stage="Set up"),
+    ActionSpec(
+        "wolf_names", "Inspect name safety", "engine", stage="Translate", read_only=True
+    ),
+    ActionSpec(
+        "wolf_precheck",
+        "Reconcile names and check injection",
+        "engine",
+        stage="Translate",
+    ),
+    ActionSpec(
+        "wolf_inject", "Apply all translated WOLF files", "engine", stage="Translate"
+    ),
+    ActionSpec(
+        "wolf_inject_game",
+        "Apply all files from wolf_json",
+        "engine",
+        stage="Translate",
+    ),
+    ActionSpec("wolf_restore", "Restore source layout", "engine", stage="Translate"),
+    ActionSpec(
+        "wolf_loose", "Back up archives for loose playtest", "engine", stage="Translate"
+    ),
+    ActionSpec("wolf_repack", "Repack Data.wolf", "engine", stage="Translate"),
+    ActionSpec("wolf_saves", "Update existing WOLF saves", "engine", stage="Translate"),
+    ActionSpec(
+        "wolf_search",
+        "Find translated text",
+        "engine",
+        stage="Translate",
+        read_only=True,
+    ),
+    ActionSpec(
+        "wolf_wrap_preview",
+        "Preview WOLF wrapping",
+        "engine",
+        stage="Translate",
+        read_only=True,
+    ),
+    ActionSpec("wolf_wrap", "Apply WOLF wrapping", "engine", stage="Translate"),
 )
 ACTIONS = {row.name: row for row in ROWS}
 GUIDED_ACTIONS = tuple(row.name for row in ROWS if row.family in GUIDED)
@@ -459,14 +598,19 @@ def handler(name):
 def run(engine, plan, log):
     """Runs a plan in the worker with its action's handler, or `engine`, the
     engine's own run."""
-    function = handler(plan["action"])
-    if function is not None:
-        return function(plan, log)
-    row = ACTIONS.get(plan["action"])
-    if not row or not row.tools:
-        return engine(plan, log)
-    from dazedtl.compatibility.game_write import write_game
+    from dazedtl.compatibility.checkpoint_commits import for_action, running
 
-    # The tools are plugins of an MV/MZ game, which has no Data to pack.
-    with write_game(plan["project"]["source"], log=log, pack=False):
-        return engine(plan, log)
+    with running(for_action(plan["action"], plan.get("label"))):
+        function = handler(plan["action"])
+        if function is not None:
+            return function(plan, log)
+        row = ACTIONS.get(plan["action"])
+        source = (plan.get("project") or {}).get("source")
+        if not row or row.read_only or not source:
+            return engine(plan, log)
+        from dazedtl.compatibility.game_write import write_game
+
+        # The engine's own writes, such as the playtest tools, which are
+        # plugins of an MV/MZ game, and WOLF's files, have no Data to pack.
+        with write_game(source, log=log, pack=False):
+            return engine(plan, log)

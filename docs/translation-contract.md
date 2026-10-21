@@ -26,18 +26,19 @@ An image in the list counts until it is applied, one its translation skipped dro
 Images is its own progress phase; a report that leaves it out gets it from these records, complete once they are and active once they list an image.
 Guided projects keep these steps in their Images task.
 
-Text QA for RPG Maker MV/MZ and VX Ace runs with `qa`: `qa --prepare` prepares or resumes the task, whose README the assistant follows to review, and `qa --apply` applies the finished findings through the app and saves a checkpoint; `qa --status` names the next step.
+Text QA for RPG Maker MV/MZ and VX Ace runs with `qa`: `qa --prepare` prepares or resumes the task, whose README the assistant follows to review, and `qa --apply` applies the finished findings through the app as a checkpoint of their own; `qa --status` names the next step.
 For an Assistant-led project, `qa --status` also lists under `labels` the text QA's captures show squeezed or cut off that QA holds no line of, such as a plugin's menu command, with each screen and capture.
 The assistant shortens those in the plugin files before `qa --apply` and runs `qa --prepare` again, which keeps the review and captures the screens again; a label that still shows squeezed is listed again.
 Apply waits while a playtest or context question is open: the user answers it in DazedTL's Text QA task, and `qa --apply --wait MINUTES` applies once every answer is in.
 `qa --undo QA-0001` puts back one applied correction and `qa --apply-again QA-0001` applies an undone one again, each with its own checkpoint; `qa --choose QUESTION keep` or `use` records an answer the user gave the assistant.
+`qa --checkpoint` is kept for assistants started before then and changes nothing.
 
 The release playtest for RPG Maker MV/MZ runs with `playtest --run --wait MINUTES`, which checks the game's files, plays it in a hidden window and returns where it stands; `--report` names the report file, and `playtest` alone the next step, the fixes file and the saved stops.
 `--stops FILE` adds places after the standard tour, a JSON list of `{"title", "do"}` objects: `map` with `map`, `x` and `y`, `event` with `event` (and `map`), `common-event` with `id`, `battle` with `troop`, `scene` with `scene`, or `script` with `script`, each optionally with `switches`, `variables` and the `seconds` to play after it.
 The stops given replace the saved ones, which every later run visits, and `[]` clears them.
 `playtest --fix --wait MINUTES` plays the game with the fixes file, a working copy of the game's `js/plugins/DazedTL_Fixes.js`, in its place and with `js/main.js` loading it after the game's plugins.
-Only when that play still plays, stops nowhere new, reaches as many places and no longer shows something the last playtest found does it write both, as one batch, which Guided's History restores; the play then becomes the latest report, and otherwise its reason is the step's failure.
-In an Assistant-led game, `--fix` with `--wait` then saves the fixes in a checkpoint with the runtime manifest of the assistant's checkpoints, as `playtest --checkpoint` does, and `fixes.saved` says whether the latest checkpoint holds them as they are.
+Only when that play still plays, stops nowhere new, reaches as many places and no longer shows something the last playtest found does it write both, as one batch and one checkpoint, which Guided's History restores; the play then becomes the latest report, and otherwise its reason is the step's failure.
+`playtest --checkpoint` is kept for assistants started before then and changes nothing.
 Its findings in translated text reach text QA by themselves; plugin text the playtest saw drawn goes back to Plugin files, whose remaining work `plugins --task` hands out, never a recheck of every decision as the app's Copy gives once nothing is left, and `plugins --apply` applies as Apply to game does; the rest name the step that fixes them.
 
 ### Sandboxed connections
@@ -238,7 +239,10 @@ When an official source version changes, rebase_rpgmaker additionally requires t
 It rebuilds metadata from that trusted source and retains Git history.
 Native formats use their existing source/injection sidecars and verified native reconstruction.
 
-Checkpoint uses the full reviewed runtime manifest, aligns original and the translation branch, and snapshots the ignored workspace in .dazedtl/backups/v2.
+Every change DazedTL makes to the game, through these operations or the app, is its own checkpoint: one commit on the translation branch whose subject names its stage and what it did ([architecture](architecture.md#checkpoints)).
+Changes made to the game outside DazedTL, which include the assistant's own edits, are saved as a checkpoint of their own before the next change DazedTL makes, a package or a game update's preview.
+The checkpoint operation saves what waits in the patch as one checkpoint, with its `message` as the summary when given; files its optional runtime `manifest` lists that the patch lacks join the patch.
+The `original` branch holds the original of every file, so a checkpoint reads no backup.
 Source, prepared-source and workspace snapshots reuse identical file content.
 The backup store never includes itself; an unchanged snapshot reuses its ID.
 Use backup_workspace for a recovery milestone without a patch commit.
@@ -251,11 +255,11 @@ Use backups to list local restore points and older profile backups. restore_back
 It verifies content and never overwrites existing files.
 Snapshot IDs remain valid after moving the entire store with the game; engine source readers use temporary verified materialization.
 Standalone recovery without an app profile is documented in the [user guide](user-guide.md#backups-and-recovery).
-Package requires current reported QA and creates a local patch from reviewed Git files.
+Package requires current reported QA for the runtime manifest Git setup or the last checkpoint named, saves outstanding changes, and creates a local patch from the files the translation branch tracks.
 It does not create remotes, push, or upload.
-A checkpoint commits the game's complete `gameupdate/patch-config.txt` with the patch, so manifests need not list it; the package leaves it out unless the existing GameUpdate checks find the commit is the verified public version, which they then stamp.
+Writing the game's complete `gameupdate/patch-config.txt` saves it with the patch, so manifests need not list it; the package leaves it out unless the existing GameUpdate checks find the commit is the verified public version, which they then stamp.
 Every checkpoint, package and QA record also carries DazedTL's other files the game holds, so manifests need not list them either: GameUpdate's launchers and scripts, the update check and Forge plugins Set up installs, and the playtest's fixes plugin with the `js/main.js` that loads it.
-A checkpoint refuses a `plugins.js` that switches on a plugin whose file neither the patch nor the original game holds, naming the plugin, since players' game would stop at start; the original game's plugins are those its Git records or prepared backup list, never DazedTL's own, such as TL Inspector.
+A package refuses a `plugins.js` that switches on a plugin whose file neither the patch nor the original game holds, naming the plugin, since players' game would stop at start; the original game's plugins are those its Git records or prepared backup list, never DazedTL's own, such as TL Inspector.
 It likewise refuses a `js/main.js` that loads the playtest's fixes the patch lacks, or fixes no `js/main.js` in the patch loads; without a prepared backup or Git copy, the original of the `js/main.js` loading the fixes is that file without the loading line.
 
 For an official update, stage_update preserves the new original and creates a separate working copy.

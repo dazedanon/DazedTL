@@ -698,12 +698,6 @@ class PlaytestFixes(TypedDict):
         ]
     ]
     check: NotRequired[PlaytestFixCheck]
-    saved: NotRequired[
-        Annotated[
-            bool,
-            "Once the game has fixes: the latest version or checkpoint holds them as they are.",
-        ]
-    ]
 
 
 class PlaytestStatus(TypedDict):
@@ -723,12 +717,6 @@ class PlaytestStatus(TypedDict):
     stops: Annotated[int, "Saved stops every run visits after the standard tour."]
     fixes: PlaytestFixes
     operation: NotRequired[PlaytestOperation]
-    checkpoint: NotRequired[
-        Annotated[
-            PlaytestOperation,
-            "Assistant-led: the last checkpoint saving the fixes the helper started.",
-        ]
-    ]
     report: NotRequired[Annotated[str, "The saved report file."]]
     layout: NotRequired[LayoutCheck]
 

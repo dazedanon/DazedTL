@@ -675,9 +675,6 @@ function ProjectVersions({
   const [target, setTarget] = useState<HTMLDivElement | null>(null);
   if (!translation || translation.projectId !== project.id) return null;
   const guided = project.method === "guided";
-  const checkpoint = guided
-    ? () => openGuided({ kind: "checkpoint", returnTo: "versions" })
-    : undefined;
   return (
     <>
       <PageBody>
@@ -692,7 +689,6 @@ function ProjectVersions({
               ? (group, files) => openGuided({ kind: "select", group, files })
               : undefined
           }
-          onCheckpoint={checkpoint}
           actionTarget={target}
         />
       </PageBody>

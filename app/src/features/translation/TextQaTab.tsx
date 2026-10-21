@@ -10,12 +10,11 @@ import type { useAction } from "../../state/useAction";
 import type { OperationEnd } from "../guided/qaSteps";
 import {
   runQaStep,
-  saveQaVersion,
   type QaStepDetails,
   type QaStepName,
 } from "../guided/qaSteps";
 import { TextQaWork } from "../guided/TextQa";
-import { qaPhase, qaUnsaved } from "../guided/qaView";
+import { qaPhase } from "../guided/qaView";
 import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
 import { PageBody } from "../../ui/PageLayout";
@@ -55,7 +54,6 @@ export function TextQaTab({
       success,
       key,
     );
-  const unsaved = qaUnsaved(qa, action);
   return (
     <>
       <PageBody>
@@ -71,33 +69,15 @@ export function TextQaTab({
         />
       </PageBody>
       <ActionBar feedback={null}>
-        {unsaved ? (
+        {phase === "ready" && (
           <ActionControl
-            label="Save version"
-            variant="default"
-            disabled={disabled || (action.key === "qa-save" && !!action.notice)}
-            {...(action.key === "qa-save"
-              ? feedback("qa-save", "Saving…")
-              : { feedbackKey: action.key, error: action.error })}
+            label="Apply corrections"
+            disabled={disabled}
+            {...feedback("qa-apply", "Applying…")}
             onClick={() =>
-              action.run(
-                () => saveQaVersion(projectId, finished),
-                "Version saved.",
-                "qa-save",
-              )
+              step("qa-apply", "apply", {}, "Corrections applied.")
             }
           />
-        ) : (
-          phase === "ready" && (
-            <ActionControl
-              label="Apply corrections"
-              disabled={disabled}
-              {...feedback("qa-apply", "Applying…")}
-              onClick={() =>
-                step("qa-apply", "apply", {}, "Corrections applied.")
-              }
-            />
-          )
         )}
         {copy}
       </ActionBar>

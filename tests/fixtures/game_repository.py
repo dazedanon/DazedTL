@@ -118,13 +118,15 @@ published = game("published")
 (published / "js/main.js").write_text("PluginManager.setup($plugins);\n")
 (published / "gameupdate").mkdir()
 (published / "gameupdate/patch.ps1").write_text("# GameUpdate fixture\n")
+engine = TranslationEngine(temporary / "profile")
+# Set up scopes the patch to its runtime manifest before the baseline.
+engine.audit_scope(published, {"files": {"data/System.json": {}}})
 save(published)
 config = published / updater.CONFIG
 state = updater.reconcile(published, defaults)
 assert state["state"] == "needs_repo" and not config.exists(), state
 # An earlier version left a placeholder; it must never be published.
 config.write_text("username=dazed-translations\nrepo=YOUR_PATCH_REPO\nbranch=main\n")
-engine = TranslationEngine(temporary / "profile")
 # Every original file comes out of one Git process with its own bytes, which
 # its blob ID hashes; a missing blob stops the read.
 blobs = [
@@ -148,16 +150,17 @@ options = {
     "install_forge": False,
 }
 manifest = {"files": {"data/System.json": {}}}
+from dazedtl.compatibility.checkpoint_commits import Change
+from util.len_patch_scope import patch_refusal
 
 
-def checkpoint():
-    engine.git_scope(published, options, manifest, None, False)
-    engine.commit(published, "translation: fixture checkpoint")
+def checkpoint(*named):
+    engine.checkpoint(published, Change("Fixture checkpoint"), named)
     return git(published, "ls-files").split()
 
 
 with engine.context():
-    assert updater.CONFIG not in checkpoint()
+    assert updater.CONFIG not in checkpoint("data/System.json")
     # A patch's plugins.js may not switch on a plugin neither the patch nor
     # players' game has, which stops their game at start: one the assistant
     # wrote, or DazedTL's TL Inspector, which no release has even when the
@@ -166,10 +169,6 @@ with engine.context():
     # backup's list holds.
     registry = published / "js/plugins.js"
     shipped = registry.read_bytes()
-    # The untranslated plugins.js, as a checkpoint restores it from the backup.
-    original = temporary / "published-original"
-    (original / "js").mkdir(parents=True)
-    (original / "js/plugins.js").write_bytes(shipped)
     added = [published / f"js/plugins/{name}.js" for name in ("Wrap", "TLInspector")]
     for path in added:
         path.write_text("// Plugin\n")
@@ -180,21 +179,12 @@ with engine.context():
         + "".join(f'{{"name":"{name}","status":true}},\n' for name in loaded)
         + '{"name":"Old","status":false}\n];\n'
     )
-    scoped = {"files": {"data/System.json": {}, "js/plugins.js": {}}}
+    scoped = {"data/System.json", "js/plugins.js"}
     backup = ["js/plugins/savelayout.js", "js/plugins/TLInspector.js"]
-    try:
-        engine.git_scope(published, options, scoped, str(original), True, backup)
-    except GitWorkflowError as error:
-        assert str(error).startswith(
-            "js/plugins.js loads the plugins TLInspector and Wrap,"
-        ), error
-    else:
-        raise AssertionError("A patch loaded plugins players lack.")
-    for path in added:
-        scoped["files"][path.relative_to(published).as_posix()] = {
-            "original_sha256": None
-        }
-    engine.git_scope(published, options, scoped, str(original), True, backup)
+    refusal = patch_refusal(published, scoped, backup) or ""
+    assert refusal.startswith("js/plugins.js loads the plugins TLInspector and Wrap,")
+    scoped |= {path.relative_to(published).as_posix() for path in added}
+    assert patch_refusal(published, scoped, backup) is None
     registry.write_bytes(shipped)
     for path in added:
         path.unlink()
@@ -211,27 +201,24 @@ with engine.context():
     (published / fixes.PLUGIN).write_text("// Fixes\n")
     main.write_bytes(fixes.with_loader(game_main))
     data = {"files": {"data/System.json": {}}}
-    engine.git_scope(
-        published, options, with_dazedtl_files(published, data), None, True
-    )
+
+    def files(document):
+        return set(document["files"])
+
+    assert patch_refusal(published, files(with_dazedtl_files(published, data))) is None
     main.write_bytes(game_main)
     for scope, message in (
         (
-            with_dazedtl_files(published, data),
+            files(with_dazedtl_files(published, data)),
             "js/main.js in the patch doesn't load them",
         ),
-        ({"files": {**data["files"], fixes.MAIN: {}}}, None),
+        ({"data/System.json", fixes.MAIN}, None),
     ):
         if message is None:
             (published / fixes.PLUGIN).unlink()
             main.write_bytes(fixes.with_loader(game_main))
             message = "the patch has no js/plugins/DazedTL_Fixes.js"
-        try:
-            engine.git_scope(published, options, scope, None, True)
-        except GitWorkflowError as error:
-            assert message in str(error), error
-        else:
-            raise AssertionError(f"A checkpoint took {sorted(scope['files'])}.")
+        assert message in (patch_refusal(published, scope) or ""), sorted(scope)
     main.write_bytes(game_main)
     git(
         published,
@@ -243,7 +230,7 @@ with engine.context():
     save_game_wrap_widths(published, {"width": 64})
     guard = action_guard({"source": str(published)}, temporary / "workflow")
     state = updater.reconcile(published, defaults)
-    assert state["state"] == "ready" and not state["committed"], state
+    assert state["state"] == "ready", state
     # The game's settings keep its repository beside the wrap widths; writing
     # it must not make saved QA, runs or reviews read Outdated.
     assert load_game_update(published)["repo"] == "published"
@@ -311,11 +298,12 @@ with engine.context():
         ".dazedtl/skills/game.md",
     ]
     assert git(published, "check-ignore", *portable).split() == portable
-    tracked = checkpoint()
+    # The config joins the patch as a write that names it does.
+    tracked = checkpoint(updater.CONFIG)
     assert updater.CONFIG in tracked and set(portable) <= set(tracked), tracked
     assert ".dazedtl/skills/notes/style.md" not in tracked, tracked
     assert "!/gameupdate/patch-config.txt" in ignore.read_text()
-    assert updater.status(published, defaults)["committed"]
+    assert not git(published, "status", "--porcelain"), git(published, "status")
     # Players never download them: a forge's archive, which GameUpdate
     # applies, and the local ZIP both leave them out.
     archived = temporary / "archive.zip"
@@ -361,4 +349,107 @@ own = "# Copied from the example\n forge=forgejo\n host=git.dazedtl.dev\nusernam
 state = updater.reconcile(mirrored, defaults)
 assert state["state"] == "ready" and state["overrides"] == ["forge", "host"], state
 assert not state["remote"] and (mirrored / updater.CONFIG).read_text() == own, state
+
+# Checkpoints: every write DazedTL makes is one commit naming its action and
+# stage, edits made outside DazedTL get their own first, a failed or stopped
+# write commits nothing, and two writes at once each commit only their own.
+from dazedtl.compatibility.checkpoint_commits import for_action, running
+from dazedtl.compatibility.game_write import write_game
+
+kept = game("checkpoints")
+engine.audit_scope(kept, {"files": {"data/Map001.json": {}, "data/Items.json": {}}})
+save(kept)
+base = git(kept, "rev-parse", "HEAD").strip()
+trailers = "%(trailers:key={},valueonly,separator=)"
+
+
+def history():
+    shown = "%s|" + trailers.format("DazedTL-Action") + "|"
+    shown += trailers.format("DazedTL-Stage")
+    return git(kept, "log", "--format=" + shown, base + "..HEAD").splitlines()
+
+
+def changed(ref="HEAD"):
+    return git(kept, "diff-tree", "--no-commit-id", "--name-only", "-r", ref).split()
+
+
+def clean():
+    assert not git(kept, "status", "--porcelain"), git(kept, "status")
+
+
+def write(name, raw, **options):
+    with write_game(kept, paths=[name], **options) as written:
+        written.put(name, raw)
+
+
+# Translate's Apply and QA's apply, as the worker runs them.
+for action in ("export_selected", "qa_apply"):
+    with running(for_action(action)):
+        write("data/Map001.json", b'{"by": "%s"}' % action.encode())
+    clean()
+# A Plugin files apply, whose plugin joins the patch.
+write(
+    "js/plugins/TitleMessage.js",
+    b"// English\n",
+    summary="Apply plugin file changes",
+    stage="Translate",
+)
+clean()
+assert "js/plugins/TitleMessage.js" in git(kept, "ls-files").split()
+# Line widths, which the game's settings keep, named or not.
+with write_game(kept, pack=False, summary="Save Line widths", stage="Context"):
+    save_game_wrap_widths(kept, {"width": 60})
+clean()
+assert history()[::-1] == [
+    "Translate: Apply selected saved outputs|export_selected|Translate",
+    "Check: Apply QA corrections|qa_apply|Check",
+    "Translate: Apply plugin file changes||Translate",
+    "Context: Save Line widths||Context",
+], history()
+# A hand edit goes in its own checkpoint before the Apply's.
+(kept / "data/Items.json").write_text("[null]\n")
+with running(for_action("export_selected")):
+    write("data/Map001.json", b'{"by": "a second apply"}')
+clean()
+assert history()[1] == "Edits made outside DazedTL|outside_edits|", history()
+assert changed("HEAD~1") == ["data/Items.json"] and changed() == ["data/Map001.json"]
+head = git(kept, "rev-parse", "HEAD")
+for failure in (ValueError("Refused."), InterruptedError("Stopped.")):
+    try:
+        with write_game(kept, paths=["data/Map001.json"]) as written:
+            written.put("data/Map001.json", b'{"by": "a failed write"}')
+            raise failure
+    except type(failure):
+        pass
+    assert git(kept, "rev-parse", "HEAD") == head, failure
+    git(kept, "checkout", "--", "data/Map001.json")
+clean()
+meeting = threading.Barrier(2)
+errors = []
+
+
+def alongside(name):
+    try:
+        with write_game(kept, paths=[name], summary="Write " + name) as written:
+            meeting.wait(10)
+            written.put(name, b'["written alongside"]')
+            meeting.wait(10)
+    except Exception as error:
+        errors.append(error)
+
+
+writers = [
+    threading.Thread(target=alongside, args=(name,))
+    for name in ("data/Map001.json", "data/Items.json")
+]
+for writer in writers:
+    writer.start()
+for writer in writers:
+    writer.join()
+assert not errors, errors
+clean()
+assert sorted([changed(), changed("HEAD~1")]) == [
+    ["data/Items.json"],
+    ["data/Map001.json"],
+], history()
 print("ok")

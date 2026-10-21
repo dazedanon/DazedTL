@@ -126,8 +126,7 @@ def awaiting_answers(workspace, params, minutes):
 
 def settle_qa(workspace, params, result):
     """Waits for the QA step the app started; an apply, undo or apply again
-    that succeeds goes on to its checkpoint, so one command changes and
-    records the corrections."""
+    is its own checkpoint."""
 
     def finish(result):
         while (result.get("operation") or {}).get("status") == "running":
@@ -135,21 +134,9 @@ def settle_qa(workspace, params, result):
             result = call(workspace, "translation_qa", {**params, "step": "status"})
         return result
 
-    if params["step"] not in {"prepare", "apply", "checkpoint", "undo", "reapply"}:
+    if params["step"] not in {"prepare", "apply", "undo", "reapply"}:
         return result
     result = finish(result)
-    operation = result.get("operation") or {}
-    if (
-        params["step"] in {"apply", "undo", "reapply"}
-        and operation.get("status") == "complete"
-    ):
-        result = finish(
-            call(
-                workspace,
-                "translation_qa",
-                {"project_id": params["project_id"], "step": "checkpoint"},
-            )
-        )
     if (result.get("operation") or {}).get("status") != "complete":
         raise ValueError(
             "The QA step did not finish: "
@@ -160,8 +147,7 @@ def settle_qa(workspace, params, result):
 
 def wait_playtest(workspace, params, result, minutes):
     """Waits while the playtest plays, then returns its status with the
-    report file. Fixes it writes into the game go on to their own version,
-    so one command writes and records them."""
+    report file."""
     deadline = time.monotonic() + minutes * 60
     status = {"project_id": params["project_id"], "step": "report"}
 
@@ -169,7 +155,6 @@ def wait_playtest(workspace, params, result, minutes):
         while "running" in {
             (result.get("operation") or {}).get("status"),
             ((result.get("layout") or {}).get("operation") or {}).get("status"),
-            (result.get("checkpoint") or {}).get("status"),
         }:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -179,15 +164,6 @@ def wait_playtest(workspace, params, result, minutes):
         return result, True
 
     result, settled = settle(result)
-    if (
-        settled
-        and params["step"] == "fix"
-        and (result.get("operation") or {}).get("status") == "complete"
-        and (result.get("fixes") or {}).get("saved") is False
-    ):
-        result, settled = settle(
-            call(workspace, "translation_playtest", {**status, "step": "checkpoint"})
-        )
     return call(workspace, "translation_playtest", status) if settled else result
 
 
@@ -245,7 +221,7 @@ def main():
     qa = commands.add_parser(
         "qa",
         help="Text QA for RPG Maker games: where it stands, preparing its task, and "
-        "applying finished findings through DazedTL, which then saves a checkpoint",
+        "applying finished findings through DazedTL, each its own checkpoint",
     )
     qa_step = qa.add_mutually_exclusive_group()
     for step, text in (
@@ -256,14 +232,14 @@ def main():
             "apply",
             (
                 "Apply every finished finding and each proposal the user chose as "
-                "one reviewed text batch, then save a checkpoint"
+                "one reviewed text batch"
             ),
         ),
         (
             "checkpoint",
             (
-                "Save the checkpoint after an apply, undo or apply again whose "
-                "checkpoint did not run"
+                "Kept for older runs: each apply, undo or apply again is "
+                "already its own checkpoint"
             ),
         ),
     ):
@@ -274,13 +250,13 @@ def main():
         "--undo",
         nargs="+",
         metavar="FINDING",
-        help="Put back the lines of these applied corrections, then save a checkpoint",
+        help="Put back the lines of these applied corrections",
     )
     qa_step.add_argument(
         "--apply-again",
         nargs="+",
         metavar="FINDING",
-        help="Apply these undone corrections again, then save a checkpoint",
+        help="Apply these undone corrections again",
     )
     qa_step.add_argument(
         "--choose",
@@ -327,14 +303,13 @@ def main():
         action="store_true",
         help="Play the game with the fixes file the status names in place of the game's "
         "fixes plugin, and write it into the game once nothing new breaks and something "
-        "the last playtest found is gone; History restores it in Guided, and with --wait "
-        "it is saved as a version of its own",
+        "the last playtest found is gone, as a checkpoint of its own; History restores "
+        "it in Guided",
     )
     playtest_step.add_argument(
         "--checkpoint",
         action="store_true",
-        help="Save the fixes in the game as a version of their own: a checkpoint with "
-        "the runtime manifest of your checkpoints in Assistant-led, which carries them",
+        help="Kept for older runs: the fixes are already a checkpoint of their own",
     )
     playtest_step.add_argument(
         "--layout",

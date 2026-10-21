@@ -3,10 +3,12 @@
 import tempfile
 import uuid
 from contextlib import ExitStack, contextmanager
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from dazedtl import system
+from dazedtl.compatibility.checkpoint_commits import for_action, running
 from dazedtl.storage import staging_folder, write_json
 
 from . import backups
@@ -220,7 +222,9 @@ def execute(engine, workspace, job, plan, stopped, progress=lambda _message: Non
     if plan["action"] in run_compiler.ACTIONS:
         # Compiling a run changes no lifecycle record, so it never writes one.
         return run_compiler.prepare(engine, workspace, job, plan, progress)
-    with ExitStack() as resources:
+    # The helper's own operations are an assistant's, in Assistant-led.
+    change = for_action(plan["action"], plan.get("label"), "Assistant-led")
+    with ExitStack() as resources, running(change):
         return _execute(engine, workspace, job, plan, stopped, progress, resources)
 
 
@@ -242,26 +246,28 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             )
         )
 
-    def checkpoint(manifest_path, message):
-        manifest = runtime_manifest(source, manifest_path)
-        original, names = None, ()
-        if state.get("prepared_source"):
-            folder, snapshot = restored(
-                state["prepared_source"]["id"], engine.runtime_paths(manifest)
-            )
-            # Only the patch's files are restored; the backup's list names the
-            # rest, such as the game's own plugins players keep.
-            original, names = str(folder), list(snapshot["files"])
-        engine.git_scope(source, options, manifest, original, True, names)
-        result = engine.git_scope(source, options, manifest, original, False, names)
-        result["commit"] = engine.commit(source, message)
-        state["checkpoint"] = {"commit": result["commit"], "manifest": manifest_path}
-        state["runtime_manifest"] = manifest_path
-        state["workspace_backup"] = backups.snapshot(
-            source / ".dazedtl", destination, stopped=stopped
-        )
-        result["backup"] = state["workspace_backup"]
-        return result
+    def save(change, manifest_path=None):
+        """A checkpoint of the changes waiting in the patch, whose scope takes
+        a runtime manifest's files the patch lacks."""
+        named = ()
+        if manifest_path:
+            named = engine.runtime_paths(runtime_manifest(source, manifest_path))
+            state["runtime_manifest"] = manifest_path
+        engine.checkpoint(source, change, named)
+        return engine.git_status(source, options)["translation_commit"]
+
+    def original_names():
+        """The original game's files the source backup lists, which hold
+        plugins with local-looking names Git's inventory leaves out."""
+        snapshot = state.get("prepared_source") or state.get("source_backup")
+        if not snapshot:
+            return ()
+        try:
+            path = backup_path(workspace, job["project_id"], source, snapshot["id"])
+            return list(backups.manifest(path)["files"])
+        except OSError, ValueError, KeyError:
+            # Git's inventory alone still names every other original file.
+            return ()
 
     action = plan["action"]
     if action in {"backup_source", "backup_workspace"}:
@@ -375,11 +381,14 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             result = engine.write_rpgmaker(source, original, staged, output)
         state.pop("delivery", None)
     elif action == "checkpoint":
+        # Every write DazedTL makes is its own checkpoint; an assistant saves
+        # its own edits with this, naming files its patch should take in a
+        # runtime manifest.
         require_baseline(engine, source, options, state)
-        result = checkpoint(
-            arguments["manifest"],
-            arguments.get("message", "translation: save reviewed patch"),
-        )
+        change = for_action(action)
+        if arguments.get("message"):
+            change = replace(change, summary=arguments["message"])
+        result = {"commit": save(change, arguments.get("manifest"))}
     elif action == "release_patch":
         from .guided_inputs import original_bindings
         from .release import (
@@ -417,26 +426,25 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             raise ValueError(
                 "The release destination changed. Review the output again."
             )
-        progress("Saving the translation version and a project backup.")
-        checkpoint(payload["manifest"], "translation: prepare release patch")
+        progress("Saving the patch's checkpoint.")
+        engine.outside_edits(source)
+        save(for_action(action), payload["manifest"])
         package_git = git_identity(engine.git_status(source, options))
-        if package_git["translation_commit"] != state["checkpoint"]["commit"]:
-            raise ValueError(
-                "The translation branch changed while checkpointing the release."
-            )
-        write_json(lifecycle_path(workspace, job["project_id"]), state)
         verify_evidence(source, payload["evidence"])
         if stopped():
-            raise InterruptedError(
-                "Release stopped. Its translation version and backup were kept."
-            )
+            raise InterruptedError("Release stopped. Its checkpoint was kept.")
         output.parent.mkdir(parents=True, exist_ok=True)
         with staging_folder(output.parent, ".dazedtl-patch-") as temporary:
             manifest = runtime_manifest(source, payload["manifest"])
             # The translation version keeps GameUpdate's config for publishing;
             # a local patch leaves it out.
             packaged = engine.package(
-                source, options, manifest, temporary, updater=False
+                source,
+                options,
+                manifest,
+                temporary,
+                updater=False,
+                original_names=original_names(),
             )
             verify_evidence(source, payload["evidence"])
             inputs = input_stamps(source, payload["evidence"])
@@ -492,35 +500,30 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         }
     elif action in {"package", "guided_package"}:
         require_baseline(engine, source, options, state)
-        if not state.get("checkpoint"):
-            raise ValueError("Checkpoint the reviewed runtime patch before packaging.")
-        if (
-            engine.git_status(source, options)["translation_commit"]
-            != state["checkpoint"]["commit"]
-        ):
-            raise ValueError(
-                "The translation branch changed after its reviewed checkpoint. Checkpoint the current patch first."
-            )
         if action == "guided_package":
-            review = verify_guided_review(source, state, workspace, engine)
-            if review["manifest"] != state["checkpoint"]["manifest"]:
-                raise ValueError(
-                    "Checkpoint the reviewed guided manifest before packaging."
-                )
+            manifest_path = verify_guided_review(source, state, workspace, engine)[
+                "manifest"
+            ]
         else:
             from .delivery import verify
 
-            proof = verify(source, full=True)
-            if state["checkpoint"]["manifest"] not in proof["files"]:
+            manifest_path = state.get("runtime_manifest")
+            if not manifest_path:
                 raise ValueError(
-                    "Record QA for the current checkpoint scope before packaging with Assistant-led."
+                    "Register the patch's runtime manifest with Git setup first."
                 )
-        manifest = runtime_manifest(source, state["checkpoint"]["manifest"])
+            if manifest_path not in verify(source, full=True)["files"]:
+                raise ValueError(
+                    "Record QA for the patch's runtime manifest before packaging with Assistant-led."
+                )
+        engine.outside_edits(source)
+        save(for_action(action), manifest_path)
         result = engine.package(
             source,
             options,
-            manifest,
+            runtime_manifest(source, manifest_path),
             Path(workspace) / "deliveries" / job["project_id"],
+            original_names=original_names(),
         )
         state["delivery"] = result
         state["workspace_backup"] = backups.snapshot(

@@ -3494,6 +3494,8 @@ class PluginService:
             project.get("backend_id"),
             paths=[row["path"] for row in preview["files"]],
             subject="The scripts",
+            summary="Apply plugin file changes",
+            stage="Translate",
         ) as game:
             receipt, completed = self._publish(project_id, value, preview, root, game)
         # Read once the gateway packed a VX Ace game's scripts.

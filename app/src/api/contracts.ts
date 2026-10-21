@@ -983,8 +983,6 @@ export type PlaytestFixes = {
   /** The game's main.js loads fixes other than the working copy, such as an older copy. */
   other_in_game?: boolean;
   check?: PlaytestFixCheck;
-  /** Once the game has fixes: the latest version or checkpoint holds them as they are. */
-  saved?: boolean;
 };
 
 /** Where the release playtest stands, for the assistant's project helper. */
@@ -1006,8 +1004,6 @@ export type PlaytestStatus = {
   stops: number;
   fixes: PlaytestFixes;
   operation?: PlaytestOperation;
-  /** Assistant-led: the last checkpoint saving the fixes the helper started. */
-  checkpoint?: PlaytestOperation;
   /** The saved report file. */
   report?: string;
   layout?: LayoutCheck;
@@ -1268,7 +1264,6 @@ export type GuidedAction =
   | "backup_source"
   | "use_source_backup"
   | "git_setup"
-  | "checkpoint"
   | "guided_review"
   | "guided_package"
   | "release_patch"
@@ -1314,6 +1309,7 @@ export type ActionFamily =
   | "text"
   | "preparation"
   | "background"
+  | "helper"
   | "engine"
   | "retired";
 
@@ -1553,11 +1549,6 @@ export type GitStatus = {
   available_original_refs: string[];
 };
 
-export type LifecycleCheckpoint = {
-  commit: string;
-  manifest: string;
-};
-
 export type GuidedReviewRecord = {
   manifest: string;
   evidence: Record<string, string>;
@@ -1589,7 +1580,6 @@ export type Lifecycle = {
   game_backup?: BackupRecord;
   prepared_source?: BackupRecord;
   workspace_backup?: BackupRecord;
-  checkpoint?: LifecycleCheckpoint;
   guided_review?: GuidedReviewRecord;
   delivery?: DeliveryRecord;
   incoming_source?: BackupRecord;
@@ -1671,7 +1661,6 @@ export type GameUpdateStatus = {
   placeholder: boolean;
   differences: ("forge" | "host" | "owner" | "repo" | "branch")[];
   overrides: ("forge" | "host" | "owner" | "branch")[];
-  committed: boolean;
   remote: string;
 };
 
@@ -3437,8 +3426,8 @@ export const ACTIONS = {
     reports_outcome: false,
   },
   checkpoint: {
-    label: "Save translation version",
-    family: "lifecycle",
+    label: "Save a checkpoint",
+    family: "helper",
     restorable: false,
     reports_outcome: false,
   },

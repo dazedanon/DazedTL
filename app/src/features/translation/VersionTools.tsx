@@ -102,28 +102,13 @@ export function VersionTools({
           )}
         </div>
       </Section>
-      <Section title="Save a reviewed translation">
-        <label>
-          Complete runtime patch manifest
-          <input
-            disabled={disabled}
-            value={manifest}
-            onChange={(event) => setManifest(event.target.value)}
-          />
-        </label>
+      <Section title="Build a local patch">
         <div className="actions">
-          {control(
-            "checkpoint",
-            "Save translation version",
-            { manifest },
-            !state.git?.configured,
-          )}
           {control(
             "package",
             "Build local patch",
             {},
-            !state.lifecycle.checkpoint ||
-              state.progress?.phases.qa !== "complete",
+            !state.git?.configured || state.progress?.phases.qa !== "complete",
           )}
         </div>
         {state.lifecycle.delivery && (

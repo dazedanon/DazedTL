@@ -5,8 +5,8 @@ The app plays the game in a hidden window and keeps one report; it writes
 nothing into the game. Findings in text QA's lines go to QA's review, and
 the rest name the task that fixes them. The assistant's fixes for the game's
 own code, such as a crash or a window sized for the Japanese, go in through
-one plugin once a play with it in place breaks nothing new; in an
-Assistant-led game, a checkpoint then saves them in its history.
+one plugin once a play with it in place breaks nothing new, as a checkpoint
+of their own.
 """
 
 from __future__ import annotations
@@ -18,14 +18,14 @@ from typing import TYPE_CHECKING, Any
 from dazedtl.storage import write_json
 
 from .files import digest, read_json
-from .operations import lifecycle
 
 if TYPE_CHECKING:
     from .guided import Guided
     from .text_qa import TextQA
 
+# `checkpoint` does nothing, now that the fixes go in as their own
+# checkpoint; an assistant started before then still runs it.
 STEPS = ("status", "report", "run", "fix", "checkpoint", "layout")
-CHECKPOINT_MESSAGE = "playtest: apply the playtest's fixes"
 
 
 def game_fixes(playtest, kept):
@@ -99,8 +99,6 @@ class Playtest:
             self.start(project_id, stops)
         if step == "fix":
             self.fix(project_id, native)
-        if step == "checkpoint":
-            self.checkpoint(project_id)
         if step == "layout":
             self.check_layout(project_id, widths)
         return self.status(project_id, native, report=step == "report")
@@ -154,7 +152,6 @@ class Playtest:
         writes it into the game once nothing new breaks."""
         from dazedtl.compatibility.playtest import fixes_copy
 
-        self.text_qa.require_saved(project_id)
         copy = fixes_copy(Path(native["source"]), Path(native["data"]).parent)
         preview = self.guided.preview(
             project_id,
@@ -170,50 +167,6 @@ class Playtest:
         write_json(
             self.guided.path(project_id, "playtest-operation"), {"id": job["id"]}
         )
-
-    def checkpoint(self, project_id):
-        """Saves the fixes in the game as a version of their own, so a later
-        batch's version, such as QA's, holds only that batch's changes: in an
-        Assistant-led game a checkpoint with the runtime manifest of the
-        assistant's own checkpoints, which carries them, and in Guided a
-        translation version."""
-        self.text_qa.require_saved(project_id)
-        if self.guided.projects.get(project_id).get("method") == "len":
-            manifest = lifecycle(self.guided.translation.workspace, project_id).get(
-                "runtime_manifest"
-            )
-            if not manifest:
-                raise ValueError(
-                    "Save a checkpoint with the patch's runtime manifest first; the "
-                    "playtest's fixes are saved with the same manifest."
-                )
-            job = self.guided.translation.operation(
-                project_id,
-                "checkpoint",
-                {"manifest": manifest, "message": CHECKPOINT_MESSAGE},
-            )
-        else:
-            preview = self.guided.preview(
-                project_id, "checkpoint", None, {"message": CHECKPOINT_MESSAGE}
-            )
-            job = self.guided.execute(project_id, preview["token"])
-        write_json(
-            self.guided.path(project_id, "playtest-checkpoint"), {"id": job["id"]}
-        )
-
-    def saving(self, project_id):
-        """The last checkpoint of the fixes the helper started, with its
-        current state."""
-        path = self.guided.path(project_id, "playtest-checkpoint")
-        if not path.exists():
-            return None
-        identity = read_json(path)["id"]
-        job = self.guided.translation.run(project_id, identity)
-        return {
-            "id": identity,
-            "status": job["status"],
-            "message": str(job.get("message") or ""),
-        }
 
     def check_layout(self, project_id, widths):
         """Shows English at the given widths in the game's own windows; it
@@ -348,17 +301,8 @@ class Playtest:
         stops = (state.get("coverage") or {}).get("stops", [])
         assistant = self.guided.projects.get(project_id).get("method") == "len"
         fixes = self.fixes(native)
-        saving = self.saving(project_id)
         if operation and operation["status"] == "running":
             following = "The playtest is running; wait with playtest --wait MINUTES or check again."
-        elif saving and saving["status"] == "running":
-            following = "DazedTL is saving the fixes in a checkpoint; wait with playtest --wait MINUTES."
-        elif fixes.get("saved") is False:
-            following = (
-                "The fixes are in the game but in no "
-                + ("checkpoint" if assistant else "version")
-                + "; save them with playtest --checkpoint."
-            )
         elif fixes.get("other_in_game"):
             following = (
                 "The game runs other fixes than the working copy fixes.file names, "
@@ -430,7 +374,6 @@ class Playtest:
             "stops": len(self.stops(project_id)),
             "fixes": fixes,
             **({"operation": operation} if operation else {}),
-            **({"checkpoint": saving} if saving else {}),
         }
         layout = self.layout(project_id, native)
         if layout:
@@ -447,17 +390,14 @@ class Playtest:
         return result
 
     def fixes(self, native):
-        """The fixes plugin's working copy and latest check, and whether the
-        game's latest version holds the game's fixes."""
-        from dazedtl.compatibility.playtest import fixes_saved, fixes_state
+        """The fixes plugin's working copy and latest check."""
+        from dazedtl.compatibility.playtest import fixes_state
 
-        state = fixes_state(
+        return fixes_state(
             self.guided.backend.workflows.folder(native["id"]),
             Path(native["source"]),
             Path(native["data"]).parent,
         )
-        saved = fixes_saved(native["source"])
-        return state if saved is None else {**state, "saved": saved}
 
     def capture(self, project_id, name):
         from dazedtl.compatibility.playtest import capture

@@ -209,11 +209,6 @@ class GitStatus(TypedDict):
     available_original_refs: list[str]
 
 
-class LifecycleCheckpoint(TypedDict):
-    commit: str
-    manifest: str
-
-
 class GuidedReviewRecord(TypedDict):
     manifest: str
     evidence: dict[str, str]
@@ -251,7 +246,6 @@ class Lifecycle(typing_extensions.TypedDict, extra_items=object):
     game_backup: NotRequired[BackupRecord]
     prepared_source: NotRequired[BackupRecord]
     workspace_backup: NotRequired[BackupRecord]
-    checkpoint: NotRequired[LifecycleCheckpoint]
     guided_review: NotRequired[GuidedReviewRecord]
     delivery: NotRequired[DeliveryRecord]
     incoming_source: NotRequired[BackupRecord]
@@ -342,8 +336,6 @@ class GameUpdateStatus(TypedDict):
     differences: list[Literal["forge", "host", "owner", "repo", "branch"]]
     # Values the game sets itself instead of following Settings.
     overrides: list[Literal["forge", "host", "owner", "branch"]]
-    # The GameUpdate branch's commit carries the file's values.
-    committed: bool
     # Why no Git remote is where players download from, or "".
     remote: str
 

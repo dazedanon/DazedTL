@@ -256,12 +256,6 @@ def remote_problem(values: dict[str, str], remotes: dict[str, list[str]]) -> str
     )
 
 
-def committed_values(game_root: str | Path, branch: str) -> dict[str, str] | None:
-    """The working config's values in ``branch``'s commit, or None without one."""
-    shown = _git(Path(game_root), "show", f"refs/heads/{branch}:{CONFIG}")
-    return file_values(shown.stdout) if shown.returncode == 0 else None
-
-
 # ------------------------------------------------------------------ state
 
 
@@ -353,7 +347,6 @@ def _status(root: Path, defaults, saved, data, found, remotes) -> dict:
         "file": found,
         "placeholder": data is not None and found is None,
         "differences": [],
-        "committed": False,
         "remote": "",
     }
     if not present and data is None:
@@ -364,8 +357,6 @@ def _status(root: Path, defaults, saved, data, found, remotes) -> dict:
     current = found or wanted
     if current:
         result["remote"] = remote_problem(current, remotes)
-    if found and (root / ".git").exists():
-        result["committed"] = committed_values(root, found["branch"]) == found
     return {**result, "state": state, "values": values, "message": _MESSAGES.get(state, "")}
 
 
@@ -394,25 +385,13 @@ def _write(game_root: Path, values: dict[str, str]) -> str:
     return digest(data)
 
 
-def reconcile(
-    game_root: str | Path,
-    defaults: dict[str, str],
-    action: str = "sync",
-    repo: str | None = None,
-) -> dict:
-    """Brings the config in line with the settings, then returns its status.
-
-    ``sync`` adopts a working config DazedTL has not seen, writes one that is
-    missing, a placeholder or outdated since DazedTL last wrote it, and leaves
-    an edited one for the user. The user's choices: ``save`` a repository,
-    ``keep`` an edited file's values for this game, ``replace`` them with
-    DazedTL's, or follow Settings again with ``defaults``.
-    """
-    from util.game_settings import load_game_update, save_game_update
+def _reconciled(root: Path, defaults, action, repo):
+    """What reconciling decides: the game's GameUpdate record before and
+    after, the values to write into the config or None, and what it read."""
+    from util.game_settings import load_game_update
 
     if action not in {"sync", "save", "keep", "replace", "defaults"}:
         raise ValueError("Choose a GameUpdate action.")
-    root = Path(game_root)
     saved = load_game_update(root)
     original = dict(saved)
     data, found = _read(root)
@@ -427,6 +406,7 @@ def reconcile(
         saved = {key: value for key, value in saved.items() if key not in OVERRIDES}
     suggested = origin_repo(remotes, _merged(defaults, saved)["username"])
     state, wanted, _values = _evaluate(saved, defaults, data, found, suggested)
+    written = None
     if found and data is not None and not saved.get("written") and not saved.get("repo"):
         saved = _own(found, defaults, data)
     elif wanted and found == wanted and data is not None:
@@ -434,7 +414,39 @@ def reconcile(
     elif wanted and installed(root) and (
         state == "pending" or action in {"save", "replace", "defaults"}
     ):
-        saved.update(repo=wanted["repo"], written=_write(root, wanted))
+        saved.update(repo=wanted["repo"])
+        written = wanted
+    return original, saved, written, remotes
+
+
+def changes(game_root: str | Path, defaults: dict[str, str], action: str = "sync",
+            repo: str | None = None) -> bool:
+    """Whether reconciling would write the config or the game's settings;
+    reads only."""
+    original, saved, written, _remotes = _reconciled(Path(game_root), defaults, action, repo)
+    return written is not None or saved != original
+
+
+def reconcile(
+    game_root: str | Path,
+    defaults: dict[str, str],
+    action: str = "sync",
+    repo: str | None = None,
+) -> dict:
+    """Brings the config in line with the settings, then returns its status.
+
+    ``sync`` adopts a working config DazedTL has not seen, writes one that is
+    missing, a placeholder or outdated since DazedTL last wrote it, and leaves
+    an edited one for the user. The user's choices: ``save`` a repository,
+    ``keep`` an edited file's values for this game, ``replace`` them with
+    DazedTL's, or follow Settings again with ``defaults``.
+    """
+    from util.game_settings import save_game_update
+
+    root = Path(game_root)
+    original, saved, written, remotes = _reconciled(root, defaults, action, repo)
+    if written is not None:
+        saved["written"] = _write(root, written)
     if saved != original:
         save_game_update(root, saved)
     data, found = _read(root)

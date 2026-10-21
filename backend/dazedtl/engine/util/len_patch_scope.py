@@ -33,7 +33,7 @@ from util.version_update.git_workflow import (
     _AssetManifestEntry, _asset_state_path, _commit_tree, _hash_file,
     _is_local_only_asset, _is_tool_owned_path, _load_asset_manifest,
     _load_asset_manifest_metadata, _message, _open_index_lock, _reject_original_checked_out_elsewhere,
-    _run_git, _save_asset_manifest, _temporary_index, _tree_files,
+    _run_git, _save_asset_manifest, _temporary_index, _tree_files, _write_json_atomic,
 )
 from util import system
 
@@ -197,6 +197,17 @@ def _fixes_refusal(root: Path, scope: Collection[str]) -> str | None:
     return None
 
 
+def patch_refusal(root: Path, scope: Collection[str], original_names: Collection[str] = ()) -> str | None:
+    """Why the patch's files `scope` may not go to players, as the plugin
+    and fixes checks find, with the original game's files from the
+    `original` branch, its ignored-asset inventory and `original_names`."""
+    repo = Path(root)
+    originals = _tree_files(repo, "original", "")
+    assets = _load_asset_manifest(repo, "") or {}
+    return (_plugin_refusal(repo, scope, chain(originals, assets, original_names), None)
+            or _fixes_refusal(repo, scope))
+
+
 def _file(root: Path, relative: str) -> Path:
     path = root
     for part in relative.split("/"):
@@ -251,6 +262,39 @@ def scope_ignore(existing: str, paths: set[str]) -> str:
     lines.extend("!/" + _escape(p) for p in sorted(paths))
     lines.append(_END)
     return normalize_game_tool_gitignore_text(existing.rstrip() + "\n\n" + "\n".join(lines) + "\n")
+
+
+def grow_scope(repo: Path, tracked: Collection[str], added: Iterable[str]) -> tuple[list[str], list[str]]:
+    """Lets `added`, files a patch-scoped translation branch lacks, into its
+    patch: the .gitignore patch block allows them besides what Git tracks,
+    and the inventory of the original's files Git leaves out drops them.
+    Returns the files let in and the rule files changed; a branch without a
+    patch block, which every file can join, lets in none."""
+    ignore = repo / ".gitignore"
+    text = ignore.read_text(encoding="utf-8", errors="surrogateescape") if ignore.is_file() else ""
+    if _BEGIN not in text:
+        return [], []
+    accepted = []
+    for relative in added:
+        try:
+            accepted.append(_path(relative))
+        except GitWorkflowError:
+            continue
+    accepted = sorted(p for p in set(accepted) if not is_portable_game_file(p) and p not in _METADATA)
+    if not accepted:
+        return [], []
+    scope = {p for p in tracked if not is_portable_game_file(p)} | set(accepted) | repository_files(repo)
+    updated = scope_ignore(text, scope)
+    if updated != text:
+        _write_atomic(ignore, updated)
+    inventory = _asset_state_path(repo, "", "official-assets")
+    if inventory.is_file():
+        document = json.loads(inventory.read_text(encoding="utf-8"))
+        files = document.get("files")
+        if isinstance(files, dict) and files.keys() & set(accepted):
+            document["files"] = {p: row for p, row in files.items() if p not in accepted}
+            _write_json_atomic(inventory, document)
+    return accepted, [".gitignore"] if updated != text else []
 
 
 def _blob_metadata(repo: Path, objects: set[str]) -> dict[str, tuple[str, int]]:

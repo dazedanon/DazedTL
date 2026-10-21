@@ -149,7 +149,7 @@ class TranslationEngine:
         from .game_write import write_game
 
         # Guidance is never the game's ace_json, so nothing packs.
-        with write_game(source, pack=False):
+        with write_game(source, pack=False, summary="Save guidance", stage="Context"):
             return document_save(source, name, revision, text)
 
     def valid_document(self, name):
@@ -180,7 +180,9 @@ class TranslationEngine:
         _validate_skill(BUNDLED_SKILL)
         # Both move legacy guidance into .dazedtl and keep DazedTL's rules in
         # the game's .gitignore.
-        with write_game(source, pack=False):
+        with write_game(
+            source, pack=False, summary="Prepare the project files", stage="Set up"
+        ):
             shared = shared_context(project)
             _prepare_local_work(project)
         layout = rpgmaker_layout(source)
@@ -246,7 +248,12 @@ class TranslationEngine:
                     f"{batch['instruction_key']}. Use a section.key from data/translation_contexts.json."
                 ) from None
         # The requests' shared context moves legacy guidance into .dazedtl.
-        with write_game(source, pack=False):
+        with write_game(
+            source,
+            pack=False,
+            summary="Prepare translation requests",
+            stage="Translate",
+        ):
             compiled = request_contexts(self.project(source, options), batches)
         for original, result in zip(plan["batches"], compiled):
             context = result["context"]
@@ -485,10 +492,19 @@ class TranslationEngine:
         from .game_write import write_game
 
         root = Path(source)
+        # A sync on returning to the window mostly changes nothing, and then
+        # starts no write, whose checkpoint runs Git.
+        if action == "sync" and not gameupdate_config.changes(root, defaults):
+            action = None
         if action is not None:
             # It writes the config and the game's settings, never ace_json.
             paths = [gameupdate_config.CONFIG, ".dazedtl/settings.json"]
-            with write_game(root, paths=paths):
+            with write_game(
+                root,
+                paths=paths,
+                summary="Update the GameUpdate config",
+                stage="Release",
+            ):
                 return gameupdate_config.reconcile(root, defaults, action, repo)
         # Each poll reads it; it changes only with Git's metadata, the config,
         # GameUpdate's scripts, the game's settings and the defaults.
@@ -934,29 +950,6 @@ class TranslationEngine:
             **fit,
         }
 
-    def git_scope(self, source, options, manifest, original, dry_run, names=()):
-        """Stages a checkpoint's files. `original` is a folder holding the
-        untranslated game's copies of them, and `names` lists all of that
-        game's files."""
-        from util.len_patch_scope import sync_patch_scope
-
-        from .game_write import write_game
-
-        def run():
-            return sync_patch_scope(
-                self.project(source, options),
-                manifest,
-                original_game=Path(original) if original else None,
-                original_names=names,
-                dry_run=dry_run,
-            )
-
-        if dry_run:
-            return run()
-        # Staging writes the patch's ignore rules, which are never ace_json.
-        with write_game(source, pack=False):
-            return run()
-
     def runtime_paths(self, manifest):
         from util.len_patch_scope import patch_manifest
 
@@ -1033,41 +1026,36 @@ class TranslationEngine:
                 + '. Review the ignore rules, or declare files the patch adds as {"files": {"<path>": {"original_sha256": null}}}.'
             )
 
-    def commit(self, source, message):
-        from util.version_update.git_workflow import _TOOL_EMAIL, _TOOL_NAME, _run_git
+    def checkpoint(self, source, change, named=()):
+        """Saves the changes waiting in the game's patch as one checkpoint,
+        letting the `named` files it lacks into it."""
+        from .checkpoint_commits import save
 
-        if (
-            not isinstance(message, str)
-            or not message.strip()
-            or len(message) > 500
-            or "\0" in message
-        ):
-            raise ValueError("Use a short checkpoint message.")
-        if _run_git(
-            Path(source), "diff", "--cached", "--quiet", check=False
-        ).returncode:
-            flags = []
-            for key, fallback in (
-                ("user.name", _TOOL_NAME),
-                ("user.email", _TOOL_EMAIL),
-            ):
-                if not _run_git(
-                    Path(source), "config", "--get", key, check=False
-                ).stdout.strip():
-                    flags += ["-c", key + "=" + fallback]
-            _run_git(Path(source), *flags, "commit", "-m", message)
-        return _run_git(Path(source), "rev-parse", "HEAD").stdout.strip()
+        return save(source, change, named)
 
-    def package(self, source, options, manifest, destination, *, updater=True):
-        """A local ZIP of the committed patch. GameUpdate's config stays out
-        unless the commit is the verified public version, which the ZIP then
-        stamps; ``updater=False`` always leaves it out."""
+    def outside_edits(self, source):
+        """Saves the changes made outside DazedTL as their own checkpoint,
+        when the game's Git is set up."""
+        from .checkpoint_commits import outside_edits
+        from .game_write import _checkout
+
+        if _checkout(Path(source).resolve()) is not None:
+            outside_edits(source)
+
+    def package(
+        self, source, options, manifest, destination, *, updater=True, original_names=()
+    ):
+        """A local ZIP of the committed patch, the files the translation
+        branch tracks. GameUpdate's config stays out unless the commit is the
+        verified public version, which the ZIP then stamps; ``updater=False``
+        always leaves it out. `original_names` lists the original game's
+        files a backup holds, for plugins Git's inventory leaves out."""
         import zipfile
 
         from util.ace.actions import patch_archive
         from util.gameupdate_config import CONFIG
-        from util.len_patch_scope import patch_manifest
-        from util.paths import GAME_REPOSITORY_METADATA, is_portable_game_file
+        from util.len_patch_scope import patch_manifest, patch_refusal
+        from util.paths import is_portable_game_file
         from util.release_package import ReleasePackageError, _release_patch_sha
         from util.version_update.git_workflow import _run_git
 
@@ -1080,21 +1068,24 @@ class TranslationEngine:
             or status["current_branch"] != status["translation_branch"]
         ):
             raise ValueError(
-                "Commit reviewed changes on the translation branch before packaging."
+                "The game changed while its patch was saved, or is off the "
+                "translation branch; build the patch again."
             )
         tracked = set(
             _run_git(source, "ls-files", "-z").stdout.rstrip("\0").split("\0")
         )
-        # Saving a translation version commits a working config with the patch.
-        scope = set(patch_manifest(manifest)) | ({CONFIG} & tracked)
         # The game's glossary, settings and skills are committed, but the
         # .gitattributes rule committed with them keeps them out of the ZIP.
         portable = set(filter(is_portable_game_file, tracked))
-        allowed = scope | set(GAME_REPOSITORY_METADATA) | portable
-        if tracked - allowed or scope - tracked:
+        missing = sorted(set(patch_manifest(manifest)) - tracked)
+        if missing:
             raise ValueError(
-                "The committed files do not match the reviewed runtime patch manifest."
+                "The patch lacks files its runtime manifest lists: "
+                + ", ".join(missing[:8])
+                + "."
             )
+        if refusal := patch_refusal(source, tracked - portable, original_names):
+            raise ValueError(refusal)
         destination.mkdir(parents=True, exist_ok=True)
         output = destination / (status["translation_commit"] + ".zip")
         temporary = output.with_suffix(".zip.tmp")
@@ -1175,6 +1166,9 @@ class TranslationEngine:
         if action == "preview":
             from util.version_update.text_changes import text_changes
 
+            # The update keeps its own commits, after edits made outside
+            # DazedTL have theirs.
+            self.outside_edits(source)
             preview = git.preview_official_update(
                 source,
                 options["official"],

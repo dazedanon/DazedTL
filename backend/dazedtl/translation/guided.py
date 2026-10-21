@@ -1031,7 +1031,13 @@ class Guided:
     def save_guidance(self, native, name, revision, text):
         """Saves one of the game's guidance documents, which Git tracks."""
         # Guidance is never the game's ace_json, so nothing packs.
-        with self.backend.game_write(native["source"], native["id"], pack=False):
+        with self.backend.game_write(
+            native["source"],
+            native["id"],
+            pack=False,
+            summary="Save guidance",
+            stage="Context",
+        ):
             return self.backend.workflows.document_save(
                 native["id"], name, revision, text
             )

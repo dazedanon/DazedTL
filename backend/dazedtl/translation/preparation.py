@@ -145,7 +145,11 @@ def run(plan, log, execute, guard):
             # Only formatting changes a VX Ace game's exports, which the game
             # reads once packed into Data.
             with write_game(
-                native["source"], folder, log=log, paths=None if data else ()
+                native["source"],
+                folder,
+                log=log,
+                paths=None if data else (),
+                action=row["action"],
             ) as game:
                 if data:
                     game.watch(native["data"])

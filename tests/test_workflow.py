@@ -7,7 +7,7 @@ from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from dazedtl.api.contracts.validation import check_response
 from dazedtl.api.server import assistant_dispatch
@@ -1400,13 +1400,12 @@ class WorkflowTests(unittest.TestCase):
                     (self.profile / "backups/stale-project-records").exists()
                 )
 
-    def test_checkpoints_use_temporary_verified_originals_and_reuse_workspace_backups(
-        self,
-    ):
+    def test_helper_checkpoints_save_through_git_with_dazedtls_own_files(self):
+        # The helper's checkpoint once restored originals from the backup and
+        # snapshotted the workspace; Git's original branch is authoritative,
+        # so it saves what waits in the patch and lets the manifest's files in.
         manifest_path = WORK + "/work/patch-files.json"
         write_json(self.game / manifest_path, ["source.json"])
-        asset = self.game / "unchanged-asset.bin"
-        asset.write_bytes(b"original asset")
         main = self.game / "js/main.js"
         main.parent.mkdir()
         main.write_bytes(b"PluginManager.setup($plugins);\n")
@@ -1425,7 +1424,6 @@ class WorkflowTests(unittest.TestCase):
         }
         self.engine.audit_scope = lambda *_args: None
         self.engine.runtime_paths = lambda manifest: list(manifest["files"])
-        originals = []
 
         def setup(_source, _options, _version, original, untranslated):
             # Git reads an untranslated game in place, not an unpacked copy.
@@ -1434,44 +1432,9 @@ class WorkflowTests(unittest.TestCase):
             return self.engine.git_status(self.game)
 
         self.engine.git_setup = setup
-
-        def git_scope(_source, _options, manifest, original, _dry_run, names):
-            folder = Path(original)
-            originals.append(folder)
-            self.assertEqual(read_json(folder / "source.json"), {"line": "はい。"})
-            # The rest of the prepared game is named, not restored, so the
-            # plugins players keep count as theirs.
-            self.assertFalse((folder / "unchanged-asset.bin").exists())
-            self.assertIn("unchanged-asset.bin", names)
-            # DazedTL's own files join a manifest that leaves them out: Set
-            # up's with the prepared game's copies as their originals, and the
-            # playtest's fixes with the game's own main.js as the original of
-            # the one loading them.
-            self.assertEqual(
-                manifest["files"],
-                {
-                    "source.json": {},
-                    "GameUpdate.bat": {},
-                    "js/plugins/TranslationUpdateCheck.js": {},
-                    "js/main.js": {},
-                    "js/plugins/DazedTL_Fixes.js": {"original_sha256": None},
-                },
-            )
-            self.assertEqual(
-                (folder / "js/main.js").read_bytes(),
-                b"PluginManager.setup($plugins);\n",
-            )
-            self.assertEqual(
-                (folder / "js/plugins/TranslationUpdateCheck.js").read_text(
-                    encoding="utf-8"
-                ),
-                "// Update check\n",
-            )
-            return {"staged": 1}
-
-        self.engine.git_scope = git_scope
-        self.engine.commit = lambda *_args: "checkpoint"
-        self.engine.package = lambda *_args: {"path": str(self.root / "patch.zip")}
+        self.engine.checkpoint = Mock()
+        self.engine.outside_edits = Mock()
+        self.engine.package = Mock(return_value={"path": str(self.root / "patch.zip")})
         self.engine.detect = lambda _source: "Other engine"
         job = {"project_id": self.identity, "id": "b" * 32}
 
@@ -1490,32 +1453,52 @@ class WorkflowTests(unittest.TestCase):
             )
 
         operation("git_setup", version="1.0", untranslated=True, manifest=manifest_path)
-        self.assertTrue(all(not path.exists() for path in originals))
         write_json(self.game / "source.json", {"line": "Yes."})
         (self.game / "js/plugins/DazedTL_Fixes.js").write_text(
             "// Fix\n", encoding="utf-8"
         )
         main.write_bytes(b"$plugins.push({});\n" + main.read_bytes())
         delivery.record(self.game, manifest_path, ["source.json"])
-        first = operation("checkpoint", manifest=manifest_path)
-        second = operation("checkpoint", manifest=manifest_path)
+        operation("checkpoint", manifest=manifest_path, message="maps 1-20")
+        change, named = self.engine.checkpoint.call_args.args[1:]
+        self.assertEqual(
+            (change.summary, change.stage, change.action),
+            ("maps 1-20", "Assistant-led", "checkpoint"),
+        )
+        # DazedTL's own files join a manifest that leaves them out: Set up's
+        # and the playtest's fixes with the main.js loading them.
+        self.assertEqual(
+            sorted(named),
+            [
+                "GameUpdate.bat",
+                "js/main.js",
+                "js/plugins/DazedTL_Fixes.js",
+                "js/plugins/TranslationUpdateCheck.js",
+                "source.json",
+            ],
+        )
+        # Without a manifest it saves what waits in the patch.
+        operation("checkpoint")
+        self.assertEqual(self.engine.checkpoint.call_args.args[2], ())
+        state = lifecycle(self.profile, self.identity)
+        self.assertNotIn("checkpoint", state)
+        self.assertNotIn("workspace_backup", state)
         packaged = operation("package")
-        self.assertEqual(first["backup"]["id"], second["backup"]["id"])
-        self.assertEqual(second["backup"]["bytes_added"], 0)
-        self.assertEqual(packaged["backup"]["id"], first["backup"]["id"])
-        # A Guided checkpoint must not reuse a different Len QA manifest.
+        # Edits made outside DazedTL get their own checkpoint before the
+        # package's.
+        self.engine.outside_edits.assert_called_once()
+        self.assertEqual(self.engine.checkpoint.call_args.args[1].action, "package")
+        # Packaging takes the manifest QA was recorded for.
         other_manifest = WORK + "/work/other-patch.json"
         write_json(self.game / other_manifest, ["source.json"])
         operation("checkpoint", manifest=other_manifest)
-        with self.assertRaisesRegex(ValueError, "current checkpoint scope"):
+        with self.assertRaisesRegex(ValueError, "runtime manifest before packaging"):
             operation("package")
-        (self.game / other_manifest).unlink()
-        operation("checkpoint", manifest=manifest_path)
-        self.assertTrue(all(not path.exists() for path in originals))
-        self.assertTrue(self.service.backups(self.identity)["snapshots"])
         restored = self.root / "recovered-work"
         operation(
-            "restore_backup", backup_id=first["backup"]["id"], destination=str(restored)
+            "restore_backup",
+            backup_id=packaged["backup"]["id"],
+            destination=str(restored),
         )
         self.assertEqual(
             read_json(restored / "len-method/work/patch-files.json"), ["source.json"]
@@ -1528,11 +1511,6 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(
             (Path(staged["official"]) / "native.bin").read_bytes(),
             b"new official bytes\r\n",
-        )
-        self.assertTrue(
-            lifecycle(self.profile, self.identity)["workspace_backup"][
-                "reused_snapshot"
-            ]
         )
         # A staged patch compares only as a patch: as a complete game it
         # would remove every file it leaves out.

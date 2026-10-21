@@ -60,17 +60,13 @@ function summary(status: GameUpdateStatus): {
     case "absent":
     case "unconfigured":
     case "ready":
-      return status.committed
-        ? {
-            mark: "done",
-            title: "Ready to publish",
-            detail: `${CONFIG} is committed on ${status.file!.branch}.`,
-          }
-        : {
-            mark: "idle",
-            title: "Not committed yet",
-            detail: `The next translation version commits ${CONFIG}.`,
-          };
+      // Every write to the game is its own checkpoint, so the config is
+      // saved with the translation as soon as it is written.
+      return {
+        mark: "done",
+        title: "Ready to publish",
+        detail: `${CONFIG} is saved with the translation.`,
+      };
   }
 }
 
@@ -83,15 +79,11 @@ export function GameUpdatePanel({
   status,
   disabled,
   openSettings,
-  onCheckpoint,
 }: {
   projectId: string;
   status: GameUpdateStatus;
   disabled: boolean;
   openSettings: () => void;
-  /** Opens the Guided translation checkpoint review, which commits the
-   * config; absent while the version panel already offers it. */
-  onCheckpoint?: () => void;
 }) {
   const application = useApplication();
   const action = useAction({ observer: application });
@@ -237,11 +229,6 @@ export function GameUpdatePanel({
                 `${CONFIG} rewritten.`,
               )}
             </>
-          )}
-          {status.state === "ready" && !status.committed && onCheckpoint && (
-            <Button disabled={busy} onClick={onCheckpoint}>
-              Review translation checkpoint
-            </Button>
           )}
         </ActionRow>
       </ActionList>

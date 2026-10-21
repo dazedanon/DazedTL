@@ -1438,7 +1438,6 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
                 "output",
                 "expected_original_commit",
             },
-            "checkpoint": {"manifest"},
             "guided_review": {"manifest"},
             "stage_update": {"official", "version"},
             "version_preview": {"official", "version"},
@@ -1521,8 +1520,8 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
                     )
             self.require_inventory(project_id, progress["metrics"]["text"]["total"])
             delivery.verify(project.root, full=True)
-        if action in {"git_setup", "checkpoint", "package"}:
-            # The translation version commits GameUpdate's current config.
+        if action == "package":
+            # The patch carries GameUpdate's current config.
             self.game_update.sync(project_id)
         self.settings.prepare_engine()
         plan = {

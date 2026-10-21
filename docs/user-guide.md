@@ -51,6 +51,8 @@ You can move between tasks at any time; Alt+Left and Alt+Right (Option on macOS)
 
 **Set up this game** asks for the game's version and whether it already contains translations.
 It then backs up the original, prepares the game files and starts version tracking, so later game updates can be merged.
+From then on DazedTL saves every change it makes to the game, such as an Apply, a Plugin files change or QA's corrections, as its own checkpoint in the game folder's Git history, so there is nothing to save by hand.
+Changes you make to the game outside DazedTL are saved as a checkpoint of their own, **Edits made outside DazedTL**, the next time DazedTL changes the game.
 If a step fails, the reason appears beside the button and **Finish setup** carries on.
 **Preparation tools** reruns a single step.
 
@@ -235,7 +237,7 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
    For RPG Maker games it also runs text QA: **Text QA** appears once it starts, lists each correction with **Undo** and asks you only what it can't settle, which **Progress** points out.
    It also shortens plugin text the game squeezes or cuts off on its screens, such as a menu command.
    For MV and MZ games it runs the playtest too, which **Playtest** shows once it has.
-   It fixes crashes and windows too small for English in a fixes plugin of DazedTL's own, which DazedTL puts into the game only after playing it with the fix breaks nothing new, and then saves as a version.
+   It fixes crashes and windows too small for English in a fixes plugin of DazedTL's own, which DazedTL puts into the game only after playing it with the fix breaks nothing new, as a checkpoint of its own.
    Approve your assistant's API estimate with the button on **Progress**; your assistant can't start a run you haven't approved there.
    A newer estimate replaces the one waiting.
    Choosing another model of the same connection, or switching between **API Batch** and **Live API**, shows the waiting estimate at the new prices at once when its requests stay the same; approving then sends them with your new choice.
@@ -263,7 +265,7 @@ Set up adds `GameUpdate.bat` for Windows, `GameUpdate_linux.sh` for Linux, the `
 MV and MZ games also get a startup check that warns players when the repository has a newer version and links to it; offline or after an error, the game starts as usual.
 Set up never replaces a game's existing `README.md`; to get the current one, delete it and choose **Recreate GameUpdate files** under **Preparation tools**.
 
-DazedTL connects each game to its repository through `gameupdate/patch-config.txt`, which it writes and commits with each translation version:
+DazedTL connects each game to its repository through `gameupdate/patch-config.txt`, which it writes and saves with the translation:
 
 1. In **Settings > GameUpdate**, choose the forge and host and enter the owner of your patch repositories, such as `dazed-translations`.
    Leave the owner empty if you don't publish with GameUpdate.
@@ -271,7 +273,7 @@ DazedTL connects each game to its repository through `gameupdate/patch-config.tx
    DazedTL fills it in from the game's `origin` remote when that belongs to the owner; otherwise type it and **Save**.
    Until it's known, Release waits for it.
 
-The status below it says whether the file is **Ready to publish**, **Not committed yet** (the next translation version, such as building a patch ZIP, commits it) or **Changed outside DazedTL**.
+The status below it says whether the file is **Ready to publish** or **Changed outside DazedTL**.
 For a file someone edited, **Keep the file** keeps its values for this game and **Rewrite the file** puts DazedTL's back; **Follow Settings** later drops what the game kept.
 A warning appears when players would download from a site or repository this game's Git remotes don't point to.
 
@@ -287,10 +289,10 @@ The file holds these keys:
 
 A file with only `username`, `repo` and `branch` uses GitLab on `gitgud.io`.
 
-Each translation version also commits the game's glossary, settings and skills in its `.dazedtl` folder, so they are pushed to the repository with the translation.
+The translation's checkpoints also hold the game's glossary, settings and skills in its `.dazedtl` folder, so they are pushed to the repository with the translation.
 Players never get them: the game's `.gitattributes` keeps `.dazedtl` out of the downloads GameUpdate applies and out of patch ZIPs.
 
-Before building a clean game ZIP for players, save the translation version and push it to the repository branch it tracks.
+Before building a clean game ZIP for players, push the translation to the repository branch it tracks.
 **Release** then writes that commit into the ZIP's `gameupdate/previous_patch_sha.txt`, so GameUpdate knows which version players start from; the game folder itself doesn't change.
 Without the pushed commit, the clean ZIP leaves out `patch-config.txt`, as patch ZIPs always do, so GameUpdate stays off in it.
 
@@ -299,6 +301,7 @@ Without the pushed commit, the clean ZIP leaves out `patch-config.txt`, as patch
 When a game gets a new official version, open **Versions** on the Project page.
 Choose the folder the developer released, either the complete game or a patch of files to copy over it; DazedTL says which it looks like, and you can change that.
 It sets the new version up as a separate copy, previews the changes, then applies the update to your translation.
+Changes you made to the game outside DazedTL are saved as their own checkpoint before the preview, so the update can start.
 Lines the developer left as they were keep their translations, even beside new or changed ones.
 The preview counts the lines to translate and the translations that go back to Japanese; open a file to see its lines before and after.
 A patch keeps every game file it doesn't include, but it can't remove files the developer deleted.

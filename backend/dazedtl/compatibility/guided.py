@@ -267,7 +267,12 @@ def phased_workflows(workspace, lock, operations, manual):
                 )
             ):
                 return super().update(project_id, revision, values)
-            with write_game(project["source"], pack=False):
+            with write_game(
+                project["source"],
+                pack=False,
+                summary="Save Line widths",
+                stage="Context",
+            ):
                 return super().update(project_id, revision, values)
 
         def apply_layout_settings(self, identity, revision, receipt):
@@ -297,7 +302,12 @@ def phased_workflows(workspace, lock, operations, manual):
                 "guided_layout": receipt,
             }
             if receipt["applied"]:
-                with write_game(project["source"], pack=False):
+                with write_game(
+                    project["source"],
+                    pack=False,
+                    summary="Save the measured Line widths",
+                    stage="Context",
+                ):
                     save_game_wrap_widths(project["source"], widths)
             self.save(updated)
             self.projects[identity] = updated
@@ -559,7 +569,7 @@ def convert_ace(root, log, folder=None):
     root = Path(root)
     fresh = not ace_converted(root)
     # Converting between Data and ace_json packs nothing.
-    with write_game(root, log=log, pack=False):
+    with write_game(root, log=log, pack=False, action="ace_extract"):
         actions.run(root, "ace_extract", log)
     if folder is None or not fresh:
         return

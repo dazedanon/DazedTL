@@ -13,6 +13,10 @@ skills), runs inside `write_game`, which holds the rules such writes share:
   saving the packing receipt Release checks when the game has a Guided
   workspace. The game reads nothing else while an RGSS archive sits beside
   Game.exe, so a write that packs refuses before writing anything then.
+- Once the outermost write to a game whose Git is set up succeeds, its change
+  is one checkpoint commit on the translation branch
+  ([checkpoint_commits](checkpoint_commits.py)), so every change DazedTL
+  makes can be seen and undone in the game's history.
 
 Writers change files through the `GameWrite` it yields, or run an engine tool
 inside it and name what the tool wrote with `wrote`, or have the write find
@@ -96,18 +100,24 @@ class GameWrite:
 
 
 def _checkout(root):
+    """The status of the game's own repository when its Git is set up, which
+    takes a checkpoint of each write, or None; refuses while the checkout
+    can't take the write."""
     # A game takes translation work only in a repository of its own; one
     # without, before version tracking is set up, has no checkout to keep.
     if not (root / ".git").exists():
-        return
+        return None
     from util.len_git import git_status
     from util.len_translation import LenProject
 
     from dazedtl.translation.operations import checkout_issue
 
     status = _statuses.get(str(root), root, lambda: git_status(LenProject(root)))
-    if status.get("configured") and (issue := checkout_issue(status)):
+    if not status.get("configured"):
+        return None
+    if issue := checkout_issue(status):
         raise ValueError(issue)
+    return status
 
 
 def _pack(native, folder, game, log):
@@ -142,21 +152,29 @@ def write_game(
     paths=None,
     pack=True,
     subject="The text",
+    summary=None,
+    stage=None,
+    action=None,
 ):
     """Checks, then yields the `GameWrite` for one write to the game at
-    `root`, and packs it once the block succeeds.
+    `root`, and packs it once the block succeeds; the outermost write to a
+    game whose Git is set up then records its checkpoint.
 
     `folder` is the game's Guided workspace, which keeps the packing receipt;
     `paths` the files the write will change when known, so a write that packs
-    none refuses no archive; `pack=False` leaves Data as it is, for writes
-    outside `ace_json`, such as guidance and .gitignore, and tools that
-    convert between Data and `ace_json`; `subject` names what was written
-    when packing fails.
+    none refuses no archive and another write's checkpoint leaves them to
+    this one; `pack=False` leaves Data as it is, for writes outside
+    `ace_json`, such as guidance and .gitignore, and tools that convert
+    between Data and `ace_json`; `subject` names what was written when
+    packing fails. The checkpoint is named by `action`'s registry row, the
+    action running the write, or else `summary` in `stage`.
     """
+    from . import checkpoint_commits
     from .guided import ace_blocked
 
     root = Path(root).resolve()
-    _checkout(root)
+    outermost = str(root) not in writing.get()
+    status = _checkout(root)
     # A VX Ace game's text DazedTL writes is always its ace_json.
     native = {"source": str(root), "data": str(root / "ace_json"), "engine": "ACE"}
     ace = pack and (root / "ace_json").is_dir()
@@ -165,16 +183,29 @@ def write_game(
     )
     if packs and (blocked := ace_blocked(root)):
         raise ValueError(blocked)
+    point = (
+        checkpoint_commits.Checkpoint(root, paths)
+        if outermost and status is not None
+        else None
+    )
     game = GameWrite(root, packs=ace)
     token = writing.set(writing.get() | {str(root)})
     try:
         yield game
+        if ace:
+            game._settle()
+            _packed(native, folder, game, log, subject)
+        if point is not None:
+            point.record(
+                checkpoint_commits.current(action, summary, stage), game.touched
+            )
     finally:
         writing.reset(token)
-    if not ace:
-        return
-    game._settle()
-    token = writing.set(writing.get() | {str(root)})
+        if point is not None:
+            point.close()
+
+
+def _packed(native, folder, game, log, subject):
     try:
         _pack(native, folder, game, log)
     except InterruptedError:
@@ -187,5 +218,3 @@ def write_game(
             f"{subject} is in ace_json, but the game's data could not be "
             f"updated: {error} Pack outside edits, in Release, tries again."
         ) from error
-    finally:
-        writing.reset(token)

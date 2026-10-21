@@ -9,19 +9,7 @@ export type OperationEnd = (
   id: string,
 ) => Promise<{ status: string; message: string }>;
 
-/** Saves the game's corrected text as a version. */
-export async function saveQaVersion(projectId: string, finished: OperationEnd) {
-  const saved = await api.guided.qa(projectId, "checkpoint");
-  const committed = await finished(saved.operation!.id);
-  if (committed.status !== "complete")
-    throw new Error(
-      "The corrections are in the game, but their version was not saved: " +
-        (committed.message || "the checkpoint did not finish."),
-    );
-}
-
-/** Runs one QA step; an apply, undo or reapply goes on to its checkpoint
- * commit. */
+/** Runs one QA step; an apply, undo or reapply is its own checkpoint. */
 export async function runQaStep(
   projectId: string,
   name: QaStepName,
@@ -33,5 +21,4 @@ export async function runQaStep(
   const ended = await finished(started.operation.id);
   if (ended.status !== "complete")
     throw new Error(ended.message || "QA did not finish this step.");
-  if (name !== "prepare") await saveQaVersion(projectId, finished);
 }

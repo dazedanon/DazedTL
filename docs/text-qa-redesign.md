@@ -17,7 +17,7 @@ The [release playtest](#release-playtest) extends the same goals to what text QA
 - Content handling starts only when a reviewer declines an item; QA never classifies or excludes content in advance, because which models decline what is not known beforehand.
   A declined item is offered only to a reviewer on another AI helper, because a helper's workers share its boundaries and offering it to another of them would ask the same helper again.
   If none will review it, finalize reports it as a coverage gap and never asks the user to attest a review; an optional queue lets the user review it.
-- After apply, QA records a [checkpoint](translation-contract.md#delivery-and-future-versions) commit; pushing and publishing stay user-approved.
+- Each apply is a [checkpoint](architecture.md#checkpoints) commit of its own; pushing and publishing stay user-approved.
 - Screening is measured instead of trusted: another reviewer screens a quarter of every reviewer's lines again, whatever either reports goes to deep review, and a reviewer whose checks show it missed more than it found is screened again in full.
   Seeded known-defect probes and per-reviewer yield tracking were rejected, for the [reasons](#screen-checks) below.
 - A defect a reviewer notices outside its own items reaches the engine as an [observation](#observations), never only as prose: the engine checks the line against the inventory and sends it to deep review, in a follow-up round when deep review is over, so its correction still passes the editorial stage.
@@ -122,7 +122,7 @@ Its behavior is in the [playtest modules](../backend/dazedtl/engine/util/playtes
   Text problems the play after QA's apply finds need QA's next round, which the assistant prepares and reviews itself, so the user still copies once; the task is finished only once a play of the game as it is leaves nothing for QA.
   A game the playtest can't play at all, such as one without its engine's scripts, finishes the task without a play once its report names no crash, since nothing the assistant writes would change it; a crash that stops the game is the assistant's to fix, so the task waits on it rather than reading Blocked.
 - In Assistant-led the starting prompt runs it through the project helper's `playtest` before text QA and again after QA's apply, and a Playtest tab shows its report once one exists.
-  Its assistant fixes the game's own code through the same fixes plugin and play as Guided's, never by editing the game's files, and DazedTL then saves the fixes in a checkpoint, since Assistant-led has no History restore and its Git history is how it takes changes out.
+  Its assistant fixes the game's own code through the same fixes plugin and play as Guided's, never by editing the game's files, and the fixes go in as a checkpoint of their own, since Assistant-led has no History restore and its Git history is how it takes changes out.
 
 ### Decisions
 

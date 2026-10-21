@@ -1622,6 +1622,15 @@ def _write_tree_from_folder(
         system.unlink(index_name, ignore_errors=True)
 
 
+def _with_trailer(message: str, trailer: str) -> str:
+    """The message with `trailer` in its trailer block, the last paragraph
+    when it holds only `Key: value` lines, which Git reads as trailers."""
+    body = message.rstrip()
+    _, separator, last = body.rpartition("\n\n")
+    joined = separator and all(re.match(r"[A-Za-z0-9-]+: ", line) for line in last.splitlines())
+    return body + ("\n" if joined else "\n\n") + trailer
+
+
 def _commit_tree(
     repo: Path,
     tree: str,
@@ -1629,7 +1638,7 @@ def _commit_tree(
     parents: Iterable[str] = (),
 ) -> str:
     if _preserve_game_files(repo) and _PRESERVE_GAME_FILES_TRAILER not in message.splitlines():
-        message = message.rstrip() + "\n\n" + _PRESERVE_GAME_FILES_TRAILER
+        message = _with_trailer(message, _PRESERVE_GAME_FILES_TRAILER)
     args = [
         "-c",
         f"user.name={_TOOL_NAME}",

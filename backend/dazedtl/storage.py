@@ -15,6 +15,7 @@ from .system import new_folder, staging_folder, write_bytes, write_json
 __all__ = [
     "WorkspaceError",
     "exclusive",
+    "hold",
     "new_folder",
     "read_versioned_json",
     "staging_folder",
@@ -105,29 +106,48 @@ def read_versioned_json(path, default, upgrades, validate):
     return migrated
 
 
+def _try_lock(handle, path):
+    """Takes an exclusive lock on an open file without waiting; False while
+    another thread or process holds it. Closing the handle releases it."""
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            if not path.stat().st_size:
+                handle.write(b"0")
+                handle.flush()
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return False
+    return True
+
+
+def hold(path):
+    """An open handle holding an exclusive lock on path until it is closed,
+    or None while another thread or process holds it."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = path.open("a+b")
+    if _try_lock(handle, path):
+        return handle
+    handle.close()
+    return None
+
+
 class WorkspaceLock:
     def __init__(self, workspace):
-        path = Path(workspace) / "workspace.lock"
-        self.handle = path.open("a+b")
-        try:
-            if os.name == "nt":
-                import msvcrt
-
-                if not path.stat().st_size:
-                    self.handle.write(b"0")
-                    self.handle.flush()
-                self.handle.seek(0)
-                msvcrt.locking(self.handle.fileno(), msvcrt.LK_NBLCK, 1)
-            else:
-                import fcntl
-
-                fcntl.flock(self.handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            self.handle.close()
+        handle = hold(Path(workspace) / "workspace.lock")
+        if handle is None:
             raise WorkspaceError(
                 "workspace_locked",
                 "This workspace is already open in another application instance.",
-            ) from None
+            )
+        self.handle = handle
 
     def close(self):
         self.handle.close()
@@ -137,30 +157,7 @@ class WorkspaceLock:
 def exclusive(path):
     """Holds an exclusive lock on path, waiting while another thread or
     process holds it."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a+b") as handle:
-        if os.name == "nt":
-            import msvcrt
-
-            if not path.stat().st_size:
-                handle.write(b"0")
-                handle.flush()
-            handle.seek(0)
-            while True:
-                try:
-                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-                    break
-                except OSError:
-                    time.sleep(0.05)
-            try:
-                yield
-            finally:
-                handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-        else:
-            import fcntl
-
-            # Closing the handle releases the lock.
-            fcntl.flock(handle, fcntl.LOCK_EX)
-            yield
+    while (handle := hold(path)) is None:
+        time.sleep(0.05)
+    with handle:
+        yield

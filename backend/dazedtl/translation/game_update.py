@@ -19,7 +19,6 @@ ABSENT = {
     "placeholder": False,
     "differences": [],
     "overrides": [],
-    "committed": False,
     "remote": "",
 }
 
@@ -52,7 +51,6 @@ def view(status):
         "placeholder": status["placeholder"],
         "differences": [_field(name) for name in status["differences"]],
         "overrides": [_field(name) for name in status["overrides"]],
-        "committed": status["committed"],
         "remote": status["remote"],
     }
 

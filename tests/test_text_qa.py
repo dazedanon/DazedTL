@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 from dazedtl.api.contracts.guided import TextQaStatus
 from dazedtl.api.contracts.validation import _close_contracts
-from dazedtl.translation.text_qa import CHECKPOINT_MESSAGE, TextQA
+from dazedtl.translation.text_qa import TextQA
 from pydantic import TypeAdapter
 from util import rpgmaker_qa
 
@@ -45,7 +45,7 @@ def fake_guided(folder, qa, method="guided"):
 
 
 class TextQATests(unittest.TestCase):
-    def test_apply_publishes_every_finding_then_saves_a_checkpoint(self):
+    def test_apply_publishes_every_finding_as_one_batch(self):
         # The assistant once applied corrections with engine commands that
         # wrote the game directly, so History could not restore them.
         with TemporaryDirectory() as folder:
@@ -71,33 +71,21 @@ class TextQATests(unittest.TestCase):
             # An open question waits for the user's answer, given in the app.
             with self.assertRaisesRegex(ValueError, "user's choice"):
                 service.run("project", "apply")
-            with self.assertRaisesRegex(ValueError, "Apply or undo"):
-                service.run("project", "checkpoint")
             service.run("project", "choose", question="Map001.json#/1", choice="use")
             # The task keeps the answer, where its ledger reads it.
             self.assertEqual(rpgmaker_qa.answers(task), {"Map001.json#/1": "use"})
             qa["questions"][0]["choice"] = "use"
-            # A version takes every change in the game, so QA's waits while
-            # the playtest's fixes are in none, as Fuuma's took them.
-            fixes = Path(folder) / "js/plugins/DazedTL_Fixes.js"
-            fixes.parent.mkdir(parents=True)
-            fixes.write_text("// Fix\n", encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "playtest --checkpoint"):
-                service.run("project", "apply")
-            fixes.unlink()
             applied = service.run("project", "apply")
-            # The playtest's fixes wait in turn for QA's version.
-            with self.assertRaisesRegex(ValueError, "qa --checkpoint"):
-                service.require_saved("project")
-            # The job reports its end before its worker exits; the checkpoint
+            # The job reports its end before its worker exits; the next step
             # waits for the worker, so the apply still reads as running.
             guided.backend.operations.active = applied["operation"]["id"]
             self.assertEqual(
                 service.run("project", "status")["operation"]["status"], "running"
             )
             guided.backend.operations.active = ""
+            # The apply is its own checkpoint; an assistant started before
+            # then still saves one, which changes nothing.
             state = service.run("project", "checkpoint")
-            service.require_saved("project")
             self.assertEqual(
                 calls,
                 [
@@ -112,18 +100,9 @@ class TextQATests(unittest.TestCase):
                         },
                     ),
                     ("execute", "qa_apply"),
-                    ("preview", "checkpoint", {"message": CHECKPOINT_MESSAGE}),
-                    ("execute", "checkpoint"),
                 ],
             )
-            self.assertEqual(state["operation"]["kind"], "checkpoint")
-            # A checkpoint that failed runs again for the apply before it;
-            # once one saves, there is nothing left to save.
-            guided.backend.operations.jobs["checkpoint-job"]["status"] = "failed"
-            service.run("project", "checkpoint")
-            self.assertEqual(calls[-2][2], {"message": CHECKPOINT_MESSAGE})
-            with self.assertRaisesRegex(ValueError, "Apply or undo"):
-                service.run("project", "checkpoint")
+            self.assertEqual(state["operation"]["kind"], "apply")
             # Applied findings are not applied twice.
             qa["applied"] = True
             for row in qa["findings"] + qa["questions"]:
@@ -137,7 +116,6 @@ class TextQATests(unittest.TestCase):
             service.run("project", "apply")
             self.assertEqual(calls[-2][2]["findings"], ["QA-0003"])
             self.assertEqual(calls[-2][2]["proposals"], [])
-            service.run("project", "checkpoint")
             qa["applied"] = True
             qa["findings"][-1]["state"] = "applied"
             # Undo's reply meets the helper contract; one that did not made
@@ -146,8 +124,7 @@ class TextQATests(unittest.TestCase):
             _close_contracts()
             TypeAdapter(TextQaStatus).validate_json(json.dumps(undone), strict=True)
             self.assertEqual(undone["operation"]["kind"], "undo")
-            # Apply again runs an apply batch of its own, and its checkpoint
-            # records an apply.
+            # Apply again runs an apply batch of its own.
             again = service.run("project", "reapply", findings=["QA-0001"])
             TypeAdapter(TextQaStatus).validate_json(json.dumps(again), strict=True)
             self.assertEqual(
@@ -163,8 +140,6 @@ class TextQATests(unittest.TestCase):
                     },
                 ),
             )
-            service.run("project", "checkpoint")
-            self.assertEqual(calls[-2][2], {"message": CHECKPOINT_MESSAGE})
             # A task the app can't read sent the assistant to prepare again,
             # which returned it, apply said to finish review and undo failed
             # without a reason; each names the task and its error instead.

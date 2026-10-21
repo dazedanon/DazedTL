@@ -28,7 +28,7 @@ App workers own source backup, Git baselines, checkpoints and local patch packag
 The Guided [workspace hook](../app/src/features/guided/workspace/useGuidedWorkspace.tsx) owns shared state, navigation and action review; each task's body and footer controls come from its [task view](../app/src/features/guided/workspace/tasks/index.ts).
 Its backend, [Guided](../backend/dazedtl/translation/guided.py), composes collaborators for [action review and execution](../backend/dazedtl/translation/guided_actions.py), [run inspection](../backend/dazedtl/translation/guided_inspection.py), the [release form](../backend/dazedtl/translation/guided_release.py) and [context setup](../backend/dazedtl/translation/guided_context.py).
 Each workflow action is one row of the [action registry](../backend/dazedtl/actions.py), which says how it is reviewed and run and what its review and History call it; Guided's checks, the worker and, through the generated contracts, the renderer read it.
-Every change to a game's files goes through the [game-write gateway](../backend/dazedtl/compatibility/game_write.py); its docstring holds the rules.
+Every change to a game's files goes through the [game-write gateway](../backend/dazedtl/compatibility/game_write.py); its docstring holds the rules, and each change is a [checkpoint](#checkpoints).
 Files and processes go through the [platform layer](../backend/dazedtl/system.py); see [Windows](#windows).
 Working copies are described under [Workflow and shared presentation](#workflow-and-shared-presentation).
 
@@ -253,7 +253,7 @@ Tabs and Continue keep drafts and allow navigation regardless of completion; the
 Set up's one action runs the backup, file preparation and version baseline as separate steps, each through its own preview and execution, so every step keeps its checks and receipts.
 Routine setup steps and local estimation consume their preview right after the click; replacement backups, paid work, runtime replacement and file resync keep their review.
 The original-backup record lives in the profile while snapshots live in the game's own store, so a moved or copied game is offered its earliest snapshot as the original (`use_source_backup`) instead of saving its current, possibly translated, files.
-Each task applies its own work and shows what it has not applied, with no cross-task reminder list; applied Translate output has no restore of its own, since Versions and Backups undo it.
+Each task applies its own work and shows what it has not applied, with no cross-task reminder list; applied Translate output has no restore of its own, since it is a [checkpoint](#checkpoints) Git can undo.
 
 #### Working copies
 
@@ -293,7 +293,7 @@ Release QA applies its finished findings without asking, as one `qa_apply` text 
 Preparing QA captures the interface screens in the [game window](../backend/dazedtl/engine/util/rpgmaker_window/launcher.cjs), which serves the game folder read-only to offscreen windows in an in-memory session with no network, so nothing reaches the game's saves; squeezed text in a plugin file goes to Plugin files in Guided, and to the assistant through the helper's `qa` status in Assistant-led, because QA never writes plugin files.
 Deep bundles print each scene once, which cut deep review's text from 14.4 MB to 3.3 MB on the Arina run.
 The playtest's [checks](../backend/dazedtl/engine/util/playtest/checks.py) and [tour](../backend/dazedtl/engine/util/playtest/harness/main.cjs) report problems in lines QA reviews as observations of a `playtest` worker, so findings never make another task; [its design](text-qa-redesign.md#release-playtest) holds the decisions.
-The assistant's [fixes plugin](../backend/dazedtl/engine/util/playtest/fixes.py) is written only after a play with it passes and joins every patch's manifest, since a manifest without it would drop the fixes without an error; QA's apply and the fix each wait while the other's changes are in no version, since a version takes every change in the game.
+The assistant's [fixes plugin](../backend/dazedtl/engine/util/playtest/fixes.py) is written only after a play with it passes and joins every patch's manifest, since a manifest without it would drop the fixes without an error.
 
 ### Navigation and responsiveness
 
@@ -411,9 +411,20 @@ Code on a poll path starts no process: Defender makes each start slow, and one u
 A worker's parent on Windows is the virtual environment's launcher stub, so ownership checks use [launched_by](../backend/dazedtl/translation/ownership.py), never `os.getppid`.
 [Shortcuts](../scripts/shortcuts.mjs) are written through IShellLinkW, since WScript.Shell passes their text through the ANSI code page.
 
+## Checkpoints
+
+The game folder's Git repository is the one record of a translation: every change DazedTL makes to a game whose Git is set up is one commit on the translation branch, a checkpoint, made by [checkpoint_commits](../backend/dazedtl/compatibility/checkpoint_commits.py), whose docstring holds the rules.
+The game-write gateway records one when the outermost write to a game succeeds, after packing, so no flow commits by hand, asks the user to, or leaves work uncommitted, and a failed or stopped write commits nothing.
+Before each write and each game update, changes made outside DazedTL get a checkpoint of their own, so a DazedTL checkpoint never mixes them in and nothing waits for a clean worktree; the checkout refusals (wrong branch, unfinished merge, unfinished asset restore) stay.
+A checkpoint's subject is its stage and a plain summary on one line, named by the action's [registry](../backend/dazedtl/actions.py) row or the writer's summary, with `DazedTL-Action` and `DazedTL-Stage` trailers beside the `DazedTL-Version` ones, so checkpoints group by stage without a saved record; DazedTL is the author of all of them.
+The translation branch is patch-scoped: the files a write names that the patch lacks join it through the .gitignore patch block, and a file outside the patch is the original game's, which the `original` branch holds, so restoring never deletes it.
+Release packages what the branch tracks and refuses plugins players would lack there; the reviewed runtime manifest no longer decides the scope.
+Commits to one repository take turns through a lock in its Git folder, and each write in progress registers the files it declared, so two writes at once each commit their own.
+The project helper's `checkpoint` operation stays for Assistant-led, which writes the game with its own tools, and commits what waits in the patch; `lifecycle.json` keeps no checkpoint record, since Git holds them.
+
 ## Backup storage
 
-Agent operations and UI checkpoints share [backups.py](../backend/dazedtl/translation/backups.py): complete path-to-content manifests over content-addressed objects shared across a game's snapshots, with no delta chain or live-file hardlinks.
+Agent operations share [backups.py](../backend/dazedtl/translation/backups.py): complete path-to-content manifests over content-addressed objects shared across a game's snapshots, with no delta chain or live-file hardlinks.
 Content is verified before reuse and publication and again at restore, presentation checks that a snapshot's files still exist, and Electron opens only backup folders the backend returns as available.
 Existing snapshots are never pruned, and a failed capture removes only unpublished objects it created.
 A poll's availability check is reused while the snapshot's manifest and object folders keep their times, so a payload changed in place is noticed only by the full hash checks at restore and reuse.

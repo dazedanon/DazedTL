@@ -37,7 +37,6 @@ export function VersionsPanel({
   onPrepare,
   openTask,
   openFiles,
-  onCheckpoint,
   actionTarget,
 }: {
   project: Project;
@@ -48,7 +47,6 @@ export function VersionsPanel({
   openTask?: (step: string, task: string) => void;
   /** Opens a Guided translate task with the given files selected. */
   openFiles?: (group: "database" | "dialogue", files: string[]) => void;
-  onCheckpoint?: () => void;
   actionTarget?: HTMLElement | null;
 }) {
   const application = useApplication();
@@ -511,7 +509,7 @@ export function VersionsPanel({
                   stage?.result?.official || preview?.result?.source_root,
                 version: resultVersion,
               },
-              !state.git?.worktree_clean,
+              false,
               true,
             )}
           </ActionSlot>
@@ -563,33 +561,6 @@ export function VersionsPanel({
           </ActionSlot>
         </Section>
       )}
-      {configured &&
-        !state.git?.worktree_clean &&
-        !pending &&
-        !assetsPending && (
-          <ActionList>
-            <ActionRow
-              label={
-                <>
-                  <strong>Save current translation changes first</strong>
-                  <small>
-                    The version comparison requires your reviewed game edits to
-                    be saved in Git.
-                  </small>
-                </>
-              }
-            >
-              <Button
-                disabled={disabled}
-                onClick={() =>
-                  onCheckpoint ? onCheckpoint() : setAdvanced(true)
-                }
-              >
-                Review translation checkpoint
-              </Button>
-            </ActionRow>
-          </ActionList>
-        )}
       {!guided && (
         <details
           open={advanced}

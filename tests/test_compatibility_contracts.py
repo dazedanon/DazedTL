@@ -955,7 +955,11 @@ def parse(codeList, i, headerString, jaString):
                     actions.run(engine, install, print)
                 engine.assert_not_called()
                 status["pending_operations"] = []
-                with write_game(game) as written:
+                # A real repository's checkpoint is the checkpoint tests'.
+                with (
+                    patch("dazedtl.compatibility.checkpoint_commits.Checkpoint"),
+                    write_game(game) as written,
+                ):
                     written.put("data/Items.json", b"[]")
             self.assertEqual((game / "data/Items.json").read_bytes(), b"[]")
             # The suite fails app code that writes a game file any other way,
@@ -1079,7 +1083,7 @@ def parse(codeList, i, headerString, jaString):
             with (
                 patch("util.len_git.git_status", return_value=status),
                 patch("util.gameupdate_config.remote_urls", return_value={}),
-                patch("util.gameupdate_config.committed_values", return_value=None),
+                patch("dazedtl.compatibility.checkpoint_commits.Checkpoint"),
             ):
                 with self.assertRaisesRegex(ValueError, "unfinished Git merge"):
                     engine.game_update(game, defaults, "save", "fixture-patch")

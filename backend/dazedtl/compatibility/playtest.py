@@ -93,29 +93,6 @@ def fixes_copy(root, web):
     return path
 
 
-def fixes_saved(source):
-    """Whether the translation branch's latest commit holds the game's fixes
-    as they are, or None for a game without fixes."""
-    from util.playtest.fixes import patch_files
-    from util.version_update.git_workflow import _run_git
-
-    root = Path(source)
-    names = patch_files(root)
-    if not names:
-        return None
-    for name in names:
-        committed = _run_git(
-            root, "rev-parse", "--verify", "--quiet", f"HEAD:{name}", check=False
-        )
-        if (
-            committed.returncode
-            or committed.stdout.strip()
-            != _run_git(root, "hash-object", "--no-filters", "--", name).stdout.strip()
-        ):
-            return False
-    return True
-
-
 def run_fixes(plan, log):
     """Plays the game with the assistant's fixes in place of the game's files;
     once nothing new breaks and something the last playtest found is gone,

@@ -378,15 +378,10 @@ class GuidedActions:
             if action == "release_patch"
             else {"backup_id"}
             if action == "use_source_backup"
-            else {"message"}
-            if action == "checkpoint"
             else set()
         )
         if set(options) - allowed:
             raise ValueError("Unknown guided action option.")
-        message = options.get("message", "")
-        if not isinstance(message, str) or len(message) > 120 or "\n" in message:
-            raise ValueError("A version message is one line of at most 120 characters.")
         if action in {"backup_source", "use_source_backup"}:
             saved = lifecycle(self.guided.translation.workspace, project_id).get(
                 "source_backup"
@@ -429,9 +424,7 @@ class GuidedActions:
                     paths, self.guided.inputs(native).record()["inputs"], fresh=True
                 )
             }
-        if action in {"git_setup", "checkpoint", "guided_review", "release_patch"}:
-            # The reviewed scope carries GameUpdate's current config.
-            self.guided.translation.game_update.sync(project_id)
+        if action in {"git_setup", "guided_review", "release_patch"}:
             paths = self.guided.release_paths(project_id, project["source"], action)
             manifest = self.guided.patch_manifest(project_id, paths, action)
             expected = evidence(project["source"], [*paths, *manifest["inputs"]])
@@ -816,7 +809,7 @@ class GuidedActions:
             )
         if action == "git_setup":
             self.guided.require_preparation(project_id, native)
-        if action in {"git_setup", "checkpoint", "guided_review", "release_patch"}:
+        if action in {"git_setup", "guided_review", "release_patch"}:
             if confirmed["manifest"] != self.guided.patch_manifest(
                 project_id, confirmed["paths"], action
             ):

@@ -253,7 +253,9 @@ class ReleaseTests(unittest.TestCase):
             write_json(work / "ace-packing.json", receipt)
             self.assertFalse(packing_state(native, work)["current"])
 
-    def test_patch_plan_binds_owner_git_sources_and_runtime_before_checkpointing(self):
+    def test_patch_plan_binds_owner_git_sources_and_runtime_before_checkpointing(
+        self,
+    ):
         with TemporaryDirectory() as folder:
             root = Path(folder)
             game, workspace = root / "game", root / "profile"
@@ -281,8 +283,9 @@ class ReleaseTests(unittest.TestCase):
                 source=root / "engine",
                 git_status=lambda *_: dict(status),
                 verify_bindings=Mock(),
-                git_scope=Mock(return_value={}),
-                commit=Mock(
+                runtime_paths=lambda manifest: list(manifest["files"]),
+                outside_edits=Mock(),
+                checkpoint=Mock(
                     side_effect=lambda *_: (
                         status.update(translation_commit="after") or "after"
                     )
@@ -341,11 +344,12 @@ class ReleaseTests(unittest.TestCase):
                     )
                     with self.assertRaises(ValueError):
                         run()
-                    engine.commit.assert_not_called()
-                    engine.git_scope.assert_not_called()
+                    engine.checkpoint.assert_not_called()
             write_json(game / "data.json", {"line": "translated"})
 
-            def package(_source, _options, _manifest, target, updater=True):
+            def package(
+                _source, _options, _manifest, target, updater=True, original_names=()
+            ):
                 # The translation version keeps GameUpdate's config; the
                 # local patch leaves it out.
                 self.assertFalse(updater)
@@ -357,8 +361,10 @@ class ReleaseTests(unittest.TestCase):
             engine.package = package
             result = run()
             self.assertTrue(available(result))
-            self.assertEqual(engine.git_scope.call_count, 2)
-            engine.commit.assert_called_once()
+            # Edits made outside DazedTL go first, then the release's own
+            # checkpoint takes the manifest's files into the patch.
+            engine.outside_edits.assert_called_once()
+            self.assertEqual(engine.checkpoint.call_args.args[2], ["data.json"])
             state = lifecycle(workspace, "owner")
             self.assertNotIn("guided_review", state)
             self.assertEqual(state["guided_release"]["path"], str(root / "release.zip"))

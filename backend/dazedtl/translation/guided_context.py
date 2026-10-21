@@ -92,7 +92,13 @@ class GuidedContext:
         # The setup task saves the reference games' overlaps, which may add
         # DazedTL's rules to the game's .gitignore.
         with (
-            self.guided.backend.game_write(native["source"], native["id"], pack=False)
+            self.guided.backend.game_write(
+                native["source"],
+                native["id"],
+                pack=False,
+                summary="Save reference game matches",
+                stage="Context",
+            )
             if name == "setup"
             else nullcontext()
         ):
@@ -495,7 +501,12 @@ class GuidedContext:
             headers = read_json(artifact).get("headers")
             if not isinstance(headers, dict):
                 raise ValueError("Scan again; this scan did not check headers.")
-            with self.guided.backend.game_write(native["source"], native["id"]) as game:
+            with self.guided.backend.game_write(
+                native["source"],
+                native["id"],
+                summary="Fix speaker headers",
+                stage="Context",
+            ) as game:
                 header_review.apply(native["source"], native["data"], headers, game)
             return self.speakers(project_id)
         if scan:

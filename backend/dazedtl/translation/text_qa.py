@@ -2,9 +2,10 @@
 Text QA task in the app.
 
 The engine reviews and makes findings; the app applies them as a reviewed
-text batch through the Guided publication flow, which History can restore,
-then records a checkpoint commit. Open questions wait for the user's choice,
-and an applied correction can be undone, and applied again, one at a time.
+text batch through the Guided publication flow, which History can restore
+and which, as every write to the game does, is its own checkpoint. Open
+questions wait for the user's choice, and an applied correction can be
+undone, and applied again, one at a time.
 No step writes game files itself, and pushing or publishing stays the user's.
 """
 
@@ -16,11 +17,12 @@ from typing import TYPE_CHECKING, Any
 from dazedtl.storage import write_json
 
 from .files import read_json
-from .operations import lifecycle
 
 if TYPE_CHECKING:
     from .guided import Guided
 
+# `checkpoint` does nothing, now that each apply is its own checkpoint; an
+# assistant started before then still runs it.
 STEPS = (
     "status",
     "report",
@@ -31,8 +33,6 @@ STEPS = (
     "reapply",
     "choose",
 )
-CHECKPOINT_MESSAGE = "qa: apply text QA corrections"
-UNDO_MESSAGE = "qa: undo text QA corrections"
 # What an Assistant-led assistant does about labels QA can't correct. A
 # capture taken again keeps the review only until the corrections change the
 # game's text, so it comes before qa --apply.
@@ -45,19 +45,6 @@ LABELS_STEP = (
     "captures the screens again. Keep a label only when no shorter English keeps "
     "its meaning or no plugin file holds it, and note why in status.md."
 )
-
-
-def _require_fixes_saved(native):
-    """Refuses while the playtest's fixes are in the game but in no version,
-    which QA's version would otherwise take."""
-    from dazedtl.compatibility.playtest import fixes_saved
-
-    if fixes_saved(native["source"]) is False:
-        raise ValueError(
-            "The playtest's fixes are in the game but in no version; save them "
-            "with playtest --checkpoint first, so QA's version holds only its "
-            "corrections."
-        )
 
 
 def _unreadable_step(qa) -> str:
@@ -177,8 +164,6 @@ class TextQA:
             self.prepare(project_id, since, everything)
         elif step == "apply":
             self.apply(project_id, native)
-        elif step == "checkpoint":
-            self.checkpoint(project_id)
         elif step in {"undo", "reapply"}:
             self.batch(project_id, native, findings, step)
         elif step == "choose":
@@ -242,7 +227,6 @@ class TextQA:
             raise ValueError(qa["message"])
         if qa["applied"]:
             raise ValueError("This task's findings are already applied.")
-        _require_fixes_saved(native)
         waiting = [row for row in qa["questions"] if "choice" not in row]
         if waiting:
             raise ValueError(
@@ -293,7 +277,6 @@ class TextQA:
                 "Choose the corrections to "
                 + ("undo." if kind == "undo" else "apply again.")
             )
-        _require_fixes_saved(native)
         questions = {row["id"] for row in qa["questions"]}
         preview = self.guided.preview(
             project_id,
@@ -338,68 +321,11 @@ class TextQA:
             }
         )
 
-    def checkpoint(self, project_id):
-        """The commit that records applied, undone or reapplied corrections
-        in the game's history."""
-        saved = self.operation(project_id)
-        # A checkpoint that did not finish runs again for the step before it.
-        kind = (
-            read_json(self.guided.path(project_id, "text-qa-operation")).get("after")
-            if saved and saved["kind"] == "checkpoint" and saved["status"] != "complete"
-            else saved and saved["status"] == "complete" and saved["kind"]
-        )
-        if kind not in {"apply", "reapply", "undo"}:
-            raise ValueError(
-                "Apply or undo QA corrections before saving their checkpoint."
-            )
-        message = UNDO_MESSAGE if kind == "undo" else CHECKPOINT_MESSAGE
-        record, _project = self.guided.translation.project(project_id)
-        if record.get("method") == "len":
-            # The assistant's own checkpoints name the runtime files of its patch.
-            manifest = lifecycle(self.guided.translation.workspace, project_id).get(
-                "runtime_manifest"
-            )
-            if not manifest:
-                raise ValueError(
-                    "Save a checkpoint with the patch's runtime manifest first; QA "
-                    "commits its corrections with the same manifest."
-                )
-            job = self.guided.translation.operation(
-                project_id, "checkpoint", {"manifest": manifest, "message": message}
-            )
-        else:
-            preview = self.guided.preview(
-                project_id, "checkpoint", None, {"message": message}
-            )
-            job = self.guided.execute(project_id, preview["token"])
-        self.started(project_id, "checkpoint", job, runner="translation", after=kind)
-
-    def started(self, project_id, kind, job, runner="native", after=""):
+    def started(self, project_id, kind, job):
         write_json(
             self.guided.path(project_id, "text-qa-operation"),
-            {
-                "kind": kind,
-                "id": job["id"],
-                "runner": runner,
-                **({"after": after} if after else {}),
-            },
+            {"kind": kind, "id": job["id"], "runner": "native"},
         )
-
-    def require_saved(self, project_id):
-        """Refuses while corrections an apply, undo or apply again wrote wait
-        for their version, which would otherwise take another batch's
-        changes, such as the playtest's fixes."""
-        saved = self.operation(project_id)
-        if saved and (
-            saved["kind"] in {"apply", "undo", "reapply"}
-            and saved["status"] in {"running", "complete"}
-            or saved["kind"] == "checkpoint"
-            and saved["status"] != "complete"
-        ):
-            raise ValueError(
-                "QA's corrections wait for their version; save it with qa "
-                "--checkpoint first, so each version holds only its own changes."
-            )
 
     def operation(self, project_id) -> dict[str, Any] | None:
         """The last QA step the helper started, with its current state."""
@@ -412,10 +338,11 @@ class TextQA:
             job = operations.jobs.get(saved["id"]) or {}
             state, message = job.get("status", "interrupted"), job.get("message", "")
             # A job reports its end before its worker exits, and the next
-            # step, such as the checkpoint, waits for the worker.
+            # step waits for the worker.
             if operations.active == saved["id"]:
                 state = "running"
         else:
+            # A checkpoint run before each apply was its own checkpoint.
             job = self.guided.translation.run(project_id, saved["id"])
             state, message = job["status"], job.get("message", "")
         return {
@@ -441,14 +368,7 @@ class TextQA:
         elif not qa.get("task"):
             following = "Run qa --prepare."
         elif qa["applied"]:
-            following = (
-                "Findings are applied and saved as a version; report the qa phase "
-                "complete."
-                if operation
-                and operation["kind"] == "checkpoint"
-                and operation["status"] == "complete"
-                else "Findings are applied; save their checkpoint with qa --checkpoint."
-            )
+            following = "Findings are applied; report the qa phase complete."
         elif qa.get("rules_changed") and stage not in {"", "screen", "complete"}:
             # Its finished screening may carry over to a task under the new
             # rules; a complete task's review does anyway, as later tasks

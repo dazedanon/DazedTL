@@ -662,14 +662,6 @@ export function useGuidedWorkspace({
     (!state.acePacking.current ||
       (packJob?.status === "complete" &&
         packJob.id === started[actionKey("ace_pack", {})]?.id));
-  // The Project tab that asked for a checkpoint, to return to afterwards.
-  const checkpointReturn = useRef<"versions" | null>(null);
-  const leaveCheckpoint = (action: string) => {
-    const tab = checkpointReturn.current;
-    if (action !== "checkpoint" || !tab) return;
-    checkpointReturn.current = null;
-    openProject(tab);
-  };
   // The last executed review, so a sequence waiting on a review it opened
   // learns which operation the user's approval started.
   const executed = useRef<{ token: string; job: Job } | null>(null);
@@ -690,7 +682,6 @@ export function useGuidedWorkspace({
         [result.id]: [phase, ...value.paths].join("\n"),
       }));
     setPreview(null);
-    leaveCheckpoint(value.action);
     if (value.action === "start") {
       if (value.options.mode !== "estimate")
         await navigate(
@@ -757,8 +748,6 @@ export function useGuidedWorkspace({
   };
   // A review the Project page asked for opens once, over the saved task.
   const openIntent = useEffectEvent((request: GuidedIntent) => {
-    if (request.kind === "checkpoint")
-      checkpointReturn.current = request.returnTo ?? null;
     if (request.kind === "select") {
       const group = new Map(state.files.map((file) => [file.name, file.group]));
       draft.session.edit((current) => ({
@@ -779,24 +768,22 @@ export function useGuidedWorkspace({
       return;
     }
     const opened =
-      request.kind === "checkpoint"
-        ? review("checkpoint")
-        : request.kind === "restore"
-          ? review("runtime_restore", { publication: request.publication })
-          : action.run(
-              async () => {
-                if (request.kind === "reapply") await reapplyRun(request.runId);
-                else {
-                  const run = state.runs.find(
-                    (item) => item.id === request.runId,
-                  );
-                  if (!run) throw new Error("That run is no longer saved.");
-                  setResume(run);
-                }
-              },
-              "",
-              request.kind,
-            );
+      request.kind === "restore"
+        ? review("runtime_restore", { publication: request.publication })
+        : action.run(
+            async () => {
+              if (request.kind === "reapply") await reapplyRun(request.runId);
+              else {
+                const run = state.runs.find(
+                  (item) => item.id === request.runId,
+                );
+                if (!run) throw new Error("That run is no longer saved.");
+                setResume(run);
+              }
+            },
+            "",
+            request.kind,
+          );
     void opened.finally(() => intentHandled?.());
   });
   useEffect(() => {
@@ -825,7 +812,6 @@ export function useGuidedWorkspace({
         )
           await api.guided.discardPreparation(project.id, estimate);
         setPreview(null);
-        if (preview) leaveCheckpoint(preview.action);
       },
       "",
       "review:cancel",
