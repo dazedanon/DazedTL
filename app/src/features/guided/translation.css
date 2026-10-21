@@ -318,7 +318,8 @@
   flex: 1;
   min-width: 0;
   font-size: var(--font-small);
-  line-height: 1.5;
+  /* Two lines fit a control's height, so the footer keeps its own. */
+  line-height: calc(var(--control-height) / 2);
 }
 .translation-action-scope small {
   display: block;
