@@ -47,6 +47,21 @@ def history(folder):
     ]
 
 
+def applied_before(folder, outputs):
+    """Whether earlier Applies already published every one of `outputs`, a
+    run's output hash per file, as reapplying a run History lists does; a
+    run's first Apply publishes at least one output for the first time."""
+    published = {}
+    for row in records(folder):
+        # A batch History restored later still published its outputs.
+        if row["kind"] == "export_selected" and row["state"] == "complete":
+            for name, sha in row.get("next_outputs", {}).get("files", {}).items():
+                published.setdefault(name, set()).add(sha)
+    return bool(outputs) and all(
+        sha in published.get(name, ()) for name, sha in outputs.items()
+    )
+
+
 def blocker(rows, identity):
     """The newest later batch still in the game that changed one of this
     batch's files, whose text restoring this one would take out too; None

@@ -542,12 +542,20 @@ class ExistingBackend:
     def guided_export_preview(self, native_id, files, *, run_output=None):
         preview = self.workflows.preview(native_id, "export_selected", {})
         plan = self.workflows.previews[preview["token"]]
+        from dazedtl.translation.publication import applied_before
+
         options = {"files": list(files)}
         shown = label("export_selected")
         if run_output:
             plan["run_output"] = run_output
             options["run_id"] = run_output["run_id"]
-            shown = "Reapply saved run output"
+            # Translate's Apply also names its own run; only output an
+            # earlier Apply already published is applied again.
+            if applied_before(
+                self.workflows.folder(native_id),
+                {name: run_output["outputs"][name] for name in files},
+            ):
+                shown = "Reapply saved run output"
         plan.update(options=options, label=shown)
         return {**preview, "label": shown, "options": options, "files": len(files)}
 
