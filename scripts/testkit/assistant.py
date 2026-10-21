@@ -184,7 +184,7 @@ class Assistant:
         for name, pointers in sorted(by_file.items()):
             game_file = self.game / "data" / f"{name}.json"
             document = json.loads(game_file.read_text(encoding="utf-8-sig"))
-            before = dict(kept(document, markers=markers))
+            before = list(kept(document, markers=markers))
             for pointer, value in pointers.items():
                 set_pointer(document, pointer, value)
             (staged / f"{name}.json").write_text(
@@ -198,22 +198,18 @@ class Assistant:
                     "output": f"data/{name}.json",
                 },
             )
-            # The labels and markers the game finds by their Japanese stay.
-            after = dict(
+            # The labels and markers the game finds by their Japanese stay; a
+            # write may add or remove commands, so they compare in order.
+            after = list(
                 kept(
                     json.loads(game_file.read_text(encoding="utf-8-sig")),
                     markers=markers,
                 )
             )
-            if after != before:
-                changed = {
-                    pointer: [value, after.get(pointer)]
-                    for pointer, value in before.items()
-                    if after.get(pointer) != value
-                }
+            if [value for _, value in after] != [value for _, value in before]:
                 raise SystemExit(
                     f"write_rpgmaker changed kept text in {name}: "
-                    + json.dumps(changed, ensure_ascii=False)
+                    + json.dumps({"before": before, "after": after}, ensure_ascii=False)
                 )
 
     def checkpoint(self):

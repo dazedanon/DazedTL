@@ -153,7 +153,7 @@ const batch = [
         "an enabled Submit Batch control",
         async () =>
           ((await page.locate("Submit Batch")) && "ready") ||
-          /Translation could not start\n(.+)/.exec(await page.text())?.[1],
+          /Translation could not start\n+(.+)/.exec(await page.text())?.[1],
         5 * 60_000,
       );
       if (ready !== "ready")
