@@ -261,7 +261,8 @@ class TranslationTests(unittest.TestCase):
         )
         self.assertEqual(len(history), 1)
         self.assertEqual(
-            json.loads(history[0].read_text())["translations"], old["translations"]
+            json.loads(history[0].read_text(encoding="utf-8"))["translations"],
+            old["translations"],
         )
 
     def test_worker_owner_loss_stops_before_another_paid_request(self):
@@ -292,7 +293,7 @@ class TranslationTests(unittest.TestCase):
         for job in (stopped, held):
             restored = scratch(job["id"]) / "dazedtl-restore-1/data/System.json"
             restored.parent.mkdir(parents=True)
-            restored.write_text("{}")
+            restored.write_text("{}", encoding="utf-8")
             os.chmod(restored, stat.S_IREAD)
         worker = WorkspaceLock(self.store.folder(held["id"]))
         jobs = Jobs(self.store.workspace, False)

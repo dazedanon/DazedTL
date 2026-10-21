@@ -90,7 +90,7 @@ class SpeakerResultTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 speaker_results.page(self.root, self.job, offset)
         snapshot = self.root / "log" / speaker_results.GLOSSARY
-        snapshot.write_text("changed")
+        snapshot.write_text("changed", encoding="utf-8")
         self.assertEqual(
             speaker_results.read(self.root, self.job)["state"], "unavailable"
         )
@@ -235,7 +235,7 @@ class SpeakerResultTests(unittest.TestCase):
             },
         ):
             speaker_results.seed(self.root, self.plan, rows)
-        self.assertEqual(self.glossary.read_text(), merged)
+        self.assertEqual(self.glossary.read_text(encoding="utf-8"), merged)
         self.assertEqual(
             self.plan["context_hashes"]["game/.dazedtl/glossary.txt"],
             digest(self.glossary.read_bytes()),

@@ -41,7 +41,7 @@ class ProjectTests(unittest.TestCase):
                 }
             ],
         }
-        self.projects.path.write_text(json.dumps(original))
+        self.projects.path.write_text(json.dumps(original), encoding="utf-8")
         original_bytes = self.projects.path.read_bytes()
         self.projects = Projects(self.root)
         self.assertEqual(self.projects.data["screen"], "translation")
@@ -81,7 +81,8 @@ class ProjectTests(unittest.TestCase):
                     "screen": "overview",
                     "projects": [],
                 }
-            )
+            ),
+            encoding="utf-8",
         )
         self.assertEqual(Projects(self.root).data["screen"], "project")
 

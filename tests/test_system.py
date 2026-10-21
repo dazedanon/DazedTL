@@ -35,6 +35,7 @@ print(child.stdout.strip(), repr(channel.readline()))
             text=True,
             timeout=30,
             check=False,
+            encoding="utf-8",
         )
         self.assertEqual(result.stderr, "")
         self.assertEqual(result.stdout.strip(), "'' 'request\\n'")

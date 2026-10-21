@@ -14,7 +14,7 @@ class RepositoryStatusCacheTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
         (root / ".git/refs/heads").mkdir(parents=True)
-        (root / ".git/HEAD").write_text("ref: refs/heads/main\n")
+        (root / ".git/HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
         now = [100.0]
         computed = []
 
@@ -28,7 +28,7 @@ class RepositoryStatusCacheTests(unittest.TestCase):
         self.assertEqual(computed, [0])
         # A branch update rewrites a ref file; the next poll inspects again.
         branch = root / ".git/refs/heads/main"
-        branch.write_text("a" * 40)
+        branch.write_text("a" * 40, encoding="utf-8")
         os.utime(branch, ns=(1, 1))
         read()
         self.assertEqual(computed, [0, 1])

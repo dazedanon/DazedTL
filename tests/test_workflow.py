@@ -1076,17 +1076,19 @@ class WorkflowTests(unittest.TestCase):
         write_json(self.game / "source.json", {"line": "Yes."})
         translated = (self.game / "source.json").read_bytes()
         (self.game / "js").mkdir()
-        (self.game / "js/Forge.js").write_text("added by setup")
+        (self.game / "js/Forge.js").write_text("added by setup", encoding="utf-8")
         (self.game / "save").mkdir()
-        (self.game / "save/file1.rmmzsave").write_text("progress")
+        (self.game / "save/file1.rmmzsave").write_text("progress", encoding="utf-8")
         (self.game / ".git").mkdir()
-        (self.game / ".git/HEAD").write_text("ref: refs/heads/main")
-        (self.game / WORK / "progress.json").write_text("{}")
+        (self.game / ".git/HEAD").write_text("ref: refs/heads/main", encoding="utf-8")
+        (self.game / WORK / "progress.json").write_text("{}", encoding="utf-8")
         # The playtest's fixes for this attempt; the next began from them.
         (self.game / ".dazedtl/playtest").mkdir()
-        (self.game / ".dazedtl/playtest/DazedTL_Fixes.js").write_text("// fix")
+        (self.game / ".dazedtl/playtest/DazedTL_Fixes.js").write_text(
+            "// fix", encoding="utf-8"
+        )
         glossary = self.game / ".dazedtl/glossary.txt"
-        glossary.write_text("Lili (リリ)")
+        glossary.write_text("Lili (リリ)", encoding="utf-8")
         self.engine.documents = lambda _source: {"glossary": {"path": str(glossary)}}
         records = self.profile / "translation/projects" / self.identity
         write_json(records / "assistant.json", {"seen_at": "2026-10-08T00:00:00"})
@@ -1112,16 +1114,19 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual((self.game / "source.json").read_bytes(), original)
         self.assertFalse((self.game / "js").exists())
         self.assertEqual(
-            (archive / "game-files/js/Forge.js").read_text(), "added by setup"
+            (archive / "game-files/js/Forge.js").read_text(encoding="utf-8"),
+            "added by setup",
         )
-        self.assertEqual((self.game / "save/file1.rmmzsave").read_text(), "progress")
+        self.assertEqual(
+            (self.game / "save/file1.rmmzsave").read_text(encoding="utf-8"), "progress"
+        )
         self.assertTrue((archive / "git/HEAD").is_file())
         self.assertFalse((self.game / ".git").exists())
         self.assertTrue((archive / "len-method/progress.json").is_file())
         self.assertFalse((self.game / ".dazedtl/playtest").exists())
         self.assertTrue((archive / "playtest/DazedTL_Fixes.js").is_file())
         self.assertTrue(self.project.path.is_file())
-        self.assertEqual(glossary.read_text(), "Lili (リリ)")
+        self.assertEqual(glossary.read_text(encoding="utf-8"), "Lili (リリ)")
         self.assertFalse((records / "assistant.json").exists())
         self.assertEqual(state["source_backup"], before["source_backup"])
         with materialized(state["game_backup"]["path"]) as (saved, _manifest):
@@ -1132,14 +1137,15 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual((self.game / "source.json").read_bytes(), original)
         self.assertFalse(glossary.exists())
         self.assertEqual(
-            (archive / "context/.dazedtl/glossary.txt").read_text(), "Lili (リリ)"
+            (archive / "context/.dazedtl/glossary.txt").read_text(encoding="utf-8"),
+            "Lili (リリ)",
         )
 
     def test_backup_never_recurses_into_itself_or_copies_git_and_work_records_as_source(
         self,
     ):
         (self.game / ".git").mkdir()
-        (self.game / ".git/config").write_text("local Git state")
+        (self.game / ".git/config").write_text("local Git state", encoding="utf-8")
         with self.assertRaises(ValueError):
             snapshot(self.game, self.game / "backups", source_game=True)
         result = snapshot(self.game, self.profile / "more-backups", source_game=True)
@@ -1154,7 +1160,7 @@ class WorkflowTests(unittest.TestCase):
         self,
     ):
         report = WORK + "/work/investigation.md"
-        (self.game / report).write_text("Engine investigation")
+        (self.game / report).write_text("Engine investigation", encoding="utf-8")
         self.service.identify(self.identity, "MVMZ", report)
         run = self.prepared(self.service.compile(self.identity, self.plan_path))
         run_folder = self.service.jobs.store.folder(run["id"])
@@ -1321,7 +1327,7 @@ class WorkflowTests(unittest.TestCase):
         self,
     ):
         report = WORK + "/work/investigation.md"
-        (self.game / report).write_text("Engine investigation")
+        (self.game / report).write_text("Engine investigation", encoding="utf-8")
         self.service.identify(self.identity, "MVMZ", report)
         state = lifecycle(self.profile, self.identity)
         state["workspace_backup"] = snapshot(
@@ -1342,9 +1348,9 @@ class WorkflowTests(unittest.TestCase):
                 if damaged:
                     (
                         Path(state["workspace_backup"]["path"]) / "manifest.json"
-                    ).write_text("damaged manifest")
+                    ).write_text("damaged manifest", encoding="utf-8")
                     (self.game / report).write_text(
-                        "Changed evidence still needs review"
+                        "Changed evidence still needs review", encoding="utf-8"
                     )
                 execute(
                     self.engine,
@@ -1368,7 +1374,7 @@ class WorkflowTests(unittest.TestCase):
 
     def test_failed_or_cancelled_source_backup_retains_stale_records(self):
         report = WORK + "/work/investigation.md"
-        (self.game / report).write_text("Engine investigation")
+        (self.game / report).write_text("Engine investigation", encoding="utf-8")
         self.service.identify(self.identity, "MVMZ", report)
         state = lifecycle(self.profile, self.identity)
         state["workspace_backup"] = snapshot(
@@ -1417,8 +1423,8 @@ class WorkflowTests(unittest.TestCase):
         # launcher; a patch without them stops the game at boot.
         check = self.game / "js/plugins/TranslationUpdateCheck.js"
         check.parent.mkdir()
-        check.write_text("// Update check\n")
-        (self.game / "GameUpdate.bat").write_text("@echo off\n")
+        check.write_text("// Update check\n", encoding="utf-8")
+        (self.game / "GameUpdate.bat").write_text("@echo off\n", encoding="utf-8")
         configured = [False]
         original_status = self.engine.git_status
         self.engine.git_status = lambda source, *args: {
@@ -1465,7 +1471,9 @@ class WorkflowTests(unittest.TestCase):
                 b"PluginManager.setup($plugins);\n",
             )
             self.assertEqual(
-                (folder / "js/plugins/TranslationUpdateCheck.js").read_text(),
+                (folder / "js/plugins/TranslationUpdateCheck.js").read_text(
+                    encoding="utf-8"
+                ),
                 "// Update check\n",
             )
             return {"staged": 1}
@@ -1493,7 +1501,9 @@ class WorkflowTests(unittest.TestCase):
         operation("git_setup", version="1.0", untranslated=True, manifest=manifest_path)
         self.assertTrue(all(not path.exists() for path in originals))
         write_json(self.game / "source.json", {"line": "Yes."})
-        (self.game / "js/plugins/DazedTL_Fixes.js").write_text("// Fix\n")
+        (self.game / "js/plugins/DazedTL_Fixes.js").write_text(
+            "// Fix\n", encoding="utf-8"
+        )
         main.write_bytes(b"$plugins.push({});\n" + main.read_bytes())
         delivery.record(self.game, manifest_path, ["source.json"])
         first = operation("checkpoint", manifest=manifest_path)

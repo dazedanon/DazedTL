@@ -17,7 +17,8 @@ class PreparationTests(unittest.TestCase):
             source = Path(temporary)
             module = source / "desktop/backend/manual.py"
             module.parent.mkdir(parents=True)
-            module.write_text("""import json, threading
+            module.write_text(
+                """import json, threading
 from pathlib import Path
 from tests.engine import point
 launch_worker = point(lambda *_args, **_kwargs: None)
@@ -31,18 +32,20 @@ class ManualJobs:
         self.load_saved()
     def load_saved(self):
         for path in (self.root/'jobs').glob('*/job.json'):
-            value = json.loads(path.read_text()); self.jobs[value['id']] = value
+            value = json.loads(path.read_text(encoding='utf-8')); self.jobs[value['id']] = value
     def folder(self, identity): return self.root/'jobs'/identity
     def running(self): return self.busy
-    def save(self, job): (self.folder(job['id'])/'job.json').write_text(json.dumps(job))
+    def save(self, job): (self.folder(job['id'])/'job.json').write_text(json.dumps(job), encoding='utf-8')
     def answer(self, identity, token, approved):
-        self.sent = json.loads((self.folder(identity)/'job.json').read_text())
+        self.sent = json.loads((self.folder(identity)/'job.json').read_text(encoding='utf-8'))
         self.jobs[identity].update(approval=None, status='running')
         self.save(self.jobs[identity]); return dict(self.jobs[identity])
     def stop(self, identity): self.stopping.set()
     def _run(self, identity, resume):
         self.jobs[identity]['status'] = 'complete'; self.save(self.jobs[identity]); self.busy = False
-""")
+""",
+                encoding="utf-8",
+            )
             controller = manual_jobs(
                 source, source / "profile", threading.RLock(), False
             )

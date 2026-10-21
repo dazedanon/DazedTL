@@ -22,6 +22,16 @@ const commands = [
       "-I",
       "-X",
       "utf8",
+      // Text opened without an encoding fails, as it would on Windows; the
+      // filters after it spare libraries DazedTL cannot change.
+      "-X",
+      "warn_default_encoding",
+      "-W",
+      "error::EncodingWarning",
+      "-W",
+      "ignore::EncodingWarning:cv2.load_config_py3",
+      "-W",
+      "ignore::EncodingWarning:regex._main",
       "-B",
       "-m",
       "unittest",

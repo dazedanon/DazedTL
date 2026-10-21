@@ -52,10 +52,10 @@ class TextQATests(unittest.TestCase):
             task = Path(folder) / "task"
             task.mkdir()
             (task / "task.json").write_text(
-                json.dumps({"schema": rpgmaker_qa.TASK_SCHEMA})
+                json.dumps({"schema": rpgmaker_qa.TASK_SCHEMA}), encoding="utf-8"
             )
             (task / "checkpoint.json").write_text(
-                json.dumps({"schema": rpgmaker_qa.CHECKPOINT_SCHEMA})
+                json.dumps({"schema": rpgmaker_qa.CHECKPOINT_SCHEMA}), encoding="utf-8"
             )
             qa = {
                 "task": str(task),
@@ -81,7 +81,7 @@ class TextQATests(unittest.TestCase):
             # the playtest's fixes are in none, as Fuuma's took them.
             fixes = Path(folder) / "js/plugins/DazedTL_Fixes.js"
             fixes.parent.mkdir(parents=True)
-            fixes.write_text("// Fix\n")
+            fixes.write_text("// Fix\n", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "playtest --checkpoint"):
                 service.run("project", "apply")
             fixes.unlink()
@@ -194,7 +194,8 @@ class TextQATests(unittest.TestCase):
             screens = task / "interface" / "round-1"
             screens.mkdir(parents=True)
             (task / "interface" / "capture.json").write_text(
-                json.dumps({"round": 1, "folder": "round-1", "summary": {}})
+                json.dumps({"round": 1, "folder": "round-1", "summary": {}}),
+                encoding="utf-8",
             )
             (screens / "screens.json").write_text(
                 json.dumps(
@@ -210,10 +211,11 @@ class TextQATests(unittest.TestCase):
                             }
                         ]
                     }
-                )
+                ),
+                encoding="utf-8",
             )
             (task / "inventory.json").write_text(
-                json.dumps({"records": [], "clusters": []})
+                json.dumps({"records": [], "clusters": []}), encoding="utf-8"
             )
             qa = {
                 "task": str(task),

@@ -25,7 +25,9 @@ class BackupTests(unittest.TestCase):
         self.store = backups.store_path(self.game)
         self.asset = self.game / "runtime.bin"
         self.asset.write_bytes(b"unchanged native asset\0" * 100)
-        (self.work / "translations.json").write_text('{"line":"English"}')
+        (self.work / "translations.json").write_text(
+            '{"line":"English"}', encoding="utf-8"
+        )
 
     def objects(self):
         return {
@@ -100,7 +102,7 @@ class BackupTests(unittest.TestCase):
         script.chmod(0o755)
         (self.work / "backups/earlier-manual-copy").mkdir()
         (self.work / "backups/earlier-manual-copy/keep.txt").write_text(
-            "Earlier user backup"
+            "Earlier user backup", encoding="utf-8"
         )
         first = backups.snapshot(self.work, self.store)
         objects = self.objects()
@@ -118,7 +120,9 @@ class BackupTests(unittest.TestCase):
         )
         self.assertEqual(len(list((self.store / "snapshots").iterdir())), 2)
         # An in-place edit must never modify the older backup or its shared asset.
-        (self.work / "translations.json").write_text('{"line":"Corrected English"}')
+        (self.work / "translations.json").write_text(
+            '{"line":"Corrected English"}', encoding="utf-8"
+        )
         changed = backups.snapshot(self.work, self.store)
         self.assertEqual(
             changed["bytes_added"], (self.work / "translations.json").stat().st_size
@@ -136,7 +140,9 @@ class BackupTests(unittest.TestCase):
                 saved = backups.lookup(moved, self.root / "absent-profile", identity)
                 target = self.root / identity
                 backups.restore(saved, target)
-                self.assertEqual((target / "translations.json").read_text(), expected)
+                self.assertEqual(
+                    (target / "translations.json").read_text(encoding="utf-8"), expected
+                )
                 self.assertTrue((target / "empty").is_dir())
                 self.assertEqual(
                     (target / "copied-asset.bin").read_bytes(),
@@ -176,17 +182,17 @@ class BackupTests(unittest.TestCase):
         ):
             with self.subTest(failure=failure):
                 current = self.work / "translations.json"
-                current.write_text(failure)
+                current.write_text(failure, encoding="utf-8")
                 stop = [False]
 
                 def progressed(_count, _name):
                     if failure == "cancel":
                         stop[0] = True
                     if failure == "source_changed":
-                        current.write_text("Another writer's update")
+                        current.write_text("Another writer's update", encoding="utf-8")
                     if failure == "inventory_changed":
                         (self.work / "new-file.txt").write_text(
-                            "Added while backing up"
+                            "Added while backing up", encoding="utf-8"
                         )
 
                 writer = patch(
@@ -221,19 +227,21 @@ class BackupTests(unittest.TestCase):
         saved = backups.snapshot(self.work, self.store)
         target = self.root / "restored"
         target.mkdir()
-        (target / "keep.txt").write_text("User work")
+        (target / "keep.txt").write_text("User work", encoding="utf-8")
         with self.assertRaises(ValueError):
             backups.restore(saved["path"], target)
-        self.assertEqual((target / "keep.txt").read_text(), "User work")
+        self.assertEqual((target / "keep.txt").read_text(encoding="utf-8"), "User work")
         racing = self.root / "racing-destination"
 
         def create_destination(_count, _name):
             racing.mkdir(exist_ok=True)
-            (racing / "keep.txt").write_text("Concurrent work")
+            (racing / "keep.txt").write_text("Concurrent work", encoding="utf-8")
 
         with self.assertRaises(ValueError):
             backups.restore(saved["path"], racing, progress=create_destination)
-        self.assertEqual((racing / "keep.txt").read_text(), "Concurrent work")
+        self.assertEqual(
+            (racing / "keep.txt").read_text(encoding="utf-8"), "Concurrent work"
+        )
         blob = next((self.store / "objects").glob("*/*"))
         blob.write_bytes(b"x" * blob.stat().st_size)
         with self.assertRaises(ValueError):

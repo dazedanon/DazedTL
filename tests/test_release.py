@@ -69,7 +69,7 @@ class ReleaseTests(unittest.TestCase):
             for name in included | private | {"gameupdate/patch-config.txt"}:
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text("synthetic fixture value")
+                path.write_text("synthetic fixture value", encoding="utf-8")
             # A temporary-file write leaves a game file owner-only; players
             # still get ordinary permissions.
             (root / "www/data/Items.json").chmod(0o600)
@@ -122,7 +122,9 @@ class ReleaseTests(unittest.TestCase):
                 stamp = archive.getinfo(top + "/gameupdate/previous_patch_sha.txt")
                 self.assertEqual(archive.read(stamp), ("a" * 40 + "\n").encode())
                 self.assertEqual(stamp.external_attr >> 16, 0o100644)
-            (root / "www/data/Items.json").write_text("changed after inspection")
+            (root / "www/data/Items.json").write_text(
+                "changed after inspection", encoding="utf-8"
+            )
             with self.assertRaises(ValueError):
                 write_archive(root, output, scope, lambda _: None, folder=top)
             # Only the game, as its snapshots have it, and the translation's
@@ -136,7 +138,7 @@ class ReleaseTests(unittest.TestCase):
                 "www/data/Map001.json",
             ):
                 (root / name).parent.mkdir(exist_ok=True)
-                (root / name).write_text("added while translating")
+                (root / name).write_text("added while translating", encoding="utf-8")
             scope = inventory(root, None, game_files(root) | {"www/data/map001.json"})
             self.assertLessEqual(
                 {"ci.html", "Dictionaries/", "www/data/notes.txt"},
@@ -212,7 +214,7 @@ class ReleaseTests(unittest.TestCase):
             data.write_bytes(b"\x04\x08generated native data")
             script = root / "ace_json/scripts/1_Main.rb"
             script.parent.mkdir()
-            script.write_text("generated script")
+            script.write_text("generated script", encoding="utf-8")
             (root / "Data/Scripts.rvdata2").write_bytes(b"\x04\x08generated scripts")
             native = {
                 "source": str(root),
@@ -235,7 +237,7 @@ class ReleaseTests(unittest.TestCase):
                 write_json(work / "ace-packing.json", receipt)
                 self.assertEqual(packing_state(native, work)["current"], current)
             # A script translated after packing needs packing again too.
-            script.write_text("later script translation")
+            script.write_text("later script translation", encoding="utf-8")
             self.assertFalse(packing_state(native, work)["current"])
             receipt["inputs"] = packing_inputs(native)
             write_json(work / "ace-packing.json", receipt)

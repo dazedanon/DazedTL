@@ -107,7 +107,7 @@ class HeaderReviewTests(unittest.TestCase):
                 document["events"][1], ensure_ascii=False, separators=(",", ":")
             )
             original = f'{{\n"events":[\nnull,\n{event}\n]\n}}'
-            path.write_text(original)
+            path.write_text(original, encoding="utf-8")
             headers = {
                 "total": 2,
                 "flags": [
@@ -140,14 +140,14 @@ class HeaderReviewTests(unittest.TestCase):
                 write_json(report, {"version": 1, "reviews": reviews})
                 with self.assertRaises(ValueError):
                     header_review.apply(game, data, headers)
-            self.assertEqual(json.loads(path.read_text()), document)
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8")), document)
             write_json(report, {"version": 1, "reviews": [fix, keep]})
             header_review.apply(game, data, headers)
             commands[0]["parameters"][0] = ""
             commands[0]["parameters"][4] = "店主"
             # Only the fixed header's values changed; the layout stays.
             self.assertEqual(
-                path.read_text(),
+                path.read_text(encoding="utf-8"),
                 original.replace('"arina",0,0,2,"アリナ"', '"",0,0,2,"店主"', 1),
             )
             # A later scan no longer flags the fix; the sheet still lists it
@@ -865,7 +865,9 @@ class GuidedTests(unittest.TestCase):
         write_json(root / "plan.json", plan)
         glossary = root / "game/.dazedtl/glossary.txt"
         glossary.parent.mkdir(parents=True)
-        glossary.write_text("# Speakers\n回想部屋 (Recollection Room)\n")
+        glossary.write_text(
+            "# Speakers\n回想部屋 (Recollection Room)\n", encoding="utf-8"
+        )
         job = {
             "id": identity,
             "mode": "batch",
@@ -1830,7 +1832,9 @@ class GuidedTests(unittest.TestCase):
             self.guided.execute(self.identity, review["token"])
             self.assertEqual(read_json(self.source / "Items.json"), partial)
             self.assertEqual(job["status"], "running")
-            (self.folder / "translated/Items.json").write_text("{broken")
+            (self.folder / "translated/Items.json").write_text(
+                "{broken", encoding="utf-8"
+            )
             with self.assertRaises(ValueError):
                 self.guided.preview(
                     self.identity, "export_selected", files=["Items.json"]
@@ -1839,7 +1843,7 @@ class GuidedTests(unittest.TestCase):
 
     def test_guidance_save_replaces_external_edits_and_retains_other_drafts(self):
         path = self.source / "glossary.txt"
-        path.write_text("Changed outside the editor")
+        path.write_text("Changed outside the editor", encoding="utf-8")
         pending = {
             "documents": {
                 "glossary": {"text": "My draft", "revision": "older"},
@@ -1848,7 +1852,7 @@ class GuidedTests(unittest.TestCase):
         }
         documents = lambda _: {
             "glossary": {
-                "text": path.read_text(),
+                "text": path.read_text(encoding="utf-8"),
                 "revision": digest(path.read_bytes()),
                 "path": str(path),
             }
@@ -1861,16 +1865,16 @@ class GuidedTests(unittest.TestCase):
             self.assertEqual(owner, "native")
             self.assertEqual(name, "glossary")
             self.assertEqual(revision, digest(path.read_bytes()))
-            path.write_text(text)
+            path.write_text(text, encoding="utf-8")
             return documents(owner)
 
         self.backend.workflows.document_save = save
         self.guided.save_document(self.identity, "glossary", "older", "My draft")
-        self.assertEqual(path.read_text(), "My draft")
+        self.assertEqual(path.read_text(encoding="utf-8"), "My draft")
         self.assertEqual(set(pending["documents"]), {"game"})
         self.guided.save_document(self.identity, "glossary", "older", "")
         self.assertTrue(path.is_file())
-        self.assertEqual(path.read_text(), "")
+        self.assertEqual(path.read_text(encoding="utf-8"), "")
         pending["documents"]["glossary"] = {
             "text": "Keep after failure",
             "revision": "older",
@@ -1881,7 +1885,7 @@ class GuidedTests(unittest.TestCase):
                 self.identity, "glossary", "older", "Keep after failure"
             )
         self.assertEqual(pending["documents"]["glossary"]["text"], "Keep after failure")
-        self.assertEqual(path.read_text(), "")
+        self.assertEqual(path.read_text(encoding="utf-8"), "")
 
     def test_measured_layout_applies_once_and_preserves_active_work_and_width_edits(
         self,
@@ -1895,7 +1899,7 @@ class GuidedTests(unittest.TestCase):
             self.native["widths"],
         )
         source = self.source / "windows.js"
-        source.write_text("Measured message window")
+        source.write_text("Measured message window", encoding="utf-8")
         report = {
             "version": 1,
             "request_id": request["request_id"],
@@ -2038,7 +2042,7 @@ class GuidedTests(unittest.TestCase):
             self.guided.context_status(self.identity)["layoutApplication"], "applied"
         )
         self.assertEqual(self.native["widths"]["width"], 60)
-        source.write_text("Later game change")
+        source.write_text("Later game change", encoding="utf-8")
         self.assertEqual(
             self.guided.context_status(self.identity)["layoutApplication"], "applied"
         )
@@ -2056,7 +2060,7 @@ class GuidedTests(unittest.TestCase):
             else 'Earlier "game" with an unfamiliar format'
         )
         folder.mkdir()
-        (folder / "old-terms.txt").write_text("薬: Potion")
+        (folder / "old-terms.txt").write_text("薬: Potion", encoding="utf-8")
         before = evidence(folder, ["old-terms.txt"])
         rows = self.guided.reference_add(self.identity, str(folder))
         self.assertTrue(rows[0]["available"])
@@ -3489,7 +3493,7 @@ class GuidedTests(unittest.TestCase):
         )
         plugin = self.source / "js/plugins/Display.js"
         plugin.parent.mkdir(parents=True)
-        plugin.write_text("original display implementation")
+        plugin.write_text("original display implementation", encoding="utf-8")
         relative = "js/plugins/Display.js"
         self.translation.engine.source_bindings = lambda _root, paths: (
             {relative: "original-plugin-blob"} if relative in paths else {}
@@ -3500,7 +3504,7 @@ class GuidedTests(unittest.TestCase):
         before = self.guided.event_text.context(
             self.identity, self.native, self.catalog
         )
-        plugin.write_text("modified logic implementation")
+        plugin.write_text("modified logic implementation", encoding="utf-8")
         after = self.guided.event_text.context(self.identity, self.native, self.catalog)
         self.assertEqual(
             before["dependencies"][relative], after["dependencies"][relative]
@@ -3851,7 +3855,7 @@ class GuidedTests(unittest.TestCase):
         # originals.
         config = self.source / "gameupdate/patch-config.txt"
         config.parent.mkdir()
-        config.write_text("owner=translator")
+        config.write_text("owner=translator", encoding="utf-8")
         saved = snapshot(self.source, store_path(self.source), source_game=True)
         write_json(path, {"version": 1, "source_backup": saved})
         self.assertEqual(

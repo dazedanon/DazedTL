@@ -269,6 +269,7 @@ try:
             capture_output=True,
             text=True,
             check=True,
+            encoding="utf-8",
         ).stdout.split()
         assert sorted(listed[1::2]) == [
             ".gitignore",
@@ -293,6 +294,7 @@ try:
             capture_output=True,
             text=True,
             check=True,
+            encoding="utf-8",
         ).stdout.split()
         assert sorted(listed[1::2]) == [
             ".gitignore",

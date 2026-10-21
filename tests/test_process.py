@@ -637,7 +637,7 @@ class ProcessTests(unittest.TestCase):
                 + body
                 + "\n\n"
             )
-            path.write_text(record)
+            path.write_text(record, encoding="utf-8")
             original = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
             value = process_view.summary(root, job)
             self.assertEqual(
@@ -714,9 +714,11 @@ class ProcessTests(unittest.TestCase):
                                 "UPDATE requests SET state='submitted' WHERE id=1"
                             )
                     if change == "ambiguous":
-                        path.write_text(record + record)
+                        path.write_text(record + record, encoding="utf-8")
                     if change == "forged":
-                        path.write_text("Malformed provider output\n" + record)
+                        path.write_text(
+                            "Malformed provider output\n" + record, encoding="utf-8"
+                        )
                     self.assertTrue(process_view.summary(root, job)["retryBlocked"])
                     self.assertTrue(
                         request_scope.overlap(current, estimate, [(root, job)])
@@ -1545,7 +1547,9 @@ class ProcessTests(unittest.TestCase):
                 write_json(root / "files" / name, {"displayName": title})
 
             def identity(name, title):
-                document = json.loads((root / "files" / name).read_text())
+                document = json.loads(
+                    (root / "files" / name).read_text(encoding="utf-8")
+                )
                 locations = request_scope.source_locations(document)
                 return request_scope.identities(name, None, [title], locations)[0]
 
