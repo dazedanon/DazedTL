@@ -1,6 +1,7 @@
 """Focused contracts at the maintained-engine boundary, without importing a sibling checkout."""
 
 import json
+import shutil
 import subprocess
 import sys
 import unittest
@@ -1045,6 +1046,57 @@ def parse(codeList, i, headerString, jaString):
                     write_game(game, folder),
                 ):
                     self.fail("The write ran beside the archive.")
+
+    def test_assistant_led_writes_to_ace_json_pack_the_games_data(self):
+        # The game reads only Data: Assistant-led's writes and Line widths
+        # refits once left it untranslated while ace_json and the patch
+        # moved on.
+        def events(document):
+            # The JSON lists a map's events, Ruby's Hash maps them by ID.
+            found = document["events"]
+            return [*filter(None, getattr(found, "values", lambda: found)())]
+
+        def messages(document):
+            return [
+                command["parameters"][0]
+                for event in events(document)
+                for page in event["pages"]
+                for command in page["list"]
+                if command["code"] == 401
+            ]
+
+        with TemporaryDirectory() as temporary:
+            game = Path(temporary) / "game"
+            fixture = Path(__file__).resolve().parent / "fixtures/ace"
+            for folder in ("Data", "ace_json"):
+                shutil.copytree(fixture / folder, game / folder)
+            exports = game / "ace_json/Map001.json"
+            document = json.loads(exports.read_text(encoding="utf-8"))
+            for event in events(document):
+                for command in event["pages"][0]["list"]:
+                    if command["code"] == 401:
+                        command["parameters"][0] = "Lovely weather today, isn't it?"
+            staged = game / ".dazedtl/len-method/work/Map001.json"
+            write_json(staged, document)
+            engine = TranslationEngine.__new__(TranslationEngine)
+
+            def played():
+                data = TranslationEngine.ace_data(game, ["Data/Map001.rvdata2"])
+                return messages(data["Data/Map001.rvdata2"])
+
+            engine.write_rpgmaker(game, exports, staged, exports)
+            self.assertEqual(played(), ["Lovely weather today, isn't it?"])
+            narrow = {
+                "width": 20,
+                "faceWidth": 20,
+                "listWidth": 40,
+                "noteWidth": 40,
+                "messageRows": 4,
+            }
+            engine.line_widths(game, narrow)
+            written = messages(json.loads(exports.read_text(encoding="utf-8")))
+            self.assertEqual(played(), written)
+            self.assertEqual(written, ["Lovely weather\ntoday, isn't it?"])
 
     def test_every_action_handler_is_a_worker_function(self):
         # A misspelt handler would fail only once a user runs the action.
