@@ -1047,6 +1047,47 @@ def parse(codeList, i, headerString, jaString):
                 ):
                     self.fail("The write ran beside the archive.")
 
+    def test_game_update_writes_its_config_only_once_git_can_take_it(self):
+        # The Project page syncs GameUpdate's config as it polls; a config
+        # written during a game update's stopped merge left Versions unable
+        # to cancel the update.
+        with TemporaryDirectory() as temporary:
+            game = Path(temporary)
+            for folder in ("data", "gameupdate", ".git"):
+                (game / folder).mkdir()
+            (game / "gameupdate/patch.ps1").write_text("# GameUpdate\n")
+            status = {
+                "configured": True,
+                "pending_operations": ["MERGE_HEAD"],
+                "current_branch": "translation",
+                "translation_branch": "translation",
+            }
+            defaults = {
+                "forge": "gitlab",
+                "host": "gitgud.io",
+                "username": "dazed-translations",
+                "branch": "main",
+            }
+            engine = TranslationEngine.__new__(TranslationEngine)
+            with (
+                patch("util.len_git.git_status", return_value=status),
+                patch("util.gameupdate_config.remote_urls", return_value={}),
+                patch("util.gameupdate_config.committed_values", return_value=None),
+            ):
+                with self.assertRaisesRegex(ValueError, "unfinished Git merge"):
+                    engine.game_update(game, defaults, "save", "fixture-patch")
+                self.assertEqual(
+                    sorted(path.name for path in game.rglob("*")),
+                    [".git", "data", "gameupdate", "patch.ps1"],
+                )
+                status["pending_operations"] = []
+                saved = engine.game_update(game, defaults, "save", "fixture-patch")
+            self.assertEqual(saved["state"], "ready")
+            self.assertIn(
+                "repo=fixture-patch",
+                (game / "gameupdate/patch-config.txt").read_text(encoding="utf-8"),
+            )
+
     def test_assistant_led_writes_to_ace_json_pack_the_games_data(self):
         # The game reads only Data: Assistant-led's writes and Line widths
         # refits once left it untranslated while ace_json and the patch

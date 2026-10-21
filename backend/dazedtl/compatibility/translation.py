@@ -469,9 +469,14 @@ class TranslationEngine:
         """GameUpdate's config status, or the result of reconciling it."""
         from util import gameupdate_config
 
+        from .game_write import write_game
+
         root = Path(source)
         if action is not None:
-            return gameupdate_config.reconcile(root, defaults, action, repo)
+            # It writes the config and the game's settings, never ace_json.
+            paths = [gameupdate_config.CONFIG, ".dazedtl/settings.json"]
+            with write_game(root, paths=paths):
+                return gameupdate_config.reconcile(root, defaults, action, repo)
         # Each poll reads it; it changes only with Git's metadata, the config,
         # GameUpdate's scripts, the game's settings and the defaults.
         files = (
