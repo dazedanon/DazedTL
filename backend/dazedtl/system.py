@@ -170,15 +170,16 @@ def _writable(function, path, error):
     function(path)
 
 
-def write_bytes(path, content):
+def write_bytes(path, content, mode=0o600):
     """Replaces path's content whole: the bytes go into a file beside it,
-    which then takes its place with the file's permissions."""
+    which then takes its place with the file's permissions. A new file gets
+    mode, owner-only unless given, since workspace files such as the approval
+    key and settings must stay private."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{secrets.token_hex(4)}.tmp")
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
-    # 0o666 lets the umask decide, as for any new file.
-    descriptor = os.open(temporary, flags, 0o666)
+    descriptor = os.open(temporary, flags, mode)
     try:
         with os.fdopen(descriptor, "wb") as stream:
             stream.write(content)
@@ -297,9 +298,10 @@ def _utf8_python(arguments):
 def stop_tree(process, force=False):
     """Stops process and everything it started. On Linux and macOS the
     process must have been started with popen(group=True)."""
-    if process.poll() is not None:
-        return
     if os.name == "nt":
+        # taskkill finds the tree through a running process.
+        if process.poll() is not None:
+            return
         run(
             ["taskkill", "/PID", str(process.pid), "/T", "/F"],
             stdout=subprocess.DEVNULL,
@@ -307,9 +309,10 @@ def stop_tree(process, force=False):
             check=False,
         )
         return
+    # The group outlives its first process, which may have exited already.
     try:
         os.killpg(process.pid, signal.SIGKILL if force else signal.SIGTERM)
-    except ProcessLookupError:
+    except ProcessLookupError, PermissionError:
         pass
 
 

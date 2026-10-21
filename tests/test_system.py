@@ -1,9 +1,12 @@
 """The platform layer keeps the Windows rules on every platform."""
 
+import os
+import stat
 import subprocess
 import sys
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from dazedtl import system
 
@@ -53,3 +56,17 @@ class SpawnTests(unittest.TestCase):
             timeout=20,
         )
         self.assertEqual(result.stdout.strip(), "1 '' ゲーム")
+
+
+class WriteTests(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "Windows has no mode bits")
+    def test_new_saved_files_stay_private_and_rewrites_keep_their_mode(self):
+        # The workspace's approval key and settings are written this way.
+        with TemporaryDirectory() as folder:
+            key = Path(folder, "approval.key")
+            system.write_bytes(key, b"secret")
+            self.assertEqual(stat.S_IMODE(key.stat().st_mode), 0o600)
+            key.chmod(0o644)
+            system.write_bytes(key, b"other")
+            self.assertEqual(stat.S_IMODE(key.stat().st_mode), 0o644)
+            self.assertEqual(os.listdir(folder), ["approval.key"])
