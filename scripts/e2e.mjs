@@ -820,7 +820,11 @@ async function upgradeJourney(tag) {
       }),
       previous,
     );
-    addVariant(path.join(previous, "tests/fixtures/mz-game"), "choice-help");
+    // Releases since 2.25.0 build their live test's game from the game
+    // variants, choice help included; adding it again would show its guide
+    // twice.
+    if (!fs.existsSync(path.join(previous, "tests/fixtures/game-variants")))
+      addVariant(path.join(previous, "tests/fixtures/mz-game"), "choice-help");
     // Its live test copies the files Git would commit.
     execFileSync("git", ["init", "-q"], { cwd: previous });
     execFileSync("git", ["add", "-A"], { cwd: previous });
