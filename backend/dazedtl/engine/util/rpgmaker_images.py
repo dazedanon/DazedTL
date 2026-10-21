@@ -21,6 +21,7 @@ from util.paths import (
     GAME_IMAGE_PATCH_GITIGNORE_COMMENT,
     ensure_game_tool_gitignore,
     normalize_game_tool_gitignore_text,
+    without_gitignore_section,
 )
 from util import system
 
@@ -452,7 +453,9 @@ def add_patch_exceptions(
                 len(lines),
             )
             section = "".join(lines[start:end])
-            before = "".join(lines[:start]).rstrip("\r\n") + "\n\n" + "".join(lines[end:])
+            before = without_gitignore_section(
+                existing, len("".join(lines[:start])), len("".join(lines[:end]))
+            )
         # The section is rebuilt from every file it lists, so a later image
         # can never land after a rule that hides it.
         files = {

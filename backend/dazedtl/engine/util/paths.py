@@ -189,6 +189,16 @@ def migrate_prompt_to_skills() -> None:
             return
 
 
+def without_gitignore_section(text: str, start: int, end: int) -> str:
+    """`text` without the managed section from `start` to `end`, leaving the
+    rules around it one blank line apart, as each section is written, so
+    taking a section out and writing it back leaves the file as it was."""
+    before, after = text[:start].rstrip("\r\n"), text[end:].lstrip("\r\n")
+    if before and after:
+        return before + "\n\n" + after
+    return before + "\n" if before else after
+
+
 def _space_len_blocks(value: str) -> str:
     return _BLANK_LINES_BEFORE_LEN_BLOCK.sub(
         lambda found: found[1] if found.start() else "", value

@@ -18,7 +18,7 @@ from util.len_translation import LenProject, _write_atomic
 from util.paths import (
     GAME_REPOSITORY_METADATA, LEN_PATCH_GITIGNORE_BEGIN, LEN_PATCH_GITIGNORE_END, PROJECT_ROOT,
     game_tool_gitattributes_text, is_portable_game_file, normalize_game_tool_gitignore_text,
-    portable_game_files,
+    portable_game_files, without_gitignore_section,
 )
 from util.playtest.fixes import MAIN as FIXES_MAIN
 from util.playtest.fixes import NAME as FIXES_PLUGIN
@@ -243,7 +243,7 @@ def scope_ignore(existing: str, paths: set[str]) -> str:
         start, end = existing.index(_BEGIN), existing.index(_END)
         if end < start:
             raise GitWorkflowError("The Len patch .gitignore block is out of order")
-        existing = existing[:start] + existing[end + len(_END):]
+        existing = without_gitignore_section(existing, start, end + len(_END))
     directories = {p[:i] for p in paths for i, c in enumerate(p) if c == "/"}
     lines = [_BEGIN, "# Only reviewed runtime patch files and repository metadata belong in Git.", "/*"]
     for directory in sorted(directories, key=lambda p: (p.count("/"), p)):

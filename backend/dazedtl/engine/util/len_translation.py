@@ -14,6 +14,7 @@ from util import system
 from util.paths import (
     DATA_DIR, GLOSSARY_BASE_SEPARATOR, LEN_PATCH_GITIGNORE_BEGIN, LEN_WORK_GITIGNORE_BEGIN,
     LEN_WORK_GITIGNORE_END, SKILLS_DIR, game_glossary_path, runtime_data_file, runtime_data_files_pinned, prepare_game_translation_context, read_game_glossary,
+    without_gitignore_section,
 )
 from util.skills import load_generic_project_setup, load_project_setup, load_system_prompt
 from util.reference_games import load_registry, reference_context
@@ -474,7 +475,7 @@ def _prepare_local_work(project: LenProject) -> None:
         if text[start:end] + "\n" == _WORK_IGNORE_BLOCK and (patch < 0 or end < patch):
             project.work_root.mkdir(parents=True, exist_ok=True)
             return
-        text = text[:start] + text[end:]
+        text = without_gitignore_section(text, start, end)
     patch_start = text.find(LEN_PATCH_GITIGNORE_BEGIN)
     if patch_start >= 0:
         updated = text[:patch_start].rstrip() + "\n\n" + _WORK_IGNORE_BLOCK + "\n" + text[patch_start:].lstrip("\r\n")

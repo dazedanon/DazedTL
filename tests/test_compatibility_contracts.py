@@ -1753,7 +1753,8 @@ class ManualJobs:
         # block goes above the patch rules, leaving the portable-settings
         # allowlist last: below the work block's rules, it hid the glossary.
         # Rescoping the patch block left its blank lines behind, so every
-        # version committed a .gitignore with 3 more, whichever block came first.
+        # version committed a .gitignore with 3 more, whichever block came first,
+        # and rules written after the block gained a blank line above them.
         script = """
 import sys
 from pathlib import Path
@@ -1776,6 +1777,7 @@ print(result.index(_WORK_IGNORE_BLOCK) < result.index(patch) and result.endswith
 for text in (GAME_TOOL_GITIGNORE_BLOCK + "\\n" + patch, patch + "\\n" + GAME_TOOL_GITIGNORE_BLOCK):
     scoped = scope_ignore(text, {"data/x.json"})
     print(scope_ignore(scoped, {"data/x.json"}) == scoped)
+print(scope_ignore("A\\n\\n" + patch + "\\nB\\n", set()).startswith("A\\n\\nB\\n"))
 """
         with TemporaryDirectory() as folder:
             result = subprocess.run(
@@ -1785,7 +1787,7 @@ for text in (GAME_TOOL_GITIGNORE_BLOCK + "\\n" + patch, patch + "\\n" + GAME_TOO
                 check=True,
                 encoding="utf-8",
             )
-        self.assertEqual(result.stdout.split(), ["True"] * 4)
+        self.assertEqual(result.stdout.split(), ["True"] * 5)
 
     def test_git_setup_accepts_declared_files_the_patch_will_add(self):
         # A Unity mod patch delivers only files the original lacks, such as
