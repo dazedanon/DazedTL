@@ -682,7 +682,7 @@ class WolfWorkflowCore:
             if bak.exists():
                 log(f"  {bak.name} already exists — leaving {arc.name} in place")
                 continue
-            arc.rename(bak)
+            system.rename(arc, bak)
             log(f"  {arc.name} → {bak.name}")
             renamed += 1
         return True, f"Backed up {renamed} archive(s); the game now runs from the loose Data/ folder."

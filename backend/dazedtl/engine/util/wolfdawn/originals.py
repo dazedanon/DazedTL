@@ -7,6 +7,7 @@ import shutil
 from pathlib import Path
 from typing import Callable
 
+from util import system
 from util import wolfdawn
 from util.paths import staging_folder
 
@@ -136,12 +137,12 @@ def rebuild_originals_from_archives(
             shutil.copytree(source, assembled)
             previous = temp_root / "previous"
             if originals_dir.exists():
-                originals_dir.rename(previous)
+                system.rename(originals_dir, previous)
             try:
-                assembled.rename(originals_dir)
+                system.rename(assembled, originals_dir)
             except Exception:
                 if previous.exists() and not originals_dir.exists():
-                    previous.rename(originals_dir)
+                    system.rename(previous, originals_dir)
                 raise
         else:
             shutil.copytree(source, originals_dir, dirs_exist_ok=True)

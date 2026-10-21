@@ -17,6 +17,7 @@ import stat
 from pathlib import Path
 from typing import Any
 
+from util import system
 from util.paths import DATA_DIR, ENV_PATH
 
 API_KEYS_PATH = DATA_DIR / "api_keys.json"
@@ -99,7 +100,7 @@ def save_vault(vault: dict[str, Any], path: Path | None = None) -> None:
         os.chmod(tmp, stat.S_IRUSR | stat.S_IWUSR)
     except OSError:
         pass
-    tmp.replace(vault_path)
+    system.replace(tmp, vault_path)
     try:
         os.chmod(vault_path, stat.S_IRUSR | stat.S_IWUSR)
     except OSError:

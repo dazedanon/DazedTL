@@ -6,6 +6,7 @@ import os
 import re
 from pathlib import Path
 
+from util import system
 from util.freshness import settled
 from util.paths import (
     GAME_GLOSSARY_RELATIVE,
@@ -64,7 +65,7 @@ def quirks_path_for_game(game_root: str | Path | None) -> Path | None:
     if legacy_present:
         preferred.parent.mkdir(parents=True, exist_ok=True)
         try:
-            legacy.rename(preferred)
+            system.rename(legacy, preferred)
         except OSError as exc:
             raise GameProjectPathError(
                 f"Could not move {legacy} to {preferred}: {exc}"
@@ -103,7 +104,7 @@ def game_skill_path_for_game(game_root: str | Path | None) -> Path | None:
     if legacy_present:
         preferred.parent.mkdir(parents=True, exist_ok=True)
         try:
-            legacy.rename(preferred)
+            system.rename(legacy, preferred)
         except OSError as exc:
             raise GameProjectPathError(
                 f"Could not move {legacy} to {preferred}: {exc}"
@@ -153,7 +154,7 @@ def game_skills_dir(game_root: str | Path | None) -> Path | None:
     if legacy_present:
         metadata.mkdir(exist_ok=True)
         try:
-            legacy.rename(preferred)
+            system.rename(legacy, preferred)
         except OSError as exc:
             raise GameProjectPathError(
                 f"Could not move {legacy} to {preferred}: {exc}"

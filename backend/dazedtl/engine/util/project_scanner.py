@@ -14,6 +14,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
+from util import system
 from util.wolfdawn import archive_stem, list_archives
 
 # ---------------------------------------------------------------------------
@@ -283,7 +284,7 @@ def wolf_repair_nested_data_dir(game_root: str | Path) -> bool:
     completed: list[tuple[Path, Path]] = []
     try:
         for child, dest in planned:
-            child.rename(dest)
+            system.rename(child, dest)
             completed.append((child, dest))
         inner.rmdir()
     except OSError as exc:
@@ -293,7 +294,7 @@ def wolf_repair_nested_data_dir(game_root: str | Path) -> bool:
                 if (dest.exists() or dest.is_symlink()) and not (
                     child.exists() or child.is_symlink()
                 ):
-                    dest.rename(child)
+                    system.rename(dest, child)
             except OSError as rollback_exc:
                 rollback_failures.append(f"{dest} -> {child}: {rollback_exc}")
         if rollback_failures:

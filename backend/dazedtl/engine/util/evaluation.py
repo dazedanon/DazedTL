@@ -1670,13 +1670,13 @@ def maintain_evaluation_storage(project_root: str | Path) -> dict:
                 run_dir.rmdir()
                 discarded.append(run_dir)
                 continue
-            run_dir.rename(target)
+            system.rename(run_dir, target)
             moved.append((run_dir, target))
             continue
         try:
             state, _manifest = load_run(run_dir)
         except (OSError, ValueError, KeyError, json.JSONDecodeError):
-            run_dir.rename(target)
+            system.rename(run_dir, target)
             moved.append((run_dir, target))
             continue
         if state.get("status") == "completed":
@@ -1685,7 +1685,7 @@ def maintain_evaluation_storage(project_root: str | Path) -> dict:
         state["storage"] = "working"
         state["run_id"] = target.name
         _atomic_write_json(run_dir / "state.json", state)
-        run_dir.rename(target)
+        system.rename(run_dir, target)
         moved.append((run_dir, target))
     for run_dir in list(work_root.iterdir()):
         if not run_dir.is_dir() or run_dir.is_symlink():
@@ -1745,7 +1745,7 @@ def _archive_completed_run(root: Path, state: dict) -> Path:
     archive_root.mkdir(parents=True, exist_ok=True)
     target = _unique_run_path(archive_root, root.name)
     try:
-        root.rename(target)
+        system.rename(root, target)
     except OSError as exc:
         if not root.is_dir():
             raise
@@ -2251,7 +2251,7 @@ def import_run_archive(
             if completed:
                 state["archived_at"] = state["imported_at"]
             _atomic_write_json(staging / "state.json", state)
-            staging.rename(target)
+            system.rename(staging, target)
 
     if completed:
         prune_completed_evaluations(project_root)

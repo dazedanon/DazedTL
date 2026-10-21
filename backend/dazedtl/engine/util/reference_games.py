@@ -62,7 +62,7 @@ def _atomic_write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".tmp")
     temporary.write_bytes(_canonical_bytes(value) + b"\n")
-    temporary.replace(path)
+    system.replace(temporary, path)
 
 
 def _read_json(path: Path) -> Any:
@@ -497,7 +497,7 @@ def add_game_pair_reference(
             )
             if target.exists():
                 raise RuntimeError(f"Reference cache target appeared unexpectedly: {target}")
-            staging.rename(target)
+            system.rename(staging, target)
         except Exception:
             system.remove_tree(staging, ignore_errors=True)
             raise

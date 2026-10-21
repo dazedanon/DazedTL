@@ -149,7 +149,7 @@ def migrate_root_data_files() -> None:
         src = PROJECT_ROOT / name
         dst = DATA_DIR / name
         if src.is_file() and not dst.exists():
-            src.rename(dst)
+            system.rename(src, dst)
 
 
 def migrate_prompt_to_skills() -> None:
@@ -159,7 +159,7 @@ def migrate_prompt_to_skills() -> None:
         return
     for legacy in (LEGACY_PROMPT_PATH, PROJECT_ROOT / "prompt.txt"):
         if legacy.is_file():
-            legacy.rename(PROMPT_PATH)
+            system.rename(legacy, PROMPT_PATH)
             return
 
 
@@ -442,7 +442,7 @@ def game_glossary_path(
     elif legacy_present:
         metadata.mkdir(exist_ok=True)
         try:
-            legacy.rename(preferred)
+            system.rename(legacy, preferred)
         except OSError as exc:
             raise GameProjectPathError(
                 f"Could not move {legacy} to {preferred}: {exc}"
@@ -489,7 +489,7 @@ def prepare_game_translation_context(
         if not (source.exists() or source.is_symlink()):
             return
         destination.parent.mkdir(parents=True, exist_ok=True)
-        source.rename(destination)
+        system.rename(source, destination)
         completed_moves.append((source, destination))
 
     try:
@@ -515,7 +515,7 @@ def prepare_game_translation_context(
             try:
                 if destination.exists() and not source.exists():
                     source.parent.mkdir(parents=True, exist_ok=True)
-                    destination.rename(source)
+                    system.rename(destination, source)
             except OSError as rollback_exc:
                 rollback_failures.append(
                     f"{destination} -> {source}: {rollback_exc}"
