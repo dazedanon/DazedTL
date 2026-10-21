@@ -10,6 +10,7 @@ settings and skills Git tracks.
 """
 
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -49,11 +50,9 @@ OUTSIDE = {
     # Assistant-led's header review writes the corrected nameplates the
     # assistant reviewed straight into the game's data.
     "translation/header_review.py:apply": "Assistant-led",
-    # A restored or materialized backup is a copy of the game, never the
-    # game itself; Windows makes its read-only files writable to remove them.
+    # A restored backup is a new copy of the game, never the game itself.
     "translation/backups.py:_extract": "backups",
     "translation/backups.py:_copy": "backups",
-    "translation/backups.py:materialized": "backups",
 }
 # Whether each folder seen is shaped like a game.
 _games = {}
@@ -119,8 +118,21 @@ def _writer():
     return None
 
 
+def _removing():
+    """Whether a folder is being removed: Windows makes its read-only files
+    writable first, which is no write to them."""
+    frame = sys._getframe(2)
+    while frame:
+        if os.path.normcase(frame.f_code.co_filename) == _shutil:
+            return True
+        frame = frame.f_back
+    return False
+
+
 def _hook(event, args):
     if event != "open" and event not in TARGETS:
+        return
+    if event == "os.chmod" and _removing():
         return
     path = _target(event, args)
     if not isinstance(path, (str, os.PathLike)):
@@ -158,6 +170,7 @@ def _hook(event, args):
 
 
 _scratch = str(Path(tempfile.gettempdir()).resolve()) + os.sep
+_shutil = os.path.normcase(shutil.__file__)
 _tests = str(Path(__file__).resolve().parent) + os.sep
 
 
