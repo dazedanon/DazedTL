@@ -1318,6 +1318,21 @@ main:has(> .page-layout--wide) {
 .expandable-text--inline > button {
   display: inline;
 }
+/* An excerpt of whole lines; its button floats down to the last line's end
+   so the excerpt never takes another line. */
+.expandable-text--inline > .expandable-text-content--clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--excerpt-lines);
+  overflow: hidden;
+}
+.expandable-text-content--clamped > button {
+  float: right;
+  height: 1lh;
+  padding-block: 0;
+  line-height: inherit;
+  margin: calc(var(--excerpt-lines) * 1lh - 1lh) 0 0 var(--space-2);
+}
 .expandable-text--fill {
   display: flex;
   flex-direction: column;
