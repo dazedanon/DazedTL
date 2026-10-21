@@ -140,7 +140,7 @@ jobs:
         # Groups of about the same length, so the jobs end together.
         scenarios:
           - playtested
-          - fresh opened set-up translated qa-done
+          - fresh opened set-up translated qa-done paged
           - assistant-led assistant-written batch-waiting upgraded
     steps:
       - run: git config --global core.autocrlf false

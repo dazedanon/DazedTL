@@ -85,6 +85,55 @@ const translateAll = [
   ],
 ];
 
+const narrowWidths = [
+  "Narrow the Line widths and check the long message pages whole",
+  async ({ page, state }) => {
+    // Applied at the stock widths, the message is not laid out for 24.
+    if (messageRows(state).every((row) => row.length <= 24))
+      throw new Error("The message was already narrow before the widths.");
+    const snapshot = await page.call("workspace_snapshot");
+    const { id } = snapshot.application.project;
+    const { preferences } = snapshot.guided;
+    const values = {
+      ...preferences.values,
+      widths: { ...preferences.values.widths, width: 24, messageRows: 2 },
+    };
+    await page.call("guided_save_options", {
+      project_id: id,
+      revision: preferences.revision,
+      values,
+    });
+    // Saving widths fits the applied text in the background.
+    const words = `${await longMessage(state)}`;
+    await until("the long message to page at the narrow widths", async () => {
+      const rows = messageRows(state);
+      return rows.length > 2 && rows.every((row) => row.length <= 24) && rows;
+    });
+    const shown = messageRows(state).join(" ").replace(/\s+/g, " ");
+    if (!shown.includes(words))
+      throw new Error(`The paged message lost words: ${shown}`);
+  },
+];
+
+/** The traveler's message the stand-in's long mode writes, as English words. */
+async function longMessage() {
+  const { longText } = await import("./provider.mjs");
+  return longText.slice(0, 40);
+}
+
+/** The rows of the traveler's message, its commands' lines split apart; a
+ * paged message holds empty rows that fill its last page. */
+/** The text rows of the traveler's message commands in the game's Map001. */
+function messageRows(state) {
+  const map = JSON.parse(
+    fs.readFileSync(path.join(state.game, "data/Map001.json"), "utf8"),
+  );
+  const event = map.events.find((item) => item?.name === "旅人");
+  return event.pages[0].list
+    .filter((command) => command.code === 401)
+    .flatMap((command) => command.parameters[0].split("\n"));
+}
+
 const playtest = [
   "Run the release playtest",
   async ({ page }) => {
@@ -295,6 +344,12 @@ export const scenarios = {
     from: "previous",
     upgrade: true,
     steps: () => [open, ...setup, ...translateAll],
+  },
+  paged: {
+    description:
+      "A long English message translated and applied, then the Line widths narrowed so it pages; the game must show every word.",
+    game: "long-dialogue",
+    steps: () => [open, ...setup, ...translateAll, narrowWidths],
   },
   playtested: {
     description:
