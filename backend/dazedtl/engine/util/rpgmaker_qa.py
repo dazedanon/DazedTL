@@ -61,6 +61,7 @@ from util.game_settings import game_wrap_widths, normalize_wrap_widths
 from util.reference_games import reference_context
 from util import rpgmaker_screens
 from util.rpgmaker_screens import screen_of, shown_text
+from util import rpgmaker_blocks as blocks
 from util import rpgmaker_rewrap as rewrap
 from util.rpgmaker_rewrap import rendered_rows, widest_line
 from util import rpgmaker_script_strings as script_strings
@@ -8298,9 +8299,9 @@ def _show_text_finding(
     )
     commands = _resolve_parts(document, parts[: list_index + 1])
     owner = int(parts[list_index + 1])
-    while commands[owner].get("code") == 401 and owner > 0:
-        owner -= 1
-    header = commands[owner]
+    if commands[owner].get("code") == 401:
+        owner = blocks.show_text(commands, owner)
+    header = commands[owner] if owner is not None else {}
     parameters = header.get("parameters")
     if header.get("code") != 101 or not isinstance(parameters, list) or len(parameters) < 5:
         raise QAResultError(f"No Show Text header owns this message: {review['id']}")

@@ -32,6 +32,8 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
+from util import rpgmaker_blocks as blocks
+
 SCHEMA = "rpgmaker-header-check-v1"
 FLAG_LIMIT = 200
 TEXT_LIMIT = 120
@@ -91,19 +93,6 @@ def _same_pronoun(token: str) -> frozenset[str]:
     return frozenset({token, "私"} if token in _KANJI_READINGS else {token})
 
 
-def _command_lists(document: Any, path: tuple = ()):
-    if isinstance(document, list):
-        if any(isinstance(item, dict) and "code" in item for item in document):
-            yield path, document
-            return
-        for index, child in enumerate(document):
-            yield from _command_lists(child, path + (index,))
-    elif isinstance(document, dict):
-        for key, child in document.items():
-            if key != "_original":
-                yield from _command_lists(child, path + (key,))
-
-
 def _read(path: Path) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8-sig"))
@@ -157,23 +146,16 @@ def _boxes(data: Path) -> list[dict[str, Any]]:
         if not _EVENT_FILE_RE.fullmatch(path.name):
             continue
         document = _read(path)
-        for list_path, commands in _command_lists(document):
+        for list_path, commands in blocks.command_lists(document):
             boxes = []
-            for index, command in enumerate(commands):
-                if not isinstance(command, dict) or command.get("code") != 101:
+            for block in blocks.blocks(commands):
+                if block.kind != blocks.MESSAGE or block.head is None:
                     continue
+                index, command = block.head, commands[block.head]
                 parameters = command.get("parameters")
                 if not isinstance(parameters, list) or len(parameters) < 5:
                     continue
-                lines = []
-                cursor = index + 1
-                while (
-                    cursor < len(commands)
-                    and isinstance(commands[cursor], dict)
-                    and commands[cursor].get("code") == 401
-                ):
-                    lines.append(cursor)
-                    cursor += 1
+                lines = list(block.rows)
                 raw = "\n".join(_source(commands[line], 0) for line in lines)
                 name = _plain(_source(command, 4), actors)
                 boxes.append({

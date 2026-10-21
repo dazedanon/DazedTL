@@ -269,32 +269,8 @@ def _visible_name(command: dict[str, Any]) -> tuple[str, str]:
 
 def _speaker(command_list: list[Any], index: int, code: int) -> dict[str, str]:
     """Resolve speaker from raw adjacency; never retain state across commands."""
-    owner = index if code == 101 else -1
-    if code == 401:
-        owner = index - 1
-        while owner >= 0 and isinstance(command_list[owner], dict):
-            if command_list[owner].get("code") != 401:
-                break
-            owner -= 1
-        if (
-            owner < 0
-            or not isinstance(command_list[owner], dict)
-            or command_list[owner].get("code") != 101
-        ):
-            owner = -1
-    elif code == 102:
-        owner = index - 1
-        while owner >= 0 and isinstance(command_list[owner], dict):
-            if command_list[owner].get("code") != 401:
-                break
-            owner -= 1
-        if (
-            owner < 0
-            or not isinstance(command_list[owner], dict)
-            or command_list[owner].get("code") != 101
-        ):
-            owner = -1
-    if owner < 0 or not isinstance(command_list[owner], dict):
+    owner = blocks.show_text(command_list, index) if code in (101, 401, 102) else None
+    if owner is None:
         return {"display_name": "", "face_name": "", "provenance": "none"}
     display, face = _visible_name(command_list[owner])
     provenance = "adjacent-code-101" if owner != index else "code-101"

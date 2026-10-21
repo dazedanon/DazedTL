@@ -47,7 +47,8 @@ HELP = "help"
 COMMENT = "comment"
 
 # A block's first command, and the code of its rows.
-_HEADS = {101: (MESSAGE, 401), 105: (SCROLL, 405), 108: (COMMENT, 408)}
+HEAD_ROWS = {101: 401, 105: 405, 108: 408}
+_HEADS = {head: (kind, HEAD_ROWS[head]) for head, kind in ((101, MESSAGE), (105, SCROLL), (108, COMMENT))}
 # A part's anchor's code, and the code of the rows it owns.
 ROW_CODES = {401: 401, 405: 405, 408: 408, 108: 408}
 
@@ -193,8 +194,10 @@ def recorded(command: Any) -> int | None:
     return rows if isinstance(rows, int) and not isinstance(rows, bool) and rows > 0 else None
 
 
-def _following(commands: list, start: int, row_code: int):
-    """The indexes of the text rows after *start*, past emptied commands."""
+def following(commands: list, start: int, row_code: int):
+    """The indexes of the rows (*row_code*) after *start*, past emptied
+    commands: a block's text rows after its first command, or a script's
+    lines (655) after its first (355)."""
     at = start + 1
     while at < len(commands):
         command = commands[at]
@@ -211,7 +214,7 @@ def run(commands: list, start: int, row_code: int) -> tuple[int, ...]:
     """The text rows after *start* up to the next translation: what a
     message's translation and Assistant-led's write own."""
     rows = []
-    for at in _following(commands, start, row_code):
+    for at in following(commands, start, row_code):
         if "_original" in commands[at]:
             break
         rows.append(at)
@@ -244,7 +247,7 @@ def owned(
     head = code(command) == 108
     rows = [] if head else [anchor]
     count = recorded(command)
-    for at in _following(commands, anchor, row_code):
+    for at in following(commands, anchor, row_code):
         if "_original" in commands[at] or (count is not None and len(rows) >= count):
             break
         rows.append(at)
@@ -286,11 +289,11 @@ def _aligned(commands: list, anchor: int, original: list) -> tuple[int, ...] | N
     heads = [at for at, command in enumerate(original) if code(command) == 108]
     if ordinal >= len(heads):
         return None
-    theirs = [text(original[at]) for at in _following(original, heads[ordinal], 408)]
+    theirs = [text(original[at]) for at in following(original, heads[ordinal], 408)]
     position = 0
     owner: list[int] | None = None
     owners: dict[int, list[int]] = {}
-    for at in _following(commands, head, 408):
+    for at in following(commands, head, 408):
         command = commands[at]
         if "_original" in command:
             wanted = _lines(command["_original"])
@@ -336,6 +339,20 @@ def help_branch(commands: list, index: int) -> int | None:
     return at - 1
 
 
+def show_text(commands: list, index: int) -> int | None:
+    """The Show Text (101) of the message holding the command at *index*,
+    its 101 or a row (401), or of the message a choice (102) at *index*
+    shows with; None for rows without their Show Text."""
+    if code(commands[index]) == 101:
+        return index
+    if code(commands[index]) not in (401, 102):
+        return None
+    at = index - 1
+    while at >= 0 and (code(commands[at]) == 401 or emptied(commands[at])):
+        at -= 1
+    return at if at >= 0 and code(commands[at]) == 101 else None
+
+
 def help_face(commands: list, index: int) -> bool:
     """Whether the choice help holding the command at *index* shows beside a
     face. MPP_ChoiceEX draws the help in the message window, which keeps the
@@ -348,6 +365,7 @@ def help_face(commands: list, index: int) -> bool:
     while True:
         while at >= 0 and not (code(commands[at]) == 102 and commands[at].get("indent") == indent):
             at -= 1
+        choice = at
         at -= 1
         while at >= 0 and emptied(commands[at]):
             at -= 1
@@ -355,9 +373,8 @@ def help_face(commands: list, index: int) -> bool:
             return False
         if code(commands[at]) != 404 or commands[at].get("indent") != indent:
             break
-    while at >= 0 and (code(commands[at]) == 401 or emptied(commands[at])):
-        at -= 1
-    return at >= 0 and code(commands[at]) == 101 and has_face(commands[at])
+    head = show_text(commands, choice)
+    return head is not None and has_face(commands[head])
 
 
 def _parts(
@@ -401,11 +418,11 @@ def _block(commands: list, index: int, face: bool, original: list | None) -> Blo
     if command_code in _HEADS:
         kind, row_code = _HEADS[command_code]
         head: int | None = index
-        rows = tuple(_following(commands, index, row_code))
+        rows = tuple(following(commands, index, row_code))
     elif command_code in (401, 405) and _text_row(command, command_code):
         # Rows without their first command, as hand-made lists have.
         kind, row_code, head = (MESSAGE if command_code == 401 else SCROLL), command_code, None
-        rows = (index, *_following(commands, index, command_code))
+        rows = (index, *following(commands, index, command_code))
     else:
         return None
     if command_code == 101:
@@ -451,7 +468,7 @@ def block_at(commands: list, index: int, *, original: list | None = None) -> Blo
     if row_code in (401, 405, 408):
         while start > 0 and (code(commands[start - 1]) == row_code or emptied(commands[start - 1])):
             start -= 1
-        head_code = {401: 101, 405: 105, 408: 108}[row_code]
+        head_code = next(head for head, rows in HEAD_ROWS.items() if rows == row_code)
         if start > 0 and code(commands[start - 1]) == head_code:
             start -= 1
     # Whether rows without their Show Text follow one with a face.

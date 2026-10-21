@@ -28,6 +28,7 @@ from util.project_scanner import (
     wolf_repair_nested_data_dir,
     wolf_unpack_out_dir,
 )
+from util import rpgmaker_blocks as blocks
 from util.rpgmaker_qa_manifest import build_manifest
 
 
@@ -40,7 +41,9 @@ OVERLAP_RELATIVE = GAME_METADATA_RELATIVE / "reference-overlaps.json"
 REFERENCE_DATA_RELATIVE = GAME_METADATA_RELATIVE / "reference-data"
 
 _JAPANESE_RE = re.compile(r"[一-龠々〆〤ぁ-ゔァ-ヴー]")
-_MESSAGE_FOLLOWERS = {101: 401, 105: 405, 108: 408, 355: 655}
+# A command's rows read as one text with it: text blocks' (see
+# rpgmaker_blocks.following) and a script's lines.
+_MESSAGE_FOLLOWERS = {**blocks.HEAD_ROWS, 355: 655}
 _WOLF_BINARY_SUFFIXES = frozenset({".dat", ".mps", ".project", ".txt", ".wolf"})
 
 
@@ -563,20 +566,14 @@ def _command_strings(commands: list[dict[str, Any]], path: tuple[Any, ...]) -> I
         base = path + (f"command-{code}", ordinal)
         follower = _MESSAGE_FOLLOWERS.get(code)
         if follower is not None:
-            lines = []
-            cursor = index + 1
-            while cursor < len(commands) and commands[cursor].get("code") == follower:
-                child_parameters = commands[cursor].get("parameters")
-                if isinstance(child_parameters, list) and child_parameters:
-                    if isinstance(child_parameters[0], str):
-                        lines.append(child_parameters[0])
-                cursor += 1
+            rows = tuple(blocks.following(commands, index, follower))
+            lines = [blocks.text(commands[row]) for row in rows]
             if lines:
                 if code == 101 and isinstance(parameters, list):
                     # The message's header holds its nameplate.
                     yield from _strings(parameters, base + ("parameters",))
                 yield "/" + "/".join(str(part) for part in base + ("text",)), "\n".join(lines)
-                index = cursor
+                index = rows[-1] + 1
                 continue
         if code == 102 and isinstance(parameters, list) and parameters:
             choices = parameters[0]

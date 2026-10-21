@@ -17,6 +17,7 @@ import json
 import re
 from pathlib import Path
 
+from util import rpgmaker_blocks as blocks
 from util.paths import DATA_DIR
 
 # ============================================================================
@@ -169,15 +170,7 @@ def detect_speaker_format(
             for page in evt.get("pages") or []:
                 cmd_list = (page or {}).get("list") or []
                 _score_command_list(cmd_list, scores)
-                # Count 401 groups
-                i = 0
-                while i < len(cmd_list):
-                    if cmd_list[i].get("code") in (401, 405):
-                        total_groups += 1
-                        while i < len(cmd_list) and cmd_list[i].get("code") in (401, 405, -1):
-                            i += 1
-                        continue
-                    i += 1
+                total_groups += sum(1 for _block in _dialogue(cmd_list))
 
     # Also scan CommonEvents
     ce_path = files_dir / "CommonEvents.json"
@@ -264,10 +257,25 @@ def detect_speaker_format(
     }
 
 
+def _dialogue(cmd_list: list):
+    """The messages and scrolling text in a command list that hold rows."""
+    return (
+        block
+        for block in blocks.blocks(cmd_list)
+        if block.kind in (blocks.MESSAGE, blocks.SCROLL) and block.rows
+    )
+
+
 def _score_command_list(cmd_list: list, scores: dict) -> None:
     """Walk a command list and score speaker patterns in module priority order."""
     if not cmd_list:
         return
+    # Each dialogue row's next row in its message.
+    following = {
+        row: after
+        for block in _dialogue(cmd_list)
+        for row, after in zip(block.rows, block.rows[1:])
+    }
 
     i = 0
     while i < len(cmd_list):
@@ -313,10 +321,8 @@ def _score_command_list(cmd_list: list, scores: dict) -> None:
                 and _has_japanese(text)
                 and not any(text.lstrip().startswith(s) for s in _DIALOGUE_STARTERS)
             ):
-                j = i + 1
-                while j < len(cmd_list) and cmd_list[j].get("code") == -1:
-                    j += 1
-                if j < len(cmd_list) and cmd_list[j].get("code") in (401, 405):
+                j = following.get(i)
+                if j is not None:
                     next_params   = cmd_list[j].get("parameters") or []
                     next_text     = (next_params[0] if next_params else "") or ""
                     # Strip leading RPGMaker control codes before checking starter

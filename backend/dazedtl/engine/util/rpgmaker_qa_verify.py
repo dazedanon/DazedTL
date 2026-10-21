@@ -395,21 +395,8 @@ def _speaker_from_document(document: Any, source_pointer: str, code: int) -> dic
         return {"display_name": "", "face_name": "", "provenance": "none"}
     index = int(command_path[-1])
     command_list = _resolve(document, _pointer(tuple(command_path[:-1])))
-    owner = index if code == 101 else -1
-    if code in (401, 102):
-        owner = index - 1
-        while owner >= 0:
-            prior = command_list[owner]
-            if not isinstance(prior, dict) or prior.get("code") != 401:
-                break
-            owner -= 1
-        if (
-            owner < 0
-            or not isinstance(command_list[owner], dict)
-            or command_list[owner].get("code") != 101
-        ):
-            owner = -1
-    if owner < 0:
+    owner = blocks.show_text(command_list, index) if code in (101, 401, 102) else None
+    if owner is None:
         return {"display_name": "", "face_name": "", "provenance": "none"}
     params = command_list[owner].get("parameters") or []
     if len(params) > 4:
