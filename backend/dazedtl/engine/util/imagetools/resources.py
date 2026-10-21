@@ -37,7 +37,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import shutil
 import ssl
 import struct
 import subprocess
@@ -48,6 +47,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from util.paths import DATA_DIR
+from util import system
 
 #: Where ``util.imagetools.inpaint`` looks. Repeated rather than imported
 #: because that module needs numpy and cv2, which may be exactly what is
@@ -408,10 +408,6 @@ def _check(should_stop) -> None:
         raise Cancelled("Download stopped.")
 
 
-def _no_window() -> int:
-    return getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
-
-
 def _pip(specs, log=None, should_stop=None) -> None:
     """Install requirement specifiers into *this* interpreter.
 
@@ -430,14 +426,13 @@ def _pip(specs, log=None, should_stop=None) -> None:
         *specs,
     ]
     _log(log, "$ " + " ".join(command))
-    process = subprocess.Popen(
+    process = system.popen(
         command,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         encoding="utf-8",
         errors="replace",
-        creationflags=_no_window(),
     )
     try:
         for line in process.stdout or ():
@@ -535,13 +530,11 @@ def _check_signature(path: Path) -> None:
         "$s.SignerCertificate.Subject)"
     )
     try:
-        result = subprocess.run(
+        result = system.run(
             [str(powershell), "-NoProfile", "-NonInteractive", "-Command", script],
             capture_output=True,
             text=True,
-            errors="replace",
             env={**os.environ, "DAZEDTL_SIGNED": str(path)},
-            creationflags=_no_window(),
             timeout=120,
         )
         status, _, subject = result.stdout.partition("\n")
@@ -574,7 +567,7 @@ def install_vc_runtime(progress=None, log=None, should_stop=None) -> None:
     # One fixed folder, emptied first, so an install stopped while Windows'
     # prompt was open leaves no installer behind for long.
     folder = Path(tempfile.gettempdir()) / "dazedtl-vc-redist"
-    shutil.rmtree(folder, ignore_errors=True)
+    system.remove_tree(folder, ignore_errors=True)
     installer = folder / "vc_redist.x64.exe"
     try:
         _fetch(
@@ -587,11 +580,12 @@ def install_vc_runtime(progress=None, log=None, should_stop=None) -> None:
             "Running Microsoft's installer; Windows asks for administrator "
             "permission",
         )
-        code = subprocess.run(
-            [str(installer), "/install", "/passive", "/norestart"], check=False
+        # The installer shows its own progress window.
+        code = system.run(
+            [str(installer), "/install", "/passive", "/norestart"], console=True
         ).returncode
     finally:
-        shutil.rmtree(folder, ignore_errors=True)
+        system.remove_tree(folder, ignore_errors=True)
     if code in _VC_REDIST_DECLINED:
         raise Cancelled(
             "The Microsoft Visual C++ Redistributable was not installed because "

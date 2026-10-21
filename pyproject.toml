@@ -36,13 +36,16 @@ ignore = ["TRY004"]
 "tests/**" = ["B023", "BLE001", "TID251"]
 # The platform layer is the one place the calls it replaces are made.
 "backend/dazedtl/system.py" = ["TID251"]
+# Runs with the previous release's code too, which may predate the layer.
+"scripts/qa_upgrade.py" = ["TID251"]
+# Stands in for an outside assistant, which has only the project helper.
+"scripts/testkit/assistant.py" = ["TID251"]
 # Calls made before the platform layer, converted file by file: remove a file
 # once it has none. Never add one; use the layer, or mark a call that must stay
 # raw with `# noqa: TID251 - <reason>`.
 "backend/dazedtl/compatibility/images.py" = ["TID251"]
 "backend/dazedtl/compatibility/playtest.py" = ["TID251"]
 "backend/dazedtl/compatibility/text.py" = ["TID251"]
-"backend/dazedtl/foreign_work.py" = ["TID251"]
 "backend/dazedtl/images/recipes.py" = ["TID251"]
 "backend/dazedtl/plugins/documents.py" = ["TID251"]
 "backend/dazedtl/translation/backups.py" = ["TID251"]
@@ -51,8 +54,6 @@ ignore = ["TRY004"]
 "backend/dazedtl/translation/publication.py" = ["TID251"]
 "backend/dazedtl/translation/release.py" = ["TID251"]
 "backend/dazedtl/translation/start_over.py" = ["TID251"]
-"scripts/qa_upgrade.py" = ["TID251"]
-"scripts/testkit/assistant.py" = ["TID251"]
 
 [tool.pyright]
 # Checks the app's Python; the bundled engine is resolved but not checked.

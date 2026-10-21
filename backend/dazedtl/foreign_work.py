@@ -9,11 +9,11 @@ with the saved files moved aside under a dated name.
 """
 
 import hashlib
-import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeIs
 
+from dazedtl import system
 from dazedtl.translation.files import project_path
 
 ARCHIVE = ".dazedtl/archived"
@@ -91,5 +91,5 @@ def archive(root, relative, name):
     while target.exists():
         count += 1
         target = folder / (stamp + "-" + str(count))
-    os.rename(source, target)
-    return target.relative_to(Path(root).resolve()).as_posix()
+    system.replace(source, target)
+    return system.project_relative(target, Path(root).resolve())
