@@ -24,7 +24,6 @@ from util.rpgmaker_plugin_registry import PluginRegistryError, loaded_entries
 from util.rpgmaker_qa_checks import BATTLE_MESSAGES, battler_name_note, runtime
 from util.rpgmaker_qa_preflight import (
     STANDARD_FILES,
-    japanese,
     pointer,
     preflight,
     read_sources,
@@ -32,6 +31,7 @@ from util.rpgmaker_qa_preflight import (
 )
 from util.rpgmaker_qa_reach import Reach
 from util.runtime_text import without_control_codes
+from util.source_text import holds_source
 
 SCHEMA = "rpgmaker-playtest-static-v1"
 TEXT_LIMIT = 160
@@ -159,9 +159,9 @@ class _Checks:
                     continue
                 location = pointer(parts)
                 # A code's argument, such as the font of \fn[和風], is not
-                # drawn; a name window's <名前> is.
+                # drawn (util/source_text); a name window's <名前> is.
                 shown = without_control_codes(value)
-                if japanese(shown):
+                if holds_source(value):
                     note = "Japanese is left in this translated text."
                     check = "visible-text"
                 elif _PLACEHOLDER_RE.search(shown):
@@ -291,7 +291,7 @@ class _Checks:
                 after += shown
                 if originals is not None and at < len(originals):
                     original = _shown_codes(originals[at])
-                elif japanese(text):
+                elif holds_source(text):
                     # Never translated: it is its own original.
                     original = shown
                 else:

@@ -16,6 +16,7 @@ from typing import Any
 from collections import Counter
 
 from util import rpgmaker_blocks as blocks
+from util.source_text import holds_source
 
 SCHEMA = "rpgmaker-qa-manifest-v1"
 EXTRACTOR = "dazedtl-rpgmaker-qa-extractor-v1"
@@ -105,7 +106,6 @@ _UNSAFE_BARE_CENTER_RE = re.compile(
     r"\\(?:ac|cl)(?=[A-Za-z])", re.IGNORECASE
 )
 _CENTER_ALIGNMENT_RE = re.compile(r"\\ac", re.IGNORECASE)
-_JAPANESE_RE = re.compile(r"[一-龠々〆〤ぁ-ゔァ-ヴー]")
 # A stat or currency abbreviation beside a number is its unit, which English
 # may move ("TP24増加" is "Increases TP by 24"); other letters beside digits
 # make an identifier such as EV024, which shows no number.
@@ -429,7 +429,7 @@ def _mechanical_evidence(source: str, live: str, code: int | None) -> dict[str, 
         flags.append("empty-live")
     if source == live:
         flags.append("unchanged-source")
-    if _JAPANESE_RE.search(live):
+    if holds_source(live):
         flags.append("source-language-residue")
     if not _runtime_tokens_match(source, live):
         flags.append("runtime-token-mismatch")

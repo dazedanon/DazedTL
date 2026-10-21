@@ -27,8 +27,8 @@ from util.rpgmaker_markers import (
     data_plugins,
 )
 from util.rpgmaker_qa_reach import MAY_SHOW, Reach
+from util.source_text import holds_source
 
-_JAPANESE_RE = re.compile(r"[ぁ-ゔァ-ヴ一-龠々〆〤]")
 _MAP_RE = re.compile(r"Map\d+\.json")
 # Plugin parameters that hold code or an asset path rather than text.
 _SCRIPT_RE = re.compile(r"\bthis\.|\$(?:game|data)[A-Z]|=>|\breturn\b|(?:^|[;\s])//")
@@ -68,11 +68,6 @@ REASON = (
 # Sources by kind: game data without `_original`, custom data files and
 # plugin settings.
 _KINDS = {"untranslated": "data", "custom_data": "custom", "plugin_parameters": "plugin"}
-
-
-def japanese(value: Any) -> bool:
-    """Whether a value holds Japanese; ・ and ー alone do not count."""
-    return isinstance(value, str) and bool(_JAPANESE_RE.search(value))
 
 
 def _escape(part: object) -> str:
@@ -177,7 +172,7 @@ def _untranslated(
     name: str, document: Any, covered: set[str], markers: frozenset[str], rows: list
 ) -> None:
     for path, value, kind, translated in visible_texts(name, document, markers):
-        if not translated and japanese(value) and pointer(path) not in covered:
+        if not translated and holds_source(value) and pointer(path) not in covered:
             _entry(rows, name, path, value, kind)
 
 
@@ -205,7 +200,7 @@ def _settings(entries: list[Any]) -> list[tuple[tuple, str]]:
         for parts, value in _leaves(plugin.get("parameters") or {}):
             if (
                 parts[0] not in MARKER_SETTINGS
-                and japanese(value)
+                and holds_source(value)
                 and not _SCRIPT_RE.search(value)
                 and not _ASSET_PATH_RE.match(value)
             ):
@@ -260,7 +255,7 @@ def preflight(
             reach.scan(path.name, document)
         else:
             for parts, value in _leaves(document):
-                if japanese(value):
+                if holds_source(value):
                     _entry(rows["custom_data"], path.name, parts, value, "custom data")
     settings = _settings(entries)
     plugins = {

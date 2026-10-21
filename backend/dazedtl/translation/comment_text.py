@@ -22,7 +22,8 @@ _MARKERS: dict[tuple, frozenset[str]] = {}
 def _japanese_lines(name: str, document: Any, markers: frozenset[str]) -> list:
     """The comment lines under *markers* that a data file holds in Japanese;
     a file shaped unlike RPG Maker's, such as a plugin's own data, holds none."""
-    from util.rpgmaker_qa_preflight import japanese, visible_texts
+    from util.rpgmaker_qa_preflight import visible_texts
+    from util.source_text import holds_source
 
     try:
         return [
@@ -30,7 +31,7 @@ def _japanese_lines(name: str, document: Any, markers: frozenset[str]) -> list:
             for _path, value, kind, _translated in visible_texts(
                 name, document, markers
             )
-            if kind == "comment text" and japanese(value)
+            if kind == "comment text" and holds_source(value)
         ]
     except AttributeError, IndexError, KeyError, TypeError:
         return []

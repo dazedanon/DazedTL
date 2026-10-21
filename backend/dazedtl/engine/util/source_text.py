@@ -1,7 +1,7 @@
 """Whether text still holds Japanese to translate: the one rule the RPG Maker
 MV/MZ engine sends text by and Guided's line counts read a line as left by
 (translation/file_lines.py), and that event-text tools such as custom
-patterns and fitting share.
+patterns and fitting, Text QA and the playtest share.
 
 Japanese to translate is a Japanese letter (kana, kanji or half-width kana)
 outside control codes and their arguments. Punctuation and brackets are not

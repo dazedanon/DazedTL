@@ -19,6 +19,7 @@ glossary = Probe("qa_glossary.py")
 reviewed = Probe("qa_reviewed.py")
 manifest = engine_module("util/rpgmaker_qa_manifest.py")
 verify = engine_module("util/rpgmaker_qa_verify.py")
+preflight = engine_module("util/rpgmaker_qa_preflight.py")
 lint = engine_module("util/rpgmaker_qa_lint.py")
 checks = engine_module("util/rpgmaker_qa_checks.py")
 headers = engine_module("util/rpgmaker_header_check.py")
@@ -169,6 +170,32 @@ class QAEngineTests(unittest.TestCase):
             "\\V[5]でHP30回復、EV024", "Restores 30 HP with \\V[5], EV024", None
         )
         self.assertEqual(evidence["source_visible_numbers"], ["30"])
+
+    def test_a_code_argument_is_not_japanese_left_to_translate(self):
+        # A plugin code's argument names an asset, never text, so the line
+        # counts read such a line done (engine util/source_text); Text QA
+        # reported it as residue, and as never translated when the engine,
+        # finding nothing to send, kept no `_original`.
+        source, live = "\\SA[びっくり]えっ、本当に？", "\\SA[びっくり]Huh, really?"
+        evidence = manifest._mechanical_evidence(source, live, 401)
+        self.assertNotIn("source-language-residue", evidence["flags"])
+        self.assertEqual(verify._mechanical(source, live, 401), evidence)
+        with tempfile.TemporaryDirectory() as folder:
+            data = Path(folder)
+            commands = [
+                {"code": 101, "parameters": ["", 0, 0, 2, ""]},
+                {"code": 401, "parameters": [live]},
+                {"code": 101, "parameters": ["", 0, 0, 2, ""]},
+                {"code": 401, "parameters": ["まだ訳されていない"]},
+                {"code": 0, "parameters": []},
+            ]
+            game = {"events": [None, {"id": 1, "pages": [{"list": commands}]}]}
+            (data / "Map001.json").write_text(
+                json.dumps(game, ensure_ascii=False), encoding="utf-8"
+            )
+            report = preflight.preflight(data, {"records": []})
+        texts = [text["text"] for item in report["sources"] for text in item["texts"]]
+        self.assertEqual(texts, ["まだ訳されていない"], report["sources"])
 
     def test_wrapped_rows_may_repeat_their_row_start_codes(self):
         # Fuuma's banner: fitting the second row to its window repeats its \>,

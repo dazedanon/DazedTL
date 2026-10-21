@@ -30,6 +30,7 @@ from util.project_scanner import (
 )
 from util import rpgmaker_blocks as blocks
 from util.rpgmaker_qa_manifest import build_manifest
+from util.source_text import holds_source
 
 
 REGISTRY_SCHEMA = "dazedtl-reference-games-v1"
@@ -40,7 +41,6 @@ INDEX_RELATIVE = GAME_METADATA_RELATIVE / "reference-index.json"
 OVERLAP_RELATIVE = GAME_METADATA_RELATIVE / "reference-overlaps.json"
 REFERENCE_DATA_RELATIVE = GAME_METADATA_RELATIVE / "reference-data"
 
-_JAPANESE_RE = re.compile(r"[一-龠々〆〤ぁ-ゔァ-ヴー]")
 # A command's rows read as one text with it: text blocks' (see
 # rpgmaker_blocks.following) and a script's lines.
 _MESSAGE_FOLLOWERS = {**blocks.HEAD_ROWS, 355: 655}
@@ -525,7 +525,7 @@ def _embedded_pairs(entry: dict[str, Any]) -> Iterable[tuple[str, str, str]]:
     for record in manifest.get("records") or []:
         source = str(record.get("source") or "")
         translation = str(record.get("live") or "")
-        if source and translation and source != translation and _JAPANESE_RE.search(source):
+        if source and translation and source != translation and holds_source(source):
             locator = f"{record.get('file', '')}#{record.get('source_pointer', '')}"
             yield source, translation, locator
 
@@ -599,7 +599,7 @@ def _paired_pairs(entry: dict[str, Any]) -> Iterable[tuple[str, str, str]]:
         translated_entries = dict(_strings(_read_json(translated_path)))
         for logical_path, source in source_entries.items():
             translation = translated_entries.get(logical_path)
-            if translation and source != translation and _JAPANESE_RE.search(source):
+            if translation and source != translation and holds_source(source):
                 yield source, translation, f"{source_path.name}#{logical_path}"
 
 
@@ -683,13 +683,13 @@ def sources_from_data(data_root: str | Path) -> set[str]:
         manifest = {"records": []}
     for record in manifest.get("records") or []:
         source = str(record.get("source") or "")
-        if source and _JAPANESE_RE.search(source):
+        if source and holds_source(source):
             sources.add(source)
     if sources:
         return sources
     for path in _json_files(data):
         document = _read_json(path)
-        sources.update(value for _logical, value in _strings(document) if _JAPANESE_RE.search(value))
+        sources.update(value for _logical, value in _strings(document) if holds_source(value))
     return sources
 
 

@@ -6645,7 +6645,7 @@ def _is_plausible_speaker(name: str) -> bool:
     Called during SPEAKER_PARSE_MODE to filter false positives before they
     enter SPEAKER_COLLECTED.  Heuristics (applied after stripping markup):
       • 1–20 characters long
-      • Contains at least one Japanese character (kana / kanji)
+      • Contains at least one Japanese letter (util/source_text)
       • No sentence-ending / mid-sentence punctuation (。！？…、)
       • No dialogue-opening quotes (「"（)
       • No newlines, underscores, slashes, or dots
@@ -6659,8 +6659,8 @@ def _is_plausible_speaker(name: str) -> bool:
         return False
     if len(clean) > 20:
         return False
-    # Must have at least one Japanese character
-    if not re.search(r"[\u3040-\u30FA\u31F0-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\uFF61-\uFF9F]", clean):
+    # Must have at least one Japanese letter
+    if not holds_source(clean):
         return False
     # Reject sentence-like strings
     if re.search(r"[。！？…、]", clean):

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from util import rpgmaker_blocks as blocks
+from util.source_text import holds_source
 
 SCHEMA = "rpgmaker-qa-manifest-v1"
 DIALOGUE = {101, 102, 401, 405}
@@ -79,7 +80,6 @@ _UNSAFE_BARE_CENTER_RE = re.compile(
     r"\\(?:ac|cl)(?=[A-Za-z])", re.IGNORECASE
 )
 _CENTER_ALIGNMENT_RE = re.compile(r"\\ac", re.IGNORECASE)
-_JAPANESE_RE = re.compile(r"[一-龠々〆〤ぁ-ゔァ-ヴー]")
 # Stat and currency abbreviations are a number's unit ("TP24", "100G"); other
 # letters beside digits make an identifier ("EV024").
 _NUMBER_UNIT = r"(?:[HMST]P|EXP|ATK|DEF|MAT|MDF|AGI|LUK|L[Vv]|G)"
@@ -286,7 +286,7 @@ def _mechanical(source: str, live: str, code: int | None) -> dict[str, Any]:
         flags.append("empty-live")
     if source == live:
         flags.append("unchanged-source")
-    if _JAPANESE_RE.search(live):
+    if holds_source(live):
         flags.append("source-language-residue")
     if not _runtime_tokens_match(source, live):
         flags.append("runtime-token-mismatch")

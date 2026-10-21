@@ -26,6 +26,8 @@ from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from typing import Any, Iterable
 
+from util.source_text import holds_source
+
 # Players never read MapInfos.json names; a map shows its own display name.
 UNSEEN_FILES = frozenset({"MapInfos.json"})
 # A one-character term is too often part of other words.
@@ -59,9 +61,6 @@ _KANJI = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff々〆ヶ]")
 # Katakana and its long vowel mark, without the middle dot that joins names.
 _KATAKANA = re.compile(r"[\u30a1-\u30fa\u30fc-\u30ff\uff66-\uff9f]")
 _KATAKANA_NAME = re.compile(r"[\u30a1-\u30fa\u30fc-\u30ff\uff66-\uff9f]+")
-_JAPANESE = re.compile(
-    r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]"
-)
 # RPG Maker's control codes, which English words never include.
 _CODE = r"\\+[A-Za-z]+\[[^\]]*\]|\\+[A-Za-z{}|.!><^$]"
 _TOKEN = re.compile(rf"(?P<code>{_CODE})|(?P<word>[^\W_]+(?:['’][^\W_]+)*['’]?)")
@@ -289,7 +288,7 @@ def terms(rows: Iterable[tuple[str, str, str, bool]]) -> list[Term]:
                     # Hiragana alone is grammar or an ordinary word, such as
                     # さん inside たくさん.
                     and bool(_KANJI.search(alias) or _KATAKANA.search(alias))
-                    and _JAPANESE.search(english) is None
+                    and not holds_source(english)
                 ),
             )
     return sorted(found.values(), key=lambda term: (-len(term.source), term.order))
