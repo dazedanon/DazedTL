@@ -3146,6 +3146,12 @@ try:
         assert not holds_source(r"\SA[びっくり]Hello") and holds_source(
             r"\SA[びっくり]こんにちは"
         )
+        # Furigana's base is text the player reads, which the engine sends.
+        for ruby in (r"「\rb[魔王,まおう]！」", r"\\R[魔王,まおう]", "{魔王|まおう}！"):
+            assert holds_source(ruby), ruby
+        assert not holds_source(r"\rb[Demon King,まおう]!")
+        # Other scripts and private-use icon glyphs are not Japanese.
+        assert not holds_source("안녕  ꞌ")
         # A name box counts the name the engine translates, not what follows.
         for value in (
             "村長",

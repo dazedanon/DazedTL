@@ -47,7 +47,7 @@ from util.paths import (
 from util.rpgmaker_markers import comment_markers, game_plugins
 from util.rpgmaker_files import mvmz_file_kind
 from util.id_ranges import id_in_ranges
-from util.source_text import holds_source
+from util.source_text import furigana_base, holds_source
 from util import system
 
 # Globals
@@ -4160,11 +4160,9 @@ def _searchCodes(page, pbar, jobList, filename):
                     finalJAString = finalJAString.replace("\\,", ',')
 
                     ### Remove format codes
-                    # Furigana: \r or \rb [base,reading] -> keep reading/base per pattern
-                    finalJAString = re.sub(r"[\\]+[rR][bB]?\[(.*?),.*?\]", r"\1", finalJAString)
-
-                    # Curly-brace furigana: {base|reading} -> keep base
-                    finalJAString = re.sub(r"\{([^|{}]+)\|[^|{}]+?\}", r"\1", finalJAString)
+                    # Furigana: \r[base,reading], \rb[...] and {base|reading}
+                    # -> keep the base (util/source_text)
+                    finalJAString = furigana_base(finalJAString)
 
                     # Remove any RPGMaker Code at start
                     ffMatch = re.search(
