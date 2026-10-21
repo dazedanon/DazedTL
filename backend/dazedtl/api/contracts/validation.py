@@ -2,6 +2,8 @@
 
 Values are checked as the JSON the renderer receives, so a field the contracts
 omit, a missing required field, or a wrong type fails instead of drifting.
+The checks are a development aid: the domain operations behind each method
+remain responsible for validating input and checking ownership.
 """
 
 import json
