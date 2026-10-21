@@ -257,7 +257,7 @@ Packaging reuses matching saved content.
 Use backups to list local restore points and older profile backups. restore_backup takes backup_id and destination, which must name a new directory outside the game.
 It verifies content and never overwrites existing files.
 Snapshot IDs remain valid after moving the entire store with the game; engine source readers use temporary verified materialization.
-Standalone recovery without an app profile is documented in the [user guide](user-guide.md#backups-and-recovery).
+Standalone recovery without an app profile is documented in the [user guide](user-guide.md#backups-from-before-checkpoints).
 Package requires current reported QA for the runtime manifest Git setup or the last checkpoint named, saves outstanding changes, and creates a local patch from the files the translation branch tracks.
 It does not create remotes, push, or upload.
 Writing the game's complete `gameupdate/patch-config.txt` saves it with the patch, so manifests need not list it; the package leaves it out unless the existing GameUpdate checks find the commit is the verified public version, which they then stamp.

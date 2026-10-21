@@ -174,7 +174,7 @@ Plugin and image progress in the game folder belongs to the project that saved i
 Strive for [Nielsen's ten usability heuristics](https://www.nngroup.com/articles/ten-usability-heuristics/) when designing and reviewing this tool.
 Make current state and the next useful action visible; use translation tasks and familiar language; offer clear exits and recovery; keep shared controls consistent; prevent scope and spending mistakes; make prerequisites visible instead of requiring memory; support both guided and experienced use; prioritize relevant actions; give errors a practical recovery path; and put concise help beside the task that needs it.
 Use these principles to evaluate real workflows, rather than adding extra panels or confirmation steps to satisfy a checklist.
-Give each idea one name and keep it everywhere: Apply only means writing into the game (settings are saved or used); Backups are copies you can restore and Versions are the Git history used to merge game updates; Line widths are the per-line character limits DazedTL wraps translated text to, with the rows a message window shows.
+Give each idea one name and keep it everywhere: Apply only means writing into the game (settings are saved or used); Checkpoints are the game's Git commits, one per change, which the user views, goes back to, undoes or copies, and a game update merges a new official version into them; Line widths are the per-line character limits DazedTL wraps translated text to, with the rows a message window shows.
 Assistant-led is the UI name of the method built on Len's game-translation skills; code and records keep the `len` identifier.
 Its starting prompt runs the whole method without the user: it asks only for spending approval, a missing API connection, denied access or a decision no source evidence settles, and a check it cannot make stays pending instead of stopping the run.
 
@@ -208,7 +208,7 @@ Use the flat, compact [Settings](../app/src/features/settings/Settings.tsx) and 
 #### Places and surfaces
 
 The sidebar has three places: the Project page holds everything about the game, Translation holds the work, and Settings holds the app.
-Each game has one translation method, chosen in [MethodDialog](../app/src/features/project/MethodDialog.tsx) and kept in the project registry; changing it keeps the other method's work, and the Project page's Status, History, Versions and Backups tabs serve both.
+Each game has one translation method, chosen in [MethodDialog](../app/src/features/project/MethodDialog.tsx) and kept in the project registry; changing it keeps the other method's work, and the Project page's Status, History and Checkpoints tabs serve both.
 Screens use four kinds of surface, each with one job:
 
 - A page is somewhere you work or browse, reached from the sidebar and kept when you leave and return.
@@ -423,6 +423,13 @@ Release packages what the branch tracks and refuses plugins players would lack t
 Commits to one repository take turns through a lock in its Git folder, and each write in progress registers the files it declared, so two writes at once each commit their own.
 Assistant-led writes the game with its own tools too, so the app commits what waits in the patch at each progress report and when a translation run ends, named for the reported phase ([progress_report](../backend/dazedtl/translation/progress_report.py)), and the assistant's writes of one file each wait for that phase's checkpoint; the helper's `checkpoint` operation stays for older runs.
 `lifecycle.json` keeps no checkpoint record, since Git holds them.
+
+The Project page's Checkpoints tab reads them from the branch's log ([checkpoint_history](../backend/dazedtl/compatibility/checkpoint_history.py), whose docstring holds the rules) when it opens and after a write moves the branch, never on a poll, and groups them by game version, which a `DazedTL-Version` trailer starts, and by stage.
+Go back, undo and save a copy are operations only the user starts, so the project helper has no route to them.
+Going back and undoing write through the gateway, so each is a checkpoint, and stay within the current game version; they leave the rule files that set the patch's scope as they are, since it only grows.
+A file outside the patch at the target takes the `original` branch's bytes; one the original lacks, because it holds only the patch too, stays as it is rather than being guessed at or removed.
+An undo waits for the newest later checkpoint that changed one of its files unless the file is again as it left it, so undoing in turn never loops; [blocker](../backend/dazedtl/compatibility/checkpoint_history.py) is that one rule.
+Save a copy writes the game as of a checkpoint into a new folder outside it, and Electron opens only the folders the backend returns.
 
 ## Backup storage
 

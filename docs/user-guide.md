@@ -24,7 +24,7 @@ Optional tasks say so and never hold up the next step.
 **Assistant tasks** lists the tasks you copied to your assistant and where each one stands; the count in the top bar opens it.
 **Dismiss** clears a task you gave up on, and copying it again brings it back.
 
-The other tabs are **History** (runs, estimates and other activity), **Versions** and **Backups**.
+The other tabs are **History** (runs, estimates and other activity) and [**Checkpoints**](#checkpoints) (every change to the game, and game updates).
 In **History**, **Review restore** takes out a batch of QA corrections, playtest fixes or rewrapping; when a later batch changed the same files, the button names it.
 
 Lists everywhere use the same words:
@@ -260,7 +260,7 @@ Notes beside a translation flag text the AI wasn't sure about; check them agains
 ## Publishing with GameUpdate
 
 GameUpdate lets players update to your latest translation from its public Git repository on GitGud, GitHub or a Forgejo server such as Codeberg.
-It is separate from [Versions](#versions), which merge a new official version of the game.
+It is separate from [game updates](#game-updates), which merge a new official version of the game.
 
 Set up adds `GameUpdate.bat` for Windows, `GameUpdate_linux.sh` for Linux, the `gameupdate` folder and a `README.md` that tells players how to patch and becomes the repository's front page.
 MV and MZ games also get a startup check that warns players when the repository has a newer version and links to it; offline or after an error, the game starts as usual.
@@ -297,29 +297,43 @@ Before building a clean game ZIP for players, push the translation to the reposi
 **Release** then writes that commit into the ZIP's `gameupdate/previous_patch_sha.txt`, so GameUpdate knows which version players start from; the game folder itself doesn't change.
 Without the pushed commit, the clean ZIP leaves out `patch-config.txt`, as patch ZIPs always do, so GameUpdate stays off in it.
 
-## Versions
+## Checkpoints
 
-When a game gets a new official version, open **Versions** on the Project page.
+Every change DazedTL makes to the game is a checkpoint in the game folder's Git history, and the Project page's **Checkpoints** tab lists them, newest first, by game version and by stage.
+The top says the game's version and either **All changes saved** or how many files were edited outside DazedTL; those become their own checkpoint before DazedTL's next change.
+
+Each checkpoint has **View changes**, which lists the files it changed and, for game text, each line before and after.
+Its **…** menu has:
+
+- **Go back to here** puts the game's files back as they were after that change.
+- **Undo this change** takes out only that change and keeps the later ones.
+  When a later checkpoint changed the same files, the menu names it; undo that one first.
+- **Save a copy…** writes the whole game as it was then into a new folder inside the one you choose, and the game stays as it is.
+
+Going back and undoing are checkpoints too, so either can be undone the same way.
+They work within the current game version; for an earlier version, save a copy.
+A file that wasn't part of the translation then gets the original game's version back.
+
+### Game updates
+
+When a game gets a new official version, choose **Start game update** on **Checkpoints**.
 Choose the folder the developer released, either the complete game or a patch of files to copy over it; DazedTL says which it looks like, and you can change that.
 It sets the new version up as a separate copy, previews the changes, then applies the update to your translation.
 Changes you made to the game outside DazedTL are saved as their own checkpoint before the preview, so the update can start.
 Lines the developer left as they were keep their translations, even beside new or changed ones.
 The preview counts the lines to translate and the translations that go back to Japanese; open a file to see its lines before and after.
 A patch keeps every game file it doesn't include, but it can't remove files the developer deleted.
-Steps above the update show where it stands, and the versions the game had are listed below.
+Steps above the checkpoints show where the update stands, and the update starts a new version in the list.
 **Discard release** drops an update you don't want.
 
 Once the update is in the game, Guided steps list the tasks it changed, such as **Maps & events**; each opens with the changed files selected.
 Files you translated before read **Outdated** there, so **Reload from game…** brings in their new text, and translating them again only sends the Japanese lines.
 For Assistant-led, **Copy post-update task** gives your assistant the update to translate.
 
-## Backups and recovery
+### Backups from before checkpoints
 
-The Project page's **Backups** saves copies of the game and of your project files.
-**Recover files…** restores a copy into a new folder; it never overwrites anything.
-Backups live in the game's `.dazedtl` folder, so keep that folder with the game when you move it.
-
-If DazedTL itself can't open, these commands, run from the DazedTL folder, list, check and restore backups; your coding assistant can run them for you.
+The backups DazedTL saved before checkpoints stay in the game's `.dazedtl/backups` folder, and **Checkpoints** opens it.
+These commands, run from the DazedTL folder, list, check and restore them; your coding assistant can run them for you.
 On Windows, use `.venv\Scripts\python` instead of `.venv/bin/python`.
 
 ```bash
