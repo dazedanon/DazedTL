@@ -42,7 +42,18 @@ export function Feedback({
       ) : (
         <>
           <Check size={15} />
-          {notice || "All changes saved"}
+          {notice ? (
+            // A long result stays an excerpt beside its control, as errors do.
+            <ExpandableText
+              key={notice}
+              text={notice}
+              label="Result details"
+              appearance="inline"
+              limit={120}
+            />
+          ) : (
+            "All changes saved"
+          )}
         </>
       )}
     </div>
