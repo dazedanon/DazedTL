@@ -206,6 +206,21 @@ def run_locked(workspace, identity, store):
         message = engine.error_message(exc)
         job.update(status="failed", message=message)
         store.save(job)
+    finally:
+        if plan["kind"] == "translation":
+            ended(engine, workspace, job["project_id"], plan)
+
+
+def ended(engine, workspace, project_id, plan):
+    """Saves the assistant's work waiting in the game as a checkpoint once
+    its translation run finishes, stops or fails."""
+    try:
+        with engine.context():
+            progress_report.checkpoint(engine, workspace, project_id, plan["source"])
+    except Exception as exc:  # noqa: BLE001
+        # The run's own outcome stands; the next report or write saves the
+        # work instead.
+        worker_failure(exc, "checkpoint")
 
 
 if __name__ == "__main__":

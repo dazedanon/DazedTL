@@ -1,10 +1,15 @@
 """The assistant's progress report, which the app republishes with counts from
 saved results. The helper, the app and a run's worker all rewrite it, so each
-holds the project's progress lock while it reads, changes and publishes."""
+holds the project's progress lock while it reads, changes and publishes.
+
+The report also names the assistant's checkpoints: the app commits the
+assistant's work at each report it publishes and when one of its runs ends,
+named for the phase the work was done in (`checkpoint`)."""
 
 from pathlib import Path
 from typing import Any
 
+from dazedtl.compatibility.checkpoint_commits import Change
 from dazedtl.storage import exclusive, write_json
 from dazedtl.translation.files import project_path, read_json, verify_evidence
 from dazedtl.translation.project import WORK
@@ -18,6 +23,34 @@ def _lock(workspace, project_id):
     return exclusive(
         Path(workspace) / "translation/projects" / project_id / "progress.lock"
     )
+
+
+def phase(source, report=None):
+    """The checkpoint of the assistant's work in the phase it last reported,
+    or in `report`'s before its first report."""
+    from util.len_progress import PHASES
+
+    path = project_path(source, REPORT, exists=False)
+    last = read_json(path) if path.is_file() else report
+    name = last.get("phase") if isinstance(last, dict) else None
+    label = PHASES.get(name) if isinstance(name, str) else None
+    return Change(label or "Assistant's work", "Assistant-led", "assistant_phase")
+
+
+def checkpoint(engine, workspace, project_id, source, report=None):
+    """Commits the assistant's changes waiting in the game, its own edits and
+    the writes that wait for their phase, as one checkpoint of `phase`, with
+    the files its runtime manifest lists that the patch lacks."""
+    from .operations import lifecycle, runtime_manifest
+
+    named = ()
+    if manifest := lifecycle(workspace, project_id).get("runtime_manifest"):
+        try:
+            named = engine.runtime_paths(runtime_manifest(source, manifest))
+        except OSError, ValueError:
+            # Packaging, which needs the manifest, says what is wrong with it.
+            pass
+    engine.pending_checkpoint(source, phase(source, report), named)
 
 
 def publish(workspace, project_id, engine, source, options, report):

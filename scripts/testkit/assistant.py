@@ -9,7 +9,9 @@ game's Japanese as source units and organize them into a run), translate
 [--requests N] (answer the run's requests in order, the first N only when
 given), write (write every saved translation into the game, checking that
 the choice labels and help markers the game finds by their Japanese stay) or
-checkpoint.
+checkpoint, the operation assistants started before the app checkpointed
+their work ran. Each step reports the phase it enters, as the starting
+prompt asks, and write reports QA once it is done.
 HELPER is a JSON list: the project helper's command without its subcommand.
 """
 
@@ -59,6 +61,11 @@ class Assistant:
             raise SystemExit(f"{action}: {json.dumps(run, ensure_ascii=False)[:2000]}")
         return run
 
+    def report(self, phase):
+        path = self.work / "report.json"
+        path.write_text(json.dumps({"phase": phase}), encoding="utf-8")
+        self.helper("progress", "--input", path.relative_to(self.game).as_posix())
+
     def remembered(self):
         if self.state.is_file():
             return json.loads(self.state.read_text(encoding="utf-8"))
@@ -72,6 +79,7 @@ class Assistant:
 
     def setup(self):
         self.helper("state")
+        self.report("preparation")
         evidence = self.work / "engine.md"
         evidence.write_text(
             "RPG Maker VX Ace: Data/*.rvdata2 and Game.ini.\n"
@@ -136,6 +144,7 @@ class Assistant:
         return rows
 
     def organize(self):
+        self.report("extraction")
         source = self.work / "source-units.json"
         source.write_text(
             json.dumps({"version": 1, "units": self.units()}, ensure_ascii=False),
@@ -145,6 +154,7 @@ class Assistant:
         self.remember(run=organized.get("run", organized)["id"])
 
     def translate(self, requests=None):
+        self.report("translation")
         run = self.remembered()["run"]
         index, total = 0, 1
         while index < total and (requests is None or index < requests):
@@ -184,6 +194,7 @@ class Assistant:
         return self.helper("run", "--run", run)
 
     def write(self):
+        self.report("injection")
         saved = self.helper("results", "--run", self.remembered()["run"])
         results = json.loads((self.game / saved["path"]).read_text(encoding="utf-8"))
         by_file: dict[str, dict[str, str]] = {}
@@ -223,6 +234,7 @@ class Assistant:
                     f"write_rpgmaker changed kept text in {name}: "
                     + json.dumps({"before": before, "after": after}, ensure_ascii=False)
                 )
+        self.report("qa")
 
     def checkpoint(self):
         self.operation(

@@ -8,10 +8,10 @@ from pathlib import Path
 from typing import Any
 
 from dazedtl import system
-from dazedtl.compatibility.checkpoint_commits import for_action, running
+from dazedtl.compatibility.checkpoint_commits import for_action, in_phase, running
 from dazedtl.storage import staging_folder, write_json
 
-from . import backups
+from . import backups, progress_report
 from .files import digest, evidence, project_path, read_json, verify_evidence
 
 
@@ -224,7 +224,14 @@ def execute(engine, workspace, job, plan, stopped, progress=lambda _message: Non
         return run_compiler.prepare(engine, workspace, job, plan, progress)
     # The helper's own operations are an assistant's, in Assistant-led.
     change = for_action(plan["action"], plan.get("label"), "Assistant-led")
-    with ExitStack() as resources, running(change):
+    # An assistant writes the game's text one file at a time; those writes
+    # wait for their phase's checkpoint rather than each being one.
+    phase = (
+        progress_report.phase(plan["source"])
+        if plan["action"] in {"write_rpgmaker", "rebase_rpgmaker"}
+        else None
+    )
+    with ExitStack() as resources, running(change), in_phase(phase):
         return _execute(engine, workspace, job, plan, stopped, progress, resources)
 
 

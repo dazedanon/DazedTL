@@ -101,12 +101,18 @@ Export database-backed translations to stable JSONL/JSON/CSV records there for r
 Keep existing project-local adaptations and do not delete working files while removing them from Git tracking.
 Do not force-add work records to either game branch.
 
-### Align both branches before patch checkpoints
+### Checkpoints
+
+In DazedTL's Assistant-led mode, DazedTL commits your changes to the game itself, as checkpoints on the translation branch: each helper operation that writes the game, each progress report, for the work of the phase you were in, and the end of each translation run.
+Don't stage, commit or run `git-scope` yourself there; the helper's `operation checkpoint` is kept only for older runs.
+Keep the patch's runtime manifest, the one Git setup registered, complete: every file the patch changes or adds, which checkpoints take into the patch.
+The rest of this section is for work outside the app.
+
+### Align both branches before patch checkpoints outside the app
 
 First inject the reviewed runtime outputs into the selected game folder and verify their hashes.
 A translation present only in staging or an isolated QA game is not present in `main`.
-Create a complete list of the patch's runtime file paths in the ignored workspace.
-In DazedTL's Assistant-led mode, the project helper's `operation checkpoint` with that manifest does this, supplying the matching original itself; outside the app, run:
+Create a complete list of the patch's runtime file paths in the ignored workspace, then run:
 
 ```bash
 python DAZEDTL_ROOT/scripts/len_translation.py git-scope \

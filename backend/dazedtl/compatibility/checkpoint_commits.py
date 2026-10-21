@@ -16,6 +16,13 @@ the files its write names that the patch lacks into it (`grow_scope`). A
 file outside the patch is the original game's, which the `original` branch
 holds.
 
+An assistant writes a game's text one file at a time, so the writes made
+inside `in_phase` wait for one checkpoint of their phase instead of each
+being one: a record in the Git folder names their files until `save` commits
+the phase. Any other checkpoint first records the writes still waiting as
+their phase's own. A waiting write leaves the edits made outside DazedTL to
+the phase's checkpoint, since in an assistant's phase they are mostly its own.
+
 Its message is one line, "<stage>: <summary>", then trailers naming the
 action and the stage (`message`), so checkpoints group by stage without a
 saved record. Every checkpoint has DazedTL's author, as all of DazedTL's
@@ -63,6 +70,11 @@ class Change:
 OUTSIDE = Change("Edits made outside DazedTL", None, OUTSIDE_EDITS)
 # The action a worker runs, which names the checkpoints of its writes.
 _running: ContextVar[Change | None] = ContextVar("checkpoint_change", default=None)
+# The phase whose checkpoint the writes made in this context wait for.
+_phase: ContextVar[Change | None] = ContextVar("checkpoint_phase", default=None)
+# The record in the checkpoints folder of the writes waiting for their phase,
+# JSON without the suffix that marks a write in progress's.
+WAITING = "waiting.phase"
 
 
 def for_action(name, label=None, stage=None):
@@ -84,6 +96,17 @@ def running(change):
         yield
     finally:
         _running.reset(token)
+
+
+@contextmanager
+def in_phase(change):
+    """The writes made inside it wait for the checkpoint of the phase
+    `change` names; None leaves each write its own."""
+    token = _phase.set(change)
+    try:
+        yield
+    finally:
+        _phase.reset(token)
 
 
 def current(action=None, summary=None, stage=None):
@@ -242,6 +265,51 @@ def _commit(root, paths, change):
     return commit
 
 
+def _waiting(folder):
+    """The phase the waiting writes belong to and their files, or None."""
+    try:
+        value = json.loads((folder / WAITING).read_text(encoding="utf-8"))
+        return Change(**value["change"]), set(value["paths"])
+    except FileNotFoundError:
+        return None
+    except OSError, ValueError, KeyError, TypeError:
+        # A record that can't be read leaves its files to the next checkpoint
+        # as pending changes.
+        system.unlink(folder / WAITING, missing_ok=True, ignore_errors=True)
+        return None
+
+
+def _settle(root, folder, change=None):
+    """Commits the writes waiting for their phase as its checkpoint, or,
+    when they wait for `change`, returns their files for its checkpoint to
+    take."""
+    waiting = _waiting(folder)
+    if waiting is None:
+        return set()
+    phase, paths = waiting
+    if phase == change:
+        return paths
+    _save(root, phase, paths, None)
+    system.unlink(folder / WAITING, missing_ok=True)
+    return set()
+
+
+def _wait(root, folder, change, paths):
+    """Adds a write's files to the writes waiting for `change`'s checkpoint."""
+    paths = set(_relative(paths)) | _settle(root, folder, change)
+    system.write_json(
+        folder / WAITING,
+        {
+            "change": {
+                "summary": change.summary,
+                "stage": change.stage,
+                "action": change.action,
+            },
+            "paths": sorted(paths),
+        },
+    )
+
+
 def _save(root, change, named, claimed):
     """Commits the pending changes `claimed`, another write's, leaves out,
     or only the `named` ones while `claimed` is None, with the named files
@@ -270,24 +338,30 @@ def _save(root, change, named, claimed):
 def save(root, change, named=()):
     """Records the pending changes in the patch, and the `named` files the
     patch lacks, as one checkpoint; for work committed outside a game write,
-    such as an assistant's own edits. Letting files in rewrites .gitignore,
-    a write of the gateway's own."""
+    such as an assistant's own edits and a phase's waiting writes. Writes
+    waiting for another phase are its checkpoint first. Letting files in
+    rewrites .gitignore, a write of the gateway's own."""
     from .game_write import writing
 
     folder = _folder(root)
     token = writing.set(writing.get() | {str(Path(root).resolve())})
     try:
         with exclusive(folder / "checkpoint.lock"):
-            return _save(root, change, named, _others(folder))
+            waiting = _settle(root, folder, change)
+            commit = _save(root, change, [*named, *waiting], _others(folder))
+            system.unlink(folder / WAITING, missing_ok=True)
+            return commit
     finally:
         writing.reset(token)
 
 
 def outside_edits(root):
-    """Records the changes made in the patch outside DazedTL as their own
-    checkpoint, leaving the files of writes in progress to them."""
+    """Records the writes waiting for their phase as its checkpoint, then the
+    changes made in the patch outside DazedTL as their own, leaving the files
+    of writes in progress to them."""
     folder = _folder(root)
     with exclusive(folder / "checkpoint.lock"):
+        _settle(root, folder)
         claimed = _others(folder)
         if claimed is not None:
             return _save(root, OUTSIDE, (), claimed)
@@ -295,16 +369,21 @@ def outside_edits(root):
 
 
 class Checkpoint:
-    """The checkpoint of one write in progress."""
+    """The checkpoint of one write in progress, or, inside `in_phase`, its
+    place among the writes waiting for their phase's."""
 
     def __init__(self, root, paths: Iterable[str] | None):
         self.root = Path(root)
         self.folder = _folder(root)
         self.paths = list(_relative(paths or ()))
+        self.phase = _phase.get()
         with exclusive(self.folder / "checkpoint.lock"):
             claimed = _others(self.folder)
             self.write = _Write(self.folder, self.paths)
+            if self.phase is not None:
+                return
             try:
+                _settle(self.root, self.folder)
                 if claimed is not None:
                     _save(self.root, OUTSIDE, (), claimed)
             except BaseException:
@@ -312,8 +391,13 @@ class Checkpoint:
                 raise
 
     def record(self, change, touched=()):
-        """Commits the write's change once it succeeded."""
+        """Commits the write's change once it succeeded, or adds it to the
+        writes waiting for its phase."""
         with exclusive(self.folder / "checkpoint.lock"):
+            if self.phase is not None:
+                return _wait(
+                    self.root, self.folder, self.phase, [*self.paths, *touched]
+                )
             return _save(
                 self.root,
                 change,

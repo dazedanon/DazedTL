@@ -223,6 +223,18 @@ def phased_workflows(workspace, lock, operations, manual):
                 return self.operations.start(plan)
             return super().execute(token)
 
+        def document_save(self, project_id, name, revision, text):
+            # Saving guidance holds its own write; the one write this starts
+            # is a finished run's collection, which adds the glossary terms
+            # the run found.
+            with write_game(
+                self.projects[project_id]["source"],
+                pack=False,
+                summary="Add the run's new glossary terms",
+                stage="Translate",
+            ):
+                return super().document_save(project_id, name, revision, text)
+
         def apply_investigation_settings(
             self, identity, revision, options, receipt_key, receipt
         ):

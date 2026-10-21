@@ -18,8 +18,8 @@ project’s `.dazedtl/len-method` workspace. Copy only the needed tools before a
 or running scripts that write beside themselves.
 
 The starting prompt also runs the lifecycle in `references/project-lifecycle.md`:
-preserve the source, set up or reuse Git through `git-status` / `git-setup`, and make
-reviewed local checkpoints. New Len baselines retain native game bytes and their
+preserve the source, set up or reuse Git through `git-status` / `git-setup`, and keep
+local checkpoints, which DazedTL makes itself in Assistant-led. New Len baselines retain native game bytes and their
 reviewed ignore rules. Authored tools, translated text records and QA notes belong in
 the project's versioned `.dazedtl/len-method/work/`; generated context and provider
 state remain local. Use the selected game's Version Update page for later releases.

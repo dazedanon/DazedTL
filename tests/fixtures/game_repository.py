@@ -458,4 +458,34 @@ from util.len_patch_scope import sync_patch_scope
 
 scoped = sync_patch_scope(LenProject(kept), ["data/Map001.json"], dry_run=True)
 assert not scoped["untrack"], scoped
+# An assistant's phase: its writes of one file each wait, and the phase's
+# report saves them with the assistant's own edits as one checkpoint; a write
+# of the app's own first saves the writes still waiting as their phase's.
+from dazedtl.compatibility.checkpoint_commits import in_phase
+from dazedtl.compatibility.checkpoint_commits import save as save_phase
+
+injection = Change("Injection", "Assistant-led", "assistant_phase")
+head = git(kept, "rev-parse", "HEAD")
+with in_phase(injection):
+    for name in ("data/Map001.json", "data/Items.json"):
+        write(name, b'["the assistant\'s"]')
+assert git(kept, "rev-parse", "HEAD") == head
+(kept / "js/plugins/TitleMessage.js").write_text("// The assistant's own edit\n")
+save_phase(kept, injection)
+clean()
+assert history()[0] == "Assistant-led: Injection|assistant_phase|Assistant-led"
+assert changed() == [
+    "data/Items.json",
+    "data/Map001.json",
+    "js/plugins/TitleMessage.js",
+]
+with in_phase(injection):
+    write("data/Map001.json", b'["the assistant\'s again"]')
+write("data/Items.json", b"[]", summary="Apply plugin file changes", stage="Translate")
+clean()
+assert history()[:2] == [
+    "Translate: Apply plugin file changes||Translate",
+    "Assistant-led: Injection|assistant_phase|Assistant-led",
+], history()
+assert changed("HEAD~1") == ["data/Map001.json"] and changed() == ["data/Items.json"]
 print("ok")

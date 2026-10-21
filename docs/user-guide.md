@@ -230,6 +230,7 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
    It works on its own and asks you only when it must, such as to approve spending.
 4. Keep DazedTL open while it works.
    **Progress** shows its phases, anything it needs from you and any API run.
+   DazedTL saves your assistant's changes to the game as checkpoints, such as **Assistant-led: Injection**, each time it reports a phase and when a translation run ends, so your assistant saves nothing by hand.
    With **Image text** on, it also finds the images with text, translates them and puts them in the game; **Images** shows where that stands and lets you change the list.
    For RPG Maker games it measures the game's text boxes and checks them in the running game, and DazedTL wraps the text it writes to them, as Guided does, without changing the game's events, so saved games still load.
    In a VX Ace game DazedTL also packs what it writes into the `Data` files the game reads, so the game folder plays the translation as soon as it is written.

@@ -22,7 +22,7 @@ Python adapters can call `util.len_progress.update_progress(project, report)`.
 
 Send a complete report each time. Missing metrics become unknown and missing phase
 states become pending; the command never guesses from the narrative log. Keep a
-report template in the pipeline if needed, updating checkpoints as work advances.
+report template in the pipeline if needed, updating phase states as work advances.
 
 ```json
 {
@@ -41,8 +41,8 @@ report template in the pipeline if needed, updating checkpoints as work advances
   that a process is currently running.
 - `phases`: those same keys with `pending`, `active`, `complete`, `blocked`, or
   `out_of_scope`. Several phases can be active when work overlaps; `phase` identifies the current focus and defaults to active.
-  Set later phases out of scope only for an explicit preparation-only request. Report QA/playtesting and
-  patch checkpoints from actual evidence, never from a translation count.
+  Set later phases out of scope only for an explicit preparation-only request. Mark QA/playtesting and
+  patch complete only from actual evidence, never from a translation count.
   `images` is out of scope when the project's image scope is disabled; a report that leaves it out
   gets it from the image records: complete once they are, active once they list an image.
 - `text`, `images`: game-relative paths to saved unit exports below, or null before
@@ -106,16 +106,18 @@ image assets in scope, not just rendered replacements.
 The helper calculates counts, validates updates, fingerprints listed artifacts and
 replaces the snapshot atomically. Re-running it cannot add duplicate completions.
 Marking translation complete requires a known text total with all text translated,
-and marking images complete the same for the scoped images. Other phase checkpoints require the corresponding validation, playtest
-or packaging evidence and are explicitly reported by the agent.
+and marking images complete the same for the scoped images. Other phases need the corresponding validation, playtest
+or packaging evidence before the agent reports them complete.
+In DazedTL, each report also saves your changes to the game as a checkpoint, a commit
+of the work in the phase you were in, so report when you enter each phase.
 
 The UI refreshes while visible. It shows the last update time and warns when tracked
 files change/disappear or image scope/project instructions change. These checks
 cover listed artifacts and project scope, not unregistered engine files. The UI
 uses file timestamps/sizes to keep refresh cheap; the CLI's `progress` read also
 always verifies content hashes, including when timestamps and sizes were preserved. Recheck source, outputs and
-downstream checkpoints before generating a new report. Do not
-retain completed injection/QA/patch checkpoints when changed output invalidates
+downstream phases before generating a new report. Do not
+retain completed injection/QA/patch phases when changed output invalidates
 them. Disabled bars remain the last reported counts.
 
 Prompt refreshes and resume never overwrite `progress.json`. Its artifact paths are
@@ -155,7 +157,7 @@ Update these values as work finishes; zero text remaining does not estimate the 
 Estimates are paused while blockers or stale-evidence warnings apply, and completed/out-of-scope phases are omitted.
 Do not add overlapping phase times into a claimed wall-clock deadline.
 
-At each milestone, also give a short human update: completed/discovered text and review count, whether coverage is audited, image status, current phase, remaining active-work range, next checkpoint and any blocker.
+At each milestone, also give a short human update: completed/discovered text and review count, whether coverage is audited, image status, current phase, remaining active-work range, next milestone and any blocker.
 During preparation, report the files/tracks inspected and remaining inventory even before source-unit counts exist.
 Before a provider wait, distinguish queued requests from accepted translations and give the next reconciliation point.
 Keep long paths, full test matrices and narrative history in `status.md`; the main update should make progress understandable without opening that file.

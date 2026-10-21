@@ -24,7 +24,7 @@ repair missing or stale work without restarting completed phases. If the deliver
 already current and verified, report its paths and evidence instead of retranslating it.
 
 Handle tools, backups, extraction, speaker mapping, references, glossary, game guidance,
-translation batches, scoped images, fitting, injection, targeted QA, checkpoint commits,
+translation batches, scoped images, fitting, injection, targeted QA, checkpoints outside DazedTL,
 packaging and progress reports yourself. Completing setup.md's guidance-only phase is
 the transition into translation, not a stopping point. Do not ask for another prompt,
 task selection, manual file transfer or permission to continue at routine phase boundaries.
@@ -52,7 +52,7 @@ same starting prompt, before and after the engine-specific translation work.
 `original` retains matching untranslated runtime files for backup and version updates;
 translation-only additions have no fabricated original.
 All `.dazedtl` working records, source copies and QA artifacts remain ignored on both.
-Use the live `git-scope` helper described in the lifecycle before patch checkpoints.
+In DazedTL, the app commits your changes to the game as checkpoints itself; outside it, use the live `git-scope` helper the lifecycle describes before patch checkpoints.
 Read `references/progress-reporting.md` and maintain the compact progress panel after
 each saved batch or milestone, and at least every 10 minutes during active work. Export saved unit records and call the live
 `scripts/len_translation.py progress-update` helper; keep the narrative in `status.md`.

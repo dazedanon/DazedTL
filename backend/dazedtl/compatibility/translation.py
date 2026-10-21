@@ -78,6 +78,18 @@ def with_dazedtl_files(source, manifest):
     return added(Path(source), manifest)
 
 
+def _takes_checkpoints(source):
+    """Whether the game's Git is set up and its checkout can take work; one
+    that can't, such as one mid-merge, keeps its changes for the operation's
+    own refusal to explain."""
+    from .game_write import _checkout
+
+    try:
+        return _checkout(Path(source).resolve()) is not None
+    except ValueError:
+        return False
+
+
 class TranslationEngine:
     def __init__(self, profile):
         from .runtime import activate
@@ -1037,16 +1049,18 @@ class TranslationEngine:
         """Saves the changes made outside DazedTL as their own checkpoint,
         when the game's Git is set up."""
         from .checkpoint_commits import outside_edits
-        from .game_write import _checkout
 
-        try:
-            configured = _checkout(Path(source).resolve()) is not None
-        except ValueError:
-            # A checkout that can't take work, such as one mid-merge, keeps
-            # its edits for the operation's own refusal to explain.
-            return
-        if configured:
+        if _takes_checkpoints(source):
             outside_edits(source)
+
+    def pending_checkpoint(self, source, change, named=()):
+        """Saves the changes waiting in the game's patch as one checkpoint,
+        letting the `named` files it lacks into it, when the game's Git is
+        set up, as at an assistant's phase report."""
+        from .checkpoint_commits import save
+
+        if _takes_checkpoints(source):
+            save(source, change, named)
 
     def package(
         self, source, options, manifest, destination, *, updater=True, original_names=()

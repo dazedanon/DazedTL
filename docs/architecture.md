@@ -420,7 +420,8 @@ A checkpoint's subject is its stage and a plain summary on one line, named by th
 The translation branch is patch-scoped: the files a write names that the patch lacks join it through the .gitignore patch block, and a file outside the patch is the original game's, which the `original` branch holds, so restoring never deletes it.
 Release packages what the branch tracks and refuses plugins players would lack there; the reviewed runtime manifest no longer decides the scope.
 Commits to one repository take turns through a lock in its Git folder, and each write in progress registers the files it declared, so two writes at once each commit their own.
-The project helper's `checkpoint` operation stays for Assistant-led, which writes the game with its own tools, and commits what waits in the patch; `lifecycle.json` keeps no checkpoint record, since Git holds them.
+Assistant-led writes the game with its own tools too, so the app commits what waits in the patch at each progress report and when a translation run ends, named for the reported phase ([progress_report](../backend/dazedtl/translation/progress_report.py)), and the assistant's writes of one file each wait for that phase's checkpoint; the helper's `checkpoint` operation stays for older runs.
+`lifecycle.json` keeps no checkpoint record, since Git holds them.
 
 ## Backup storage
 

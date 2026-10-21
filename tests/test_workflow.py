@@ -43,6 +43,7 @@ class Engine:
         self.reports = []
         self.pending = []
         self.branch = "main"
+        self.checkpoints = []
 
     def git_status(self, source, *_args):
         return {
@@ -109,6 +110,9 @@ class Engine:
     def prepare(self, source, _options, *, refresh=True):
         self.refreshed = refresh
         return {"skill": "SKILL.md", "setup": str(Path(source) / "setup.md")}
+
+    def pending_checkpoint(self, _source, change, _named=()):
+        self.checkpoints.append(f"{change.stage}: {change.summary}")
 
     def progress(self, _source, _options, report=None, **_kwargs):
         if report is not None:
@@ -271,6 +275,20 @@ class WorkflowTests(unittest.TestCase):
         accepted = self.service.accept(self.identity, run["id"], "scene", receipt)
         self.assertEqual(accepted["accepted_units"], 1)
         self.assertEqual(accepted["status"], "complete")
+        # The finished run, and each later report, save the assistant's work
+        # as a checkpoint of the phase it was done in.
+        report = read_json(self.game / (WORK + "/progress-report.json"))
+        write_json(
+            self.game / (WORK + "/work/injection.json"),
+            {**report, "phase": "injection"},
+        )
+        self.service.progress(self.identity, WORK + "/work/injection.json")
+        self.assertEqual(
+            self.engine.checkpoints,
+            ["Assistant-led: Translation", "Assistant-led: Translation"],
+        )
+        self.service.progress(self.identity, WORK + "/work/injection.json")
+        self.assertEqual(self.engine.checkpoints[-1], "Assistant-led: Injection")
         report = read_json(self.game / (WORK + "/progress-report.json"))
         report.update(phase=None)
         report["phases"].update(

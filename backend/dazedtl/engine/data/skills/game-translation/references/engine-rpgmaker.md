@@ -349,8 +349,8 @@ entry pointing at a missing file throws at boot), append the entry LAST so it
 can alias the plugin it patches, make it idempotent, re-parse your own output
 before `os.replace`, and assert every other entry's name and status is
 unchanged. List the `.js` file in the patch manifest too: DazedTL refuses a
-checkpoint whose `plugins.js` switches on a plugin that neither the patch nor
-the original game has.
+patch whose `plugins.js` switches on a plugin that neither the patch nor the
+original game has.
 
 ---
 

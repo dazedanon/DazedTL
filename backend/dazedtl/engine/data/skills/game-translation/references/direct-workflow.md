@@ -43,12 +43,12 @@ In Assistant only, read each request with the helper, translate it, and save its
 
 ## Save small results; validate at the right scale
 
-Apply the shared source-checked dialogue pass before saving a batch. At cross-batch checkpoints,
+Apply the shared source-checked dialogue pass before saving a batch. At cross-batch reviews,
 read split exchanges together so reply continuity and voice survive the batch boundary.
 
 After each batch, save accepted outputs atomically and check IDs, untranslated/empty results, placeholder multisets, protected codes and local layout bounds.
 Do not recompute the whole source/reference census or run every global rendering check merely because another small batch finished.
-As a starting point, perform a cross-batch review and checkpoint after roughly 1,000–1,500 units, or sooner when a glossary decision, renderer, extractor, control-code handling or source scope changes.
+As a starting point, perform a cross-batch review after roughly 1,000–1,500 units, or sooner when a glossary decision, renderer, extractor, control-code handling or source scope changes.
 Run the complete structural/coverage checks at the final milestone and whenever a change invalidates their assumptions.
 Use incremental validation only when the validator can identify its affected dependency set.
 
@@ -59,5 +59,5 @@ For MV/MZ, all final writes still pass through `write-rpgmaker-json`; an externa
 Keep the same original command structure and save identity unless an explicitly validated adapter provides the required mapping.
 
 Update the GUI and the user using `progress-reporting.md` at every saved milestone and at least every 10 minutes.
-Before a long wait or QA segment, state the remaining scope, estimate basis and next visible checkpoint.
+Before a long wait or QA segment, state the remaining scope, estimate basis and next visible milestone.
 Use targeted native checks for changed behavior; do not turn an ordinary translation follow-up into an unrequested full playthrough.
