@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from dazedtl import system
 from dazedtl.api.contracts.validation import check_response
 from dazedtl.compatibility import original_files
 from dazedtl.compatibility.game_write import GameWrite, write_game
@@ -924,7 +925,7 @@ class PluginTests(unittest.TestCase):
             )
 
     def test_missing_originals_and_dynamic_configuration_never_authorize_edits(self):
-        shutil.rmtree(self.game / ".git")
+        system.remove_tree(self.game / ".git")
         # Without the original Japanese, lookup values cannot be protected.
         with self.assertRaisesRegex(ValueError, "no record of this game's original"):
             self.service.action(self.identity, "plugin_task")
