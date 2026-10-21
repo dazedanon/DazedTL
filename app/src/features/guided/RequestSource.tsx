@@ -2,7 +2,8 @@ import type { RunPayload } from "../../api/contracts";
 import { RequestContext } from "./RequestContext";
 
 /** Request text as sent; each placeholder that stood in for a control code is
-    marked so its position can be checked. */
+    marked so its position can be checked. The request does not record which
+    code a placeholder replaced, so the mark cannot name it. */
 export function ProtectedText({ text }: { text: string }) {
   return text.split(/(__PROTECTED_\d+__)/).map((part, index) =>
     index % 2 ? (

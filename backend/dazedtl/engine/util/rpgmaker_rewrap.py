@@ -102,7 +102,8 @@ def visible_width(text: str) -> int:
     alignment and other codes draw nothing there, while names, icons and
     variables take their room. A full-width character takes two, and so
     does a symbol East Asian fonts draw full width, such as ♥ or …: RPG
-    Maker games draw text in Japanese fonts."""
+    Maker games draw text in Japanese fonts, which captures of Fuuma
+    Chronicle confirmed."""
     text = _MARKER.sub("", _ALIGNMENT.sub("", _NAME_WINDOW.sub("", text)))
     for pattern, size in _EXPANDING.items():
         text = pattern.sub("x" * size, text)
@@ -114,7 +115,8 @@ def _full_width(character: str) -> bool:
     """Whether Japanese fonts draw *character* full width: a full-width
     character, or one of ambiguous width other than a letter. MV/MZ's and
     VX Ace's fonts draw ♥, … and ① full width, while accented, Greek and
-    Cyrillic letters, such as é, stay half width."""
+    Cyrillic letters, such as é, stay half width (MV/MZ's M+ and VX Ace's
+    VL Gothic draw them so)."""
     width = unicodedata.east_asian_width(character)
     return width in "FW" or (
         width == "A" and not unicodedata.category(character).startswith("L")
@@ -653,7 +655,10 @@ def fit_value(
 
 
 def misfit(text: str, box: Box) -> str | None:
-    """Why *text*, as written, still does not fit *box*, or None."""
+    """Why *text*, as written, still does not fit *box*, or None. Counts only
+    choose what to look at: text a fixed window cuts off even fitted goes to
+    Text QA as a ``text-fit`` check, and QA's captures and the playtest
+    confirm what the game shows."""
     if not isinstance(text, str) or not text.strip():
         return None
     if box.kind == "note":
@@ -706,7 +711,11 @@ def fit_run(texts: list[str], box: Box, source: str | None = None) -> list[str]:
     commands. Text between commands kept as they are, such as Japanese left
     untranslated (see :func:`_spans`), is laid out as one text over its own
     commands (see :func:`spread`); Scroll Text rows wrap in their own
-    command. *source* is the Japanese of the whole message."""
+    command. *source* is the Japanese of the whole message.
+
+    Fitting each command on its own would have pushed 353 of Fuuma
+    Chronicle's 3,307 overflowing messages past its four-row window, against
+    23 when fitted as one text."""
     if box.kind == "scroll" or len(texts) == 1:
         return [
             fit_value(text, box, source=source if len(texts) == 1 else None)

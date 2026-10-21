@@ -56,479 +56,92 @@ The playtest's tour gets an index of the blocks before it plays, so a message it
 
 ### Estimates and approval
 
-Guided main text shares configuration while retaining independent database and event selections.
 Each phase binds its estimate to source, scope, provider and pricing, guidance, and layout.
-New estimate and Batch preparation workspaces are temporary until approval; they do not enter saved history or contribute translated outputs.
-Each Translate click discards that phase’s unapproved preparation and creates a fresh estimate, unless the phase's latest finished estimate is still current ([freshness](../backend/dazedtl/engine/util/freshness.py)), or its inputs differ only in what a model switch prices differently: Translate then reopens it ([unchanged_estimate](../backend/dazedtl/translation/guided_actions.py)) and its dialog marks Estimate cost as reused, so declining or closing a review costs no second estimate.
-A model switch only prices an estimate differently ([repricing](../backend/dazedtl/translation/repricing.py)) when the connection and request settings stay the same, a sample request built for each model carries the same messages ([request_text](../backend/dazedtl/compatibility/request_text.py)), and the provider counts tokens the same way for every model, which leaves out Claude.
-Each estimate records the shape of its inputs without what such a switch changes, and its counts are then priced with the new model's rates by the engine's own formulas and DazedTL's pricing layers ([estimate_prices](../backend/dazedtl/compatibility/estimate_prices.py)), which a test holds to the engine's estimate for that model.
-A review's model can be switched in its dialog: the reviewed preparation is discarded first, since settings wait for its worker to end, and a Batch then prepares its requests again for the new model while the dialog shows the estimate at its prices.
-An estimate stays reusable through its Batch preparation and ends with approved work started from it or a Claude count it still needs.
-Decline discards a Batch preparation after its worker exits and keeps the finished estimate; restart removes all temporary work, estimates included, so a newer release estimates afresh.
-Approved work is retained before signaling the worker, including separately approved speaker translation.
-Existing historical runs remain intact.
-Paid review requires that matching estimate and rechecks it before the one-use submission.
-Cost dialogs focus on price, selected scope and approval; an optional Preview request opens the existing prepared text, context and exact payload without preparing or submitting work.
-Preview request shows requests an estimate kept: estimates keep them on connections that support Batch, while Live-only connections estimate from token counts and offer no preview; Batch review previews the collected requests it submits, numbered like its request count, without the Live names pass sent before it.
-Every RPG Maker estimate parses all its files in one worker process, as Batch collection does; a process per file took seconds each on Windows.
-Live RPG Maker translation reuses its worker processes the same way, one per concurrent file, each handed the next file when it finishes one; a file that fails ends its worker, and a fresh one takes the files after it.
-Closing the preview returns to the same approval.
+Estimate and Batch preparation workspaces are temporary until approval and never enter saved history or contribute translated outputs.
+Translate reopens the phase's latest finished estimate while it is current by the [freshness](../backend/dazedtl/engine/util/freshness.py) rule ([unchanged_estimate](../backend/dazedtl/translation/guided_actions.py)), so declining or closing a review costs no second estimate.
+A model switch only reprices an estimate ([repricing](../backend/dazedtl/translation/repricing.py)) when the connection and request settings stay the same, a sample request built for each model carries the same messages and the provider counts tokens the same way for every model, which leaves out Claude.
+Paid review requires that matching estimate and rechecks its inputs before the native one-use approval controls submission, under the API lock, so other runs cannot revoke it.
+Approved work is retained before signaling the worker, and the frozen request then stays authoritative for recovery and is never silently rebuilt.
+Navigation never submits work, approval alone never establishes success, and a canceled late reply cannot open a review or start paid work; new remaining work and Live resumes need their own review.
 Speaker interpretation stays with the user.
-Translate keeps its game text tasks below the shared phase navigation: Database files, Maps & events (including CommonEvents and Troops), and Other event text.
-Task completion aggregates verified per-file progress across runs through [translationTaskComplete](../app/src/features/guided/translationView.ts), so re-running some files keeps the rest: Database files and Maps & events over their full file groups, independent of checkbox selection, and event codes and comparisons over the selected event files plus every file an earlier run of that step included, so clearing the selection keeps finished work.
-Each file's current owning run must retain complete output or explicit evidence that no requests were needed; active work, partial or missing output, changed sources and retired runs cannot establish completion.
-Current findings reviewed with no source enabled complete Other event text without a run, since nothing in it needs translating.
-Translate is complete only when all its tasks are complete; action and cost reviews remain bound to the selected scope.
-Translate starts a local estimate and follows that exact job once into Live review or local Batch preparation.
-Failed, stopped and stale estimates stop preparation with feedback.
-An explicit zero-request estimate opens a result explaining that no new API work was needed; absent saved request payloads never imply zero work.
-Stop translation is available for Live execution.
-Batch work keeps monitoring automatically; Run history opens its progress and controls.
-Navigation never submits work.
-App restarts can continue the unchanged approved queue and its saved clarification allowance.
-Legacy estimate continuation records remain readable for recovery.
-Each pending Batch or speaker approval opens once in a focused cost review with visible token counts, mode-specific pricing, prepared file scope and an explicit Decline action.
-Cost comparisons explain reuse of repeated instructions in plain words and include cache creation without promising savings.
-A Batch whose provider caches prompts is priced as a range, from every request that shares a cached prefix reusing it to none doing so, because Batch cache hits are best effort; the approval shows both ends, and an Assistant-led quote's cost is the higher one.
-Claude caches a request's tools and reply schema with its instructions, so each line count's schema is a separate cache entry, and an estimate counts and prices each one.
-Claude requests cache their instructions for five minutes in both Live and Batch.
-A Batch starts most of its requests together, so many write the cache instead of reading it: two of three real Claude Batches read it on about one request in ten, and a five-minute write costs 1.25 times input where a one-hour write costs twice.
-Receipts price each write at the lifetime Anthropic reports for it, and results saved without that split count as one-hour, which every Batch used before.
-Estimates count tokens with the GPT-4 encoder, except that Claude estimates in both methods use [Claude's own count](../backend/dazedtl/engine/util/claude_tokens.py), because Anthropic bills by a tokenizer that turns the same text into more tokens.
-They send each cached prefix with its reply schema and an evenly spread sample of 24 whole requests to Anthropic's free token-count endpoint and scale the approximate count of the rest by the sample; if any count fails, the whole estimate keeps the approximate count.
-A Translate estimate's worker has no credential or network, so a finished Claude estimate is counted again before its run completes: [estimate_pricing.py](../backend/dazedtl/compatibility/estimate_pricing.py) prices its kept requests in a separate process that opens the network only for that endpoint, with the run's own credential.
-The count runs on the run's worker thread, so snapshots never wait on it, and stopping or discarding the estimate ends it.
-Its process starts beside the estimate and waits for the key until the requests are ready, so its startup overlaps the estimate.
-A Batch preparation counts the requests it submits itself, so the estimate leading into it, and every estimate in a launch with providers disabled, keeps the approximate count.
-A speaker approval's run counts the name requests it would send the same way.
-A cost review whose estimate kept the approximate Claude count says so.
-The [Batch pricing adapter](../backend/dazedtl/compatibility/batch_pricing.py) calculates new GPT-6.1 Sol cached quotes from native token counts and frozen input/output rates using its [documented cache rates](https://developers.openai.com/api/docs/models/gpt-6.1-sol); saved historical estimates remain unchanged.
-Inspection leaves Review cost available, while Translate always prepares the Batch or Live review again.
-Approval rechecks the temporary preparation’s current inputs before the native one-use approval controls submission.
-Once approved, the frozen request remains authoritative for recovery and is never silently rebuilt.
-The fresh Batch speaker check validates unresolved nameplates against frozen files and the current glossary before collection; it retains its separate approval if translation is needed.
-The estimate leading into a Batch scans the nameplates beside its own worker, and the preparation reuses that scan and submits the estimate's own requests when its frozen plan matches the estimate's ([adoptable_requests](../backend/dazedtl/engine/desktop/backend/manual.py)); it reads the files again only to collect after its names step translated names.
-Nameplates may contain character names or other display labels, so the review does not assume a character identity.
-A nameplate a registered reference game already translated one way, in at least 90% of its occurrences, takes that translation without a request.
-Every name the step or a later run's reuse adds is marked `Unverified nameplate` in the glossary, because it was translated apart from its story: a cameo's 存子 became "Sonko" where its creator reads it Aruko; Project Setup lists the marked rows as guesses and removes the marker from each name it verifies.
-This small preparation uses Live pricing to avoid waiting for a separate name Batch, and the review distinguishes it from the selected Batch mode for file text.
-The file-text Batch receives its own cost review after names are resolved.
-Collection itself never sends a Live request: a label or plugin argument translated on its own, such as a map event's `<LB:>` note, travels in the file-text Batch as a one-item request, and text collection cannot queue stops it before anything is sent.
-The [name-result adapter](../backend/dazedtl/compatibility/speaker_results.py) retains the native save outcome and a verified glossary snapshot independently of the later Batch decision.
-It verifies each name against that glossary: one that does not read back is shown as not saved and asked for again by the next run, and never discards the others.
-The shared observer exposes pending, saved and unavailable outcomes; Batch review and the request inspector’s Technical tab show the result with bounded, read-only translation inspection.
-Name feedback is a compact secondary note below the reviewed cost and file scope, or beneath the active preparation status, with its inspection action adjacent.
-Approval alone never establishes success.
-Declining or stopping the file Batch keeps approved names reusable in the next run’s frozen glossary, with current glossary entries and aliases taking precedence.
-Paid names also join the game glossary: collecting a completed run copies its glossary over the game’s and refuses one changed since the run began, so the observer adds names the game glossary lacks only once the latest run is a Batch that can never complete: declined or stopped before its own approval, with no Batch sent ([publish_names](../backend/dazedtl/translation/guided_runs.py)).
-It adds each run’s names once, to the Speakers section, while no run or operation is active and no glossary draft is open; a name the user later removes stays removed.
-Reuse is bound to the project, target language and source pass, participates in estimate identity, and preserves the shared guidance and drafts.
-Older runs, including those whose first receipt version called a finished save unavailable as a whole, can recover exact entries only from retained approved names, native save evidence and that run’s glossary.
-Closing preparation after approving names preserves the paid run.
-Read-only provider details resolve the submitted connection from canonical settings by its recorded runtime name, endpoint and organization, regardless of the active account.
-Provider monitoring and new runs have independent isolated workers.
-Cost approval checks its own frozen preparation and one-use token under the API lock; other runs cannot revoke it.
-Existing Live resumes retain their frozen settings and require explicit review; Batch recovery follows saved provider receipts and the frozen clarification allowance described above.
-New remaining work requires a fresh estimate and spending review.
-The compact footer keeps Translate and available Apply actions beside the selected scope.
-Translate immediately opens one stable estimate dialog; preparation, cost approval, no-work results and actionable failures stay inside it.
-While it works, the dialog shows the [steps](../app/src/features/guided/estimateActivity.ts) to the cost review: Check files and Estimate cost, then for Batch Prepare Batch, which also holds any names review and name pass.
-Each finished step shows how long it took, the current one its file count and remaining time, and the footer the time since Translate, so a large game's wait is visible from the start.
-Each Batch phase starts its own file count, so a speaker scan the Batch has to repeat is never read as its requests' progress.
-Files differ widely in how long they take, so [remaining time](../app/src/ui/workTime.ts) follows the last half minute's pace, appears only once that pace has been measured for long enough, and grows while one file takes longer than usual.
-An estimate without work is a result, not a preparation to cancel.
-Batch estimates count no requests; Live estimates report no request count, so they qualify only by finding no source text.
-Then each selected file with no text left to translate shows Complete for that phase until a newer attempt includes it or a resync replaces it, and Close only closes.
-Text reused from earlier responses still needs a run to write it, so it never completes a file this way.
-The existing observer advances only that dialog’s owned estimate, and a canceled late reply cannot open a review or start paid work.
-Saved active runs do not disable Translate or lock its file selection and mode; only the current preparation/action owns pending feedback.
-Selecting more files or clicking Translate again retains the engine’s skip-translated behavior.
-Apply includes only checked files with saved output in the current task, including output from earlier runs.
-Model and method live in the toolbar.
-Resync, labelled Reload from game, sits beside file selection apart from its selection helpers; Options edits translation behavior and opens saved translations; wrapping limits belong to the layout workflow.
-Live file rows count returned requests, including rejected attempts; native map-command totals are not used as translation percentages.
-Finished Live runs clear progress and preparation labels.
-Batch rows use provider request receipts.
-The request inspector reconciles the selected run against the shared observer and reloads a selected response when its receipt state changes, without adding a polling loop.
+Monitoring and new runs never share a worker: each run has its own controller, and the Batch monitor reads providers on a thread of its own.
+Every RPG Maker estimate parses all its files in one worker process, as Batch collection does, and Live translation reuses one worker per concurrent file, because a process per file took seconds each on Windows.
+
+Prompt caching is priced as providers bill it, never as promised savings: a Batch whose provider caches prompts is priced as a range from every shared prefix reused to none, because Batch cache hits are best effort, and an Assistant-led quote's cost is the higher end.
+Claude requests cache their instructions for five minutes: a Batch starts most requests together, so many write the cache instead of reading it (two of three real Claude Batches read it on about one request in ten), and a five-minute write costs 1.25 times input where a one-hour write costs twice.
+Claude estimates use [Claude's own token count](../backend/dazedtl/engine/util/claude_tokens.py), because Anthropic bills by a tokenizer that turns the same text into more tokens than the GPT-4 encoder other estimates use.
+GPT-6.1 Sol Batch quotes use its [published cache rates](https://developers.openai.com/api/docs/models/gpt-6.1-sol) ([batch_pricing](../backend/dazedtl/compatibility/batch_pricing.py)).
+A Translate estimate's worker has no credential or network, so [estimate_pricing.py](../backend/dazedtl/compatibility/estimate_pricing.py) counts in a separate process that opens the network only for the count endpoint, with the run's own credential.
+
+Nameplates may hold character names or other display labels, so the names step never assumes a character identity.
+It uses Live pricing to avoid waiting for a separate name Batch, the file-text Batch gets its own review afterwards, and collection itself never sends a Live request.
+Every name it adds is marked `Unverified nameplate` in the glossary, because it was translated apart from its story: a cameo's 存子 became "Sonko" where its creator reads it Aruko.
+Paid names stay reusable whatever happens to the file Batch ([speaker_results](../backend/dazedtl/compatibility/speaker_results.py)) and join the game glossary when collection copies the run's glossary, or once through [publish_names](../backend/dazedtl/translation/guided_runs.py) when the Batch can never complete.
+
+Task completion aggregates verified per-file progress across runs ([translationTaskComplete](../app/src/features/guided/translationView.ts)), so re-running some files keeps the rest; active work, partial or missing output, changed sources and retired runs cannot establish it.
+An explicit zero-request estimate is a result, while absent saved request payloads never imply zero work.
 
 ### Whole-game estimate
 
-Context's Cost estimate prices every Translate task that sends game text through the API key: Database files, Maps & events and Other event text with its chosen sources.
-It covers each task's whole file group, independent of the selection, so translating a small first scene leaves its scope unchanged.
-[full_estimate.py](../backend/dazedtl/translation/full_estimate.py) starts it as a tool operation, never as a run, so it creates no preparation, approval or history run, and no paid work can follow from it.
-The [worker](../backend/dazedtl/compatibility/full_estimate.py) builds each task's frozen plan with the engine helpers and request policy a Translate estimate uses and runs the same offline estimate worker, starting each file from its saved translation, working copy or game file as a run would, so its figures match each task's own estimate.
-A Claude estimate is then counted again as a Translate estimate is (see [Estimates and approval](#estimates-and-approval)); a failed count keeps the approximate figures, which the task says.
-The tasks run side by side, each with its own workers and count and with its inputs linked to the operation's one staged copy; the first task that fails stops the others.
-The newest finished operation holds the saved estimate.
-It reads current while every task's estimate inputs match: files, sources, guidance, options, layout, connection and prices ([freshness](../backend/dazedtl/engine/util/freshness.py)).
-A model switch that only prices its requests differently (see [Estimates and approval](#estimates-and-approval)) keeps it current at the new model's prices, from the counts the result keeps beside each task.
-Estimating again while it reads current would only repeat it, so the action waits for a change, except to retry a failed Claude count.
-They are computed with the Live configuration, since one estimate prices both Batch and Live; switching between them only changes which total leads.
-Stop ends the worker and keeps the previous estimate.
-While it works, the worker reports each task's state and file count as the operation's structured activity, never parsed from its status line, so tasks can also run side by side; the panel shows them as steps with the same remaining time as the Translate dialog, and a saved estimate says how long it took, as a guide to the next.
+Context's Cost estimate prices every Translate task that sends game text through the API key, over each task's whole file group.
+[full_estimate.py](../backend/dazedtl/translation/full_estimate.py) runs it as a tool operation, never as a run, so no approval, history run or paid work can follow from it, and its [worker](../backend/dazedtl/compatibility/full_estimate.py) builds each task's plan with the helpers and request policy a Translate estimate uses, so the figures match.
 
 ### Frozen request policies
 
-New API runs freeze a provider-default generation policy before estimation and review.
-The compatibility adapter omits the native engine's implicit temperature, frequency penalty, and reasoning effort; current model preferences expose no explicit overrides for these parameters.
-The policy participates in estimate identity and applies to both Live and Batch request construction.
-Saved runs without this policy retain their original parameters and recovery behavior.
-New API runs also freeze a [single clarification retry](../backend/dazedtl/translation/refusals.py) for provider refusals.
-A refusal is the provider's refusal signal, a refusal message in place of the reply, or a note in place of a line or inside one, such as "[Not translated: …]", "[Omitted]" or "Translation declined."; one such line refuses the whole request.
-Notes that real lines can also hold, such as "(Omitted)" for 中略 or a character who cannot translate an inscription, count only when that line's own source does not explain them.
-The clarification identifies the existing fictional source and the owner's adult-character statement without changing source facts or asking the provider to disregard its rules.
-Live retains both attempts and their usage; Batch submits only refused rows through the same Batch provider and retains successful originals.
-The [retry journal](../backend/dazedtl/translation/batch_refusals.py) records intent before submission and saves returned job IDs before polling, including across restarts.
-It keeps the original Batch's responses and the clarified payloads it sends; the original payloads stay with the run.
-A clarification can wait for hours, so its polls read this small journal instead of downloading the original output again.
-Cancelling an Assistant-led run then asks the provider once to cancel each submitted clarification, records that request in the journal and submits no waiting one; the run keeps the rows and usage they finished.
-The guided adapter waits before native consume, while the background monitor can finish the same authorized retry after interruption.
-Uncertain submissions are never retried automatically, and repeated refusals remain untranslated.
-Original payloads and responses remain available beside the clarification evidence.
-The request inspector groups a clarification or a validation retry with its original request and offers Original, Clarification retry and Retry tabs inside that selection.
-Response, source/context, exact payload and usage follow the selected attempt without another backend read; the latest attempt opens by default.
-Both replies come from retained receipts, separately from the refusal-filtered native consume result.
-Live workers record the parent before sending.
-Older Live pairs require an exact, unambiguous match of payload, file and source identities; unrelated or ambiguous requests stay separate.
-Validation retries record their first attempt the same way; in older runs only an attempt that a later validated response replaced leads the following attempts at its lines.
-Grouping is presentation-only: raw receipt indices, submission guards and billed usage stay intact.
-File line counts and rejected-request counts follow each request's latest attempt, so retried lines count once.
-Each clarification retains the original source and instructions with one appended clarification.
-New MV/MZ state runs also freeze compatible state-call grouping before submission.
-The app adapter delegates extraction and field writing to the native state handler, groups only calls with identical instructions and matched system/glossary/SFX context within the saved request limit, and reuses the saved response partition during consume.
-A Batch matches glossary context against its glossary freeze, never the live glossary that consume grows with names from earlier files, so a Batch that submitted its estimate's requests partitions them as the estimate did ([state_requests](../backend/dazedtl/compatibility/state_requests.py)).
-Grouped requests carry their state-ID and field associations as context beside the unchanged LineN source/output schema.
-Actor-substitution calls and note calls retain their original boundaries.
-New MV/MZ runs freeze a single-pass choice policy, the [event parser's](../backend/dazedtl/engine/modules/rpgmakermvmz.py) `CHOICE_COLLECTION`: built-in menu choices are visited only on the first event pass, retaining their scene context.
-The write pass cannot queue a duplicate during preparation or consume/retry a rejected choice again.
-Pass state is local to the worker thread; identical text in different menus remains independently contextualized.
-Older frozen plans retain their original preparation and recovery behavior.
-New MV/MZ runs also freeze a speaker-context policy, which enables the [event parser's](../backend/dazedtl/engine/modules/rpgmakermvmz.py) `SPEAKER_CONTEXT` fixes.
-Existing translated code-101 nameplates still supply dialogue context; unnamed messages clear the preceding speaker.
-Implicit square-bracket nameplates must pass short-name plausibility checks, so bracketed tutorial prose receives normal text instructions instead of the nameplate prompt.
-Adjacent text with its own retained original remains a separate translation unit, preserving previously translated neighbors and source metadata.
-A separate same-line speaker policy, `SAME_LINE_SPEAKERS`, sends a nameplate sharing its line with the text, such as `【Name】：text` or `Name「text`, only as the `[Speaker]:` prefix, so the model does not write it into the message a second time.
-New MV/MZ runs also freeze a battle-message-users policy, the database parser's `BATTLE_MESSAGE_USERS`: a skill's battle messages carry a note naming the actors that learn the skill, through their starting class, an Add Skill trait or a Change Skill command, and the enemies whose actions use it, and those names bring their glossary entries, so the model can choose pronouns for the battler.
-A skill granted any other way, such as by a plugin, has no users, and its battler stays gender neutral, as does a state message's, whose subject is whichever battler has the state.
-Its second version also reads the party: when System's starting party and every actor a Change Party Member command or an `addActor` script adds come to one named actor, that actor uses every skill no enemy uses, other actors are left out of the notes, and a state's message1, which shows when a party member gains the state, names that actor; an `addActor` whose actor is not a number leaves the party unknown.
-Runs frozen with the first version keep its requests.
-New MV/MZ runs also freeze a page-packing policy, the event parser's `PAGE_PACKING`: in maps, common events and troops, a page of at most `SHARED_PAGE_ENTRIES` (10) message boxes and choices shares a request with the file's other short pages, each labelled with its event and page, because each request otherwise repeats the full system prompt.
-A longer page keeps a request of its own, so no other scene's speakers or subjects bleed into a conversation, and its choice menus join that request in play order when the page fits one request; the parser's other lists keep their requests.
-A packed reply of the wrong length writes none of its pages, which stay untranslated for a retry.
-New MV/MZ runs also freeze a source-text policy, the parser's `SOURCE_TEXT`: text still to translate is what [source_text](../backend/dazedtl/engine/util/source_text.py) reads as Japanese, Japanese letters outside control codes and their arguments, the rule Guided's line counts use, so punctuation and brackets a translation or the game keeps, such as `【Saving beforehand is recommended】`, and a plugin code's argument such as `\SA[びっくり]` read finished.
-Under it map display names and note labels, like other text, are sent only while they hold Japanese; runs frozen without it read Japanese by `LANGREGEX` and send map names and labels on every pass, keeping their requests.
-On a 970-map game this cut a Maps & events estimate from 4,089 to 2,173 requests and from 23.5 to 14.0 million input tokens.
-Assistant-led organize applies the same 10-line rule to API requests (`SHARED_LINES` in [organize.py](../backend/dazedtl/translation/organize.py)).
-Estimates, Live and Batch use these policies; older frozen runs retain their original parser and request identities.
+Each new API run freezes request policies before estimation; a policy joins estimate identity and applies to Live and Batch alike, and runs frozen without it keep their original parser, parameters and request identities.
+The parser policies are the constants in [preferences.py](../backend/dazedtl/settings/preferences.py), each documented there, which the parsers ([rpgmakermvmz](../backend/dazedtl/engine/modules/rpgmakermvmz.py)) implement; the clarification retry and compatible state-call grouping ([state_requests](../backend/dazedtl/compatibility/state_requests.py)) define their `POLICY` beside their code.
+The [clarification retry](../backend/dazedtl/translation/refusals.py) for provider refusals names the existing fictional source and the owner's adult-character statement without changing source facts or asking the provider to disregard its rules; it is sent once, and repeated refusals stay untranslated.
+Page packing (`PAGE_PACKING`) exists because each request otherwise repeats the full system prompt, and Assistant-led organize applies the same 10-line rule (`SHARED_LINES` in [organize.py](../backend/dazedtl/translation/organize.py)).
 
 ### Batch execution and recovery
 
-The provider adapter normalizes cancellation acknowledgements before the guided handler saves them; the saved status takes precedence over a stale worker poll.
-Retrying cancellation checks provider status first, so an already cancelling or terminal Batch does not receive another cancellation request.
-Pending provider counts and errors may be null; saved polling receipts take precedence over earlier file-scan progress without rewriting run evidence.
-The [Batch monitor](../backend/dazedtl/translation/batch_monitor.py) retains the last outcome while rechecking recovery records; the check itself does not make a run active.
-Late observations recheck ownership and worker state before publication.
-Saved terminal receipts and their counts take precedence over monitor polls, and a resumed or completed worker supersedes its old monitoring view.
-For runs split across provider Batches, inactive summaries retain original request totals and finished outcomes across completed chunks, without counting clarifications again.
-Current provider work keeps its own counts.
-Status text pairs with an active spinner or an outcome icon; saved success requires verified output without outstanding work or reported issues.
-Missing counts stay unknown, and provider completion remains separate from saving local output.
-The app-owned [OpenAI Batch window](../backend/dazedtl/compatibility/batch_window.py) fills the configured total input-token allowance with multiple provider jobs and refills when any terminal job releases capacity.
-It targets one quarter of that allowance per job, capped by the native chunk target, so a slow request cannot hold the entire window.
-Individual requests remain intact, and provider file/request limits still apply.
-A shared connection/model lock accounts for other Guided runs, clarification attempts and uncertain submissions before reserving capacity.
-Partial request progress does not release a pending job’s tokens.
-Only the owning worker advances its approved queue; the background monitor restarts that worker after interruption and collects its retained responses.
-An ended provider receipt with a matching submission manifest and counts covering every request, a canceled or expired one included, remains submitted while awaiting download, as does a Batch the provider is still canceling; missing fetched responses or conflicting evidence retain submission uncertainty and outstanding work is never automatically resubmitted.
-The [submission journal](../backend/dazedtl/compatibility/batch_continuation.py) records a create the provider refused outright with a client error, such as OpenRouter's HTTP 402, so its requests read as never sent and a new approval may send them; timeouts, conflicts, server errors and lost responses can follow a successful create and stay uncertain.
-The worker also records a submission attempt that failed before journaling any create, such as one whose SDK client could not be built, so its requests read as never sent too; an approved run without either record, including older runs and a worker killed mid-attempt, stays uncertain.
-A journaled create's requests stay uncertain until its receipt reaches the saved manifests, also beside earlier submitted chunks.
-A failed Live request reads as never sent only when every HTTP try inside it failed to connect or was refused outright, as the [transport observer](../backend/dazedtl/compatibility/transmission.py) records, because SDK retries can hide a processed try behind a later refused connection; anything else stays uncertain.
-Cancellation binds one provider Batch and its request mapping through a project-owned, one-use review; it retains the queue and receipts.
-Terminal collection uses the recorded connection and retains successful responses.
-It settles any authorized clarification Batch before native fetched-results consumption, including partial results from canceled Batches.
-Unknown or conflicting responses retain their recovery guard.
-Consumed Batch history plus a matching frozen plan and unchanged, complete output receipts settle finished requests without inventing per-request validation.
-Missing outputs and native mismatches retain unresolved receipt states; identical text in different known files does not create an overlap.
-The backend-owned [Batch monitor](../backend/dazedtl/translation/batch_monitor.py) checks interrupted runs automatically across registered projects, independently of the current screen and native worker pointer.
-A worker that ends after every provider Batch ended, such as one that finds its Batch canceled, leaves the results to the monitor's next check, and its run reads as collecting rather than failed until then.
-A Batch approval binds the full frozen queue and plan.
-After an app interruption, the original worker continues that unchanged approved queue, skipping recorded provider requests and preserving already collected results.
-Explicit stops, provider cancellations, newer approved overlapping runs, changed scope and uncertain submission outcomes prevent automatic continuation.
-Older app approvals require the matching saved quote and prepared request ledger before adopting the same binding.
-Native submission is wrapped by a durable intent/returned-ID journal; known receipts are recovered after a checkpoint interruption, while unknown HTTP outcomes are never submitted again automatically.
-Provider reads and downloads run outside the API lock; cached observations feed the existing application observer.
-Collection rechecks ownership, worker state and shutdown before committing.
-Automatic local consumption requires both a durable fetched marker and submission receipts covering every prepared request.
-The controller and worker-launch boundary recheck that coverage: collecting one completed chunk cannot turn an unsent remainder into a full consume pass.
-Incomplete submissions retain their downloaded responses while the approved remainder continues.
-Unapproved or changed work requires its own estimate and paid review; an app restart does not require a second approval for the unchanged original queue.
-Clarification receipts can extend as later original chunks arrive, preserving both original responses and settled retries without repeating them.
-Local consume failures with received responses expose Retry saving results instead of an automatic restart loop; Batches with confirmed zero successes are left failed without attempting an empty consume pass.
-A request without a fetched result fails only its file, before any Live request, so later files still save theirs; the file's failure reason, written once by the [engine](../backend/dazedtl/engine/util/translation.py), tells a request the Batch sent but got nothing back for, as a canceled Batch leaves, from one the Batch never sent.
-No pause/resume monitoring control is presented.
+Uncertain work is never resubmitted automatically, and an app restart needs no second approval for an unchanged approved queue.
+A Batch approval binds the full frozen queue and plan; only the owning worker advances it, and the backend-owned [Batch monitor](../backend/dazedtl/translation/batch_monitor.py) restarts that worker after an interruption and collects its responses, independently of the current screen.
+Explicit stops, provider cancellations, newer approved overlapping runs, changed scope and uncertain submissions prevent automatic continuation.
+Requests read as never sent only with evidence the [submission journal](../backend/dazedtl/compatibility/batch_continuation.py) or the [transport observer](../backend/dazedtl/compatibility/transmission.py) records, since SDK retries can hide a processed try behind a later refused connection.
+Automatic local consumption requires a durable fetched marker and submission receipts covering every prepared request, so collecting one chunk cannot turn an unsent remainder into a full consume pass, and a failed consume offers Retry saving results instead of a restart loop.
+The [OpenAI Batch window](../backend/dazedtl/compatibility/batch_window.py) gives each provider job at most a quarter of the input-token allowance, so a slow request cannot hold the whole window.
+Provider reads and downloads run outside the API lock and feed the application observer through cached observations.
 
 ### Evidence and validation
 
-Guided process views read saved queue fragments, manifests, results, and file receipts separately.
-The Batch evidence adapter archives approved request mappings and responses before native scratch cleanup.
-Older consumed Batches can display translations only when their retained source identities and native validation records match exactly; these are identified as validated translations, not original provider bodies.
-Missing evidence never establishes successful validation or billed usage.
-Live workers retain each response body and its refusal/finish metadata before validation, separately from the native accepted values and recorded usage.
-Native cache acceptance settles only its matching request; rejected attempts remain inspectable without being offered as translated text.
-A refusal cannot enter game dialogue, including in older runs without a clarification policy.
-Historical refusal prose is flagged and excluded from validated-result reuse without rewriting saved output or inventing missing response bodies.
-Older runs saved refusal notes as translations, and a run sends only lines still in the game's own words, so a Guided phase puts each such line's source back in its selected working copies before it lists them ([saved_refusals](../backend/dazedtl/translation/saved_refusals.py)).
-The source is the line's `_original`, through QA's inventory mapping, or outside event commands the original game file's value at the same place, which covers names the engine keeps no `_original` for; a note without a known source stays.
-The run records its inputs as restored, so its estimate stays current, and the file counts such lines as left until a run replaces them.
-Batch workers retain [native validation receipts](../backend/dazedtl/compatibility/batch_validation.py) in the existing process ledger, bound to the consumed request key, source, file and response hash.
-Native cache acceptance records a pass; a normally returned validation call marks its remaining responses failed, while exceptions leave them unresolved.
-These receipts do not depend on refusal wording, text logs or whole-file completion.
-Historical runs retain the exact log-matching fallback.
-Live and Batch inspectors show generic validation passed/failed outcomes for the selected attempt and keep failed bodies readable; receipt-only responses remain neutral until validation is known.
-The [Live validation reader](../backend/dazedtl/compatibility/live_validation.py) settles older rejected retry groups only when the completed run's frozen plan and output hashes match, every attempt has a received receipt, and one structured native mismatch record matches the exact source and unambiguous request context.
-The final formatted reply can be shown as recovered log evidence; earlier bodies remain unavailable.
-Missing, changed, ambiguous or uncertain evidence keeps the historical request unresolved.
-A failed attempt followed by native acceptance remains inspectable without marking the successful file incomplete.
-The [checkpoint adapter](../backend/dazedtl/compatibility/checkpoints.py) records verified native JSON progress saves.
-Live resumes read those partial outputs through the native file reader while preserving frozen input snapshots, and reload validated responses from the same run to cover the gap before a checkpoint.
-Batch consume keeps its original input grouping and saved provider responses.
-Known pre-consumption Batch checkpoints remain scratch data even after approval.
-The collector exposes verified partial outputs without overwriting newer staged copies.
-The request reader is project-bound and read-only.
-Its Response tab shows retained replies or full error details, including nested provider diagnostics.
-Live failures retain bounded, credential-redacted SDK response bodies (including wrapped exceptions and plain-text bodies), separately from accepted translations; unavailable historical bodies are never invented.
-Provider status and collection belong to the existing worker and Batch monitor.
-The selected request updates automatically from shared observer receipt changes, with a spinner while that request is at the provider; a failed detail read offers a local retry.
-The Batch inspector keeps a selectable batch sidebar beside its request reader, with separate unsent or unlinked requests.
-The Live names pass before a Batch is its own first group; its requests belong to no file, so they never count toward a file's lines, skipped-file evidence or continuation reuse.
-A Batch translates every selected map's display name in requests made while it parses the first map; each line records its maps, so a line counts toward the maps it names, a name two maps share counts for both, and a rejected name marks only those maps.
-Those requests and their Batch receipts stay the first map's, so consume and clarifications match them as before.
-Runs frozen with the map-name-identities policy (`MAP_NAME_IDENTITIES` in [preferences.py](../backend/dazedtl/settings/preferences.py)) identify each line in every map it names, as a Live run identifies that map's name, and save its translation under each of those maps, so Live and Batch reuse each other's names whichever map a selection starts at.
-They also reuse a name an older run saved under the first map; older runs keep the first map's identities, so their Batch consume rebuilds the requests it collected.
-Clarifications join their original batch through the recorded parent ID; they do not increase the original request count or duplicate its source rows.
-Request selection stays within the selected group's recorded request indices, and each affected request retains Original and Clarification attempt tabs.
-A pending or failed clarification remains visible in the group's status.
-Counts and file overlap never infer membership or parentage; an unlinked clarification remains separate.
-Content tabs and request selection remain local view state, and a missing response shows only its waiting or unavailable state.
-A fully successful Batch with matching submission receipts may identify requests as finished at the provider while download is pending; partial provider totals never identify individual results or release execution guards.
-Validation mismatches are file warnings with a direct action into the request inspector's rejected-translation filter.
-Provider completion and local validation stay distinct.
-The [Batch validation reader](../backend/dazedtl/compatibility/batch_validation.py) matches retained native acceptance/rejection records to exact source identities and provider responses only after verifying the consumed submission mapping, frozen plan and unchanged output.
-Matching rejected requests retain their source text and can enter a fresh estimate; matching valid requests remain settled even when another request in the same file fails.
-Missing, ambiguous or conflicting evidence keeps the affected requests unresolved, and older file-only mismatch records show an unknown count with log inspection.
-Parsed validation records are cached by file stamps and exact input/response bindings; observations do not rewrite history or rerun validators.
-Rejected responses remain inspectable as raw evidence and never appear as saved translations.
-The [choice history reader](../backend/dazedtl/compatibility/choice_history.py) identifies an older unused response only when one extra context-free request accompanies the exact contextualized requests for every physical menu, and each menu's saved text and original metadata match a validated sibling response.
-Frozen input/output hashes and submission mappings must still match.
-Proven extras are labeled Unused duplicate, keep their provider bodies and usage, and link to the requests whose wording was saved.
-They do not count as validated or unresolved work; ambiguous associations remain unresolved.
-Menu locations are cached by source/output file stamps, without rewriting historical runs.
+Evidence is kept apart from accepted values: response bodies, refusal metadata, request mappings and native validation receipts ([batch_validation](../backend/dazedtl/compatibility/batch_validation.py)) are retained before validation or scratch cleanup, bound to request key, source, file and response hash.
+Missing evidence never establishes successful validation or billed usage, and provider completion stays separate from saving local output.
+A refusal cannot enter game dialogue; a Guided phase puts the source back for lines older runs saved a refusal note in ([saved_refusals](../backend/dazedtl/translation/saved_refusals.py)), since a run sends only lines still in the game's own words.
+An old interrupted Live run without request evidence flags only its shared files and phase in the overlap advisory, since its send outcomes cannot be rebuilt locally.
+Readers for older runs ([live_validation](../backend/dazedtl/compatibility/live_validation.py), [choice_history](../backend/dazedtl/compatibility/choice_history.py)) settle a historical request only when the frozen plan, output hashes, submission mapping and exact source identity all match; otherwise it stays unresolved, and missing bodies are never invented.
+Grouping a retry with its original is presentation only: receipt indices, submission guards and billed usage stay intact.
 
 ### Result reuse
 
-New workers record durable submission intent separately from preparation, source identities independent of model/prompt/chunk size, and native-validated response values.
-Each request records the identities of exactly the lines it sends, which the translator names while building it: a chunk leaves out lines without source text, so requests do not follow a call's lines one for one.
-Continuation reuses these values locally across expanded or narrowed selections when the relevant source bindings and file versions match.
-If compatible runs contain different validated wording for one identity, the newest run by creation time supplies the reusable value; historical alternatives stay unchanged and do not block preparation.
-Existing working translations still go through the native skip-translated behavior.
-Every selected file is still parsed; untranslated or changed text within a previously translated file remains eligible.
-Reuse is per text identity, never a file-complete skip.
-New provenance associates validated identities with their files so changing one source does not reuse its old values.
-Verified completed files from partial runs are collected only when their frozen inputs still match the working copy; newer edits are retained.
-When a call mixes reused translations with remaining source spans, runs frozen with the reuse-stretches policy (`REUSE_STRETCHES` in [preferences.py](../backend/dazedtl/settings/preferences.py)) send the spans together in requests up to the request size, each labelled with the lines before it and their earlier translations, so scattered leftovers do not each pay for a full prompt; older runs, and a call with one span, send each span with its preceding source.
-A mismatch in one request preserves its lines' native fallback and continues the others.
-The adapter retains successful translations, all attempted usage and the final mismatch flag without changing native validation or retry rules.
-The MV/MZ comment handler also retains aligned partial results instead of discarding every comment after one rejected chunk.
-Its length/type guard and the separate name-preflight checks remain intact; native mismatch records still identify the file for review.
-Source identity currently treats repeated identical strings within one file and phase as aliases.
-Legacy queues without file provenance use a conservative source-text intersection within shared saved files/phase.
-Interrupted old Live runs without request evidence flag only their shared file/phase scope for the advisory; their send outcomes cannot be reconstructed locally.
+Workers record source identities independent of model, prompt and chunk size with their validated values, and continuation reuses them per text identity, never as a file-complete skip, while the source bindings and file versions match; the newest compatible run wins.
+The Live names pass before a Batch belongs to no file, so it never counts toward a file's lines or continuation reuse.
 
 ### Run history and inspection
 
-Run history is the single run list.
-Its shared inspector owns provider cancellation, stopping or continuing an approved OpenRouter queue, collection/saving recovery and reviewed reapplication of verified output.
-Cancellation controls bind the selected provider Batch, including its linked clarifications; concurrent jobs keep independent targets.
-Run-wide queue and recovery actions remain distinct from request selection.
-They use the shared guarded action feedback, preserve the existing one-use reviews, and render the single application observer’s receipts without another polling loop.
-Approved project-owned runs remain in History automatically, including failed and canceled runs.
-Legacy history remains readable; new unapproved preparation is excluded.
-The native pointer is not the ownership registry.
-Creation order determines the newest attempt in each task; an active worker stays visible, while a newer estimate or different scope never falls back to an older overlapping failure.
-The application-wide run view represents active work only.
-Runs have no hidden-history preference or separate output-copy action; Apply and the translated-folder tool remain the guided output workflow.
-Legacy `kept_failed_runs` keys remain an ownership-discovery source only; they do not hide runs or settle receipts.
-Unresolved submissions remain inspectable in history and subject to the existing execution guards and overlapping-charge review.
-Saved run status never vetoes an explicitly requested new Guided translation.
-Live and Batch preparation and cost approval allow overlapping submitted, uncertain or received requests.
-The existing cost review shows an advisory about possible duplicate charges when the estimate overlaps unresolved history or that history cannot be read; no extra confirmation or recovery step is required.
-This advisory is saved with the estimate for the Batch review without reconstructing history during observation.
-Fresh source/scope/settings checks, project ownership and one-use approval tokens still apply.
-Older runs and their receipts stay intact, and automatic recovery never gains authority to resend uncertain work.
-File inspect buttons open the same [run inspector](../app/src/features/guided/RunInspector.tsx) used by Run history, independently of checkbox selection.
-The owning attempt and exact file-linked request are selected locally; a current estimate takes precedence over older completed output.
-Files without a linked request show that limitation without borrowing another file’s payload.
-Files without an attempt still open the shared inspector’s file reader.
-Source retains prepared text and matched context, while Response pairs only matching LineN keys or equal-length validated Live responses and retains raw replies when pairing is ambiguous.
-Request text shows each placeholder that replaced a control code as sent, marked so its position can be checked; the request does not record which code it replaced.
-A run opens on the request a reader last viewed, or on the first that needs attention: a submission its ended run never confirmed, then a failed or rejected one.
-Missing context never substitutes current guidance.
-The cost-review preview keeps Text, Context and API payload tabs, with request paging outside the reader.
-File contents is available for the selected file through the project-bound [file reader](../backend/dazedtl/translation/file_preview.py), which reads staged output, then working input, then current game JSON without preparing or modifying files.
-It identifies this current text separately from saved run evidence.
-It omits text identical to retained source, keeps changed and unmatched fields, and never claims request eligibility.
-The reader loads only after opening its tab and retains its search, page and scroll while switching content tabs.
-Translate embeds the existing [FileSelection](../app/src/features/guided/FileSelection.tsx) component rather than a second picker.
-Its shared virtual list and selection logic retain Ctrl/Cmd toggles, Shift ranges and keyboard movement.
-A separate Inspect icon does not change scope; the open file is marked independently of selection.
-Database files and Maps & events read their files, as [File status and Lines](#file-status-and-lines) describes; Other event text still follows its runs' request receipts and verified output, independently of checkbox selection or the current attempt.
-The file list uses the shared display states.
-Untouched files show Not started, including files whose requests all failed without returning lines, with that reason in the detail.
-A rerun reads the earlier run's output and reuses its results, so a verified pass with no new requests over a file an earlier run translated shows Ready to apply, or Applied once that output is in the game.
-A file no current run has changed or sent requests for, per [translatedFiles](../app/src/features/guided/translationView.ts), still holds the game's own text: a pass that sends nothing for it found nothing to translate, so it shows Done during the run and after, with that reason in the detail.
-Preparation, queueing, provider work, cancellation, collection and saving show Working; a pending cost approval shows Needs review without a spinner.
-Needs review also covers partial, rejected or unsaved results and never establishes completion.
-Ready to apply requires verified full output or explicit evidence that no requests were needed for a file an earlier run translated.
-Applied means the game matches the saved output, or the latest Apply receipt holds it or an output a later run built from it, through [applied_versions](../backend/dazedtl/translation/guided.py).
-Hand fixes, Line widths and QA fixes in the game therefore leave it Applied, as does a later phase's Apply; another Apply or a restore replaces the receipt, and Reload from game retires the file's runs.
-An Apply that fitted an output to the Line widths records the bytes it wrote beside the output's hash, so the file reads as Applied and not edited, and the next Apply warns of no later edits.
-Recorded output that is missing or changed shows Blocked, and a file changed in the game since its working copy was made shows Outdated.
-Detailed states and request counts belong in Inspect and the approval dialog.
-The latest run's failure, or a Batch that could not be confirmed as sent, shows on its task with the reason instead of a finished notice; collection errors and rejection details remain in the inspector and run views.
-Dismissing that [banner](../app/src/features/guided/RunFailure.tsx) is a browser-profile preference for the run and a fingerprint of its reason; it hides no run, receipt or execution guard, and a different reason shows again.
-The observed `workerStatus` retains the actual worker state separately from public monitoring activity.
-File ownership, saved metrics and task completion use that worker state, so a background check cannot promote an older run or make its whole scope look queued.
-Automatic Batch monitoring cannot mark every file as submitted or override saved progress: In progress for provider work requires the file's latest submitted requests to be mapped to an explicitly active provider Batch, using the shared provider-state rules.
-Terminal, unknown, missing or unrelated Batch receipts cannot make retained submissions appear active.
-Pending collection also requires matching ended-Batch and finished-request evidence.
-These display rules never settle submissions or release execution guards.
-A finished Batch collection can identify files with no new requests only when its recorded builder provenance covers the selected scope; deduplicated callers remain included, and absent legacy evidence stays unknown.
-Provider-waiting rows and active Batch stages use the shared activity indicator, while cost approval and files with no requests stay still.
-Selection locks during active work while search and inspection remain available.
-Per-file cost and processing time come from native result receipts, retained beyond the log cap; Batch collection figures are excluded and consumption time excludes provider waiting.
-A run's TOTAL adds up those receipts with their tokens, plus the receipt of any names pass before its files, which the file list leaves out.
-Each attempt starts from the run's saved receipts, and a worker reused for several files reports each file's figures on its own.
-The file list retains cost and time from the latest run that changed the file, comparing its recorded output hash with its frozen input hash; estimates, pending work and unchanged passes do not replace those metrics.
-Missing receipts for a changed file stay unknown.
-Line amounts follow the same receipts through [fileLines](../app/src/features/guided/translationView.ts): the lines a file's latest run saved, out of the lines that run prepared, counting each source request once at its latest attempt; a later "nothing to translate" check closes the file at what is done.
-A latest run that finished a file with nothing to send found every line of the run that last translated it done, since it sends any line still in the game's own words, except lines holding a saved refusal note; those notes also keep a "nothing to translate" check from closing the file.
-A Batch writes a file only while it saves its results, so its received lines count as saved once the file is written, and not at all when saving that file failed.
-A Batch sends identical requests of several files, such as a scene two maps repeat, once; the queued request names each of those files, and its lines and validation outcome count in every one of them.
-A Live run prepares requests as it works, so its files show only the lines saved so far until it ends, and Apply leaves them out until then.
-Estimates carry no per-file lines, so a file without a run shows no amount; the Project page totals the known amounts with files applied and the recorded cost.
-Saved-output counts there, on Apply and in the Check and Release notes about applied text leave out files no run translated, since their saved copy is the game's own text.
-Incoming observations preserve the reader's selected file, request, tab and scroll position.
-Selected request receipts update automatically; older records without file provenance identify their scope limitation.
-History, on the Project page, has separate translation, estimate and other-activity tabs.
-A row shows its message only when it adds to the row's title, and other activity shows a status only when it is not Complete.
-Display outcomes use existing observed receipts: estimates, no-request attempts, verified output, partial progress and unavailable output stay distinct.
-Unresolved submissions remain marked for review in history.
-Search and filters operate locally on the already-observed summaries; In progress includes submitted provider work even after its local worker stops.
-Its request inspector uses Source, Response and Technical, plus File contents when a file is identified.
-Source retains matched context; Response shows the retained reply or a concise missing-response state.
-Technical starts with the run record and exposes collection errors, provider receipts and the exact request, including when no request payload is available.
-Request failures stay with the selected attempt’s response and technical payload; request-bound provider errors do not become run-wide diagnostics.
-File-only legacy validation evidence stays explicitly scoped to its file without identifying a guessed failed request.
-The picker is the sole request navigation control and has no hidden failure or file filters.
-It lists one page of the selected group's requests, with Previous and Next for longer groups, and the inspector reads each page through `guided_requests` when it needs it.
-Raw worker logs are not a separate content view: Technical ends with the retained log tail, which the compatibility readers still use as evidence.
-Other-activity records open with their status, saved result and log in the same presentation.
-Request selection and tabs persist locally without storing payloads in browser preferences.
-The inspector has no separate provider-check control or transient remote status overlay; tab changes never contact the provider.
-Saved translated output and applied files are separate counts.
-Active per-file request states take precedence over retained checkpoints; a resumed worker takes ownership of its rows even when a newer completed attempt exists.
-Live rows also retain the worker's current filename from `itemProgress` between requests, including after rejected replies.
-The completed-file counter identifies the last finished file and cannot establish current activity; native command totals are not translation percentages.
+Run history is the single run list, and its shared [run inspector](../app/src/features/guided/RunInspector.tsx) owns cancellation, queue controls, collection recovery and reviewed reapplication, rendering the observer's receipts without another polling loop.
+Approved project-owned runs stay in History, failed and canceled ones included; the native pointer is not the ownership registry.
+Saved run status never vetoes an explicitly requested new translation: overlapping submitted or uncertain requests get an advisory about possible duplicate charges in the cost review instead of an extra confirmation, and automatic recovery never gains authority to resend them.
+Display rules never settle submissions or release execution guards, and the observed `workerStatus` keeps the real worker state, so a background check cannot promote an older run.
+Per-file cost and time, and Other event text's lines, come from native result receipts; request rows, payloads and logs stay out of observations and browser preferences.
 
 ### File status and Lines
 
-Database files and Maps & events read each file's status and Lines from the file itself through [file_lines](../backend/dazedtl/translation/file_lines.py), independently of checkbox selection and of the runs that wrote it.
-The backend reads the file's newest copy (its translated working copy, else its working copy, else the game's own file) once per change, by its digest.
-A line is one message (a 101's name box with its 401 rows), scrolling text block, choice, choice help block while Comment text is on, map display name, event note label, database field or system term, without what another task or no task translates, such as System's currency unit and actor name changes.
-What an event file holds of these is defined once, in [rpgmaker_scope](../backend/dazedtl/engine/util/rpgmaker_scope.py), which the engine translates from too; database fields and system terms are the ones Text QA's never-translated report lists.
-A line is in scope when its source holds Japanese by the engine's own rule ([source_text](../backend/dazedtl/engine/util/source_text.py)): the `_original` the engine keeps, or for a translated map name or note label, which keep none, the original game file's.
-It is translated when it holds no Japanese and no refusal note, since the engine sends a value while it holds Japanese whatever its `_original` says; a name box counts only the name the engine translates.
-The engine probe ([engine_runtime](../tests/fixtures/engine_runtime.py)) runs a real pass over the fixtures and the `finished-text` game variant and checks that the engine sends only Japanese from the lines left, for exactly the files with lines left, leaves none, and sends nothing on a second pass.
-Lines shows the lines translated of those in scope from the first look; a Live run still working on a file shows the lines it saved so far, and the file's count takes over once the run is done with it.
-A run's work while it is in progress for the file shows Working, or Needs review while a cost approval waits; otherwise the file decides.
-Nothing translated shows Not started, lines left show Needs review with how many and why (never translated, choice help that Comment text now translates, a refusal note), and Inspect opens on them; a submission that could not be confirmed names that instead.
-A file with none left shows Ready to apply, or Applied once it is in the game or has no translated copy of its own, and one with nothing in scope shows Done; one the backend cannot read shows Blocked.
-The task is done when no file in its group has lines left, no run works on one and none changed in the game, and the overview adds up the same counts.
+Database files and Maps & events read each file's status and Lines from the file itself through [file_lines](../backend/dazedtl/translation/file_lines.py), independently of selection and of the runs that wrote it.
+What an event file holds is defined once in [rpgmaker_scope](../backend/dazedtl/engine/util/rpgmaker_scope.py), which the engine translates from, and a line is left while it holds Japanese by the engine's own rule ([source_text](../backend/dazedtl/engine/util/source_text.py)) or a refusal note, whatever its `_original` says.
+The engine probe ([engine_runtime](../tests/fixtures/engine_runtime.py)) checks that the engine sends exactly the lines this counts as left, and nothing on a second pass, so the count and the engine cannot drift apart.
 
 ### Apply and release
 
-Completed Batches offer Reapply in the shared run inspector.
-The review resolves the chosen project-owned run independently of the current selection and freezes its hash-verified retained output; it never substitutes the latest working translation or submits provider work.
-Missing or changed historical files cannot be reapplied.
-Publication uses the same reviewed overwrite and restore receipts as ordinary Apply.
-An older Apply receipt does not establish that the current game still matches a run’s output.
-Explicit text Apply is a full overwrite: it binds the frozen candidate and destination scope while accepting intervening game-data edits.
-Its review names the files edited in the game since their last Apply, whose edits it replaces.
-Its one-use confirmation retains the reviewed file list for execution guards.
-A failed confirmation keeps its error visible and offers Refresh preview; it cannot resend the consumed token or automatically execute the replacement review.
-Apply captures the actual overwritten bytes for rollback at execution, backing up every file before its first write so its receipt is saved once.
-An Apply binds the saved outputs it publishes by hash instead of copying them for its review, unless it fitted one to the Line widths; other batches freeze copies of what they write.
-A finished batch keeps only its backups, and the next review discards reviews older than their 20 minutes with the copies they froze.
-An Apply review lists the files it overwrites without comparing their text, which took minutes on a large game; a restore's review shows the start of each file's [diff](../backend/dazedtl/compatibility/text.py), matched window by window after each change.
-QA and restore keep their existing exact-before checks; no background synchronization is performed.
-
-Translation, Apply, Assistant-led's game writes, Text QA and new Line widths fit text with one [fitter](../backend/dazedtl/engine/util/rpgmaker_rewrap.py), so text written by one never needs fitting by the next, and Check has no line width task.
-It measures a line by what the game draws in its box: name-window and alignment codes take no room, names, icons and variables take a generous fixed room, since their values vary, and a full-width character, or a symbol the Japanese fonts RPG Maker games use draw full width such as ♥ or …, takes two, which captures of Fuuma Chronicle confirmed.
-Letters of ambiguous width, such as é or Greek and Cyrillic, take one, as MV/MZ's M+ and VX Ace's VL Gothic draw them.
-It wraps like the Japanese where the English allows, through [wrapShaped](../backend/dazedtl/engine/util/dazedwrap.py): blank first rows stay, lines break after the sentences the Japanese breaks after (and its clauses) and before list items, and otherwise lines are as few and as even as they can be; a message longer than its window starts each page after a sentence.
-A message window pages instead of cutting rows off, so a message keeps each list item it had on a row of its own on rows of its own, an item too wide for its row wrapping alone.
-Measured on six translated games against filling each line in turn, it matched the Japanese row count for 51-93% of messages (33-87%), broke after a sentence or clause at 42-77% of line breaks (9-14%), and left a short stray last line in 0-2% of multi-line messages (18-32%).
-Apply fits each translated value wider than its box in the output before freezing it; Japanese left untranslated and text with no box, such as a text picture, are never rewrapped.
-Kana and kanji mark text as Japanese; the middle dot and long vowel mark alone do not, since English uses them as bullets and dashes.
-Database text keeps its authored lines, a list's items one a line, until they need more rows than a window of fixed height shows; then the text flows together, its items starting a line where they can, since the game cuts off a row past the window's last.
-A note's prose tags are decided one by one, so an English body fits beside a tag left in Japanese.
-A text variable (code 122) is fitted only where translation wrote it, so a script of the game's own stays exact, and its text wraps around `${...}` and `#{...}`, which a line break would turn into a syntax error.
-Translation [writes](../backend/dazedtl/engine/util/rpgmaker_script_strings.py) a text variable's operand as a script string, so a backtick or a `${` the translation adds is text, while an interpolation its source runs, such as `${$gameActors.actor(1).name()}` for the hero's name, keeps running wherever the translation keeps it.
-In that string `\n` breaks a line except where it starts a name code: `\n[1]` or a name window such as `\n<Alice>` or `\nc<Alice>`, so its wrap never breaks a line right before a word that starts with `[` or `<`.
-A message whose rows are stored in several Show Text commands, as Assistant-led writes one Japanese line per command, is fitted as one text and its rows go back over the same commands, a row each with the rest in the last and empty commands when it has fewer (`spread`); no command is added or removed, so a saved game's place in an event and Len's next write still line up.
-Fitting each command on its own would have pushed 353 of Fuuma Chronicle's 3,307 overflowing messages past its four-row window, against 23 fitted as one text.
-Within a message, commands left in Japanese and labels such as 【Name】 keep their rows, and a row that changes the code repeated on each row, such as centring, or the font size starts its own text; Scroll Text rows are the author's, often a list such as credits, so a row too wide wraps inside its own command.
-Assistant-led's `write_rpgmaker` and `rebase_rpgmaker` fit the staged text to the game's saved Line widths, or the defaults Text QA also reads, and list text a fixed window still cuts off for the assistant to shorten; its assistant confirms the widths it measures with `playtest --layout` and saves them with `line_widths`, where Guided keeps them.
-Saving widths also fits the text the writer already wrote, in the data files holding its `_original` sources, so text written before the widths changed fits the new ones.
-Until a game has widths, it takes its engine's stock windows' from [game_settings](../backend/dazedtl/engine/util/game_settings.py): VX Ace's 544-pixel windows hold 52 characters, 40 beside a face, as captures of the engine's own windows confirmed, against MV/MZ's 60, so its assistant confirms measured widths by running the game itself, which `playtest --layout` cannot, and an Ace project still on the MV/MZ widths earlier versions gave it takes Ace's when opened, with its applied text fitted to them.
-New Line widths, saved by hand or measured, queue a `fit_text` publication of the areas whose width changed (new message rows alone rewrap nothing and only check what does not fit), which [starts](../backend/dazedtl/translation/text_fit.py) once nothing else runs and reports beside Save line widths; it rewraps only lines that no longer fit, so hand layout that fits stays.
-Its result lists the text no wrap fits in any area of those files, with the widths it fitted to, and Guided's readiness shows that list while the widths are the same and no later text write replaced the game's text.
-Like any write to the game, it waits while the game folder has an unfinished Git operation, such as a game update's merge whose conflicts its files still hold, or is off the translation branch; the request stays queued and starts once Git is done.
-It fits only the files DazedTL applied, leaving files translated another way as they are, and a file still as the last Apply wrote it records the fitted bytes as that Apply's, so the next Apply reads no edits; History restores it like QA's batches.
-Character counts only choose what to look at: text a fixed window cuts off even fitted goes to Text QA as a `text-fit` check, and QA's captures and the playtest confirm what the game shows.
-Reviewed Apply accepts saved partial output regardless of earlier Batch status, unresolved requests, provider work or collection.
-It validates and freezes the saved JSON without requiring translation completion; untranslated content stays as saved.
-Isolated translation workers do not veto Apply, while runtime operations, source/output checks and one-use publication guards still apply.
-Applying output does not settle request receipts, cancel work or establish translation completion.
-Compact run counts preserve preparation, submission, receipt, validation and application as separate evidence, and full request/provider errors remain available in Response & error.
-Audited assignments produce variable mappings, and the later comparison step consumes only mappings matching its selected events.
-Their controller exposes specific engine actions through one-use, project-bound previews; source, selection, settings and working-output changes invalidate the relevant preview.
-Explicit full-overwrite Apply does not track runtime JSON conflicts.
-Guided release freezes the current runtime scope and original-source bindings through an app-only, one-use preview.
-Patch packaging saves its checkpoint and workspace restore point as part of the same operation.
-The app-owned clean packager uses one inventory for inspection and writing, retains player documentation, excludes known private and translator material and names Windows can't extract, and verifies the source and destination before atomically replacing a ZIP.
-Of the other files it ships only those a saved game snapshot holds (the original, the prepared game, an update or a game backup) or the translation's runtime scope names, so a translator's notes, downloads and browser caches stay out; when either list can't be read, it ships them all.
-Guided patches add current applied-image receipts and explicitly reviewed image/font paths to the runtime scope.
-Each game's GameUpdate config, `gameupdate/patch-config.txt`, belongs to the engine's [gameupdate_config](../backend/dazedtl/engine/util/gameupdate_config.py).
-It writes the compact file from Settings' GameUpdate defaults and the game's repository, which the game's `.dazedtl/settings.json` keeps with any values the game sets itself and the digest of the file it last wrote.
-The [action guard](../backend/dazedtl/engine/desktop/backend/workflow_actions.py) that binds saved runs, QA and reviews to the game's settings leaves that record out, so writing it never marks saved work Outdated.
-The repository comes from the `origin` remote when that names the configured owner; a placeholder is never written, and a working config it has not seen is adopted as the game's own.
-A file changed after that write keeps its values until the user keeps or replaces them on the Project page.
-Settings offer GameUpdate's own forge names, gitlab, forgejo and github; a saved gitea reads as forgejo.
-[GameUpdate](../backend/dazedtl/translation/game_update.py) reconciles the file when a game is opened or selected, when the window regains focus, after Settings change and before a scope review or release, never while an operation holds the game; observations only read its status, cached on Git's metadata and the files it reads.
-Every translation version commits a complete config with the patch scope, as a translation-only addition when the original lacks it, so the Len `.gitignore` block allows it; a placeholder never enters Git.
-Guided releases wait while GameUpdate has an owner but no repository; a game without an owner, or with an edited file, still builds.
-The status warns when no Git remote shares the config's site and `owner/repo`; hosts of one forge, such as `ssh.gitgud.io` and `gitgud.io`, share a site.
-Local patches omit the config unless their commit is the verified public version, which Guided's patch never claims; clean ZIPs include it only with the frozen engine's verified public commit stamp.
-Player updater scripts remain included but cannot update an unstamped local build without configuration.
-Archive availability describes the saved ZIP on disk, never freshness against later game edits.
-Archive names and additional asset choices are retained per project, with separate game and patch names.
-A clean game ZIP holds the game in a folder of the archive's name rather than the source folder's, so players get the name the translator chose.
-RGSS3's Game.exe reaches its library through the ANSI code page and fails as "RGSS301.dll File corrupted" from a Japanese-named folder on English Windows, and Explorer's Extract All adds a folder of the archive's name, so a VX Ace game ZIP's name must be ASCII.
-Neither operation manufactures a user-review record or completes Len's report-based QA.
-The project helper cannot invoke Guided packaging; its separate QA requirements remain in force.
-Legacy Guided review receipts remain readable for existing records.
+Text Apply is a full overwrite: it binds the frozen candidates by hash while accepting intervening game-data edits, names the files it replaces edits in, and backs up what it overwrites before its first write.
+Its review lists files without comparing their text, which took minutes on a large game; a restore's review shows the [diff](../backend/dazedtl/compatibility/text.py).
+Applying never settles request receipts, cancels work or establishes translation completion, and Reapply uses a run's hash-verified retained output, never the latest working translation.
+Translation, Apply, Assistant-led's writes, Text QA and new Line widths fit text with one [fitter](../backend/dazedtl/engine/util/rpgmaker_rewrap.py), so text written by one never needs fitting by the next and Check has no line width task.
+New Line widths queue a `fit_text` publication ([text_fit](../backend/dazedtl/translation/text_fit.py)) that rewraps only lines that no longer fit in files DazedTL applied, so hand layout that fits stays; its result lists the text no wrap fits, which Guided's Line widths shows while the widths and the game's text are unchanged.
+Release freezes the runtime scope and original-source bindings through an app-only, one-use preview; the clean packager ships, besides the runtime scope, only files a saved game snapshot holds, so a translator's notes and downloads stay out.
+A VX Ace game ZIP's name must be ASCII: RGSS3's Game.exe reaches its library through the ANSI code page and fails as "RGSS301.dll File corrupted" from a Japanese-named folder on English Windows, and Explorer's Extract All adds a folder of the archive's name.
+The GameUpdate config belongs to the engine's [gameupdate_config](../backend/dazedtl/engine/util/gameupdate_config.py), and the [action guard](../backend/dazedtl/engine/desktop/backend/workflow_actions.py) leaves its settings record out, so writing it never marks saved work Outdated.
+Neither Apply nor packaging manufactures a user-review record or completes Len's report-based QA, and the project helper cannot invoke Guided packaging.
 
 ## Plugins and images
 
