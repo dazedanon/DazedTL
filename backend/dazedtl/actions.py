@@ -8,7 +8,7 @@ one row here plus its handler.
 `family` says how Guided reviews an action:
 
 - `run` starts a translation, estimate or speaker run from the current phase.
-- `lifecycle` backs up, versions, reloads or packages the game through the
+- `lifecycle` versions, reloads or packages the game through the
   app's own operations, reviewed by the app.
 - `native` is reviewed by the engine's workflow, which binds the plan to the
   game, guidance and workflow files it read.
