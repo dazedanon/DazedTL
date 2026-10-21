@@ -9,25 +9,6 @@ from pathlib import Path
 from typing import Any
 
 from util import rpgmaker_qa_lint as lint
-from util.qa.schema import (
-    DEFAULT_SCREEN_CHAR_BUDGET,
-    DEFAULT_SCREEN_ITEM_LIMIT,
-    _normalize_category,
-    REVIEW_STAGES,
-    _sha256,
-)
-from util.qa.storage import _read_json
-from util.qa.records import _latest_deep_reviews, _record_maps, _result_declines
-from util.qa.fitting import _record_problems
-from util.qa.selection import (
-    _command_number,
-    _compact_items,
-    _lint_game,
-    _lint_items,
-    _scene_groups,
-    _scene_item,
-    _scene_position,
-)
 from util.qa.bundles import (
     _bundle_items,
     _load_screen_index,
@@ -37,6 +18,25 @@ from util.qa.bundles import (
     _units,
     _write_bundles,
 )
+from util.qa.fitting import _record_problems
+from util.qa.records import _latest_deep_reviews, _record_maps, _result_declines
+from util.qa.schema import (
+    DEFAULT_SCREEN_CHAR_BUDGET,
+    DEFAULT_SCREEN_ITEM_LIMIT,
+    REVIEW_STAGES,
+    _normalize_category,
+    _sha256,
+)
+from util.qa.selection import (
+    _command_number,
+    _compact_items,
+    _lint_game,
+    _lint_items,
+    _scene_groups,
+    _scene_item,
+    _scene_position,
+)
+from util.qa.storage import _read_json
 
 
 def _deep_basis(

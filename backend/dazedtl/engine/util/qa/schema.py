@@ -10,7 +10,6 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
-
 TASK_SCHEMA = "rpgmaker-qa-task-v3"
 # The rules a task is reviewed under. Bump it only when a change makes reviews
 # an earlier version saved wrong or unreadable: a task in review then prepares

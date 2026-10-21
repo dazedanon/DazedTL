@@ -10,36 +10,44 @@ from typing import Any, Callable, Iterable
 from util import system
 from util.freshness import Basis, compare
 from util.paths import new_folder
-from util.rpgmaker_qa_manifest import QUOTED_TRANSFORMS, build_manifest, write_manifest
-from util.rpgmaker_qa_verify import verify_manifest
-from util.rpgmaker_qa_preflight import preflight
+from util.qa.advance import _screen_targets
+from util.qa.briefs import _task_instructions
+from util.qa.bundles import (
+    _bundle_items,
+    _candidate,
+    _header_flags,
+    _merge_candidate,
+    _regrouped,
+    _write_bundles,
+)
+from util.qa.fitting import task_layout
+from util.qa.interface import (
+    INTERFACE_FOLDER,
+    _capture_round,
+    _fit_checks,
+    _save_capture_record,
+)
+from util.qa.ledger import (
+    BASELINE_FOLDER,
+    REVIEWED_SCHEMA,
+    _baseline_ledger,
+    _Reviewed,
+    _task_ledger,
+)
+from util.qa.pace import _write_report, status
+from util.qa.records import _record_maps
+from util.qa.reopen import _note_observations, _observe_again, _recapture
 from util.qa.schema import (
-    _canonical_bytes,
     CHECKPOINT_SCHEMA,
     DEFAULT_SCREEN_CHAR_BUDGET,
     DEFAULT_SCREEN_ITEM_LIMIT,
     QA_RULES_VERSION,
-    QAResultError,
-    _sha256,
     TASK_SCHEMA,
+    QAResultError,
+    _canonical_bytes,
+    _sha256,
     _utc_now,
 )
-from util.qa.storage import (
-    _atomic_write_json,
-    _atomic_write_text,
-    _decisions,
-    DECISIONS_FILE,
-    DECISIONS_SCHEMA,
-    JUDGED_BEFORE,
-    _observation_key,
-    _read_json,
-    _rules_version,
-    _safe_task_root,
-    _slug,
-    _task_lock,
-)
-from util.qa.records import _record_maps
-from util.qa.fitting import task_layout
 from util.qa.selection import (
     _cluster_by_identity,
     _compact_items,
@@ -50,33 +58,24 @@ from util.qa.selection import (
     _lint_items,
     _screen_items,
 )
-from util.qa.interface import (
-    _capture_round,
-    _fit_checks,
-    INTERFACE_FOLDER,
-    _save_capture_record,
-)
-from util.qa.ledger import (
-    BASELINE_FOLDER,
-    _baseline_ledger,
-    _Reviewed,
-    REVIEWED_SCHEMA,
-    _task_ledger,
-)
-from util.qa.bundles import (
-    _bundle_items,
-    _candidate,
-    _header_flags,
-    _merge_candidate,
-    _regrouped,
-    _write_bundles,
+from util.qa.storage import (
+    DECISIONS_FILE,
+    DECISIONS_SCHEMA,
+    JUDGED_BEFORE,
+    _atomic_write_json,
+    _atomic_write_text,
+    _decisions,
+    _observation_key,
+    _read_json,
+    _rules_version,
+    _safe_task_root,
+    _slug,
+    _task_lock,
 )
 from util.qa.validation import _read_observations
-from util.qa.pace import status, _write_report
-from util.qa.advance import _screen_targets
-from util.qa.reopen import _note_observations, _observe_again, _recapture
-from util.qa.briefs import _task_instructions
-
+from util.rpgmaker_qa_manifest import QUOTED_TRANSFORMS, build_manifest, write_manifest
+from util.rpgmaker_qa_preflight import preflight
+from util.rpgmaker_qa_verify import verify_manifest
 
 # A task's folder is named by its key; the app sets aside a task it can't
 # trust under another name, and a task being prepared has a staging name.

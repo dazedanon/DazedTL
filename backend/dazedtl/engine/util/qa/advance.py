@@ -7,34 +7,26 @@ from pathlib import Path
 from typing import Any
 
 from util import rpgmaker_qa_lint as lint
-from util.qa.schema import (
-    _canonical_bytes,
-    DEFAULT_DEEP_CHAR_BUDGET,
-    DEFAULT_DEEP_ITEM_LIMIT,
-    FINISHED_STATUSES,
-    LINT_ITEM_LIMIT,
-    _normalize_category,
-    _normalize_family_key,
-    _sha256,
-    _utc_now,
-)
-from util.qa.storage import _atomic_write_json, _load_task, _read_json, _task_lock
-from util.qa.records import _latest_deep_reviews, _record_maps
-from util.qa.fitting import _box, _record_problems
-from util.qa.selection import (
-    _compact_items,
-    _database_checks,
-    _entry_numbers,
-    _lint_game,
-    _nearby_commands,
-    _scene_position,
-)
-from util.qa.interface import _capture_folder, _fit_checks, _interface_checks
 from util.qa.bundles import (
     _bundle_deep,
     _bundle_items,
     _load_screen_index,
     _write_bundles,
+)
+from util.qa.fitting import _box, _record_problems
+from util.qa.interface import _capture_folder, _fit_checks, _interface_checks
+from util.qa.pace import status
+from util.qa.records import _latest_deep_reviews, _record_maps
+from util.qa.schema import (
+    DEFAULT_DEEP_CHAR_BUDGET,
+    DEFAULT_DEEP_ITEM_LIMIT,
+    FINISHED_STATUSES,
+    LINT_ITEM_LIMIT,
+    _canonical_bytes,
+    _normalize_category,
+    _normalize_family_key,
+    _sha256,
+    _utc_now,
 )
 from util.qa.scope import (
     _declined_scope,
@@ -44,8 +36,15 @@ from util.qa.scope import (
     _open_follow_ups,
     _screen_target_rows,
 )
-from util.qa.pace import status
-
+from util.qa.selection import (
+    _compact_items,
+    _database_checks,
+    _entry_numbers,
+    _lint_game,
+    _nearby_commands,
+    _scene_position,
+)
+from util.qa.storage import _atomic_write_json, _load_task, _read_json, _task_lock
 
 # Ready deep items that open a deep bundle while screening continues.
 EARLY_DEEP_BATCH = DEFAULT_DEEP_ITEM_LIMIT

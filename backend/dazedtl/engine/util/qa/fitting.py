@@ -10,6 +10,11 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
 
+from util import rpgmaker_blocks as blocks
+from util import rpgmaker_rewrap as rewrap
+from util import rpgmaker_script_strings as script_strings
+from util.game_settings import game_wrap_widths, normalize_wrap_widths
+from util.qa.schema import _QUOTED_VALUE_RE, ADDED_BATTLER_NAME
 from util.rpgmaker_qa_manifest import (
     QUOTED_TRANSFORMS,
     SCRIPT_STRINGS,
@@ -17,13 +22,7 @@ from util.rpgmaker_qa_manifest import (
     _row_codes,
     resolve_pointer,
 )
-from util.game_settings import game_wrap_widths, normalize_wrap_widths
-from util import rpgmaker_blocks as blocks
-from util import rpgmaker_rewrap as rewrap
 from util.rpgmaker_rewrap import rendered_rows, widest_line
-from util import rpgmaker_script_strings as script_strings
-from util.qa.schema import ADDED_BATTLER_NAME, _QUOTED_VALUE_RE
-
 
 APPROVED_NONBLOCKING_MECHANICAL_FLAGS = frozenset({"suspicious-length-ratio"})
 

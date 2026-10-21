@@ -9,19 +9,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 
-from util.rpgmaker_qa_manifest import QUOTED_TRANSFORMS, resolve_pointer
-from util.qa.schema import QAResultError, _QUOTED_VALUE_RE, _sha256, _utc_now
-from util.qa.storage import (
-    _atomic_write_json,
-    JUDGED_BEFORE,
-    _load_task,
-    _observation_key,
-    _read_json,
-    _read_task,
-    _task_lock,
-)
-from util.qa.records import _bundle_row, _record_maps, _split_notice
-from util.qa.ledger import _pair_key, _task_ledger
 from util.qa.bundles import (
     _checkable,
     _declined_items,
@@ -33,6 +20,21 @@ from util.qa.bundles import (
     _screen_target_map,
     _split_declined,
 )
+from util.qa.editorial import _validate_editorial_result
+from util.qa.ledger import _pair_key, _task_ledger
+from util.qa.pace import status
+from util.qa.records import _bundle_row, _record_maps, _split_notice
+from util.qa.reopen import _issue_new_evidence, _note_observations
+from util.qa.schema import _QUOTED_VALUE_RE, QAResultError, _sha256, _utc_now
+from util.qa.storage import (
+    JUDGED_BEFORE,
+    _atomic_write_json,
+    _load_task,
+    _observation_key,
+    _read_json,
+    _read_task,
+    _task_lock,
+)
 from util.qa.validation import (
     _line_names,
     _own_lines,
@@ -42,9 +44,7 @@ from util.qa.validation import (
     _validate_screen_result,
     _validate_sweep_result,
 )
-from util.qa.pace import status
-from util.qa.reopen import _issue_new_evidence, _note_observations
-from util.qa.editorial import _validate_editorial_result
+from util.rpgmaker_qa_manifest import QUOTED_TRANSFORMS, resolve_pointer
 
 
 def accept_result(task_dir: str | Path, result_path: str | Path) -> dict[str, Any]:

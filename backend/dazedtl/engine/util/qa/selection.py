@@ -11,6 +11,9 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable
 
+from util import rpgmaker_qa_checks as checks
+from util import rpgmaker_qa_glossary as glossary_rules
+from util import rpgmaker_qa_lint as lint
 from util.paths import (
     GAME_GLOSSARY_RELATIVE,
     GAME_QUIRKS_RELATIVE,
@@ -18,20 +21,17 @@ from util.paths import (
     GAME_SKILL_RESERVED_NAMES,
     GAME_SKILLS_RELATIVE,
 )
-from util.rpgmaker_qa_manifest import _mechanical_evidence
-from util import rpgmaker_qa_checks as checks
-from util import rpgmaker_qa_glossary as glossary_rules
-from util import rpgmaker_qa_lint as lint
-from util.reference_games import reference_context
+from util.qa.fitting import _record_problems
+from util.qa.records import _decode_pointer, _record_maps, _resolve_parts
 from util.qa.schema import (
-    _canonical_bytes,
     _JAPANESE_ANCHOR_RE,
     LINT_ITEM_LIMIT,
+    _canonical_bytes,
     _sha256,
 )
 from util.qa.storage import _decisions, _read_json, _read_optional
-from util.qa.records import _decode_pointer, _record_maps, _resolve_parts
-from util.qa.fitting import _record_problems
+from util.reference_games import reference_context
+from util.rpgmaker_qa_manifest import _mechanical_evidence
 
 if TYPE_CHECKING:
     from util.qa.ledger import _Reviewed

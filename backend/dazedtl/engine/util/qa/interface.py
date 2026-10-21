@@ -9,19 +9,17 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Callable
 
-from util import system
-from util.paths import new_folder
-from util.rpgmaker_qa_manifest import resolve_pointer
-from util import rpgmaker_screens
-from util.rpgmaker_screens import screen_of, shown_text
 from util import rpgmaker_blocks as blocks
 from util import rpgmaker_rewrap as rewrap
-from util.qa.schema import _utc_now
-from util.qa.storage import _atomic_write_json, _read_json
-from util.qa.records import _changes, _record_maps, _set_pointer
+from util import rpgmaker_screens, system
+from util.paths import new_folder
 from util.qa.fitting import _box, _fit, _operation_writes, _window, _written
+from util.qa.records import _changes, _record_maps, _set_pointer
+from util.qa.schema import _utc_now
 from util.qa.selection import _cluster_by_identity
-
+from util.qa.storage import _atomic_write_json, _read_json
+from util.rpgmaker_qa_manifest import resolve_pointer
+from util.rpgmaker_screens import screen_of, shown_text
 
 # Captures of the game's interface screens, and those taken again with a
 # finding's corrections in place, under the task's folder. Each capture is a

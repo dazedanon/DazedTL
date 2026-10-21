@@ -6,6 +6,20 @@ import copy
 from pathlib import Path
 from typing import Any
 
+from util.qa.acceptance import accept_result
+from util.qa.advance import _advance_unlocked
+from util.qa.briefs import _decision_line, render_bundle
+from util.qa.bundles import (
+    _add_row,
+    _declined_items,
+    _make_bundle,
+    _next_number,
+    _shared_context,
+    _split_declined,
+)
+from util.qa.editorial import _finalize_unlocked
+from util.qa.pace import _stalled, status
+from util.qa.records import _bundle_row, _register_worker
 from util.qa.schema import FINISHED_STATUSES, REVIEW_STAGES, _utc_now
 from util.qa.storage import (
     _atomic_write_json,
@@ -15,21 +29,6 @@ from util.qa.storage import (
     _read_task,
     _task_lock,
 )
-from util.qa.records import _bundle_row, _register_worker
-from util.qa.bundles import (
-    _add_row,
-    _declined_items,
-    _make_bundle,
-    _next_number,
-    _shared_context,
-    _split_declined,
-)
-from util.qa.pace import _stalled, status
-from util.qa.advance import _advance_unlocked
-from util.qa.editorial import _finalize_unlocked
-from util.qa.acceptance import accept_result
-from util.qa.briefs import _decision_line, render_bundle
-
 
 # A worker's run reviews this many bundles, then a fresh run of it continues,
 # which keeps each review's context small.

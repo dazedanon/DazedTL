@@ -7,24 +7,25 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-from util.rpgmaker_qa_preflight import (
-    REASON as NOT_TRANSLATED_REASON,
-    kept_digest,
-    read_sources,
-    with_kept,
-)
+from util.qa.bundles import _check_counts
+from util.qa.interface import interface_capture
 from util.qa.schema import REVIEW_STAGES
 from util.qa.storage import (
     _atomic_write_json,
     _decisions,
     _read_json,
     _read_task,
-    rules_changed,
     _task_lock,
+    rules_changed,
 )
-from util.qa.interface import interface_capture
-from util.qa.bundles import _check_counts
-
+from util.rpgmaker_qa_preflight import (
+    REASON as NOT_TRANSLATED_REASON,
+)
+from util.rpgmaker_qa_preflight import (
+    kept_digest,
+    read_sources,
+    with_kept,
+)
 
 # A bundle whose worker has not been seen this long, or three times a typical
 # bundle's time when longer, has stalled; the next idle worker takes it.

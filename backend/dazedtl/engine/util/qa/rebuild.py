@@ -7,17 +7,24 @@ from pathlib import Path
 from typing import Any
 
 from util import system
+from util.qa.acceptance import _accept
+from util.qa.advance import _advance_unlocked, advance
+from util.qa.bundles import _next_number, _screen_digest
+from util.qa.claims import _decline, _stage_finished
+from util.qa.pace import status
+from util.qa.prepare import _inventory_text, prepare_task
+from util.qa.records import _bundle_row
 from util.qa.schema import (
     BUNDLE_SCHEMA,
-    _canonical_bytes,
     CHECKPOINT_SCHEMA,
     DEFAULT_HELPER,
     DEFAULT_SCREEN_CHAR_BUDGET,
     DEFAULT_SCREEN_ITEM_LIMIT,
     FINISHED_STATUSES,
-    QAResultError,
-    _sha256,
     TASK_SCHEMA,
+    QAResultError,
+    _canonical_bytes,
+    _sha256,
 )
 from util.qa.storage import (
     _atomic_write_json,
@@ -27,14 +34,7 @@ from util.qa.storage import (
     _slug,
     _task_lock,
 )
-from util.qa.records import _bundle_row
-from util.qa.bundles import _next_number, _screen_digest
 from util.qa.validation import _validate_screen_result
-from util.qa.pace import status
-from util.qa.advance import advance, _advance_unlocked
-from util.qa.acceptance import _accept
-from util.qa.claims import _decline, _stage_finished
-from util.qa.prepare import _inventory_text, prepare_task
 
 
 def rebuild_deep_from_screen(

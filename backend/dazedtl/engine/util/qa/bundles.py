@@ -9,20 +9,19 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 
-from util.rpgmaker_header_check import check as check_headers
+from util.qa.fitting import correction_problems
+from util.qa.records import _bundle_row, _helper_of, _item_targets
 from util.qa.schema import (
     BUNDLE_SCHEMA,
-    _canonical_bytes,
     DECLINE_REASON_LIMIT,
     DEFAULT_DEEP_CHAR_BUDGET,
     DEFAULT_DEEP_ITEM_LIMIT,
     QAResultError,
+    _canonical_bytes,
     _sha256,
 )
 from util.qa.storage import _atomic_write_json, _read_json
-from util.qa.records import _bundle_row, _helper_of, _item_targets
-from util.qa.fitting import correction_problems
-
+from util.rpgmaker_header_check import check as check_headers
 
 # Occurrences a deep item lists in full; its shapes still cover every one.
 DEEP_LOCATOR_LIMIT = 12

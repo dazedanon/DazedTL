@@ -7,26 +7,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 
-from util.rpgmaker_qa_manifest import _mechanical_evidence
 from util import rpgmaker_qa_checks as checks
-from util.qa.schema import (
-    ADDED_BATTLER_NAME,
-    _canonical_bytes,
-    DECLINE_REASON_LIMIT,
-    DEEP_RESULT_SCHEMA,
-    EDITORIAL_JUDGMENT_CATEGORIES,
-    FINDING_CATEGORIES,
-    _normalize_category,
-    QAResultError,
-    SCREEN_RESULT_SCHEMA,
-    _sha256,
-    SUMMARY_LIMIT,
-    SWEEP_RESULT_SCHEMA,
-)
-from util.qa.storage import _read_json
-from util.qa.records import _changes, _decode_pointer, _record_maps
-from util.qa.fitting import _adds_only_battler_name, _record_problems
-from util.qa.selection import _cluster_by_identity, _scene_position, _scene_records
 from util.qa.bundles import (
     _declined_items,
     _partition,
@@ -36,8 +17,26 @@ from util.qa.bundles import (
     _target_entry,
     _target_shape,
 )
+from util.qa.fitting import _adds_only_battler_name, _record_problems
+from util.qa.records import _changes, _decode_pointer, _record_maps
+from util.qa.schema import (
+    ADDED_BATTLER_NAME,
+    DECLINE_REASON_LIMIT,
+    DEEP_RESULT_SCHEMA,
+    EDITORIAL_JUDGMENT_CATEGORIES,
+    FINDING_CATEGORIES,
+    SCREEN_RESULT_SCHEMA,
+    SUMMARY_LIMIT,
+    SWEEP_RESULT_SCHEMA,
+    QAResultError,
+    _canonical_bytes,
+    _normalize_category,
+    _sha256,
+)
 from util.qa.scope import _declined_scope
-
+from util.qa.selection import _cluster_by_identity, _scene_position, _scene_records
+from util.qa.storage import _read_json
+from util.rpgmaker_qa_manifest import _mechanical_evidence
 
 SCREEN_VERDICTS = frozenset({"suspect", "needs-context"})
 MOTIF_DISPOSITIONS = frozenset({"preserved", "suspect", "uncertain-playtest"})

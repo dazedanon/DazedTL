@@ -9,27 +9,26 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 
+from util import rpgmaker_qa_glossary as glossary_rules
 from util import system
 from util.paths import GAME_GLOSSARY_RELATIVE, GAME_QUIRKS_RELATIVE
-from util.rpgmaker_qa_manifest import build_manifest
-from util import rpgmaker_qa_glossary as glossary_rules
+from util.qa.fitting import _written
+from util.qa.records import _changes, _record_maps, _result_declines
 from util.qa.schema import (
-    _canonical_bytes,
-    FINDINGS_SCHEMA,
     _JAPANESE_ANCHOR_RE,
+    FINDINGS_SCHEMA,
+    _canonical_bytes,
     _sha256,
 )
+from util.qa.selection import _glossary_entries, _scene_groups
 from util.qa.storage import (
-    answers,
     _atomic_write_json,
     _read_json,
     _read_task,
     _task_lock,
+    answers,
 )
-from util.qa.records import _changes, _record_maps, _result_declines
-from util.qa.fitting import _written
-from util.qa.selection import _glossary_entries, _scene_groups
-
+from util.rpgmaker_qa_manifest import build_manifest
 
 # Earlier reviews. A finished task's reviews still stand for text that has not
 # changed since, and a version the user says was checked before DazedTL counts
@@ -262,7 +261,9 @@ def _baseline_commit(game: Path, since: str) -> tuple[Path, str, str]:
     reviewed: before the update that brought version *since*, or *since* as
     a Git revision; and how to name it."""
     from util.version_update.git_workflow import (
-        _VERSION_LINE, GitWorkflowError, _run_git,
+        _VERSION_LINE,
+        GitWorkflowError,
+        _run_git,
     )
 
     try:

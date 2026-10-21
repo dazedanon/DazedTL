@@ -12,30 +12,6 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from util.paths import unlink_with_retry
-from util.rpgmaker_qa_manifest import _mechanical_evidence, build_manifest
-from util.rpgmaker_qa_verify import verify_manifest
-from util.qa.schema import (
-    _canonical_bytes,
-    CORRECTION_MAP_SCHEMA,
-    REGRESSION_SCHEMA,
-    _sha256,
-    _utc_now,
-)
-from util.qa.storage import (
-    ANSWERS,
-    answers,
-    ANSWERS_FILE,
-    ANSWERS_SCHEMA,
-    _atomic_write_json,
-    _decisions,
-    DECISIONS_FILE,
-    DECISIONS_SCHEMA,
-    _load_task,
-    _read_json,
-    _read_task,
-    _task_lock,
-)
-from util.qa.records import _changes, _set_pointer
 from util.qa.fitting import (
     _disallowed_flags,
     _flag_details,
@@ -44,6 +20,30 @@ from util.qa.fitting import (
     _written,
 )
 from util.qa.ledger import REVIEWED_FILE
+from util.qa.records import _changes, _set_pointer
+from util.qa.schema import (
+    CORRECTION_MAP_SCHEMA,
+    REGRESSION_SCHEMA,
+    _canonical_bytes,
+    _sha256,
+    _utc_now,
+)
+from util.qa.storage import (
+    ANSWERS,
+    ANSWERS_FILE,
+    ANSWERS_SCHEMA,
+    DECISIONS_FILE,
+    DECISIONS_SCHEMA,
+    _atomic_write_json,
+    _decisions,
+    _load_task,
+    _read_json,
+    _read_task,
+    _task_lock,
+    answers,
+)
+from util.rpgmaker_qa_manifest import _mechanical_evidence, build_manifest
+from util.rpgmaker_qa_verify import verify_manifest
 
 
 def answer(task_dir: str | Path, question: str, choice: str) -> dict[str, str]:

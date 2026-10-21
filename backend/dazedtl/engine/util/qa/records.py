@@ -7,7 +7,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 
-from util.qa.schema import DEFAULT_HELPER, QAResultError, REVIEW_STAGES, _utc_now
+from util.qa.schema import DEFAULT_HELPER, REVIEW_STAGES, QAResultError, _utc_now
 from util.qa.storage import _read_json
 
 

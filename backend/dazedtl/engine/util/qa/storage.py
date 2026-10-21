@@ -13,11 +13,11 @@ from typing import Any
 from util import system
 from util.freshness import Basis, compare
 from util.qa.schema import (
-    _canonical_bytes,
     CHECKPOINT_SCHEMA,
     QA_RULES_VERSION,
-    _sha256,
     TASK_SCHEMA,
+    _canonical_bytes,
+    _sha256,
 )
 
 

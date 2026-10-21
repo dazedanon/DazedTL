@@ -6,26 +6,25 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable
 
-from util import system
+from util import rpgmaker_screens, system
 from util.paths import unlink_with_retry
-from util import rpgmaker_screens
+from util.qa.advance import _issue_deep
+from util.qa.interface import (
+    INTERFACE_FOLDER,
+    RECAPTURE_OBSERVER,
+    _capture_record,
+    _capture_round,
+    _save_capture_record,
+)
+from util.qa.ledger import REVIEWED_FILE
 from util.qa.schema import _utc_now
 from util.qa.storage import (
-    _atomic_write_json,
     JUDGED_BEFORE,
+    _atomic_write_json,
     _load_task,
     _observation_key,
     _task_lock,
 )
-from util.qa.interface import (
-    _capture_record,
-    _capture_round,
-    INTERFACE_FOLDER,
-    RECAPTURE_OBSERVER,
-    _save_capture_record,
-)
-from util.qa.ledger import REVIEWED_FILE
-from util.qa.advance import _issue_deep
 
 
 def _recapture(

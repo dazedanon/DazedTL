@@ -8,18 +8,9 @@ from pathlib import Path
 from typing import Any
 
 from util import rpgmaker_blocks as blocks
-from util.qa.schema import (
-    ADDED_BATTLER_NAME,
-    _canonical_bytes,
-    EDITORIAL_JUDGMENT_CATEGORIES,
-    FINDINGS_SCHEMA,
-    _normalize_category,
-    _normalize_family_key,
-    QAResultError,
-    _sha256,
-    _utc_now,
-)
-from util.qa.storage import _read_json
+from util.qa.advance import _not_reviewed
+from util.qa.bundles import _screen_motif_map
+from util.qa.pace import _not_translated_report
 from util.qa.records import (
     _changes,
     _decode_pointer,
@@ -28,23 +19,31 @@ from util.qa.records import (
     _resolve_parts,
     _result_declines,
 )
-from util.qa.selection import (
-    _cluster_by_identity,
-    _lint_game,
-    _scene_records,
-    _scene_signature,
+from util.qa.schema import (
+    ADDED_BATTLER_NAME,
+    EDITORIAL_JUDGMENT_CATEGORIES,
+    FINDINGS_SCHEMA,
+    QAResultError,
+    _canonical_bytes,
+    _normalize_category,
+    _normalize_family_key,
+    _sha256,
+    _utc_now,
 )
-from util.qa.bundles import _screen_motif_map
 from util.qa.scope import (
     _add_lint_findings,
     _add_sweep_findings,
     _declined_scope,
     _lint_decisions,
 )
+from util.qa.selection import (
+    _cluster_by_identity,
+    _lint_game,
+    _scene_records,
+    _scene_signature,
+)
+from util.qa.storage import _read_json
 from util.qa.validation import _scene_line, _simulate_apply
-from util.qa.pace import _not_translated_report
-from util.qa.advance import _not_reviewed
-
 
 # The flags each correcting source fix may introduce.
 SOURCE_FIX_ALLOWED_FLAGS = {
