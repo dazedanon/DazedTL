@@ -591,8 +591,9 @@ assert listed()[0]["blocker"] == {
     "files": ["data/Items.json"],
 }, listed()[0]
 # Going back puts a file the patch didn't hold then to the original game's
-# bytes, here a plugin the patch took in later, which stays in it; a file
-# neither held whose original the patch-only original branch lacks stays.
+# bytes, here a plugin the patch took in later, which stays in it. The
+# glossary is DazedTL's, so going back to before it removes it; going back
+# and undoing it once did nothing, as if it were an unknown original file.
 plugin = "js/plugins/TitleMessage.js"
 oldest = listed()[-2]
 assert oldest["title"] == "Apply selected saved outputs", oldest
@@ -623,7 +624,7 @@ assert history()[0] == "Went back to “Apply selected saved outputs”|checkpoi
 assert history()[1] == "Edits made outside DazedTL|outside_edits|", history()
 assert (kept / plugin).read_bytes() == native
 assert plugin in git(kept, "ls-files").split()
-assert (kept / ".dazedtl/glossary.txt").is_file()
+assert not (kept / ".dazedtl/glossary.txt").exists()
 assert (kept / "data/Map001.json").read_bytes() == b'{"by": "export_selected"}'
 # Save a copy: the game as of a checkpoint, in a new folder outside it.
 copies = temporary / "copies"

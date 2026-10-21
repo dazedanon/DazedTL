@@ -305,12 +305,7 @@ function CheckpointRow({
   ) : job?.status === "complete" ? (
     job.action === "checkpoint_copy" ? (
       <>
-        {/* The folder's name says which copy; the user chose where. */}
-        <span title={result?.folder}>
-          <Feedback
-            notice={`Saved a copy: ${fileName(result?.folder || "")}`}
-          />
-        </span>
+        <Feedback notice={`Saved a copy: ${fileName(result?.folder || "")}`} />
         <ActionControl
           inline
           variant="link"
@@ -331,7 +326,9 @@ function CheckpointRow({
       <Feedback
         notice={
           !result?.files
-            ? "The game already matched this checkpoint."
+            ? job.action === "checkpoint_back"
+              ? "The game already matched this checkpoint."
+              : "Nothing to undo; its files were already as before it."
             : job.action === "checkpoint_back"
               ? `Went back; ${plural(result.files, "file")} changed. Undo it from the top of the list.`
               : `Undone; ${plural(result.files, "file")} changed. Undo the new checkpoint to put it back.`
@@ -361,7 +358,7 @@ function CheckpointRow({
         variant="quiet"
         className="checkpoints-more"
         label={`Actions for ${row.title}`}
-        aria-label={`More actions for ${row.title}, ${when(row.time)}`}
+        aria-label={`More actions for ${row.title}, ${when(row.time)}, ${changedFiles(row)}`}
         title={
           blocked ||
           (!row.restorable
@@ -417,7 +414,15 @@ function CheckpointRow({
           Save a copy…
         </MenuItem>
       </Menu>
-      {feedback && <div className="checkpoints-feedback">{feedback}</div>}
+      {feedback && (
+        <div
+          className="action-row-feedback"
+          // A copy's folder name says which copy; the user chose where.
+          title={job?.action === "checkpoint_copy" ? result?.folder : undefined}
+        >
+          {feedback}
+        </div>
+      )}
     </ActionRow>
   );
 }

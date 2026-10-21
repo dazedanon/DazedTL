@@ -393,6 +393,10 @@ class _Game:
             return tree[path]
         if path in self.original:
             return self.original[path]
+        # The glossary, settings and skills are DazedTL's, never the
+        # original game's, so one the target lacked didn't exist then.
+        if path.startswith(".dazedtl/"):
+            return None
         return None if self.complete else "keep"
 
     def tree(self, commit):

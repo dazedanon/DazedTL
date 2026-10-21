@@ -1210,18 +1210,31 @@ main:has(> .page-layout--wide) {
   .action-row-actions
     > .action-control
     > .action-control-feedback
-    > .feedback:not(.error) {
+    > .feedback:not(.error),
+  .action-row-actions > .action-row-feedback > .feedback:not(.error) {
     display: block;
   }
   .action-row-actions
     > .action-control
     > .action-control-feedback
     > .feedback
-    > :is(svg, .unsaved-dot) {
+    > :is(svg, .unsaved-dot),
+  .action-row-actions > .action-row-feedback > .feedback > svg {
     display: inline-block;
     margin-inline-end: var(--space-2);
     vertical-align: middle;
   }
+}
+/* A row's own result, for actions that are not one control, such as a
+   menu's: its line under the buttons, as a control's feedback takes. */
+.action-row-actions > .action-row-feedback {
+  order: 1;
+  flex-basis: 100%;
+  min-width: 0;
+  text-align: end;
+}
+.action-row:has(> .action-row-actions > .action-row-feedback) {
+  align-items: start;
 }
 .action-row-actions > .actions {
   margin-top: 0;

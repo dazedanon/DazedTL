@@ -49,7 +49,7 @@ export function blockedBy(row: Checkpoint) {
   // Edits made outside DazedTL become a checkpoint only with its next change.
   if (!later.commit)
     return `${shared} ${later.files.length === 1 ? "was" : "were"} edited outside DazedTL since; go back to before this change instead.`;
-  return `Undo the later “${later.title}” first; it also changed ${shared}.`;
+  return `Undo the later ${quoted(later.title)} first; it also changed ${shared}.`;
 }
 
 /** Consecutive checkpoints of one stage, so the list reads by stage. */
@@ -62,3 +62,8 @@ export function runs(rows: Checkpoint[]) {
   }
   return grouped;
 }
+
+/** A title in quotes, single ones inside a title already quoting another,
+ * as checkpoint names quote theirs. */
+export const quoted = (title: string) =>
+  title.includes("“") ? `‘${title}’` : `“${title}”`;
