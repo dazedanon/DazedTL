@@ -372,8 +372,8 @@ export function ReleaseReview({
       <p className="muted">{preview.package?.updater}</p>
       {patch && (
         <p className="muted">
-          Build also saves the reviewed scope as a translation version and backs
-          up the project first. No publication.
+          Build first saves any changes waiting in the game as checkpoints. No
+          publication.
         </p>
       )}
     </div>
