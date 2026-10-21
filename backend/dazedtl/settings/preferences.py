@@ -6,25 +6,75 @@ from typing import cast
 
 DEFAULT_ENTRIES_PER_REQUEST = 50
 DEFAULT_OUTPUT_TOKENS = 32_768
-# Below the 500k Tier 1 Batch queue limit published for GPT-5.5 Pro;
-# source and account-limit caveats live in docs/architecture.md.
+# The default Batch input-token allowance for new OpenAI runs, which a
+# connection or model can override in batchInputTokens. It leaves 20% headroom
+# below the 500k Tier 1 Batch queue limit published for GPT-5.5 Pro
+# (https://developers.openai.com/api/docs/models/gpt-5.5-pro), which is lower
+# than the published GPT-6 Astra and GPT-6 Luna limits. It is a conservative
+# fallback, not an account quota: older models can have lower limits, GPT-6.1
+# Sol's public page does not list its Batch limit, other pending jobs share the
+# queue, and account usage outside the tracked Guided runs still needs headroom
+# because the local estimate is not a provider quota lookup. The frozen value
+# becomes the Guided Batch window's combined active-token allowance, which
+# clarification batches reserve from before they record submission intent.
+# Older runs keep their native default or saved sequential limit.
 DEFAULT_BATCH_INPUT_TOKENS = 400_000
+# The request policies below are frozen into each new API run before it is
+# estimated, so a policy joins the estimate's identity and applies to Live and
+# Batch alike. A run frozen without one keeps its original parameters, parser
+# behavior and request identities. The event policies are implemented by the
+# engine's modules/rpgmakermvmz.py, which holds each one's full rule.
+# The native engine's implicit temperature, frequency penalty and reasoning
+# effort are omitted (compatibility/request_parameters), since model
+# preferences expose no explicit override for them; the provider's defaults
+# apply, without guessing a model's capabilities.
 GENERATION_PARAMETERS = "provider-defaults-v1"
+# Built-in menu choices are requested only on the first event pass, keeping
+# their scene context, so the write pass cannot queue a duplicate during
+# preparation or consume and retry a rejected choice again.
 CHOICE_COLLECTION = "event-choices-once-v1"
+# Already-translated code 101 nameplates still give dialogue context, unnamed
+# messages clear the preceding speaker, and an implicit [Name] nameplate must
+# pass short-name plausibility checks, so bracketed tutorial prose gets normal
+# text instructions. Adjacent text with its own retained original stays a
+# separate translation unit.
 SPEAKER_CONTEXT = "event-speaker-context-v1"
+# A nameplate sharing its line with the text, such as 【Name】：text or
+# Name「text, is sent only as the [Speaker]: prefix, so the model does not
+# write it into the message a second time.
 SAME_LINE_SPEAKERS = "event-same-line-speakers-v1"
-# Small RPG Maker event pages of one file share a request, each page labelled.
+# Small RPG Maker event pages of one file share a request, each page labelled,
+# because each request otherwise repeats the full system prompt: a 970-map
+# game's Maps & events estimate fell from 4,089 to 2,173 requests and from
+# 23.5 to 14.0 million input tokens. A page of more than SHARED_PAGE_ENTRIES
+# (10) message boxes and choices keeps a request of its own, so no other
+# scene's speakers or subjects bleed into it, and its choice menus join that
+# request in play order when the page fits one request. A packed reply of the
+# wrong length writes none of its pages, which stay untranslated for a retry.
 PAGE_PACKING = "event-pages-v1"
-# Stretches left between translations an earlier run saved share a request,
-# each labelled with the lines before it.
+# Stretches left between translations an earlier run saved share requests up to
+# the request size, each labelled with the lines before it and their earlier
+# translations, so scattered leftovers do not each pay for a full prompt. Runs
+# frozen without it, and a call with one stretch, send each stretch with its
+# preceding source.
 REUSE_STRETCHES = "shared-stretches-v1"
 # A Batch's grouped map display names are identified by the maps they name, as
-# a Live run identifies each map's name, so either run reuses the other's.
+# a Live run identifies each map's name, and each translation is saved under
+# every one of those maps, so either run reuses the other's whichever map a
+# selection starts at; a name an older run saved under the first map is reused
+# too. Runs frozen without it keep the first map's identities, so their Batch
+# consume rebuilds the requests it collected.
 MAP_NAME_IDENTITIES = "map-name-identities-v1"
+# A skill's battle messages carry a note naming the actors that learn it and
+# the enemies whose actions use it, and those names bring their glossary
+# entries, so the model can choose pronouns for the battler. A skill granted
+# any other way, such as by a plugin, has no users and its battler stays
+# gender neutral, as does a state message's (_battle_users in the parser).
 BATTLE_MESSAGE_USERS = "battle-message-users-v2"
 # RPG Maker MV/MZ text still to translate is what engine util/source_text
 # reads as Japanese, the rule Guided's line counts share, and finished labels
-# and map names are not sent again.
+# and map names are not sent again. A run frozen without it reads Japanese by
+# LANGREGEX and sends map names and labels on every pass.
 SOURCE_TEXT = "source-letters-v1"
 # Each battle-message-users policy a saved run may hold, by the parser level it
 # enables: v2 also treats a party of one actor as that actor.

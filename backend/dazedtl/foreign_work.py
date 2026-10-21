@@ -6,6 +6,14 @@ copied game, a new profile or a reinstall opens the same folder as a new
 project. Its saved work is then neither used nor discarded until the user
 chooses: the feature takes it over after rechecking what it can, or starts over
 with the saved files moved aside under a dated name.
+
+Taking over keeps findings, choices, working copies, reviews and application
+records, but not copied requests: their authority (plugin request hashes in
+the old profile, image requests bound to the old project) cannot be checked
+here. Starting over moves only the feature's work folder; editable image
+copies and the Qt publisher's image backups lie outside it and stay in place.
+Each choice binds the hash of the saved state the user was shown (see
+reviewed).
 """
 
 import hashlib

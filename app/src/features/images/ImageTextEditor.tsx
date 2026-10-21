@@ -1408,6 +1408,8 @@ function Editor({
                           message: job.status === "complete" ? "" : job.message,
                         }}
                       />
+                      {/* These runs have no run inspector, so a failed run's log
+                          tail appears beside its status. */}
                       {["failed", "interrupted"].includes(job.status) &&
                         !!job.log?.length && (
                           <ExpandableText

@@ -216,7 +216,8 @@ function nodeFolder() {
 
 /**
  * The pinned Node and its npm, so every install resolves packages the same
- * way. START provides it on Windows; elsewhere setup can fetch it itself.
+ * way; the system Node may have no npm or a different version. START provides
+ * it on Windows; elsewhere setup can fetch it itself.
  */
 async function npm() {
   const name = nodeFolder();
@@ -375,7 +376,9 @@ export async function ensureSetup({ mode }) {
     console.log("Installing Electron…");
     await installElectron(electron);
   }
-  // Translation projects are Git repositories.
+  // Translation projects are Git repositories, and Windows ships no Git.
+  // MinGit's system config sets core.autocrlf=true as Git for Windows does,
+  // which the engine's repo-local line-ending settings already override.
   const git = bundledGit();
   if (git) {
     if (!fs.existsSync(path.join(git.bin, "git.exe"))) {

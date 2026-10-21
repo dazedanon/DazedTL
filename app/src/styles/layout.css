@@ -48,6 +48,8 @@
   background: var(--color-accent);
   mask: url("../assets/brand/cat-head-outline.png") center / contain no-repeat;
 }
+/* The project switcher and the sidebar below size themselves as chrome
+   instead of taking --control-height. */
 .current-project {
   font-size: var(--font-body);
   max-width: 430px;

@@ -70,7 +70,9 @@ function lock() {
 
 /**
  * Hands over to the START launcher that an update just installed, so a
- * release's own setup and runtime pins apply from its first start.
+ * release's own setup and runtime pins apply from its first start. 2.0.0's
+ * launcher instead continued in place after its swap, so releases still keep
+ * `.node-version`, `.python-version` and the other files it reads then.
  */
 function restart() {
   const result =

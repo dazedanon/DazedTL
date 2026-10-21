@@ -73,7 +73,9 @@
 details {
   margin: var(--space-4) 0;
 }
-/* Every disclosure uses the app's chevron instead of the browser marker. */
+/* Every disclosure uses the app's chevron instead of the browser marker.
+   A disclosure holds genuine advanced settings or long evidence, never status
+   the task already needs. */
 summary {
   display: inline-flex;
   align-items: center;

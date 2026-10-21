@@ -178,10 +178,16 @@ function outcome(ended: Work[]) {
 
 /**
  * Watches one window's observations for moments the user would come back
- * for: work they started that took a while ending or waiting for approval,
- * a copied task coming back from their assistant, text QA's questions, and
- * an Assistant-led run that is blocked, finished or waiting for approval.
- * The first observation of a game only sets where things stand.
+ * for: work they started that took at least WATCHED_MS and then ended or
+ * waited for approval (steps within FOLLOW_MS of each other count as one
+ * piece of work, and an approval given in the window starts new work), a
+ * copied task leaving "waiting" with the same copy, which a dismissal never
+ * does because dismissed tasks leave the list, text QA's new questions, and
+ * an Assistant-led run that is blocked, finished or waiting for an
+ * estimate's approval. Which work counts is `userWork`'s.
+ * It reads every observation outside rendering, so a background window
+ * still notices. The first observation of a game only sets where things
+ * stand.
  */
 export class WorkAlerts {
   private project: string | null = null;

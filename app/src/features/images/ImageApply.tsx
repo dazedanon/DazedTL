@@ -6,7 +6,11 @@ import { Modal } from "../../ui/Modal";
 import { ActionBar } from "../../ui/ActionBar";
 import { Message } from "../../ui/Feedback";
 
-/** What an image apply or restore includes and leaves out. */
+/**
+ * What an image apply or restore includes and leaves out. It shows
+ * destinations, never hashes or backup paths: execution rechecks the exact
+ * reviewed bytes.
+ */
 export function ImageApplyContent({
   preview,
   selected,

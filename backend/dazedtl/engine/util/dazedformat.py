@@ -18,6 +18,10 @@ def format_json_files(
 ) -> tuple[int, list[str]]:
     """Format every .json file found under *directory* in-place.
 
+    Files are written as UTF-8 with LF on every platform, like translated JSON
+    and fitting output, and a file that is already formatted but has CRLF or CR
+    endings is rewritten too, so Apply never shows whole-file line-ending diffs.
+
     Returns (formatted_count, error_list).
     """
     directory = Path(directory)

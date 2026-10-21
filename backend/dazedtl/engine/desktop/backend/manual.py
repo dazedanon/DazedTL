@@ -32,7 +32,9 @@ def launch_worker(arguments, **kwargs):
 @extensions.point
 def finish_estimate(directory, plan, estimate, stopped):
     """A finished local estimate's figures. Its worker counted tokens offline;
-    a host may count its kept requests again before the run completes."""
+    a host may count its kept requests again before the run completes. This
+    runs on the run's worker thread outside the job lock, so snapshots never
+    wait on it, and ``stopped`` ends the count."""
     return estimate
 
 

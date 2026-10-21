@@ -1,5 +1,9 @@
 # Starts DazedTL on Windows for START.bat. The first run downloads the pinned
 # Node into .runtime; the launcher then installs everything else.
+# START.bat is a single line, because cmd reads a batch file as it runs and an
+# update's swap replaces it. That line ends with this script's result as an
+# explicit exit code, since a bare `exit /b` would report success to `cmd /c`
+# callers such as the live test.
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12

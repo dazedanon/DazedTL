@@ -1,6 +1,7 @@
 // Keeps tracked paths unpackable and importable on Windows: short enough for a
-// Windows ZIP, and distinct without letter case. Both rules are explained under
-// Distribution and updates in docs/architecture.md.
+// Windows ZIP, and distinct without letter case. Windows Explorer and Python
+// stop at 260 characters unless long paths are enabled, and Explorer unpacks a
+// GitHub ZIP into a doubled top folder, so the limit leaves room for both.
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { root } from "./dependencies.mjs";

@@ -48,7 +48,8 @@ _TOOL_EMAIL = "local@dazedmtl.invalid"
 _ZERO_OID = "0" * 40
 # Commands that take the index lock before they change anything, so one that
 # found the lock held can run again. A `git status` holds it briefly while it
-# refreshes the index, including the app's own polls.
+# refreshes the index, including the app's own polls; waiting here, rather
+# than stopping the polls, lets them keep that refresh while workers write.
 _INDEX_WRITERS = frozenset(
     {"add", "checkout", "checkout-index", "cherry-pick", "commit", "read-tree", "reset", "rm", "update-index"}
 )

@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 
 /**
  * An inline note beside the content it describes. Neutral notes read as
- * plain secondary text, so empty states do not look like problems.
+ * plain secondary text, so empty states do not look like problems. Warnings
+ * get the warning edge and carry their way forward beside them.
  */
 export function Notice({
   tone = "neutral",

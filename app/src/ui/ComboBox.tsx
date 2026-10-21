@@ -25,7 +25,15 @@ type Props = Omit<ComponentProps<"input">, "value" | "onChange" | "list"> & {
   selectionOnly?: boolean;
 };
 
-/** Editable suggestions, fixed choices, or searchable selection in a bounded popup. */
+/**
+ * Editable suggestions, fixed choices, or searchable selection in a bounded
+ * popup. The top-layer list scrolls within the available window height and
+ * opens above the field when space below is limited. It stands in for the
+ * native datalist popup, so typed values and keyboard selection are kept
+ * here; choice labels hide the automatic selection highlight (ui.css) while
+ * still replacing on typing, and typed queries and editable text keep normal
+ * selection.
+ */
 export function ComboBox({
   value,
   options,

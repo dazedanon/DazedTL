@@ -159,7 +159,9 @@ class Projects:
         """Take a game off the recent list, closing it if it is open.
 
         Its record stays, hidden, so its runs keep their owner and its Batches
-        are still collected; opening the game again brings it back.
+        are still collected; opening the game again brings it back. Older
+        versions ignore the flag and list the game, so it needs no new format
+        version.
         """
         data = deepcopy(self.data)
         self._get(data, project_id)["hidden"] = True

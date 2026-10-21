@@ -198,6 +198,9 @@ export function virtualRows(
   };
 }
 
+// Sound effects lettered into scene art are flavor, often hundreds per game:
+// an image with nothing else is found "Sound effects only" and stays out of
+// the list like a text-free one.
 export const imageClassificationLabels: Record<string, string> = {
   recommended: "Recommended",
   uncertain: "Uncertain",

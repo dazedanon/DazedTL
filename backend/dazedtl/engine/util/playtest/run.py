@@ -643,7 +643,11 @@ def layout(
     stopped: Callable[[], bool] = lambda: False,
 ) -> dict[str, Any]:
     """Shows English at each width in the game's own windows, measures it
-    and captures each; writes layout.json to `out` and changes no game file."""
+    and captures each; writes layout.json to `out` and changes no game file.
+
+    It plays only the title, New Game and the opening, and keeps its own
+    reports apart from the playtest's. It confirms a setup task's measured
+    widths on screen where that task had improvised a browser session."""
     data = Path(data_root).expanduser().resolve()
     target = Path(out).expanduser().resolve()
     target.mkdir(parents=True, exist_ok=True)
