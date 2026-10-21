@@ -24,7 +24,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 
-from dazedtl.storage import write_bytes
+from dazedtl.system import unlink, write_bytes
 from dazedtl.translation.files import project_path
 
 # The game folders a gateway is writing to in this context.
@@ -40,12 +40,14 @@ class GameWrite:
         self.everything = False
 
     def put(self, relative, raw, mode=None):
-        """Writes one game file atomically, or takes it out for None."""
+        """Writes one game file whole, with `mode` when given, or takes it
+        out for None. A file the write creates is readable by everyone, as
+        the game's own files are."""
         target = project_path(self.root, relative, exists=False)
         if raw is None:
-            target.unlink(missing_ok=True)
+            unlink(target, missing_ok=True)
         else:
-            write_bytes(target, raw)
+            write_bytes(target, raw, 0o644 if mode is None else mode)
             if mode is not None:
                 target.chmod(mode)
         self.wrote(relative)
