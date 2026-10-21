@@ -276,6 +276,7 @@ class ObservationTests(unittest.TestCase):
                 "www/data/Linked.json",
                 "www/data/Missing.json",
                 "../Map001.json",
+                "/Map001.json",
                 "www\\data\\Map001.json",
             ):
                 with self.assertRaises(ValueError) as expected:
