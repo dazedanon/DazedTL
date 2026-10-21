@@ -110,19 +110,16 @@ EARLIER_ANSWERS = "text-qa-choices.json"
 
 
 def adopt_answers(folder):
-    """Moves the answers 2.24.0 and earlier kept in the game workspace into
+    """Copies the answers 2.24.0 and earlier kept in the game workspace into
     their tasks, whose ledgers read them there, so a line the user kept reads
-    reviewed. A task that is gone or broken, which no review builds on, takes
-    its answers with it; one that can't be written now keeps them here for
-    the next read."""
+    reviewed. The file stays, since going back to 2.24.0 reads it, and an
+    answer the task already holds, given since, wins over it."""
     from util import rpgmaker_qa as qa
 
-    path = Path(folder) / EARLIER_ANSWERS
     try:
-        earlier = read_json(path)
+        earlier = read_json(Path(folder) / EARLIER_ANSWERS)
     except ValueError, OSError:
         return
-    left = {}
     for task, choices in earlier.items() if isinstance(earlier, dict) else ():
         try:
             root = _stored_task(folder, task)
@@ -132,19 +129,9 @@ def adopt_answers(folder):
             for question, choice in choices.items():
                 if question not in saved and choice in qa.ANSWERS:
                     qa.answer(root, question, choice)
-        except ValueError, AttributeError:
+        # A task gone, broken or out of reach now holds no review to build on.
+        except ValueError, OSError, AttributeError:
             continue
-        except OSError:
-            left[task] = choices
-    # Moving them again adds nothing, so a file another reader holds open, as
-    # Windows refuses to remove, goes on the next read.
-    try:
-        if left:
-            write_json(path, left)
-        else:
-            path.unlink(missing_ok=True)
-    except OSError:
-        pass
 
 
 def _failure(error):

@@ -533,7 +533,13 @@ hashes = {
     "Map001.json": hashlib.sha256((data / "Map001.json").read_bytes()).hexdigest()
 }
 assert labels(asked, kept, hashes) == ["reviewed"]
-assert qa.answers(asked) == {question["id"]: "keep"} and not choices.exists()
+# The record stays for going back to 2.24.0, and an answer the task holds,
+# given since, wins over it.
+assert qa.answers(asked) == {question["id"]: "keep"} and choices.exists()
+qa.answer(asked, question["id"], "use")
+assert labels(asked, kept, hashes) == ["waiting"]
+assert qa.answers(asked) == {question["id"]: "use"}
+qa.answer(asked, question["id"], "keep")
 # The next round reads the kept line as reviewed and leaves its problem out.
 again = prepare(observations=kept)
 assert again != asked and "おはよう" not in targets(again), targets(again)
