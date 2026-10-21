@@ -16,7 +16,7 @@ from dazedtl.compatibility.dazedmtl import ExistingBackend
 from dazedtl.compatibility.observations import RunObservations
 from dazedtl.compatibility.run_evidence import Evidence
 from dazedtl.storage import write_json
-from dazedtl.translation.files import digest, project_path
+from dazedtl.translation.files import digest, live_path, project_path
 
 
 class ObservationTests(unittest.TestCase):
@@ -267,6 +267,7 @@ class ObservationTests(unittest.TestCase):
                 ),
                 project_path(root, "www/data/Map001.json"),
             )
+            self.assertEqual(live_path(root, "www/data/Map001.json"), path)
             try:
                 (root / "www/data/Linked.json").symlink_to(path)
             except OSError:  # Windows without the symbolic link privilege
@@ -283,6 +284,11 @@ class ObservationTests(unittest.TestCase):
                     ValueError, re.escape(str(expected.exception))
                 ):
                     observed(lambda files: files.project_path(root, relative))
+                # A live run file is checked by its folder, with the same answer.
+                with self.assertRaisesRegex(
+                    ValueError, re.escape(str(expected.exception))
+                ):
+                    live_path(root, relative)
             self.assertEqual(
                 observed(lambda files: files.digest(path)), digest(path.read_bytes())
             )

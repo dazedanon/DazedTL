@@ -100,7 +100,7 @@ def live_path(root, relative, *, exists=True):
         if not folder.is_dir():
             raise ValueError("The selected game folder is unavailable.")
     path = folder / name
-    if path.is_symlink():
+    if path.is_symlink() or getattr(path, "is_junction", lambda: False)():
         raise ValueError("Project operations cannot follow symbolic links.")
     if exists and not path.is_file():
         raise ValueError("The selected project file is missing.")
