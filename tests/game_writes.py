@@ -119,11 +119,15 @@ def _writer():
 
 
 def _removing():
-    """Whether a folder is being removed: Windows makes its read-only files
-    writable first, which is no write to them."""
+    """Whether shutil.rmtree is removing a folder, which the check judges by
+    the folder it removes: on Windows it makes read-only files writable and
+    deletes each file by its full path."""
     frame = sys._getframe(2)
     while frame:
-        if os.path.normcase(frame.f_code.co_filename) == _shutil:
+        code = frame.f_code
+        if os.path.normcase(code.co_filename) == _shutil and (
+            code.co_name == "rmtree" or code.co_name.startswith("_rmtree")
+        ):
             return True
         frame = frame.f_back
     return False
@@ -132,13 +136,13 @@ def _removing():
 def _hook(event, args):
     if event != "open" and event not in TARGETS:
         return
-    if event == "os.chmod" and _removing():
-        return
     path = _target(event, args)
     if not isinstance(path, (str, os.PathLike)):
         return
     path = os.path.abspath(os.fspath(path))
     if not path.startswith(_scratch):
+        return
+    if event != "shutil.rmtree" and _removing():
         return
     path = Path(path)
     _shaped(path)
