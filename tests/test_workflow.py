@@ -1061,6 +1061,8 @@ class WorkflowTests(unittest.TestCase):
         translated = (self.game / "source.json").read_bytes()
         (self.game / "js").mkdir()
         (self.game / "js/Forge.js").write_text("added by setup", encoding="utf-8")
+        # The game's plugin list makes the folder a game's for the write check.
+        (self.game / "js/plugins.js").write_text("var $plugins = [];", encoding="utf-8")
         (self.game / "save").mkdir()
         (self.game / "save/file1.rmmzsave").write_text("progress", encoding="utf-8")
         (self.game / ".git").mkdir()
