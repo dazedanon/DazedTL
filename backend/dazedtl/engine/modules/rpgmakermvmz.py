@@ -4335,23 +4335,21 @@ def _searchCodes(page, pbar, jobList, filename):
                             # Set Code
                             codeList[groupStart]["code"] = code
 
-                            # Handle 405
+                            # A scroll shows a row a line: its lines go over
+                            # its own rows, adding and removing none, so a saved
+                            # game's place in the event stays valid.
                             if code == 405:
-                                # 1. Split translatedText by newlines
                                 lines = [line for line in translatedText.split('\n') if line.strip() != ""]
-
-                                # 2. The first string replaces the rows
                                 rpgmaker_blocks.write_text(
-                                    codeList, tuple(range(groupStart, i + 1)), lines[0]
+                                    codeList,
+                                    tuple(
+                                        at
+                                        for at in range(groupStart, i + 1)
+                                        if not rpgmaker_blocks.emptied(codeList[at])
+                                    ),
+                                    "\n".join(lines),
+                                    joined=False,
                                 )
-
-                                # 3. Make copies for each additional line and insert them
-                                for idx, line in enumerate(lines[1:]):
-                                    new_item = copy.deepcopy(codeList[groupStart])
-                                    new_item.pop("_original", None)
-                                    new_item["parameters"] = [line]
-                                    codeList.insert(groupStart + idx + 1, new_item)
-                                i += len(lines) - 1
 
                             # Handle 401
                             else:

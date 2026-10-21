@@ -1139,7 +1139,8 @@ try:
             assert not report.changes, report.changes
             # A message left untranslated or refused keeps every row; it was
             # written back over its first row, and the others were dropped.
-            # A translated scroll still takes a row a line after it.
+            # A translated scroll is laid over its own rows, adding and
+            # removing none, so a saved game's place in the event stays valid.
             bard = [
                 name("花"),
                 *(command(401, [f"歌その{index}"]) for index in (1, 2, 3)),
@@ -1151,7 +1152,9 @@ try:
             def scroll_only(text, *_args, **_kwargs):
                 return [
                     [
-                        "Scroll one.\nScroll two." if "巻物" in line else line
+                        "Scroll one.\nScroll two.\nScroll three."
+                        if "巻物" in line
+                        else line
                         for line in text
                     ],
                     [0, 0],
@@ -1164,11 +1167,16 @@ try:
                     CODE405=True,
                     translateAI=extensions.point(scroll_only),
                 ):
-                    result = [row for row in parse(bard) if row["code"] != -1]
+                    result = parse(bard)
+                assert [row["code"] for row in result] == [
+                    *(row["code"] for row in bard),
+                    0,
+                ], result
+                result = [row for row in result if row["code"] != -1]
                 scroll = (
-                    [["Scroll one. Scroll two."]]
+                    [["Scroll one. Scroll two. Scroll three."], [""]]
                     if wrap
-                    else [["Scroll one."], ["Scroll two."]]
+                    else [["Scroll one."], ["Scroll two.\nScroll three."]]
                 )
                 assert result[1:5] == bard[1:5], result
                 assert [row["parameters"] for row in result[5:]] == [*scroll, []], (
