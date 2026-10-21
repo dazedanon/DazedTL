@@ -1515,6 +1515,8 @@ try:
             }, operands
             # Batch collection queues a lone label or plugin argument with the
             # file text. It sent each one Live before the Batch cost review.
+            from util import rpgmaker_scope
+
             payloads = []
 
             def queued(text, *_args):
@@ -1533,7 +1535,10 @@ try:
                         command(356, ["OriginMenuStatus SetParam param1 攻撃力"]),
                     ]
                 )
-                parser.translateNoteOmitSpace({"note": "<LB:村>"}, "村")
+                parser.translateNoteOmitSpace(
+                    {"note": "<LB:村>"},
+                    rpgmaker_scope.NOTE_TAGS[1].search("<LB:村>"),
+                )
             assert all(isinstance(text, list) for text in payloads) and {
                 text[0] for text in payloads
             } == {"村長", "攻撃力", "村"}, payloads
@@ -3245,8 +3250,11 @@ try:
                 "えっ、本当に？",
                 "【Saving beforehand is recommended】",
             ]
-            # A label ends at its own >, leaving the next note tag alone.
-            assert older["events"][4]["note"].endswith("><Shadow:false>")
+            # A label ends at its own >, and its translation replaces only
+            # it, leaving the note tags after it alone.
+            assert older["events"][4]["note"].endswith(
+                "><Shadow:false><Sound:古びた井戸>"
+            )
             configure_states(
                 {"engine": "MVMZ"}, temporary, {**policy, "sourceText": SOURCE_TEXT}
             )

@@ -2171,7 +2171,7 @@ def _map_pages(events, totalTokens):
             for tag in rpgmaker_scope.NOTE_TAGS:
                 match = tag.search(rpgmaker_scope.note(event))
                 if match and (not SOURCE_TEXT or _text_needs_translation(match[1])):
-                    tok = translateNoteOmitSpace(event, match[1])
+                    tok = translateNoteOmitSpace(event, match)
                     totalTokens[0] += tok[0]
                     totalTokens[1] += tok[1]
 
@@ -2265,8 +2265,10 @@ def _translate_string(text, history):
 
 
 # For notes that can't have spaces.
-def translateNoteOmitSpace(event, oldJAString):
-    """Translates a label in an event's note (util/rpgmaker_scope) in place."""
+def translateNoteOmitSpace(event, match):
+    """Translates the label a note tag matched in an event's note
+    (util/rpgmaker_scope) in place, leaving the rest of the note as it is."""
+    oldJAString = match[1]
     if oldJAString:
         # Remove any textwrap
         jaString = re.sub(r"\n", " ", oldJAString)
@@ -2285,10 +2287,13 @@ def translateNoteOmitSpace(event, oldJAString):
 
         translatedText = translatedText.replace('"', "")
         translatedText = translatedText.replace(" ", "_")
-        # Safely update the note if it exists and is a string
+        # Write over the matched span only: the same text can stand in
+        # another note tag, such as <dn:井戸><Sound:井戸>.
         current_note = event.get("note")
-        if isinstance(current_note, str):
-            event["note"] = current_note.replace(oldJAString, translatedText)
+        if current_note == match.string:
+            event["note"] = (
+                current_note[: match.start(1)] + translatedText + current_note[match.end(1) :]
+            )
         return token_info
     return [0, 0]
 
