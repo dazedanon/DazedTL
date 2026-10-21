@@ -38,7 +38,7 @@ def _atomic_write_text(path: Path, value: str) -> None:
 
 def _read_json(path: Path) -> dict[str, Any]:
     # utf-8-sig: an assistant's shell may start a result file with a BOM.
-    value = json.loads(path.read_text(encoding="utf-8-sig"))
+    value = json.loads(system.read_bytes(path).decode("utf-8-sig"))
     if not isinstance(value, dict):
         raise ValueError(f"Expected a JSON object in {path}")
     return value

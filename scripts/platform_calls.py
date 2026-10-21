@@ -1,14 +1,23 @@
-"""Rejects Path.replace and Path.rename calls outside the platform layer.
+"""Rejects file calls that skip the platform layer's Windows waits.
 
 Ruff's banned-api rule (TID251 in pyproject.toml) sees module calls such as
-os.replace but not method calls, so this check extends it to the Path methods
-that move a file without the wait Windows needs while a reader holds it. It
-reads the files ruff lints, spares those whose per-file ignores list TID251,
-and accepts a call marked `# noqa: TID251 - <reason>`.
+os.replace but not method calls, so this check extends it to two kinds of
+call Ruff cannot see. It reads the files ruff lints, spares those whose
+per-file ignores list TID251, and accepts a call marked
+`# noqa: TID251 - <reason>`.
 
-A Path is not known without type information, so a call counts when it is a
-.replace or .rename with one positional argument or only target=, shapes no
-str, bytes or datetime call has; an unbound Path.replace(a, b) counts too.
+Moves: the Path methods that move a file without the wait Windows needs while
+a reader holds it. A Path is not known without type information, so a call
+counts when it is a .replace or .rename with one positional argument or only
+target=, shapes no str, bytes or datetime call has; an unbound
+Path.replace(a, b) counts too.
+
+Run record reads: read_text, read_bytes and open of a run record (RECORDS),
+which fail on Windows while a live run replaces the file. A path counts as a
+run record when its last part is one, written in place or held in a name of
+its function or module, a loop over such paths or a project_path, glob or
+Path call naming one. A reader that takes the path as an argument, such as a
+Live run's translated output, is out of its sight.
 
 Usage: python scripts/platform_calls.py <ruff>
 """
@@ -28,6 +37,44 @@ METHODS = {"replace": "system.replace", "rename": "system.rename"}
 # Module functions of the same shape that copy an object instead of moving a file.
 COPIES = {"copy", "dataclasses"}
 MARK = re.compile(r"#\s*noqa:[^#]*\bTID251\b\s*-\s*\S")
+# Files a live run replaces while another process reads them.
+RECORDS = {
+    # A run's own records.
+    "attempt.json",
+    "job.json",
+    "plan.json",
+    # Batch queue and recovery files.
+    "batch_history.json",
+    "batch_requests.json",
+    "batch_results.json",
+    "batch_state.json",
+    "dazedtl-batch-evidence.json",
+    "dazedtl-batch-submission.json",
+    "dazedtl-clarified-results.json",
+    "estimate_requests.json",
+    # Per-file workers' shared progress.
+    "dazedtl-checkpoints.json",
+    "dazedtl-speaker-results.json",
+    "var_translation_map.json",
+    # Text QA's task state.
+    "checkpoint.json",
+}
+READS = {"read_text", "read_bytes", "open"}
+# Calls whose result names the same file as the path among their arguments.
+PATH_CALLS = {
+    "Path",
+    "PurePath",
+    "beneath",
+    "glob",
+    "joinpath",
+    "list",
+    "project_path",
+    "rglob",
+    "sorted",
+    "with_name",
+}
+# Path methods whose result names the file they are called on.
+SAME_FILE = {"absolute", "expanduser", "resolve"}
 
 
 def exempt_patterns():
@@ -66,6 +113,130 @@ def moved_by(call):
     return None
 
 
+class Records:
+    """The local names of one function, or of a module's top level, that
+    hold a run record's path, found without regard to order; outer names
+    are the module's, which its functions see."""
+
+    def __init__(self, scope, outer=()):
+        self.names = set(outer)
+        bindings = list(_bindings(scope))
+        while True:
+            found = {
+                name
+                for target, value in bindings
+                if self.names_record(value)
+                for name in _names(target)
+            }
+            if found <= self.names:
+                return
+            self.names |= found
+
+    def names_record(self, node):
+        if isinstance(node, ast.Constant):
+            return isinstance(node.value, str) and _record_name(node.value)
+        if isinstance(node, ast.JoinedStr):
+            tail = node.values[-1] if node.values else None
+            return isinstance(tail, ast.Constant) and _record_name(tail.value)
+        if isinstance(node, ast.Name):
+            return node.id in self.names
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+            return self.names_record(node.right)
+        if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+            return any(self.names_record(element) for element in node.elts)
+        if isinstance(node, (ast.Subscript, ast.Starred)):
+            return self.names_record(node.value)
+        if isinstance(node, ast.IfExp):
+            return self.names_record(node.body) or self.names_record(node.orelse)
+        if not isinstance(node, ast.Call):
+            return False
+        function = node.func
+        name = function.attr if isinstance(function, ast.Attribute) else None
+        if isinstance(function, ast.Name):
+            name = function.id
+        if name in SAME_FILE and isinstance(function, ast.Attribute):
+            return self.names_record(function.value)
+        return name in PATH_CALLS and any(
+            self.names_record(argument) for argument in node.args
+        )
+
+
+def _record_name(text):
+    return text.rsplit("/", 1)[-1] in RECORDS
+
+
+def _bindings(scope):
+    """(target, value) for each name scope binds, nested functions included;
+    loops bind their targets to what they iterate."""
+    for node in _inside(scope):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                yield from _paired(target, node.value)
+        elif isinstance(node, (ast.AnnAssign, ast.NamedExpr)) and node.value:
+            yield node.target, node.value
+        elif isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)):
+            yield node.target, node.iter
+
+
+def _paired(target, value):
+    same_shape = isinstance(target, (ast.Tuple, ast.List)) and isinstance(
+        value, (ast.Tuple, ast.List)
+    )
+    if same_shape and len(target.elts) == len(value.elts):
+        for element, part in zip(target.elts, value.elts, strict=True):
+            yield from _paired(element, part)
+    else:
+        yield target, value
+
+
+def _names(target):
+    return {node.id for node in ast.walk(target) if isinstance(node, ast.Name)}
+
+
+def read_by(call, records):
+    """The raw read a call makes of a run record, or None for another call."""
+    function = call.func
+    if isinstance(function, ast.Attribute) and function.attr in READS:
+        owner = function.value
+        if isinstance(owner, ast.Name) and owner.id in {"io", "system"}:
+            if function.attr != "open":
+                return None
+        elif records.names_record(owner):
+            return f"Path.{function.attr}"
+    builtin = isinstance(function, ast.Name) and function.id == "open"
+    module = isinstance(function, ast.Attribute) and function.attr == "open"
+    if (builtin or module) and call.args and records.names_record(call.args[0]):
+        return "open"
+    return None
+
+
+def _scopes(tree):
+    """The module's top level, then each function no other function holds,
+    whose names its nested functions see too."""
+    yield tree
+    pending = list(ast.iter_child_nodes(tree))[::-1]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            yield node
+        else:
+            pending.extend(list(ast.iter_child_nodes(node))[::-1])
+
+
+def _inside(scope):
+    """The nodes of a scope in source order; the top level leaves its
+    functions to them."""
+    pending = list(ast.iter_child_nodes(scope))[::-1]
+    while pending:
+        node = pending.pop()
+        if isinstance(scope, ast.Module) and isinstance(
+            node, (ast.FunctionDef, ast.AsyncFunctionDef)
+        ):
+            continue
+        yield node
+        pending.extend(list(ast.iter_child_nodes(node))[::-1])
+
+
 def problems(path, relative):
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
@@ -73,20 +244,36 @@ def problems(path, relative):
         # Old escapes in the engine's strings are ruff's to report.
         warnings.simplefilter("ignore", SyntaxWarning)
         tree = ast.parse(text, filename=str(path))
+
+    def marked(node):
+        end = node.end_lineno or node.lineno
+        return any(MARK.search(line) for line in lines[node.lineno - 1 : end])
+
+    def where(node):
+        return f"{relative}:{node.lineno}:{node.col_offset + 1}: "
+
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
         method = moved_by(node)
-        if method is None:
-            continue
-        end = node.end_lineno or node.lineno
-        if any(MARK.search(line) for line in lines[node.lineno - 1 : end]):
+        if method is None or marked(node):
             continue
         yield (
-            f"{relative}:{node.lineno}:{node.col_offset + 1}: "
-            f"Path.{method} does not wait for readers on Windows; "
+            f"{where(node)}Path.{method} does not wait for readers on Windows; "
             f"use {METHODS[method]} (engine: util.system)."
         )
+    module = Records(tree)
+    for scope in _scopes(tree):
+        records = module if scope is tree else Records(scope, module.names)
+        for node in _inside(scope):
+            read = isinstance(node, ast.Call) and read_by(node, records)
+            if not read or marked(node):
+                continue
+            yield (
+                f"{where(node)}{read} of a run record fails on Windows while a "
+                "run replaces it; use system.read_bytes or system.read_text "
+                "(engine: util.system)."
+            )
 
 
 def main():
@@ -101,9 +288,8 @@ def main():
         print(problem)
     if found:
         print(
-            f"{len(found)} Path.replace or Path.rename call(s) outside the platform"
-            " layer. A call that must stay raw is marked"
-            " `# noqa: TID251 - <reason>`."
+            f"{len(found)} file call(s) outside the platform layer. A call that"
+            " must stay raw is marked `# noqa: TID251 - <reason>`."
         )
         return 1
     return 0

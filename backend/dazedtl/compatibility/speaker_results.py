@@ -5,6 +5,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import TypeGuard
 
+from dazedtl import system
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest, project_path
 
@@ -33,7 +34,7 @@ def install(module, root):
         value = {
             # Version 2 verifies each name; version 1 all of them at once.
             "version": 2,
-            "planHash": digest((root / "plan.json").read_bytes()),
+            "planHash": digest(system.read_bytes(root / "plan.json")),
             "state": "running",
             "count": len(names),
         }

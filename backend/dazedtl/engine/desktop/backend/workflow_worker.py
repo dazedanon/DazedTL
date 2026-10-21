@@ -12,7 +12,9 @@ PROTOCOL = sys.stdout
 
 
 def main():
-    plan = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+    from util import system
+
+    plan = json.loads(system.read_bytes(sys.argv[1]))
     canceled = threading.Event()
     def commands():
         for _line in sys.stdin:

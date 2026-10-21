@@ -7,6 +7,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from dazedtl import system
 from dazedtl.storage import write_bytes, write_json
 
 from .files import decode_json, digest, project_path, read_json
@@ -457,7 +458,7 @@ class GuidedInputs:
                 or (self.folder / "source-history").is_symlink()
             ):
                 raise ValueError("The phase cache cannot be a symbolic link.")
-            cache_bytes = cache.read_bytes() if cache.is_file() else None
+            cache_bytes = system.read_bytes(cache) if cache.is_file() else None
             archive = self.folder / "source-history" / uuid.uuid4().hex
             write_json(archive / "source-inputs.json", record)
             for (group, name), raw in old.items():

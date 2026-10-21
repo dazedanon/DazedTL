@@ -10,6 +10,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from dazedtl import system
+
 from .preparations import discard, discardable, temporary
 
 SPEAKER_CANCELLATION = "Speaker translation canceled"
@@ -54,8 +56,8 @@ def canceled_before_submission(job, directory, *, finishing=False):
         plan_path, attempt_path = directory / "plan.json", directory / "attempt.json"
         if plan_path.is_symlink() or attempt_path.is_symlink():
             return False
-        raw = plan_path.read_bytes()
-        plan, attempt = json.loads(raw), json.loads(attempt_path.read_bytes())
+        raw = system.read_bytes(plan_path)
+        plan, attempt = json.loads(raw), json.loads(system.read_bytes(attempt_path))
         if (
             hashlib.sha256(raw).hexdigest() != job.get("plan_hash")
             or plan.get("mode") != job["mode"]
@@ -94,7 +96,7 @@ def seed_requests(directory, plan, estimate):
     from .process_view import queue
 
     try:
-        raw_plan = (estimate / "plan.json").read_bytes()
+        raw_plan = system.read_bytes(estimate / "plan.json")
         requests = queue(estimate)
     except OSError, ValueError:
         return
@@ -136,7 +138,7 @@ def manual_jobs(source, workspace, lock, allow_providers):
                 "The preserved worker entrypoint changed. Update the compatibility adapter."
             )
         directory = Path(arguments[3])
-        job = json.loads((directory / "job.json").read_bytes())
+        job = json.loads(system.read_bytes(directory / "job.json"))
         if job.get("dazedtl_continue_batch"):
             from .batch_continuation import (
                 approved_binding,
@@ -144,11 +146,11 @@ def manual_jobs(source, workspace, lock, allow_providers):
             )
 
             approved_binding(
-                directory, job, json.loads((directory / "plan.json").read_bytes())
+                directory, job, json.loads(system.read_bytes(directory / "plan.json"))
             )
             validate_submission_records(directory)
         if job.get("dazedtl_consume_only"):
-            attempt = json.loads((directory / "attempt.json").read_bytes())
+            attempt = json.loads(system.read_bytes(directory / "attempt.json"))
             if (
                 job.get("mode") != "batch"
                 or attempt.get("resume") is not True
@@ -267,7 +269,7 @@ def manual_jobs(source, workspace, lock, allow_providers):
                             from .batch_continuation import APPROVAL, binding
 
                             root = self.folder(identity)
-                            plan = json.loads((root / "plan.json").read_bytes())
+                            plan = json.loads(system.read_bytes(root / "plan.json"))
                             job[APPROVAL] = binding(
                                 root, job, plan, quote=prompt["detail"]
                             )
@@ -375,7 +377,7 @@ def manual_jobs(source, workspace, lock, allow_providers):
                 prepare_continuation(
                     root,
                     job,
-                    json.loads((root / "plan.json").read_bytes()),
+                    json.loads(system.read_bytes(root / "plan.json")),
                     explicit=explicit,
                 )
                 self.save(job)
@@ -466,7 +468,7 @@ def manual_jobs(source, workspace, lock, allow_providers):
             if job.get("mode") == "estimate" and allow_providers:
                 # Its startup, seconds on Windows, overlaps the estimate.
                 try:
-                    plan = json.loads((Path(folder) / "plan.json").read_bytes())
+                    plan = json.loads(system.read_bytes(Path(folder) / "plan.json"))
                     if plan.get("dazedtl_claude_count") is not False:
                         process = start(folder, workspace, plan)
                         if process is not None:

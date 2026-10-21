@@ -30,7 +30,7 @@ class Operations:
         self.active = ""
         self.stopping = threading.Event()
         for path in self.root.glob("*/job.json"):
-            job = json.loads(path.read_text(encoding="utf-8"))
+            job = json.loads(system.read_text(path))
             if job["status"] == "running":
                 job.update(status="interrupted", message="The application closed during this action. Review its log and destination before running it again.")
                 atomic_json(path, job)
@@ -53,7 +53,7 @@ class Operations:
             atomic_json(directory / "plan.json", plan)
             job = {"id": identity, "created": timestamp(), "project_id": plan["project_id"], "action": plan["action"],
                    "label": plan["label"], "status": "running", "message": "Starting…", "log": [], "result": None,
-                   "plan_hash": digest((directory / "plan.json").read_bytes())}
+                   "plan_hash": digest(system.read_bytes(directory / "plan.json"))}
             self.jobs[identity] = job
             self.save(job)
             self.active = identity
@@ -67,7 +67,7 @@ class Operations:
         directory = self.root / identity
         try:
             plan = directory / "plan.json"
-            if plan.is_symlink() or digest(plan.read_bytes()) != job["plan_hash"]:
+            if plan.is_symlink() or digest(system.read_bytes(plan)) != job["plan_hash"]:
                 raise ValueError("The saved action changed. Preview it again.")
             environment = system_environment(
                 "ProgramFiles", "ProgramFiles(x86)", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_ATTR_NOSYSTEM",

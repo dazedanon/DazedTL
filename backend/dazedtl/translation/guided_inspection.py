@@ -6,6 +6,7 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from dazedtl import system
 from dazedtl.storage import write_json
 
 from .files import digest, project_path
@@ -34,7 +35,7 @@ class RunInspection:
             folder = root / "translated"
             plan = self.guided.run_configuration(identity)
             if (root / "plan.json").is_file() and job.get("plan_hash") == digest(
-                (root / "plan.json").read_bytes()
+                system.read_bytes(root / "plan.json")
             ):
                 from dazedtl.compatibility.checkpoints import (
                     can_collect_outputs,

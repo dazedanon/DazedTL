@@ -3,6 +3,7 @@
 import re
 from pathlib import Path
 
+from dazedtl import system
 from dazedtl.storage import staging_folder, write_json
 from dazedtl.translation.files import digest, project_path, read_json
 
@@ -389,7 +390,8 @@ def phased_workflows(workspace, lock, operations, manual):
                             "translated/" + name,
                             exists=False,
                         )
-                        if digest(output.read_bytes()) != expected or digest(
+                        # A Live run's worker may still replace its output.
+                        if digest(system.read_bytes(output)) != expected or digest(
                             working.read_bytes()
                         ) not in {before.get(name), expected}:
                             continue

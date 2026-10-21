@@ -463,7 +463,7 @@ def _atomic_write_text(path: Path, value: str) -> None:
 
 
 def _read_json(path: Path) -> dict:
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(system.read_bytes(path))
     if not isinstance(data, dict):
         raise ValueError(f"Expected an object in {path}")
     return data
