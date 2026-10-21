@@ -14,8 +14,10 @@ PROTOCOL = sys.stdout
 
 
 def main():
+    from util import system
+
     root = Path(sys.argv[1]).resolve()
-    attempt = json.loads((root / "attempt.json").read_text(encoding="utf-8"))
+    attempt = json.loads(system.read_bytes(root / "attempt.json"))
     (root / "log").mkdir(exist_ok=True)
     log = (root / "log/engine.txt").open("a", encoding="utf-8", buffering=1)
     output_lock = threading.Lock()

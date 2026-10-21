@@ -7,6 +7,7 @@ import re
 import shutil
 import uuid
 
+from util import system
 from util.engine_options import validate_engine_options, engine_options
 from util.game_settings import GameSettingsError, default_wrap_widths, load_game_wrap_widths, normalize_wrap_widths, save_game_wrap_widths, valid_line_widths, wrap_widths_saved
 from util.rpgmaker_profiles import DB_FILES, EVENT_FILES_EXACT, PHASE0_CONFIG, PHASE1_CONFIG, PHASE1B_CONFIG, PHASE2_CONFIG
@@ -440,8 +441,8 @@ class Workflows:
             return
         try:
             folder, source = self.folder(project["id"]), self.manual.folder(identity)
-            plan = json.loads((source / "plan.json").read_text(encoding="utf-8"))
-            if digest((source / "plan.json").read_bytes()) != job["plan_hash"] or plan["workflow"]["id"] != project["id"]:
+            plan = json.loads(system.read_text(source / "plan.json"))
+            if digest(system.read_bytes(source / "plan.json")) != job["plan_hash"] or plan["workflow"]["id"] != project["id"]:
                 raise ValueError("The completed phase's saved plan changed.")
             if job["mode"] != "estimate":
                 for name, expected in job["outputs"].items():

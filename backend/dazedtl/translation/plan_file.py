@@ -14,7 +14,8 @@ and keep loading unchanged.
 
 import json
 from collections import Counter
-from pathlib import Path
+
+from dazedtl import system
 
 from .files import decode_json, digest
 
@@ -114,7 +115,7 @@ def encode(plan):
 def read(path, expected):
     """The plan saved at path, which must be the plan whose digest the run
     recorded as expected."""
-    raw = Path(path).read_bytes()
+    raw = system.read_bytes(path)
     value = decode_json(raw)
     if not (
         isinstance(value, dict)

@@ -11,8 +11,10 @@ def run_action(arguments):
     run folder named first in their arguments."""
     import json
 
+    from dazedtl import system
+
     try:
-        mode = json.loads((Path(arguments[1]) / "plan.json").read_bytes())["mode"]
+        mode = json.loads(system.read_bytes(Path(arguments[1]) / "plan.json"))["mode"]
     except OSError, ValueError, KeyError, TypeError, IndexError:
         mode = "unknown"  # The engine's worker reports the unreadable plan.
     return "manual_" + str(mode)

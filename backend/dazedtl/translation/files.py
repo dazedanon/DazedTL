@@ -6,6 +6,7 @@ import os
 import stat
 from pathlib import Path
 
+from dazedtl import system
 from dazedtl.storage import write_json
 
 
@@ -53,7 +54,7 @@ def read_json(path, *, limit: int | None = 128_000_000):
         and path.stat().st_size > limit
     ):
         raise ValueError("Choose a regular JSON file within the supported size limit.")
-    return decode_json(path.read_bytes())
+    return decode_json(system.read_bytes(path))
 
 
 def project_path(root, relative, *, exists=True):

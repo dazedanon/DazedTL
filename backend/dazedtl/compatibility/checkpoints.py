@@ -4,6 +4,7 @@ import io
 import os
 from pathlib import Path
 
+from dazedtl import system
 from dazedtl.freshness import Digests
 from dazedtl.storage import exclusive, write_json
 from dazedtl.translation.files import (
@@ -48,7 +49,8 @@ _DIGESTS = Digests()
 
 def _json_digest(path, info):
     def read():
-        raw = Path(path).read_bytes()
+        # A Live run's worker replaces its outputs while snapshots read them.
+        raw = system.read_bytes(path)
         if not isinstance(decode_json(raw), (dict, list)):
             raise ValueError("A progress checkpoint must contain game JSON.")
         return digest(raw)
@@ -71,7 +73,7 @@ def _index(root, path=None):
         return None
     record = read_json(path)
     if record.get("version") != 1 or record.get("plan_hash") != digest(
-        (root / "plan.json").read_bytes()
+        system.read_bytes(root / "plan.json")
     ):
         raise ValueError("Progress checkpoints do not match this saved run.")
     return record
@@ -118,7 +120,7 @@ def install(module, root, plan):
         return
     root = Path(root).resolve()
     names = {row["name"] for row in plan["files"]}
-    plan_hash = digest((root / "plan.json").read_bytes())
+    plan_hash = digest(system.read_bytes(root / "plan.json"))
     # Concurrent files save from separate worker processes, so receipts are
     # read and written under a lock they share.
     index, lock = _paths(root)

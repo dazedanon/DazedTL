@@ -32,7 +32,7 @@ def read_json(path, default=None):
         return default
     if path.is_symlink() or path.stat().st_size > 256_000_000:
         raise ValueError('Evaluation files must be regular files below 256 MB.')
-    return json.loads(path.read_text(encoding='utf-8'))
+    return json.loads(system.read_bytes(path))
 
 
 def run_path(project, identity):

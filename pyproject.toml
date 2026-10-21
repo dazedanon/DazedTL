@@ -41,8 +41,8 @@ ignore = ["TRY004"]
 # Stands in for an outside assistant, which has only the project helper.
 "scripts/testkit/assistant.py" = ["TID251"]
 # A single call that must stay raw is marked `# noqa: TID251 - <reason>`.
-# scripts/platform_calls.py applies these ignores and marks to Path.replace and
-# Path.rename, which this rule cannot see.
+# scripts/platform_calls.py applies these ignores and marks to Path.replace,
+# Path.rename and raw reads of run records, which this rule cannot see.
 
 [tool.pyright]
 # Checks the app's Python and the engine's Text QA package (util/qa); the rest

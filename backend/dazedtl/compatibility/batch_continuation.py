@@ -5,6 +5,7 @@ from contextlib import closing, contextmanager
 from copy import deepcopy
 from pathlib import Path
 
+from dazedtl import system
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, project_path, read_json
 
@@ -54,7 +55,8 @@ def binding(root, job, plan, *, quote=None):
         job.get("mode") != "batch"
         or plan.get("mode") != "batch"
         or plan.get("batch_link")
-        or job.get("plan_hash") != digest(project_path(root, "plan.json").read_bytes())
+        or job.get("plan_hash")
+        != digest(system.read_bytes(project_path(root, "plan.json")))
         or not requests
         or not state.get("run_id")
         or set(state.get("file_set") or []) != set(plan.get("selected") or [])

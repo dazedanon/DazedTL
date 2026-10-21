@@ -9,7 +9,10 @@ Files
 - Another process reading a file, such as the app's poll or a virus scanner,
   makes Windows refuse to replace, rename or delete it ("Access is denied",
   WinError 5 or 32), so replace, rename, unlink, remove_tree and the writers
-  wait up to about two seconds for it to let go.
+  wait up to about two seconds for it to let go. Opening a file while another
+  process replaces it fails the same way ("Permission denied", Errno 13), so
+  open_read, read_bytes and read_text wait too; run records such as job.json and
+  plan.json are read only through them.
 - Saved files are written whole through a file beside them, as UTF-8 with
   "\\n" line ends, so a crash never leaves half a file and Windows never adds
   "\\r".
@@ -56,9 +59,12 @@ __all__ = [
     "Reader",
     "held_open",
     "new_folder",
+    "open_read",
     "popen",
     "private_stdin",
     "project_relative",
+    "read_bytes",
+    "read_text",
     "remove_tree",
     "rename",
     "replace",
@@ -97,9 +103,10 @@ class Reader:
 
 @contextmanager
 def held_open(path, attempts=2):
-    """Test seam: the next ``attempts`` replaces, renames or deletes of
-    ``path``, or renames or removals of a folder holding it, fail as Windows fails them while another
-    process has the file open. Retries after a simulated failure do not wait.
+    """Test seam: the next ``attempts`` reads, replaces, renames or deletes of
+    ``path``, or renames or removals of a folder holding it, fail as Windows
+    fails them while another process has the file open or is replacing it.
+    Retries after a simulated failure do not wait.
     Yields the Reader, whose attempts reach 0 once the writer met them all.
     """
     key = _key(path)
@@ -136,17 +143,18 @@ def _retryable(error):
 
 def _retried(operation, path, tree=False):
     delay = 0.05
-    for attempt in range(8):
+    for _attempt in range(7):
         try:
             _simulate_reader(path, tree)
             return operation()
         except OSError as error:
-            if not _retryable(error) or attempt == 7:
+            if not _retryable(error):
                 raise
             if not isinstance(error, _HeldOpen):
                 time.sleep(delay)
             delay = min(delay * 2, 0.5)
-    return None
+    _simulate_reader(path, tree)
+    return operation()
 
 
 def replace(source, target):
@@ -159,6 +167,22 @@ def rename(source, target):
     folder source names, to let go. Unlike replace it fails on Windows when
     target exists."""
     _retried(lambda: os.rename(source, target), source, tree=True)
+
+
+def open_read(path):
+    """open(path, "rb"), waiting for a writer replacing the file to finish."""
+    return _retried(lambda: open(path, "rb"), path)
+
+
+def read_bytes(path):
+    """Path.read_bytes, waiting for a writer replacing the file to finish."""
+    with open_read(path) as stream:
+        return stream.read()
+
+
+def read_text(path):
+    """read_bytes decoded as UTF-8, keeping its line ends."""
+    return read_bytes(path).decode("utf-8")
 
 
 def unlink(path, missing_ok=False):

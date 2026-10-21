@@ -245,7 +245,7 @@ def seed_variables(directory, plan, workflow_folder):
     if cache.exists():
         if cache.is_symlink() or cache.stat().st_size > 10_000_000:
             raise ValueError("The phase variable cache must be a regular file below 10 MB.")
-        raw = cache.read_bytes()
+        raw = system.read_bytes(cache)
         json.loads(raw)
         # A Batch preparation may already hold its estimate's requests here.
         (directory / "seed").mkdir(exist_ok=True)
@@ -338,7 +338,7 @@ class ManualJobs:
 
     def load_saved(self):
         for path in (self.root / "jobs").glob("*/job.json"):
-            job = json.loads(path.read_text(encoding="utf-8"))
+            job = json.loads(system.read_bytes(path))
             if job['id'] in self.jobs:
                 continue
             if job.get("version") not in {1, 2}:
@@ -426,7 +426,7 @@ class ManualJobs:
                 job = {"version": 1, "id": identity, "created": timestamp(), "updated": timestamp(), "source": inventory["source"],
                        "engine": engine, "mode": mode, "model": plan["settings"]["model"], "files": files, "status": "running", "phase": "preparing",
                        "message": "Preparing an isolated copy of the input files.", "completed": [], "errors": {}, "mismatches": {}, "approval": None,
-                       "progress": None, "estimate": None, "log": [], "exports": [], "outputs": {}, "plan_hash": digest((directory / "plan.json").read_bytes())}
+                       "progress": None, "estimate": None, "log": [], "exports": [], "outputs": {}, "plan_hash": digest(system.read_bytes(directory / "plan.json"))}
                 self.jobs[identity] = job
                 if not launch:
                     job.update(status='stopped', message='Imported batch recovery is ready for review.')
@@ -456,9 +456,9 @@ class ManualJobs:
         directory = self.folder(identity)
         try:
             plan_path = directory / "plan.json"
-            if plan_path.is_symlink() or digest(plan_path.read_bytes()) != job["plan_hash"]:
+            if plan_path.is_symlink() or digest(system.read_bytes(plan_path)) != job["plan_hash"]:
                 raise ValueError("The saved plan changed. Start a new run.")
-            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            plan = json.loads(system.read_text(plan_path))
             if not compatible(plan["engine"], plan["signature"]):
                 raise ValueError("The engine changed. Start a new run to keep saved requests tied to their original code.")
             for name, expected in plan["context_hashes"].items():

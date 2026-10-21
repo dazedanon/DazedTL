@@ -6,6 +6,7 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 
+from dazedtl import system
 from dazedtl.actions import label
 from dazedtl.storage import WorkspaceError, write_bytes, write_json
 
@@ -289,7 +290,7 @@ class ExistingBackend:
         path = self.manual.folder(identity) / "plan.json"
         if path.is_symlink() or not path.is_file():
             raise ValueError("The saved run configuration is unavailable.")
-        raw = path.read_bytes()
+        raw = system.read_bytes(path)
         if hashlib.sha256(raw).hexdigest() != self.manual.jobs[identity]["plan_hash"]:
             raise ValueError(
                 "The saved run configuration changed. Its original outputs remain retained."
