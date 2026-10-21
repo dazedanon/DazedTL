@@ -319,7 +319,11 @@ class TextBlockTests(unittest.TestCase):
         self.assertEqual(listed, direct)
         self.assertFalse(report.misfits)
         # A message's spare commands at the end are no part of its layout.
-        message = ["The forest road is dangerous at", "night, so please be careful.", ""]
+        message = [
+            "The forest road is dangerous at",
+            "night, so please be careful.",
+            "",
+        ]
         listed[1:2] = [command(401, [row]) for row in message]
         fit_document({"list": listed}, "Map001.json", wide, resized=True)
         self.assertEqual(
