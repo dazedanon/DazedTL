@@ -146,7 +146,11 @@ class TranslationEngine:
     def document_save(self, source, name, revision, text):
         from desktop.backend.guidance import document_save
 
-        return document_save(source, name, revision, text)
+        from .game_write import write_game
+
+        # Guidance is never the game's ace_json, so nothing packs.
+        with write_game(source, pack=False):
+            return document_save(source, name, revision, text)
 
     def valid_document(self, name):
         from desktop.backend.guidance import valid_document_name
@@ -164,6 +168,8 @@ class TranslationEngine:
         from util.project_preparation import rpgmaker_layout
         from util.skills import load_generic_project_setup, load_project_setup
 
+        from .game_write import write_game
+
         project = self.project(source, options)
         paths = {
             "skill": str(BUNDLED_SKILL / "SKILL.md"),
@@ -172,8 +178,11 @@ class TranslationEngine:
         if not refresh:
             return paths
         _validate_skill(BUNDLED_SKILL)
-        shared = shared_context(project)
-        _prepare_local_work(project)
+        # Both move legacy guidance into .dazedtl and keep DazedTL's rules in
+        # the game's .gitignore.
+        with write_game(source, pack=False):
+            shared = shared_context(project)
+            _prepare_local_work(project)
         layout = rpgmaker_layout(source)
         setup = (
             load_project_setup(
@@ -212,6 +221,8 @@ class TranslationEngine:
         from util.len_translation import request_contexts
         from util.skills import ctx
 
+        from .game_write import write_game
+
         batches = [
             {
                 key: item
@@ -234,7 +245,9 @@ class TranslationEngine:
                     f"Request {batch['id']} names an unknown field template, "
                     f"{batch['instruction_key']}. Use a section.key from data/translation_contexts.json."
                 ) from None
-        compiled = request_contexts(self.project(source, options), batches)
+        # The requests' shared context moves legacy guidance into .dazedtl.
+        with write_game(source, pack=False):
+            compiled = request_contexts(self.project(source, options), batches)
         for original, result in zip(plan["batches"], compiled):
             context = result["context"]
             # Match the shared engine's target-language substitution without touching source text.
@@ -773,12 +786,17 @@ class TranslationEngine:
     def git_setup(self, source, options, version, original, untranslated):
         from util.len_git import setup_git
 
-        return setup_git(
-            self.project(source, options),
-            original_game=Path(original) if original else None,
-            version=version,
-            current_is_untranslated=untranslated,
-        )
+        from .game_write import write_game
+
+        # A baseline adds DazedTL's rules to the game's .gitignore and
+        # .gitattributes, which are never ace_json.
+        with write_game(source, pack=False):
+            return setup_git(
+                self.project(source, options),
+                original_game=Path(original) if original else None,
+                version=version,
+                current_is_untranslated=untranslated,
+            )
 
     def line_layout(self, root):
         """The Line widths a game's RPG Maker text is fitted to: the ones
@@ -922,13 +940,22 @@ class TranslationEngine:
         game's files."""
         from util.len_patch_scope import sync_patch_scope
 
-        return sync_patch_scope(
-            self.project(source, options),
-            manifest,
-            original_game=Path(original) if original else None,
-            original_names=names,
-            dry_run=dry_run,
-        )
+        from .game_write import write_game
+
+        def run():
+            return sync_patch_scope(
+                self.project(source, options),
+                manifest,
+                original_game=Path(original) if original else None,
+                original_names=names,
+                dry_run=dry_run,
+            )
+
+        if dry_run:
+            return run()
+        # Staging writes the patch's ignore rules, which are never ace_json.
+        with write_game(source, pack=False):
+            return run()
 
     def runtime_paths(self, manifest):
         from util.len_patch_scope import patch_manifest
@@ -939,6 +966,8 @@ class TranslationEngine:
         from util.len_patch_scope import patch_manifest, scope_ignore
         from util.version_update.git_workflow import unfinished_bootstrap
 
+        from .game_write import write_game
+
         # Reuse the patch helper's rejection of secrets, work records and unsafe paths.
         entries = patch_manifest(manifest)
         ignore = Path(source) / ".gitignore"
@@ -947,7 +976,10 @@ class TranslationEngine:
             if ignore.is_symlink():
                 raise ValueError("The game's ignore file cannot be a symbolic link.")
             previous = ignore.read_text(encoding="utf-8") if ignore.exists() else ""
-            write_bytes(ignore, scope_ignore(previous, set(entries)).encode("utf-8"))
+            with write_game(source, pack=False):
+                write_bytes(
+                    ignore, scope_ignore(previous, set(entries)).encode("utf-8")
+                )
         allowed = set(entries) | {".gitignore", ".gitattributes", "README.md"}
         with system.staging_folder(
             tempfile.gettempdir(), "dazedtl-scope-"

@@ -2249,13 +2249,17 @@ class ImageService:
         with index.connection() as db:
             for row in allowed:
                 index.put(db, row, row.get("generation", ""))
-        result = (
-            self.adapter.prepare(
-                root, profile, allowed, self.adapter.key(root, profile)
-            )
-            if allowed
-            else {"completed": 0, "skipped": 0, "errors": []}
-        )
+        if allowed:
+            # The editable copies are DazedTL's own records, but making them
+            # may add DazedTL's rules to the game's .gitignore.
+            with self.backend.game_write(
+                root, self.projects.get(project_id).get("backend_id"), pack=False
+            ):
+                result = self.adapter.prepare(
+                    root, profile, allowed, self.adapter.key(root, profile)
+                )
+        else:
+            result = {"completed": 0, "skipped": 0, "errors": []}
         result["errors"] = errors + result.get("errors", [])
         self.refresh_assets(project_id, identities)
         value = self._load(project_id)

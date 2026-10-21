@@ -929,8 +929,9 @@ def parse(codeList, i, headerString, jaString):
 
     def test_a_game_write_waits_for_an_unfinished_git_operation(self):
         # A file written during a game update's stopped merge leaves Versions
-        # unable to cancel the update; Line widths, Plugin files, Images and
-        # playtest fixes each once wrote without this check.
+        # unable to cancel the update; Line widths, Plugin files, Images,
+        # playtest fixes and the playtest tools each once wrote without it.
+        from dazedtl import actions
         from dazedtl.compatibility.game_write import GameWrite, write_game
 
         with TemporaryDirectory() as temporary:
@@ -948,6 +949,11 @@ def parse(codeList, i, headerString, jaString):
                     write_game(game),
                 ):
                     self.fail("The write ran mid cherry-pick.")
+                install = {"action": "inspector_install", "project": {"source": game}}
+                engine = Mock()
+                with self.assertRaisesRegex(ValueError, "unfinished Git cherry-pick"):
+                    actions.run(engine, install, print)
+                engine.assert_not_called()
                 status["pending_operations"] = []
                 with write_game(game) as written:
                     written.put("data/Items.json", b"[]")

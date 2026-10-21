@@ -2,11 +2,12 @@
 
 Every write to a file of a game folder that Git tracks goes through
 dazedtl.compatibility.game_write; see its docstring for why. This audit hook,
-installed for the whole suite, raises when code under backend/dazedtl, other
-than the engine's, writes such a file while no gateway write to that game is
-open. A game folder is one holding a game's data, plugins or VX Ace exports;
-DazedTL's own records under `.dazedtl/` are exempt, apart from the glossary,
-settings and skills Git tracks.
+installed for the whole suite and its probe processes (tests/probe.py), raises
+when code under backend/dazedtl, other than the engine's, writes such a file
+while no gateway write to that game is open. A game folder is one holding a
+game's data, plugins or VX Ace exports; DazedTL's own records under
+`.dazedtl/` are exempt, apart from the glossary, settings and skills Git
+tracks.
 """
 
 import os

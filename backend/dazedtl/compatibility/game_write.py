@@ -91,15 +91,15 @@ class GameWrite:
 
 
 def _checkout(root):
+    # A game takes translation work only in a repository of its own; one
+    # without, before version tracking is set up, has no checkout to keep.
+    if not (root / ".git").exists():
+        return
     from util.len_git import git_status
     from util.len_translation import LenProject
 
     from dazedtl.translation.operations import checkout_issue
 
-    # A game takes translation work only in a repository of its own; one
-    # without, before version tracking is set up, has no checkout to keep.
-    if not (root / ".git").exists():
-        return
     status = git_status(LenProject(root))
     if status.get("configured") and (issue := checkout_issue(status)):
         raise ValueError(issue)
@@ -143,9 +143,10 @@ def write_game(
 
     `folder` is the game's Guided workspace, which keeps the packing receipt;
     `paths` the files the write will change when known, so a write that packs
-    none refuses no archive; `pack=False` leaves Data as it is, for tools that
-    convert between Data and `ace_json`; `subject` names what was written when
-    packing fails.
+    none refuses no archive; `pack=False` leaves Data as it is, for writes
+    outside `ace_json`, such as guidance and .gitignore, and tools that
+    convert between Data and `ace_json`; `subject` names what was written
+    when packing fails.
     """
     from .guided import ace_blocked
 

@@ -87,11 +87,20 @@ class GuidedContext:
                     "expects": [guided / "event-text-findings.json"],
                 },
             }
-        text = self.guided.backend.workflows.skill(
-            native["id"],
-            name,
-            thorough=self.guided.saved_form(project_id)["thorough_investigation"],
-        )
+        thorough = self.guided.saved_form(project_id)["thorough_investigation"]
+        if name == "setup":
+            # The setup task saves the reference games' overlaps, which may
+            # add DazedTL's rules to the game's .gitignore.
+            with self.guided.backend.game_write(
+                native["source"], native["id"], pack=False
+            ):
+                text = self.guided.backend.workflows.skill(
+                    native["id"], name, thorough=thorough
+                )
+        else:
+            text = self.guided.backend.workflows.skill(
+                native["id"], name, thorough=thorough
+            )
         handoff = None
         if name == "walkthrough":
             handoff = {

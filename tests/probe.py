@@ -8,6 +8,16 @@ import time
 from pathlib import Path
 from tempfile import TemporaryDirectory, mkstemp
 
+# Runs a fixture script as its own program after the setup every test
+# module has, which includes the write check (tests/game_writes.py).
+LAUNCH = """
+import runpy, sys
+del sys.argv[0]
+sys.path.insert(0, sys.argv[1])
+import tests
+runpy.run_path(sys.argv[0], run_name="__main__")
+"""
+
 
 class Probe:
     """Runs a fixture script in a fresh offline interpreter, then cleans up."""
@@ -59,6 +69,8 @@ class Probe:
                     "-X",
                     "utf8",
                     "-B",
+                    "-c",
+                    LAUNCH,
                     str(root / "tests/fixtures" / script),
                     str(root),
                     temporary,

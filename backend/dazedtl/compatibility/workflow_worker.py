@@ -31,12 +31,6 @@ from dazedtl import actions
 from dazedtl.compatibility.translation import explained
 
 
-def run_action(engine, plan, log):
-    """Runs a plan with its action's handler, or the engine's own run."""
-    handler = actions.handler(plan["action"])
-    return engine(plan, log) if handler is None else handler(plan, log)
-
-
 class Progress:
     """The worker's event stream; every event the action sends is progress."""
 
@@ -62,7 +56,7 @@ def reported(native, error):
     native(error)
 
 
-workflow_actions.run_action.layer("dazedtl-actions", run_action)
+workflow_actions.run_action.layer("dazedtl-actions", actions.run)
 worker_failures.reported.layer("dazedtl-diagnostics", reported)
 # The worker keeps standard output as its event stream before redirecting it.
 sys.stdout = Progress(sys.stdout, watch_action(action))

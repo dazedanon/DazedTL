@@ -36,7 +36,8 @@ Flags:
 - `restorable`: History restores its batch.
 - `isolated`: may start while isolated translation workers run.
 - `tools`: installs or configures the MV/MZ playtest tools, which need their
-  hotkeys.
+  hotkeys; the engine changes the game's plugins inside the game-write
+  gateway.
 - `reports_outcome`: its outcome shows where its work lands (Apply's notice,
   a tool row, the archive panel), so its control leaves the finished status
   out.
@@ -453,3 +454,18 @@ def handler(name):
         return None
     module, function = row.handler.split(":")
     return getattr(import_module(module), function)
+
+
+def run(engine, plan, log):
+    """Runs a plan in the worker with its action's handler, or `engine`, the
+    engine's own run."""
+    function = handler(plan["action"])
+    if function is not None:
+        return function(plan, log)
+    if not ACTIONS[plan["action"]].tools:
+        return engine(plan, log)
+    from dazedtl.compatibility.game_write import write_game
+
+    # The tools are plugins of an MV/MZ game, which has no Data to pack.
+    with write_game(plan["project"]["source"], log=log, pack=False):
+        return engine(plan, log)
