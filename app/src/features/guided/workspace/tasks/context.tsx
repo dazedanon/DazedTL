@@ -181,7 +181,13 @@ export function guidanceView(w: GuidedWorkspace): TaskView {
     feedback,
     savedNames,
     saveDocuments,
+    translation,
   } = w;
+  // Guidance is the game's tracked files, so it saves only once the notice
+  // above is resolved; the edits stay drafts meanwhile.
+  const refused = translation.checkoutIssue
+    ? "Resolve the game folder notice above first."
+    : "";
   let content: ReactNode;
   content = (
     <>
@@ -225,14 +231,16 @@ export function guidanceView(w: GuidedWorkspace): TaskView {
         variant={dirty ? "primary" : "default"}
         title={`Save guidance (${shortcutLabel.save})`}
         aria-keyshortcuts={shortcutKeys.save}
-        disabled={disabled}
+        disabled={disabled || !!refused}
+        disabledReason={refused}
         {...feedback("context:save", "Saving guidance…")}
         onClick={() => saveDocuments(savedNames)}
       />
     ),
     next: advance(undefined, undefined, dirty ? "quiet" : "primary"),
     heading: { title: "Translation guidance" },
-    save: disabled ? undefined : () => void saveDocuments(savedNames),
+    save:
+      disabled || refused ? undefined : () => void saveDocuments(savedNames),
   };
 }
 
