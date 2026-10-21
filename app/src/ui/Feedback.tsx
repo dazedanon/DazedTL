@@ -28,7 +28,7 @@ export function Feedback({
           text={error}
           label="Error details"
           appearance="inline"
-          limit={120}
+          lines={2}
         />
       ) : loading ? (
         loadingText
@@ -49,7 +49,7 @@ export function Feedback({
               text={notice}
               label="Result details"
               appearance="inline"
-              limit={120}
+              lines={2}
             />
           ) : (
             "All changes saved"
