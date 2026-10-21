@@ -22,6 +22,7 @@ from util.paths import (
     GAME_SKILL_RESERVED_NAMES,
     GAME_SKILLS_RELATIVE,
 )
+from util.qa import mechanical
 from util.qa.fitting import _record_problems
 from util.qa.records import _decode_pointer, _record_maps, _resolve_parts
 from util.qa.schema import (
@@ -32,7 +33,6 @@ from util.qa.schema import (
 )
 from util.qa.storage import _decisions, _read_json, _read_optional
 from util.reference_games import reference_context
-from util.rpgmaker_qa_manifest import _mechanical_evidence
 
 if TYPE_CHECKING:
     from util.qa.ledger import _Reviewed
@@ -796,7 +796,7 @@ def _number_defect(source: str, live: str) -> bool:
     from the English is only when it is not an ordinal or idiom, not a small
     count English writes as a word ("three", "once"), and not a word already.
     """
-    evidence = _mechanical_evidence(source, live, None)
+    evidence = mechanical.evidence(source, live, None)
     visible = unicodedata.normalize("NFKC", source)
     idioms = Counter(
         number.lstrip("0") or "0"
@@ -824,7 +824,7 @@ def _forced_deep_reasons(item: dict[str, Any]) -> list[str]:
     defect: a changed number, or a source code the English lost.
     """
     source, live = str(item["source"]), str(item["translation"])
-    evidence = _mechanical_evidence(source, live, None)
+    evidence = mechanical.evidence(source, live, None)
     reasons = {
         reason for reason in item.get("risk") or []
         if reason in FORCED_DEEP_MECHANICAL_FLAGS

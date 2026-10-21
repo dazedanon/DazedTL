@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from util.paths import unlink_with_retry
+from util.qa import mechanical
 from util.qa.fitting import (
     _disallowed_flags,
     _flag_details,
@@ -43,7 +44,7 @@ from util.qa.storage import (
     _task_lock,
     answers,
 )
-from util.rpgmaker_qa_manifest import _mechanical_evidence, build_manifest
+from util.rpgmaker_qa_manifest import build_manifest
 from util.rpgmaker_qa_verify import verify_manifest
 
 
@@ -441,7 +442,7 @@ def _regression_check_loaded(
             # correction is, whichever rules made its inventory.
             before_record = before_records.get(operation["identity"])
             before_flags = set(
-                _mechanical_evidence(
+                mechanical.evidence(
                     before_record["source"],
                     before_record["live"],
                     before_record.get("event_code"),

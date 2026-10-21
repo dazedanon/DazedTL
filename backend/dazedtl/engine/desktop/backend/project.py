@@ -12,7 +12,8 @@ from util.freshness import Digests
 from util import system
 from util.paths import replace_with_retry
 from util.project_preparation import rpgmaker_layout
-from util.rpgmaker_qa_manifest import pointer, resolve_pointer, _mechanical_evidence
+from util.qa import mechanical
+from util.rpgmaker_qa_manifest import pointer, resolve_pointer
 from util.runtime_text import protect_script_codes, validate_control_codes
 
 JAPANESE = re.compile(r"[ぁ-ゔァ-ヴ一-龠]")
@@ -177,7 +178,7 @@ def apply_record(document, record, text):
 
 
 def review_flags(source: str, text: str, code=None) -> list[str]:
-    flags = [flag for flag in _mechanical_evidence(source, text, code)["flags"] if flag != "runtime-token-mismatch"]
+    flags = [flag for flag in mechanical.evidence(source, text, code)["flags"] if flag != "runtime-token-mismatch"]
     _protected, replacements = protect_script_codes(source)
     valid, _reasons = validate_control_codes(source, text, {0: replacements})
     if not valid:

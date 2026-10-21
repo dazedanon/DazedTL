@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from util import rpgmaker_qa_checks as checks
+from util.qa import mechanical
 from util.qa.bundles import (
     _declined_items,
     _partition,
@@ -37,7 +38,6 @@ from util.qa.schema import (
 from util.qa.scope import _declined_scope
 from util.qa.selection import _cluster_by_identity, _scene_position, _scene_records
 from util.qa.storage import _read_json
-from util.rpgmaker_qa_manifest import _mechanical_evidence
 
 SCREEN_VERDICTS = frozenset({"suspect", "needs-context"})
 MOTIF_DISPOSITIONS = frozenset({"preserved", "suspect", "uncertain-playtest"})
@@ -566,7 +566,7 @@ def _database_number_allowance(
             raise QAResultError(
                 f"A database number fix needs a database field: {identity}"
             )
-        evidence = _mechanical_evidence(
+        evidence = mechanical.evidence(
             str(item["source"]), str(review["correction"]), locator.get("event_code")
         )
         added = Counter(evidence["live_visible_numbers"]) - Counter(

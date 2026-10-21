@@ -15,12 +15,11 @@ from util import rpgmaker_blocks as blocks
 from util import rpgmaker_rewrap as rewrap
 from util import rpgmaker_script_strings as script_strings
 from util.game_settings import game_wrap_widths, normalize_wrap_widths
+from util.qa import mechanical
 from util.qa.schema import _QUOTED_VALUE_RE, ADDED_BATTLER_NAME
 from util.rpgmaker_qa_manifest import (
     QUOTED_TRANSFORMS,
     SCRIPT_STRINGS,
-    _mechanical_evidence,
-    _row_codes,
     resolve_pointer,
 )
 from util.rpgmaker_rewrap import rendered_rows, widest_line
@@ -354,8 +353,8 @@ def correction_problems(
             f"has a line {widest_line(correction)} characters wide; its line "
             f"width is {box['width']}"
         )
-    before = set(_mechanical_evidence(source, live, event_code)["flags"])
-    after = set(_mechanical_evidence(source, written, event_code)["flags"])
+    before = set(mechanical.evidence(source, live, event_code)["flags"])
+    after = set(mechanical.evidence(source, written, event_code)["flags"])
     introduced = sorted(_disallowed_flags(
         after - before - APPROVED_NONBLOCKING_MECHANICAL_FLAGS, allowed,
         source, written,
@@ -378,8 +377,8 @@ def _flag_details(flags: Iterable[str], source: str, text: str) -> str:
 def _token_difference(source: str, text: str) -> str:
     """How *text* changes *source*'s runtime codes, as the token check
     compares them (see rpgmaker_qa_manifest._runtime_tokens_match)."""
-    source_starts, source_codes = _row_codes(source)
-    starts, codes = _row_codes(text)
+    source_starts, source_codes = mechanical.row_codes(source)
+    starts, codes = mechanical.row_codes(text)
     parts = []
     for verb, difference in (
         ("drops", source_codes - codes), ("adds", codes - source_codes)
@@ -398,7 +397,7 @@ def _token_difference(source: str, text: str) -> str:
 def _adds_only_battler_name(source: str, text: str) -> bool:
     """Whether a text keeps its source's runtime codes and adds only the %1
     the source lacks."""
-    evidence = _mechanical_evidence(source, text, None)
+    evidence = mechanical.evidence(source, text, None)
     source_tokens = Counter(evidence["source_runtime_tokens"])
     text_tokens = Counter(evidence["live_runtime_tokens"])
     return (

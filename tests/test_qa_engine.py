@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tests.engine import engine_module
 from tests.probe import Probe
@@ -150,6 +151,35 @@ class QAEngineTests(unittest.TestCase):
         returncode, output = reviewed.result()
         self.assertEqual(returncode, 0, output)
 
+    def test_the_inventory_and_its_verifier_read_one_mechanical_rule(self):
+        # A flag changed in one of two copies of the rule failed every new
+        # inventory with "mechanical evidence mismatch", so QA could not prepare.
+        rule = manifest.mechanical.evidence
+
+        def changed(*arguments):
+            value = rule(*arguments)
+            return {**value, "flags": [*value["flags"], "changed-rule"]}
+
+        commands = [
+            {"code": 101, "parameters": ["", 0, 0, 2, ""]},
+            {"code": 401, "parameters": ["Hello."], "_original": "こんにちは。"},
+            {"code": 0, "parameters": []},
+        ]
+        game = {"events": [None, {"id": 1, "pages": [{"list": commands}]}]}
+        with (
+            tempfile.TemporaryDirectory() as folder,
+            mock.patch.object(manifest.mechanical, "evidence", changed),
+        ):
+            data = Path(folder)
+            (data / "Map001.json").write_text(
+                json.dumps(game, ensure_ascii=False), encoding="utf-8"
+            )
+            built = manifest.build_manifest(data, "release")
+            verified = verify.verify_manifest(data, built)
+        self.assertTrue(verified["valid"], verified["errors"])
+        (record,) = built["records"]
+        self.assertIn("changed-rule", record["mechanical"]["flags"])
+
     def test_numbers_beside_stat_letters_count(self):
         # Skill descriptions from a release, where English moves the stat away
         # from its number.
@@ -161,12 +191,10 @@ class QAEngineTests(unittest.TestCase):
             ("ＴＰ２０増加", "Increases TP by 20."),
             ("1000Gを手に入れた", "Obtained 1,000 G."),
         ):
-            evidence = manifest._mechanical_evidence(source, live, None)
+            evidence = manifest.mechanical.evidence(source, live, None)
             self.assertNotIn("visible-number-mismatch", evidence["flags"], source)
-            # The verifier recomputes the evidence, so it must count the same.
-            self.assertEqual(verify._mechanical(source, live, None), evidence)
         # Runtime codes and identifiers still show no number.
-        evidence = manifest._mechanical_evidence(
+        evidence = manifest.mechanical.evidence(
             "\\V[5]でHP30回復、EV024", "Restores 30 HP with \\V[5], EV024", None
         )
         self.assertEqual(evidence["source_visible_numbers"], ["30"])
@@ -177,9 +205,8 @@ class QAEngineTests(unittest.TestCase):
         # reported it as residue, and as never translated when the engine,
         # finding nothing to send, kept no `_original`.
         source, live = "\\SA[びっくり]えっ、本当に？", "\\SA[びっくり]Huh, really?"
-        evidence = manifest._mechanical_evidence(source, live, 401)
+        evidence = manifest.mechanical.evidence(source, live, 401)
         self.assertNotIn("source-language-residue", evidence["flags"])
-        self.assertEqual(verify._mechanical(source, live, 401), evidence)
         with tempfile.TemporaryDirectory() as folder:
             data = Path(folder)
             commands = [
@@ -212,11 +239,10 @@ class QAEngineTests(unittest.TestCase):
                 True,
             ),
         ):
-            evidence = manifest._mechanical_evidence(source, live, 401)
+            evidence = manifest.mechanical.evidence(source, live, 401)
             self.assertEqual(
                 "runtime-token-mismatch" in evidence["flags"], flagged, live
             )
-            self.assertEqual(verify._mechanical(source, live, 401), evidence)
 
     def test_header_check_flags_slips_but_not_the_games_conventions(self):
         game = header_game()

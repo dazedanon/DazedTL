@@ -3,6 +3,8 @@
 The verifier intentionally does not import the inventory builder.  It rescans
 the JSON corpus, rediscovers preserved-source leaves, resolves every recorded
 pointer, and recomputes identities, speakers, clusters, ordering, and hashes.
+Mechanical evidence is a rule rather than a record, so it reads the builder's
+one definition (util/qa/mechanical.py).
 """
 
 from __future__ import annotations
@@ -10,13 +12,12 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import unicodedata
 from collections import Counter
 from pathlib import Path
 from typing import Any
 
 from util import rpgmaker_blocks as blocks
-from util.source_text import holds_source
+from util.qa import mechanical
 
 SCHEMA = "rpgmaker-qa-manifest-v1"
 DIALOGUE = {101, 102, 401, 405}
@@ -66,88 +67,6 @@ CODE357_TEXT_ARGUMENTS = {
     "Mano_CurrencyUnit": ("unit",),
     "SceneGlossary": ("category",),
 }
-_RUNTIME_TOKEN_RE = re.compile(
-    r"\\(?:[A-Za-z]+\[[^\]\r\n]*\]|[{}.!|^><])"
-    # A name window code such as \n<Alice> or \nc<Alice>, counted without its
-    # name, which translation changes.
-    r"|\\n[A-Za-z]?<(?=[^<>\r\n]*>)"
-    r"|__PROTECTED_\d+__"
-    r"|%(?:\d+\$)?[-+#0]*(?:\d+|\*)?(?:\.\d+)?[A-Za-z]"
-    # RPG Maker's numbered placeholders, as in "%1 uses %2!".
-    r"|%\d+"
-)
-_UNSAFE_BARE_CENTER_RE = re.compile(
-    r"\\(?:ac|cl)(?=[A-Za-z])", re.IGNORECASE
-)
-_CENTER_ALIGNMENT_RE = re.compile(r"\\ac", re.IGNORECASE)
-# Stat and currency abbreviations are a number's unit ("TP24", "100G"); other
-# letters beside digits make an identifier ("EV024").
-_NUMBER_UNIT = r"(?:[HMST]P|EXP|ATK|DEF|MAT|MDF|AGI|LUK|L[Vv]|G)"
-_VISIBLE_NUMBER_RE = re.compile(
-    rf"(?<![A-Za-z0-9_])(?:{_NUMBER_UNIT}(?=\d))?([-+]?\d+(?:[.,]\d+)?)"
-    rf"{_NUMBER_UNIT}?(?![A-Za-z0-9_])"
-)
-_ORDINALS = (
-    "first", "second", "third", "fourth", "fifth", "sixth", "seventh",
-    "eighth", "ninth", "tenth", "eleventh", "twelfth", "thirteenth",
-    "fourteenth", "fifteenth", "sixteenth", "seventeenth", "eighteenth",
-    "nineteenth", "twentieth",
-)
-_CARDINALS = (
-    "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
-    "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
-    "seventeen", "eighteen", "nineteen", "twenty",
-)
-_TENS = {
-    "thirty": "30", "forty": "40", "fifty": "50", "sixty": "60", "seventy": "70",
-    "eighty": "80", "ninety": "90", "hundred": "100", "thousand": "1000",
-}
-_ORDINAL_TOKEN_RE = re.compile(
-    r"(?<![A-Za-z0-9_])(?:\d+(?:st|nd|rd|th)|"
-    + "|".join(_ORDINALS + _CARDINALS + tuple(_TENS))
-    + r")(?![A-Za-z0-9_])",
-    re.IGNORECASE,
-)
-
-
-def _ordinal_value(token: str) -> str:
-    lowered = token.casefold()
-    if lowered in _ORDINALS:
-        return str(_ORDINALS.index(lowered) + 1)
-    if lowered in _CARDINALS:
-        return str(_CARDINALS.index(lowered) + 1)
-    if lowered in _TENS:
-        return _TENS[lowered]
-    return lowered.rstrip("stndrh")
-
-
-def _plain_number(text: str) -> str:
-    text = text.lstrip("+")
-    return text.replace(",", "") if re.match(r"^-?\d{1,3}(?:,\d{3})+$", text) else text
-
-
-def _numbers_shown(source_numbers: list[str], live: str) -> bool:
-    """Plain live numbers must equal the source's in order; ordinals may fill gaps."""
-    tokens = sorted(
-        [(m.start(1), _plain_number(m.group(1)), False) for m in _VISIBLE_NUMBER_RE.finditer(live)]
-        + [(m.start(), _ordinal_value(m.group(0)), True) for m in _ORDINAL_TOKEN_RE.finditer(live)]
-    )
-
-    def walk(token_index: int, number_index: int) -> bool:
-        if token_index == len(tokens):
-            return number_index == len(source_numbers)
-        _start, value, optional = tokens[token_index]
-        if (
-            number_index < len(source_numbers)
-            and source_numbers[number_index] == value
-            and walk(token_index + 1, number_index + 1)
-        ):
-            return True
-        return optional and walk(token_index + 1, number_index)
-
-    return walk(0, 0)
-
-
 def _hash(value: bytes | str) -> str:
     return hashlib.sha256(value.encode("utf-8") if isinstance(value, str) else value).hexdigest()
 
@@ -253,65 +172,6 @@ def _decode_pointer(json_pointer: str) -> list[str]:
         item.replace("~1", "/").replace("~0", "~")
         for item in json_pointer.split("/")[1:]
     ]
-
-
-def _row_codes(text: str):
-    """*text*'s runtime codes counted per row (see rpgmaker_blocks.row_codes)."""
-    return blocks.row_codes(text, _RUNTIME_TOKEN_RE)
-
-
-def _runtime_tokens_match(source: str, live: str) -> bool:
-    """Whether *live* keeps *source*'s runtime codes. A row wrapping adds may
-    repeat the codes its row starts with; any other change still counts."""
-    if Counter(_RUNTIME_TOKEN_RE.findall(source)) == Counter(
-        _RUNTIME_TOKEN_RE.findall(live)
-    ):
-        return True
-    return _row_codes(source) == _row_codes(live)
-
-
-def _mechanical(source: str, live: str, code: int | None) -> dict[str, Any]:
-    source_tokens = _RUNTIME_TOKEN_RE.findall(source)
-    live_tokens = _RUNTIME_TOKEN_RE.findall(live)
-    source_visible = unicodedata.normalize(
-        "NFKC", _RUNTIME_TOKEN_RE.sub(" ", source)
-    )
-    live_visible = unicodedata.normalize(
-        "NFKC", _RUNTIME_TOKEN_RE.sub(" ", live)
-    )
-    source_numbers = [_plain_number(n) for n in _VISIBLE_NUMBER_RE.findall(source_visible)]
-    live_numbers = [_plain_number(n) for n in _VISIBLE_NUMBER_RE.findall(live_visible)]
-    flags = []
-    if not live.strip():
-        flags.append("empty-live")
-    if source == live:
-        flags.append("unchanged-source")
-    if holds_source(live):
-        flags.append("source-language-residue")
-    if not _runtime_tokens_match(source, live):
-        flags.append("runtime-token-mismatch")
-    live_lines = [line for line in live.splitlines() if line.strip()]
-    safe_centered_live = bool(live_lines) and all(
-        re.match(r"^\s*\\ac(?=[^A-Za-z]|$)", line, re.IGNORECASE)
-        for line in live_lines
-    )
-    if code == 401 and _CENTER_ALIGNMENT_RE.search(source) and not safe_centered_live:
-        flags.append("missing-center-alignment")
-    if _UNSAFE_BARE_CENTER_RE.search(live):
-        flags.append("unsafe-bare-center-code")
-    if source_numbers != live_numbers and not _numbers_shown(source_numbers, live_visible):
-        flags.append("visible-number-mismatch")
-    if len(source) >= 8 and len(live) >= 1:
-        ratio = len(live) / len(source)
-        if ratio < 0.35 or ratio > 3.0:
-            flags.append("suspicious-length-ratio")
-    return {
-        "flags": flags,
-        "source_runtime_tokens": source_tokens,
-        "live_runtime_tokens": live_tokens,
-        "source_visible_numbers": source_numbers,
-        "live_visible_numbers": live_numbers,
-    }
 
 
 def _expected_live_pointers(document: Any, record: dict[str, Any]) -> list[str]:
@@ -594,7 +454,7 @@ def verify_manifest(data_root: str | Path, manifest: dict[str, Any]) -> dict[str
             expected_band = "short" if len(live) <= 20 else "medium" if len(live) <= 60 else "long"
             if record.get("length_band") != expected_band:
                 raise ValueError("length band mismatch")
-            if record.get("mechanical") != _mechanical(source, live, code):
+            if record.get("mechanical") != mechanical.evidence(source, live, code):
                 raise ValueError("mechanical evidence mismatch")
             if classification == "database":
                 relative = source_parts[source_parts.index("_original") + 1 :]
