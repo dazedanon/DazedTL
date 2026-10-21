@@ -1,0 +1,6 @@
+# Text QA is linted like the app's Python (pyproject.toml). It keeps the
+# engine's style, so the formatter leaves it alone as it does the engine.
+extend = "../../../../../pyproject.toml"
+
+[format]
+exclude = ["*"]
