@@ -205,6 +205,7 @@ VX Ace keeps menu commands, battle messages and other interface text in its Ruby
 It also puts the translated game title into `Game.ini`, which is the title the game window shows, in plain letters (é as e, ♥ left out), since players on Linux, Steam Deck or JoiPlay can't start the game from a title in other letters.
 If you or your assistant edit `ace_json` outside DazedTL, or it came converted, **Pack outside edits**, in Check or Release, puts it all into the game; Release waits for it.
 Name a clean game ZIP with English letters, numbers and symbols only: the name becomes the game's folder, and a VX Ace game doesn't start on English Windows from a folder named in Japanese.
+A game whose folder name is in Japanese starts with the folder name in English letters, or `translated-game.zip`, so rename it to the translated title.
 A patch ZIP for an encrypted game carries a rebuilt `Game.rgss3a`, so players replace one file.
 GameUpdate can't update an encrypted game, so share a new patch for each update instead.
 

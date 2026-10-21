@@ -237,6 +237,22 @@ def game_folder(output, engine):
     return name
 
 
+def archive_stem(name, engine):
+    """What a game's release ZIPs are named before the translator names them,
+    as in "<stem>-game.zip": the game folder's *name* wherever game_folder
+    takes it, else its ASCII form, else a plain name, so a VX Ace game with
+    a Japanese folder name still opens Release with a name it can build."""
+    from util.ace.game_ini import ascii_title
+
+    for stem in (name, ascii_title(name)):
+        try:
+            if stem:
+                return game_folder(stem + ".zip", engine)
+        except ValueError:
+            pass
+    return "translated"
+
+
 def write_archive(source, target, scope, log, *, folder):
     if inventory(source, scope["updater_stamp"], scope["known"]) != scope:
         raise ValueError("The archive contents changed. Inspect and build again.")
