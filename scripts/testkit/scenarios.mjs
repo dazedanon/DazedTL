@@ -6,6 +6,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { python } from "../dependencies.mjs";
 import { until } from "./cdp.mjs";
+import { gameName, makeGame } from "./games.mjs";
 import {
   connect,
   openGame,
@@ -294,6 +295,83 @@ const assistantWrite = [
   },
 ];
 
+const stoppedUpdate = [
+  [
+    "Save the translation version under Versions",
+    async ({ page }) => {
+      await page.click("Project");
+      await page.click("Versions");
+      await page.click("Review translation checkpoint");
+      await page.click("Save translation version");
+      await page.waitText("Start game update");
+      await until(
+        "the translation version to save",
+        async () =>
+          !(await page.text()).includes("Review translation checkpoint"),
+      );
+    },
+  ],
+  [
+    "Bring in version 1.1, which changes a profile the translation changed",
+    async ({ page, state }) => {
+      if (state.variants[0] === "ace")
+        throw new Error("The update changes the MZ game's Actors.json.");
+      const release = path.join(
+        state.work,
+        "リリース 1.1",
+        gameName(state.variants),
+      );
+      await makeGame(state.variants, release);
+      const file = path.join(release, "data/Actors.json");
+      const actors = JSON.parse(fs.readFileSync(file, "utf8"));
+      actors[1].profile = "森の村に住む元気な女の子。\n伝説の杖を探している。";
+      fs.writeFileSync(file, JSON.stringify(actors));
+      await page.click("Start game update");
+      // Typed, as a user may instead of choosing it in the folder dialog.
+      await page.type("#update-official-folder", release);
+      await page.waitText("Complete game");
+      await page.type("#update-version", "1.1");
+      await page.click("Prepare new release");
+      await page.click("Preview changes", 5 * 60_000);
+      await page.waitText("Apply update to 1.1", 5 * 60_000);
+    },
+  ],
+  [
+    "Apply it, stopping at the conflict as an apply the app closed during does",
+    async ({ page, state }) => {
+      const project = (await page.call("workspace_snapshot")).application
+        .project;
+      const { jobs } = await page.call("translation_state", {
+        project_id: project.id,
+      });
+      const done = (action) =>
+        jobs.find((job) => job.action === action && job.status === "complete")
+          .result;
+      const stage = done("stage_update");
+      // The app's Apply resolves conflicts at once; stopping before that is
+      // what an update interrupted mid-apply leaves for Versions.
+      execFileSync(
+        state.env?.DAZEDTL_PYTHON || python,
+        [
+          "-X",
+          "utf8",
+          path.join(import.meta.dirname, "stopped_update.py"),
+          state.root,
+          state.game,
+          stage.official,
+          stage.version,
+          JSON.stringify(done("version_preview")),
+        ],
+        { encoding: "utf8" },
+      );
+      await page.waitText("Finish the interrupted update");
+      await until("Versions to offer to cancel the update", () =>
+        page.locate("Cancel update & restore translation"),
+      );
+    },
+  ],
+];
+
 /**
  * @type {Record<string, { description: string, game?: string,
  *   from?: "previous", upgrade?: boolean,
@@ -316,6 +394,11 @@ export const scenarios = {
     description:
       "Database, maps and events translated live by the stand-in and applied.",
     steps: () => [open, ...setup, ...translateAll],
+  },
+  "update-stopped": {
+    description:
+      "Translated and applied, then version 1.1 brought in under Versions, its apply stopped at Git's conflict in Actors.json; Versions offers to continue or cancel.",
+    steps: () => [open, ...setup, ...translateAll, ...stoppedUpdate],
   },
   "qa-done": {
     description:
