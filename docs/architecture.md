@@ -438,7 +438,7 @@ The game-write gateway records the game as found before the first write to a gam
 Git setup records the prepared game, and a game update records the release it stages and the prepared release it applies, laid over the current record when it is a patch.
 Nothing is removed from the ref, and a record is never rewritten.
 
-[originals](../backend/dazedtl/translation/originals.py) is the one place readers get the original files: the plugin lookups, release file lists, census, checkpoint sources, Start over and an assistant's `backup_id`.
+[originals](../backend/dazedtl/translation/originals.py) is where the plugin lookups, release file lists, census, patch sources, Start over and an assistant's `backup_id` get them; going back to a checkpoint reads the Git records alone, through the same choice of record (`chosen`).
 DazedTL takes no backups now; a project set up before keeps reading the backups its `lifecycle.json` records name from the game's `.dazedtl/backups/v2` store, which [backups](../backend/dazedtl/translation/backups.py) only reads, and existing stores are never removed.
 The independent scripts/backups.py reader can recover a moved game from such a store without its former app profile, and restoring never overwrites an existing folder.
 
