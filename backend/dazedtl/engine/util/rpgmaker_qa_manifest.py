@@ -279,9 +279,13 @@ def _speaker(command_list: list[Any], index: int, code: int) -> dict[str, str]:
 
 def _choice_help(record: dict[str, Any], command_list: list[Any], index: int) -> None:
     """Mark a comment line (408) that is a choice's help, which shows in the
-    message window beside the face of the choice's message."""
+    message window beside the face of the choice's message, with the rest of
+    its comment, which the window shows with it."""
     if blocks.help_branch(command_list, index) is not None:
-        record["choice_help"] = {"face": blocks.help_face(command_list, index)}
+        record["choice_help"] = {
+            "face": blocks.help_face(command_list, index),
+            "comment": blocks.help_layout(command_list, index),
+        }
 
 
 _ROW_MAPPINGS = {

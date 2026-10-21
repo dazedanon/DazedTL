@@ -204,7 +204,9 @@ that `prior_review`, and your review replaces it.
   characters per line, `rows` it shows, and `wraps` when DazedTL rewraps a correction that has a
   line wider than the box, as it wraps translated text. Where it does not rewrap, keep each line
   within `width`. A longer wording that needs more rows than the box and the current text is
-  refused, so shorten it instead.
+  refused, so shorten it instead. A choice's help box also has `help`: every row of the comment
+  its window shows (`rows`), the ones this text holds (`part`) and where other translations
+  start (`translated`); the rows count once over the whole comment.
 - Actionable `fluency`, `voice` and `wordplay` reviews carry `editorial_basis`: the concrete
   reader-facing defect, the source, scene or guidance that makes it defective, and
   `not_preference: true`.

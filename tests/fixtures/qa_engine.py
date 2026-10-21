@@ -1523,6 +1523,7 @@ assert forced(prepare_checks({**CHECK_WIDTHS, "width": 56})) == {FIRE: ["text-fi
 # message: help taller than the window is a check, and a correction to it is
 # fitted and spread over its comment lines, however many rows it takes.
 from util import rpgmaker_qa_manifest, rpgmaker_qa_verify
+from util import rpgmaker_rewrap as rewrap
 
 help_data = temporary / "help-game/data"
 help_data.mkdir(parents=True)
@@ -1628,6 +1629,93 @@ for undo in (False, True):
             "(1/3)",
             "",
         ], help_list
+
+# Help translated a Japanese row at a time around the game's own "(1/3)", as
+# the scroll-pages game variant holds it, shows in one window: parts that each
+# fit but together need more rows than it shows are a check, and a correction
+# is refused when the help as a whole would need more rows than the window and
+# its current text. Help in one part is checked as before.
+pages_event = json.loads(
+    (root / "tests/fixtures/game-variants/scroll-pages/variant.json").read_text(
+        encoding="utf-8"
+    )
+)["events"][0]
+pages_list = pages_event["pages"][0]["list"]
+pages_layout = {"widths": {**CHECK_WIDTHS, "width": 30, "messageRows": 4}}
+pages_rows = {
+    "所要時間は二十分です。": "Watching the opening takes about twenty minutes from start to end.",
+    "初回は見ることを推奨します。": "We strongly recommend watching it all the way through on your first run.",
+    "あとで掲示板から見られます。": "You can watch it later from the notice board instead.",
+}
+
+
+def pages_manifest(english):
+    for command in pages_list:
+        original = command.get(
+            "_original", command["parameters"][0] if command["parameters"] else None
+        )
+        if command["code"] == 408 and original in english:
+            command.update(_original=original, _rows=1, parameters=[english[original]])
+    # Fitted to the Line widths as Apply writes it.
+    pages_document = {"events": [None, {**pages_event, "id": 1}]}
+    fitted = rewrap.fit_document(
+        pages_document, "Map001.json", rewrap.Layout.from_widths(pages_layout["widths"])
+    )
+    pages_data = temporary / "pages-game/data"
+    pages_data.mkdir(parents=True, exist_ok=True)
+    (pages_data / "Map001.json").write_text(
+        json.dumps(pages_document, ensure_ascii=False), encoding="utf-8"
+    )
+    built = rpgmaker_qa_manifest.build_manifest(pages_data, "release")
+    assert rpgmaker_qa_verify.verify_manifest(pages_data, built)["valid"]
+    return (
+        built,
+        {
+            record["source"]: record
+            for record in built["records"]
+            if record["event_code"] == 408
+        },
+        [misfit["reason"] for misfit in fitted.misfits],
+    )
+
+
+pages_built, pages_records, pages_misfits = pages_manifest(pages_rows)
+# Line widths finds the same misfit.
+assert pages_misfits == ["needs 7 rows; its window shows 4"], pages_misfits
+pages_note = (
+    "Wrapped to the game's Line widths and shown with the rest of its choice "
+    "help, this text needs 7 rows; its window shows 4."
+)
+assert qa._fit_checks(pages_built, pages_layout) == {
+    pages_records[source]["identity"]: [{"check": "text-fit", "note": pages_note}]
+    for source in ("所要時間は二十分です。", "初回は見ることを推奨します。")
+}, qa._fit_checks(pages_built, pages_layout)
+pages_built, pages_records, pages_misfits = pages_manifest(
+    {
+        "所要時間は二十分です。": "About twenty minutes.",
+        "初回は見ることを推奨します。": "Watch it first.",
+    }
+)
+assert qa._fit_checks(pages_built, pages_layout) == {} and not pages_misfits
+first = pages_records["所要時間は二十分です。"]
+assert qa._record_problems(
+    first,
+    "Watching the opening takes about twenty minutes from start to end.",
+    pages_layout,
+) == ["needs 5 rows with the rest of its choice help; its window shows 4"]
+assert (
+    qa._record_problems(first, "The opening takes about twenty minutes.", pages_layout)
+    == []
+)
+later = pages_records["あとで掲示板から見られます。"]
+assert (
+    qa._record_problems(
+        later,
+        "You can watch the opening later from the notice board in the village.",
+        pages_layout,
+    )
+    == []
+)
 
 
 def pace(lanes):

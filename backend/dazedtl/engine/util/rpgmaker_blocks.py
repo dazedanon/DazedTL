@@ -32,7 +32,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import dataclass
-from typing import Any, Iterator
+from typing import Any, Iterable, Iterator
 
 from util.source_text import holds_source
 
@@ -567,6 +567,43 @@ def write_help(commands: list, rows: tuple[int, ...], lines: list[str]) -> int:
             commands[at] for at in spare
         ]
     return used
+
+
+def shown(commands: list, rows: Iterable[int]) -> str:
+    """The text a window shows of a block's *rows*, such as a choice's help
+    whole: the game's own rows and every part, while empty rows moved to the
+    end (see :func:`write_help`) show nothing."""
+    return "\n".join(text(commands[at]) for at in rows).rstrip("\n")
+
+
+def help_layout(commands: list, anchor: int) -> dict[str, list] | None:
+    """The comment a choice's help translation at *anchor* shows in, as
+    plain data a check can keep beside the translation: the text of each of
+    its rows, the ones the translation owns (``part``) and the ones a later
+    or earlier translation starts at (``translated``). None for other text."""
+    block = block_at(commands, anchor)
+    if block is None or block.kind != HELP or anchor not in block.rows:
+        return None
+    place = {at: number for number, at in enumerate(block.rows)}
+    return {
+        "rows": [text(commands[at]) for at in block.rows],
+        "part": [place[at] for at in owned(commands, anchor)],
+        "translated": [
+            place[at] for at in block.rows if at != anchor and "_original" in commands[at]
+        ],
+    }
+
+
+def help_shown(layout: dict[str, list], lines: list[str] | None = None) -> str:
+    """The text a choice's help window shows (see :func:`shown`) from its
+    :func:`help_layout`, once *lines* are written over the translation's rows
+    as :func:`write_help` writes them, or as it is without *lines*."""
+    commands = [{"code": 408, "parameters": [row]} for row in layout["rows"]]
+    for at in layout["translated"]:
+        commands[at]["_original"] = ""
+    if lines is not None:
+        write_help(commands, tuple(layout["part"]), lines)
+    return shown(commands, range(len(commands)))
 
 
 def row_codes(value: str, tokens: re.Pattern) -> tuple[list[tuple[str, ...]], Counter]:

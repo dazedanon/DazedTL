@@ -572,6 +572,10 @@ def _box(record: dict[str, Any], layout: dict[str, Any]) -> dict[str, Any] | Non
         record["live_transform"] == "identity"
         and (len(record["live_pointers"]) == 1 or _message_record(record))
     )
+    # A choice's help shows with the rest of its comment, whose rows count
+    # with its own; inventories made before they were kept have none.
+    if comment := (record.get("choice_help") or {}).get("comment"):
+        box["help"] = comment
     return box
 
 
@@ -806,6 +810,14 @@ def correction_problems(
         )
     elif event_code in {101, 102} and "\n" in correction:
         problems.append("a name or choice cannot contain a line break")
+    elif box and box.get("help") and box.get("rows"):
+        # The window shows the rest of the help with it (see _box).
+        rows = rendered_rows(blocks.help_shown(box["help"], written.split("\n")))
+        if rows > max(rendered_rows(blocks.help_shown(box["help"])), box["rows"]):
+            problems.append(
+                f"needs {rows} rows with the rest of its choice help; its window "
+                f"shows {box['rows']}"
+            )
     elif box and box.get("rows"):
         rows = rendered_rows(written)
         if rows > max(rendered_rows(live), box["rows"]):
@@ -2058,12 +2070,19 @@ def _fit_checks(
             continue
         box = _box(record, layout)
         written = _fit(live, live, box, str(record.get("source") or ""))
-        reason = rewrap.misfit(written, window)
+        if reason := rewrap.misfit(written, window):
+            note = f"Wrapped to the game's Line widths, this text {reason}."
+        elif box.get("help") and (
+            reason := rewrap.rows_misfit(
+                blocks.help_shown(box["help"], written.split("\n")), window
+            )
+        ):
+            note = (
+                "Wrapped to the game's Line widths and shown with the rest of its "
+                f"choice help, this text {reason}."
+            )
         if reason:
-            entry = {
-                "check": "text-fit",
-                "note": f"Wrapped to the game's Line widths, this text {reason}.",
-            }
+            entry = {"check": "text-fit", "note": note}
             if entry not in found[cluster_of[record["identity"]]]:
                 found[cluster_of[record["identity"]]].append(entry)
     return dict(found)
