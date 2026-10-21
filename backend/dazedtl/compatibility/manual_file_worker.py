@@ -6,6 +6,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 if __name__ == "__main__":
+    from dazedtl.compatibility.manual_worker import run_action
+    from dazedtl.diagnostics import record_crashes
+
+    record_crashes(run_action(sys.argv))
     from dazedtl.compatibility.runtime import activate
 
     activate()
