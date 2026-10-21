@@ -39,6 +39,7 @@ if str(ROOT) not in sys.path:
 # Standalone helpers use the same bundled runtime and shared resources as the app.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from dazedtl.compatibility.runtime import activate
+from dazedtl import system
 
 activate()
 
@@ -210,7 +211,7 @@ def _write_png(pixels, mode: str, output: Path, *, like: Path | None, replace: b
     temporary = Path(temporary_name)
     try:
         temporary.write_bytes(data)
-        os.replace(temporary, output)
+        system.replace(temporary, output)
     finally:
         temporary.unlink(missing_ok=True)
 

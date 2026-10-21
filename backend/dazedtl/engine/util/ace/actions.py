@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from collections.abc import Callable, Collection, Iterable, Iterator
 from pathlib import Path
@@ -12,6 +11,7 @@ from typing import Any
 from util import rpgmaker_script_strings as script_strings
 
 from . import game_ini, rgssad, rv2json
+from util import system
 
 ACTIONS = ("ace_decrypt", "ace_extract", "ace_pack")
 # A text variable's (code 122) operand as earlier versions translated it in
@@ -93,7 +93,7 @@ def run(
         if archives:
             target = root / ORIGINALS / archives[0].name
             target.parent.mkdir(parents=True, exist_ok=True)
-            os.replace(archives[0], target)
+            system.replace(archives[0], target)
             log(
                 f"Moved {archives[0].name} to {ORIGINALS.as_posix()}, so the game reads its extracted files"
             )
@@ -106,13 +106,13 @@ def run(
             root, skip_backup=True, edit=ruby_text_variables(log), only=only, log=log
         )
         ini = game_ini.find(root)
-        system = root / "ace_json/System.json"
+        system_json = root / "ace_json/System.json"
         if ini is None or (
             only is not None and "system" not in {name.casefold() for name in only}
         ):
             return written
-        if system.is_file():
-            title = json.loads(system.read_text(encoding="utf-8-sig")).get("gameTitle")
+        if system_json.is_file():
+            title = json.loads(system_json.read_text(encoding="utf-8-sig")).get("gameTitle")
             game_ini.write_title(ini, title, log)
         return [*written, ini]
     else:

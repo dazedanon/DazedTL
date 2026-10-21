@@ -14,6 +14,7 @@ import tempfile
 import uuid
 
 from util.paths import ensure_game_tool_gitignore
+from util import system
 
 PROFILE_AUTO = "auto"
 PROFILE_RPGMAKER_MVMZ = "rpgmaker_mvmz"
@@ -154,7 +155,7 @@ def _atomic_write(path: Path, data: bytes) -> None:
     try:
         with handle:
             handle.write(data)
-        os.replace(temp_path, path)
+        system.replace(temp_path, path)
     except Exception:
         temp_path.unlink(missing_ok=True)
         raise
@@ -474,11 +475,11 @@ def _prepare_assets_transaction(
     # must not leave the other selected files partially published.
     if result.errors:
         if transaction_root.exists():
-            shutil.rmtree(transaction_root)
+            system.remove_tree(transaction_root)
         return result
     if not candidates and not reconciled:
         if transaction_root.exists():
-            shutil.rmtree(transaction_root)
+            system.remove_tree(transaction_root)
         return result
 
     published: list[tuple[Path, Path]] = []
@@ -516,7 +517,7 @@ def _prepare_assets_transaction(
         return result
     finally:
         if transaction_root.exists():
-            shutil.rmtree(transaction_root)
+            system.remove_tree(transaction_root)
 
     result.completed = len(candidates)
     result.patch_files = targets

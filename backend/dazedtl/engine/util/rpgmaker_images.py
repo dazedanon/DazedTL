@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Callable, Iterable
 import io
 import json
-import os
 import re
 import shutil
 import tempfile
@@ -23,6 +22,7 @@ from util.paths import (
     ensure_game_tool_gitignore,
     normalize_game_tool_gitignore_text,
 )
+from util import system
 
 
 RPGMV_HEADER = bytes(
@@ -207,7 +207,7 @@ def _atomic_write(path: Path, data: bytes) -> None:
     try:
         with handle:
             handle.write(data)
-        os.replace(temp_path, path)
+        system.replace(temp_path, path)
     except Exception:
         temp_path.unlink(missing_ok=True)
         raise

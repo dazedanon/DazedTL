@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 import subprocess
 from pathlib import Path
+from util import system
 
 
 class ReleasePackageError(RuntimeError):
@@ -62,7 +63,7 @@ def _release_patch_sha(root: Path) -> str | None:
 
     def run_git(*args: str) -> subprocess.CompletedProcess[str]:
         try:
-            return subprocess.run(
+            return system.run(
                 ["git", "-C", str(root), *args],
                 check=False,
                 capture_output=True,

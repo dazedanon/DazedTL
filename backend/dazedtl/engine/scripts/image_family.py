@@ -34,6 +34,7 @@ from pathlib import Path
 # Standalone helpers use the same bundled runtime as the app.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from dazedtl.compatibility.runtime import activate  # noqa: E402
+from dazedtl import system  # noqa: E402
 
 activate()
 
@@ -249,7 +250,7 @@ def _save(Image, pixels, mode: str, output: Path) -> str:
     try:
         with os.fdopen(descriptor, "wb") as handle:
             handle.write(data)
-        os.replace(temporary, output)
+        system.replace(temporary, output)
     finally:
         Path(temporary).unlink(missing_ok=True)
     return hashlib.sha256(data).hexdigest()

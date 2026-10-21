@@ -20,6 +20,7 @@ from util.wolfdawn import codes as wolf_codes
 from util.wolfdawn import db_dat_sibling
 from util.wolfdawn import originals as wolf_originals
 from util import wolfdawn
+from util import system
 
 NAMES_JSON = "names.json"
 
@@ -101,7 +102,7 @@ def restore_live_from_originals(
         try:
             if orig.is_dir():
                 if live.exists():
-                    shutil.rmtree(live)
+                    system.remove_tree(live)
                 shutil.copytree(orig, live)
             else:
                 live.parent.mkdir(parents=True, exist_ok=True)
@@ -508,8 +509,8 @@ def _inject_strings(
     )
     if (probe_drifted or 0) > 0 or (probe_untranslated or 0) > 0:
         emit = log_fn or (lambda _message: None)
-        with tempfile.TemporaryDirectory() as raw:
-            pristine_json = Path(raw) / json_name
+        with system.staging_folder(tempfile.gettempdir(), "dazedtl-inject-") as raw:
+            pristine_json = raw / json_name
             extracted = wolfdawn.strings_extract(
                 str(orig), str(pristine_json), log_fn=None
             )

@@ -881,7 +881,7 @@ def _write_json_atomic(path: Path, payload: Mapping[str, object]) -> None:
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
             json.dump(payload, handle, ensure_ascii=False, sort_keys=True, indent=2)
             handle.write("\n")
-        os.replace(temporary_name, path)
+        system.replace(temporary_name, path)
     except Exception:
         try:
             os.close(descriptor)
@@ -1439,7 +1439,7 @@ def _sync_external_assets(
                         destination.unlink()
                 else:
                     destination.parent.mkdir(parents=True, exist_ok=True)
-                    os.replace(staged[change.path], destination)
+                    system.replace(staged[change.path], destination)
                 applied.append(change.path)
         except Exception as exc:
             rollback_errors = []
@@ -1476,7 +1476,7 @@ def _materialize_normalized_text(files: list[_SourceFile]) -> None:
             with os.fdopen(descriptor, "wb") as handle:
                 handle.write(entry.normalized_text.encode("utf-8"))
             os.chmod(temporary_name, stat.S_IMODE(original_mode))
-            os.replace(temporary_name, entry.path)
+            system.replace(temporary_name, entry.path)
         except Exception:
             try:
                 os.close(descriptor)

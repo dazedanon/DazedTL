@@ -8,24 +8,11 @@ extend-exclude = ["data/skills/*/tools"]
 exclude = ["*"]
 
 [lint]
-select = ["TID251"]
+# F823 also catches a local named like the layer (`system`) that hides it.
+select = ["TID251", "F823"]
 
 [lint.extend-per-file-ignores]
 # Calls made before the platform layer, converted file by file: remove a file
 # once it has none. Never add one; use the layer, or mark a call that must stay
 # raw with `# noqa: TID251 - <reason>`.
-"desktop/backend/workflow_actions.py" = ["TID251"]
-"scripts/image_family.py" = ["TID251"]
-"scripts/image_inpaint.py" = ["TID251"]
-"scripts/image_recipe.py" = ["TID251"]
-"util/ace/actions.py" = ["TID251"]
 "util/gameupdate_config.py" = ["TID251"]
-"util/image_manager.py" = ["TID251"]
-"util/playtest/fixes.py" = ["TID251"]
-"util/release_package.py" = ["TID251"]
-"util/rpgmaker_images.py" = ["TID251"]
-"util/rpgmaker_plugin_registry.py" = ["TID251"]
-"util/version_update/git_workflow.py" = ["TID251"]
-"util/version_update/text_changes.py" = ["TID251"]
-"util/wolf_workflow.py" = ["TID251"]
-"util/wolfdawn/inject.py" = ["TID251"]
