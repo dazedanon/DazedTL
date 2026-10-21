@@ -9187,10 +9187,11 @@ def answers(task_dir: str | Path) -> dict[str, str]:
         return {}
     if not isinstance(document, dict) or document.get("schema") != ANSWERS_SCHEMA:
         return {}
+    saved = document.get("answers")
+    if not isinstance(saved, dict):
+        return {}
     return {
-        str(question): choice
-        for question, choice in (document.get("answers") or {}).items()
-        if choice in ANSWERS
+        str(question): choice for question, choice in saved.items() if choice in ANSWERS
     }
 
 
