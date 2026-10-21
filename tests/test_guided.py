@@ -4250,6 +4250,17 @@ class GuidedTests(unittest.TestCase):
             ("fit_text", {"areas": ["listWidth"], "files": ["Items.json"]}),
         )
         self.assertFalse(self.guided.text_fit.pending(self.identity))
+        # A snapshot starts the queued fit before it lists what runs.
+        self.backend.operations.start.reset_mock()
+        self.guided.text_fit.request(
+            self.identity, self.native, {"listWidth": 30}, {"listWidth": 40}
+        )
+        self.backend.workflows.state = lambda _: {
+            "project": {**self.native, "files": [{"name": "Items.json"}]}
+        }
+        self.guided.start_queued(self.identity)
+        self.backend.operations.start.assert_called_once()
+        self.assertFalse(self.guided.text_fit.pending(self.identity))
         # Saving the same widths again retries a fit that failed.
         operations = self.root / "operations"
         write_json(operations / "fit/plan.json", {"options": {"areas": ["listWidth"]}})

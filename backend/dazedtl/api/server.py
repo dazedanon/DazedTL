@@ -106,6 +106,12 @@ class Application:
     def state(self):
         value = self.projects.state()
         project = value["project"]
+        if project and project.get("backend_id") and Path(project["source"]).is_dir():
+            # Queued work starts before this reads what runs.
+            try:
+                self.guided.start_queued(project["id"])
+            except ValueError, OSError, RuntimeError, subprocess.SubprocessError:
+                pass  # The snapshot reports an unreadable project.
         value.update(
             running=self.backend.running() or self.translation.jobs.running(),
             provider_ready=self.settings.ready(),
