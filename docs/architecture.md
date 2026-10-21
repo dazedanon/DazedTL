@@ -390,6 +390,7 @@ An ended worker cannot clean up after itself, so each run worker keeps its tempo
 Closing or pausing cannot undo an already submitted provider request.
 
 Git baselines and backup records gate new translation work, and the game-write gateway refuses writes while the checkout is off the translation branch or mid-operation; [checkout_issue](../backend/dazedtl/translation/operations.py) names the problem for both the refusal and the warning every Guided task shows.
+Work DazedTL starts by itself as it polls, such as a queued Line widths fit or reused paid names, waits for Git instead of failing ([checkout_waiting](../backend/dazedtl/translation/guided.py)).
 Start over is the one writer to the game itself that the [write check](../tests/game_writes.py) lets past it: it puts back the original game whole and sets the Git history aside, so it must run whatever state the checkout is in.
 Reviewed runtime manifests control patch scope, and all .dazedtl work stays outside both branches.
 DazedTL's own runtime files a game holds join every manifest ([dazedtl_files](../backend/dazedtl/engine/util/len_patch_scope.py)), because an assistant's manifest of data and `plugins.js` alone once gave players a `plugins.js` loading a plugin the patch lacked.

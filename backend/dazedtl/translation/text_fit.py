@@ -13,7 +13,6 @@ from dazedtl import system
 from dazedtl.actions import label, named
 from dazedtl.storage import write_json
 from dazedtl.translation.files import read_json
-from dazedtl.translation.operations import checkout_issue
 
 ACTION = "fit_text"
 LABEL = label(ACTION)
@@ -54,26 +53,13 @@ class TextFit:
         return path.exists()
 
     def waiting(self, project_id):
-        """Why a queued fit waits on the game's Git checkout, or "". Like any
-        write to the game, it waits for an unfinished Git operation, such as
-        a game update's merge whose conflicts the game's files still hold,
-        and for the translation branch."""
+        """Why a queued fit waits on the game's Git checkout, or "": like any
+        write to the game, for an unfinished Git operation, such as a game
+        update's merge whose conflicts the game's files still hold, and for
+        the translation branch."""
         if not self.pending(project_id):
             return ""
-
-        def read():
-            translation = self.guided.translation
-            try:
-                _, project = translation.project(project_id)
-                status = translation.engine.git_status(
-                    project.root, project.read()["options"]
-                )
-            except Exception:  # noqa: BLE001
-                # Unread, Git holds nothing back; History can restore a fit.
-                return ""
-            return checkout_issue(status) if status.get("configured") else ""
-
-        return self.guided.observations.once(("checkout", project_id), read)
+        return self.guided.checkout_waiting(project_id)
 
     def advance(self, project_id, native, applied):
         """Start a queued fit of the files DazedTL *applied* once nothing

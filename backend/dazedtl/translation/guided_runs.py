@@ -259,7 +259,8 @@ class GuidedRuns:
         Collecting a completed run copies its glossary, names included, over
         the game's and refuses one changed since the run began. A Batch
         declined or stopped before its own approval, with nothing sent, can
-        never complete, so the names it paid for are added here, once per run."""
+        never complete, so the names it paid for are added here, once per run,
+        as soon as Git can take the write."""
         from dazedtl.compatibility.batch_continuation import APPROVAL
         from dazedtl.compatibility.process_view import evidence_root, saved
         from dazedtl.compatibility.speaker_results import merge_missing
@@ -296,7 +297,10 @@ class GuidedRuns:
             for row in self.name_reuse(native, self.guided.settings.language())
             if row["runId"] not in published
         ]
-        if not rows:
+        # Every snapshot runs this, so the names wait out a checkout the
+        # game-write gateway would refuse, such as a game update's stopped
+        # merge, instead of failing until the glossary changes.
+        if not rows or self.guided.checkout_waiting(project_id):
             return
         try:
             glossary = self.guided.backend.workflows.documents(native["id"])["glossary"]
@@ -319,8 +323,8 @@ class GuidedRuns:
         )
         try:
             if added:
-                self.guided.backend.workflows.document_save(
-                    native["id"], "glossary", glossary["revision"], text
+                self.guided.save_guidance(
+                    native, "glossary", glossary["revision"], text
                 )
             write_json(
                 path,

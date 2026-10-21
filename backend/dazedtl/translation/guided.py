@@ -17,7 +17,7 @@ from .guided_inputs import GuidedInputs
 from .guided_inspection import RunInspection
 from .guided_release import GuidedRelease
 from .guided_runs import GuidedRuns
-from .operations import lifecycle, require_source_backup
+from .operations import checkout_issue, lifecycle, require_source_backup
 from .text_fit import TextFit
 
 STEPS = {"setup", "context", "translate", "check", "release"}
@@ -653,6 +653,26 @@ class Guided:
         self.options_draft(project_id, None)
         return self.preferences(result["project"])
 
+    def checkout_waiting(self, project_id):
+        """Why a write DazedTL starts by itself as it polls, such as a queued
+        fit or reused names, waits on the game's Git checkout, or "". It
+        waits rather than fails, since the game-write gateway would refuse
+        it, and is read once per observation."""
+
+        def read():
+            translation = self.translation
+            try:
+                _, project = translation.project(project_id)
+                status = translation.engine.git_status(
+                    project.root, project.read()["options"]
+                )
+            except Exception:  # noqa: BLE001
+                # Unread, the gateway checks again as it writes.
+                return ""
+            return checkout_issue(status) if status.get("configured") else ""
+
+        return self.observations.once(("checkout", project_id), read)
+
     def start_queued(self, project_id):
         """Start queued work, such as a fit of new Line widths, before a
         snapshot reads what runs, so that snapshot already lists it."""
@@ -1008,6 +1028,14 @@ class Guided:
             native["id"], {**current, "documents": documents}
         )
 
+    def save_guidance(self, native, name, revision, text):
+        """Saves one of the game's guidance documents, which Git tracks."""
+        # Guidance is never the game's ace_json, so nothing packs.
+        with self.backend.game_write(native["source"], native["id"], pack=False):
+            return self.backend.workflows.document_save(
+                native["id"], name, revision, text
+            )
+
     def save_document(self, project_id, name, revision, text):
         _, native = self.record(project_id)
         if not isinstance(name, str):
@@ -1015,9 +1043,7 @@ class Guided:
         # Explicit Save replaces the current guidance. The editor's older
         # revision is recovery metadata, not a conflict-review prerequisite.
         current = self.backend.workflows.documents(native["id"]).get(name, {})
-        result = self.backend.workflows.document_save(
-            native["id"], name, current.get("revision", ""), text
-        )
+        result = self.save_guidance(native, name, current.get("revision", ""), text)
         draft = self.backend.workflows.state(native["id"]).get("draft", {})
         draft.get("documents", {}).pop(name, None)
         self.backend.workflows.draft(native["id"], draft)

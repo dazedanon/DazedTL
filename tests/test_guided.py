@@ -30,6 +30,7 @@ from dazedtl.translation.operations import lifecycle_path
 from dazedtl.translation.release import packing_state
 
 from tests.engine import engine_module
+from tests.game_writes import game_write
 
 custom_patterns = engine_module("util/custom_patterns.py")
 
@@ -251,6 +252,7 @@ class GuidedTests(unittest.TestCase):
             ),
             guided_runtime_files=lambda _source: ["Items.json"],
             guided_ace_packing=packing_state,
+            game_write=game_write,
         )
         choices = {
             "CODE357": ["TextPicture", "QuestSystem"],
@@ -983,6 +985,15 @@ class GuidedTests(unittest.TestCase):
             speaker_source_lookup_keys=lambda source: [source],
         )
         job = self.backend.manual.jobs[identity]
+        # A game update's merge stopped on conflicts: a glossary written then
+        # left Versions unable to cancel the update. The names wait for Git.
+        git = {
+            "configured": True,
+            "pending_operations": ["MERGE_HEAD"],
+            "current_branch": "main",
+            "translation_branch": "main",
+        }
+        self.translation.engine.git_status = lambda *_: git
         with patch.dict("sys.modules", {"util.translation": fake}):
             self.guided.runs.publish_names(self.identity, self.native)
             drafts.clear()
@@ -990,6 +1001,9 @@ class GuidedTests(unittest.TestCase):
             self.guided.runs.publish_names(self.identity, self.native)
             self.assertEqual(saved, [])
             del job["dazedtl_batch_approval"]
+            self.guided.runs.publish_names(self.identity, self.native)
+            self.assertEqual(saved, [])
+            git["pending_operations"] = []
             self.guided.runs.publish_names(self.identity, self.native)
             self.assertEqual(
                 saved,
