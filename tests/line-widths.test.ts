@@ -10,7 +10,7 @@ test("saving Line widths says when With portrait was lowered to match Dialogue",
     noteWidth: 75,
     messageRows: 4,
   };
-  const fitted = "Rewrapped 3 lines to the new Line widths.";
+  const fitted = "Fitted 3 lines to the new Line widths.";
   const asked = { ...widths, faceWidth: 50 };
   const notice = { fitted, saved: "", asked, widths };
   assert.equal(

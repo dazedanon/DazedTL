@@ -1063,11 +1063,12 @@ def run_fit(plan, log):
         return {"files": 0, "lines": 0, "message": message, **unfit}
     lines = plan["fitted_lines"]
     counted = f"{lines:,} {'line' if lines == 1 else 'lines'}"
-    log(f"Rewrapping {counted}.")
+    log(f"Fitting {counted}.")
     return {
         **run_publication(plan, log),
         "lines": lines,
-        "message": f"Rewrapped {counted} to the new Line widths.",
+        # Wider widths join lines as well as break them.
+        "message": f"Fitted {counted} to the new Line widths.",
         **unfit,
     }
 
