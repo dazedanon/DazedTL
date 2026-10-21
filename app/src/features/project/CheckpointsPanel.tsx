@@ -64,6 +64,8 @@ export function CheckpointsPanel({
 }) {
   const application = useApplication();
   const action = useAction({ observer: application });
+  // Opening the backup folder reports apart, so a checkpoint's result stays.
+  const folder = useAction();
   const [viewing, setViewing] = useState<Checkpoint | null>(null);
   const configured = !!state.git?.configured;
   const read = useRead(readKey(project.id, state.git), () =>
@@ -244,10 +246,10 @@ export function CheckpointsPanel({
             variant="link"
             label="Open folder"
             icon={<FolderOpen size={14} aria-hidden="true" />}
-            disabled={action.busy}
-            error={action.key === "backups" ? action.error : ""}
+            disabled={folder.busy}
+            error={folder.error}
             onClick={() =>
-              action.run(
+              folder.run(
                 () => window.dazedtl.openFolder("output", timeline.backups!),
                 "",
                 "backups",

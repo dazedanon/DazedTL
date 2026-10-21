@@ -32,6 +32,8 @@ JAPANESE = re.compile(r"[぀-ヿ㐀-䶿一-鿿ｦ-ﾟ]")
 # the counts always cover every line.
 FILE_LINES = 200
 ALL_LINES = 2000
+# The files of one checkpoint whose lines are read.
+CHECKPOINT_FILES = 40
 # How alike an old and a new line must be to read as one line changed, and
 # the largest replaced block paired that way.
 PAIRING_RATIO = 0.5
@@ -400,7 +402,13 @@ def _edits(path, old, new, budget) -> FileText:
 def checkpoint_text(repo: Path, files: dict[str, tuple[str, str]]) -> dict:
     """The lines one checkpoint changed in a game's JSON files and plugins,
     from each file's blob before and after it ("0" * 40 for none)."""
-    readable = {path: blobs for path, blobs in files.items() if path.casefold().endswith((".json", ".js"))}
+    # A setup or update checkpoint changes every file; its first files show
+    # their lines and the rest are listed, so one view never reads a game.
+    readable = dict(
+        sorted((path, blobs) for path, blobs in files.items() if path.casefold().endswith((".json", ".js")))[
+            :CHECKPOINT_FILES
+        ]
+    )
     contents = _blobs(repo, [blob for pair in readable.values() for blob in pair if blob.strip("0")])
     budget = [ALL_LINES]
     found = []
