@@ -21,7 +21,7 @@ from typing import Any, NamedTuple
 NOTE_TAGS = (
     re.compile(r"<namePop:\s?([\w一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９｡-ﾟ]+)", re.DOTALL),
     re.compile(r"<LB:(.*?)\s?>.*", re.DOTALL),
-    re.compile(r"<dn:\s*(.*)>.*", re.DOTALL),
+    re.compile(r"<dn:\s*(.*?)>.*", re.DOTALL),
 )
 # EventLabel shows the event's own name over an event whose note holds <LB>.
 NAME_TAG = "<LB>"
