@@ -3245,6 +3245,8 @@ try:
                 "えっ、本当に？",
                 "【Saving beforehand is recommended】",
             ]
+            # A label ends at its own >, leaving the next note tag alone.
+            assert older["events"][4]["note"].endswith("><Shadow:false>")
             configure_states(
                 {"engine": "MVMZ"}, temporary, {**policy, "sourceText": SOURCE_TEXT}
             )
