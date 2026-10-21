@@ -7,8 +7,8 @@ reads the files ruff lints, spares those whose per-file ignores list TID251,
 and accepts a call marked `# noqa: TID251 - <reason>`.
 
 A Path is not known without type information, so a call counts when it is a
-.replace or .rename with one positional argument, the shape no str, bytes or
-datetime call has; an unbound Path.replace(a, b) counts too.
+.replace or .rename with one positional argument or only target=, shapes no
+str, bytes or datetime call has; an unbound Path.replace(a, b) counts too.
 
 Usage: python scripts/platform_calls.py <ruff>
 """
@@ -57,9 +57,11 @@ def moved_by(call):
         return None
     if isinstance(owner, ast.Name) and owner.id == "Path" and len(call.args) == 2:
         return function.attr
+    if isinstance(owner, ast.Constant):
+        return None
     if len(call.args) == 1 and not call.keywords:
-        if isinstance(call.args[0], ast.Starred) or isinstance(owner, ast.Constant):
-            return None
+        return None if isinstance(call.args[0], ast.Starred) else function.attr
+    if not call.args and [keyword.arg for keyword in call.keywords] == ["target"]:
         return function.attr
     return None
 
@@ -91,7 +93,7 @@ def main():
     exempt = exempt_patterns()
     found = []
     for path in linted_files(sys.argv[1]):
-        relative = PurePosixPath(path.relative_to(ROOT).as_posix())
+        relative = PurePosixPath(path.resolve().relative_to(ROOT).as_posix())
         if any(relative.full_match(pattern) for pattern in exempt):
             continue
         found.extend(problems(path, relative))
