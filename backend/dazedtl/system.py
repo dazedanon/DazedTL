@@ -154,18 +154,20 @@ def unlink(path, missing_ok=False):
     _retried(lambda: Path(path).unlink(missing_ok=missing_ok), path)
 
 
-def remove_tree(path, missing_ok=False):
+def remove_tree(path, missing_ok=False, ignore_errors=False):
     """shutil.rmtree that also removes read-only files and waits for readers
-    of the files inside to let go. Never follows a link out of the folder."""
+    of the files inside to let go. Never follows a link out of the folder.
+    ignore_errors leaves what still cannot go, for a cleanup that must not
+    hide the error it cleans up after."""
     if not os.path.lexists(path):
-        if missing_ok:
+        if missing_ok or ignore_errors:
             return
         raise FileNotFoundError(2, "No such folder", os.fspath(path))
-    _retried(
-        lambda: shutil.rmtree(path, onexc=_writable),
-        path,
-        tree=True,
-    )
+    try:
+        _retried(lambda: shutil.rmtree(path, onexc=_writable), path, tree=True)
+    except OSError:
+        if not ignore_errors:
+            raise
 
 
 def _writable(function, path, error):

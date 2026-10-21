@@ -15,7 +15,6 @@ import math
 import os
 import re
 import shlex
-import shutil
 import sys
 import tempfile
 import unicodedata
@@ -25,6 +24,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, NamedTuple
 
+from util import system
 from util.freshness import Basis, compare
 from util.paths import (
     GAME_GLOSSARY_RELATIVE,
@@ -909,17 +909,11 @@ def _rules_version(task: dict[str, Any]) -> int:
 
 
 def _atomic_write_json(path: Path, value: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + ".tmp")
-    temporary.write_bytes(_canonical_bytes(value) + b"\n")
-    temporary.replace(path)
+    system.write_bytes(path, _canonical_bytes(value) + b"\n")
 
 
 def _atomic_write_text(path: Path, value: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + ".tmp")
-    temporary.write_text(value.rstrip() + "\n", encoding="utf-8", newline="\n")
-    temporary.replace(path)
+    system.write_text(path, value.rstrip() + "\n")
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -1854,10 +1848,10 @@ def _capture_round(
     try:
         summary = _capture_interface(data, staging, progress)
         # A round an interrupted prepare left behind is in no record.
-        shutil.rmtree(root / INTERFACE_FOLDER / name, ignore_errors=True)
-        staging.rename(root / INTERFACE_FOLDER / name)
+        system.remove_tree(root / INTERFACE_FOLDER / name, ignore_errors=True)
+        system.replace(staging, root / INTERFACE_FOLDER / name)
     except BaseException:
-        shutil.rmtree(staging, ignore_errors=True)
+        system.remove_tree(staging, ignore_errors=True)
         raise
     places, outside = _interface_places(root / INTERFACE_FOLDER / name, manifest)
     record = {
@@ -1949,7 +1943,7 @@ def _recapture(
         # round's name only the latest.
         for folder in (root / INTERFACE_FOLDER).glob("round-*"):
             if folder.name != record["folder"]:
-                shutil.rmtree(folder, ignore_errors=True)
+                system.remove_tree(folder, ignore_errors=True)
 
 
 def _observe_again(
@@ -3279,7 +3273,6 @@ def _baseline_ledger(
     """Every line of the game as it was translated at the baseline, which the
     user says was reviewed before, as a ledger kept with the game's tasks."""
     import io
-    import subprocess
     import tarfile
 
     from util.version_update.git_workflow import _run_git
@@ -3293,7 +3286,7 @@ def _baseline_ledger(
     except (OSError, ValueError):
         pass
     relative = data.relative_to(repo).as_posix()
-    archive = subprocess.run(
+    archive = system.run(
         ["git", "-C", str(repo), "archive", "--format=tar", commit, "--", relative],
         capture_output=True, check=False,
     )
@@ -3302,7 +3295,7 @@ def _baseline_ledger(
             f"Git could not read the game's data at {commit[:12]}: "
             + archive.stderr.decode("utf-8", "replace").strip()
         )
-    with tempfile.TemporaryDirectory(prefix="dazedtl-qa-baseline-") as temporary:
+    with system.staging_folder(tempfile.gettempdir(), "dazedtl-qa-baseline-") as temporary:
         with tarfile.open(fileobj=io.BytesIO(archive.stdout)) as tar:
             tar.extractall(temporary, filter="data")
         manifest = build_manifest(Path(temporary) / relative, focus)
@@ -4007,10 +4000,10 @@ def prepare_task(
             _atomic_write_text(
                 staging / "README.md", _task_instructions(task_dir, task)
             )
-            staging.replace(task_dir)
+            system.replace(staging, task_dir)
         except Exception:
             if staging.is_dir() and not staging.is_symlink():
-                shutil.rmtree(staging)
+                system.remove_tree(staging)
             raise
         _atomic_write_json(task_parent / CURRENT_FILE, {"task": task_key})
     return task_dir, status(task_dir)
@@ -7813,7 +7806,7 @@ def rebuild_deep_from_screen(
         # A task this rebuild made but could not fill is no task to go on with.
         if rebuilt.name not in before:
             with _task_lock(tasks):
-                shutil.rmtree(rebuilt, ignore_errors=True)
+                system.remove_tree(rebuilt, ignore_errors=True)
         raise
     # Declined items the source reported as not reviewed are set aside again.
     skipped = any(row.get("skipped") for row in source_rows)
