@@ -8,11 +8,12 @@ them). The engine imports this module as util.system.
 Files
 - Another process reading a file, such as the app's poll or a virus scanner,
   makes Windows refuse to replace, rename or delete it ("Access is denied",
-  WinError 5 or 32), so replace, rename, unlink, remove_tree and the writers
-  wait up to about two seconds for it to let go. Opening a file while another
-  process replaces it fails the same way ("Permission denied", Errno 13), so
-  open_read, read_bytes and read_text wait too; run records such as job.json and
-  plan.json are read only through them.
+  WinError 5 or 32), so replace, rename, unlink, rmdir, remove_tree and the
+  writers wait up to about two seconds for it to let go. Opening a file while
+  another process replaces it fails the same way ("Permission denied", Errno
+  13), so open_read, read_bytes and read_text wait too; run records such as
+  job.json and plan.json are read only through them. A cleanup that may leave
+  its file behind says so with ignore_errors instead of catching the error.
 - Saved files are written whole through a file beside them, as UTF-8 with
   "\\n" line ends, so a crash never leaves half a file and Windows never adds
   "\\r".
@@ -68,6 +69,7 @@ __all__ = [
     "remove_tree",
     "rename",
     "replace",
+    "rmdir",
     "run",
     "staging_folder",
     "stop_tree",
@@ -185,9 +187,28 @@ def read_text(path):
     return read_bytes(path).decode("utf-8")
 
 
-def unlink(path, missing_ok=False):
-    """Path.unlink, waiting for a reader to let go."""
-    _retried(lambda: Path(path).unlink(missing_ok=missing_ok), path)
+def unlink(path, missing_ok=False, ignore_errors=False):
+    """Path.unlink, waiting for a reader to let go. ignore_errors leaves a
+    file that still cannot go, for a cleanup that must not hide the error it
+    cleans up after or fail what already succeeded."""
+    try:
+        _retried(lambda: Path(path).unlink(missing_ok=missing_ok), path)
+    except OSError:
+        if not ignore_errors:
+            raise
+
+
+def rmdir(path, missing_ok=False, ignore_errors=False):
+    """Path.rmdir of an empty folder, waiting for a reader of it to let go;
+    ignore_errors leaves a folder that is not empty or still cannot go."""
+    try:
+        _retried(lambda: os.rmdir(path), path)
+    except FileNotFoundError:
+        if not (missing_ok or ignore_errors):
+            raise
+    except OSError:
+        if not ignore_errors:
+            raise
 
 
 def remove_tree(path, missing_ok=False, ignore_errors=False):
