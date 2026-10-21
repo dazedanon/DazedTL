@@ -122,7 +122,8 @@ GAME_TOOL_GITIGNORE_BLOCK = "\n".join(
         "!/.dazedtl/settings.json",
         "!/.dazedtl/skills/",
         "/.dazedtl/skills/*",
-        "!/.dazedtl/skills/*.md",
+        # Any case, as Windows' Git and the skill loader read the extension.
+        "!/.dazedtl/skills/*.[mM][dD]",
         GAME_TOOL_GITIGNORE_END,
     )
 ) + "\n"
@@ -326,7 +327,7 @@ def is_portable_game_file(relative: str) -> bool:
     return parts in {
         (".dazedtl", GLOSSARY_FILENAME),
         (".dazedtl", "settings.json"),
-    } or (len(parts) == 3 and parts[:2] == (".dazedtl", "skills") and parts[2].endswith(".md"))
+    } or (len(parts) == 3 and parts[:2] == (".dazedtl", "skills") and parts[2].casefold().endswith(".md"))
 
 
 def portable_game_files(game_root: str | Path) -> list[str]:

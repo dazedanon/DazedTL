@@ -296,6 +296,9 @@ with engine.context():
 
     (published / ".dazedtl/glossary.txt").write_text("魔法 (Magic)\n")
     (published / ".dazedtl/skills/game.md").write_text("A magical girl story.\n")
+    # A skill named with an upper-case extension: Windows' Git un-ignored it
+    # while the patch's file list left it out, so the checkpoint refused.
+    (published / ".dazedtl/skills/Style.MD").write_text("Keep it light.\n")
     ignore = published / ".gitignore"
     text = ignore.read_text()
     start = text.index(GAME_TOOL_GITIGNORE_BEGIN)
@@ -304,6 +307,7 @@ with engine.context():
     portable = [
         ".dazedtl/glossary.txt",
         ".dazedtl/settings.json",
+        ".dazedtl/skills/Style.MD",
         ".dazedtl/skills/game.md",
     ]
     assert git(published, "check-ignore", *portable).split() == portable
