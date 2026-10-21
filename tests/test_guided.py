@@ -2634,6 +2634,24 @@ class GuidedTests(unittest.TestCase):
         }
         self.backend.manual.jobs[paid["id"]] = paid
         self.guided.runs.remember(self.identity, paid, inputs)
+        # An update that changes what a run sends (RUN_VERSION) leaves approved
+        # work alone: a stopped approved Live run resumes from its own frozen
+        # plan, with no new approval.
+        from dazedtl.translation import guided_runs
+
+        resumable = {**paid, "id": "approved-live", "mode": "translate"}
+        resumable["status"] = "stopped"
+        self.backend.manual.jobs[resumable["id"]] = resumable
+        self.guided.runs.remember(self.identity, resumable, inputs)
+        self.backend.saved_run_configuration = Mock(
+            return_value={"workflow": {"id": self.native["id"]}}
+        )
+        self.guided.settings.prepare_engine = Mock()
+        self.backend.manual.resume = Mock(return_value=resumable)
+        with patch.object(guided_runs, "RUN_VERSION", guided_runs.RUN_VERSION + 1):
+            self.assertIs(self.guided.resume(self.identity, "approved-live"), resumable)
+        self.backend.manual.resume.assert_called_once_with("approved-live")
+        self.backend.manual.jobs.pop(resumable["id"])
         discarded = []
 
         def discard(identity):
