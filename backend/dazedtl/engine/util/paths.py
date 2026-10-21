@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import stat
 import tempfile
 from contextlib import contextmanager
@@ -133,6 +134,13 @@ LEN_WORK_GITIGNORE_BEGIN = "# BEGIN DazedTL Len project work"
 LEN_WORK_GITIGNORE_END = "# END DazedTL Len project work"
 LEN_PATCH_GITIGNORE_BEGIN = "# BEGIN DazedTL Len patch files"
 LEN_PATCH_GITIGNORE_END = "# END DazedTL Len patch files"
+# Replacing a Len block leaves the blank lines that surrounded it; one blank
+# line, or none at the top, keeps each version's .gitignore identical.
+_BLANK_LINES_BEFORE_LEN_BLOCK = re.compile(
+    r"(?:\A|(?<=\n))(\r?\n)(?:\r?\n)*(?="
+    + "|".join(map(re.escape, (LEN_WORK_GITIGNORE_BEGIN, LEN_PATCH_GITIGNORE_BEGIN)))
+    + ")"
+)
 # The files describing a game's repository, which every commit of it holds.
 GAME_REPOSITORY_METADATA = (".gitignore", ".gitattributes", "README.md")
 # The portable files are in a game's Git history and remotes but never in
@@ -181,6 +189,10 @@ def migrate_prompt_to_skills() -> None:
             return
 
 
+def _space_len_blocks(value: str) -> str:
+    return _BLANK_LINES_BEFORE_LEN_BLOCK.sub(
+        lambda found: found[1] if found.start() else "", value
+    )
 
 
 def normalize_game_tool_gitignore_text(
@@ -265,8 +277,8 @@ def normalize_game_tool_gitignore_text(
         found = rest.rfind(marker)
         if found >= offset:
             offset = rest.find("\n", found) + 1 or len(rest)
-    before = without_legacy_rules(rest[:offset]).rstrip("\r\n")
-    after = without_legacy_rules(rest[offset:]).strip("\r\n")
+    before = _space_len_blocks(without_legacy_rules(rest[:offset])).rstrip("\r\n")
+    after = _space_len_blocks(without_legacy_rules(rest[offset:])).strip("\r\n")
     normalized = f"{before}\n\n" if before else ""
     normalized += GAME_TOOL_GITIGNORE_BLOCK
     if after:
