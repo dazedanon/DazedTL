@@ -7,6 +7,7 @@
 
 ### Fixed
 
+- **Versions:** an action that has just started now says **Running** once, not **Running Starting…**, and after **Cancel update** the Compare step no longer shows **Last run: complete** from a comparison that no longer applies.
 - **Maps & events:** the names, nicknames and profiles events give characters (Change Name, Change Nickname and Change Profile) are now translated and counted in **Lines**, like the database's own; before, they stayed in Japanese unless **Event text sources** turned them on, while the file read done. In a project translated before, each file holding them now counts them as lines left, and **Translate** sends only them.
 - **Assistant-led:** your assistant's first preparation of a VX Ace game now converts its data, unpacking an encrypted `Game.rgss3a` and moving it into `.dazedtl/ace` as Guided's **Convert Ace data** does; before, preparation stopped until the data was converted with tools Assistant-led doesn't have, and a game whose archive still sat beside `Game.exe` refused every write with advice to use Set up, which Assistant-led doesn't have.
 - **Assistant-led:** in a VX Ace game, the text your assistant writes, and the text refitted when it saves Line widths, is now packed into the `Data` files the game reads, so playing the game folder shows the translation; before, the game kept showing the Japanese.
