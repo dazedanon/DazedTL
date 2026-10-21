@@ -1,5 +1,7 @@
 """The platform layer keeps the Windows rules on every platform."""
 
+import importlib
+import json
 import os
 import stat
 import subprocess
@@ -8,7 +10,9 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from dazedtl import system
+from dazedtl import storage, system
+
+from tests.engine import engine_package
 
 BACKEND = Path(__file__).resolve().parents[1] / "backend"
 
@@ -71,3 +75,38 @@ class WriteTests(unittest.TestCase):
             system.write_bytes(key, b"other")
             self.assertEqual(stat.S_IMODE(key.stat().st_mode), 0o644)
             self.assertEqual(os.listdir(folder), ["approval.key"])
+
+
+class HeldFileTests(unittest.TestCase):
+    def test_each_writer_waits_for_a_reader_that_holds_its_file(self):
+        # Windows refuses to replace or delete a file another process reads,
+        # such as the app's poll reading a run record while its worker saves.
+        from desktop.backend.project import atomic_json
+
+        rv2json = importlib.import_module(
+            engine_package("util/ace").__name__ + ".rv2json"
+        )
+        writers = {
+            "saved state": lambda path: storage.write_json(path, "new"),
+            "run records": lambda path: atomic_json(path, "new"),
+            "Ace data": lambda path: rv2json._replace(path, b'"new"\n'),
+            "deletes": system.unlink,
+            "folders": lambda path: system.remove_tree(path.parent),
+        }
+        with TemporaryDirectory() as root:
+            for name, write in writers.items():
+                with self.subTest(name):
+                    folder = Path(root, name)
+                    folder.mkdir()
+                    path = folder / "file.json"
+                    path.write_bytes(b'"old"\n')
+                    with system.held_open(path, attempts=3) as reader:
+                        write(path)
+                    self.assertEqual(reader.attempts, 0)
+                    if name == "folders":
+                        self.assertFalse(folder.exists())
+                    elif name == "deletes":
+                        self.assertEqual(os.listdir(folder), [])
+                    else:
+                        self.assertEqual(json.loads(path.read_bytes()), "new")
+                        self.assertEqual(os.listdir(folder), ["file.json"])

@@ -49,6 +49,7 @@ from pathlib import Path, PurePath
 
 __all__ = [
     "SYSTEM_VARIABLES",
+    "Reader",
     "held_open",
     "new_folder",
     "popen",
@@ -82,16 +83,24 @@ class _HeldOpen(PermissionError):
     """The failure held_open simulates."""
 
 
+class Reader:
+    """A simulated reader of one file; attempts counts the failures left."""
+
+    def __init__(self, attempts):
+        self.attempts = attempts
+
+
 @contextmanager
 def held_open(path, attempts=2):
     """Test seam: the next ``attempts`` replaces or deletes of ``path``, or
     removals of a folder holding it, fail as Windows fails them while another
     process has the file open. Retries after a simulated failure do not wait.
+    Yields the Reader, whose attempts reach 0 once the writer met them all.
     """
     key = _key(path)
-    _held[key] = attempts
+    reader = _held[key] = Reader(attempts)
     try:
-        yield
+        yield reader
     finally:
         _held.pop(key, None)
 
@@ -104,10 +113,10 @@ def _simulate_reader(path, tree=False):
     if not _held:
         return
     key = _key(path)
-    for held, remaining in _held.items():
+    for held, reader in _held.items():
         inside = held == key or (tree and held.startswith(key.rstrip(os.sep) + os.sep))
-        if inside and remaining:
-            _held[held] = remaining - 1
+        if inside and reader.attempts:
+            reader.attempts -= 1
             raise _HeldOpen(13, "Simulated reader holds the file", held)
 
 
