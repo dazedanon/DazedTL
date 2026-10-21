@@ -3,6 +3,7 @@
 import json
 import runpy
 import sys
+from contextlib import suppress
 from pathlib import Path
 
 sys.dont_write_bytecode = True
@@ -130,9 +131,11 @@ class Progress:
 
 def reported(native, error):
     # The action's finished event shows the error's message, which explains
-    # only the errors that say what to fix.
-    if not explained(error):
-        worker_failure(error, action)
+    # only the errors that say what to fix. Recording must not stop the
+    # worker from reporting it.
+    with suppress(Exception):
+        if not explained(error):
+            worker_failure(error, action)
     native(error)
 
 
