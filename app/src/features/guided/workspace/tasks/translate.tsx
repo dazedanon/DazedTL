@@ -224,8 +224,8 @@ export function phaseView(w: GuidedWorkspace): TaskView {
         <>
           <p>{state.comparisons.message}</p>
           {state.comparisons.status === "recovery_needed" ? (
-            <Button onClick={() => openProject("backups")}>
-              Backups & recovery
+            <Button onClick={() => openProject("checkpoints")}>
+              Open Checkpoints
             </Button>
           ) : (
             state.comparisons.matches > 0 && (

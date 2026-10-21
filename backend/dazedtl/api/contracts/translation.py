@@ -85,6 +85,8 @@ class TranslationJob(TypedDict):
     project_id: str
     kind: Literal["translation", "operation"]
     action: NotRequired[str | None]
+    # The checkpoint a Checkpoints operation goes back to, undoes or copies.
+    target: NotRequired[str | None]
     label: str
     status: str
     message: str
@@ -376,12 +378,87 @@ class UpdateTask(TypedDict):
     prompt: str
 
 
-class VersionRecord(TypedDict):
-    version: str
-    recorded: str
-    kind: Literal["setup", "update"]
-    release: Literal["patch", "complete", ""]
+class CheckpointBlocker(TypedDict):
+    """The later checkpoint to undo first, and the files both changed."""
+
     commit: str
+    title: str
+    files: list[str]
+
+
+class Checkpoint(TypedDict):
+    """One checkpoint on the translation branch; see
+    compatibility/checkpoint_history.py."""
+
+    commit: str
+    title: str
+    # The stage the view groups it under.
+    group: str
+    time: str
+    files: int
+    # The first few files it changed.
+    names: list[str]
+    # "setup" or "update" for the checkpoint that starts a game version.
+    kind: Literal["change", "setup", "update"]
+    release: str
+    current: bool
+    # In the current game version, so it can be gone back to or undone.
+    restorable: bool
+    blocker: CheckpointBlocker | None
+
+
+class CheckpointVersion(TypedDict):
+    version: str
+    current: bool
+    checkpoints: list[Checkpoint]
+
+
+class CheckpointTimeline(TypedDict):
+    version: str
+    # Files in the patch edited outside DazedTL, not yet in a checkpoint.
+    outside: list[str]
+    versions: list[CheckpointVersion]
+    # The backup store from before checkpoints, when the game has one.
+    backups: str | None
+
+
+class CheckpointTextLine(TypedDict):
+    kind: Literal["edited"]
+    before: str | None
+    translation: None
+    after: str | None
+
+
+class CheckpointFileText(TypedDict):
+    path: str
+    to_translate: int
+    replaced: int
+    kept: int
+    edited: int
+    lines: list[CheckpointTextLine]
+    more: int
+
+
+class CheckpointText(TypedDict):
+    to_translate: int
+    replaced: int
+    kept: int
+    edited: int
+    files: list[CheckpointFileText]
+
+
+class CheckpointFileChange(TypedDict):
+    path: str
+    change: Literal["Added", "Removed", "Changed"]
+    result: str
+
+
+class CheckpointChanges(TypedDict):
+    title: str
+    group: str
+    time: str
+    file_changes: list[CheckpointFileChange]
+    text: CheckpointText
 
 
 class ReleaseLayout(TypedDict):

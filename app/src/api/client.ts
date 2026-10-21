@@ -120,8 +120,22 @@ export const api = {
       request("translation_backups", { project_id }),
     updateTask: (project_id: string) =>
       request("translation_update_task", { project_id }),
-    versions: (project_id: string) =>
-      request("translation_versions", { project_id }),
+    checkpoints: (project_id: string) =>
+      request("project_checkpoints", { project_id }),
+    checkpointChanges: (project_id: string, commit: string) =>
+      request("project_checkpoint_changes", { project_id, commit }),
+    checkpoint: (
+      project_id: string,
+      action: "checkpoint_back" | "checkpoint_undo" | "checkpoint_copy",
+      commit: string,
+      destination?: string,
+    ) =>
+      request("project_checkpoint", {
+        project_id,
+        action,
+        commit,
+        ...(destination === undefined ? {} : { destination }),
+      }),
     release: (project_id: string, folder: string) =>
       request("translation_release", { project_id, folder }),
     compile: (project_id: string, input_path: string) =>

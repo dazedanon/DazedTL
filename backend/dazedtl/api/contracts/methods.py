@@ -75,6 +75,8 @@ from dazedtl.api.contracts.settings import (
 )
 from dazedtl.api.contracts.translation import (
     BackupCatalog,
+    CheckpointChanges,
+    CheckpointTimeline,
     GameUpdateStatus,
     PreparedHandoff,
     ProjectOptions,
@@ -87,7 +89,6 @@ from dazedtl.api.contracts.translation import (
     TranslationResults,
     TranslationState,
     UpdateTask,
-    VersionRecord,
 )
 from dazedtl.api.contracts.workspace import (
     AppState,
@@ -382,6 +383,19 @@ class TranslationOperationRequest(TypedDict):
     project_id: str
     action: str
     arguments: dict[str, object]
+
+
+class CheckpointRequest(TypedDict):
+    project_id: str
+    action: Literal["checkpoint_back", "checkpoint_undo", "checkpoint_copy"]
+    commit: str
+    # Save a copy's folder, which a new folder for the copy goes in.
+    destination: NotRequired[str]
+
+
+class CheckpointChangesRequest(TypedDict):
+    project_id: str
+    commit: str
 
 
 class StartOverRequest(TypedDict):
@@ -737,8 +751,6 @@ METHODS: dict[str, Method] = {
     "translation_backups": Method(ProjectRequest, BackupCatalog, refresh=False),
     # The assistant's task for the text an applied update brought in.
     "translation_update_task": Method(ProjectRequest, UpdateTask, refresh=False),
-    # The game versions its version history recorded, newest first.
-    "translation_versions": Method(ProjectRequest, list[VersionRecord], refresh=False),
     # How a new official release's folder lines up with the game, before staging.
     "translation_release": Method(
         TranslationReleaseRequest, ReleaseInspection, refresh=False
@@ -755,6 +767,13 @@ METHODS: dict[str, Method] = {
     "translation_progress": Method(InputPathRequest, TranslationProgress),
     "translation_operation": Method(TranslationOperationRequest, TranslationJob),
     "project_start_over": Method(StartOverRequest, TranslationJob),
+    # The Checkpoints tab: its timeline, one checkpoint's changes, and go
+    # back, undo and save a copy, which only the user starts.
+    "project_checkpoints": Method(ProjectRequest, CheckpointTimeline, refresh=False),
+    "project_checkpoint_changes": Method(
+        CheckpointChangesRequest, CheckpointChanges, refresh=False
+    ),
+    "project_checkpoint": Method(CheckpointRequest, TranslationJob),
     # The game's GameUpdate repository and config; the user's choice only.
     "project_game_update": Method(ProjectGameUpdateRequest, GameUpdateStatus),
     "translation_attach_batch": Method(TranslationAttachBatchRequest, TranslationJob),

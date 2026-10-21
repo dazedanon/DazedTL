@@ -14,7 +14,7 @@ import { useFeedbackOwner } from "./FeedbackOwners";
 // Successes finished before this interface loaded belong to History, not
 // beside the control; failures stay until a newer attempt replaces them.
 const loadedAt = performance.timeOrigin;
-const earlierSuccess = (job: Pick<Job, "status" | "updated">) =>
+export const earlierSuccess = (job: Pick<Job, "status" | "updated">) =>
   job.status === "complete" &&
   !!job.updated &&
   Date.parse(job.updated) < loadedAt;

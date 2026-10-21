@@ -94,7 +94,7 @@ export function VersionTools({
             )}
           {control(
             "git_setup",
-            "Save game version",
+            "Record game version",
             { version, manifest, untranslated, original },
             !preserved ||
               !version.trim() ||

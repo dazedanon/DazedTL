@@ -2,7 +2,6 @@ import type {
   ReleaseLayout,
   TranslationJob,
   TranslationState,
-  VersionRecord,
 } from "../../api/contracts.ts";
 import { displayText } from "../../ui/displayText.ts";
 
@@ -174,22 +173,6 @@ export function versionSession(
   };
 }
 
-/** How a recorded version came in, and when: "Patch · Oct 11, 2026". */
-export function versionLabel(record: VersionRecord) {
-  const kind =
-    record.kind === "setup"
-      ? "Set up"
-      : record.release === "patch"
-        ? "Patch"
-        : record.release === "complete"
-          ? "Complete release"
-          : "Update";
-  const date = new Date(record.recorded).toLocaleDateString(undefined, {
-    dateStyle: "medium",
-  });
-  return `${kind} · ${date}`;
-}
-
 /** An update's four steps, each finished one with what it did; `problem`
  * marks the current step blocked. */
 export function updateSteps(
@@ -228,7 +211,8 @@ export function updateSteps(
 }
 
 export type TextLine = {
-  kind: "added" | "changed" | "removed" | "replaced";
+  // "edited" is a checkpoint's line, its text before and after.
+  kind: "added" | "changed" | "removed" | "replaced" | "edited";
   before: string | null;
   translation: string | null;
   after: string | null;
@@ -238,6 +222,7 @@ export type FileText = {
   to_translate: number;
   replaced: number;
   kept: number;
+  edited?: number;
   lines: TextLine[];
   more: number;
 };
@@ -245,6 +230,7 @@ export type TextChanges = {
   to_translate: number;
   replaced: number;
   kept: number;
+  edited?: number;
   files: FileText[];
 };
 
@@ -261,11 +247,13 @@ export function textChanges(value: Record<string, unknown>) {
 const lines = (count: number) =>
   `${count.toLocaleString()} ${count === 1 ? "line" : "lines"}`;
 
-/** What an update does to a file's text, or the whole update's, without zeros. */
+/** What an update or a checkpoint does to a file's text, or to all of it,
+ * without zeros. */
 export function textSummary(
-  text: Pick<TextChanges, "to_translate" | "replaced" | "kept">,
+  text: Pick<TextChanges, "to_translate" | "replaced" | "kept" | "edited">,
 ) {
   return [
+    text.edited && `${lines(text.edited)} changed`,
     text.to_translate && `${lines(text.to_translate)} to translate`,
     text.replaced &&
       `${text.replaced.toLocaleString()} ${text.replaced === 1 ? "translation goes" : "translations go"} back to Japanese`,

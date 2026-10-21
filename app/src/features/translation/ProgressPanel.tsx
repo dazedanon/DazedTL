@@ -236,11 +236,8 @@ export function ProgressPanel({
         <Button variant="link" onClick={() => openProject("history")}>
           Run history
         </Button>
-        <Button variant="link" onClick={() => openProject("backups")}>
-          Backups
-        </Button>
-        <Button variant="link" onClick={() => openProject("versions")}>
-          Versions
+        <Button variant="link" onClick={() => openProject("checkpoints")}>
+          Checkpoints
         </Button>
         <StartOver
           state={state}

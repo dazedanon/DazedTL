@@ -127,7 +127,7 @@ ROWS = (
     # Setup saves the version from the form it shows, right after backing up
     # and preparing; execution rechecks the same scope.
     ActionSpec(
-        "git_setup", "Save game version", "lifecycle", stage="Set up", one_click=True
+        "git_setup", "Record game version", "lifecycle", stage="Set up", one_click=True
     ),
     # Every write is its own checkpoint; an assistant's own edits are saved
     # by the helper's checkpoint.

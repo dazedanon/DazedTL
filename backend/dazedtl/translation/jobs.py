@@ -187,6 +187,9 @@ class RunStore:
             "states": states,
             "mode": plan.get("configuration", {}).get("mode"),
             "action": plan.get("action") if plan["kind"] == "operation" else None,
+            "target": (plan.get("arguments") or {}).get("commit")
+            if plan["kind"] == "operation"
+            else None,
             "finishes": plan.get("finishes"),
             "unit_counts": {
                 row["id"]: len(row["sources"]) for row in plan.get("requests", [])
@@ -414,6 +417,7 @@ class RunStore:
             else "failed",
             "mode": job["mode"],
             "action": job.get("action"),
+            "target": job.get("target"),
             "counts": counts,
             "approved": self.authorized(job),
             "app_approved_at": job.get("app_approved_at"),

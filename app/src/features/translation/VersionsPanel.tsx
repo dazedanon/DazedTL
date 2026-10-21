@@ -24,11 +24,9 @@ import {
   textSummary,
   updateSteps,
   updateSummary,
-  versionLabel,
   versionSession,
 } from "./versionState";
 import { displayText, selectionNames, sentence } from "../../ui/displayText";
-import { useRead } from "../../state/useRead";
 
 export function VersionsPanel({
   project,
@@ -166,17 +164,6 @@ export function VersionsPanel({
     action.clear();
   };
   const configured = !!state.git?.configured;
-  // The versions the game's history recorded, read again once it records another.
-  const versions = useRead(
-    configured ? `${project.id}\n${state.git?.original_commit}` : null,
-    () => api.translation.versions(project.id),
-  );
-  const history = versions.value ?? [];
-  const latest =
-    history[0]?.version === state.git?.original_version
-      ? history[0]
-      : undefined;
-  const earlier = latest ? history.slice(1) : history;
   // The update under way, from choosing its release to translating its text.
   const step = !configured
     ? null
@@ -213,11 +200,6 @@ export function VersionsPanel({
           : "";
   return (
     <div className="version-panel">
-      <div className="version-current">
-        <span>Current game version</span>
-        <strong>{state.git?.original_version || "Not recorded yet"}</strong>
-        {latest && <small>{versionLabel(latest)}</small>}
-      </div>
       {step !== null && (
         <StepProgress
           label="Game update steps"
@@ -230,7 +212,7 @@ export function VersionsPanel({
       )}
       {!configured ? (
         <Section title="Set up the game first">
-          <p>Save the game’s version before bringing in an update.</p>
+          <p>Checkpoints and game updates start once the game is set up.</p>
           <ActionSlot target={actionTarget}>
             {onPrepare ? (
               <Button variant="primary" onClick={onPrepare}>
@@ -548,18 +530,23 @@ export function VersionsPanel({
           )}
         />
       ) : (
-        <Section title="Update the game">
-          <p>
-            {aborted
-              ? "The update was canceled. Choose another release when you’re ready."
-              : "When the developer releases a new version or a patch, bring it in here. Your translation carries over, so only new and changed text needs translating."}
-          </p>
+        <>
+          {aborted && (
+            <p className="muted">
+              The update was canceled. Choose another release when you’re ready.
+            </p>
+          )}
           <ActionSlot target={actionTarget}>
-            <Button variant="primary" disabled={disabled} onClick={chooseNew}>
+            <Button
+              variant="primary"
+              disabled={disabled}
+              title="Bring in the developer’s new version or patch; your translation carries over."
+              onClick={chooseNew}
+            >
               Start game update
             </Button>
           </ActionSlot>
-        </Section>
+        </>
       )}
       {!guided && (
         <details
@@ -574,18 +561,6 @@ export function VersionsPanel({
             control={control}
           />
         </details>
-      )}
-      {(step === null || done) && !!earlier.length && (
-        <Section title="Earlier versions" className="version-history">
-          <ol>
-            {earlier.map((record) => (
-              <li key={record.commit}>
-                <strong>{record.version}</strong>
-                <span>{versionLabel(record)}</span>
-              </li>
-            ))}
-          </ol>
-        </Section>
       )}
       {!guided && !!session.history.length && (
         <details>

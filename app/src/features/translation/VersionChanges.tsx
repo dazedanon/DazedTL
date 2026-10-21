@@ -22,7 +22,17 @@ const rows = (value: unknown): Record<string, unknown>[] =>
     : [];
 const rowKey = (row: Record<string, unknown>) => String(row.path);
 
-export function VersionChanges({ value }: { value: Record<string, unknown> }) {
+export function VersionChanges({
+  value,
+  listLabel = "Files affected by the official update",
+  unread = "Review this file after updating.",
+}: {
+  value: Record<string, unknown>;
+  /** Names the file list for assistive technology. */
+  listLabel?: string;
+  /** A file's result when the comparison names none. */
+  unread?: string;
+}) {
   const [query, setQuery] = useState("");
   const [opened, setOpened] = useState<FileText | null>(null);
   const changes = [
@@ -44,7 +54,7 @@ export function VersionChanges({ value }: { value: Record<string, unknown> }) {
   return (
     <div className="version-changes">
       {text
-        ? !!(text.to_translate || text.replaced) && (
+        ? !!(text.to_translate || text.replaced || text.edited) && (
             <p className="version-text-summary">{textSummary(text)}</p>
           )
         : !!overlap.length && (
@@ -72,7 +82,7 @@ export function VersionChanges({ value }: { value: Record<string, unknown> }) {
             <VirtualList
               items={filtered}
               itemKey={rowKey}
-              label="Files affected by the official update"
+              label={listLabel}
               empty={<p>No matching files.</p>}
             >
               {(row) => {
@@ -88,11 +98,7 @@ export function VersionChanges({ value }: { value: Record<string, unknown> }) {
                       <strong>{String(row.path)}</strong>
                     )}
                     <span className="version-file-result">
-                      {[
-                        displayText(row.result) ||
-                          "Review this file after updating.",
-                        summary,
-                      ]
+                      {[displayText(row.result) || unread, summary]
                         .filter(Boolean)
                         .join(" · ")}
                     </span>
@@ -116,6 +122,7 @@ const kinds: Record<TextLine["kind"], string> = {
   changed: "Changed",
   removed: "Removed",
   replaced: "Translation replaced",
+  edited: "Changed",
 };
 
 /** A line's versions: the old release's, the new one's and its translation. */
@@ -137,6 +144,21 @@ function lineRows(line: TextLine): LineChangeRow[] {
           },
         ];
   switch (line.kind) {
+    case "edited":
+      return [
+        ...(line.before === null
+          ? []
+          : [
+              {
+                label: "Before",
+                text: line.before,
+                change: "removed" as const,
+              },
+            ]),
+        ...(line.after === null
+          ? []
+          : [{ label: "After", text: line.after, change: "added" as const }]),
+      ];
     case "added":
       return japanese("Japanese", line.after, "added");
     case "removed":

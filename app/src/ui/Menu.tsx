@@ -155,10 +155,13 @@ export function MenuItem({
   onSelect,
   current = false,
   keepOpen = false,
+  description,
   children,
   ...button
 }: Omit<ComponentProps<"button">, "onClick" | "role"> & {
   onSelect: () => void;
+  /** A line under the item: what it does, or why it is unavailable. */
+  description?: ReactNode;
   /** Marks the item that matches the present state, such as the open project. */
   current?: boolean;
   /** Leaves the list open, such as for an item that removes its own row;
@@ -178,14 +181,21 @@ export function MenuItem({
       ref={node}
       role="menuitem"
       aria-current={current || undefined}
-      className={`menu-item ${button.className || ""}`}
+      className={`menu-item ${description ? "menu-item--described" : ""} ${button.className || ""}`}
       onClick={(event) => {
         if (keepOpen) refocus(event.currentTarget);
         else close();
         onSelect();
       }}
     >
-      {children}
+      {description ? (
+        <>
+          <span>{children}</span>
+          <small className="menu-item-description">{description}</small>
+        </>
+      ) : (
+        children
+      )}
     </button>
   );
 }

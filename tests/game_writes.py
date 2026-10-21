@@ -52,6 +52,8 @@ OUTSIDE = {
     # A restored backup is a new copy of the game, never the game itself.
     "translation/backups.py:_extract": "backups",
     "translation/backups.py:_copy": "backups",
+    # Save a copy writes a checkpoint's game into a new folder outside it.
+    "compatibility/checkpoint_history.py:save_copy": "Checkpoints",
 }
 # Whether each folder seen is shaped like a game.
 _games = {}

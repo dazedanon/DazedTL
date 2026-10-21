@@ -1403,6 +1403,28 @@ main:has(> .page-layout--wide) {
 .menu-item[aria-current="true"] {
   color: var(--color-accent);
 }
+/* An item with a line under it, saying what it does or why it is
+   unavailable; the reason stays readable on a disabled item. */
+.menu-item--described {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  height: auto;
+  min-height: var(--control-height);
+}
+.menu-item--described:disabled {
+  opacity: 1;
+}
+.menu-item--described:disabled > span {
+  color: var(--color-muted);
+}
+.menu-item-description {
+  max-width: 20rem;
+  color: var(--color-muted);
+  font-size: var(--font-small);
+  line-height: 1.45;
+  white-space: normal;
+}
 .menu-separator {
   margin: var(--space-1) 0;
   border-top: 1px solid var(--color-border);

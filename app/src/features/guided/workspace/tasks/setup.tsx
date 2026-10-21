@@ -46,7 +46,6 @@ export function setupView(w: GuidedWorkspace): TaskView {
     translation,
     action,
     disabled,
-    openProject,
     setPanel,
     sourceBackup,
     storedOriginal,
@@ -84,12 +83,7 @@ export function setupView(w: GuidedWorkspace): TaskView {
   const backup = stepStatus("backup_source", preserved);
   const backupDetail =
     backup === "done" ? (
-      <>
-        {`${sourceBackup!.files.toLocaleString()} original files backed up.`}{" "}
-        <Button variant="link" onClick={() => openProject("backups")}>
-          Backups
-        </Button>
-      </>
+      <>{`${sourceBackup!.files.toLocaleString()} original files backed up.`}</>
     ) : backup === "working" ? (
       setupJobs.backup_source!.message || "Backing up…"
     ) : backup === "blocked" ? undefined : storedOriginal && !sourceBackup ? (
@@ -97,10 +91,7 @@ export function setupView(w: GuidedWorkspace): TaskView {
     ) : sourceBackup ? (
       <>
         {sourceBackup.issue ||
-          "The original backup is unavailable. Setting up saves the current game instead; it cannot recover the missing original."}{" "}
-        <Button variant="link" onClick={() => openProject("backups")}>
-          Recover a saved backup
-        </Button>
+          "The original backup is unavailable. Setting up saves the current game instead; it cannot recover the missing original."}
       </>
     ) : (
       "An untouched copy you can restore. Later steps read the original text from it."
@@ -243,11 +234,11 @@ export function setupView(w: GuidedWorkspace): TaskView {
           title={
             gitConfigured
               ? translation.git?.original_version
-                ? `Version ${translation.git.original_version} saved`
-                : "Version saved"
+                ? `Version ${translation.git.original_version} recorded`
+                : "Version recorded"
               : fields.version.trim()
-                ? `Save version ${fields.version.trim()}`
-                : "Save this version"
+                ? `Record version ${fields.version.trim()}`
+                : "Record this version"
           }
           detail={versionDetail}
         />

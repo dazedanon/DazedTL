@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type {
+  GitStatus,
   TranslationJob,
   TranslationState,
 } from "../app/src/api/contracts.ts";
+import { readKey } from "../app/src/features/project/checkpoints.ts";
 import {
   guidedUpdateTasks,
   versionSession,
@@ -181,4 +183,20 @@ test("a finished update opens the Guided tasks its files belong to", () => {
       { task: "images", files: ["www/img/pictures/sign.png"], lines: 0 },
     ],
   );
+});
+
+test("the Checkpoints tab reads Git again only once a write moves the branch", () => {
+  // Reading the timeline runs Git; a poll path that starts processes froze
+  // one user's jobs, so a snapshot that changed nothing in Git keeps the read.
+  const git = {
+    configured: true,
+    translation_commit: "a".repeat(40),
+  } as GitStatus;
+  const key = readKey("game", git);
+  assert.equal(readKey("game", { ...git, worktree_clean: false }), key);
+  assert.notEqual(
+    readKey("game", { ...git, translation_commit: "b".repeat(40) }),
+    key,
+  );
+  assert.equal(readKey("game", { ...git, configured: false }), null);
 });

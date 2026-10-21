@@ -1,6 +1,7 @@
 """One project service shared by the Electron UI and the external agent helper."""
 
 import json
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -128,7 +129,17 @@ IMAGE_UNITS = WORK + "/work/image-units.json"
 # these, so an assistant can never start its own project over.
 USER_OPERATIONS = {
     "start_over": ("Start over from the original game", {"keep_context"}),
+    # The Checkpoints tab's; each goes back, undoes or copies through Git.
+    "checkpoint_back": ("Go back to a checkpoint", {"commit"}),
+    "checkpoint_undo": ("Undo a checkpoint", {"commit"}),
+    "checkpoint_copy": ("Save a copy of a checkpoint", {"commit", "destination"}),
 }
+
+
+def _commit_id(value):
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{40,64}", value):
+        raise ValueError("Choose a checkpoint from the list.")
+    return value
 
 
 class Translation:
@@ -749,10 +760,35 @@ Additional project instructions:
         task = self.engine.version(project.root, "handoff", {})
         return {**task, "prompt": windows_note() + task["prompt"]}
 
-    def versions(self, project_id):
-        """The game versions its version history recorded, newest first."""
+    def checkpoints(self, project_id):
+        """The Checkpoints tab's timeline; read when the tab opens and after
+        each write, never by a poll."""
+        from dazedtl.compatibility.checkpoint_history import timeline
+
         _record, project = self.project(project_id)
-        return self.engine.versions(project.root)
+        options = project.read()["options"]
+        if not self.engine.git_status(project.root, options).get("configured"):
+            return {"version": "", "outside": [], "versions": [], "backups": None}
+        return timeline(project.root)
+
+    def checkpoint_changes(self, project_id, commit):
+        """What one checkpoint changed, file by file and line by line."""
+        from dazedtl.compatibility.checkpoint_history import changes
+
+        _record, project = self.project(project_id)
+        return changes(project.root, _commit_id(commit))
+
+    def checkpoint(self, project_id, action, commit, destination=None):
+        """Goes back to, undoes or saves a copy of one checkpoint, as an
+        operation only the user starts."""
+        if action not in {"checkpoint_back", "checkpoint_undo", "checkpoint_copy"}:
+            raise ValueError("Choose go back, undo or save a copy.")
+        arguments = {"commit": _commit_id(commit)}
+        if action == "checkpoint_copy":
+            arguments["destination"] = (
+                destination if isinstance(destination, str) else ""
+            )
+        return self._operation(project_id, action, arguments, USER_OPERATIONS[action])
 
     def release(self, project_id, folder):
         """How a new official release's folder lines up with the game, as a
@@ -1458,6 +1494,9 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
             "version_apply": {"preview_id"},
             "discard_release": {"stage"},
             "release_patch": {"plan", "sha256"},
+            "checkpoint_back": {"commit"},
+            "checkpoint_undo": {"commit"},
+            "checkpoint_copy": {"commit", "destination"},
         }.get(action, set())
         if any(
             not isinstance(arguments.get(key), str) or not arguments[key].strip()

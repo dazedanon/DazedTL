@@ -32,21 +32,21 @@ import { RunInspector } from "../guided/RunInspector";
 import { QaCoverageReport } from "../guided/TextQa";
 import { canResumeRun, observedRun } from "../guided/translationView";
 import type { GuidedIntent } from "../guided/workspace/model";
-import { BackupsPanel } from "../translation/BackupsPanel";
 import { RequestsPanel } from "../translation/RequestsPanel";
 import { VersionsPanel } from "../translation/VersionsPanel";
 import type { SettingsSection } from "../settings/Settings";
+import { CheckpointsPanel } from "./CheckpointsPanel";
 import { guidedEngines, methodLabels } from "./MethodDialog";
 
-export type ProjectTab = "status" | "history" | "versions" | "backups";
+export type ProjectTab = "status" | "history" | "checkpoints";
 /** What removing a game from the recent list does, wherever it is offered. */
 export const removeHint =
   "Remove from list. Opening the game again brings it back with its work.";
 type Amounts = ReturnType<typeof projectAmounts>;
 
 /**
- * The game's own page: where it stands, its history, versions and
- * backups. Both translation methods share these tools here.
+ * The game's own page: where it stands, its history and its checkpoints.
+ * Both translation methods share these tools here.
  */
 export default function ProjectPage({
   state,
@@ -151,8 +151,7 @@ export default function ProjectPage({
           items={[
             { id: "status", label: "Status" },
             { id: "history", label: "History", disabled: !available },
-            { id: "versions", label: "Versions", disabled: !available },
-            { id: "backups", label: "Backups", disabled: !available },
+            { id: "checkpoints", label: "Checkpoints", disabled: !available },
           ]}
         />
       </div>
@@ -179,14 +178,13 @@ export default function ProjectPage({
             openGuided={openGuided}
           />
         )}
-        {tab === "versions" && (
-          <ProjectVersions
+        {tab === "checkpoints" && (
+          <ProjectCheckpoints
             project={project}
             openTask={openTask}
             openGuided={openGuided}
           />
         )}
-        {tab === "backups" && <ProjectBackups />}
       </TabPanel>
     </PageLayout>
   );
@@ -661,7 +659,7 @@ function ProjectHistory({
   );
 }
 
-function ProjectVersions({
+function ProjectCheckpoints({
   project,
   openTask,
   openGuided,
@@ -678,36 +676,26 @@ function ProjectVersions({
   return (
     <>
       <PageBody>
-        <VersionsPanel
-          guided={guided}
+        <CheckpointsPanel
           project={project}
           state={translation}
-          onPrepare={guided ? () => openTask("setup", "setup") : undefined}
-          openTask={guided ? openTask : undefined}
-          openFiles={
-            guided
-              ? (group, files) => openGuided({ kind: "select", group, files })
-              : undefined
+          update={
+            <VersionsPanel
+              guided={guided}
+              project={project}
+              state={translation}
+              onPrepare={guided ? () => openTask("setup", "setup") : undefined}
+              openTask={guided ? openTask : undefined}
+              openFiles={
+                guided
+                  ? (group, files) =>
+                      openGuided({ kind: "select", group, files })
+                  : undefined
+              }
+              actionTarget={target}
+            />
           }
-          actionTarget={target}
         />
-      </PageBody>
-      <ActionBar feedback={null}>
-        <div ref={setTarget} className="action-bar-slot" />
-      </ActionBar>
-    </>
-  );
-}
-
-function ProjectBackups() {
-  const { snapshot } = useApplication();
-  const translation = snapshot?.translation;
-  const [target, setTarget] = useState<HTMLDivElement | null>(null);
-  if (!translation) return null;
-  return (
-    <>
-      <PageBody>
-        <BackupsPanel state={translation} actionTarget={target} />
       </PageBody>
       <ActionBar feedback={null}>
         <div ref={setTarget} className="action-bar-slot" />

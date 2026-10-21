@@ -1,5 +1,5 @@
 {
-  "version": "00769a7abbe0ff47",
+  "version": "138d63c319f8a88c",
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
@@ -289,10 +289,6 @@
       "refresh": false,
       "duringClose": false
     },
-    "translation_versions": {
-      "refresh": false,
-      "duringClose": false
-    },
     "translation_release": {
       "refresh": false,
       "duringClose": false
@@ -338,6 +334,18 @@
       "duringClose": false
     },
     "project_start_over": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "project_checkpoints": {
+      "refresh": false,
+      "duringClose": false
+    },
+    "project_checkpoint_changes": {
+      "refresh": false,
+      "duringClose": false
+    },
+    "project_checkpoint": {
       "refresh": true,
       "duringClose": false
     },

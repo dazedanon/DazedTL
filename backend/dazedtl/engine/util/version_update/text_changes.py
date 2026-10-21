@@ -16,7 +16,7 @@ import json
 import re
 import subprocess
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from difflib import SequenceMatcher
 from pathlib import Path
 
@@ -43,7 +43,8 @@ _SOURCE_KEYS = frozenset({"_original"})
 @dataclass(frozen=True)
 class LineChange:
     # "added", "changed", "removed", or "replaced" for an unchanged line whose
-    # translation the update drops anyway.
+    # translation the update drops anyway; "edited" for a checkpoint's line,
+    # its text before and after.
     kind: str
     # The old release's Japanese and the translation the game had for it.
     before: str | None
@@ -61,6 +62,8 @@ class FileText:
     replaced: int = 0
     # Translated lines the update leaves as they are.
     kept: int = 0
+    # Lines a checkpoint changed.
+    edited: int = 0
     lines: list[LineChange] = field(default_factory=list)
     # Lines left out of `lines` past the display limits.
     more: int = 0
@@ -358,6 +361,70 @@ def text_changes(game_root: str | Path, preview: UpdatePreview) -> TextChanges:
         sum(entry.kept for entry in files),
         tuple(files),
     )
+
+
+def _keyed(path: str, raw: bytes | None) -> dict | None:
+    """A file's strings by where they sit: a JSON file's and a plugin
+    registry's by key, a script's by line."""
+    if is_plugin_registry(path) or not path.casefold().endswith(".js"):
+        document = (_plugins if is_plugin_registry(path) else _parse)(raw)
+        return None if document is None else dict(_strings(document))
+    lines = _script(raw)
+    return None if lines is None else {index: line.strip() for index, line in enumerate(lines)}
+
+
+def _edits(path, old, new, budget) -> FileText:
+    """A checkpoint's lines of one file, before and after."""
+    text = FileText(path)
+    if isinstance(next(iter(old or new or {0: ""})), int):
+        # A script's lines shift when one is added, so they pair by text.
+        before, after = list((old or {}).values()), list((new or {}).values())
+        blocks = SequenceMatcher(None, before, after, autojunk=False).get_opcodes()
+        pairs = [
+            pair
+            for tag, start, end, new_start, new_end in blocks
+            if tag != "equal"
+            for pair in _pairs(
+                list(enumerate(before[start:end])), list(enumerate(after[new_start:new_end]))
+            )
+        ]
+        changes = [(was[1], now[1]) for was, now in pairs]
+    else:
+        keys = list(dict.fromkeys([*(new or {}), *(old or {})]))
+        changes = [((old or {}).get(key), (new or {}).get(key)) for key in keys]
+    for was, now in changes:
+        if was == now or not (was or now):
+            continue
+        text.edited += 1
+        if len(text.lines) < FILE_LINES and budget[0] > 0:
+            text.lines.append(LineChange("edited", was or None, None, now or None))
+            budget[0] -= 1
+        else:
+            text.more += 1
+    return text
+
+
+def checkpoint_text(repo: Path, files: dict[str, tuple[str, str]]) -> dict:
+    """The lines one checkpoint changed in a game's JSON files and plugins,
+    from each file's blob before and after it ("0" * 40 for none)."""
+    readable = {path: blobs for path, blobs in files.items() if path.casefold().endswith((".json", ".js"))}
+    contents = _blobs(repo, [blob for pair in readable.values() for blob in pair if blob.strip("0")])
+    budget = [ALL_LINES]
+    found = []
+    for path, (old, new) in sorted(readable.items()):
+        before, after = (_keyed(path, contents.get(blob)) if blob.strip("0") else {} for blob in (old, new))
+        if before is None or after is None:
+            continue
+        text = _edits(path, before, after, budget)
+        if text.edited:
+            found.append(asdict(text))
+    return {
+        "to_translate": 0,
+        "replaced": 0,
+        "kept": 0,
+        "edited": sum(file["edited"] for file in found),
+        "files": found,
+    }
 
 
 def _read_file(path: Path) -> bytes | None:

@@ -804,7 +804,6 @@ def routes(app):
         "save_document",
         "prepare",
         "backups",
-        "versions",
         "update_task",
         "release",
         "compile",
@@ -840,6 +839,18 @@ def routes(app):
     # Absent from the helper's methods: only the user starts a project over.
     methods["project_start_over"] = (
         app.translation.start_over,
+        lambda value, _params: value,
+    )
+    methods["project_checkpoints"] = (
+        app.translation.checkpoints,
+        lambda value, _params: value,
+    )
+    methods["project_checkpoint_changes"] = (
+        app.translation.checkpoint_changes,
+        lambda value, _params: value,
+    )
+    methods["project_checkpoint"] = (
+        app.translation.checkpoint,
         lambda value, _params: value,
     )
     methods["translation_images"] = (

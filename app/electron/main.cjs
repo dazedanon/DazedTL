@@ -406,6 +406,12 @@ app
           running = !!result?.application?.running;
         if (method === "guided_export" || method === "guided_output_folder")
           outputs.add(result.path);
+        // The backup store from before checkpoints, which Checkpoints opens.
+        if (
+          method === "project_checkpoints" &&
+          typeof result?.backups === "string"
+        )
+          outputs.add(result.backups);
         if (method === "workspace_snapshot") {
           backupFolders.clear();
           for (const key of [
@@ -433,6 +439,14 @@ app
             typeof job.result?.path === "string"
           )
             outputs.add(path.dirname(job.result.path));
+          // A copy Checkpoints saved opens as its own folder.
+          if (
+            job.kind === "operation" &&
+            job.status === "complete" &&
+            job.action === "checkpoint_copy" &&
+            typeof job.result?.folder === "string"
+          )
+            outputs.add(job.result.folder);
         }
         return { version: protocol.version, ok: true, value: result };
       } catch (error) {

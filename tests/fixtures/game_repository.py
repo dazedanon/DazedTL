@@ -520,4 +520,111 @@ assert history()[:2] == [
     "Assistant-led: Injection|assistant_phase|Assistant-led",
 ], history()
 assert changed("HEAD~1") == ["data/Map001.json"] and changed() == ["data/Items.json"]
+# The Checkpoints tab. An undo waits for a later checkpoint that changed the
+# same file, and an undo undone in turn never blocks it again.
+from dazedtl.compatibility import checkpoint_history as checkpoints
+
+
+def tip():
+    return git(kept, "rev-parse", "HEAD").strip()
+
+
+def listed():
+    return [
+        row
+        for version in checkpoints.timeline(kept)["versions"]
+        for row in version["checkpoints"]
+    ]
+
+
+before_first = (kept / "data/Items.json").read_bytes()
+write("data/Items.json", b'["first"]', summary="First", stage="Translate")
+first = tip()
+write("data/Items.json", b'["second"]', summary="Second", stage="Translate")
+second = tip()
+rows = {row["commit"]: row for row in listed()}
+assert rows[second]["current"] and rows[second]["group"] == "Translate", rows[second]
+assert rows[first]["blocker"] == {
+    "commit": second,
+    "title": "Second",
+    "files": ["data/Items.json"],
+}, rows[first]
+try:
+    checkpoints.undo(kept, first)
+except ValueError as reason:
+    assert "“Second” first; it also changed Items.json" in str(reason), reason
+else:
+    raise AssertionError("An undo took out a later checkpoint's change.")
+assert tip() == second
+shown = checkpoints.changes(kept, second)
+assert shown["file_changes"] == [
+    {"path": "data/Items.json", "change": "Changed", "result": ""}
+], shown
+assert shown["text"]["edited"] == 1, shown
+assert shown["text"]["files"][0]["lines"][0]["before"] == "first", shown
+checkpoints.undo(kept, second)
+clean()
+assert history()[0] == "Undid “Second”|checkpoint_undo|", history()
+assert (kept / "data/Items.json").read_bytes() == b'["first"]'
+checkpoints.undo(kept, first)
+clean()
+assert (kept / "data/Items.json").read_bytes() == before_first
+# Edits made outside DazedTL show until DazedTL's next change saves them.
+(kept / "data/Items.json").write_text("[null]\n")
+assert checkpoints.timeline(kept)["outside"] == ["data/Items.json"]
+# Going back puts a file the patch didn't hold then to the original game's
+# bytes, here a plugin the patch took in later, which stays in it; a file
+# neither held whose original the patch-only original branch lacks stays.
+plugin = "js/plugins/TitleMessage.js"
+oldest = listed()[-2]
+assert oldest["title"] == "Apply selected saved outputs", oldest
+assert listed()[-1]["title"] == "Set up the game at version 1.0", listed()
+native = (root / "tests/fixtures/mz-game" / plugin).read_bytes()
+blob = git(kept, "hash-object", "-w", str(root / "tests/fixtures/mz-game" / plugin))
+index = temporary / "original-index"
+plumbing = {"GIT_INDEX_FILE": str(index)}
+_run_git(kept, "read-tree", "original", env=plumbing)
+_run_git(
+    kept,
+    "update-index",
+    "--add",
+    "--cacheinfo",
+    f"100644,{blob.strip()},{plugin}",
+    env=plumbing,
+)
+tree = _run_git(kept, "write-tree", env=plumbing).stdout.strip()
+from util.version_update.git_workflow import _commit_tree
+
+complete = _commit_tree(kept, tree, "original: complete", ("original",))
+git(kept, "update-ref", "refs/heads/original", complete)
+checkpoints.go_back(kept, oldest["commit"])
+clean()
+assert history()[0].startswith("Went back to “Apply selected saved outputs” ("), (
+    history()
+)
+assert history()[1] == "Edits made outside DazedTL|outside_edits|", history()
+assert (kept / plugin).read_bytes() == native
+assert plugin in git(kept, "ls-files").split()
+assert (kept / ".dazedtl/glossary.txt").is_file()
+assert (kept / "data/Map001.json").read_bytes() == b'{"by": "export_selected"}'
+# Save a copy: the game as of a checkpoint, in a new folder outside it.
+copies = temporary / "copies"
+copies.mkdir()
+saved = checkpoints.save_copy(kept, second, copies)
+copy = Path(saved["folder"])
+assert copy.parent == copies and copy.name.startswith("checkpoints (1.0, "), copy
+assert (copy / "data/Items.json").read_bytes() == b'["second"]'
+assert (copy / "data/Map001.json").read_text() == git(
+    kept, "show", second + ":data/Map001.json"
+)
+assert (copy / plugin).read_text() == git(kept, "show", f"{second}:{plugin}")
+assert not (copy / ".git").exists() and not (copy / ".dazedtl/backups").exists()
+assert Path(checkpoints.save_copy(kept, second, copies)["folder"]).name.endswith(" 2")
+clean()
+try:
+    checkpoints.save_copy(kept, second, kept / "data")
+except ValueError as reason:
+    assert "outside the game" in str(reason), reason
+else:
+    raise AssertionError("A copy went inside the game.")
 print("ok")

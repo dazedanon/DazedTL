@@ -661,6 +661,23 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         records = Path(workspace) / "translation/projects" / job["project_id"]
         for name in ("engine.json", "assistant.json"):
             system.unlink(records / name, missing_ok=True)
+    elif action in {"checkpoint_back", "checkpoint_undo"}:
+        from dazedtl.compatibility import checkpoint_history
+
+        require_baseline(engine, source, options, state)
+        restore = (
+            checkpoint_history.go_back
+            if action == "checkpoint_back"
+            else checkpoint_history.undo
+        )
+        result = restore(source, arguments["commit"], stopped, progress)
+    elif action == "checkpoint_copy":
+        from dazedtl.compatibility import checkpoint_history
+
+        require_baseline(engine, source, options, state)
+        result = checkpoint_history.save_copy(
+            source, arguments["commit"], arguments["destination"], stopped, progress
+        )
     elif action == "census":
         result = take_census(
             engine,

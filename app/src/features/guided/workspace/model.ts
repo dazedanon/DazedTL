@@ -80,7 +80,7 @@ export type GuidedIntent =
   | { kind: "select"; group: "database" | "dialogue"; files: string[] };
 /** Project tools live on the Project page; tasks link to their tab. */
 export type ProjectLink = (
-  tab: "history" | "versions" | "backups",
+  tab: "history" | "checkpoints",
   historyQuery?: string,
 ) => void;
 export type GuidedProps = {

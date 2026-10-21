@@ -1431,6 +1431,7 @@ export type TranslationJob = {
   project_id: string;
   kind: "translation" | "operation";
   action?: string | null;
+  target?: string | null;
   label: string;
   status: string;
   message: string;
@@ -1693,12 +1694,79 @@ export type UpdateTask = {
   prompt: string;
 };
 
-export type VersionRecord = {
-  version: string;
-  recorded: string;
-  kind: "setup" | "update";
-  release: "patch" | "complete" | "";
+/** The later checkpoint to undo first, and the files both changed. */
+export type CheckpointBlocker = {
   commit: string;
+  title: string;
+  files: string[];
+};
+
+/** One checkpoint on the translation branch; see
+compatibility/checkpoint_history.py. */
+export type Checkpoint = {
+  commit: string;
+  title: string;
+  group: string;
+  time: string;
+  files: number;
+  names: string[];
+  kind: "change" | "setup" | "update";
+  release: string;
+  current: boolean;
+  restorable: boolean;
+  blocker: CheckpointBlocker | null;
+};
+
+export type CheckpointVersion = {
+  version: string;
+  current: boolean;
+  checkpoints: Checkpoint[];
+};
+
+export type CheckpointTimeline = {
+  version: string;
+  outside: string[];
+  versions: CheckpointVersion[];
+  backups: string | null;
+};
+
+export type CheckpointTextLine = {
+  kind: "edited";
+  before: string | null;
+  translation: null;
+  after: string | null;
+};
+
+export type CheckpointFileText = {
+  path: string;
+  to_translate: number;
+  replaced: number;
+  kept: number;
+  edited: number;
+  lines: CheckpointTextLine[];
+  more: number;
+};
+
+export type CheckpointText = {
+  to_translate: number;
+  replaced: number;
+  kept: number;
+  edited: number;
+  files: CheckpointFileText[];
+};
+
+export type CheckpointFileChange = {
+  path: string;
+  change: "Added" | "Removed" | "Changed";
+  result: string;
+};
+
+export type CheckpointChanges = {
+  title: string;
+  group: string;
+  time: string;
+  file_changes: CheckpointFileChange[];
+  text: CheckpointText;
 };
 
 /** How a release lines up with the game as one kind; see the engine's
@@ -2886,6 +2954,18 @@ export type TranslationOperationRequest = {
   arguments: Record<string, unknown>;
 };
 
+export type CheckpointRequest = {
+  project_id: string;
+  action: "checkpoint_back" | "checkpoint_undo" | "checkpoint_copy";
+  commit: string;
+  destination?: string;
+};
+
+export type CheckpointChangesRequest = {
+  project_id: string;
+  commit: string;
+};
+
 export type StartOverRequest = {
   project_id: string;
   keep_context: boolean;
@@ -3279,7 +3359,6 @@ export type RpcContract = {
   translation_results: { request: RunRequest; response: TranslationResults };
   translation_backups: { request: ProjectRequest; response: BackupCatalog };
   translation_update_task: { request: ProjectRequest; response: UpdateTask };
-  translation_versions: { request: ProjectRequest; response: VersionRecord[] };
   translation_release: {
     request: TranslationReleaseRequest;
     response: ReleaseInspection;
@@ -3316,6 +3395,15 @@ export type RpcContract = {
     response: TranslationJob;
   };
   project_start_over: { request: StartOverRequest; response: TranslationJob };
+  project_checkpoints: {
+    request: ProjectRequest;
+    response: CheckpointTimeline;
+  };
+  project_checkpoint_changes: {
+    request: CheckpointChangesRequest;
+    response: CheckpointChanges;
+  };
+  project_checkpoint: { request: CheckpointRequest; response: TranslationJob };
   project_game_update: {
     request: ProjectGameUpdateRequest;
     response: GameUpdateStatus;
@@ -3425,7 +3513,7 @@ export const ACTIONS = {
     reports_outcome: false,
   },
   git_setup: {
-    label: "Save game version",
+    label: "Record game version",
     family: "lifecycle",
     restorable: false,
     reports_outcome: false,
