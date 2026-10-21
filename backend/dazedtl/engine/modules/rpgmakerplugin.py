@@ -205,10 +205,7 @@ def save_progress_lines(lines, filename, encoding="utf_8"):
                         time.sleep(0.1 * (attempt + 1))
             finally:
                 if os.path.exists(tmp_path):
-                    try:
-                        os.remove(tmp_path)
-                    except OSError:
-                        pass
+                    system.unlink(tmp_path, ignore_errors=True)
     except Exception:
         traceback.print_exc()
 
