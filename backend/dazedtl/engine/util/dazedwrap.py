@@ -446,6 +446,38 @@ def wrapShaped(
     return "\n" * lead + "\n".join(out)
 
 
+def unpaged(text: str, rows: int) -> str:
+    """Text :func:`wrapShaped` paged into windows of *rows* as it read the
+    text before: without the empty rows it fills a page with. Other blank
+    rows, such as a paragraph break, stay, unless one ends a page just as
+    those rows would."""
+    lines = text.split("\n")
+    lead = 0
+    while lead < len(lines) and not lines[lead].strip():
+        lead += 1
+    page = max(1, int(rows) - lead)
+    kept = lines[:lead]
+    shown = 0
+    index = lead
+    while index < len(lines):
+        end = index
+        while end < len(lines) and not lines[end].strip():
+            end += 1
+        if end == index:
+            # A full page goes on to the next with no empty rows between.
+            shown = 1 if shown == page else shown + 1
+            kept.append(lines[index])
+            index += 1
+            continue
+        # A page's empty rows fill it and add the blank rows each page
+        # starts with; a paragraph starts its pages afresh.
+        if not (end < len(lines) and 0 < shown and end - index == page - shown + lead):
+            kept += lines[index:end]
+        shown = 0
+        index = end
+    return "\n".join(kept)
+
+
 def _wrapLine(line: str, width: int, measure=None) -> str:
     """One authored line too wide for *width*, on as few lines as it needs,
     evened out so its last line is not a stray word. The line's indent stays

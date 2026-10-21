@@ -337,6 +337,47 @@ class TextBlockTests(unittest.TestCase):
             fit_document({"list": listed}, "Map001.json", wide, resized=True).changes
         )
 
+    def test_message_paged_narrower_is_laid_out_again_once_the_width_grows(self):
+        # At 45 the message takes two windows, the first filled with blank
+        # rows; at 60 again it reads as if fitted at 60 directly.
+        def translated(text, japanese):
+            return [
+                command(101, ["", 0, 0, 2, ""]),
+                command(401, [text], _original=japanese),
+                command(0, []),
+            ]
+
+        wide, narrow = Layout(60, 60, 74, 45, 4), Layout(45, 45, 74, 45, 4)
+        for text, japanese in (
+            (
+                (
+                    "Bandits wait by the old bridge tonight. Keep your sword ready. "
+                    "The road through the forest is dangerous at night, and the "
+                    "wolves come down from the hills whenever the moon is hidden "
+                    "behind the clouds."
+                ),
+                "今夜は古い橋で盗賊が待っている。剣を構えておけ。",
+            ),
+            # A blank row the Japanese has is the author's, even where it ends
+            # a page as the fitter's empty rows would.
+            (
+                (
+                    "The road through the forest is dangerous at night, and the old "
+                    "bridge has fallen. Keep your sword ready.\n\n"
+                    "The village will take you in if you reach it before the rain "
+                    "starts. Hurry now, and do not look back."
+                ),
+                "森の道は夜は危険です。\n\n村が迎えてくれます。",
+            ),
+        ):
+            direct = translated(text, japanese)
+            fit_document({"list": direct}, "Map001.json", wide)
+            listed = translated(text, japanese)
+            fit_document({"list": listed}, "Map001.json", narrow)
+            self.assertNotEqual(listed, direct)
+            fit_document({"list": listed}, "Map001.json", wide, resized=True)
+            self.assertEqual(listed, direct)
+
     def test_list_items_of_the_japanese_keep_a_row_each_beside_a_face(self):
         help_text = wrap_help(
             "Effects: ・Attack power rises greatly for the rest of the battle "

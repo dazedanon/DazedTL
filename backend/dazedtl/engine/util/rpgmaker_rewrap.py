@@ -16,6 +16,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass, field, replace
+from functools import lru_cache
 from itertools import groupby
 from typing import Any, Iterator
 
@@ -99,6 +100,8 @@ _MARKER = re.compile(r"^_ABL")
 MARKED_WIDTH = 100
 
 
+# Fitting measures each word of a game's text, whose words repeat.
+@lru_cache(maxsize=1 << 16)
 def visible_width(text: str) -> int:
     """The characters *text* takes on one line of a window: name windows,
     alignment and other codes draw nothing there, while names, icons and
@@ -313,6 +316,41 @@ def _repeated(code: str, line: str) -> str:
     return code + line
 
 
+def _message(text: str, rows: int | None) -> tuple[str, list[str], int | None, bool]:
+    """A message as :func:`wrap_message` lays it out: its speaker line, the
+    rows of its body without blank rows at the end, the rows a page of its
+    window shows below a [Speaker] line, and whether it breaks lines with
+    ``<br>``."""
+    prefix = ""
+    body = text
+    speaker = _SPEAKER_LINE.match(body)
+    if speaker:
+        prefix = speaker.group("prefix")
+        body = body[len(prefix) :]
+        if rows is not None and prefix.lstrip().startswith("["):
+            rows = max(1, rows - 1)
+    uses_br = "<br>" in body and "\n" not in body
+    if uses_br:
+        body = body.replace("<br>", "\n")
+    lines = body.split("\n")
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return prefix, lines, rows, uses_br
+
+
+def _unpaged(text: str, rows: int) -> str:
+    """A message :func:`wrap_message` paged into windows of *rows* as it read
+    the message before, without the empty rows it fills a page with (see
+    :func:`dazedwrap.unpaged`), and without blank rows at the end."""
+    prefix, lines, page, uses_br = _message(text, rows)
+    read: list[str] = []
+    for span in _spans([_row_kind(line) for line in lines]):
+        part = "\n".join(lines[span.start : span.end])
+        read.append(dazedwrap.unpaged(part, page or rows) if span.flows else part)
+    body = "\n".join(read)
+    return prefix + (body.replace("\n", "<br>") if uses_br else body)
+
+
 def wrap_message(
     text: str,
     width: int,
@@ -335,20 +373,7 @@ def wrap_message(
     source's layout, which no longer lines up with the rows."""
     if not text or not text.strip():
         return text
-    prefix = ""
-    body = text
-    speaker = _SPEAKER_LINE.match(body)
-    if speaker:
-        prefix = speaker.group("prefix")
-        body = body[len(prefix) :]
-        if rows is not None and prefix.lstrip().startswith("["):
-            rows = max(1, rows - 1)
-    uses_br = "<br>" in body and "\n" not in body
-    if uses_br:
-        body = body.replace("<br>", "\n")
-    lines = body.split("\n")
-    while lines and not lines[-1].strip():
-        lines.pop()
+    prefix, lines, rows, uses_br = _message(text, rows)
     spans = _spans([_row_kind(line) for line in lines])
     if len(spans) == 1 and spans[0].flows:
         wrapped = _flow(lines, spans[0].per_line, width, _source_body(source), rows)
@@ -637,6 +662,14 @@ def _rows(text: str) -> list[str]:
     return [row for row in _rendered_lines(body) if row.strip()]
 
 
+def _parted(message: str | None) -> bool:
+    """Whether a message, or its Japanese, has blank rows between its text
+    below its speaker."""
+    rows = [row.strip() for row in _rendered_lines(_source_body(message) or "")]
+    held = [at for at, row in enumerate(rows) if row]
+    return bool(held) and "" in rows[held[0] : held[-1]]
+
+
 def _widened(text: str, box: Box, source: str | None) -> str:
     """A message that fits *box* laid out again at its width when the fitter
     laid it out for a narrower window and the wider one takes it on fewer
@@ -644,10 +677,14 @@ def _widened(text: str, box: Box, source: str | None) -> str:
     at that width leaves it as it is, so rows a translator or the game laid
     out stay, and the message reads as if fitted at the new width at once.
 
-    Only a narrower width the message's rows fill as few rows as they hold
-    is tried: wrapping at one where they take fewer never gives them back.
-    Blank rows at the end, such as a message's spare commands, are no part
-    of the layout (see :func:`wrap_message`)."""
+    A message the fitter paged is read first without the empty rows it
+    filled a page with (see :func:`_unpaged`), unless it is laid out for
+    this width already with them read as paragraph breaks, or its Japanese
+    has blank rows between text, which are the author's. Only a narrower
+    width the rows of a message without blank rows fill as few rows as they
+    hold is tried: wrapping at one where they take fewer never gives them
+    back. Blank rows at the end, such as a message's spare commands, are no
+    part of the layout (see :func:`wrap_message`)."""
     rows = box.rows if box.paged else None
     laid = text.split("\n")
     while laid and not laid[-1].strip():
@@ -657,14 +694,30 @@ def _widened(text: str, box: Box, source: str | None) -> str:
     sizes = [visible_width(word) for word in " ".join(held).split()]
     if len(held) < 2 or dazedwrap.rows_needed(sizes, box.width) >= len(held):
         return text
-    wider = wrap_message(text, box.width, source=source, rows=rows, every=True)
-    if rendered_rows(wider) >= rendered_rows(text):
-        return text
-    for width in range(widest_line(text), box.width):
-        if dazedwrap.rows_needed(sizes, width) < len(held):
-            break
-        if wrap_message(text, width, source=source, rows=rows, every=True) == laid:
-            return wider
+    readings = [laid]
+    # Only a message of more rows than its window shows was paged.
+    paged = rows is not None and rendered_rows(laid) > rows
+    if rows is not None and paged and not _parted(source):
+        unpaged = _unpaged(laid, rows)
+        if unpaged != laid:
+            readings.insert(0, unpaged)
+    wider: dict[str, str] = {}
+    for read in readings:
+        wider[read] = wrap_message(read, box.width, source=source, rows=rows, every=True)
+        # Laid out for this width already, its blank rows read as paragraph
+        # breaks or not.
+        if wider[read] == laid:
+            return text
+    # Rows that flow on with no blank row between need as many at a width.
+    flowing = not paged and not _parted(laid)
+    for read in readings:
+        if len(_rows(wider[read])) >= len(held):
+            continue
+        for width in range(widest_line(text), box.width):
+            if flowing and dazedwrap.rows_needed(sizes, width) < len(held):
+                break
+            if wrap_message(read, width, source=source, rows=rows, every=True) == laid:
+                return wider[read]
     return text
 
 
