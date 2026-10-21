@@ -158,7 +158,7 @@ def wrapLines(text: str, width: int, rows: int | None = None, measure=None) -> s
     words = text.split()
     sizes = [measure(word) for word in words]
     flowed = None
-    for count in range(_rows_needed(sizes, width), rows + 1):
+    for count in range(rows_needed(sizes, width), rows + 1):
         lines = _sentence_lines(words, sizes, width, count, False)
         if lines:
             flowed = "\n".join(lines)
@@ -235,7 +235,9 @@ _BREAK_COST = {"sentence": 0.0, "clause": 0.12, "word": 0.3}
 EVEN_WEIGHT = 4.0
 
 
-def _rows_needed(sizes: list[int], width: int) -> int:
+def rows_needed(sizes: list[int], width: int) -> int:
+    """The fewest rows words of *sizes* take within *width*, filling each
+    row in turn."""
     rows, line = 1, -1
     for size in sizes:
         if line >= 0 and line + 1 + size > width:
@@ -341,7 +343,7 @@ def _paged(
         for start in range(end - 1, -1, -1):
             if best[start] == infinite:
                 continue
-            rows = _rows_needed(sizes[start:end], width)
+            rows = rows_needed(sizes[start:end], width)
             if rows > page_rows:
                 break
             pages, spare = best[start]
@@ -357,7 +359,7 @@ def _paged(
         pages.append(
             _even_lines(
                 words[start:end], sizes[start:end], width,
-                _rows_needed(sizes[start:end], width),
+                rows_needed(sizes[start:end], width),
             )
         )
         end = start
@@ -415,7 +417,7 @@ def wrapShaped(
         if not words:
             continue
         sizes = [measure(word) for word in words]
-        needed = _rows_needed(sizes, width)
+        needed = rows_needed(sizes, width)
         lines = None
         if len(paragraphs) == 1 and len(segments) > 1:
             shares = [size / sum(segments) for size in segments] if sum(segments) else None
@@ -518,4 +520,4 @@ def wrapSGDesc(text: str, width: int) -> str:
         flush_body()
         wrapped_paragraphs.append("\n".join(out_parts))
 
-    return "\n\n".join(wrapped_paragraphs)
+    return "\n\n".join(wrapped_paragraphs)

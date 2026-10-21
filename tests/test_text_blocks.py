@@ -285,6 +285,58 @@ class TextBlockTests(unittest.TestCase):
             ["/list/7/parameters/0"],
         )
 
+    def test_help_fitted_narrower_is_laid_out_again_once_the_width_grows(self):
+        # Dialogue 60, then 45 (5 of 4 rows), then 60 again: the breaks the
+        # fit at 45 wrote go, as if the help had been fitted at 60 directly.
+        def translated():
+            return choosing(
+                [
+                    command(
+                        408,
+                        ["Watching the opening takes about twenty minutes."],
+                        1,
+                        _original="所要時間は二十分です。",
+                        _rows=1,
+                    ),
+                    command(408, ["(1/3)"], 1),
+                    command(
+                        408,
+                        ["We strongly recommend watching it on your first run."],
+                        1,
+                        _original="初回は見ることを推奨します。",
+                        _rows=1,
+                    ),
+                ],
+                face="",
+            )
+
+        wide, narrow = Layout(60, 60, 74, 45, 4), Layout(45, 45, 74, 45, 4)
+        direct = translated()
+        self.assertFalse(fit_document({"list": direct}, "Map001.json", wide).changes)
+        listed = translated()
+        self.assertTrue(fit_document({"list": listed}, "Map001.json", narrow).misfits)
+        report = fit_document({"list": listed}, "Map001.json", wide, resized=True)
+        self.assertEqual(listed, direct)
+        self.assertFalse(report.misfits)
+        # A message's spare commands at the end are no part of its layout.
+        message = [
+            "The forest road is dangerous at",
+            "night, so please be careful.",
+            "",
+        ]
+        listed[1:2] = [command(401, [row]) for row in message]
+        fit_document({"list": listed}, "Map001.json", wide, resized=True)
+        self.assertEqual(
+            [row["parameters"][0] for row in listed[1:4]],
+            ["The forest road is dangerous at night, so please be careful.", "", ""],
+        )
+        del listed[2:4]
+        # Rows a translator laid out are no layout of the fitter's: they stay.
+        listed[7]["parameters"] = ["Watch it. It takes\nabout twenty\nminutes."]
+        self.assertFalse(
+            fit_document({"list": listed}, "Map001.json", wide, resized=True).changes
+        )
+
     def test_list_items_of_the_japanese_keep_a_row_each_beside_a_face(self):
         help_text = wrap_help(
             "Effects: ・Attack power rises greatly for the rest of the battle "
