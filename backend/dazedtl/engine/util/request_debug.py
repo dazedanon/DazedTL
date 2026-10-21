@@ -13,6 +13,8 @@ import threading
 import time
 from pathlib import Path
 
+from util import system
+
 
 _LOG_LOCK = threading.RLock()
 _TRUE_VALUES = {"1", "true", "yes", "on"}
@@ -65,8 +67,8 @@ def append_rotating(path: Path, text: str, *, max_bytes: int, backups: int) -> N
             for index in range(backups - 1, 0, -1):
                 source = path.with_name(f"{path.name}.{index}")
                 if source.is_file():
-                    source.replace(path.with_name(f"{path.name}.{index + 1}"))
-            path.replace(path.with_name(f"{path.name}.1"))
+                    system.replace(source, path.with_name(f"{path.name}.{index + 1}"))
+            system.replace(path, path.with_name(f"{path.name}.1"))
         with open(path, "a", encoding="utf-8") as debug_file:
             debug_file.write(text)
             debug_file.flush()

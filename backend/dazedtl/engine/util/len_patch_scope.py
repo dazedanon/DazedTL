@@ -461,7 +461,7 @@ def _sync_patch_scope(project: LenProject, document: object, original_game: Path
             _save_asset_manifest(repo, "", state["original_version"], new_original, assets,
                                  baseline_source_kind=asset_metadata.get("baseline_source_kind", "bootstrap"),
                                  has_unbased_tracked_assets=bool(asset_metadata.get("has_unbased_tracked_assets", False)))
-        lock.replace(index_path)
+        system.replace(lock, index_path)
         acquired = False
         result.update({"original_commit": new_original, "staged_tree": main_tree})
         return result

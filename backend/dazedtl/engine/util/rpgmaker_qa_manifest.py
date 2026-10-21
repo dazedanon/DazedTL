@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from util import system
 from util import rpgmaker_blocks as blocks
 from util.qa import mechanical
 
@@ -545,4 +546,4 @@ def write_manifest(manifest: dict[str, Any], output: str | Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_name(destination.name + ".tmp")
     temporary.write_bytes(_canonical_bytes(manifest) + b"\n")
-    temporary.replace(destination)
+    system.replace(temporary, destination)

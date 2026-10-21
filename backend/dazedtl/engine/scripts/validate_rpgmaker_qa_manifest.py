@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from dazedtl.compatibility.runtime import activate
 activate()
 
+from util import system  # noqa: E402
 from util.rpgmaker_qa_verify import verify_manifest  # noqa: E402
 
 
@@ -45,7 +46,7 @@ def main() -> int:
         destination.parent.mkdir(parents=True, exist_ok=True)
         temporary = destination.with_name(destination.name + ".tmp")
         temporary.write_text(rendered, encoding="utf-8", newline="\n")
-        temporary.replace(destination)
+        system.replace(temporary, destination)
     print(rendered, end="")
     return 0 if report["valid"] else 1
 

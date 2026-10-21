@@ -10,6 +10,7 @@ from pathlib import Path
 import sys
 from types import SimpleNamespace
 
+from util import system
 from util.paths import (
     DATA_DIR, GLOSSARY_BASE_SEPARATOR, SKILLS_DIR, game_glossary_path, runtime_data_file,
     runtime_data_files_pinned, prepare_game_translation_context, read_game_glossary,
@@ -448,7 +449,7 @@ def _write_atomic(path: Path, text: str) -> None:
             handle.write(text)
         if path.exists():
             temporary.chmod(path.stat().st_mode)
-        temporary.replace(path)
+        system.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
 

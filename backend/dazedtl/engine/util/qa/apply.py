@@ -12,6 +12,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from util import system
 from util.paths import unlink_with_retry
 from util.qa import mechanical
 from util.qa.fitting import (
@@ -379,13 +380,13 @@ def apply_loaded_correction_map(
             json.loads(temporary.read_text(encoding="utf-8-sig"))
             temporaries[path] = temporary
         for path, temporary in temporaries.items():
-            temporary.replace(path)
+            system.replace(temporary, path)
             replaced.append(path)
     except Exception:
         for path in replaced:
             rollback = path.with_name(path.name + ".qa.rollback")
             rollback.write_bytes(originals[path])
-            rollback.replace(path)
+            system.replace(rollback, path)
         raise
     finally:
         for temporary in temporaries.values():
@@ -400,7 +401,7 @@ def apply_loaded_correction_map(
         for path, raw in originals.items():
             rollback = path.with_name(path.name + ".qa.rollback")
             rollback.write_bytes(raw)
-            rollback.replace(path)
+            system.replace(rollback, path)
         regression["rolled_back"] = True
         _atomic_write_json(root / regression_name, regression)
         raise ValueError("QA regression failed; all game-file changes were rolled back")

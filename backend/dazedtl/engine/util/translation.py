@@ -1474,7 +1474,7 @@ def _save_var_map():
         tmp_file = VAR_MAP_FILE.with_suffix(".tmp")
         with open(tmp_file, "w", encoding="utf-8", newline="\n") as f:
             json.dump(_var_map, f, ensure_ascii=False, indent=2)
-        tmp_file.replace(VAR_MAP_FILE)
+        system.replace(tmp_file, VAR_MAP_FILE)
     except Exception:
         pass
 
