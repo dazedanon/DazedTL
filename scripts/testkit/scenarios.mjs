@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { python } from "../dependencies.mjs";
+import { until } from "./cdp.mjs";
 import {
   connect,
   openGame,
@@ -67,8 +68,19 @@ const translateAll = [
     async ({ page }) => {
       // Lines a variant has the stand-in refuse fail their run.
       await translateTask(page, "Maps & events", { failed: true });
-      if ((await page.text()).match(/Apply \(\d+\)/))
-        await applyTask(page, "Maps & events");
+      // A run that saved nothing new leaves Apply disabled, or away when it
+      // saved nothing at all.
+      const apply = /^Apply \(\d+\)$/;
+      const next = await until("Maps & events' Apply to settle", async () => {
+        if (await page.locate(apply)) return "apply";
+        const text = await page.text();
+        return (
+          (!/Apply \(\d+\)/.test(text) ||
+            text.includes("Saved translations applied.")) &&
+          "skip"
+        );
+      });
+      if (next === "apply") await applyTask(page, "Maps & events");
     },
   ],
 ];
