@@ -1181,11 +1181,11 @@ Additional project instructions:
                 message="Translations saved. Injection and runtime QA remain separate.",
             )
         self.jobs.store.save(job)
+        self.refresh_progress(project_id, plan)
         if finished:
             progress_report.checkpoint(
                 self.engine, self.workspace, project_id, plan["source"]
             )
-        self.refresh_progress(project_id, plan)
         return self.jobs.store.view(job)
 
     def declined_record(self, project_id, run_id):

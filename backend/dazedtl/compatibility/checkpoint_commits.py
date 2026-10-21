@@ -378,7 +378,7 @@ class Checkpoint:
         self.paths = list(_relative(paths or ()))
         self.phase = _phase.get()
         with exclusive(self.folder / "checkpoint.lock"):
-            claimed = _others(self.folder)
+            claimed = None if self.phase else _others(self.folder)
             self.write = _Write(self.folder, self.paths)
             if self.phase is not None:
                 return
