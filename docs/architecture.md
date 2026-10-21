@@ -408,36 +408,12 @@ A worker's parent on Windows is the virtual environment's launcher stub, so owne
 
 ## Backup storage
 
-Both agent operations and UI checkpoints use translation/backups.py.
-Each version-two snapshot is a complete path-to-content manifest with file sizes, permissions and empty directories; content-addressed objects are shared across original, prepared-source and workspace snapshots in the same game.
-No delta chain or live-file hardlinks are used.
-Snapshot identity covers file content, paths, modes and directories, so unchanged captures reuse a manifest.
-Backup presentation checks manifest and payload availability instead of treating a profile reference as proof that its files still exist.
-A poll checks shared object directories and payload sizes, and reuses that check while the snapshot's manifest and object folders keep their modification times ([record_status](../backend/dazedtl/translation/backups.py)).
-Adding or removing an object changes its folder's time; a payload changed in place keeps those times, so only the full hash checks below notice it.
-Electron opens only backup folders the backend returns as available.
-Full content hashes are still verified at restore and reuse boundaries.
-The managed store has its own writer lock.
-Content is verified before reuse/publication; source mutations abort capture.
-A failed capture removes only unpublished objects it created.
-Existing snapshots are never pruned.
-The project's `source_backup` record is the original it was set up from: a later game backup becomes `game_backup`, the latest one the Backups tab shows, and replaces the original only when that is missing or unreadable, judged before the new capture because an identical capture shares its identity.
-Plugin lookup evidence and release original bindings read the original, so saving the translated game must not move it.
-After a source backup is successfully saved, the operation reconciles profile references to a deleted workspace snapshot and engine investigation whose evidence files are all missing.
-It archives those records under profile `backups/stale-project-records` before retiring them.
-Read-only observations do not clear records.
-Existing or unreadable artifacts, prepared-original baselines, and run history stay intact; a failed or cancelled backup does not retire anything.
-
-Workspace capture excludes the entire .dazedtl/backups directory, including any pre-existing manual backups.
-Source capture excludes .git and .dazedtl.
-Arbitrary nested destinations remain forbidden.
-The v2 subdirectory avoids repurposing existing backup folders.
-Older version-one full-copy snapshots remain supported by the reader.
-Engine operations obtain temporary verified normal files through materialized; patch checkpoints materialize only their runtime source paths.
-No expanded cache is retained.
-Restore verifies into a staging directory before publishing a new destination, refuses existing or overlapping targets, and reconstructs empty directories and file modes.
-The independent scripts/backups.py reader can recover a moved game without its former app profile.
-Restoring a workspace does not transplant connections, paid-job ownership or spending authorizations from another app profile.
+Agent operations and UI checkpoints share [backups.py](../backend/dazedtl/translation/backups.py): complete path-to-content manifests over content-addressed objects shared across a game's snapshots, with no delta chain or live-file hardlinks.
+Content is verified before reuse and publication and again at restore, presentation checks that a snapshot's files still exist, and Electron opens only backup folders the backend returns as available.
+Existing snapshots are never pruned, and a failed capture removes only unpublished objects it created.
+A poll's availability check is reused while the snapshot's manifest and object folders keep their times, so a payload changed in place is noticed only by the full hash checks at restore and reuse.
+The project's `source_backup` stays the original it was set up from while it is readable, because plugin lookup evidence and release original bindings read the original.
+The independent scripts/backups.py reader can recover a moved game without its former app profile, and restoring a workspace never transplants connections, paid-job ownership or spending authorizations from another profile.
 
 ## Distribution and updates
 
