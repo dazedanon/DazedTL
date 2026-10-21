@@ -217,6 +217,74 @@ class TextBlockTests(unittest.TestCase):
         )
         self.assertFalse(fit_document({"list": listed}, "Map001.json", layout).changes)
 
+    def test_help_translated_in_parts_is_checked_as_the_window_shows_it(self):
+        # Guided translation writes each Japanese row of the scroll-pages
+        # help on its own around the game's "(1/3)"; each part fits the
+        # window, but the window shows them all.
+        listed = choosing(
+            [
+                command(
+                    408,
+                    [
+                        "Watching the opening takes about twenty minutes from start to end."
+                    ],
+                    1,
+                    _original="所要時間は二十分です。",
+                    _rows=1,
+                ),
+                command(408, ["(1/3)"], 1),
+                command(
+                    408,
+                    [
+                        "We strongly recommend watching it all the way through on your first run."
+                    ],
+                    1,
+                    _original="初回は見ることを推奨します。",
+                    _rows=1,
+                ),
+            ],
+            face="",
+        )
+        layout = Layout(30, 30, 74, 45, 4)
+        report = fit_document({"list": listed}, "Map001.json", layout)
+        rows = "\n".join(row["parameters"][0] for row in listed[5:8]).split("\n")
+        self.assertEqual(rows[rows.index("(1/3)") - 1][-4:], "end.", rows)
+        self.assertEqual(
+            [(misfit["pointer"], misfit["reason"]) for misfit in report.misfits],
+            [("/list/5/parameters/0", f"needs {len(rows)} rows; its window shows 4")],
+        )
+        # Help whose parts fit the window together is fitted as before.
+        listed = choosing(
+            [
+                command(
+                    408,
+                    ["About twenty minutes."],
+                    1,
+                    _original="所要時間は二十分です。",
+                ),
+                command(408, ["(1/3)"], 1),
+                command(
+                    408,
+                    ["Watch it first."],
+                    1,
+                    _original="初回は見ることを推奨します。",
+                ),
+            ],
+            face="",
+        )
+        self.assertFalse(fit_document({"list": listed}, "Map001.json", layout).misfits)
+        # A line too wide is named where it is written.
+        listed[7]["parameters"] = ["See https://example.com/opening-guide"]
+        self.assertEqual(
+            [
+                misfit["pointer"]
+                for misfit in fit_document(
+                    {"list": listed}, "Map001.json", layout
+                ).misfits
+            ],
+            ["/list/7/parameters/0"],
+        )
+
     def test_list_items_of_the_japanese_keep_a_row_each_beside_a_face(self):
         help_text = wrap_help(
             "Effects: ・Attack power rises greatly for the rest of the battle "

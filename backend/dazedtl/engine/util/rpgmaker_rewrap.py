@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from itertools import groupby
 from typing import Any, Iterator
 
@@ -731,8 +731,8 @@ class _Slot:
     run: tuple[list, ...] = ()
     commands: list | None = None
     rows: tuple[int, ...] = ()
-    # The rows a window shows with this text, checked as one once all are
-    # written; () when another slot checks them.
+    # The rows a window shows with this text and the rest of its block,
+    # checked as one once all are written (see :func:`fit_document`).
     together: tuple[int, ...] | None = None
 
     def read(self):
@@ -835,6 +835,9 @@ def _command_slots(commands: list, pointer: str, layout: Layout) -> Iterator[_Sl
             parts = tuple(part for part in block.parts if part.translated and part.rows)
         else:
             continue
+        # The window shows a choice's help whole: the game's own rows, such
+        # as a page number, and every part around them.
+        together = block.rows if block.kind == blocks.HELP else None
         for part in parts:
             runs = [part.rows]
             if block.kind == blocks.HELP and part.on_head:
@@ -848,7 +851,7 @@ def _command_slots(commands: list, pointer: str, layout: Layout) -> Iterator[_Sl
                     if not own
                 ]
             source = blocks.source(commands, part) if len(runs) == 1 else None
-            for number, rows in enumerate(runs):
+            for rows in runs:
                 first = rows[0]
                 params = commands[first]["parameters"]
                 shown = box
@@ -857,8 +860,7 @@ def _command_slots(commands: list, pointer: str, layout: Layout) -> Iterator[_Sl
                 run = tuple(commands[at]["parameters"] for at in rows)
                 slots.append((first, _Slot(
                     f"{pointer}/{first}/parameters/0", shown, source, params, 0, run,
-                    commands, rows if block.kind == blocks.HELP else (),
-                    None if len(runs) == 1 else () if number else part.rows,
+                    commands, rows if block.kind == blocks.HELP else (), together,
                 )))
     for index, command in enumerate(commands):
         if not isinstance(command, dict):
@@ -938,8 +940,14 @@ def fit_document(
     widths moved. Japanese left untranslated is never rewrapped. A message
     keeps its commands (see :func:`fit_run`)."""
     report = FitReport()
+    fitted = list(_fitted_slots(document, file_name, layout, areas))
+    # Text a window shows together is checked once, at its first value.
+    checks: dict[tuple[int, ...], _Slot] = {}
+    for slot, _value in fitted:
+        if slot.together is not None:
+            checks.setdefault(slot.together, slot)
     # Last first: writing help moves the rows after it (see _Slot).
-    for slot, value in reversed(list(_fitted_slots(document, file_name, layout, areas))):
+    for slot, value in reversed(fitted):
         texts = slot.fitted()
         written = "\n".join(texts)
         if written != value:
@@ -948,11 +956,19 @@ def fit_document(
             report.changes.append(
                 {"file": file_name, "pointer": slot.pointer, "before": value, "after": written}
             )
-        if slot.together is not None:
-            # Fitted around the game's own rows, the text shows with them.
-            written = "\n".join(blocks.text(slot.commands[at]) for at in slot.together)
-        reason = misfit(written, slot.box)
-        if reason:
+        if slot.together is None:
+            reasons = [misfit(written, slot.box)]
+        else:
+            # Each part's lines are measured where they are written, and the
+            # window's rows once every part is: it shows them all, the game's
+            # own rows too. Spare rows moved to the end show nothing.
+            reasons = [misfit(written, replace(slot.box, rows=None))]
+            if checks[slot.together] is slot:
+                whole = "\n".join(
+                    blocks.text(slot.commands[at]) for at in slot.together
+                ).rstrip("\n")
+                reasons.append(misfit(whole, replace(slot.box, width=widest_line(whole))))
+        for reason in filter(None, reasons):
             report.misfits.append({"file": file_name, "pointer": slot.pointer, "reason": reason})
     report.changes.reverse()
     report.misfits.reverse()
