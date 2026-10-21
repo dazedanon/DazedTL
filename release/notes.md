@@ -6,6 +6,9 @@
 
 ### Fixed
 
+- **Assistant-led:** in a VX Ace game, the text your assistant writes, and the text refitted when it saves Line widths, is now packed into the `Data` files the game reads, so playing the game folder shows the translation; before, the game kept showing the Japanese.
+- **Set up:** in a VX Ace game, formatting the game data now packs it into `Data`, so **Release** no longer asks for **Pack outside edits** afterwards.
+- **Game updates:** GameUpdate's settings are no longer written while a game update is stopped on a conflict, which left **Versions** unable to cancel the update; the same goes for the **Speaker slips** your assistant fixes and for preparing the game in **Set up**.
 - **Maps & events:** text that is already finished is no longer sent again on every run: a line the game wrote in English inside 【】, whose translation replaced the game's own English, a translated message whose only Japanese is inside a plugin code such as `\SA[...]`, map names and event labels from map notes; those labels (`<LB>`, `<LB:...>`, `<namePop:...>`, `<dn:...>`) now count in **Lines**, so a map no longer reads done with them still in Japanese.
 - **Maps & events:** an event label from a map note (`<LB:...>`, `<namePop:...>`, `<dn:...>`) now translates only the label and leaves the note's other tags alone: `<dn:古びた井戸><Shadow:false>` no longer loses `<Shadow:false>`, and `<dn:井戸><Sound:井戸>` keeps its sound name.
 - **Line widths:** after you save new widths, text that still does not fit even rewrapped, such as help that needs more rows than its window shows, is listed under **Too long to fit** with its file and place, and saving a Dialogue narrower than With portrait says that With portrait was lowered to match; before, nothing on the page showed either.
