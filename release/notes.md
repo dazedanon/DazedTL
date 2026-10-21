@@ -7,6 +7,7 @@
 ### Fixed
 
 - **Maps & events:** the names, nicknames and profiles events give characters (Change Name, Change Nickname and Change Profile) are now translated and counted in **Lines**, like the database's own; before, they stayed in Japanese unless **Event text sources** turned them on, while the file read done. In a project translated before, each file holding them now counts them as lines left, and **Translate** sends only them.
+- **Assistant-led:** your assistant's first preparation of a VX Ace game now converts its data, unpacking an encrypted `Game.rgss3a` and moving it into `.dazedtl/ace` as Guided's **Convert Ace data** does; before, preparation stopped until the data was converted with tools Assistant-led doesn't have, and a game whose archive still sat beside `Game.exe` refused every write with advice to use Set up, which Assistant-led doesn't have.
 - **Assistant-led:** in a VX Ace game, the text your assistant writes, and the text refitted when it saves Line widths, is now packed into the `Data` files the game reads, so playing the game folder shows the translation; before, the game kept showing the Japanese.
 - **Set up:** in a VX Ace game, formatting the game data now packs it into `Data`, so **Release** no longer asks for **Pack outside edits** afterwards.
 - **Game updates:** GameUpdate's settings are no longer written while a game update is stopped on a conflict, which left **Versions** unable to cancel the update; the same goes for the **Speaker slips** your assistant fixes and for preparing the game in **Set up**.
