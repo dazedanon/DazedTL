@@ -78,7 +78,8 @@ export function phaseView(w: GuidedWorkspace): TaskView {
     !!pendingBatches.length;
   // A file a Live run is still translating has only partial output to apply,
   // and one no run translated has nothing to apply.
-  const translatedOutputs = savedTranslations(state).outputs;
+  const { outputs: translatedOutputs, applied: appliedOutputs } =
+    savedTranslations(state);
   const applyFiles = selectedNames.filter(
     (name) =>
       translatedOutputs.includes(name) &&
@@ -307,7 +308,10 @@ export function phaseView(w: GuidedWorkspace): TaskView {
           ownRun ? { run_id: ownRun.id } : {},
           !baseline ||
             !!state.collectionError ||
-            applyFiles.some((name) => changed.includes(name)),
+            applyFiles.some((name) => changed.includes(name)) ||
+            // The files' rows read Applied, so Apply has nothing to do.
+            (applyFiles.every((name) => appliedOutputs.includes(name)) &&
+              "Saved translations applied."),
           "default",
           applyFiles,
         )}
