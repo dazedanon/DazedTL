@@ -341,7 +341,7 @@
 }
 /* A long scope list needs a fixed sheet to scroll in; a short one sizes the
    review to its content. The flow keeps its size from progress to review;
-   a no-requests result sizes to its one line. */
+   a no-requests or failed result sizes to its message. */
 .guided-sheet.translation-review:has(.guided-preview-files),
 .guided-sheet.translation-flow:not(.translation-flow--result),
 .guided-sheet.prepared-request-preview {
