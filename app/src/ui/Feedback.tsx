@@ -39,21 +39,21 @@ export function Feedback({
           <span className="unsaved-dot" />
           Unsaved changes
         </>
+      ) : notice ? (
+        // A long result stays an excerpt beside its control, as errors do,
+        // and its mark reads in its first line, so a wrapped result keeps it.
+        <ExpandableText
+          key={notice}
+          text={notice}
+          label="Result details"
+          appearance="inline"
+          lines={2}
+          lead={<Check size={15} className="feedback-mark" />}
+        />
       ) : (
         <>
           <Check size={15} />
-          {notice ? (
-            // A long result stays an excerpt beside its control, as errors do.
-            <ExpandableText
-              key={notice}
-              text={notice}
-              label="Result details"
-              appearance="inline"
-              lines={2}
-            />
-          ) : (
-            "All changes saved"
-          )}
+          All changes saved
         </>
       )}
     </div>

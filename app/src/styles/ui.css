@@ -669,6 +669,11 @@ main:has(> .page-layout--wide) {
 .feedback.error {
   color: var(--color-error-text);
 }
+.feedback .feedback-mark {
+  display: inline-block;
+  margin-inline-end: var(--space-2);
+  vertical-align: middle;
+}
 /* An expanded result scrolls in its own space instead of growing its bar or
    row past the page. */
 .feedback > .expandable-text,
@@ -1236,6 +1241,11 @@ main:has(> .page-layout--wide) {
 .action-row:has(> .action-row-actions > .action-row-feedback) {
   align-items: start;
 }
+/* An action that follows the result, such as opening what it made, keeps
+   the result's edge. */
+.action-row-feedback > .action-control--inline {
+  justify-content: flex-end;
+}
 .action-row-actions > .actions {
   margin-top: 0;
   flex-wrap: wrap;
@@ -1257,6 +1267,12 @@ main:has(> .page-layout--wide) {
   .action-row-actions > .actions {
     justify-content: flex-start;
     max-width: 100%;
+  }
+  .action-row-actions > .action-row-feedback {
+    text-align: start;
+  }
+  .action-row-feedback > .action-control--inline {
+    justify-content: flex-start;
   }
   /* As specific as the wide rule it overrides, so feedback follows the
      controls to the start. */
