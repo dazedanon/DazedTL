@@ -1730,6 +1730,9 @@ class GuidedTests(unittest.TestCase):
             )
             self.assertEqual(review["paths"], ["Items.json"])
             self.assertEqual(review["options"]["run_id"], identity)
+            # Translate's Apply names its run too; History listed a run's
+            # first Apply as a reapply.
+            self.assertEqual(review["label"], "Apply selected saved outputs")
             self.assertEqual(read_json(self.source / "Items.json"), [{"name": "薬"}])
             write_json(self.source / "Items.json", [{"name": "Edit after review"}])
             # Runtime edits are accepted by explicit overwrite and backed up.
@@ -1757,11 +1760,12 @@ class GuidedTests(unittest.TestCase):
             job["status"] = "complete"
             # A complete Live run's saved output reapplies like a Batch's.
             job["mode"] = "translate"
+            again = self.guided.preview(
+                self.identity, "export_selected", options={"run_id": identity}
+            )
             self.assertEqual(
-                self.guided.preview(
-                    self.identity, "export_selected", options={"run_id": identity}
-                )["paths"],
-                ["Items.json"],
+                (again["paths"], again["label"]),
+                (["Items.json"], "Reapply saved run output"),
             )
             job["mode"] = "batch"
             for files in (

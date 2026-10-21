@@ -3390,11 +3390,9 @@ class PluginService:
         }
         return preview
 
-    def _publish_file(self, root, path, raw):
-        target = project_path(root, path)
-        mode = target.stat().st_mode & 0o777
-        write_bytes(target, raw)
-        target.chmod(mode)
+    @staticmethod
+    def _mode(root, path):
+        return project_path(root, path).stat().st_mode & 0o777
 
     def publication_manifest(self, project_id, rows):
         _, root = self.record(project_id)
@@ -3490,15 +3488,24 @@ class PluginService:
         """Backs up and writes a checked batch, rolling back what it wrote if
         any file fails. A VX Ace game's scripts are then packed into the
         Data/Scripts.rvdata2 the game reads."""
+        project, root = self.record(project_id)
+        with self.backend.game_write(
+            root,
+            project.get("backend_id"),
+            paths=[row["path"] for row in preview["files"]],
+            subject="The scripts",
+        ) as game:
+            receipt, completed = self._publish(project_id, value, preview, root, game)
+        # Read once the gateway packed a VX Ace game's scripts.
+        return {
+            "receipt": receipt_view(receipt, value["files"]),
+            "state": self.state(project_id),
+            "completed": len(completed),
+        }
+
+    def _publish(self, project_id, value, preview, root, game):
         token = preview["token"]
         mode = preview["mode"]
-        project, root = self.record(project_id)
-        scripts = project["engine"] == "ACE" and any(
-            row["path"].startswith(ACE_SCRIPTS + "/") for row in preview["files"]
-        )
-        blocked = scripts and self.backend.guided_ace_blocked(root)
-        if blocked:
-            raise ValueError(blocked)
         publication = deepcopy(preview)
         publication["id"] = token
         prior_manifest = lifecycle(self.translation.workspace, project_id).get(
@@ -3552,7 +3559,7 @@ class PluginService:
                         "Runtime changed during publication: " + row["path"]
                     )
                 written.append((row, raw))
-                self._publish_file(root, row["path"], candidate)
+                game.put(row["path"], candidate, self._mode(root, row["path"]))
         except Exception as exc:  # noqa: BLE001
             failure = str(exc)
             for row, raw in reversed(written):
@@ -3564,7 +3571,7 @@ class PluginService:
                         raise ValueError(
                             "File changed after publication; rollback left it untouched."
                         )
-                    self._publish_file(root, row["path"], raw)
+                    game.put(row["path"], raw, self._mode(root, row["path"]))
                 except Exception as rollback:  # noqa: BLE001
                     conflicts.append(row["path"] + ": " + str(rollback))
         completed = [
@@ -3594,23 +3601,7 @@ class PluginService:
                 + failure
                 + (" Recovery conflicts: " + "; ".join(conflicts) if conflicts else "")
             )
-        if scripts:
-            try:
-                self.backend.guided_ace_pack(
-                    root,
-                    project.get("backend_id"),
-                    [row["path"] for row in preview["files"]],
-                )
-            except (OSError, ValueError, KeyError) as error:
-                raise ValueError(
-                    "The scripts are in ace_json, but the game's data could not be "
-                    f"updated: {error} Pack outside edits, in Release, tries again."
-                ) from error
-        return {
-            "receipt": receipt_view(receipt, value["files"]),
-            "state": self.state(project_id),
-            "completed": len(completed),
-        }
+        return receipt, completed
 
     def finish(self, project_id, value, receipt):
         _, root = self.record(project_id)

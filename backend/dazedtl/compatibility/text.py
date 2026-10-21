@@ -972,6 +972,9 @@ def prepare_publication(plan):
         overwrite=action == "export_selected",
         sources=sources,
         written=written,
+        run=(plan.get("run_output") or {}).get("run_id")
+        if action == "export_selected"
+        else None,
         task=options["task"] if action in {"qa_apply", "qa_undo"} else None,
         findings=options.get("findings", []) + options.get("proposals", [])
         if action in {"qa_apply", "qa_undo"}

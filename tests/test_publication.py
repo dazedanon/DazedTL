@@ -5,6 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+from dazedtl.compatibility import game_write
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation import publication as p
 from dazedtl.translation.files import read_json
@@ -56,12 +57,12 @@ class PublicationTests(unittest.TestCase):
         # made in between must be backed up again before it is overwritten.
         during = b'{"text":"manual edit while publishing"}'
 
-        def editing(path, raw):
+        def editing(path, raw, mode=0o644):
             write_bytes(path, raw)
             if path == self.root / "data/A.json":
                 write_bytes(self.root / "data/B.json", during)
 
-        with patch.object(p, "write_bytes", side_effect=editing):
+        with patch.object(game_write, "write_bytes", side_effect=editing):
             result = p.publish(self.folder, self.root, plan)
         self.assertEqual(
             {name: (self.root / name).read_bytes() for name in self.after}, self.after
@@ -151,13 +152,13 @@ class PublicationTests(unittest.TestCase):
     def test_write_then_raise_rolls_back_the_attempted_batch_and_retains_backups(self):
         plan = p.freeze(self.folder, self.root, self.after, "export_selected")
 
-        def failing(path, raw):
+        def failing(path, raw, mode=0o644):
             write_bytes(path, raw)
             if path == self.root / "data/B.json" and raw == self.after["data/B.json"]:
                 raise OSError("generated second-file write failure")
 
         with (
-            patch.object(p, "write_bytes", side_effect=failing),
+            patch.object(game_write, "write_bytes", side_effect=failing),
             self.assertRaisesRegex(ValueError, "rolled back"),
         ):
             p.publish(self.folder, self.root, plan)
@@ -200,7 +201,7 @@ class PublicationTests(unittest.TestCase):
     ):
         plan = p.freeze(self.folder, self.root, self.after, "fit_text")
 
-        def failing(path, raw):
+        def failing(path, raw, mode=0o644):
             if path == self.root / "data/A.json" and raw == self.before["data/A.json"]:
                 raise OSError("generated rollback failure")
             write_bytes(path, raw)
@@ -208,7 +209,7 @@ class PublicationTests(unittest.TestCase):
                 raise OSError("generated publication failure")
 
         with (
-            patch.object(p, "write_bytes", side_effect=failing),
+            patch.object(game_write, "write_bytes", side_effect=failing),
             self.assertRaisesRegex(ValueError, "Review restore"),
         ):
             p.publish(self.folder, self.root, plan)

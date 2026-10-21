@@ -30,8 +30,9 @@ Flags:
   Git operation.
 - `source_backup`: makes or chooses the source backup, so it runs before one
   exists.
-- `publication`: writes game text as a reviewed publication, frozen at review
-  with backups and a receipt; on VX Ace the worker packs it into Data.
+- `writes_text`: writes the game's text, which on VX Ace the game-write
+  gateway packs into Data, so its review refuses while an RGSS archive sits
+  beside Game.exe.
 - `restorable`: History restores its batch.
 - `isolated`: may start while isolated translation workers run.
 - `tools`: installs or configures the MV/MZ playtest tools, which need their
@@ -88,7 +89,7 @@ class ActionSpec:
     one_click: bool = False
     ready: bool = False
     source_backup: bool = False
-    publication: bool = False
+    writes_text: bool = False
     restorable: bool = False
     isolated: bool = False
     tools: bool = False
@@ -147,7 +148,7 @@ ROWS = (
         "apply",
         handler=PUBLISH,
         ready=True,
-        publication=True,
+        writes_text=True,
         isolated=True,
         reports_outcome=True,
     ),
@@ -157,7 +158,7 @@ ROWS = (
         "text",
         handler=PUBLISH,
         ready=True,
-        publication=True,
+        writes_text=True,
     ),
     # QA applies its finished findings, and undoes one, in one click; History
     # restores each batch.
@@ -168,7 +169,7 @@ ROWS = (
         handler=PUBLISH,
         one_click=True,
         ready=True,
-        publication=True,
+        writes_text=True,
         restorable=True,
         reports_outcome=True,
     ),
@@ -179,7 +180,7 @@ ROWS = (
         handler=PUBLISH,
         one_click=True,
         ready=True,
-        publication=True,
+        writes_text=True,
         restorable=True,
     ),
     # Preparation
@@ -237,6 +238,7 @@ ROWS = (
         handler=ACE,
         one_click=True,
         ready=True,
+        writes_text=True,
         reports_outcome=True,
     ),
     # Text QA
@@ -270,7 +272,6 @@ ROWS = (
         handler=PLAYTEST + ":run_fixes",
         one_click=True,
         ready=True,
-        publication=True,
         restorable=True,
     ),
     ActionSpec(
@@ -374,7 +375,7 @@ ROWS = (
         "Fit text to the new Line widths",
         "background",
         handler="dazedtl.compatibility.text:run_fit",
-        publication=True,
+        writes_text=True,
         restorable=True,
     ),
     ActionSpec(

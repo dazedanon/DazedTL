@@ -927,8 +927,39 @@ def parse(codeList, i, headerString, jaString):
                     ],
                 )
 
+    def test_a_game_write_waits_for_an_unfinished_git_operation(self):
+        # A file written during a game update's stopped merge leaves Versions
+        # unable to cancel the update; Line widths, Plugin files, Images and
+        # playtest fixes each once wrote without this check.
+        from dazedtl.compatibility.game_write import GameWrite, write_game
+
+        with TemporaryDirectory() as temporary:
+            game = Path(temporary)
+            (game / ".git").mkdir()
+            status = {
+                "configured": True,
+                "pending_operations": ["CHERRY_PICK_HEAD"],
+                "current_branch": "translation",
+                "translation_branch": "translation",
+            }
+            with patch("util.len_git.git_status", return_value=status):
+                with (
+                    self.assertRaisesRegex(ValueError, "unfinished Git cherry-pick"),
+                    write_game(game),
+                ):
+                    self.fail("The write ran mid cherry-pick.")
+                status["pending_operations"] = []
+                with write_game(game) as written:
+                    written.put("data/Items.json", b"[]")
+            self.assertEqual((game / "data/Items.json").read_bytes(), b"[]")
+            # The suite fails app code that writes a game file any other way,
+            # though DazedTL's own records may be written directly.
+            GameWrite(game).put(".dazedtl/plugin-work/state.json", b"{}")
+            with self.assertRaisesRegex(RuntimeError, "outside the game-write gateway"):
+                GameWrite(game).put("data/Items.json", b"[{}]")
+
     def test_ace_packing_saves_a_receipt_only_when_every_export_was_packed(self):
-        from dazedtl.compatibility.guided import publish_ace
+        from dazedtl.compatibility.game_write import write_game
         from dazedtl.translation.release import packing_state
 
         with TemporaryDirectory() as temporary:
@@ -989,15 +1020,11 @@ def parse(codeList, i, headerString, jaString):
                 # A write to the game's text packs the exports changed since
                 # the receipt, and the receipt stays current.
                 def write(name):
-                    def run(plan, _log):
-                        write_json(game / name, [None, {"name": "Potion"}])
-                        plan["publication"] = {"files": [{"path": name}]}
-                        return {"files": 1}
-
-                    return run
+                    with write_game(game, folder) as written:
+                        written.put(name, b'[null, {"name": "Potion"}]')
 
                 calls.clear()
-                publish_ace(dict(plan), print, write("ace_json/Items.json"))
+                write("ace_json/Items.json")
                 self.assertEqual(calls, [{"items"}])
                 self.assertTrue(packing_state(native, folder)["current"])
                 # Without a current receipt, as after Data changed outside
@@ -1005,7 +1032,7 @@ def parse(codeList, i, headerString, jaString):
                 # rest of Data to an explicit pack of everything.
                 (game / "Data/Items.rvdata2").write_bytes(b"edited")
                 calls.clear()
-                publish_ace(dict(plan), print, write("ace_json/CommonEvents.json"))
+                write("ace_json/CommonEvents.json")
                 self.assertEqual(calls, [{"commonevents"}])
                 self.assertFalse(packing_state(native, folder)["current"])
                 run_ace(plan, lambda _line: None)
@@ -1013,8 +1040,11 @@ def parse(codeList, i, headerString, jaString):
                 self.assertTrue(packing_state(native, folder)["current"])
                 # An archive the game still reads refuses before the write.
                 (game / "Game.rgss3a").write_bytes(b"RGSSAD")
-                with self.assertRaisesRegex(ValueError, "Convert Ace data"):
-                    publish_ace(dict(plan), print, self.fail)
+                with (
+                    self.assertRaisesRegex(ValueError, "Convert Ace data"),
+                    write_game(game, folder),
+                ):
+                    self.fail("The write ran beside the archive.")
 
     def test_every_action_handler_is_a_worker_function(self):
         # A misspelt handler would fail only once a user runs the action.

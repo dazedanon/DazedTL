@@ -25,6 +25,7 @@ from dazedtl.translation.files import digest, read_json
 from dazedtl.translation.operations import lifecycle_path
 from PIL import Image
 
+from tests.game_writes import game_write
 from tests.test_image_families import TEXTS, backdrop, letter
 from tests.test_image_families import png as rgba_png
 
@@ -131,7 +132,9 @@ class ImageTests(unittest.TestCase):
             clean_drafts=lambda _: None,
             writable=lambda _: None,
         )
-        self.backend = SimpleNamespace(source=self.root / "engine", context=nullcontext)
+        self.backend = SimpleNamespace(
+            source=self.root / "engine", context=nullcontext, game_write=game_write
+        )
         self.service = ImageService(
             self.projects, self.translation, None, self.backend, adapter=self.adapter
         )

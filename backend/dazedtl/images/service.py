@@ -2494,11 +2494,16 @@ class ImageService:
         self._save(project_id, value)
         self.mutating.add(project_id)
         try:
-            result = (
-                self.adapter.apply(root, profile, current, key)
-                if action == "apply"
-                else self.adapter.restore(root, current)
-            )
+            with self.backend.game_write(
+                root,
+                self.projects.get(project_id).get("backend_id"),
+                paths=[row["runtime"] for row in current],
+            ):
+                result = (
+                    self.adapter.apply(root, profile, current, key)
+                    if action == "apply"
+                    else self.adapter.restore(root, current)
+                )
             if not result.get("errors"):
                 with index.connection() as db:
                     for row in current:

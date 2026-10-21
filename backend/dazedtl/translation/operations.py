@@ -345,15 +345,9 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             state["runtime_manifest"] = arguments["manifest"]
     elif action == "line_widths":
         # RPG Maker text is fitted to them as write_rpgmaker writes it, and
-        # the text it already wrote is fitted to them now, which, like any
-        # write, waits for an unfinished Git operation, such as a game
-        # update's merge whose conflicts the game's files still hold.
-        status = engine.git_status(source, options)
-        if status.get("configured") and (issue := checkout_issue(status)):
-            raise ValueError(issue)
+        # the text it already wrote is fitted to them now.
         widths = read_json(project_path(source, arguments["widths"]))
-        result = {"widths": engine.save_line_widths(source, widths)}
-        result.update(engine.fit_rpgmaker(source))
+        result = engine.line_widths(source, widths)
     elif action in {"write_rpgmaker", "rebase_rpgmaker"}:
         require_baseline(engine, source, options, state)
         output = project_path(source, arguments["output"], exists=False)
