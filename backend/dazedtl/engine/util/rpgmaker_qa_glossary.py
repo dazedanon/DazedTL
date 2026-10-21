@@ -122,7 +122,7 @@ class Term:
 
 
 def glossary_lines(
-    text: str,
+    text: str | None,
 ) -> list[tuple[tuple[tuple[str, str], ...], str, str, bool]]:
     """The glossary's lines as (pairs, line, section, is_base): each
     `source (translation)` pair of a line that lists several, and the whole

@@ -285,7 +285,7 @@ _RENDERED_TEXT_CODES = frozenset({
 })
 
 
-def _render_commands(commands: list[dict], indent: str) -> list[str]:
+def _render_commands(commands: list[dict] | None, indent: str) -> list[str]:
     out = []
     for command in commands or []:
         code = command.get("code")

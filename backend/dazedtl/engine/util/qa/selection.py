@@ -478,7 +478,7 @@ def _scene_items(
     for (signature, cluster_id), reasons in _pronoun_context_requirements(
         groups, compact
     ).items():
-        if earlier(cluster_id) and reviewed.scene(
+        if reviewed is not None and earlier(cluster_id) and reviewed.scene(
             "scene-" + signature[:20],
             (
                 (record["source"], record["live"])
@@ -872,7 +872,7 @@ def _command_number(identity: str) -> int | None:
     return position[1] if position else None
 
 
-def _glossary_entries(text: str) -> list[tuple[list[str], list[str], str]]:
+def _glossary_entries(text: str | None) -> list[tuple[list[str], list[str], str]]:
     """Each glossary line's Japanese forms, its English and the whole line,
     whose notes, such as a character's gender, stay with it."""
     return [

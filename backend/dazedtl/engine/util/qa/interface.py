@@ -200,7 +200,7 @@ def _fit_checks(
         written = _fit(live, live, box, str(record.get("source") or ""))
         if reason := rewrap.misfit(written, window):
             note = f"Wrapped to the game's Line widths, this text {reason}."
-        elif box.get("help") and (
+        elif box and box.get("help") and (
             reason := rewrap.rows_misfit(
                 blocks.help_shown(box["help"], written.split("\n")), window
             )

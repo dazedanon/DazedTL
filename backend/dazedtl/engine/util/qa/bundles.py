@@ -147,10 +147,11 @@ def _own_index(
 ) -> dict[str, Any]:
     """A follow-up bundle's own screen index, for lines the task's index,
     made before any review, does not hold."""
+    index = screen_index or {}
     entries = {
-        target: screen_index[target]
+        target: index[target]
         for item in items for target in _item_targets(item)
-        if target in (screen_index or {})
+        if target in index
     }
     return {"screen_index": entries} if entries else {}
 
@@ -286,25 +287,29 @@ def _bundle_deep(items: list[dict], first: int = 1) -> list[dict]:
     size = 0
     seen: set[str] = set()
     for entry in prepared:
-        item, scenes, motifs = entry
-        new = [scene for scene in scenes if scene["scene_id"] not in seen] + [
-            motif for motif in motifs if motif["id"] not in seen
+        item, item_scenes, item_motifs = entry
+        new = [scene for scene in item_scenes if scene["scene_id"] not in seen] + [
+            motif for motif in item_motifs if motif["id"] not in seen
         ]
         extra = len(_canonical_bytes(item)) + len(_canonical_bytes(new))
         # An item whose scene the bundle prints already stays with it, since
         # another bundle would print that scene again: on Fuuma Chronicle,
         # two items of one 1,117-line scene printed it twice.
-        shared = any(scene["scene_id"] in seen for scene in scenes)
+        shared = any(scene["scene_id"] in seen for scene in item_scenes)
         if current and (
             len(current) >= DEFAULT_DEEP_ITEM_LIMIT
             or not shared and size + extra > DEFAULT_DEEP_CHAR_BUDGET
         ):
             groups.append(current)
             current, size, seen = [], 0, set()
-            extra = len(_canonical_bytes(item)) + len(_canonical_bytes(scenes + motifs))
+            extra = len(_canonical_bytes(item)) + len(
+                _canonical_bytes(item_scenes + item_motifs)
+            )
         current.append(entry)
         size += extra
-        seen |= {scene["scene_id"] for scene in scenes} | {motif["id"] for motif in motifs}
+        seen |= {scene["scene_id"] for scene in item_scenes} | {
+            motif["id"] for motif in item_motifs
+        }
     if current:
         groups.append(current)
     bundles = []

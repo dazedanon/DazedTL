@@ -120,7 +120,7 @@ def _consistency_conflicts(
                 if (
                     decision.get("source")
                     and decision["source"] in str(change["source"])
-                    and decision.get("translation") not in str(change["correction"])
+                    and decision["translation"] not in str(change["correction"])
                 ):
                     conflicts[finding["id"]].append({
                         "kind": "hard",

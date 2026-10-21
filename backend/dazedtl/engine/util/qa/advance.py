@@ -236,6 +236,7 @@ def _issue_deep(root: Path, checkpoint: dict[str, Any], final: bool) -> int:
         for row in rows if row["status"] in {"pending", "assigned"}
         for item in _read_json(Path(row["path"]))["items"]
     }
+    ready: set[str] = set()
     if not final:
         candidates = set(deep.get("candidate_reasons") or {}) | {
             observation["cluster_id"]

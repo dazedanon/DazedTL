@@ -62,7 +62,7 @@ def _window(record: dict[str, Any], layout: dict[str, Any]) -> rewrap.Box | None
     if code == 325:
         return rewrap.help_box(widths, source, dialogue=True)
     if code == 357:
-        plugin = (record.get("risky_context") or {}).get("plugin_header")
+        plugin = (record.get("risky_context") or {}).get("plugin_header") or ""
         key = record["live_pointers"][0].rsplit("/", 1)[-1]
         if key in rewrap.MESSAGE_PLUGIN_TEXT.get(plugin, ()):
             return rewrap.message_box(widths)
@@ -198,7 +198,7 @@ def _fitted(
     boxes = [_box(target, layout) for target in targets]
     if not boxes or not all(box and box.get("wraps") for box in boxes):
         return correction
-    narrowest = min(boxes, key=lambda box: box["width"])
+    narrowest = min((box for box in boxes if box), key=lambda box: box["width"])
     return _fit(correction, live, narrowest, targets[0].get("source"))
 
 
