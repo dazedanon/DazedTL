@@ -18,6 +18,8 @@ root, temporary = map(Path, sys.argv[1:])
 sys.path.insert(0, str(root / "backend/dazedtl/engine"))
 
 from util import rpgmaker_qa as qa
+from util import rpgmaker_screens
+from util.qa import ledger as qa_ledger
 
 game = temporary / "game"
 data = game / "data"
@@ -134,7 +136,7 @@ def capture(
     return listing
 
 
-qa.rpgmaker_screens.capture = capture
+rpgmaker_screens.capture = capture
 PLAYTEST = {
     "identity": "Weapons.json#/2/name",
     "categories": ["meaning"],
@@ -293,7 +295,7 @@ assert (finding["current"], finding["correction"]) == (LONG, SHORT), finding
 spear_pair = qa._pair_key("古代の槍", SPEAR)
 # The ledger is made under the task's lock, which a follow-up round holds
 # while it reopens the task, so no ledger made meanwhile outlives it.
-derive, held = qa._derive_ledger, []
+derive, held = qa_ledger._derive_ledger, []
 
 
 def deriving(*arguments):
@@ -302,9 +304,9 @@ def deriving(*arguments):
     return derive(*arguments)
 
 
-qa._derive_ledger = deriving
+qa_ledger._derive_ledger = deriving
 assert spear_pair in qa._task_ledger(task)["pairs"]
-qa._derive_ledger = derive
+qa_ledger._derive_ledger = derive
 assert held == [True], held
 # The spear, which deep review kept as the playtest asked about, is squeezed
 # too now.

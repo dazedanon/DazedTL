@@ -14,6 +14,11 @@ sys.path.insert(0, str(root / "backend"))
 
 from dazedtl.compatibility.playtest import reviewing
 from util import rpgmaker_qa as qa
+from util import rpgmaker_qa_manifest, rpgmaker_qa_verify
+from util.qa import apply as qa_apply
+from util.qa import ledger as qa_ledger
+from util.qa import prepare as qa_prepare
+from util.qa import storage as qa_storage
 
 game = temporary / "game"
 data = game / "data"
@@ -353,7 +358,7 @@ finish(everything, set(), {})
 # An update that derives otherwise from the text, such as each line's
 # mechanical evidence, leaves a task of the same text current: preparing again
 # goes on with it, and its inventory reads as the game's.
-build, verify = qa.build_manifest, qa.verify_manifest
+build, verify = rpgmaker_qa_manifest.build_manifest, rpgmaker_qa_verify.verify_manifest
 
 
 def rebuilt_manifest(*arguments):
@@ -365,7 +370,7 @@ def rebuilt_manifest(*arguments):
     return manifest
 
 
-screen_items = qa._screen_items
+screen_items = qa_prepare._screen_items
 
 
 def hinted(*arguments):
@@ -377,14 +382,16 @@ def hinted(*arguments):
     return items, index
 
 
-qa.build_manifest = rebuilt_manifest
-qa.verify_manifest = lambda *_arguments: {"valid": True, "errors": []}
+for module in (qa_ledger, qa_prepare, qa_apply):
+    module.build_manifest = rebuilt_manifest
+for module in (qa_prepare, qa_apply):
+    module.verify_manifest = lambda *_arguments: {"valid": True, "errors": []}
 assert prepare() == everything
-assert qa.inventory_matches(everything, qa.build_manifest(data, "release"))
+assert qa.inventory_matches(everything, rebuilt_manifest(data, "release"))
 # Bumping QA's rules version makes another task, which a rebuild fills from a
 # finished screen read from the same earlier reviews, here every line.
-qa.QA_RULES_VERSION += 1
-qa._screen_items = hinted
+qa_storage.QA_RULES_VERSION = qa_prepare.QA_RULES_VERSION = qa.QA_RULES_VERSION + 1
+qa_prepare._screen_items = hinted
 rebuilt, state = qa.rebuild_deep_from_screen(everything)
 assert rebuilt != everything and state["screen"]["accepted"] == 7, state
 # One that can't keep it leaves no task behind.
@@ -397,9 +404,12 @@ except ValueError as error:
 else:
     raise AssertionError("A screen of other text was reused.")
 assert set(rebuilt.parent.iterdir()) == tasks
-qa.QA_RULES_VERSION -= 1
-qa.build_manifest, qa.verify_manifest = build, verify
-qa._screen_items = screen_items
+qa_storage.QA_RULES_VERSION = qa_prepare.QA_RULES_VERSION = qa.QA_RULES_VERSION
+for module in (qa_ledger, qa_prepare, qa_apply):
+    module.build_manifest = build
+for module in (qa_prepare, qa_apply):
+    module.verify_manifest = verify
+qa_prepare._screen_items = screen_items
 write_game(LINES)
 
 

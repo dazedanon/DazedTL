@@ -13,9 +13,15 @@ root, temporary = map(Path, sys.argv[1:])
 sys.path.insert(0, str(root / "backend/dazedtl/engine"))
 
 from util import rpgmaker_qa as qa
+from util import rpgmaker_script_strings as script_strings
+from util.qa import advance as qa_advance
+from util.qa import claims as qa_claims
+from util.qa import pace as qa_pace
+from util.qa import prepare as qa_prepare
+from util.qa import storage as qa_storage
 
 # Deep bundles open as soon as one screened cluster is ready.
-qa.EARLY_DEEP_BATCH = 1
+qa_advance.EARLY_DEEP_BATCH = 1
 
 game = temporary / "game"
 data = game / "data"
@@ -349,7 +355,7 @@ def claimed(text):
 # its text uses, and accept --next accepts it and prints the following one,
 # until the run has reviewed its share and a fresh run continues; runs of two
 # bundles take this reviewer's four in two runs.
-qa.RUN_BUNDLES = 2
+qa_claims.RUN_BUNDLES = 2
 qa.brief(task, "worker", "screen-a")
 text = qa.claim(task, "screen-a")
 printed = []
@@ -370,7 +376,7 @@ while row := claimed(text):
     )
     if "stop now" in text:
         assert (
-            runs[-1] == qa.RUN_BUNDLES
+            runs[-1] == qa_claims.RUN_BUNDLES
             and qa.status(task)["screen"]["assigned_workers"] == []
         ), text
         qa.brief(task, "worker", "screen-a")
@@ -514,7 +520,7 @@ qa.next_bundle(task, "deep-a")
 assert qa.status(task)["stage"] == "deep"
 # A task in review when an update bumps QA's rules version takes no more
 # review, and QA is prepared again.
-qa.QA_RULES_VERSION += 1
+qa_storage.QA_RULES_VERSION = qa_prepare.QA_RULES_VERSION = qa.QA_RULES_VERSION + 1
 assert qa.status(task)["rules_changed"]
 try:
     qa.next_bundle(task, "deep-a")
@@ -522,7 +528,7 @@ except ValueError as error:
     assert "prepare QA again" in str(error), error
 else:
     raise AssertionError("A task in review went on under other rules.")
-qa.QA_RULES_VERSION -= 1
+qa_storage.QA_RULES_VERSION = qa_prepare.QA_RULES_VERSION = qa.QA_RULES_VERSION
 # Deep review and the context view leave the set-aside scene out, even its
 # Japanese residue, which would otherwise force deep review, and even for its
 # last reviewer.
@@ -793,10 +799,10 @@ assert FOREST_NOTE not in {
     for evidence in item.get("screen_evidence") or []
 }
 # A worker that stops answering loses its bundle to the next idle one.
-qa.STALL_MINIMUM_SECONDS = 0
+qa_pace.STALL_MINIMUM_SECONDS = 0
 stalled = qa.next_bundle(task, "sweep-slow")
 row = qa.next_bundle(task, "sweep-a")
-qa.STALL_MINIMUM_SECONDS = 20 * 60
+qa_pace.STALL_MINIMUM_SECONDS = 20 * 60
 assert row["id"] == stalled["id"] and row["reassigned_from"] == "sweep-slow", row
 (family,) = bundle_of(row)["items"]
 assert sorted(row["current"] for row in family["candidates"]) == [
@@ -1141,7 +1147,7 @@ assert [
 # A finished task keeps its results through any update: under another rules
 # version it reads as it stood and its findings still apply, while Undo still
 # needs the game to hold what the apply wrote.
-qa.QA_RULES_VERSION += 1
+qa_storage.QA_RULES_VERSION = qa_prepare.QA_RULES_VERSION = qa.QA_RULES_VERSION + 1
 assert not qa.status(task)["rules_changed"]
 try:
     apply(qa.correction_map(task, [stratum], undo=True))
@@ -1151,7 +1157,7 @@ else:
     raise AssertionError("A correction no longer in the game was undone.")
 assert apply(qa.correction_map(task, [stratum]))
 assert message(STRATUM["_original"]) == "Rest on the first stratum"
-qa.QA_RULES_VERSION -= 1
+qa_storage.QA_RULES_VERSION = qa_prepare.QA_RULES_VERSION = qa.QA_RULES_VERSION
 
 # Database checks send what reviewers read apart to deep review with their
 # evidence: two skills that show one name, an MZ state message that prints
@@ -1457,7 +1463,7 @@ assert as_read == {
     },
 }, as_read
 for original, quote in ((NICKNAME, "`"), (GREETING, '"')):
-    assert as_read[original]["correction"] == qa.script_strings.text(
+    assert as_read[original]["correction"] == script_strings.text(
         WRITTEN[original], quote
     ), original
 # A line reported as not corrected reads the same way, and asks nothing.
