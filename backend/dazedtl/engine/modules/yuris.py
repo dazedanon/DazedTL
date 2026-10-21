@@ -18,6 +18,7 @@ from util.translation import (
     getPricingConfig,
     translateAI as sharedtranslateAI,
 )
+from util import system
 
 
 MODEL = os.getenv("model")
@@ -330,7 +331,7 @@ def save_progress_json(data, filename):
         try:
             with os.fdopen(tmp_fd, "w", encoding="utf-8", newline="\n") as tmp_file:
                 json.dump(data, tmp_file, ensure_ascii=False, indent=4)
-            os.replace(tmp_path, target)
+            system.replace(tmp_path, target)
         finally:
             if os.path.exists(tmp_path):
                 try:

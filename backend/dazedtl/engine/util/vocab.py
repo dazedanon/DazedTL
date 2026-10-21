@@ -29,6 +29,7 @@ from util.paths import (
     read_active_glossary,
     read_game_glossary,
 )
+from util import system
 
 BASE_SEPARATOR = GLOSSARY_BASE_SEPARATOR
 
@@ -74,7 +75,7 @@ def write_batch_glossary_freeze(text: str) -> Path:
         + f".{os.getpid()}.{threading.get_ident()}.tmp"
     )
     tmp.write_text(text, encoding="utf-8", newline="\n")
-    os.replace(tmp, BATCH_GLOSSARY_FREEZE_FILE)
+    system.replace(tmp, BATCH_GLOSSARY_FREEZE_FILE)
     return BATCH_GLOSSARY_FREEZE_FILE
 
 
@@ -384,7 +385,7 @@ def update_vocab_section(
             glossary_path.suffix + f".{os.getpid()}.{threading.get_ident()}.tmp"
         )
         tmp_path.write_text(combined, encoding="utf-8", newline="\n")
-        os.replace(tmp_path, glossary_path)
+        system.replace(tmp_path, glossary_path)
 
 
 def merge_reviewed_character_names(content: str, pairs) -> str:
@@ -465,4 +466,4 @@ def remove_vocab_section(category: str, *, game_root=None) -> None:
             glossary_path.suffix + f".{os.getpid()}.{threading.get_ident()}.tmp"
         )
         tmp_path.write_text(combined, encoding="utf-8", newline="\n")
-        os.replace(tmp_path, glossary_path)
+        system.replace(tmp_path, glossary_path)
