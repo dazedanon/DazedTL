@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -88,16 +89,13 @@ class GuidedContext:
                 },
             }
         thorough = self.guided.saved_form(project_id)["thorough_investigation"]
-        if name == "setup":
-            # The setup task saves the reference games' overlaps, which may
-            # add DazedTL's rules to the game's .gitignore.
-            with self.guided.backend.game_write(
-                native["source"], native["id"], pack=False
-            ):
-                text = self.guided.backend.workflows.skill(
-                    native["id"], name, thorough=thorough
-                )
-        else:
+        # The setup task saves the reference games' overlaps, which may add
+        # DazedTL's rules to the game's .gitignore.
+        with (
+            self.guided.backend.game_write(native["source"], native["id"], pack=False)
+            if name == "setup"
+            else nullcontext()
+        ):
             text = self.guided.backend.workflows.skill(
                 native["id"], name, thorough=thorough
             )

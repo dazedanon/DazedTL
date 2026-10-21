@@ -462,7 +462,8 @@ def run(engine, plan, log):
     function = handler(plan["action"])
     if function is not None:
         return function(plan, log)
-    if not ACTIONS[plan["action"]].tools:
+    row = ACTIONS.get(plan["action"])
+    if not row or not row.tools:
         return engine(plan, log)
     from dazedtl.compatibility.game_write import write_game
 
