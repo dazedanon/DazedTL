@@ -1,5 +1,5 @@
 {
-  "description": "Text Maps & events must send once and then never again: event labels from map notes (<LB> with the event's name, <LB:...>, <namePop:...>, <dn:...>), a message whose only Japanese after translation is a plugin code's argument (\\SA[...]), and a line the game already wrote in English inside 【】.",
+  "description": "Text Maps & events must send once and then never again: event labels from map notes (<LB> with the event's name, <LB:...>, <namePop:...>, <dn:...> followed by another note tag), a message whose only Japanese after translation is a plugin code's argument (\\SA[...]), and a line the game already wrote in English inside 【】.",
   "events": [
     {
       "name": "回想部屋へ",
@@ -219,7 +219,7 @@
     },
     {
       "name": "井戸",
-      "note": "<dn:古びた井戸>",
+      "note": "<dn:古びた井戸><Shadow:false>",
       "x": 6,
       "y": 3,
       "pages": [
