@@ -167,22 +167,41 @@ test("diagnostics map renderer frames to source and keep backend hang records, w
     "render",
     fields.causes.map((cause) => ({ ...cause, message: error.message })),
   );
-  // The backend's hang records reach the report with only their safe fields.
+  // The backend's hang and worker records reach the report with only their
+  // safe fields.
   fs.writeFileSync(
     path.join(checkout, "diagnostics/backend-failures.jsonl"),
-    JSON.stringify({
-      time: "2026-10-09T18:00:00.000Z",
-      event: "operation.stalled",
-      action: "git_setup",
-      seconds: 60,
-      message: "private game text",
-      causes: [
-        {
-          type: "Stack",
-          frames: [{ file: "python/subprocess.py", line: 9, function: "run" }],
-        },
-      ],
-    }) + "\n",
+    [
+      {
+        time: "2026-10-09T18:00:00.000Z",
+        event: "operation.stalled",
+        action: "git_setup",
+        seconds: 60,
+        message: "private game text",
+        causes: [
+          {
+            type: "Stack",
+            frames: [
+              { file: "python/subprocess.py", line: 9, function: "run" },
+            ],
+          },
+        ],
+      },
+      {
+        time: "2026-10-09T18:01:00.000Z",
+        event: "worker.error",
+        action: "fit_text",
+        message: "private game text",
+        causes: [
+          {
+            type: "KeyError",
+            frames: [{ file: "app/worker.py", line: 4, function: "main" }],
+          },
+        ],
+      },
+    ]
+      .map((record) => JSON.stringify(record) + "\n")
+      .join(""),
   );
   const report = await diagnostics.report();
   assert.match(
@@ -192,6 +211,10 @@ test("diagnostics map renderer frames to source and keep backend hang records, w
   assert.match(
     report,
     /"event":"operation.stalled","seconds":60,"action":"git_setup","causes":\[\{"type":"Stack","frames":\[\{"file":"python\/subprocess.py","line":9,"function":"run"\}\]\}\]/,
+  );
+  assert.match(
+    report,
+    /"event":"worker.error","action":"fit_text","causes":\[\{"type":"KeyError","frames":\[\{"file":"app\/worker.py","line":4,"function":"main"\}\]\}\]/,
   );
   assert.doesNotMatch(report, /private|credentials|not-code|index-abc/);
   assert.deepEqual(

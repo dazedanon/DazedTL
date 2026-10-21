@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 import sys
 import threading
-import traceback
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -47,7 +46,8 @@ def main():
         emit("finished", status="failed" if isinstance(result, dict) and result.get("ok") is False else "complete",
              message=result.get("message") or "Completed: " + plan["label"] if isinstance(result, dict) else "Completed: " + plan["label"], result=json_value(result))
     except Exception as exc:
-        traceback.print_exc()
+        from desktop.backend.worker_failures import reported
+        reported(exc)
         emit("finished", status="stopped" if isinstance(exc, InterruptedError) else "failed", message=str(exc))
     finally:
         sys.stdout = PROTOCOL

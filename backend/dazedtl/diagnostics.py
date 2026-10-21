@@ -5,7 +5,9 @@ import logging
 import os
 import sys
 import sysconfig
+import threading
 import traceback
+from contextlib import suppress
 from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -114,7 +116,9 @@ class Diagnostics:
         except OSError, ValueError:
             pass  # Logging must not prevent returning the original error.
 
-    def failure(self, error, operation="startup", request_id=None):
+    def _error(self, error):
+        """An error's type and code locations, with up to two causes; never
+        its message or locals."""
         causes = []
         seen = set()
         current = error
@@ -130,12 +134,20 @@ class Diagnostics:
             ][-8:]
             causes.append({"type": type(current).__name__[:80], "frames": frames})
             current = current.__cause__ or current.__context__
-        fields = {"operation": operation, "causes": causes}
-        if type(request_id) is int and 0 <= request_id <= 2**53 - 1:
-            fields["requestId"] = request_id
+        fields: dict[str, object] = {"causes": causes}
         if isinstance(error, OSError) and isinstance(error.errno, int):
             fields["errno"] = error.errno
+        return fields
+
+    def failure(self, error, operation="startup", request_id=None):
+        fields = {"operation": operation, **self._error(error)}
+        if type(request_id) is int and 0 <= request_id <= 2**53 - 1:
+            fields["requestId"] = request_id
         self._record("backend.error", **fields)
+
+    def worker_failure(self, error, action):
+        """A worker's failure, named by the action it ran."""
+        self._record("worker.error", action=str(action)[:80], **self._error(error))
 
     def stack(self, frame):
         return self.code.stack(frame)
@@ -190,12 +202,39 @@ def _worker_diagnostics():
     )
 
 
-def worker_failure(error, operation):
+def worker_failure(error, action):
     """Records where a worker's unexpected error happened, as the backend
     records its own; the worker's job keeps only a generic message."""
-    diagnostics = _worker_diagnostics()
-    if diagnostics:
-        diagnostics.failure(error, operation)
+    # Recording must not replace the error being reported.
+    with suppress(Exception):
+        diagnostics = _worker_diagnostics()
+        if diagnostics:
+            diagnostics.worker_failure(error, action)
+
+
+def record_crashes(action):
+    """Records an error no code in a worker handled, in any of its threads,
+    as the worker's failure. The worker's standard error still gets the
+    traceback; outside the app it does nothing."""
+    if not os.environ.get(FOLDER):
+        return
+    previous, previous_thread = sys.excepthook, threading.excepthook
+
+    def record(error):
+        # Exiting and interrupting are not failures.
+        if isinstance(error, Exception):
+            worker_failure(error, action)
+
+    def crashed(kind, error, trace):
+        record(error)
+        previous(kind, error, trace)
+
+    def thread_crashed(arguments):
+        record(arguments.exc_value)
+        previous_thread(arguments)
+
+    sys.excepthook = crashed
+    threading.excepthook = thread_crashed
 
 
 def watch_action(action):

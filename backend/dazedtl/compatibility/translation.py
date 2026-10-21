@@ -47,6 +47,14 @@ class ProviderFailure(RuntimeError):
         )
 
 
+def explained(error):
+    """Whether an error's own message says what to fix; any other error is a
+    fault the user can only report."""
+    from util.version_update import GitWorkflowError
+
+    return isinstance(error, (ValueError, OSError, GitWorkflowError, ProviderFailure))
+
+
 def provider_errors(function):
     @wraps(function)
     def call(*args, **kwargs):
@@ -571,17 +579,8 @@ class TranslationEngine:
                         raise ValueError(f"{purpose}: {blob} ended early.")
                     yield blob, raw
 
-    def expected(self, error):
-        """Whether an error's own message says what to fix; any other error
-        is a fault the user can only report."""
-        from util.version_update import GitWorkflowError
-
-        return isinstance(
-            error, (ValueError, OSError, GitWorkflowError, ProviderFailure)
-        )
-
     def error_message(self, error):
-        if self.expected(error):
+        if explained(error):
             return str(error)
         return (
             "Operation failed ("

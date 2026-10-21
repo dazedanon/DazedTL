@@ -318,7 +318,8 @@ def system_environment(*names):
 
 def worker_environment(workspace, plan):
     """A run worker's environment: local runs get no credential and no network."""
-    env = system_environment()
+    # The app's diagnostics folder, where the worker records a crash.
+    env = system_environment("DAZEDTL_DIAGNOSTICS")
     if plan["mode"] == "estimate":
         env.update({key: str(value).lower() if isinstance(value, bool) else str(value) for key, value in plan["settings"].items()})
         env.update(key="local-run-no-credential", API_KEY_OPTIONAL="true", DAZEDTL_TEST_OFFLINE="1")

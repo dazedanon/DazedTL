@@ -3,10 +3,19 @@
 import json
 import runpy
 import sys
+from contextlib import suppress
 from pathlib import Path
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from dazedtl.diagnostics import record_crashes, watch_action, worker_failure
+
+try:
+    action = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["action"]
+except OSError, ValueError, KeyError, TypeError, IndexError:
+    action = "unknown"  # The engine's worker reports the unreadable plan.
+action = str(action)
+record_crashes(action)
 from dazedtl.stdio import private_stdin
 
 # The stop command arrives on standard input while this action runs Git and
@@ -15,7 +24,7 @@ sys.stdin = private_stdin()
 from dazedtl.compatibility.runtime import activate
 
 source = activate()
-from desktop.backend import workflow_actions
+from desktop.backend import worker_failures, workflow_actions
 
 from dazedtl.compatibility.guided import (
     apply_selected,
@@ -23,8 +32,7 @@ from dazedtl.compatibility.guided import (
     run_ace,
     run_release,
 )
-from dazedtl.compatibility.translation import TranslationEngine
-from dazedtl.diagnostics import watch_action
+from dazedtl.compatibility.translation import TranslationEngine, explained
 from dazedtl.translation.guided_inputs import GuidedInputs
 
 original = workflow_actions.run_action
@@ -121,11 +129,18 @@ class Progress:
         return getattr(self.stream, name)
 
 
+def reported(native, error):
+    # The action's finished event shows the error's message, which explains
+    # only the errors that say what to fix. Recording must not stop the
+    # worker from reporting it.
+    with suppress(Exception):
+        if not explained(error):
+            worker_failure(error, action)
+    native(error)
+
+
 workflow_actions.run_action = run_action
-try:
-    action = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["action"]
-except OSError, ValueError, KeyError, TypeError:
-    action = "unknown"  # The engine's worker reports the unreadable plan.
+worker_failures.reported.layer("dazedtl-diagnostics", reported)
 # The worker keeps standard output as its event stream before redirecting it.
-sys.stdout = Progress(sys.stdout, watch_action(str(action)))
+sys.stdout = Progress(sys.stdout, watch_action(action))
 runpy.run_path(str(source / "desktop/backend/workflow_worker.py"), run_name="__main__")

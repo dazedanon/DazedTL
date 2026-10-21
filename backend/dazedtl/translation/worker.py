@@ -9,8 +9,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from dazedtl.compatibility.translation import TranslationEngine, TranslationProvider
-from dazedtl.diagnostics import watch_action, worker_failure
+from dazedtl.diagnostics import record_crashes, watch_action, worker_failure
+
+if __name__ == "__main__":
+    # Standard error is discarded, so a crash leaves only this record.
+    record_crashes("run")
+from dazedtl.compatibility.translation import (
+    TranslationEngine,
+    TranslationProvider,
+    explained,
+)
 from dazedtl.settings.execution import worker_secret
 from dazedtl.storage import WorkspaceError, WorkspaceLock
 from dazedtl.translation import progress_report
@@ -191,8 +199,8 @@ def run_locked(workspace, identity, store):
         job.update(status="stopped", message=str(exc))
         store.save(job)
     except Exception as exc:  # noqa: BLE001
-        if not engine.expected(exc):
-            worker_failure(exc, "worker " + (plan.get("action") or plan["kind"]))
+        if not explained(exc):
+            worker_failure(exc, plan.get("action") or plan["kind"])
         job = store.record(identity)
         # Provider exceptions can contain request bodies or auth details; retain only their class.
         message = engine.error_message(exc)
