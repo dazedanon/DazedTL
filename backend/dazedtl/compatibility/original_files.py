@@ -313,7 +313,6 @@ def record(
 
     with exclusive(_folder(root) / "originals.lock"):
         parent = _tip(root)
-
         commit = _git(
             root,
             "-c",
@@ -346,7 +345,8 @@ def ensure_found(root, log=lambda _message: None):
         return None
     _repository(root)
     with exclusive(_folder(root) / "found.lock"):
-        if recorded(root):
+        # A folder with no files yet has none to keep.
+        if recorded(root) or not inventory(root):
             return None
         log("Recording the original game files in Git.")
         return record(root, FOUND, progress=log)

@@ -120,11 +120,14 @@ def _saved(workspace, project_id, root, record):
     if not isinstance(record, dict):
         return None
     try:
-        location = backups.lookup(
-            root,
-            Path(record.get("path") or Path(workspace) / "backups" / project_id).parent,
-            record["id"],
+        # A record names its snapshot's folder; the profile's old store
+        # holds the ones that don't.
+        store = (
+            Path(record["path"]).parent
+            if record.get("path")
+            else Path(workspace) / "backups" / project_id
         )
+        location = backups.lookup(root, store, record["id"])
         value = backups.verify(location, source=root, full=False)
     except OSError, ValueError, KeyError, TypeError:
         return None
