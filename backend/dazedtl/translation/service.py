@@ -106,7 +106,7 @@ OPERATIONS = {
         {"official", "version", "baseline", "patch_overlay"},
     ),
     "version_apply": ("Apply the game update", {"preview_id"}),
-    "version_continue": ("Finish the game update with the official files", set()),
+    "version_continue": ("Finish the stopped game update", set()),
     "version_abort": ("Cancel the game update", set()),
     "version_handoff": ("Prepare the post-update task", set()),
     "discard_release": ("Discard the new release", {"stage"}),
