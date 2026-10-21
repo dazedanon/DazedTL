@@ -19,7 +19,11 @@ from dazedtl.compatibility.game_write import write_game, writing
 APP = str(Path(__file__).resolve().parents[1] / "backend/dazedtl") + os.sep
 ENGINE = APP + "engine" + os.sep
 # Shared helpers whose callers are the writers.
-HELPERS = (APP + "storage.py", APP + "translation" + os.sep + "files.py")
+HELPERS = (
+    APP + "storage.py",
+    APP + "system.py",
+    APP + "translation" + os.sep + "files.py",
+)
 GAME = ("data", "www", "Data", "ace_json")
 TRACKED = {".dazedtl/glossary.txt", ".dazedtl/settings.json"}
 WRITES = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND
