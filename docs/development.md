@@ -101,6 +101,7 @@ It drives this checkout's app through the same steps a user takes, in a private 
 - `fresh`, `opened`, `set-up` and `translated`: the Guided journey up to that point, Live translation applied.
 - `qa-done`: Text QA reviewed by a scripted assistant through the project helper, one correction applied.
 - `assistant-led`: an Assistant-led project in agent mode, set up and organized, its first request translated.
+- `assistant-written`: the assistant translates every request and writes them into the game, failing if the write changes the choice labels (402) or help markers (108) the game finds by their Japanese.
 - `batch-waiting`: the database submitted as a Batch that the stand-in holds.
 - `upgraded`: translated by the previous release, then opened in this checkout.
 - `playtested`: translated, then played by the release playtest, which prints its problems.

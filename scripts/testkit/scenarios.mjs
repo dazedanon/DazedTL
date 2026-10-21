@@ -234,6 +234,17 @@ const assistantLed = [
   ],
 ];
 
+const assistantWrite = [
+  "The assistant organizes and translates all the text, then writes it into the game",
+  async ({ page, state }) => {
+    await assistant(page, state, "organize");
+    const run = JSON.parse(await assistant(page, state, "translate"));
+    if (run.status !== "complete")
+      throw new Error(`Run ${run.id}: ${run.status}, ${run.message || ""}`);
+    await assistant(page, state, "write");
+  },
+];
+
 /**
  * @type {Record<string, { description: string, game?: string,
  *   from?: "previous", upgrade?: boolean,
@@ -266,6 +277,12 @@ export const scenarios = {
     description:
       "An Assistant-led project, the assistant translating itself: set up, text organized, the first request translated and the rest waiting.",
     steps: () => assistantLed,
+  },
+  "assistant-written": {
+    description:
+      "An Assistant-led project the assistant translated whole and wrote into the game, its choice labels and help markers kept in Japanese.",
+    game: "choice-help",
+    steps: () => [...assistantLed.slice(0, 2), assistantWrite],
   },
   "batch-waiting": {
     description:
