@@ -7,8 +7,9 @@ from __future__ import annotations
 import copy
 import re
 from collections import Counter
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from util import rpgmaker_blocks as blocks
 from util import rpgmaker_rewrap as rewrap

@@ -3,8 +3,9 @@ later, and interface screens captured again."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from util import rpgmaker_screens, system
 from util.paths import unlink_with_retry

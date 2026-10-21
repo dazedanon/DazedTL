@@ -6,8 +6,9 @@ from __future__ import annotations
 import re
 import tempfile
 from collections import defaultdict
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from util import rpgmaker_qa_glossary as glossary_rules
 from util import system

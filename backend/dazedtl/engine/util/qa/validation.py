@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from util import rpgmaker_qa_checks as checks
 from util.qa.bundles import (

@@ -7,7 +7,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 TASK_SCHEMA = "rpgmaker-qa-task-v3"
@@ -83,7 +83,7 @@ class QAResultError(ValueError):
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _canonical_bytes(value: Any) -> bytes:

@@ -4,8 +4,9 @@ checkpoint bundle rows and workers, and the changes a finding makes."""
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from util.qa.schema import DEFAULT_HELPER, REVIEW_STAGES, QAResultError, _utc_now
 from util.qa.storage import _read_json

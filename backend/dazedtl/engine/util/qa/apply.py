@@ -8,8 +8,9 @@ import os
 import re
 import tempfile
 from collections import defaultdict
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from util.paths import unlink_with_retry
 from util.qa.fitting import (

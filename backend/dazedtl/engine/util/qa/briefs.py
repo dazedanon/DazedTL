@@ -71,7 +71,7 @@ _BRIEF_SECTIONS = {
     ),
 }
 QA_ROLES = tuple(_BRIEF_SECTIONS)
-_SKILL_SECTION_RE = re.compile(r"^## (.+)$", re.M)
+_SKILL_SECTION_RE = re.compile(r"^## (.+)$", re.MULTILINE)
 
 
 def _skill_sections(focus: str) -> tuple[str, dict[str, str], str]:

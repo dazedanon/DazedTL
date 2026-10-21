@@ -3,9 +3,10 @@ task's status, and its reports."""
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from collections.abc import Iterable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from util.qa.bundles import _check_counts
 from util.qa.interface import interface_capture
@@ -89,7 +90,7 @@ def _stalled(checkpoint: dict[str, Any], stage: str, row: dict[str, Any]) -> boo
         datetime.fromisoformat(row["assigned_at"]),
         datetime.fromisoformat(seen.get("last_seen") or row["assigned_at"]),
     )
-    idle = (datetime.now(timezone.utc) - last).total_seconds()
+    idle = (datetime.now(UTC) - last).total_seconds()
     return idle > _stall_after(checkpoint, stage)
 
 
@@ -133,7 +134,7 @@ def _pace(checkpoint: dict[str, Any], now: datetime) -> tuple[float, int]:
 
 def _estimate(checkpoint: dict[str, Any]) -> dict[str, Any]:
     """The work left by stage and the engine's estimate of its time."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     active = sorted(
         name for name, worker in (checkpoint.get("workers") or {}).items()
         if worker.get("last_seen")
@@ -191,7 +192,7 @@ def _stage_metrics(stage: dict[str, Any], *, active: bool) -> dict[str, Any]:
     elapsed_seconds = 0.0
     if starts:
         if active:
-            end = datetime.now(timezone.utc)
+            end = datetime.now(UTC)
         else:
             accepted_times = [
                 datetime.fromisoformat(row["accepted_at"])

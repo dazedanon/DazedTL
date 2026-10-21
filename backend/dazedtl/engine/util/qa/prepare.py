@@ -4,8 +4,9 @@ inventory and bundles a new task starts with."""
 from __future__ import annotations
 
 import re
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any
 
 from util import system
 from util.freshness import Basis, compare

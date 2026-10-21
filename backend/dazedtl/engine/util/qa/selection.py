@@ -8,8 +8,9 @@ import json
 import re
 import unicodedata
 from collections import Counter, defaultdict
+from collections.abc import Iterable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING, Any
 
 from util import rpgmaker_qa_checks as checks
 from util import rpgmaker_qa_glossary as glossary_rules
