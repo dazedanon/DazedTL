@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from util import wolfdawn
+from util import system
 
 SIDECAR_NAME = ".cdb-context.json"
 SIDECAR_KIND = "wolf-cdb-context"
@@ -75,7 +76,7 @@ def write_sidecar(project_path: str | Path, sidecar_path: str | Path, log_fn=Non
         return False
     sidecar.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with tempfile.TemporaryDirectory(prefix="dazedtl-cdb-") as temp_dir:
+        with system.staging_folder(tempfile.gettempdir(), "dazedtl-cdb-") as temp_dir:
             full_json = Path(temp_dir) / "CDataBase.full.json"
             result = wolfdawn.db_json(project, full_json, log_fn=log_fn)
             if not result.ok or not full_json.is_file():

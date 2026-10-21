@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import subprocess
 import tempfile
 import urllib.parse
 import urllib.request
@@ -17,6 +16,7 @@ from util.wolfdawn import (
     _GITGUD_HOST,
     bundled_binary_path,
 )
+from util import system
 
 WOLFDAWN_PROJECT = "zero64801/wolfdawn"
 WOLFDAWN_BRANCH = "master"
@@ -88,7 +88,7 @@ def buildable_from_source(platform: str) -> bool:
 def _run(cmd: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None, log_fn=None) -> bool:
     _log(f"$ {' '.join(cmd)}", log_fn)
     try:
-        proc = subprocess.run(
+        proc = system.run(
             cmd,
             cwd=str(cwd) if cwd else None,
             env=env,
@@ -124,7 +124,7 @@ def clone_source(dest: Path, log_fn=print) -> bool:
         _log("ERROR: git not found; cannot clone WolfDawn source.", log_fn)
         return False
     if dest.exists():
-        shutil.rmtree(dest)
+        system.remove_tree(dest)
     return _run(
         ["git", "clone", "--depth", "1", "--branch", WOLFDAWN_BRANCH, CLONE_URL, str(dest)],
         log_fn=log_fn,
@@ -210,8 +210,8 @@ def build_and_install_platforms(
         return results
 
     _log(f"Cloning WolfDawn ({WOLFDAWN_BRANCH}) for source build…", log_fn)
-    with tempfile.TemporaryDirectory(prefix="wolfdawn-src-") as tmp:
-        source_dir = Path(tmp) / "wolfdawn"
+    with system.staging_folder(tempfile.gettempdir(), "wolfdawn-src-") as tmp:
+        source_dir = tmp / "wolfdawn"
         if not clone_source(source_dir, log_fn=log_fn):
             return results
         for platform in buildable:

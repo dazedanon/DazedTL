@@ -32,6 +32,7 @@ from util.rpgmaker_qa_preflight import (
 from util.rpgmaker_qa_reach import Reach
 from util.runtime_text import without_control_codes
 from util.source_text import holds_source
+from util import system
 
 SCHEMA = "rpgmaker-playtest-static-v1"
 TEXT_LIMIT = 160
@@ -370,7 +371,7 @@ class _Checks:
             ],
         }
         try:
-            response = subprocess.run(
+            response = system.run(
                 [node, str(CODE_SCRIPT)],
                 input=json.dumps(request, ensure_ascii=False).encode("utf-8"),
                 capture_output=True,

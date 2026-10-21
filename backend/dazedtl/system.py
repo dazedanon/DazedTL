@@ -49,6 +49,7 @@ from pathlib import Path, PurePath
 
 __all__ = [
     "SYSTEM_VARIABLES",
+    "Process",
     "Reader",
     "held_open",
     "new_folder",
@@ -253,6 +254,9 @@ def project_relative(path, root):
 
 
 # Processes
+
+# The type popen returns, for annotations.
+Process = subprocess.Popen
 
 
 def run(arguments, *, check=False, console=False, **options):
