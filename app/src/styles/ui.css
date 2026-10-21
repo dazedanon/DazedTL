@@ -587,16 +587,25 @@ main:has(> .page-layout--wide) {
   gap: var(--space-2);
   max-width: 100%;
 }
-.action-bar .action-control:has(> .action-control-feedback:not(:empty)) {
-  flex-grow: 1;
-}
 /* A result counts toward the bar's wrapping only up to 16rem, so a long one
    wraps beside its button instead of moving the actions to a row of their
-   own; it then takes the room beside its button up to a fixed cap, since a
-   percentage cap would be ignored while the bar sizes its controls. */
+   own: its control starts at its narrowest, the button and that much of the
+   result. It then grows only as far as the result's text, up to a fixed cap,
+   since a percentage cap would be ignored while the bar sizes its controls
+   (and a percentage in its own cap hides it from the bar's sizing); the room
+   left stays before the first action, so the other actions keep their place
+   beside it. */
+.action-bar .action-control:has(> .action-control-feedback:not(:empty)) {
+  flex-grow: 1;
+  width: min-content;
+  max-width: max-content;
+}
+/* Its result gives way first; the button keeps its label on one line. */
+.action-bar .action-control > button {
+  white-space: nowrap;
+}
 .action-bar .action-control > .action-control-feedback {
   flex: 1 1 auto;
-  width: calc-size(max-content, min(size, 16rem));
   min-width: calc-size(max-content, min(size, 16rem));
   max-width: 30rem;
   text-align: left;

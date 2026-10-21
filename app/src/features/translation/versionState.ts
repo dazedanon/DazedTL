@@ -18,7 +18,7 @@ export function releaseEffect(layout: ReleaseLayout) {
   if (layout.kind === "game") {
     const removed = removedFiles(layout);
     return removed
-      ? `Replaces the game. ${removed.toLocaleString()} of the game’s ${files(layout.game_files)} aren’t in it and would be removed.`
+      ? `Replaces the game. ${removed.toLocaleString()} of the game’s ${files(layout.game_files)} ${removed === 1 ? "isn’t" : "aren’t"} in it and would be removed.`
       : "Replaces the game with this release.";
   }
   const added = layout.files - layout.replaced;
