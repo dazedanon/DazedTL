@@ -47,15 +47,20 @@ def history(folder):
     ]
 
 
-def applied_before(folder, outputs):
-    """Whether earlier Applies already published every one of `outputs`, a
-    run's output hash per file, as reapplying a run History lists does; a
-    run's first Apply publishes at least one output for the first time."""
+def applied_before(folder, run, outputs):
+    """Whether an earlier Apply published this saved run's output, so applying
+    it now, as History's Reapply does, applies it again; Translate's Apply
+    names its run too. An Apply saved before Applies named their run counts
+    when it published every one of `outputs`, the run's hash per file."""
     published = {}
     for row in records(folder):
         # A batch History restored later still published its outputs.
-        if row["kind"] == "export_selected" and row["state"] == "complete":
-            for name, sha in row.get("next_outputs", {}).get("files", {}).items():
+        if row["kind"] != "export_selected" or row["state"] != "complete":
+            continue
+        if row.get("run") == run:
+            return True
+        if "run" not in row:
+            for name, sha in row["next_outputs"].get("files", {}).items():
                 published.setdefault(name, set()).add(sha)
     return bool(outputs) and all(
         sha in published.get(name, ()) for name, sha in outputs.items()
@@ -130,6 +135,7 @@ def freeze(
     sources=None,
     created=(),
     written=None,
+    run=None,
 ):
     """Freeze both sides before the user reviews an exact destination batch.
     `task` names the QA task whose corrections the batch applies or undoes,
@@ -139,7 +145,8 @@ def freeze(
     to the game; a restore takes an added file out again, its candidate None,
     and puts back one a batch took out. `written` names the hashes of applied
     outputs that were fitted to the Line widths on the way, which the game
-    then holds in place of the output's own."""
+    then holds in place of the output's own. `run` names the saved run whose
+    output an Apply publishes."""
     if not candidates:
         raise ValueError("Select at least one file or correction to apply.")
     _discard_unused(folder)
@@ -198,6 +205,7 @@ def freeze(
         "restores": restore["id"] if restore else None,
         "task": task,
         **({"findings": sorted(findings)} if findings else {}),
+        **({"run": run} if run else {}),
     }
     index = Path(folder) / "source-inputs.json"
     record["source_inputs"] = digest(index.read_bytes()) if index.exists() else None

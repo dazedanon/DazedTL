@@ -553,6 +553,7 @@ class ExistingBackend:
             # earlier Apply already published is applied again.
             if applied_before(
                 self.workflows.folder(native_id),
+                run_output["run_id"],
                 {name: run_output["outputs"][name] for name in files},
             ):
                 shown = "Reapply saved run output"
