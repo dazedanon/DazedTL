@@ -12,6 +12,8 @@ import re
 from functools import lru_cache
 from re import _constants, _parser
 
+from util.source_text import holds_source
+
 # Event code -> the engine option holding its patterns.
 CODE_KEYS = {355: "CUSTOM_355655", 655: "CUSTOM_355655", 356: "CUSTOM_356", 108: "CUSTOM_108"}
 HANDLER_KEY = "CUSTOM_357"
@@ -23,10 +25,6 @@ LABELS = {
 }
 KEYS = tuple(LABELS)
 SPACING = ("space", "nbsp", "underscore")
-JAPANESE = re.compile(
-    r"[\u3002-\u3009\u300C-\u303F\u3040-\u309A\u309C-\u30FA\u31F0-\u31FF"
-    r"\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFF61-\uFF9F]"
-)
 QUOTES = "'\"`"
 _REPEATS = (_constants.MAX_REPEAT, _constants.MIN_REPEAT, _constants.POSSESSIVE_REPEAT)
 
@@ -186,10 +184,6 @@ def structured(value):
         return False
 
 
-def _japanese(value):
-    return bool(JAPANESE.search(value))
-
-
 def problems(options, documents):
     """Why custom options would not translate the selected event files'
     original text as intended: a pattern capturing no Japanese, two patterns
@@ -211,7 +205,7 @@ def problems(options, documents):
             if code == 355:
                 header = text if isinstance(text, str) else ""
             key = CODE_KEYS.get(code)
-            matches = captures(patterns[key], text, header, _japanese) if key else []
+            matches = captures(patterns[key], text, header, holds_source) if key else []
             for entry, start, end in matches:
                 used.discard((key, entry["name"]))
                 inner = text[start:end]
@@ -240,7 +234,7 @@ def problems(options, documents):
                             f"Custom handler {identity}'s argument {arg} holds "
                             "structured data, which the engine cannot translate in place."
                         )
-                    elif isinstance(value, str) and _japanese(value):
+                    elif holds_source(value):
                         used.discard((HANDLER_KEY, identity))
     for key, identity in used:
         found.add(

@@ -9,7 +9,6 @@ from typing import Any
 
 from dazedtl.storage import write_bytes, write_json
 
-from .file_lines import japanese
 from .files import decode_json, digest, project_path, read_json
 from .saved_refusals import restore
 
@@ -290,6 +289,8 @@ class GuidedInputs:
         file to its phase ("database" or "dialogue"); choice help counts under
         *markers*. A file read once stays counted until its bytes change, and
         a file that cannot be read has none."""
+        from util.source_text import holds_source
+
         from .file_lines import count
 
         identities = self.record()["inputs"]
@@ -332,7 +333,7 @@ class GuidedInputs:
         # A translated map display name keeps no `_original`: it is a line
         # when the original game file's name holds Japanese.
         for name, original in self.original_names(names).items():
-            if japanese(original):
+            if holds_source(original):
                 result[name]["lines"] += 1
                 result[name]["translated"] += 1
         return result

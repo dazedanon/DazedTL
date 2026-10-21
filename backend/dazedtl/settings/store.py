@@ -468,6 +468,7 @@ class Settings:
             "reuseStretches": preferences.REUSE_STRETCHES,
             "mapNameIdentities": preferences.MAP_NAME_IDENTITIES,
             "battleMessageUsers": preferences.BATTLE_MESSAGE_USERS,
+            "sourceText": preferences.SOURCE_TEXT,
         }
 
     def connection_summary(self):
@@ -1101,6 +1102,7 @@ class Settings:
                 "reuseStretches": preferences.REUSE_STRETCHES,
                 "mapNameIdentities": preferences.MAP_NAME_IDENTITIES,
                 "battleMessageUsers": preferences.BATTLE_MESSAGE_USERS,
+                "sourceText": preferences.SOURCE_TEXT,
                 "entriesPerRequest": entries,
                 "inputRate": input_rate,
                 "outputRate": output_rate,

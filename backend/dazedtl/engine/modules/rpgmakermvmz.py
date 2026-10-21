@@ -4,7 +4,7 @@ import json
 import os
 import re
 import util.dazedwrap as dazedwrap
-from util import rpgmaker_blocks, rpgmaker_rewrap
+from util import rpgmaker_blocks, rpgmaker_rewrap, rpgmaker_scope
 from util import rpgmaker_script_strings as script_strings
 import threading
 import time
@@ -47,6 +47,7 @@ from util.paths import (
 from util.rpgmaker_markers import comment_markers, game_plugins
 from util.rpgmaker_files import mvmz_file_kind
 from util.id_ranges import id_in_ranges
+from util.source_text import holds_source
 
 # Globals
 MODEL = os.getenv("model")
@@ -973,13 +974,24 @@ def _apply_event_parameter_originals(snapshots: list[tuple[dict, list]]) -> None
         _merge_original_tree(original_params, changed)
 
 
-def _has_japanese_text(text) -> bool:
-    """True when text still has Japanese after quote normalization.
+# Text still to translate is what util/source_text reads as Japanese, the
+# rule Guided's line counts share, and labels and map names are sent only
+# while they hold it. A run frozen without the sourceText request policy
+# keeps reading Japanese by LANGREGEX and sending labels and map names on
+# every pass, so its requests keep their identities.
+SOURCE_TEXT = True
 
-    Decorative wrappers such as 〝phytoncide〟 become ASCII quotes when
-    convertQuotes is on, matching output conversion, so English-only lines are
-    not treated as source text.
+
+def _has_japanese_text(text) -> bool:
+    """True when text still holds Japanese to translate (util/source_text).
+
+    Older runs read it by LANGREGEX after quote normalization: decorative
+    wrappers such as 〝phytoncide〟 become ASCII quotes when convertQuotes is
+    on, matching output conversion, so English-only lines are not treated as
+    source text.
     """
+    if SOURCE_TEXT:
+        return text is not None and holds_source(str(text))
     if text is None:
         return False
     sample = str(text)
@@ -1101,7 +1113,11 @@ def _group_current(codeList, start: int, end: int) -> str:
 
 
 def _text_group_end(codeList, start: int, allowed_codes: tuple[int, ...]) -> int:
-    """Return the last command joined into a contiguous visible-text group."""
+    """Return the last command joined into a contiguous visible-text group.
+
+    This groups a request, not a block's rows (util/rpgmaker_blocks): a row
+    led by a control code starts a new request, so walking blocks instead
+    would change requests and the identities of saved Batch results."""
     end = start
     while end + 1 < len(codeList):
         current = codeList[end]
@@ -1950,9 +1966,14 @@ def prepareBatchMapNames() -> list[int]:
             continue
         filename_sources.append((filename, display_name))
         source_files.setdefault(display_name, []).append(filename)
-    unique_sources = list(source_files)
+    # Older runs send every name again, finished or not.
+    unique_sources = [
+        source
+        for source in source_files
+        if not SOURCE_TEXT or _text_needs_translation(source)
+    ]
 
-    translated_by_source = {source: source for source in unique_sources}
+    translated_by_source = {source: source for source in source_files}
     tokens = [0, 0]
     if unique_sources:
         previous_pbar = PBAR
@@ -2048,29 +2069,12 @@ def parseMap(data, filename):
             for evt in evts:
                 if not evt:
                     continue
-                note_val = evt.get("note") or ""
-                if not isinstance(note_val, str):
-                    note_val = str(note_val) if note_val is not None else ""
 
-                # Count note-based translations
-                if "<LB>" in note_val:
-                    name_val = evt.get("name") or ""
-                    if isinstance(name_val, str) and name_val:
-                        count += 1
-
-                if "<msgText:" in note_val:
-                    matches = re.findall(r"<msgText:\"(.*?)\">", note_val, re.DOTALL)
-                    count += len(matches)
-
-                if "<namePop:" in note_val:
-                    matches = re.findall(r"<namePop:\s?([\w一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]+)", note_val)
-                    count += len(matches)
-                if "<LB:" in note_val:
-                    matches = re.findall(r"<LB:(.*?)\s?>.*", note_val)
-                    count += len(matches)
-                if "<dn:" in note_val:
-                    matches = re.findall(r"<dn:\s*(.*)>.*", note_val)
-                    count += len(matches)
+                # Count note labels; older runs send each one again.
+                count += sum(
+                    not SOURCE_TEXT or _text_needs_translation(label.text)
+                    for label in rpgmaker_scope.labels(evt)
+                )
 
                 # Count commands in pages (rough estimate)
                 for page in (evt.get("pages", []) or []):
@@ -2118,6 +2122,8 @@ def parseMap(data, filename):
                 if filename in _BATCH_MAP_NAME_REJECTED and filename not in MISMATCH:
                     MISMATCH.append(filename)
                 pbar.update(1)
+            elif SOURCE_TEXT and not _text_needs_translation(data["displayName"]):
+                pbar.update(1)
             else:
                 batch_phase = (os.getenv("BATCH_PHASE") or "").strip().lower()
                 map_name_payload = (
@@ -2160,25 +2166,12 @@ def _map_pages(events, totalTokens):
     """A map's event pages with their labels, after each event's notes."""
     for event in events:
         if event is not None:
-            # Normalize note to a safe string
-            note_val = event.get("note") or ""
-            if not isinstance(note_val, str):
-                note_val = str(note_val) if note_val is not None else ""
-
-            # This translates ID of events. (May break the game)
-            if "<namePop:" in note_val:
-                tok = translateNoteOmitSpace(event, r"<namePop:\s?([\w一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]+)")
-                if tok and isinstance(tok, (list, tuple)):
-                    totalTokens[0] += tok[0]
-                    totalTokens[1] += tok[1]
-            if "<LB:" in note_val:
-                tok = translateNoteOmitSpace(event, r"<LB:(.*?)\s?>.*")
-                if tok and isinstance(tok, (list, tuple)):
-                    totalTokens[0] += tok[0]
-                    totalTokens[1] += tok[1]
-            if "<dn:" in note_val:
-                tok = translateNoteOmitSpace(event, r"<dn:\s*(.*)>.*")
-                if tok and isinstance(tok, (list, tuple)):
+            # Each tag reads the note as the tags before it left it. Older
+            # runs send each label again, finished or not.
+            for tag in rpgmaker_scope.NOTE_TAGS:
+                match = tag.search(rpgmaker_scope.note(event))
+                if match and (not SOURCE_TEXT or _text_needs_translation(match[1])):
+                    tok = translateNoteOmitSpace(event, match[1])
                     totalTokens[0] += tok[0]
                     totalTokens[1] += tok[1]
 
@@ -2272,15 +2265,9 @@ def _translate_string(text, history):
 
 
 # For notes that can't have spaces.
-def translateNoteOmitSpace(event, regex):
-    # Regex that only matches text inside LB.
-    jaString = event.get("note") or ""
-    if not isinstance(jaString, str):
-        jaString = str(jaString) if jaString is not None else ""
-
-    match = re.findall(regex, jaString, re.DOTALL)
-    if match:
-        oldJAString = match[0]
+def translateNoteOmitSpace(event, oldJAString):
+    """Translates a label in an event's note (util/rpgmaker_scope) in place."""
+    if oldJAString:
         # Remove any textwrap
         jaString = re.sub(r"\n", " ", oldJAString)
 
@@ -2316,16 +2303,9 @@ def translateLBNames(events):
     # Collect events with <LB> tag that have translatable names
     lb_events = []  # List of (event_index, original_name)
     for idx, event in enumerate(events):
-        if event is None:
-            continue
-        note_val = event.get("note") or ""
-        if not isinstance(note_val, str):
-            note_val = str(note_val) if note_val is not None else ""
-        
-        if "<LB>" in note_val:
-            name_val = event.get("name") or ""
-            if isinstance(name_val, str) and name_val and _has_japanese_text(name_val):
-                lb_events.append((idx, name_val))
+        for label in rpgmaker_scope.labels(event):
+            if label.field == "name" and _has_japanese_text(label.text):
+                lb_events.append((idx, label.text))
     
     # Batch translate if we have any
     if lb_events:
@@ -2996,7 +2976,12 @@ def _translate_skill_messages(texts: list[str], skills: list[int]):
         party_actor = None
     unsent = [
         index for index, text in enumerate(texts)
-        if "\ufffd" in text or not re.search(TRANSLATION_CONFIG.langRegex, text)
+        if "\ufffd" in text
+        or not (
+            holds_source(text)
+            if SOURCE_TEXT
+            else re.search(TRANSLATION_CONFIG.langRegex, text)
+        )
     ]
     sent = [index for index in range(len(texts)) if index not in unsent]
     size = _request_size()

@@ -34,6 +34,8 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Iterator
 
+from util.source_text import holds_source
+
 # The number of rows a part's text owns, kept on its anchor beside
 # `_original`. Notes are not game data: whatever copies or compares commands
 # treats both as the translation's.
@@ -52,9 +54,6 @@ _HEADS = {head: (kind, HEAD_ROWS[head]) for head, kind in ((101, MESSAGE), (105,
 # A part's anchor's code, and the code of the rows it owns.
 ROW_CODES = {401: 401, 405: 405, 408: 408, 108: 408}
 
-# Japanese that DazedTL never rewraps; ・ and ー alone are not Japanese.
-_JAPANESE = re.compile(r"[\u3040-\u30fa\u30fd-\u30ff\u3400-\u9fff]")
-
 # Codes translation repeats at the start of every row of a message: centring,
 # instant lines and an indent.
 PER_LINE = re.compile(r"^(?:\\+a[clr](?![A-Za-z])|\\+>|\\+px\[\d+\])+ ?", re.IGNORECASE)
@@ -72,11 +71,6 @@ def command_lists(document: Any, path: tuple = ()) -> Iterator[tuple[tuple, list
         for key, child in document.items():
             if key != "_original":
                 yield from command_lists(child, path + (key,))
-
-
-def japanese(text: Any) -> bool:
-    """Whether *text* still holds Japanese."""
-    return isinstance(text, str) and bool(_JAPANESE.search(text))
 
 
 def code(command: Any) -> int | None:
@@ -276,7 +270,7 @@ def owned(
     kept = [anchor]
     for at in rows[1:]:
         value = text(commands[at])
-        if not value.strip() or japanese(value):
+        if not value.strip() or holds_source(value):
             break
         kept.append(at)
     return tuple(kept)

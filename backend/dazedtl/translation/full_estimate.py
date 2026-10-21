@@ -26,7 +26,7 @@ MODE = "translate"
 
 # Raise when the same tasks would estimate differently. It is part of the
 # fingerprint, so raising it outdates every saved whole-game estimate.
-ESTIMATE_VERSION = 1
+ESTIMATE_VERSION = 2
 # Releases that bound a whole-game estimate to their own version instead, so
 # every upgrade outdated it. Their estimates read current while the tasks match.
 RELEASES = (

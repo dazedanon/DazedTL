@@ -24,6 +24,7 @@ from util import rpgmaker_script_strings as script_strings
 from util.rpgmaker_blocks import PER_LINE as _PER_LINE
 from util.rpgmaker_blocks import spread
 from util.rpgmaker_script_strings import BREAK
+from util.source_text import holds_source
 
 
 LIST_FIELDS_BY_FILE = {
@@ -136,14 +137,10 @@ def over_width(text: str, width: int) -> bool:
     return widest_line(text) > int(width)
 
 
-# Japanese the translation left as it is, which is never rewrapped: kana and
-# kanji. English uses the middle dot and the long vowel mark (\u30fb, \u30fc) as
-# bullets and dashes, so they alone do not make text Japanese.
-
-
 def untranslated(text: str) -> bool:
-    """Whether *text* still holds Japanese, which DazedTL never rewraps."""
-    return blocks.japanese(text)
+    """Whether *text* still holds Japanese (util/source_text), which DazedTL
+    never rewraps."""
+    return holds_source(text)
 
 
 def _translated(text: str) -> str:

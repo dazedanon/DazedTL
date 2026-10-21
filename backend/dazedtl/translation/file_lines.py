@@ -3,35 +3,30 @@
 Guided's Database files and Maps & events count each file's lines in its
 newest copy, so the count is right whichever runs wrote it, and a file reads
 finished only when nothing in it is left for the engine to send. A line is
-what a person reads as one: an event text block as util/rpgmaker_blocks
-defines it (a message, with its name box; scrolling text; one choice of a
+what a person reads as one: in an event file, the game text
+util/rpgmaker_scope lists (an event text block as util/rpgmaker_blocks
+defines it: a message, with its name box; scrolling text; one choice of a
 menu; a choice's help, or another comment a plugin shows, with Comment text
-on), a map display name, and the database fields and system terms Text QA's
-never-translated report lists (util/rpgmaker_qa_preflight `visible_texts`).
-What another task translates, or no task does, is left out.
+on; a map display name; an event's note label), and the database fields and
+system terms Text QA's never-translated report lists
+(util/rpgmaker_qa_preflight `visible_texts`). What another task translates,
+or no task does, is left out.
 
-A line is in scope when its source holds Japanese: the source the engine keeps
-in `_original`, else the text itself. The engine sends a value while it holds
-Japanese, whatever `_original` says, so a line is translated when no part of
-it holds Japanese letters outside control-code arguments (of a name box, the
-name the engine translates), unless it holds a refusal note an earlier run
-saved in place of a translation (`saved_refusals`). A translated map display
-name keeps no `_original`, so whether it had Japanese takes the original game
-file. The engine probe (tests/fixtures/engine_runtime.py) checks the two agree.
+A line is in scope when its source holds Japanese (util/source_text): the
+source the engine keeps in `_original`, else the text itself. The engine
+sends a value while it holds Japanese, whatever `_original` says, so a line is
+translated when no part of it holds Japanese (of a name box, the name the
+engine translates), unless it holds a refusal note an earlier run saved in
+place of a translation (`saved_refusals`). A translated map display name or
+note label keeps no `_original`, so whether it had Japanese takes the
+original game file. The engine probe (tests/fixtures/engine_runtime.py)
+checks that the engine sends only the lines left.
 """
 
 import re
 from collections.abc import Callable, Iterator
 from typing import Any, NamedTuple
 
-# Japanese letters still to translate: the engine's own range
-# (rpgmakermvmz LANGREGEX) without its punctuation and brackets. A
-# translation keeps 【Name】 labels, which the engine reads as names and never
-# sends again; the engine probe checks the two ranges agree on every letter.
-_JAPANESE = re.compile(
-    r"[\u3005-\u3007\u3040-\u309A\u309C-\u30FA\u31F0-\u31FF\u3400-\u4DBF"
-    r"\u4E00-\u9FFF\uF900-\uFAFF\uFF66-\uFF9F]"
-)
 _MAP = re.compile(r"Map\d+\.json")
 # Database fields the database pass translates, beyond those players read in
 # menus: map names, which some plugins show.
@@ -53,18 +48,6 @@ def speaker_name(value: Any) -> str:
     name = _NAME_COLOURS.sub("", str(value or "").strip())
     found = _BRACKETED_NAME.match(name) or _PLAIN_NAME.match(name)
     return found.group(1).strip() if found else ""
-
-
-# A control code's argument, such as \SA[びっくり], names a plugin's asset or
-# setting: it is never text to translate.
-_CODE_ARGUMENT = re.compile(r"\\+[A-Za-z]+\[[^\]\n]*\]")
-
-
-def japanese(value: Any) -> bool:
-    """Whether a value still holds Japanese letters outside control codes."""
-    return isinstance(value, str) and bool(
-        _JAPANESE.search(_CODE_ARGUMENT.sub("", value))
-    )
 
 
 class Line(NamedTuple):
@@ -190,7 +173,19 @@ def lines(
         value = readable.get("displayName")
         if isinstance(value, str):
             found.append(Line("map name", (("displayName",),), (value,), ()))
+        found.extend(_labels(document))
     return found
+
+
+def _labels(document: Any) -> Iterator[Line]:
+    """A map's note labels (util/rpgmaker_scope), each at the field holding
+    it; they keep no `_original`."""
+    from util.rpgmaker_scope import labels
+
+    events = document.get("events") if isinstance(document, dict) else None
+    for index, event in enumerate(events if isinstance(events, list) else ()):
+        for label in labels(event):
+            yield Line("label", (("events", index, label.field),), (label.text,), ())
 
 
 def _pages(owner: Any, key: str) -> Any:
@@ -290,20 +285,34 @@ def _database(name: str, document: Any) -> list[Line]:
     return found
 
 
+# Lines whose source no `_original` keeps.
+_UNKEPT = frozenset({"map name", "label"})
+
+
 def state(line: Line, notes: frozenset[str]) -> str | None:
     """Whether a line is "translated", "untranslated" or holds a refusal
     "note"; None when it is out of scope, and "unknown" for a translated map
-    name, whose source only the original game file has."""
+    name or note label, whose source only the original game file has."""
+    from util.source_text import holds_source
+
     # Notes are rare: only then do the lines' paths become pointers.
     if notes and any(_pointer(path) in notes for path in line.paths):
         return "note"
-    if any(japanese(text) for text in line.texts):
+    if any(holds_source(text) for text in line.texts):
         return "untranslated"
-    if any(japanese(source) for source in line.sources):
+    if any(holds_source(source) for source in line.sources):
         return "translated"
-    if line.kind == "map name" and any(text.strip() for text in line.texts):
+    if line.kind in _UNKEPT and any(text.strip() for text in line.texts):
         return "unknown"
     return None
+
+
+def _original_labels(original: Any) -> dict[tuple, list[str]]:
+    """The original game file's note labels, by the field holding them."""
+    found: dict[tuple, list[str]] = {}
+    for line in _labels(original):
+        found.setdefault(line.paths[0], []).append(line.texts[0])
+    return found
 
 
 def _pointer(path: tuple) -> str:
@@ -335,16 +344,32 @@ def count(
     in a Maps & events file's values outside these lines, such as Other event
     text (a database file counts them as lines left), and `mapName`
     is a translated map display name whose source decides its scope."""
+    from util.source_text import holds_source
+
     notes = note_pointers(document, original)
     counted: set[str] = set()
     result: dict[str, Any] = {"lines": 0, "translated": 0}
+    sources: dict[tuple, list[str]] | None = None
+    taken: dict[tuple, int] = {}
     for line in lines(name, document, phase, markers):
         if notes:
             counted.update(map(_pointer, line.paths))
         found = state(line, notes)
-        if found == "unknown":
+        if found == "unknown" and line.kind == "map name":
             result["mapName"] = line.texts[0]
             continue
+        at = 0
+        if line.kind == "label":
+            at = taken[line.paths[0]] = taken.get(line.paths[0], -1) + 1
+        if found == "unknown":
+            # A finished label is a line when the original's label in the
+            # same place held Japanese.
+            if sources is None:
+                sources = _original_labels(original())
+            theirs = sources.get(line.paths[0], [])
+            found = (
+                "translated" if at < len(theirs) and holds_source(theirs[at]) else None
+            )
         if found is None:
             continue
         result["lines"] += 1

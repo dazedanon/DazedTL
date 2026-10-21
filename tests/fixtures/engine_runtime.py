@@ -357,6 +357,7 @@ try:
             CHOICE_COLLECTION,
             PAGE_PACKING,
             SAME_LINE_SPEAKERS,
+            SOURCE_TEXT,
             SPEAKER_CONTEXT,
         )
         from modules import rpgmakermvmz as parser
@@ -1532,7 +1533,7 @@ try:
                         command(356, ["OriginMenuStatus SetParam param1 攻撃力"]),
                     ]
                 )
-                parser.translateNoteOmitSpace({"note": "<LB:村>"}, r"<LB:(.*?)\s?>.*")
+                parser.translateNoteOmitSpace({"note": "<LB:村>"}, "村")
             assert all(isinstance(text, list) for text in payloads) and {
                 text[0] for text in payloads
             } == {"村長", "攻撃力", "村"}, payloads
@@ -3053,10 +3054,12 @@ try:
             anthropic.Anthropic(api_key="run-key")
     # Guided reads each file's lines from the file (translation/file_lines.py)
     # and must agree with what the engine sends: a line it counts that the
-    # engine never sends would read unfinished forever. A real pass over the
-    # fixture games, answered like the live test's stand-in, sends text for
-    # exactly the files with lines left and leaves none, without changing
-    # which lines count; a second pass over its own output sends nothing.
+    # engine never sends would read unfinished forever, and text the engine
+    # sends outside the lines it counts would leave a file reading done with
+    # Japanese in it, or replace the game's own English. A real pass over the
+    # fixture games, answered like the live test's stand-in, sends only
+    # Japanese from the lines left, and exactly for the files with lines
+    # left, and leaves none; a second pass over its own output sends nothing.
     with app.backend.context():
         from dazedtl.compatibility.worker_policy import configure_states
         from dazedtl.translation import file_lines
@@ -3064,23 +3067,9 @@ try:
         from util import extensions
         from util.rpgmaker_markers import comment_markers
         from util.rpgmaker_profiles import DB_FILES, PHASE0_CONFIG, PHASE1_CONFIG
+        from util.runtime_text import _CONTROL_CODE_RE
+        from util.source_text import LETTERS, holds_source
 
-        # Japanese letters are the engine's own range without its punctuation
-        # and brackets, which translations keep in labels such as 【Name】.
-        punctuation = {
-            0x3000,
-            *range(0x3002, 0x3005),
-            0x3008,
-            0x3009,
-            *range(0x300C, 0x3040),
-            *range(0xFF61, 0xFF66),
-        }
-        engine_japanese = re.compile(parser.LANGREGEX)
-        for code in range(0x10000):
-            letter = code not in punctuation and bool(
-                engine_japanese.fullmatch(chr(code))
-            )
-            assert file_lines.japanese(chr(code)) == letter, hex(code)
         # A refusal note an older run saved in a database note tag, which the
         # database pass translates, is a line left.
         noted = [
@@ -3098,7 +3087,7 @@ try:
         }, file_lines.count("Items.json", noted, "database", frozenset())
         # A control code's argument names a plugin's asset, never text: the
         # engine sends such a line again on every pass, but it is translated.
-        assert not file_lines.japanese(r"\SA[びっくり]Hello") and file_lines.japanese(
+        assert not holds_source(r"\SA[びっくり]Hello") and holds_source(
             r"\SA[びっくり]こんにちは"
         )
         # A name box counts the name the engine translates, not what follows.
@@ -3114,10 +3103,21 @@ try:
             )
 
         def stand_in(value):
+            # Like a model, it keeps control codes and their arguments.
             text = str(value)
             prefix = re.match(r"^(\[[^\n]*?\]:\s*)", text)
             body = text[prefix.end() :] if prefix else text
-            kept = re.sub(r"\s+", " ", engine_japanese.sub(" ", body)).strip()
+            pieces = _CONTROL_CODE_RE.split(body)
+            codes = _CONTROL_CODE_RE.findall(body)
+            kept = re.sub(
+                r"\s+",
+                " ",
+                "".join(
+                    LETTERS.sub(" ", piece)
+                    + (codes[index] if index < len(codes) else "")
+                    for index, piece in enumerate(pieces)
+                ),
+            ).strip()
             return (prefix[1] if prefix else "") + f"Tested {len(text)} {kept}".strip()
 
         sent = []
@@ -3157,7 +3157,7 @@ try:
                 else:
                     result = parser.parseNames(document, file, kind)
                 assert result[2] is None, file
-            return [value for value in sent if file_lines.japanese(value)]
+            return list(sent)
 
         lines_game = temporary / "lines-game"
         # The parser logs and saves progress beside the files it reads.
@@ -3200,21 +3200,54 @@ try:
             ),
             encoding="utf-8",
         )
-        markers = comment_markers(())
-        configure_states(
-            {"engine": "MVMZ"},
-            temporary,
-            {
-                "choiceCollection": CHOICE_COLLECTION,
-                "speakerContext": SPEAKER_CONTEXT,
-                "sameLineSpeakers": SAME_LINE_SPEAKERS,
-                "pagePacking": PAGE_PACKING,
-            },
-        )
+        # Text the engine sends once and then never again, as the
+        # finished-text game variant holds it for test scenarios.
         fixtures = Path(__file__).resolve().parent
+        finished = json.loads(
+            (fixtures / "game-variants/finished-text/variant.json").read_text("utf-8")
+        )
+        (lines_game / "data/Map003.json").write_text(
+            json.dumps(
+                {
+                    "displayName": "",
+                    "events": [
+                        None,
+                        *(
+                            {**event, "id": number}
+                            for number, event in enumerate(finished["events"], 1)
+                        ),
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        markers = comment_markers(())
+        policy = {
+            "choiceCollection": CHOICE_COLLECTION,
+            "speakerContext": SPEAKER_CONTEXT,
+            "sameLineSpeakers": SAME_LINE_SPEAKERS,
+            "pagePacking": PAGE_PACKING,
+        }
         directory = os.getcwd()
         os.chdir(lines_game)
         try:
+            # Runs frozen before the source-text policy keep their requests:
+            # they send labels and map names again, and read 【】 as Japanese.
+            configure_states({"engine": "MVMZ"}, temporary, policy)
+            older = json.loads((lines_game / "data/Map003.json").read_text("utf-8"))
+            assert engine_pass("Map003.json", older, False) == [
+                "",
+                "回想部屋へ",
+                "→中継地点",
+                "村人",
+                "古びた井戸",
+                "えっ、本当に？",
+                "【Saving beforehand is recommended】",
+            ]
+            configure_states(
+                {"engine": "MVMZ"}, temporary, {**policy, "sourceText": SOURCE_TEXT}
+            )
             for folder, vxace in (
                 (fixtures / "mz-game/data", False),
                 (fixtures / "ace/ace_json", True),
@@ -3232,10 +3265,16 @@ try:
                     document = json.loads(path.read_text("utf-8-sig"))
                     translated = deepcopy(document)
                     before = file_lines.count(file, document, phase, markers)
+                    unfinished = "\n".join(
+                        row["text"]
+                        for row in file_lines.left(file, document, phase, markers)
+                    )
                     sends = engine_pass(file, translated, vxace)
-                    after = file_lines.count(file, translated, phase, markers)
+                    after = file_lines.count(
+                        file, translated, phase, markers, lambda: document
+                    )
                     # A translated map name's source is the original's name.
-                    if after.pop("mapName", None) is not None and file_lines.japanese(
+                    if after.pop("mapName", None) is not None and holds_source(
                         document.get("displayName")
                     ):
                         after["lines"] += 1
@@ -3243,6 +3282,12 @@ try:
                     left = before["lines"] - before["translated"]
                     report = (folder.name, file, before, after, sends)
                     assert (left > 0) == bool(sends), report
+                    # Each value sent holds Japanese, and only Japanese of a
+                    # line left.
+                    for value in sends:
+                        assert holds_source(value), (report, value)
+                        for word in re.findall(f"{LETTERS.pattern}+", value):
+                            assert word in unfinished, (report, value, word)
                     assert after == {
                         "lines": before["lines"],
                         "translated": before["lines"],
@@ -3250,7 +3295,8 @@ try:
                         report,
                         file_lines.left(file, translated, phase, markers),
                     )
-                    assert not engine_pass(file, translated, vxace), report
+                    again = engine_pass(file, translated, vxace)
+                    assert not again, (report, again)
             # The help counts only while Comment text translates it.
             help_map = json.loads((lines_game / "data/Map002.json").read_text("utf-8"))
             assert file_lines.count("Map002.json", help_map, "dialogue", markers) == {

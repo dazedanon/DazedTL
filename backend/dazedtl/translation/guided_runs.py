@@ -13,10 +13,7 @@ from .files import digest, read_json
 PHASES = ("database", "dialogue", "advanced", "variables")
 # Raise when the same inputs and settings would estimate a phase differently.
 # It is part of every estimate's fingerprint, so raising it outdates them all.
-RUN_VERSION = 1
-JAPANESE = re.compile(
-    r"[\u3000\u3002-\u3009\u300C-\u303F\u3040-\u309A\u309C-\u30FA\u31F0-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFF61-\uFF9F]+"
-)
+RUN_VERSION = 2
 
 
 class GuidedRuns:
@@ -414,6 +411,8 @@ class GuidedRuns:
         )
 
     def _comparisons(self, native):
+        from util.source_text import holds_source
+
         try:
             cache, _ = self.cache(native)
             names = self.files(native, "variables")
@@ -430,7 +429,7 @@ class GuidedRuns:
                 for command_index, literal, variables in literals:
                     if native["engine_options"].get(
                         "IGNORETLTEXT", True
-                    ) and not JAPANESE.search(literal):
+                    ) and not holds_source(literal):
                         continue
                     if literal in cache:
                         matched += 1

@@ -22,6 +22,10 @@ REUSE_STRETCHES = "shared-stretches-v1"
 # a Live run identifies each map's name, so either run reuses the other's.
 MAP_NAME_IDENTITIES = "map-name-identities-v1"
 BATTLE_MESSAGE_USERS = "battle-message-users-v2"
+# RPG Maker MV/MZ text still to translate is what engine util/source_text
+# reads as Japanese, the rule Guided's line counts share, and finished labels
+# and map names are not sent again.
+SOURCE_TEXT = "source-letters-v1"
 # Each battle-message-users policy a saved run may hold, by the parser level it
 # enables: v2 also treats a party of one actor as that actor.
 BATTLE_MESSAGE_USERS_LEVELS = {

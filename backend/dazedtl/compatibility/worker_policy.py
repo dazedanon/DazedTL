@@ -15,6 +15,7 @@ from dazedtl.settings.preferences import (
     PAGE_PACKING,
     REUSE_STRETCHES,
     SAME_LINE_SPEAKERS,
+    SOURCE_TEXT,
     SPEAKER_CONTEXT,
     batch_input_tokens,
     output_tokens,
@@ -63,6 +64,9 @@ def configure_states(plan, root, policy):
         )
         cast(Any, module).CHOICE_COLLECTION = bool(
             policy and policy.get("choiceCollection") == CHOICE_COLLECTION
+        )
+        cast(Any, module).SOURCE_TEXT = bool(
+            policy and policy.get("sourceText") == SOURCE_TEXT
         )
         users = (policy or {}).get("battleMessageUsers")
         cast(Any, module).BATTLE_MESSAGE_USERS = (
@@ -156,6 +160,7 @@ def install(*, coordinator=False):
             or policy.get("pagePacking") not in (None, PAGE_PACKING)
             or policy.get("reuseStretches") not in (None, REUSE_STRETCHES)
             or policy.get("mapNameIdentities") not in (None, MAP_NAME_IDENTITIES)
+            or policy.get("sourceText") not in (None, SOURCE_TEXT)
             or policy.get("battleMessageUsers")
             not in (None, *BATTLE_MESSAGE_USERS_LEVELS)
             or policy.get("openrouterStructuredOutputs")
