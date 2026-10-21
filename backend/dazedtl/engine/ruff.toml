@@ -10,9 +10,3 @@ exclude = ["*"]
 [lint]
 # F823 also catches a local named like the layer (`system`) that hides it.
 select = ["TID251", "F823"]
-
-[lint.extend-per-file-ignores]
-# Calls made before the platform layer, converted file by file: remove a file
-# once it has none. Never add one; use the layer, or mark a call that must stay
-# raw with `# noqa: TID251 - <reason>`.
-"util/gameupdate_config.py" = ["TID251"]

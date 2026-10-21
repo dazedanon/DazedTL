@@ -40,10 +40,7 @@ ignore = ["TRY004"]
 "scripts/qa_upgrade.py" = ["TID251"]
 # Stands in for an outside assistant, which has only the project helper.
 "scripts/testkit/assistant.py" = ["TID251"]
-# Calls made before the platform layer, converted file by file: remove a file
-# once it has none. Never add one; use the layer, or mark a call that must stay
-# raw with `# noqa: TID251 - <reason>`.
-"backend/dazedtl/translation/start_over.py" = ["TID251"]
+# A single call that must stay raw is marked `# noqa: TID251 - <reason>`.
 
 [tool.pyright]
 # Checks the app's Python; the bundled engine is resolved but not checked.

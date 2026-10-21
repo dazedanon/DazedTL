@@ -58,7 +58,7 @@ def _move(path, target):
     target.parent.mkdir(parents=True, exist_ok=True)
     for attempt in range(20):
         try:
-            os.rename(path, target)
+            os.rename(path, target)  # noqa: TID251 - B5 moves Start over onto the game-write gateway
             return
         except PermissionError:
             if attempt == 19:

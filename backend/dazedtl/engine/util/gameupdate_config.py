@@ -394,7 +394,7 @@ def _write(game_root: Path, values: dict[str, str]) -> str:
     try:
         with os.fdopen(descriptor, "wb") as handle:
             handle.write(data)
-        os.replace(temporary, folder / "patch-config.txt")
+        os.replace(temporary, folder / "patch-config.txt")  # noqa: TID251 - B5 moves this onto the game-write gateway
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
