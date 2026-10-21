@@ -14,12 +14,6 @@ select = ["TID251"]
 # Calls made before the platform layer, converted file by file: remove a file
 # once it has none. Never add one; use the layer, or mark a call that must stay
 # raw with `# noqa: TID251 - <reason>`.
-"desktop/backend/batches.py" = ["TID251"]
-"desktop/backend/evaluations.py" = ["TID251"]
-"desktop/backend/images.py" = ["TID251"]
-"desktop/backend/manual.py" = ["TID251"]
-"desktop/backend/operations.py" = ["TID251"]
-"desktop/backend/project.py" = ["TID251"]
 "desktop/backend/workflow_actions.py" = ["TID251"]
 "modules/aquedi4.py" = ["TID251"]
 "modules/json.py" = ["TID251"]

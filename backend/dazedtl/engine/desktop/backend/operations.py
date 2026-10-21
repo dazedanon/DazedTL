@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-import signal
 import subprocess
 import sys
 import threading
@@ -12,13 +11,13 @@ import uuid
 
 from .project import atomic_json, digest
 from .manual import system_environment, timestamp
-from util import extensions
+from util import extensions, system
 
 
 @extensions.point
 def launch_worker(arguments, **kwargs):
     """Starts an operation's worker process; a host may launch its own worker instead."""
-    return subprocess.Popen(arguments, **kwargs)
+    return system.popen(arguments, **kwargs)
 
 
 class Operations:
@@ -82,7 +81,7 @@ class Operations:
             with (directory / "worker.log").open("a", encoding="utf-8") as errors:
                 process = launch_worker([sys.executable, "-u", str(Path(__file__).with_name("workflow_worker.py")), str(plan)],
                                         cwd=directory, env=environment, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=errors,
-                                        encoding="utf-8", text=True, bufsize=1, start_new_session=os.name != "nt")
+                                        encoding="utf-8", text=True, bufsize=1, group=True)
                 with self.lock:
                     self.process = process
                     if self.stopping.is_set():
@@ -141,9 +140,6 @@ class Operations:
         with self.lock:
             process = self.process
             if process and process.poll() is None:
-                if os.name == "nt":
-                    subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-                else:
-                    os.killpg(process.pid, signal.SIGTERM)
+                system.stop_tree(process)
         if self.worker:
             self.worker.join(timeout=3)

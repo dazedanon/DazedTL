@@ -8,7 +8,7 @@ import json
 import math
 import re
 import shutil
-import subprocess
+from util import system
 import sys
 import time
 from pathlib import Path
@@ -231,7 +231,7 @@ class ImageStore:
         with (operation_dir / "renderer.log").open("w", encoding="utf-8", newline="\n") as log:
             env = system_environment("FONTCONFIG_PATH")
             env.update(PYTHON_DOTENV_DISABLED="1", DAZEDTL_TEST_OFFLINE="1", PYTHONIOENCODING="utf-8")
-            process = subprocess.Popen([sys.executable, str(Path(__file__).with_name("image_worker.py")), str(operation_dir / "request.json")],
+            process = system.popen([sys.executable, str(Path(__file__).with_name("image_worker.py")), str(operation_dir / "request.json")],
                                        stdout=log, stderr=log, cwd=operation_dir, env=env)
             try:
                 started = time.monotonic()
