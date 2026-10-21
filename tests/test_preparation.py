@@ -170,6 +170,16 @@ class PreparationTests(unittest.TestCase):
             def execute(_plan, _log):
                 return {"formatted": format_json_files(game / "ace_json")[0]}
 
+            def stop(message):
+                if message.startswith("Packing"):
+                    raise InterruptedError("Stopped")
+
             plan = {"action": "format_data", "project": native, "folder": str(folder)}
+            # A stop while packing reads as a stop, not as a failed pack.
+            with self.assertRaises(InterruptedError):
+                preparation.run(plan, stop, execute, lambda *_: {})
+            self.assertEqual(
+                preparation.state(native, folder)["stages"][0]["status"], "stopped"
+            )
             preparation.run(plan, lambda _: None, execute, lambda *_: {})
             self.assertTrue(packing_state(native, folder)["current"])

@@ -63,7 +63,8 @@ class GameWrite:
         """Names the files a tool run inside the write changes in `folder`,
         a game folder, itself, by their content before and after, for a tool
         that rewrites only some of them, such as a formatter. Only a write
-        that packs needs their names."""
+        that packs needs their names; with the packing receipt, it also packs
+        what the receipt finds changed since."""
         if self.packs:
             base = (self.root / folder).resolve()
             self.watched[base] = self._contents(base)
@@ -114,7 +115,10 @@ def _pack(native, folder, game, log):
     if game.everything:
         return pack_ace(native, folder, log)
     touched = [name for name in game.touched if name.startswith("ace_json/")]
-    if not touched:
+    # A write that watched its exports lets the packing receipt find what
+    # changed even when it changed nothing itself, such as a format run
+    # again after one stopped before its pack.
+    if not touched and (folder is None or not game.watched):
         return []
     if folder is None:
         # Without a Guided workspace, which keeps the packing receipt, a
@@ -167,6 +171,9 @@ def write_game(
     token = writing.set(writing.get() | {str(root)})
     try:
         _pack(native, folder, game, log)
+    except InterruptedError:
+        # A stop, which the log raises, stays a stop.
+        raise
     except (OSError, ValueError, KeyError) as error:
         if game.everything:
             raise
