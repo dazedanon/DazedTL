@@ -14,7 +14,10 @@ export function JobStatus({
   const active = job.status === "running" || job.status === "waiting";
   // Older saved operations also carry generic completion wording. Keep any
   // useful detail following it without repeating the heading and state.
-  const message = job.message.trim();
+  // A job that has just started says "Starting…" until it has progress to
+  // report; beside its own "Running" that is one state said twice.
+  const message =
+    active && job.message.trim() === "Starting…" ? "" : job.message.trim();
   const completion =
     job.status === "complete"
       ? [`${job.label} completed.`, `Completed: ${job.label}`].find(
