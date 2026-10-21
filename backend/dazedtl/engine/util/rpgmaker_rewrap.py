@@ -3,8 +3,10 @@
 Translation wraps the text it writes with these functions, and every later
 write of translated text (Apply, QA corrections, new Line widths) fits again
 the lines that no longer fit, so the game's text is measured and wrapped one
-way throughout. Line widths count characters; on-screen checks, such as QA's
-captures and the playtest, confirm what a count cannot see.
+way throughout; new Line widths also lay out again a message fitted to a
+narrower window (see :func:`fit_value`). Line widths count characters;
+on-screen checks, such as QA's captures and the playtest, confirm what a
+count cannot see.
 
 Only known display fields are touched, and ``_original`` never is.
 """
@@ -317,6 +319,7 @@ def wrap_message(
     *,
     source: str | None = None,
     rows: int | None = None,
+    every: bool = False,
 ) -> str:
     """A message laid out for its window: the body wrapped to *width* like
     its Japanese *source* (see :func:`dazedwrap.wrapShaped`), paging after a
@@ -328,8 +331,8 @@ def wrap_message(
 
     Rows that keep a layout of their own (see :func:`_spans`) split the
     message: then each part wraps on its own, only where a row is wider
-    than *width*, and without the source's layout, which no longer lines up
-    with the rows."""
+    than *width* (or every part that flows, with *every*), and without the
+    source's layout, which no longer lines up with the rows."""
     if not text or not text.strip():
         return text
     prefix = ""
@@ -353,7 +356,7 @@ def wrap_message(
         wrapped = []
         for span in spans:
             part = lines[span.start : span.end]
-            if span.flows and any(visible_width(row) > width for row in part):
+            if span.flows and (every or any(visible_width(row) > width for row in part)):
                 wrapped += _flow(part, span.per_line, width, None, rows)
             else:
                 wrapped += part
@@ -365,7 +368,9 @@ def wrap_message(
         for span in spans:
             part = lines[span.start : span.end]
             for item in _items(part) if span.flows else [part]:
-                if span.flows and any(visible_width(row) > width for row in item):
+                if span.flows and (
+                    every or any(visible_width(row) > width for row in item)
+                ):
                     wrapped += _flow(item, span.per_line, width, None, rows)
                 else:
                     wrapped += item
@@ -625,14 +630,55 @@ def variable_box(layout: Layout) -> Box:
     return Box(layout.list_width, None, False, "variable", "listWidth")
 
 
+def _rows(text: str) -> list[str]:
+    """A message's rows that hold text, after its speaker line."""
+    speaker = _SPEAKER_LINE.match(text)
+    body = text[speaker.end("prefix") :] if speaker else text
+    return [row for row in _rendered_lines(body) if row.strip()]
+
+
+def _widened(text: str, box: Box, source: str | None) -> str:
+    """A message that fits *box* laid out again at its width when the fitter
+    laid it out for a narrower window and the wider one takes it on fewer
+    rows; otherwise *text*. A layout is the fitter's when wrapping it again
+    at that width leaves it as it is, so rows a translator or the game laid
+    out stay, and the message reads as if fitted at the new width at once.
+
+    Only a narrower width the message's rows fill as few rows as they hold
+    is tried: wrapping at one where they take fewer never gives them back.
+    Blank rows at the end, such as a message's spare commands, are no part
+    of the layout (see :func:`wrap_message`)."""
+    rows = box.rows if box.paged else None
+    laid = text.split("\n")
+    while laid and not laid[-1].strip():
+        laid.pop()
+    laid = "\n".join(laid)
+    held = _rows(text)
+    sizes = [visible_width(word) for word in " ".join(held).split()]
+    if len(held) < 2 or dazedwrap.rows_needed(sizes, box.width) >= len(held):
+        return text
+    wider = wrap_message(text, box.width, source=source, rows=rows, every=True)
+    if rendered_rows(wider) >= rendered_rows(text):
+        return text
+    for width in range(widest_line(text), box.width):
+        if dazedwrap.rows_needed(sizes, width) < len(held):
+            break
+        if wrap_message(text, width, source=source, rows=rows, every=True) == laid:
+            return wider
+    return text
+
+
 def fit_value(
     text: str,
     box: Box,
     *,
     source: str | None = None,
+    resized: bool = False,
 ) -> str:
     """*text* as DazedTL writes it to *box*: unchanged when every line fits,
-    otherwise wrapped again as translation wraps it there."""
+    otherwise wrapped again as translation wraps it there. *resized* says the
+    text was fitted to other Line widths: a message the fitter laid out for a
+    narrower window is laid out again (see :func:`_widened`)."""
     if not isinstance(text, str) or not text.strip():
         return text
     if box.kind == "note":
@@ -641,6 +687,8 @@ def fit_value(
         return wrap_variable(text, box.width)
     rows_apart = box.kind in ("message", "scroll")
     if not over_width(_translated(text) if rows_apart else text, box.width):
+        if resized and box.kind == "message":
+            return _widened(text, box, source)
         return text
     if box.kind == "scroll":
         return "\n".join(
@@ -705,20 +753,25 @@ class FitReport:
     misfits: list[dict[str, Any]] = field(default_factory=list)
 
 
-def fit_run(texts: list[str], box: Box, source: str | None = None) -> list[str]:
+def fit_run(
+    texts: list[str], box: Box, source: str | None = None, *, resized: bool = False
+) -> list[str]:
     """A message whose rows are stored in several commands, one text per
     command as Assistant-led writes them, fitted to *box* over the same
     commands. Text between commands kept as they are, such as Japanese left
     untranslated (see :func:`_spans`), is laid out as one text over its own
     commands (see :func:`spread`); Scroll Text rows wrap in their own
-    command. *source* is the Japanese of the whole message.
+    command. *source* is the Japanese of the whole message; *resized* is
+    :func:`fit_value`'s.
 
     Fitting each command on its own would have pushed 353 of Fuuma
     Chronicle's 3,307 overflowing messages past its four-row window, against
     23 when fitted as one text."""
     if box.kind == "scroll" or len(texts) == 1:
         return [
-            fit_value(text, box, source=source if len(texts) == 1 else None)
+            fit_value(
+                text, box, source=source if len(texts) == 1 else None, resized=resized
+            )
             for text in texts
         ]
     spans = _spans([_command_kind(text) for text in texts])
@@ -727,7 +780,9 @@ def fit_run(texts: list[str], box: Box, source: str | None = None) -> list[str]:
         if not span.flows:
             continue
         joined = "\n".join(texts[span.start : span.end])
-        text = fit_value(joined, box, source=source if len(spans) == 1 else None)
+        text = fit_value(
+            joined, box, source=source if len(spans) == 1 else None, resized=resized
+        )
         if text != joined:
             fitted[span.start : span.end] = spread(text, span.end - span.start)
     return fitted
@@ -759,12 +814,19 @@ class _Slot:
             return "\n".join(parameters[0] for parameters in self.run)
         return self.owner[self.key]
 
-    def fitted(self) -> list[str]:
-        """The value fitted to its box: a text for each command of a message,
-        otherwise the one text."""
+    def fitted(self, resized: bool = False) -> list[str]:
+        """The value fitted to its box (see :func:`fit_value`): a text for
+        each command of a message, otherwise the one text."""
         if self.run:
-            return fit_run([parameters[0] for parameters in self.run], self.box, self.source)
-        return [fit_value(self.owner[self.key], self.box, source=self.source)]
+            return fit_run(
+                [parameters[0] for parameters in self.run],
+                self.box,
+                self.source,
+                resized=resized,
+            )
+        return [
+            fit_value(self.owner[self.key], self.box, source=self.source, resized=resized)
+        ]
 
     def written(self, texts: list[str]) -> str:
         """The value *texts* leave once written: help without the rows it
@@ -936,28 +998,21 @@ def _fitted_slots(document, file_name: str, layout: Layout, areas):
         yield slot, value
 
 
-def needs_fit(
-    document, file_name: str, layout: Layout, *, areas: set[str] | None = None
-) -> bool:
-    """Whether any translated value in *document* does not fit its box."""
-    return any(
-        "\n".join(slot.fitted()) != value
-        for slot, value in _fitted_slots(document, file_name, layout, areas)
-    )
-
-
 def fit_document(
     document,
     file_name: str,
     layout: Layout,
     *,
     areas: set[str] | None = None,
+    resized: bool = False,
 ) -> FitReport:
     """Fit *document* in place: each translated value that does not fit its
     box is wrapped again, as translation wraps it. *areas* limits fitting to
     boxes measured by those Line widths entries, such as the ones a change of
-    widths moved. Japanese left untranslated is never rewrapped. A message
-    keeps its commands (see :func:`fit_run`)."""
+    widths moved, and *resized* says the text was fitted to other widths, so
+    a message the fitter laid out narrower is laid out again (see
+    :func:`fit_value`). Japanese left untranslated is never rewrapped. A
+    message keeps its commands (see :func:`fit_run`)."""
     report = FitReport()
     fitted = list(_fitted_slots(document, file_name, layout, areas))
     # Text a window shows together is checked once, at its first value.
@@ -967,7 +1022,7 @@ def fit_document(
             checks.setdefault(slot.together, slot)
     # Last first: writing help moves the rows after it (see _Slot).
     for slot, value in reversed(fitted):
-        texts = slot.fitted()
+        texts = slot.fitted(resized)
         written = "\n".join(texts)
         if written != value:
             slot.write(texts)

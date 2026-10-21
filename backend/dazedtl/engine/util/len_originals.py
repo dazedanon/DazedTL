@@ -200,13 +200,15 @@ def preserve_originals(source, translated, *, filename: str):
 LISTED_MISFITS = 20
 
 
-def fit_written(document, filename: str, layout) -> dict:
+def fit_written(document, filename: str, layout, *, resized: bool = False) -> dict:
     """Fit a document about to be written to the game's Line widths, in
     place, and say what changed and what still does not fit. Commands are
-    never added or removed, so later writes still line up with the source."""
+    never added or removed, so later writes still line up with the source.
+    *resized* says the text was fitted to other widths (see
+    util.rpgmaker_rewrap.fit_document)."""
     from util.rpgmaker_rewrap import fit_document
 
-    report = fit_document(document, filename, layout)
+    report = fit_document(document, filename, layout, resized=resized)
     return {
         "fitted": len(report.changes),
         "misfits": report.misfits[:LISTED_MISFITS],
@@ -278,7 +280,7 @@ def fit_game(data: Path, layout) -> dict:
         if b'"_original"' not in before:
             continue
         document = json.loads(before.decode("utf-8-sig"))
-        report = fit_written(document, path.name, layout)
+        report = fit_written(document, path.name, layout, resized=True)
         misfits += report["misfits"][: LISTED_MISFITS - len(misfits)]
         misfit_count += report["misfit_count"]
         if not report["fitted"]:

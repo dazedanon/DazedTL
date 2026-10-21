@@ -800,15 +800,18 @@ def fitting_layout(plan):
     return Layout.from_widths(project.get("widths"))
 
 
-def fit_output(document, name, layout, areas=None, *, newline=False):
+def fit_output(document, name, layout, areas=None, *, newline=False, resized=False):
     """A translated file's bytes with every translated line that does not
     fit the Line widths wrapped again, and how many values that changed; no
-    bytes when nothing needs it."""
-    from util.rpgmaker_rewrap import fit_document, needs_fit
+    bytes when nothing needs it. *resized* says the text was fitted to other
+    widths (see util.rpgmaker_rewrap.fit_document)."""
+    from util.rpgmaker_rewrap import fit_document
 
-    if not needs_fit(document, name, layout, areas=areas):
+    changes = len(
+        fit_document(document, name, layout, areas=areas, resized=resized).changes
+    )
+    if not changes:
         return None, 0
-    changes = len(fit_document(document, name, layout, areas=areas).changes)
     # The engine's own formatting, so only the fitted lines differ.
     text = json.dumps(document, ensure_ascii=False, indent=4)
     return (text + "\n" if newline else text).encode("utf-8"), changes
@@ -890,6 +893,7 @@ def prepare_publication(plan):
                 layout,
                 set(options["areas"]),
                 newline=raw.endswith(b"\n"),
+                resized=True,
             )
             # What no wrap fits at these widths, in every area, as the game
             # will hold it once this fit is written.
