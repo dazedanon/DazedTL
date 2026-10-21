@@ -44,9 +44,6 @@ TARGETS = {
 # Writers that change a game's files without the gateway yet, each with why;
 # routing one through it removes its row.
 OUTSIDE = {
-    # Preparation formats the game's data and writes GameUpdate's files
-    # before the game has version tracking.
-    "translation/preparation.py:run": "preparation",
     # Assistant-led's header review writes the corrected nameplates the
     # assistant reviewed straight into the game's data.
     "translation/header_review.py:apply": "Assistant-led",

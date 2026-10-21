@@ -4,6 +4,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from dazedtl.actions import ACTIONS
+from dazedtl.compatibility.game_write import write_game
 from dazedtl.freshness import Basis, compare
 from dazedtl.storage import write_json
 
@@ -140,9 +141,17 @@ def run(plan, log, execute, guard):
                 "label": row["label"],
                 "guard": guard(native, folder),
             }
-            result = execute(current, log)
-            if isinstance(result, dict) and result.get("ok") is False:
-                raise ValueError(result.get("message") or row["label"] + " failed.")
+            data = row["action"] == "format_data"
+            # Only formatting changes a VX Ace game's exports, which the game
+            # reads once packed into Data.
+            with write_game(
+                native["source"], folder, log=log, paths=None if data else ()
+            ) as game:
+                if data:
+                    game.watch(native["data"])
+                result = execute(current, log)
+                if isinstance(result, dict) and result.get("ok") is False:
+                    raise ValueError(result.get("message") or row["label"] + " failed.")
             row.update(status="complete", result=result)
             save()
         except Exception as error:
