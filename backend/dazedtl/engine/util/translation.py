@@ -310,10 +310,11 @@ _ESTIMATE_STATIC_TOKENS_FILE = Path("log/estimate_static_tokens.json")
 
 
 @contextmanager
-def _estimate_state_lock():
-    """Serialize estimate-only state shared by concurrent file workers."""
-    _ESTIMATE_STATE_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(_ESTIMATE_STATE_LOCK_FILE, "a+b") as lock_file:
+def _file_lock(path):
+    """Cross-process lock held on `path` while the block runs, so concurrent
+    file workers serialize a read-merge-write of a file they share."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a+b") as lock_file:
         if os.name == "nt":
             import msvcrt
 
@@ -322,7 +323,13 @@ def _estimate_state_lock():
                 lock_file.write(b"\0")
                 lock_file.flush()
             lock_file.seek(0)
-            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+            # LK_LOCK gives up after 10 one-second tries; keep waiting.
+            while True:
+                try:
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+                    break
+                except OSError:
+                    continue
             try:
                 yield
             finally:
@@ -336,6 +343,11 @@ def _estimate_state_lock():
                 yield
             finally:
                 fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def _estimate_state_lock():
+    """Serialize estimate-only state shared by concurrent file workers."""
+    return _file_lock(_ESTIMATE_STATE_LOCK_FILE)
 
 def _load_estimate_written_sizes():
     """Load persisted written-sizes set from disk (for GUI subprocess sharing)."""
@@ -767,27 +779,9 @@ _REQUEST_CONTEXT_KINDS = {
 }
 _cache = None
 
-@contextmanager
 def _translation_cache_file_lock():
     """Cross-process lock for translation_cache.json."""
-    CACHE_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(CACHE_LOCK_FILE, "a+b") as lock_file:
-        if os.name == "nt":
-            import msvcrt
-            lock_file.seek(0)
-            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
-            try:
-                yield
-            finally:
-                lock_file.seek(0)
-                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    return _file_lock(CACHE_LOCK_FILE)
 
 _CACHE_SQLITE_HEADER = b"SQLite format 3\x00"
 _CACHE_SCHEMA = (
@@ -1425,6 +1419,7 @@ def cache_translation(
 
 # Variable translation map (code 122 <-> code 111 consistency)
 VAR_MAP_FILE = Path("log/var_translation_map.json")
+VAR_MAP_LOCK_FILE = Path("log/var_translation_map.lock")
 VAR_MAP_LOCK = threading.Lock()
 _var_map = None
 
@@ -1453,28 +1448,22 @@ def _load_var_map():
 
 def _save_var_map():
     """Save the variable translation map to disk.
-    Re-reads the file first and merges so entries from other subprocesses
-    are never lost."""
+    Re-reads the file and merges under a cross-process lock, so entries other
+    file workers saved are never lost; a re-read that fails raises instead of
+    counting as empty."""
     global _var_map
     if _var_map is None:
         return
-    try:
-        VAR_MAP_FILE.parent.mkdir(parents=True, exist_ok=True)
-        # Re-read the on-disk version and merge our entries on top
+    with _file_lock(VAR_MAP_LOCK_FILE):
         disk_map = {}
-        try:
-            if VAR_MAP_FILE.exists():
-                disk_map = json.loads(system.read_bytes(VAR_MAP_FILE))
-        except Exception:
-            disk_map = {}
+        if VAR_MAP_FILE.exists():
+            disk_map = json.loads(system.read_text(VAR_MAP_FILE))
         disk_map.update(_var_map)
         _var_map = disk_map
         tmp_file = VAR_MAP_FILE.with_suffix(".tmp")
         with open(tmp_file, "w", encoding="utf-8", newline="\n") as f:
             json.dump(_var_map, f, ensure_ascii=False, indent=2)
         system.replace(tmp_file, VAR_MAP_FILE)
-    except Exception:
-        pass
 
 def get_var_translation(original):
     """Look up a cached variable translation. Returns the translation or None."""
@@ -1560,27 +1549,9 @@ def get_batch_phase():
     return phase if phase in ("collect", "consume", "estimate") else None
 
 
-@contextmanager
 def _batch_file_lock():
     """Cross-process lock for the batch queue/state/results files."""
-    BATCH_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(BATCH_LOCK_FILE, "a+b") as lock_file:
-        if os.name == "nt":
-            import msvcrt
-            lock_file.seek(0)
-            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
-            try:
-                yield
-            finally:
-                lock_file.seek(0)
-                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    return _file_lock(BATCH_LOCK_FILE)
 
 
 @contextmanager

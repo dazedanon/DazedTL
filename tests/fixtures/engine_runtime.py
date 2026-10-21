@@ -119,6 +119,30 @@ try:
         assert "seed/var_translation_map.json" in batch_plan["context_hashes"]
         assert (adopt / "seed/estimate_plan.json").is_file()
 
+        # Per-file workers save the variable map at once: a save waits for
+        # another worker's, here the lock this thread holds, and keeps what it
+        # wrote meanwhile instead of overwriting it.
+        from util import translation as variables
+
+        var_map = workflow / "log/var_translation_map.json"
+        with patch.multiple(
+            variables,
+            VAR_MAP_FILE=var_map,
+            VAR_MAP_LOCK_FILE=workflow / "log/var_translation_map.lock",
+        ):
+            with variables._file_lock(variables.VAR_MAP_LOCK_FILE):
+                saver = threading.Thread(
+                    target=variables.set_var_translation, args=("剣", "Sword")
+                )
+                saver.start()
+                saver.join(0.2)
+                var_map.write_text('{"薬": "Potion"}', encoding="utf-8")
+            saver.join()
+        assert json.loads(var_map.read_text(encoding="utf-8")) == {
+            "薬": "Potion",
+            "剣": "Sword",
+        }
+
         # OpenAI Batch quotes count cache reads from prefix fingerprints taken
         # every 128 tokens past 1,024; hashing many tokens at once must find
         # exactly the hits that hashing them one by one did.
