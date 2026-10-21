@@ -297,18 +297,11 @@ const assistantWrite = [
 
 const stoppedUpdate = [
   [
-    "Save the translation version under Versions",
+    "Open Versions, the translation's Apply already its checkpoint",
     async ({ page }) => {
       await page.click("Project");
       await page.click("Versions");
-      await page.click("Review translation checkpoint");
-      await page.click("Save translation version");
       await page.waitText("Start game update");
-      await until(
-        "the translation version to save",
-        async () =>
-          !(await page.text()).includes("Review translation checkpoint"),
-      );
     },
   ],
   [

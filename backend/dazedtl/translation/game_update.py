@@ -3,8 +3,7 @@ own repository for both methods' Project page.
 
 The engine owns the file and its rules; this decides when they run: on
 opening a game, on returning to the window, after Settings change, before
-saving a translation version or building a release, and on the user's own
-choices.
+building a patch or a release, and on the user's own choices.
 """
 
 ACTIONS = {"save", "keep", "replace", "defaults"}
