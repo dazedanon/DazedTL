@@ -148,7 +148,17 @@ const batch = [
       await page.click("Database files");
       await page.click("Batch");
       await page.click("Translate");
-      await page.click("Submit Batch", 5 * 60_000);
+      // An estimate that fails never enables Submit Batch; say why at once.
+      const ready = await until(
+        "an enabled Submit Batch control",
+        async () =>
+          ((await page.locate("Submit Batch")) && "ready") ||
+          /Translation could not start\n(.+)/.exec(await page.text())?.[1],
+        5 * 60_000,
+      );
+      if (ready !== "ready")
+        throw new Error(`The Batch could not start: ${ready}`);
+      await page.click("Submit Batch");
       await page.waitText("Waiting for provider results");
     },
   ],
