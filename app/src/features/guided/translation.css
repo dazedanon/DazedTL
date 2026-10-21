@@ -318,7 +318,8 @@
   flex: 1;
   min-width: 0;
   font-size: var(--font-small);
-  line-height: 1.5;
+  /* Two lines fit a control's height, so the footer keeps its own. */
+  line-height: calc(var(--control-height) / 2);
 }
 .translation-action-scope small {
   display: block;
@@ -340,7 +341,7 @@
 }
 /* A long scope list needs a fixed sheet to scroll in; a short one sizes the
    review to its content. The flow keeps its size from progress to review;
-   a no-requests result sizes to its one line. */
+   a no-requests or failed result sizes to its message. */
 .guided-sheet.translation-review:has(.guided-preview-files),
 .guided-sheet.translation-flow:not(.translation-flow--result),
 .guided-sheet.prepared-request-preview {
