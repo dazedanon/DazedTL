@@ -97,10 +97,11 @@ def prepare(**options):
     return qa.prepare_task(game, data, "release", storage, **options)[0]
 
 
-def finish(task, flagged, corrections):
+def finish(task, flagged, corrections, asked=None):
     """Review the task to completion: the screen flags *flagged*, deep review
-    corrects what *corrections* names and editorial accepts; a second
-    reviewer takes the checks and editorial the first may not."""
+    corrects what *corrections* names, asks the user about what *asked*
+    proposes, and editorial accepts; a second reviewer takes the checks and
+    editorial the first may not."""
     while row := qa.next_bundle(task, "rev-a") or qa.next_bundle(task, "rev-b"):
         bundle = json.loads(Path(row["path"]).read_text(encoding="utf-8"))
         if row["id"].startswith("screen"):
@@ -141,6 +142,19 @@ def finish(task, flagged, corrections):
                         "apply_identities": [],
                     }
                     if item["source"] in corrections
+                    else {
+                        "id": item["id"],
+                        "disposition": "uncertain-playtest",
+                        "severity": None,
+                        "category": "",
+                        "family_key": "",
+                        "motif_ids": [],
+                        "summary": "Whether the box fits the greeting.",
+                        "evidence": "Only the game shows how wide it draws.",
+                        "correction": (asked or {})[item["source"]],
+                        "apply_identities": [],
+                    }
+                    if item["source"] in (asked or {})
                     else {
                         "id": item["id"],
                         "disposition": "clean",
@@ -498,3 +512,38 @@ except ValueError as error:
     assert "9.99" in str(error), error
 else:
     raise AssertionError("An unknown version scoped QA.")
+
+# A question the user answers Keep settles its line: the playtest found the
+# first line too long, deep review asked about a shorter one, the user kept
+# the line, and other text changed, as once QA's corrections are in. On the
+# Text QA page the kept line's problem read waiting and the next round asked
+# again. 2.24.0 saved the answer only in the game's workflow folder.
+storage = workflow / "text-qa"
+kept = [found[0]]
+asked = prepare(observations=kept)
+finish(asked, set(), {}, {"おはよう": "Hi!"})
+(question,) = json.loads((asked / "findings.json").read_text(encoding="utf-8"))[
+    "uncertain_playtests"
+]
+choices = workflow / "text-qa-choices.json"
+choices.write_text(json.dumps({str(asked): {question["id"]: "keep"}}), encoding="utf-8")
+LINES[2] = ("静かな部屋だ", "Such a quiet room.")
+write_game(LINES)
+hashes = {
+    "Map001.json": hashlib.sha256((data / "Map001.json").read_bytes()).hexdigest()
+}
+assert labels(asked, kept, hashes) == ["reviewed"]
+# The record stays for going back to 2.24.0, and an answer the task holds,
+# given since, wins over it.
+assert qa.answers(asked) == {question["id"]: "keep"} and choices.exists()
+qa.answer(asked, question["id"], "use")
+assert labels(asked, kept, hashes) == ["waiting"]
+assert qa.answers(asked) == {question["id"]: "use"}
+qa.answer(asked, question["id"], "keep")
+# The next round reads the kept line as reviewed and leaves its problem out.
+again = prepare(observations=kept)
+assert again != asked and "おはよう" not in targets(again), targets(again)
+assert not json.loads((again / "checkpoint.json").read_text(encoding="utf-8"))[
+    "observations"
+]
+assert labels(again, kept, hashes) == ["reviewed"]

@@ -32,11 +32,6 @@ def _finding_kind(row):
     return "review"
 
 
-def _task_record(folder, name, task):
-    path = Path(folder) / name
-    return (read_json(path) if path.exists() else {}).get(task)
-
-
 def binding(plan):
     guard = {
         key: value
@@ -100,9 +95,43 @@ def _pointer(plan):
 
 def _task_folder(plan, saved):
     """The task folder a pointer names, inside QA's storage."""
-    storage = Path(plan["folder"]) / "text-qa"
-    relative = Path(saved["task"]).relative_to(storage)
+    return _stored_task(plan["folder"], saved["task"])
+
+
+def _stored_task(folder, task):
+    """A task folder inside the game workspace's QA storage, by its path."""
+    storage = Path(folder) / "text-qa"
+    relative = Path(task).relative_to(storage)
     return project_path(storage, relative.as_posix(), exists=False)
+
+
+# Where 2.24.0 and earlier kept the user's answers to QA's questions, by task.
+EARLIER_ANSWERS = "text-qa-choices.json"
+
+
+def adopt_answers(folder):
+    """Copies the answers 2.24.0 and earlier kept in the game workspace into
+    their tasks, whose ledgers read them there, so a line the user kept reads
+    reviewed. The file stays, since going back to 2.24.0 reads it, and an
+    answer the task already holds, given since, wins over it."""
+    from util import rpgmaker_qa as qa
+
+    try:
+        earlier = read_json(Path(folder) / EARLIER_ANSWERS)
+    except ValueError, OSError:
+        return
+    for task, choices in earlier.items() if isinstance(earlier, dict) else ():
+        try:
+            root = _stored_task(folder, task)
+            if not root.is_dir():
+                continue
+            saved = qa.answers(root)
+            for question, choice in choices.items():
+                if question not in saved and choice in qa.ANSWERS:
+                    qa.answer(root, question, choice)
+        # A task gone, broken or out of reach now holds no review to build on.
+        except ValueError, OSError, AttributeError:
+            continue
 
 
 def _failure(error):
@@ -216,6 +245,7 @@ def qa_state(plan):
             "questions": [],
             "message": "No QA task prepared for this focus.",
         }
+    adopt_answers(plan["folder"])
     saved, root, task, checkpoint, document = _prepared(plan)
     # A finished task stays current through any update.
     rules_changed = qa.rules_changed(task, checkpoint)
@@ -304,7 +334,7 @@ def qa_state(plan):
                 ),
             }
         )
-    choices = _task_record(plan["folder"], "text-qa-choices.json", str(root)) or {}
+    choices = qa.answers(root)
     questions = [
         {
             "id": row["id"],
@@ -561,6 +591,8 @@ def run_qa(plan, log):
     folder = Path(plan["folder"])
     if plan["action"] == "qa_prepare":
         _set_aside(plan, log)
+        # A new task builds on the earlier ones, with the lines the user kept.
+        adopt_answers(folder)
         # What the release playtest found in the same text goes to review; a
         # task prepared again keeps its own and takes the ones it lacks.
         from .playtest import pending

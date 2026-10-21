@@ -3,10 +3,12 @@ every bundle through this checkout's engine and review it clean, except the
 first deep item, which gets a correction so applying has a finding. It ends
 when the task is complete and prints what each stage reviewed.
 
-    python scripts/testkit/qa_reviewer.py TASK RESULTS [--clean]
+    python scripts/testkit/qa_reviewer.py TASK RESULTS [--clean] [--ask]
 
 TASK is the task folder the project helper's `qa --prepare` names; results go
-to RESULTS. With --clean, every item is reviewed clean.
+to RESULTS. With --clean, every item is reviewed clean. With --ask, each line
+an observation brings to deep review, such as the playtest's, is a question
+for the user with a proposal.
 """
 
 import argparse
@@ -60,11 +62,24 @@ def screen(bundle, _corrected):
     }
 
 
-def deep(bundle, corrected):
+def deep(bundle, corrected, ask=False):
     reviews = []
     for item in bundle["items"]:
         text = item.get("translation") or ""
-        if (
+        if ask and any(
+            evidence.get("verdict") == "observation"
+            for evidence in item.get("screen_evidence") or []
+        ):
+            reviews.append(
+                {
+                    **clean(item),
+                    "disposition": "uncertain-playtest",
+                    "summary": "Only the game shows whether this fits.",
+                    "evidence": "A scripted reviewer asks about each observed line.",
+                    "correction": f"{text} (asked)",
+                }
+            )
+        elif (
             not corrected
             and text
             and "\n" not in text
@@ -115,9 +130,15 @@ def main() -> None:
     parser.add_argument("task", type=Path)
     parser.add_argument("results", type=Path)
     parser.add_argument("--clean", action="store_true")
+    parser.add_argument("--ask", action="store_true")
     args = parser.parse_args()
     args.results.mkdir(parents=True, exist_ok=True)
-    reviewers = {"screen": screen, "deep": deep, "sweep": sweep, "editorial": editorial}
+    reviewers = {
+        "screen": screen,
+        "deep": lambda bundle, corrected: deep(bundle, corrected, args.ask),
+        "sweep": sweep,
+        "editorial": editorial,
+    }
     # A list, so "--clean" can start it full.
     corrected = ["none"] if args.clean else []
     reviewed: dict[str, int] = {}
