@@ -274,8 +274,10 @@ def _end(process: system.Process) -> None:
 def _remove(folder: Path) -> None:
     """Removes the run's profile and plan, which Windows keeps locked until
     Electron's helpers have exited."""
-    for _ in range(40):
+    # remove_tree waits for each held file itself; this bounds the whole wait.
+    deadline = time.monotonic() + 10
+    while True:
         system.remove_tree(folder, ignore_errors=True)
-        if not folder.exists():
+        if not folder.exists() or time.monotonic() > deadline:
             return
         time.sleep(0.25)

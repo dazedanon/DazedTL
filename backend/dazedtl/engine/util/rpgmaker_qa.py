@@ -33,7 +33,6 @@ from util.paths import (
     GAME_SKILL_RESERVED_NAMES,
     GAME_SKILLS_RELATIVE,
     new_folder,
-    replace_with_retry,
     unlink_with_retry,
 )
 from util.rpgmaker_qa_manifest import (
@@ -1868,12 +1867,7 @@ def _capture_round(
 
 
 def _save_capture_record(root: Path, record: dict[str, Any]) -> None:
-    path = root / INTERFACE_FOLDER / CAPTURE_RECORD
-    temporary = path.with_name(path.name + ".tmp")
-    temporary.write_bytes(_canonical_bytes(record) + b"\n")
-    # The app's polls read the record; Windows can't replace a file while
-    # one does.
-    replace_with_retry(temporary, path)
+    _atomic_write_json(root / INTERFACE_FOLDER / CAPTURE_RECORD, record)
 
 
 def _recapture(
