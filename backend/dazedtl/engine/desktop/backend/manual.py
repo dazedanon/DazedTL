@@ -19,6 +19,8 @@ from util.translation_task import TRANSLATION_MODULE_SPECS, format_estimate_tota
 from .project import atomic_json, digest, file_digest
 from .settings import SettingsStore
 from util import extensions
+# images and operations import system_environment from here.
+from util.system import system_environment
 
 
 @extensions.point
@@ -299,21 +301,6 @@ def prepare_inputs(directory, plan, stopped=lambda: False, *, link=False):
                 raise ValueError("The isolated engine input changed. Create a new run.")
         (directory / "translated" / name).parent.mkdir(parents=True, exist_ok=True)
     atomic_json(prepared, {"ready": True})
-
-
-# Workers start from these variables instead of the whole environment, which
-# may hold provider keys. Claude's SDK looks for its settings under APPDATA or
-# the home folder whenever a client is created, and Windows has no home folder
-# without USERPROFILE.
-SYSTEM_VARIABLES = ("PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL", "LD_LIBRARY_PATH",
-                    "DYLD_LIBRARY_PATH", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA")
-
-
-def system_environment(*names):
-    """This process's system variables and ``names``, for a worker to start from."""
-    # Windows lists every variable name in capitals.
-    wanted = {name.upper() if os.name == "nt" else name for name in (*SYSTEM_VARIABLES, *names)}
-    return {key: value for key, value in os.environ.items() if key in wanted}
 
 
 def worker_environment(workspace, plan):

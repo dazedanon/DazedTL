@@ -23,7 +23,7 @@ if __name__ == "__main__":
 
     action = run_action(sys.argv)
     record_crashes(action)
-    from dazedtl.stdio import private_stdin
+    from dazedtl.system import private_stdin
 
     # Stop and approval commands arrive on standard input while the per-file
     # workers start; they must not inherit that pipe.

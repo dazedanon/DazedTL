@@ -16,7 +16,7 @@ except OSError, ValueError, KeyError, TypeError, IndexError:
     action = "unknown"  # The engine's worker reports the unreadable plan.
 action = str(action)
 record_crashes(action)
-from dazedtl.stdio import private_stdin
+from dazedtl.system import private_stdin
 
 # The stop command arrives on standard input while this action runs Git and
 # other tools; they must not inherit that pipe.
