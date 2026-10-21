@@ -64,8 +64,10 @@ export function TranslationFlowDialog({
   return (
     <Modal
       label="Translate selected text"
-      size="md"
-      className="guided-sheet translation-review translation-flow"
+      size={value.stage === "empty" ? "sm" : "md"}
+      className={`guided-sheet translation-review translation-flow${
+        value.stage === "empty" ? " translation-flow--result" : ""
+      }`}
       dismissible={loading || !flow.busy}
       onDismiss={flow.cancel}
     >
@@ -111,8 +113,8 @@ export function TranslationFlowDialog({
                     : "Translation estimate"
             }
           />
-          {/* The sheet keeps its size from start to finish, so a status or a
-              short result sits in its centre. */}
+          {/* The sheet keeps its size while work runs, so a status sits in its
+              centre; a no-requests result sizes it to its one line. */}
           <DialogBody
             className={
               loading || value.stage === "empty"

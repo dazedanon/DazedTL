@@ -339,9 +339,10 @@
   margin: 0 0 var(--space-2);
 }
 /* A long scope list needs a fixed sheet to scroll in; a short one sizes the
-   review to its content. The flow keeps its size from progress to review. */
+   review to its content. The flow keeps its size from progress to review;
+   a no-requests result sizes to its one line. */
 .guided-sheet.translation-review:has(.guided-preview-files),
-.guided-sheet.translation-flow,
+.guided-sheet.translation-flow:not(.translation-flow--result),
 .guided-sheet.prepared-request-preview {
   height: min(680px, calc(100dvh - var(--space-8)));
 }
