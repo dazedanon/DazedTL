@@ -377,11 +377,7 @@ def clear_estimate_written_sizes():
     global _estimate_written_sizes
     with _estimate_state_lock():
         _estimate_written_sizes = set()
-        try:
-            if _ESTIMATE_SIZES_FILE.exists():
-                _ESTIMATE_SIZES_FILE.unlink()
-        except Exception:
-            pass
+        system.unlink(_ESTIMATE_SIZES_FILE, ignore_errors=True)
 
 
 def _estimate_static_token_count(static_system, model):
@@ -844,7 +840,7 @@ def _ensure_cache_database():
     )
     try:
         if tmp_file.exists():
-            tmp_file.unlink()
+            system.unlink(tmp_file)
         _initialize_cache_database(tmp_file, legacy)
         system.replace(tmp_file, CACHE_FILE)
     finally:
@@ -852,11 +848,7 @@ def _ensure_cache_database():
             tmp_file,
             tmp_file.with_name(tmp_file.name + "-journal"),
         ):
-            try:
-                if leftover.exists():
-                    leftover.unlink()
-            except OSError:
-                pass
+            system.unlink(leftover, ignore_errors=True)
 
 
 def _cache_connection():
@@ -938,7 +930,7 @@ def _write_cache_to_disk(cache):
     )
     try:
         if tmp_file.exists():
-            tmp_file.unlink()
+            system.unlink(tmp_file)
         _initialize_cache_database(tmp_file, cache)
         system.replace(tmp_file, CACHE_FILE)
     finally:
@@ -946,11 +938,7 @@ def _write_cache_to_disk(cache):
             tmp_file,
             tmp_file.with_name(tmp_file.name + "-journal"),
         ):
-            try:
-                if leftover.exists():
-                    leftover.unlink()
-            except OSError:
-                pass
+            system.unlink(leftover, ignore_errors=True)
 
 def _is_pending_cache_entry(value):
     return isinstance(value, dict) and value.get(CACHE_PENDING_MARKER) is True
@@ -1045,11 +1033,7 @@ def clear_cache():
                 CACHE_FILE.with_name(CACHE_FILE.name + "-wal"),
                 CACHE_FILE.with_name(CACHE_FILE.name + "-shm"),
             ):
-                try:
-                    if path.exists():
-                        path.unlink()
-                except Exception:
-                    pass
+                system.unlink(path, ignore_errors=True)
 
 def load_cache():
     """Load the translation cache from disk."""
@@ -1428,11 +1412,7 @@ def clear_var_map():
     global _var_map
     with VAR_MAP_LOCK:
         _var_map = {}
-        try:
-            if VAR_MAP_FILE.exists():
-                VAR_MAP_FILE.unlink()
-        except Exception:
-            pass
+        system.unlink(VAR_MAP_FILE, ignore_errors=True)
 
 def _load_var_map():
     """Load the variable translation map from disk (always re-reads to pick up
@@ -1745,7 +1725,7 @@ def _clear_batch_queue_parts(*, strict=False, queue_file=None):
                 raise
     try:
         if parts_dir.exists():
-            parts_dir.rmdir()
+            system.rmdir(parts_dir)
     except Exception:
         if strict:
             raise
@@ -1756,7 +1736,7 @@ def _clear_batch_queue_storage(*, strict=False, queue_file=None):
     queue_file = Path(queue_file or _active_batch_queue_file())
     try:
         if queue_file.exists():
-            queue_file.unlink()
+            system.unlink(queue_file)
     except Exception:
         if strict:
             raise
@@ -2245,7 +2225,7 @@ def clearBatchFiles(*, strict=False):
             for path in (BATCH_STATE_FILE, BATCH_RESULTS_FILE):
                 try:
                     if path.exists():
-                        path.unlink()
+                        system.unlink(path)
                 except Exception:
                     if strict:
                         raise
