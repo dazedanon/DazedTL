@@ -408,7 +408,7 @@ export function layoutView(w: GuidedWorkspace): TaskView {
                   : "the current work finishes"
               }.`
             : saved.notice || "",
-        askedPortrait: textFit.askedPortrait,
+        asked: textFit.askedWidths,
         widths: w.state.preferences.values.widths,
       })}
       onClick={saveLayout}

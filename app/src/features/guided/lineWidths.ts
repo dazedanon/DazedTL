@@ -4,23 +4,26 @@ import type { LayoutWidths } from "../../api/contracts";
  * What saving Line widths reports beside its control: the fit of the applied
  * text to them, or else the save itself, then a portrait width the save
  * lowered to Dialogue, since text beside a portrait is never wider.
- * `askedPortrait` is the With portrait width this visit's save asked for, or 0.
+ * `asked` holds the widths this visit's save asked for; widths saved later
+ * another way, such as measured ones, have their own Dialogue.
  */
 export function widthsSaveNotice({
   fitted,
   saved,
-  askedPortrait,
+  asked,
   widths,
 }: {
   fitted: string;
   saved: string;
-  askedPortrait: number;
+  asked: LayoutWidths | null;
   widths: LayoutWidths;
 }) {
   const report = fitted || saved;
   const lowered =
     report &&
-    askedPortrait > widths.faceWidth &&
+    asked &&
+    asked.width === widths.width &&
+    asked.faceWidth > widths.faceWidth &&
     widths.faceWidth === widths.width;
   return lowered
     ? `${report} With portrait was lowered to ${widths.faceWidth} to match Dialogue.`
