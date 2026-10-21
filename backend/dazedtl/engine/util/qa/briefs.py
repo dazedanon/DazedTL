@@ -356,10 +356,10 @@ def _render_screen_item(
 ) -> list[str]:
     kind = item.get("kind")
     if kind == "scene":
-        out = [
+        out = [(
             f"### SCENE {item['id']} {item['scene_id']} "
             f"({item['line_count']} lines, {item['target_count']} targets)"
-        ]
+        )]
         for line in item["lines"]:
             mark = f"[T {line['id']}]" if "id" in line else "[ctx]"
             entry = screen_index[line.get("id") or line["context_id"]]
@@ -595,10 +595,10 @@ def render_bundle(task_dir: str | Path, bundle_id: str) -> str:
         {**_load_screen_index(root, task), **(bundle.get("screen_index") or {})}
         if stage == "screen" else {}
     )
-    out = [
+    out = [(
         f"BUNDLE {bundle_id} ({stage}, {bundle['item_count']} targets, "
         f"sha256 {bundle['content_sha256']}). Newlines show as ⏎."
-    ]
+    )]
     if stage == "deep":
         out += _render_deep(bundle)
     else:

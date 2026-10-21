@@ -476,7 +476,7 @@ def prepare_task(
             )
             _atomic_write_json(staging / "screen-index.json", screen_index_document)
             # Lint families come first, in bundles of their own.
-            ordinal = max(
+            last = max(
                 [item["ordinal"] for item in items if "ordinal" in item]
                 + [
                     line["ordinal"] for item in items
@@ -484,7 +484,7 @@ def prepare_task(
                 ]
                 + [0]
             )
-            for ordinal, item in enumerate(lint_items, start=ordinal + 1):
+            for ordinal, item in enumerate(lint_items, start=last + 1):
                 item["ordinal"] = ordinal
             bundles = _bundle_items(
                 lint_items,

@@ -57,7 +57,7 @@ def _header_flags(data: Path, manifest: dict[str, Any]) -> dict[str, Any]:
 def _candidate(reasons: Iterable[str], identities: Iterable[str] = ()) -> dict[str, Any]:
     return {
         "reasons": sorted(set(reasons)),
-        "context_identities": sorted(set(identity for identity in identities if identity)),
+        "context_identities": sorted({identity for identity in identities if identity}),
     }
 
 

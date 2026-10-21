@@ -537,7 +537,7 @@ def _motif_items(
 ) -> list[dict[str, Any]]:
     """Each recurring joke's translations as one family; variants reviewed in
     the family earlier are listed beside the others instead of read again."""
-    records, clusters = _record_maps(manifest)
+    records, _clusters = _record_maps(manifest)
     document_cache: dict[str, Any] = {}
     items = []
     for seed in _motif_seeds(context["quirks"]["text"]):

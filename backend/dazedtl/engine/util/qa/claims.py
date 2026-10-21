@@ -157,7 +157,7 @@ def _next_unlocked(
     skip_declined: bool = False,
 ) -> tuple[dict[str, Any] | None, bool]:
     """One assignment attempt; True when it moved QA to its next stage instead."""
-    root, task, checkpoint = _load_task(root)
+    root, _task, checkpoint = _load_task(root)
     helper = _register_worker(checkpoint, worker, helper)
     _atomic_write_json(root / "checkpoint.json", checkpoint)
     stage = checkpoint["stage"]
