@@ -8,7 +8,7 @@ import shutil
 import uuid
 
 from util.engine_options import validate_engine_options, engine_options
-from util.game_settings import GameSettingsError, default_wrap_widths, load_game_wrap_widths, normalize_wrap_widths, save_game_wrap_widths, valid_line_widths
+from util.game_settings import GameSettingsError, default_wrap_widths, load_game_wrap_widths, normalize_wrap_widths, save_game_wrap_widths, valid_line_widths, wrap_widths_saved
 from util.rpgmaker_profiles import DB_FILES, EVENT_FILES_EXACT, PHASE0_CONFIG, PHASE1_CONFIG, PHASE1B_CONFIG, PHASE2_CONFIG
 from .project import atomic_json, digest
 from .settings import SettingsStore
@@ -168,7 +168,7 @@ class Workflows:
                            narrative_groups=[g.key for g in distribution.groups if g.key in selected and g.tier == db.TIER_NARRATIVE],
                            defer_groups=[g.key for g in distribution.groups if g.key not in selected])
             db.save_db_profile(work, profile)
-        if "widths" in values:
+        if "widths" in values and not wrap_widths_saved(project["source"], updated["widths"]):
             save_game_wrap_widths(project["source"], updated["widths"])
         updated["revision"] += 1
         self.projects[project_id] = updated

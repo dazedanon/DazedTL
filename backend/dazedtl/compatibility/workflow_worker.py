@@ -27,19 +27,13 @@ source = activate()
 from desktop.backend import worker_failures, workflow_actions
 
 from dazedtl import actions
-from dazedtl.compatibility.guided import publish_ace
 from dazedtl.compatibility.translation import explained
 
 
 def run_action(engine, plan, log):
     """Runs a plan with its action's handler, or the engine's own run."""
     handler = actions.handler(plan["action"])
-    if handler is None:
-        return engine(plan, log)
-    # Every write to the game's text also packs an Ace game's native data.
-    if actions.ACTIONS[plan["action"]].publication:
-        return publish_ace(plan, log, handler)
-    return handler(plan, log)
+    return engine(plan, log) if handler is None else handler(plan, log)
 
 
 class Progress:

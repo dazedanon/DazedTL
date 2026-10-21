@@ -1326,7 +1326,7 @@ Closing or pausing cannot undo an already submitted provider request.
 
 Git baselines and backup records gate new translation work.
 Index writes wait up to ten seconds while another Git process holds the index lock, as any `git status` does while it refreshes the index, so status polls keep that refresh while workers write ([_run_git](../backend/dazedtl/engine/util/version_update/git_workflow.py)).
-A checkout off the translation branch, or with an unfinished Git operation or asset sync, refuses every change to the game; [checkout_issue](../backend/dazedtl/translation/operations.py) names the problem for both the refusal and a translation warning that every Guided task shows.
+Every change to a game's files goes through the [game-write gateway](../backend/dazedtl/compatibility/game_write.py), which refuses it while the checkout is off the translation branch or has an unfinished Git operation or asset sync; [checkout_issue](../backend/dazedtl/translation/operations.py) names the problem for both the refusal and a translation warning that every Guided task shows.
 Reviewed runtime manifests control patch scope; all .dazedtl work stays outside both branches.
 DazedTL's own runtime files a game holds join every manifest that checkpoints, packages and QA records read ([dazedtl_files](../backend/dazedtl/engine/util/len_patch_scope.py)), and Guided proposes the same list: an assistant's manifest of data and `plugins.js` alone gave players a `plugins.js` loading a plugin the patch lacked, so the game stopped at boot.
 Set up's files take the prepared game's copies as their originals, as `plugins.js` does; a game whose prepared backup lacks them, such as one set up after its Git baseline, gets them as translation-only additions instead of a checkpoint that fails.
@@ -1358,8 +1358,7 @@ So Set up keeps an encrypted game's archive in `.dazedtl/ace`, where releases an
 Games also arrive with `ace_json` converted and the archive still beside Game.exe, from DazedMTLTool, which only told users to delete it, or from a manual RPGMakerDecrypter and RV2JSON conversion.
 Convert Ace data is done only once no archive sits in the game root, which an opened project's state shows on every Guided task; it keeps existing `ace_json`, since converting again would overwrite its translations, writes only the exports it lacks ([actions](../backend/dazedtl/engine/util/ace/actions.py)) and sets the archive aside.
 Until then packing refuses, and so do Apply and Release, which pack or check its receipt.
-The game reads only Data, so every in-app write to `ace_json` packs it in the same step: Guided Apply, Text QA's apply and undo, Line widths fitting and History restores in the workflow worker, and Plugin files' apply and restore in its service ([pack_ace](../backend/dazedtl/compatibility/guided.py)).
-A write that would reach a game still reading its archive refuses before anything is written; a pack that fails after the write reports that the game's data was not updated.
+The game reads only Data, so the game-write gateway packs what a write changed in `ace_json` once it succeeds ([pack_ace](../backend/dazedtl/compatibility/guided.py)), and refuses such a write before anything is written while the game still reads its archive.
 Packing saves a receipt bound to every current JSON input and its corresponding native output, and Set up's conversion saves the first one, since JSON just converted from Data holds what Data does.
 From a current receipt a pack converts only the data files whose exports changed since.
 Without one, such as for `ace_json` an earlier tool converted or Data an assistant wrote with its own tools, as Len's method does, a write packs only the exports it touched and leaves the rest of Data as it is.

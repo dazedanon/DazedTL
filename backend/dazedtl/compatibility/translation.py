@@ -771,6 +771,19 @@ class TranslationEngine:
         save_game_wrap_widths(root, widths)
         return load_game_wrap_widths(root)
 
+    def line_widths(self, root, widths):
+        """Saves an assistant's measured Line widths and fits the text
+        write_rpgmaker already wrote to them, in one write to the game."""
+        from .game_write import write_game
+
+        # Assistant-led's writes leave a VX Ace game's Data as it is; its
+        # patch rebuilds the game's archive.
+        with write_game(root, pack=False):
+            return {
+                "widths": self.save_line_widths(root, widths),
+                **self.fit_rpgmaker(root),
+            }
+
     def fit_rpgmaker(self, root):
         """Fits the text write_rpgmaker wrote into a game's data to its Line
         widths as they are now, and says what changed and what still does

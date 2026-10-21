@@ -3,6 +3,7 @@
 import json
 import shutil
 import unittest
+from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -10,6 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from dazedtl.api.contracts.validation import check_response
+from dazedtl.compatibility.game_write import GameWrite, write_game
 from dazedtl.compatibility.translation import TranslationEngine
 from dazedtl.foreign_work import ForeignWorkError
 from dazedtl.plugins import PluginService, ruby
@@ -25,6 +27,8 @@ from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.backups import snapshot, store_path
 from dazedtl.translation.files import digest, read_json
 from dazedtl.translation.operations import lifecycle_path
+
+from tests.game_writes import game_write
 
 
 class PluginTests(unittest.TestCase):
@@ -100,7 +104,9 @@ class PluginTests(unittest.TestCase):
             clean_drafts=lambda _: None,
             writable=lambda _: None,
         )
-        self.backend = SimpleNamespace(source=self.root / "engine")
+        self.backend = SimpleNamespace(
+            source=self.root / "engine", game_write=game_write
+        )
         self.service = PluginService(
             self.projects, self.translation, self.backend, documents=self.documents
         )
@@ -560,17 +566,17 @@ class PluginTests(unittest.TestCase):
         )
         for candidate, raw in candidates.items():
             write_bytes(candidate, raw)
-        original_publish = self.service._publish_file
+        original_put = GameWrite.put
         calls = []
 
-        def fail(root, path, content):
+        def fail(game, path, content, mode=None):
             calls.append(path)
-            original_publish(root, path, content)
+            original_put(game, path, content, mode)
             if len(calls) == 2:
                 raise OSError("Injected second publication failure after its write")
 
         with (
-            patch.object(self.service, "_publish_file", side_effect=fail),
+            patch.object(GameWrite, "put", autospec=True, side_effect=fail),
             self.assertRaisesRegex(ValueError, "rollback attempted"),
         ):
             self.service.action(self.identity, "apply")
@@ -1172,18 +1178,18 @@ class PluginTests(unittest.TestCase):
         self,
     ):
         _request, _report = self.translated()
-        publish = self.service._publish_file
+        put = GameWrite.put
         count = 0
 
-        def interrupt(root, path, raw):
+        def interrupt(game, path, raw, mode=None):
             nonlocal count
             count += 1
             if count == 2:
                 raise KeyboardInterrupt("Injected process interruption")
-            publish(root, path, raw)
+            put(game, path, raw, mode)
 
         with (
-            patch.object(self.service, "_publish_file", side_effect=interrupt),
+            patch.object(GameWrite, "put", autospec=True, side_effect=interrupt),
             self.assertRaises(KeyboardInterrupt),
         ):
             self.service.action(self.identity, "apply")
@@ -1323,6 +1329,14 @@ class AceScriptTests(unittest.TestCase):
         project = projects.open({"source": str(game), "engine": "ACE"})
         identity = project["id"]
         packed = []
+
+        @contextmanager
+        def recorded(source, _native=None, **options):
+            options.pop("subject")
+            with write_game(source, pack=False, **options) as game:
+                yield game
+            packed.append((Path(source), game.touched))
+
         service = PluginService(
             projects,
             SimpleNamespace(
@@ -1337,10 +1351,7 @@ class AceScriptTests(unittest.TestCase):
             ),
             SimpleNamespace(
                 source=root / "engine",
-                guided_ace_blocked=lambda _root: None,
-                guided_ace_pack=lambda source, _native, touched: packed.append(
-                    (source, touched)
-                ),
+                game_write=recorded,
             ),
         )
         write_json(

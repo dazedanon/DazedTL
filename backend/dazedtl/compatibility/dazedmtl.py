@@ -369,25 +369,19 @@ class ExistingBackend:
 
         return ace_packing_state(native, folder)
 
-    def guided_ace_pack(self, source, native_id, touched):
-        """Packs the exports a write outside a workflow operation, such as
-        Plugin files', `touched` into an Ace game's native data. A game
-        without a Guided workspace, which keeps the packing receipt, packs
-        only those."""
-        from desktop.backend.workflow_actions import describe_game
-        from util.ace import actions
-
-        from dazedtl.translation.release import packing_target
-
-        from .guided import pack_ace
+    def game_write(self, source, native_id=None, **options):
+        """The game-write gateway for a write outside a workflow operation,
+        such as Plugin files' or Images', with the game's Guided workspace
+        when it has one, which keeps the packing receipt."""
+        from .game_write import write_game
 
         native = self.workflows.projects.get(native_id)
-        if not native or native["source"] != str(source):
-            only = {packing_target(name) for name in touched}
-            return actions.run(Path(source), "ace_pack", lambda _line: None, only=only)
-        current = {**native, **describe_game(native["source"], files=False)}
-        folder = self.workflows.folder(native_id)
-        return pack_ace(current, folder, lambda _line: None, touched)
+        folder = (
+            self.workflows.folder(native_id)
+            if native and native["source"] == str(source)
+            else None
+        )
+        return write_game(source, folder, **options)
 
     @staticmethod
     def guided_titles(native):

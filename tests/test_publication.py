@@ -5,6 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+from dazedtl.compatibility import game_write
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation import publication as p
 from dazedtl.translation.files import read_json
@@ -61,7 +62,7 @@ class PublicationTests(unittest.TestCase):
             if path == self.root / "data/A.json":
                 write_bytes(self.root / "data/B.json", during)
 
-        with patch.object(p, "write_bytes", side_effect=editing):
+        with patch.object(game_write, "write_bytes", side_effect=editing):
             result = p.publish(self.folder, self.root, plan)
         self.assertEqual(
             {name: (self.root / name).read_bytes() for name in self.after}, self.after
@@ -157,7 +158,7 @@ class PublicationTests(unittest.TestCase):
                 raise OSError("generated second-file write failure")
 
         with (
-            patch.object(p, "write_bytes", side_effect=failing),
+            patch.object(game_write, "write_bytes", side_effect=failing),
             self.assertRaisesRegex(ValueError, "rolled back"),
         ):
             p.publish(self.folder, self.root, plan)
@@ -208,7 +209,7 @@ class PublicationTests(unittest.TestCase):
                 raise OSError("generated publication failure")
 
         with (
-            patch.object(p, "write_bytes", side_effect=failing),
+            patch.object(game_write, "write_bytes", side_effect=failing),
             self.assertRaisesRegex(ValueError, "Review restore"),
         ):
             p.publish(self.folder, self.root, plan)

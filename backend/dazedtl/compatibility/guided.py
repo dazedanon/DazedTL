@@ -205,6 +205,8 @@ def guard_context(project, observed):
 def phased_workflows(workspace, lock, operations, manual):
     from desktop.backend.workflow import Workflows
 
+    from .game_write import write_game
+
     class ScopedWorkflows(Workflows):
         def execute(self, token):
             plan = self.previews.get(token)
@@ -244,6 +246,29 @@ def phased_workflows(workspace, lock, operations, manual):
             self.projects[identity] = updated
             return updated
 
+        def update(self, project_id, revision, values):
+            """Saves the workflow's settings; Line widths the game's settings
+            don't hold yet go into them through the game-write gateway."""
+            from util.game_settings import (
+                normalize_wrap_widths,
+                valid_line_widths,
+                wrap_widths_saved,
+            )
+
+            project = self.projects.get(project_id)
+            if (
+                not project
+                or "widths" not in values
+                or not valid_line_widths(values["widths"])
+                or wrap_widths_saved(
+                    project["source"],
+                    normalize_wrap_widths(values["widths"], defaults=project["widths"]),
+                )
+            ):
+                return super().update(project_id, revision, values)
+            with write_game(project["source"], pack=False):
+                return super().update(project_id, revision, values)
+
         def apply_layout_settings(self, identity, revision, receipt):
             from util.game_settings import save_game_wrap_widths, valid_line_widths
 
@@ -271,7 +296,8 @@ def phased_workflows(workspace, lock, operations, manual):
                 "guided_layout": receipt,
             }
             if receipt["applied"]:
-                save_game_wrap_widths(project["source"], widths)
+                with write_game(project["source"], pack=False):
+                    save_game_wrap_widths(project["source"], widths)
             self.save(updated)
             self.projects[identity] = updated
             return updated
@@ -499,15 +525,20 @@ def run_ace(plan, log):
     from desktop.backend.workflow_actions import validate_plan
     from util.ace import actions
 
+    from .game_write import write_game
+
     validate_plan(plan)
     action = plan["action"]
     root = Path(plan["project"]["source"])
     if action == "ace_pack":
-        pack_ace(plan["project"], plan["folder"], log)
+        with write_game(root, plan["folder"], log=log) as game:
+            game.repack()
         return {"completed": action}
     exports = root / "ace_json"
     fresh = not (exports.is_dir() and any(exports.glob("*.json", case_sensitive=False)))
-    actions.run(root, action, log)
+    # Converting between Data and ace_json packs nothing.
+    with write_game(root, log=log, pack=False):
+        actions.run(root, action, log)
     if action == "ace_extract" and fresh:
         # JSON just converted from Data holds what Data does, so the game's
         # data starts out current without packing it.
@@ -603,37 +634,3 @@ def _save_receipt(native, folder, outputs, inputs=None):
             "outputs": evidence(root, outputs),
         },
     )
-
-
-def publish_ace(plan, log, write):
-    """Runs a write to the game's text, and for an Ace game packs what it
-    wrote to ace_json into the native data the game reads, in the same
-    operation. A game still reading its archive refuses before anything is
-    written."""
-    if plan["project"]["engine"] != "ACE":
-        return write(plan, log)
-    blocked = ace_blocked(plan["project"]["source"])
-    if blocked:
-        raise ValueError(blocked)
-    result = write(plan, log)
-    if not result.get("files"):
-        return result
-    root = Path(plan["project"]["source"])
-    rows = (plan.get("publication") or {}).get("files")
-    touched = (
-        [row["path"] for row in rows]
-        if rows
-        else [
-            (Path(plan["project"]["data"]) / name).relative_to(root).as_posix()
-            for name in plan["options"]["files"]
-        ]
-    )
-    try:
-        pack_ace(plan["project"], plan["folder"], log, touched)
-    except (OSError, ValueError) as error:
-        raise ValueError(
-            "The text is in ace_json, but the game's data could not be updated: "
-            + str(error)
-            + " Pack outside edits, in Release, tries again."
-        ) from error
-    return result

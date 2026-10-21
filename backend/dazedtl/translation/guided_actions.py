@@ -204,11 +204,7 @@ class GuidedActions:
             if set(options) != {"run_id"}:
                 raise ValueError("Choose a saved Batch to reapply.")
             run_output, files = self.saved_output(native, options["run_id"], files)
-        # Writing an Ace game's text packs it into Data, which the game
-        # ignores while an archive sits beside Game.exe.
-        if native["engine"] == "ACE" and (
-            row.family in {"apply", "text"} or action == "ace_pack"
-        ):
+        if native["engine"] == "ACE" and row.writes_text:
             blocked = self.guided.backend.guided_ace_blocked(project["source"])
             if blocked:
                 raise ValueError(blocked)

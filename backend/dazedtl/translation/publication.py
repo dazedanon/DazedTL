@@ -6,6 +6,7 @@ import time
 import uuid
 from pathlib import Path
 
+from dazedtl.compatibility.game_write import write_game
 from dazedtl.storage import write_bytes, write_json
 
 from .files import digest, project_path, read_json
@@ -198,15 +199,6 @@ def _current(target):
     return target.read_bytes() if target.exists() else None
 
 
-def _put(target, raw, mode):
-    """Writes a file, or takes it out for None."""
-    if raw is None:
-        target.unlink(missing_ok=True)
-        return
-    write_bytes(target, raw)
-    target.chmod(mode)
-
-
 def _discard_unused(folder):
     """Removes reviews too old to publish and the copies finished batches
     froze of what they would write; each copy is as large as its files,
@@ -310,68 +302,72 @@ def publish(folder, root, plan, log=lambda _: None):
                 "A source, destination or frozen candidate changed. Review again."
             )
         payloads.append([target, row, before, after])
-    log("Publishing the reviewed batch; backups are retained.")
-    if overwrite:
-        # Explicit full-file Apply backs up the bytes present at the actual
-        # overwrite, including edits made after its preview. Backing up every
-        # file before the first write saves the receipt once: saved per file,
-        # its writes grew with the square of the batch's files.
-        for payload in payloads:
-            payload[2] = _back_up(base, payload[1], payload[0])
-    record["state"] = "publishing"
-    write_json(base / "receipt.json", record)
-    attempted = []
-    try:
-        for target, row, before, after in payloads:
-            if _hash(_current(target)) != row["before"]:
-                if not overwrite:
-                    raise ValueError("A runtime file changed during publication.")
-                # The game file changed since its backup moments ago.
-                before = _back_up(base, row, target)
-                write_json(base / "receipt.json", record)
-            attempted.append((target, row, before, after))
-            _put(target, after, row["mode"])
-            if _hash(_current(target)) != row["after"]:
-                raise ValueError("Published bytes failed verification.")
-        write_json(Path(folder) / "applied-outputs.json", record["next_outputs"])
-        record["state"] = "complete"
+    with write_game(
+        root, folder, log=log, paths=[row["path"] for row in record["files"]]
+    ) as game:
+        log("Publishing the reviewed batch; backups are retained.")
+        if overwrite:
+            # Explicit full-file Apply backs up the bytes present at the actual
+            # overwrite, including edits made after its preview. Backing up every
+            # file before the first write saves the receipt once: saved per file,
+            # its writes grew with the square of the batch's files.
+            for payload in payloads:
+                payload[2] = _back_up(base, payload[1], payload[0])
+        record["state"] = "publishing"
         write_json(base / "receipt.json", record)
-        _discard_candidates(base)
-    except BaseException as failure:
-        errors = []
-        for target, row, before, after in reversed(attempted):
-            try:
-                current = _hash(_current(target))
-                if current not in {row["before"], row["after"]}:
-                    raise ValueError("newer runtime edit retained")
-                if current != row["before"]:
-                    _put(target, before, row["mode"])
-                if _hash(_current(target)) != row["before"]:
-                    raise ValueError("rollback verification failed")
-            except BaseException as exc:  # noqa: BLE001
-                errors.append(row["path"] + ": " + str(exc))
+        attempted = []
         try:
-            if receipt_hash(folder) == json_hash(record["next_outputs"]):
-                write_json(
-                    Path(folder) / "applied-outputs.json", record["prior_outputs"]
-                )
-        except BaseException as exc:  # noqa: BLE001
-            errors.append("output receipt: " + str(exc))
-        record.update(
-            state="recovery_needed" if errors else "rolled_back", recovery_errors=errors
-        )
-        write_json(base / "receipt.json", record)
-        _discard_candidates(base)
-        raise ValueError(
-            "Publication failed. "
-            + (
-                "Review restore; " + "; ".join(errors)
-                if errors
-                else "The attempted writes were rolled back."
+            for target, row, before, after in payloads:
+                if _hash(_current(target)) != row["before"]:
+                    if not overwrite:
+                        raise ValueError("A runtime file changed during publication.")
+                    # The game file changed since its backup moments ago.
+                    before = _back_up(base, row, target)
+                    write_json(base / "receipt.json", record)
+                attempted.append((target, row, before, after))
+                game.put(row["path"], after, row["mode"])
+                if _hash(_current(target)) != row["after"]:
+                    raise ValueError("Published bytes failed verification.")
+            write_json(Path(folder) / "applied-outputs.json", record["next_outputs"])
+            record["state"] = "complete"
+            write_json(base / "receipt.json", record)
+            _discard_candidates(base)
+        except BaseException as failure:
+            errors = []
+            for target, row, before, after in reversed(attempted):
+                try:
+                    current = _hash(_current(target))
+                    if current not in {row["before"], row["after"]}:
+                        raise ValueError("newer runtime edit retained")
+                    if current != row["before"]:
+                        game.put(row["path"], before, row["mode"])
+                    if _hash(_current(target)) != row["before"]:
+                        raise ValueError("rollback verification failed")
+                except BaseException as exc:  # noqa: BLE001
+                    errors.append(row["path"] + ": " + str(exc))
+            try:
+                if receipt_hash(folder) == json_hash(record["next_outputs"]):
+                    write_json(
+                        Path(folder) / "applied-outputs.json", record["prior_outputs"]
+                    )
+            except BaseException as exc:  # noqa: BLE001
+                errors.append("output receipt: " + str(exc))
+            record.update(
+                state="recovery_needed" if errors else "rolled_back",
+                recovery_errors=errors,
             )
-            + " "
-            + str(failure)
-        ) from failure
+            write_json(base / "receipt.json", record)
+            _discard_candidates(base)
+            raise ValueError(
+                "Publication failed. "
+                + (
+                    "Review restore; " + "; ".join(errors)
+                    if errors
+                    else "The attempted writes were rolled back."
+                )
+                + " "
+                + str(failure)
+            ) from failure
     return {
         "files": len(payloads),
         "publication": record["id"],
