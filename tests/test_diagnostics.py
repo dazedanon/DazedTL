@@ -161,3 +161,52 @@ class WorkerCrashTests(unittest.TestCase):
         self.assertNotIn("FAKEKEY", log)
         self.assertNotIn("日本語", log)
         self.assertNotIn("\\u65e5", log)
+
+    def test_a_per_file_worker_that_crashes_at_startup_records_where(self):
+        temporary = TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        folder = Path(temporary.name)
+        run = folder / "run"
+        run.mkdir()
+        (run / "plan.json").write_text(
+            json.dumps({"mode": "translate"}), encoding="utf-8"
+        )
+        # Its list of files never arrives, as when the coordinator's pipe breaks.
+        subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                "-X",
+                "utf8",
+                "-B",
+                str(ROOT / "backend/dazedtl/compatibility/manual_file_worker.py"),
+                str(run),
+                "RPG Maker MV/MZ",
+                "--files-from-stdin",
+                "False",
+            ],
+            env={**os.environ, FOLDER: str(folder / "diagnostics")},
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=30,
+        )
+
+        (record,) = [
+            json.loads(line)
+            for line in (folder / "diagnostics/backend-failures.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
+        self.assertEqual(
+            (record["event"], record["action"], record["causes"][0]["type"]),
+            ("worker.error", "manual_translate", "JSONDecodeError"),
+        )
+        self.assertIn(
+            ("app/backend/dazedtl/engine/util/subprocess_runner.py", "file_arguments"),
+            [
+                (frame["file"], frame["function"])
+                for frame in record["causes"][0]["frames"]
+            ],
+        )
