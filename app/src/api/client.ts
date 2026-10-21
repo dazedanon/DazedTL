@@ -356,12 +356,8 @@ export const api = {
     request("guided_resume", { project_id, ...(run_id ? { run_id } : {}) }),
   draft: (project_id: string, documents: Documents) =>
     request("guided_draft", { project_id, documents }),
-  saveDocument: (
-    project_id: string,
-    name: string,
-    revision: string,
-    text: string,
-  ) => request("guided_save_document", { project_id, name, revision, text }),
+  saveDocuments: (project_id: string, documents: Documents) =>
+    request("guided_save_documents", { project_id, documents }),
   settings: () => request("settings_get", {}),
   modelDefaults: (connection_id: string, model: string) =>
     request("settings_model_defaults", { connection_id, model }),

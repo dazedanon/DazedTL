@@ -5,6 +5,7 @@ import {
   ACTIONS,
   type ActionView,
   type AssistantTaskKind,
+  type Documents,
   type GuidedAction,
   type GuidedForm,
   type GuidedOptions,
@@ -38,7 +39,7 @@ import {
   selection,
   sourceErrors,
 } from "../eventTextSelection";
-import { guidanceNames, saveGuidanceSet } from "../guidanceReview";
+import { guidanceNames } from "../guidanceReview";
 import { historyOutcome } from "../historyView";
 import { activeRun, observedRun } from "../translationView";
 import { useContextDraft } from "../useContextDraft";
@@ -1105,18 +1106,16 @@ export function useGuidedWorkspace({
   const saveDocuments = (names: string[]) =>
     action.run(
       async () => {
-        // A missing file is created from the text shown for it.
-        await saveGuidanceSet(names, (name) =>
-          context.save(
-            name,
-            discovery.documents[name]?.exists
-              ? undefined
-              : {
-                  text: state.documents[name]?.text || "",
-                  revision: state.documents[name]?.revision || "",
-                },
-          ),
-        );
+        // One save, so one checkpoint; a missing file is created from the
+        // text shown for it.
+        const created: Documents = {};
+        for (const name of names)
+          if (!discovery.documents[name]?.exists)
+            created[name] = {
+              text: state.documents[name]?.text || "",
+              revision: state.documents[name]?.revision || "",
+            };
+        await context.save(names, created);
       },
       // Saving creates missing files and writes drafts; otherwise it is a no-op.
       names.some(

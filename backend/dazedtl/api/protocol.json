@@ -1,5 +1,5 @@
 {
-  "version": "501f25960516abff",
+  "version": "00769a7abbe0ff47",
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
@@ -109,7 +109,7 @@
       "refresh": true,
       "duringClose": true
     },
-    "guided_save_document": {
+    "guided_save_documents": {
       "refresh": true,
       "duringClose": false
     },

@@ -198,12 +198,18 @@ def load_translation_runtime_environment(
     return saved
 
 
-def wrap_widths_saved(game_root: str | Path, values: Mapping) -> bool:
-    """Whether the game's settings already hold these wrap widths."""
+def wrap_widths_saved(
+    game_root: str | Path, values: Mapping, defaults: Mapping
+) -> bool:
+    """Whether the game already uses these wrap widths: the ones its settings
+    hold, or `defaults` while it holds none, which stay implicit until the
+    user changes them."""
     try:
-        return load_game_wrap_widths(game_root) == normalize_wrap_widths(values)
+        saved = load_game_wrap_widths(game_root)
     except GameSettingsError:
         return False
+    current = saved if saved is not None else normalize_wrap_widths(defaults)
+    return current == normalize_wrap_widths(values)
 
 
 def save_game_wrap_widths(

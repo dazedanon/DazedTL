@@ -791,8 +791,8 @@ def routes(app):
             lambda value, _params: value,
         ),
         "guided_draft": (app.guided.draft, lambda value, _params: value),
-        "guided_save_document": (
-            app.guided.save_document,
+        "guided_save_documents": (
+            app.guided.save_documents,
             lambda value, _params: views.documents(value),
         ),
     }

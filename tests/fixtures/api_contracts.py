@@ -104,12 +104,15 @@ try:
     call("guided_draft", {"project_id": project_id, "documents": {}})
     name, document = next(iter(guided["documents"].items()))
     call(
-        "guided_save_document",
+        "guided_save_documents",
         {
             "project_id": project_id,
-            "name": name,
-            "revision": document["revision"],
-            "text": document["text"] + "\n",
+            "documents": {
+                name: {
+                    "revision": document["revision"],
+                    "text": document["text"] + "\n",
+                }
+            },
         },
     )
     folders = call(

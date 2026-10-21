@@ -1028,29 +1028,58 @@ class Guided:
             native["id"], {**current, "documents": documents}
         )
 
-    def save_guidance(self, native, name, revision, text):
-        """Saves one of the game's guidance documents, which Git tracks."""
+    def save_guidance(self, native, changes, summary=None):
+        """Saves a set of the game's guidance documents, which Git tracks, as
+        one checkpoint named by what it saved, or by `summary`."""
+        titles = ", ".join(map(guidance_title, changes))
         # Guidance is never the game's ace_json, so nothing packs.
         with self.backend.game_write(
             native["source"],
             native["id"],
             pack=False,
-            summary="Save guidance",
+            summary=summary or f"Save {titles}",
             stage="Context",
         ):
-            return self.backend.workflows.document_save(
-                native["id"], name, revision, text
-            )
+            return self.backend.workflows.documents_save(native["id"], changes)
 
-    def save_document(self, project_id, name, revision, text):
+    def save_documents(self, project_id, documents):
+        """Saves the guidance documents Save guidance sends, skipping those
+        whose file already holds their text."""
         _, native = self.record(project_id)
-        if not isinstance(name, str):
+        if not isinstance(documents, dict) or not all(
+            isinstance(name, str)
+            and isinstance(document, dict)
+            and isinstance(document.get("text"), str)
+            for name, document in documents.items()
+        ):
             raise ValueError("Choose a guidance document.")
+        current = self.backend.workflows.documents(native["id"])
         # Explicit Save replaces the current guidance. The editor's older
         # revision is recovery metadata, not a conflict-review prerequisite.
-        current = self.backend.workflows.documents(native["id"]).get(name, {})
-        result = self.save_guidance(native, name, current.get("revision", ""), text)
+        changes = {
+            name: {
+                "revision": current.get(name, {}).get("revision", ""),
+                "text": document["text"],
+            }
+            for name, document in documents.items()
+            if not (
+                name in current
+                and current[name]["text"] == document["text"]
+                and Path(current[name]["path"]).is_file()
+            )
+        }
+        result = self.save_guidance(native, changes) if changes else current
         draft = self.backend.workflows.state(native["id"]).get("draft", {})
-        draft.get("documents", {}).pop(name, None)
+        for name in documents:
+            draft.get("documents", {}).pop(name, None)
         self.backend.workflows.draft(native["id"], draft)
         return result
+
+
+def guidance_title(name):
+    """A guidance document's name as the Guidance task's tabs show it."""
+    return {
+        "glossary": "Glossary",
+        "quirks": "Style & quirks",
+        "game": "Game context",
+    }.get(name) or "Skill: " + name.removeprefix("custom:")

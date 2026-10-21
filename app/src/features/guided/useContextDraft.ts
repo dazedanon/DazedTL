@@ -9,7 +9,6 @@ export function useContextDraft(
 ) {
   return useDocumentDraft("context:" + projectId, recovered, report, {
     persist: (documents) => api.draft(projectId, documents),
-    save: (name, revision, text) =>
-      api.saveDocument(projectId, name, revision, text),
+    save: (documents) => api.saveDocuments(projectId, documents),
   });
 }

@@ -2815,6 +2815,11 @@ export type SaveDocumentRequest = {
   text: string;
 };
 
+export type SaveDocumentsRequest = {
+  project_id: string;
+  documents: Documents;
+};
+
 export type TranslationReleaseRequest = {
   project_id: string;
   folder: string;
@@ -3163,7 +3168,7 @@ export type RpcContract = {
   guided_stop: { request: RunControlRequest; response: Job };
   guided_resume: { request: RunControlRequest; response: Job };
   guided_draft: { request: GuidedDraftRequest; response: Saved };
-  guided_save_document: { request: SaveDocumentRequest; response: Documents };
+  guided_save_documents: { request: SaveDocumentsRequest; response: Documents };
   guided_position: { request: GuidedPositionRequest; response: Saved };
   guided_options_draft: { request: GuidedOptionsDraftRequest; response: Saved };
   guided_save_options: {

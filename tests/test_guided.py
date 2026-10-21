@@ -962,14 +962,17 @@ class GuidedTests(unittest.TestCase):
         glossary = {"text": "# Game Characters\nミカ (Mika)", "revision": "r1"}
         saved = []
 
-        def save(_owner, name, revision, text):
-            self.assertEqual((name, revision), ("glossary", glossary["revision"]))
-            saved.append(text)
-            glossary.update(text=text, revision=f"r{len(saved) + 1}")
+        def save(_owner, changes):
+            self.assertEqual(list(changes), ["glossary"])
+            self.assertEqual(changes["glossary"]["revision"], glossary["revision"])
+            saved.append(changes["glossary"]["text"])
+            glossary.update(
+                text=changes["glossary"]["text"], revision=f"r{len(saved) + 1}"
+            )
 
         drafts = {"glossary": {"text": "", "revision": "r1"}}
         self.backend.workflows.documents = lambda _: {"glossary": dict(glossary)}
-        self.backend.workflows.document_save = save
+        self.backend.workflows.documents_save = save
         self.backend.workflows.state = lambda _: {
             "project": self.native,
             "draft": {"documents": drafts},
@@ -1885,29 +1888,36 @@ class GuidedTests(unittest.TestCase):
         self.backend.workflows.state = lambda _: {"draft": pending}
         self.backend.workflows.draft = Mock()
 
-        def save(owner, name, revision, text):
+        def save(owner, changes):
             self.assertEqual(owner, "native")
-            self.assertEqual(name, "glossary")
-            self.assertEqual(revision, digest(path.read_bytes()))
-            path.write_text(text, encoding="utf-8")
+            self.assertEqual(list(changes), ["glossary"])
+            self.assertEqual(changes["glossary"]["revision"], digest(path.read_bytes()))
+            path.write_text(changes["glossary"]["text"], encoding="utf-8")
             return documents(owner)
 
-        self.backend.workflows.document_save = save
-        self.guided.save_document(self.identity, "glossary", "older", "My draft")
+        def draft(text):
+            return {"glossary": {"text": text, "revision": "older"}}
+
+        self.backend.workflows.documents_save = save
+        self.guided.save_documents(self.identity, draft("My draft"))
         self.assertEqual(path.read_text(encoding="utf-8"), "My draft")
         self.assertEqual(set(pending["documents"]), {"game"})
-        self.guided.save_document(self.identity, "glossary", "older", "")
+        # A document whose file already holds its text writes nothing, so a
+        # Save of untouched tabs makes no checkpoint.
+        self.backend.workflows.documents_save = Mock()
+        self.guided.save_documents(self.identity, draft("My draft"))
+        self.backend.workflows.documents_save.assert_not_called()
+        self.backend.workflows.documents_save = save
+        self.guided.save_documents(self.identity, draft(""))
         self.assertTrue(path.is_file())
         self.assertEqual(path.read_text(encoding="utf-8"), "")
         pending["documents"]["glossary"] = {
             "text": "Keep after failure",
             "revision": "older",
         }
-        self.backend.workflows.document_save = Mock(side_effect=OSError("No space"))
+        self.backend.workflows.documents_save = Mock(side_effect=OSError("No space"))
         with self.assertRaises(OSError):
-            self.guided.save_document(
-                self.identity, "glossary", "older", "Keep after failure"
-            )
+            self.guided.save_documents(self.identity, draft("Keep after failure"))
         self.assertEqual(pending["documents"]["glossary"]["text"], "Keep after failure")
         self.assertEqual(path.read_text(encoding="utf-8"), "")
 

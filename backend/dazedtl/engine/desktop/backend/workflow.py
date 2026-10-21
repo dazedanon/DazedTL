@@ -15,7 +15,7 @@ from .project import atomic_json, digest
 from .settings import SettingsStore
 from .workflow_actions import LABELS, READ_ONLY, action_guard, describe_game, regular, validate_plan
 
-from .guidance import documents, document_save, valid_document_name
+from .guidance import documents, documents_save, valid_document_name
 
 
 class Workflows:
@@ -169,7 +169,7 @@ class Workflows:
                            narrative_groups=[g.key for g in distribution.groups if g.key in selected and g.tier == db.TIER_NARRATIVE],
                            defer_groups=[g.key for g in distribution.groups if g.key not in selected])
             db.save_db_profile(work, profile)
-        if "widths" in values and not wrap_widths_saved(project["source"], updated["widths"]):
+        if "widths" in values and not wrap_widths_saved(project["source"], updated["widths"], project["widths"]):
             save_game_wrap_widths(project["source"], updated["widths"])
         updated["revision"] += 1
         self.projects[project_id] = updated
@@ -299,8 +299,11 @@ class Workflows:
         return documents(self.projects[project_id]["source"])
 
     def document_save(self, project_id, name, revision, text):
+        return self.documents_save(project_id, {name: {"revision": revision, "text": text}})
+
+    def documents_save(self, project_id, changes):
         self.folder(project_id)
-        return document_save(self.projects[project_id]["source"], name, revision, text)
+        return documents_save(self.projects[project_id]["source"], changes)
 
     def skill(self, project_id, name, thorough=False):
         """One clipboard task; `thorough` runs its investigation as three blind passes."""

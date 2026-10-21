@@ -1,14 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type {
-  ContextSetup,
-  Documents,
-  GuidedState,
-} from "../app/src/api/contracts.ts";
+import type { ContextSetup, GuidedState } from "../app/src/api/contracts.ts";
 import {
   guidanceAvailability,
   guidanceNames,
-  saveGuidanceSet,
 } from "../app/src/features/guided/guidanceReview.ts";
 import { investigationResults } from "../app/src/features/guided/contextView.ts";
 
@@ -99,25 +94,4 @@ test("guidance completion follows file presence independently of old review and 
       { "custom:notes": { text: "", revision: "old" } },
     ).includes("custom:notes"),
   );
-});
-
-test("a partial guidance save reports committed portions and leaves remaining drafts for retry", async () => {
-  const pending: Documents = {
-    glossary: { text: "薬 (Potion)", revision: "g" },
-    quirks: { text: "Retained voice draft.", revision: "q" },
-    game: { text: "Retained game draft.", revision: "c" },
-  };
-  const save = async (name: string) => {
-    if (name === "quirks") throw new Error("Disk write failed.");
-    const saved = { [name]: pending[name] };
-    delete pending[name];
-    return saved;
-  };
-  await assert.rejects(
-    saveGuidanceSet(["glossary", "quirks", "game"], save),
-    /Saved Glossary.*Disk write failed.*Remaining drafts/,
-  );
-  assert.equal(pending.quirks.text, "Retained voice draft.");
-  assert.equal(pending.game.text, "Retained game draft.");
-  assert.equal(pending.glossary, undefined);
 });

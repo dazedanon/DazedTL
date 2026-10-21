@@ -19,24 +19,3 @@ export function guidanceAvailability(documents: ContextSetup["documents"]) {
   const missing = coreGuidance.filter((name) => !documents[name]?.exists);
   return { complete: !missing.length, missing };
 }
-
-/** Report successful document writes if a later save fails. */
-export async function saveGuidanceSet(
-  names: string[],
-  save: (name: string) => Promise<Documents>,
-) {
-  const savedNames: string[] = [];
-  for (const name of names) {
-    try {
-      const saved = await save(name);
-      if (saved[name]) savedNames.push(name);
-    } catch (error) {
-      if (!savedNames.length) throw error;
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(
-        `Saved ${savedNames.map(guidanceTitle).join(", ")}. ${message} Remaining drafts are retained.`,
-        { cause: error },
-      );
-    }
-  }
-}

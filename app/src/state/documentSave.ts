@@ -2,35 +2,41 @@ import type { Documents } from "../api/contracts";
 import type { DraftSession } from "./DraftSession";
 
 /**
- * Saves one document's draft, or `created`, the text of a document that has
- * no file yet, which never becomes a draft: a refused save leaves nothing
- * unsaved the user didn't edit.
+ * Saves the drafts of `names` in one save, with `created`, the text of
+ * documents that have no file yet, which never become drafts: a refused save
+ * leaves nothing unsaved the user didn't edit.
  */
-export async function saveDocument(
+export async function saveDocuments(
   session: DraftSession<Documents>,
-  save: (name: string, revision: string, text: string) => Promise<Documents>,
-  name: string,
-  created?: Documents[string],
+  save: (documents: Documents) => Promise<Documents>,
+  names: string[],
+  created: Documents = {},
 ) {
   let documents: Documents = {};
   await session.commit(
     async (current) => {
-      const document = current[name] ?? created;
-      if (!document) return { saved: {}, draft: current };
-      documents = await save(name, document.revision, document.text);
+      const chosen: Documents = {};
+      for (const name of names) {
+        const document = current[name] ?? created[name];
+        if (document) chosen[name] = document;
+      }
+      if (!Object.keys(chosen).length) return { saved: {}, draft: current };
+      documents = await save(chosen);
       const pending = { ...current };
-      delete pending[name];
+      for (const name of names) delete pending[name];
       return { saved: {}, draft: pending };
     },
     (before, current) => {
       const pending = { ...current };
-      if (JSON.stringify(before[name]) === JSON.stringify(current[name]))
-        delete pending[name];
-      else if (pending[name] && documents[name])
-        pending[name] = {
-          ...pending[name],
-          revision: documents[name].revision,
-        };
+      for (const name of names) {
+        if (JSON.stringify(before[name]) === JSON.stringify(current[name]))
+          delete pending[name];
+        else if (pending[name] && documents[name])
+          pending[name] = {
+            ...pending[name],
+            revision: documents[name].revision,
+          };
+      }
       return pending;
     },
   );

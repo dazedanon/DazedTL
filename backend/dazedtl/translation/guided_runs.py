@@ -324,7 +324,9 @@ class GuidedRuns:
         try:
             if added:
                 self.guided.save_guidance(
-                    native, "glossary", glossary["revision"], text
+                    native,
+                    {"glossary": {"revision": glossary["revision"], "text": text}},
+                    "Add reused names to the glossary",
                 )
             write_json(
                 path,

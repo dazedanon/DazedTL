@@ -313,6 +313,11 @@ class SaveDocumentRequest(TypedDict):
     text: str
 
 
+class SaveDocumentsRequest(TypedDict):
+    project_id: str
+    documents: Documents
+
+
 class TranslationReleaseRequest(TypedDict):
     project_id: str
     folder: str
@@ -670,7 +675,7 @@ METHODS: dict[str, Method] = {
     "guided_stop": Method(RunControlRequest, Job),
     "guided_resume": Method(RunControlRequest, Job),
     "guided_draft": Method(GuidedDraftRequest, Saved, during_close=True),
-    "guided_save_document": Method(SaveDocumentRequest, Documents),
+    "guided_save_documents": Method(SaveDocumentsRequest, Documents),
     "guided_position": Method(GuidedPositionRequest, Saved),
     "guided_options_draft": Method(GuidedOptionsDraftRequest, Saved, during_close=True),
     "guided_save_options": Method(GuidedSaveOptionsRequest, GuidedPreferences),

@@ -46,7 +46,7 @@ export function GuidanceEditor({
         focused
         fill
         showActions={false}
-        save={context.save}
+        save={(name) => void context.save([name])}
         discard={context.discard}
         before={(name) => (
           <>

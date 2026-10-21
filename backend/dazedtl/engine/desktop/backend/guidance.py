@@ -34,20 +34,30 @@ def documents(root):
     return result
 
 def document_save(root, name, revision, text):
+    return documents_save(root, {name: {"revision": revision, "text": text}})
+
+def documents_save(root, changes):
+    """Saves a set of guidance documents, {name: {revision, text}}, checking
+    every one before writing any, so a refused set changes no file."""
     root = Path(root)
     current = documents(root)
-    if not valid_document_name(name) or not isinstance(text, str) or len(text.encode()) > 1_000_000:
+    if not isinstance(changes, dict):
         raise ValueError("Choose a guidance document below 1 MB.")
-    if name not in current:
-        current[name] = {"revision": digest(b""), "text": ""}
-        if revision == "":
-            revision = current[name]["revision"]
-    if current[name]["revision"] != revision:
-        raise ValueError("This guidance changed on disk. Reload before saving.")
-    if name == "glossary":
-        from util.vocab import write_game_vocab
-        write_game_vocab(text, game_root=root)
-    else:
+    for name, change in changes.items():
+        text = change.get("text") if isinstance(change, dict) else None
+        if not valid_document_name(name) or not isinstance(text, str) or len(text.encode()) > 1_000_000:
+            raise ValueError("Choose a guidance document below 1 MB.")
+        revision = change.get("revision")
+        if name not in current and revision == "":
+            revision = digest(b"")
+        if current.get(name, {"revision": digest(b"")})["revision"] != revision:
+            raise ValueError("This guidance changed on disk. Reload before saving.")
+    for name, change in changes.items():
+        text = change["text"]
+        if name == "glossary":
+            from util.vocab import write_game_vocab
+            write_game_vocab(text, game_root=root)
+            continue
         from util.skills import game_skill_path_for_game, quirks_path_for_game, custom_skill_path_for_game
         path = custom_skill_path_for_game(root, name.removeprefix("custom:")) if name.startswith("custom:") else (game_skill_path_for_game if name == "game" else quirks_path_for_game)(root)
         path.parent.mkdir(parents=True, exist_ok=True)

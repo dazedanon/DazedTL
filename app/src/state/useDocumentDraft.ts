@@ -1,5 +1,5 @@
 import type { Documents } from "../api/contracts";
-import { saveDocument } from "./documentSave";
+import { saveDocuments } from "./documentSave";
 import { useDraft } from "./useDraft";
 
 export function useDocumentDraft(
@@ -8,7 +8,7 @@ export function useDocumentDraft(
   report: (error: unknown) => void,
   adapter: {
     persist: (documents: Documents) => Promise<unknown>;
-    save: (name: string, revision: string, text: string) => Promise<Documents>;
+    save: (documents: Documents) => Promise<Documents>;
   },
 ) {
   const draft = useDraft<Documents>(identity, {
@@ -22,8 +22,9 @@ export function useDocumentDraft(
       [name]: { text, revision },
     }));
   }
-  const save = (name: string, created?: Documents[string]) =>
-    saveDocument(draft.session, adapter.save, name, created);
+  // `created` holds the text of documents that have no file yet.
+  const save = (names: string[], created?: Documents) =>
+    saveDocuments(draft.session, adapter.save, names, created);
   async function discard(name: string) {
     draft.session.edit((current) => {
       const pending = { ...current };

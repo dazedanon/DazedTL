@@ -36,8 +36,11 @@ export function ContextPanel({
     {
       persist: (value) =>
         api.translation.draft(state.projectId, "documents", value),
-      save: (name, revision, text) =>
-        api.translation.document(state.projectId, name, revision, text),
+      // This editor saves one document at a time.
+      save: (documents) => {
+        const [[name, { revision, text }]] = Object.entries(documents);
+        return api.translation.document(state.projectId, name, revision, text);
+      },
     },
   );
   const [selected, setSelected] = useState("glossary");
@@ -48,7 +51,8 @@ export function ContextPanel({
   const dirty = !!draft.drafts[name];
   const disabled = state.active || action.busy || draft.committing;
   const refused = checkoutRefusal(state);
-  const save = () => void action.run(() => draft.save(name), "Context saved.");
+  const save = () =>
+    void action.run(() => draft.save([name]), "Context saved.");
   const body = useRef<HTMLDivElement>(null);
   useShortcut(saveKey, dirty && !disabled && !refused ? save : null, body, {
     inFields: true,
@@ -74,7 +78,7 @@ export function ContextPanel({
           focused
           fill
           showActions={false}
-          save={(next) => void action.run(() => draft.save(next))}
+          save={(next) => void action.run(() => draft.save([next]))}
           discard={(next) => void action.run(() => draft.discard(next))}
         />
       </PageBody>

@@ -396,6 +396,14 @@ write(
 )
 clean()
 assert "js/plugins/TitleMessage.js" in git(kept, "ls-files").split()
+# Saving Guided options keeps the Line widths a game already uses, its
+# defaults while it has none saved, implicit: they once became a "Save Line
+# widths" checkpoint the user never asked for.
+from util.game_settings import normalize_wrap_widths, wrap_widths_saved
+
+stock = normalize_wrap_widths(None)
+assert wrap_widths_saved(kept, stock, stock)
+assert not wrap_widths_saved(kept, {**stock, "width": 64}, stock)
 # Line widths, which the game's settings keep, named or not.
 with write_game(kept, pack=False, summary="Save Line widths", stage="Context"):
     save_game_wrap_widths(kept, {"width": 60})
@@ -406,6 +414,31 @@ assert history()[::-1] == [
     "Translate: Apply plugin file changes||Translate",
     "Context: Save Line widths||Context",
 ], history()
+# One Save guidance click is one checkpoint, named by the documents it saved.
+from types import SimpleNamespace
+
+from dazedtl.translation.guided import Guided
+from desktop.backend.guidance import documents, documents_save
+
+current = documents(kept)
+Guided.save_guidance(
+    SimpleNamespace(
+        backend=SimpleNamespace(
+            game_write=lambda source, _id, **options: write_game(source, **options),
+            workflows=SimpleNamespace(
+                documents_save=lambda _id, changes: documents_save(kept, changes)
+            ),
+        )
+    ),
+    {"source": str(kept), "id": "native"},
+    {
+        name: {"revision": current[name]["revision"], "text": text}
+        for name, text in (("glossary", "薬 (Potion)"), ("quirks", "Plain."))
+    },
+)
+clean()
+assert history()[0] == "Context: Save Glossary, Style & quirks||Context", history()
+assert changed() == [".dazedtl/glossary.txt", ".dazedtl/skills/quirks.md"]
 # A hand edit goes in its own checkpoint before the Apply's.
 (kept / "data/Items.json").write_text("[null]\n")
 with running(for_action("export_selected")):

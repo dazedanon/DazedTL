@@ -32,7 +32,7 @@ export default function ContextEditor({
         drafts={draft.drafts}
         edit={draft.edit}
         disabled={disabled || action.busy || draft.committing}
-        save={(name) => action.run(() => draft.save(name))}
+        save={(name) => action.run(() => draft.save([name]))}
         discard={(name) => action.run(() => draft.discard(name))}
       />
     </section>
