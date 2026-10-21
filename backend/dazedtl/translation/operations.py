@@ -260,7 +260,6 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             change = replace(change, summary=arguments["message"])
         result = {"commit": save(change, arguments.get("manifest"))}
     elif action == "release_patch":
-        from .guided_inputs import original_bindings
         from .release import (
             destination as release_destination,
         )
@@ -287,7 +286,9 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             raise ValueError(
                 "Working sources changed before packaging. Review the current scope."
             )
-        engine.verify_bindings(source, original_bindings(inputs))
+        # The preview's original commit fixes every original file the patch
+        # is built against; working copies keep the bindings of the version
+        # they came from, which a game update leaves behind.
         verify_evidence(source, payload["evidence"])
         output = release_destination(
             source, workspace, engine.source, payload["output"]

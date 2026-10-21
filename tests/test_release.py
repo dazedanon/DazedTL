@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+import subprocess
 import unittest
 import zipfile
 from contextlib import closing
@@ -11,9 +12,11 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from dazedtl.compatibility import original_files
+from dazedtl.compatibility.translation import TranslationEngine
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, evidence, read_json
 from dazedtl.translation.game_update import ABSENT, GameUpdate
+from dazedtl.translation.git_status_cache import RepositoryStatusCache
 from dazedtl.translation.operations import execute, lifecycle, lifecycle_path
 from dazedtl.translation.originals import game_names
 from dazedtl.translation.release import (
@@ -266,7 +269,38 @@ class ReleaseTests(unittest.TestCase):
             manifest_path = ".dazedtl/guided/runtime-manifest.json"
             write_json(game / manifest_path, {"files": {"data.json": {}}})
             write_json(lifecycle_path(workspace, "owner"), {"version": 1})
-            inputs = {"version": 1, "inputs": {}}
+
+            # Guided bound data.json's working copy to the original version
+            # it came from; a game update then moved `original`. Releases
+            # failed as if a new request plan were needed.
+            def git(*arguments):
+                return subprocess.run(
+                    ["git", "-C", str(game), *arguments],
+                    capture_output=True,
+                    encoding="utf-8",
+                    check=True,
+                ).stdout.strip()
+
+            git("init", "-q", "-b", "original")
+            identity = ("-c", "user.name=Test", "-c", "user.email=test@example.invalid")
+            write_json(game / "data.json", {"line": "1.0"})
+            git("add", "data.json")
+            git(*identity, "commit", "-qm", "1.0")
+            bound = git("rev-parse", "original:data.json")
+            write_json(game / "data.json", {"line": "1.1"})
+            git(*identity, "commit", "-qam", "1.1")
+            write_json(game / "data.json", {"line": "translated"})
+            real = TranslationEngine.__new__(TranslationEngine)
+            real.original_trees = RepositoryStatusCache(stable=True)
+            inputs = {
+                "version": 1,
+                "inputs": {
+                    "data.json": {
+                        "relative": "data.json",
+                        "identity": {"original": bound},
+                    }
+                },
+            }
             write_json(workspace / "inputs.json", inputs)
             status = {
                 "repo_root": str(game),
@@ -281,7 +315,7 @@ class ReleaseTests(unittest.TestCase):
             engine = SimpleNamespace(
                 source=root / "engine",
                 git_status=lambda *_: dict(status),
-                verify_bindings=Mock(),
+                verify_bindings=real.verify_bindings,
                 runtime_paths=lambda manifest: list(manifest["files"]),
                 outside_edits=Mock(),
                 checkpoint=Mock(
