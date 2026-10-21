@@ -86,11 +86,29 @@ class Assistant:
             "git_setup", {"version": "1.0", "untranslated": True, "manifest": MANIFEST}
         )
 
+    def help_markers(self):
+        """The comment heads MPP_ChoiceEX shows as a choice's help, from its
+        Choice Help Commands parameter, as the game's plugins.js sets it."""
+        plugins = self.game / "js/plugins.js"
+        if not plugins.is_file():
+            return frozenset()
+        text = plugins.read_text(encoding="utf-8-sig")
+        listed = json.loads(text[text.index("[") : text.rindex("]") + 1])
+        return frozenset(
+            marker
+            for plugin in listed
+            if plugin.get("name") == "MPP_ChoiceEX" and plugin.get("status")
+            for marker in json.loads(
+                plugin.get("parameters", {}).get("Choice Help Commands") or "[]"
+            )
+        )
+
     def units(self):
         rows = []
+        markers = self.help_markers()
         for path in sorted((self.game / "data").glob("*.json")):
             document = json.loads(path.read_text(encoding="utf-8-sig"))
-            for pointer, text in walk(document):
+            for pointer, text in walk(document, markers=markers):
                 rows.append(
                     {
                         "id": f"{path.stem}{pointer}",
@@ -185,14 +203,32 @@ class Assistant:
         )
 
 
-def walk(node, pointer=""):
+def walk(node, pointer="", markers=frozenset()):
+    """Every Japanese string, leaving out what a structural extractor keeps:
+    a choice branch's label (402), which mirrors its choice while the engine
+    branches on the index, and a choice help comment's head (108), the marker
+    MPP_ChoiceEX finds the help by."""
     if isinstance(node, dict):
+        code, parameters = node.get("code"), node.get("parameters")
+        kept = (
+            {1}
+            if code == 402
+            else {0}
+            if code == 108 and parameters and parameters[0] in markers
+            else set()
+        )
         for key, value in node.items():
-            if key != "_original":
-                yield from walk(value, f"{pointer}/{key}")
+            if key == "_original":
+                continue
+            if key == "parameters" and kept:
+                for index, item in enumerate(value):
+                    if index not in kept:
+                        yield from walk(item, f"{pointer}/{key}/{index}", markers)
+            else:
+                yield from walk(value, f"{pointer}/{key}", markers)
     elif isinstance(node, list):
         for index, value in enumerate(node):
-            yield from walk(value, f"{pointer}/{index}")
+            yield from walk(value, f"{pointer}/{index}", markers)
     elif isinstance(node, str) and JAPANESE.search(node):
         yield pointer, node
 
