@@ -1,12 +1,12 @@
 """Preparation and delivery compose preserved engine operations with backups."""
 
-import shutil
 import tempfile
 import uuid
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Any
 
+from dazedtl import system
 from dazedtl.storage import staging_folder, write_json
 
 from . import backups
@@ -189,7 +189,7 @@ def take_census(
         backups.materialized(
             path, files=census.wanted(names, peek), stopped=stopped
         ) as (root, _manifest),
-        tempfile.TemporaryDirectory(prefix="dazedtl-census-") as work,
+        system.staging_folder(tempfile.gettempdir(), "dazedtl-census-") as work,
     ):
         result = census.scan(
             names,
@@ -566,7 +566,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
                 staged,
             )
         finally:
-            shutil.rmtree(copy, ignore_errors=True)
+            system.remove_tree(copy, ignore_errors=True)
         patch = layout["kind"] == "patch"
         # A patch holds only some of the game's files, so the game says which engine it is.
         kind = engine.detect(source if patch else staged)

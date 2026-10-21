@@ -25,6 +25,7 @@ from util.rpgmaker_plugin_registry import PluginRegistryError, plugin_entries
 from .git_workflow import GitWorkflowError, UpdatePreview, inspect_repository, merged_file, _tree_files
 from .json_merge import expand
 from .script_merge import is_plugin_registry, paired_lines, quoted_text
+from util import system
 
 JAPANESE = re.compile(r"[぀-ヿ㐀-䶿一-鿿ｦ-ﾟ]")
 # A file's lines a preview keeps for display, and all files' lines together;
@@ -161,7 +162,7 @@ def _blobs(repo: Path, objects: list[str]) -> dict[str, bytes]:
     if not unique:
         return {}
     try:
-        output = subprocess.run(
+        output = system.run(
             ["git", "-C", str(repo), "cat-file", "--batch"],
             input=("\n".join(unique) + "\n").encode(),
             capture_output=True,

@@ -3,11 +3,11 @@
 import hashlib
 import os
 import sys
-import tempfile
 from contextlib import nullcontext
 from dataclasses import asdict
 from pathlib import Path
 
+from dazedtl import system
 from dazedtl.storage import write_bytes
 from dazedtl.translation.files import project_path, read_json
 
@@ -236,9 +236,7 @@ class ImageCompatibility:
                 root, ".dazedtl/image_manager/guided/stage/placeholder", exists=False
             ).parent
             stage.mkdir(parents=True, exist_ok=True)
-            with tempfile.TemporaryDirectory(
-                prefix="reviewed-", dir=stage
-            ) as temporary:
+            with system.staging_folder(stage, "reviewed-") as temporary:
                 frozen = []
                 for row in rows:
                     raw = project_path(root, row["editable"]).read_bytes()
@@ -255,7 +253,7 @@ class ImageCompatibility:
                         raise ValueError(
                             "An included runtime source changed after review. Nothing was applied."
                         )
-                    staged = Path(temporary) / row["id"]
+                    staged = temporary / row["id"]
                     write_bytes(staged, raw)
                     frozen.append(
                         self._asset(

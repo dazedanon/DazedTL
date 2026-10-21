@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import jsbeautifier
+from util import system
 
 
 class PluginRegistryError(ValueError):
@@ -320,7 +321,7 @@ def _atomic_write_bytes(path: Path, payload: bytes, mode: int | None = None) -> 
             handle.flush()
             os.fsync(handle.fileno())
         os.chmod(temporary, mode)
-        os.replace(temporary, path)
+        system.replace(temporary, path)
     except Exception:
         temporary.unlink(missing_ok=True)
         raise

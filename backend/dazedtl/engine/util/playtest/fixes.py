@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import re
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Any
+from util import system
 
 NAME = "DazedTL_Fixes"
 # Paths under the game's web folder, which holds index.html.
@@ -100,7 +100,7 @@ def check(source: bytes) -> str:
     if not node:
         raise ValueError(f"{NAME}.js can't be checked without the app's Node runtime.")
     # Compiled as a script, as the game loads it, without running it.
-    response = subprocess.run(
+    response = system.run(
         [node, "-e", COMPILE],
         input=source,
         capture_output=True,

@@ -2,11 +2,11 @@
 plays the game, the report it keeps, and the observations it hands to text
 QA so a deep reviewer corrects what the playtest found in translated text."""
 
-import shutil
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+from dazedtl import system
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, project_path, read_json
 
@@ -204,8 +204,8 @@ def run_fixes(plan, log):
             "publication"
         ]
         # The play matched the game as it now is, so it is the latest report.
-        shutil.rmtree(out / "served", ignore_errors=True)
-        out.rename(folder / STORAGE / name)
+        system.remove_tree(out / "served", ignore_errors=True)
+        system.replace(out, folder / STORAGE / name)
         write_json(
             folder / POINTER,
             {
@@ -232,7 +232,7 @@ def _prune(storage, keep):
     """Removes all but the newest reports, never `keep`."""
     for old in sorted(path for path in storage.iterdir() if path.is_dir())[:-KEEP]:
         if old.name != keep:
-            shutil.rmtree(old, ignore_errors=True)
+            system.remove_tree(old, ignore_errors=True)
 
 
 def fixes_state(folder, root, web):

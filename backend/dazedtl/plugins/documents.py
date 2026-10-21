@@ -8,6 +8,7 @@ import threading
 from collections import OrderedDict
 from pathlib import Path
 
+from dazedtl import system
 from dazedtl.translation.files import digest, unique_object
 
 from . import ruby
@@ -210,7 +211,7 @@ def syntax(files):
         )
     limit = max(10, len(files) * 6)
     try:
-        response = subprocess.run(
+        response = system.run(
             [node, str(Path(__file__).with_name("syntax.cjs"))],
             input=json.dumps({"files": files}, ensure_ascii=False).encode(),
             capture_output=True,

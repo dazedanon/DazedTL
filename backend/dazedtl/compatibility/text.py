@@ -3,11 +3,11 @@
 import difflib
 import json
 import shutil
-import tempfile
 import traceback
 from datetime import datetime
 from pathlib import Path
 
+from dazedtl import system
 from dazedtl.storage import write_json
 from dazedtl.translation import publication
 from dazedtl.translation.files import decode_json, digest, project_path, read_json
@@ -919,10 +919,7 @@ def prepare_publication(plan):
             )
         except ValueError as exc:
             raise ValueError(str(exc)) from exc
-        with tempfile.TemporaryDirectory(
-            dir=folder, prefix="qa-candidates-"
-        ) as temporary:
-            staging = Path(temporary)
+        with system.staging_folder(folder, "qa-candidates-") as staging:
             scratch = staging / "data"
             scratch.mkdir()
             for path in data.glob("*.json"):

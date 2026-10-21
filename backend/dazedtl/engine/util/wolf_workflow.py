@@ -6,6 +6,7 @@ from pathlib import Path
 from util.wolfdawn import originals as wolf_originals
 from util.project_scanner import (detect_wolf_layout, find_wolf_text_archives, wolf_has_maps,
     wolf_maps_dir, wolf_nested_data_dir, wolf_repair_nested_data_dir, wolf_unpack_out_dir)
+from util import system
 
 MANIFEST_NAME = "manifest.json"
 NAMES_JSON = "names.json"
@@ -177,7 +178,7 @@ class WolfWorkflowCore:
             try:
                 if orig.is_dir():
                     if live.exists():
-                        shutil.rmtree(live)
+                        system.remove_tree(live)
                     shutil.copytree(orig, live)
                 else:
                     live.parent.mkdir(parents=True, exist_ok=True)

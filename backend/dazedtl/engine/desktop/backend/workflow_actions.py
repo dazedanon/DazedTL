@@ -6,7 +6,6 @@ import json
 import os
 from pathlib import Path
 import stat
-import shutil
 import uuid
 
 from dazedtl.actions import ACTIONS, ENGINE, named
@@ -16,6 +15,7 @@ from util.game_settings import without_game_update
 from util.project_preparation import _game_path, rpgmaker_layout
 from .project import digest, file_digest
 from . import wolf
+from util import system
 
 # The actions the engine's workflow reviews; the host's registry names them.
 LABELS = {name: ACTIONS[name].label for name in named(family=ENGINE)}
@@ -177,7 +177,7 @@ def run_engine_action(plan, log):
         staging.mkdir()
         count, errors = import_to_files(selected, staging)
         if errors:
-            shutil.rmtree(staging)
+            system.remove_tree(staging)
             raise ValueError("; ".join(errors))
         previous = folder / ("previous-import-" + uuid.uuid4().hex)
         if (folder / "files").exists():
@@ -189,7 +189,7 @@ def run_engine_action(plan, log):
                 previous.rename(folder / "files")
             raise
         if previous.exists():
-            shutil.rmtree(previous)
+            system.remove_tree(previous)
         return {"files": count, "selected": options["files"]}
     if action in {"prepare", "format_data", "format_plugins", "gameupdate"}:
         from util.project_preparation import (prepare_rpgmaker, format_plugins_js, install_gameupdate, write_gameupdate_config,

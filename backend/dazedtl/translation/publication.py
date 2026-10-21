@@ -1,11 +1,11 @@
 """Frozen, reviewed text publication with durable backups and guarded recovery."""
 
 import json
-import shutil
 import time
 import uuid
 from pathlib import Path
 
+from dazedtl import system
 from dazedtl.compatibility.game_write import write_game
 from dazedtl.storage import write_bytes, write_json
 
@@ -240,7 +240,7 @@ def _discard_unused(folder):
             if (path.parent / "0.after").exists():
                 _discard_candidates(path.parent)
         elif time.time() - row.get("created", 0) > REVIEW_SECONDS:
-            shutil.rmtree(path.parent, ignore_errors=True)
+            system.remove_tree(path.parent, ignore_errors=True)
 
 
 def _discard_candidates(base):
