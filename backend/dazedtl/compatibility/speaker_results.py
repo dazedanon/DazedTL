@@ -7,7 +7,7 @@ from typing import TypeGuard
 
 from dazedtl import system
 from dazedtl.storage import write_bytes, write_json
-from dazedtl.translation.files import digest, project_path
+from dazedtl.translation.files import digest, live_path, project_path
 
 from .process_view import _read_cached, _verified_digest, file_stamp, saved
 
@@ -23,7 +23,7 @@ def install(module, root):
     def record(value):
         # Reporting must not turn a completed paid call into a translation retry.
         try:
-            write_json(project_path(root, "log/" + RECEIPT, exists=False), value)
+            write_json(live_path(root, "log/" + RECEIPT, exists=False), value)
         except OSError, ValueError:
             pass
 
@@ -135,7 +135,7 @@ def read(root, job):
         if not isinstance(value, dict):
             raise ValueError("Name result receipt is invalid.")
         names = (job.get("estimate") or {}).get("speakers")
-        plan_path = project_path(root, "plan.json", exists=False)
+        plan_path = live_path(root, "plan.json", exists=False)
         if not value and not names and not plan_path.exists():
             return None
         plan = _read_cached(str(plan_path), file_stamp(plan_path))

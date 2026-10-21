@@ -82,6 +82,31 @@ def project_path(root, relative, *, exists=True):
     return path
 
 
+def live_path(root, relative, *, exists=True):
+    """project_path for a file other processes replace, such as a running
+    run's job.json or its translated outputs. It checks the folder holding
+    the file and the file's own name but never resolves the file: on Windows,
+    resolving a file replaced meanwhile keeps a \\?\\ prefix that no longer
+    lies inside root."""
+    if not isinstance(relative, str) or "\\" in relative:
+        raise ValueError("Use a project-relative path with forward slashes.")
+    parent, _, name = relative.rpartition("/")
+    if name.casefold() in {"", ".", "..", ".git"}:
+        raise ValueError("Choose a file inside the selected game.")
+    if parent:
+        folder = project_path(root, parent, exists=False)
+    else:
+        folder = Path(root).resolve(strict=True)
+        if not folder.is_dir():
+            raise ValueError("The selected game folder is unavailable.")
+    path = folder / name
+    if path.is_symlink():
+        raise ValueError("Project operations cannot follow symbolic links.")
+    if exists and not path.is_file():
+        raise ValueError("The selected project file is missing.")
+    return path
+
+
 class ObservedFiles:
     """One observation's look at project files.
 

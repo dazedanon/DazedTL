@@ -25,7 +25,8 @@ Files
   forward-slash string, never str(Path), whose backslashes it rejects.
   Never project_path a file other processes may be replacing: Windows'
   realpath reads its final path twice, and a file replaced in between keeps a
-  \\?\\ prefix that no longer lies inside the game folder.
+  \\?\\ prefix that no longer lies inside the game folder. live_path checks
+  its folder instead.
 
 Processes
 - Children never inherit standard input: on Windows a child's startup blocks

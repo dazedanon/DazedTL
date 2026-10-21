@@ -11,7 +11,7 @@ from typing import Any
 
 from dazedtl.storage import write_json
 from dazedtl.translation.batch_refusals import advance
-from dazedtl.translation.files import project_path, read_json
+from dazedtl.translation.files import live_path, read_json
 from dazedtl.translation.refusals import POLICY, refused
 
 RESULTS = "dazedtl-clarified-results.json"
@@ -83,7 +83,7 @@ def advance_guided(
         # native consume file; this operation cannot submit provider work.
         with commit():
             write_json(
-                project_path(root, "log/batch_results.json", exists=False),
+                live_path(root, "log/batch_results.json", exists=False),
                 completed["results"],
             )
         return {"ready": True, "batches": []}
@@ -171,12 +171,10 @@ def advance_guided(
                 value.update(text="", refusal=True)
         with commit():
             write_json(
-                project_path(root, "log/" + RESULTS, exists=False),
+                live_path(root, "log/" + RESULTS, exists=False),
                 {"original": results, "results": output},
             )
-            write_json(
-                project_path(root, "log/batch_results.json", exists=False), output
-            )
+            write_json(live_path(root, "log/batch_results.json", exists=False), output)
     return {"ready": True, "batches": pending}
 
 

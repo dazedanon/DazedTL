@@ -10,6 +10,7 @@ from dazedtl.storage import exclusive, write_json
 from dazedtl.translation.files import (
     decode_json,
     digest,
+    live_path,
     project_path,
     read_json,
 )
@@ -103,7 +104,7 @@ def outputs(root, plan):
             output = folder / name
             stat = entry.stat(follow_symlinks=False)
         else:
-            output = project_path(root, "translated/" + name)
+            output = live_path(root, "translated/" + name)
             stat = output.stat()
         actual = _json_digest(str(output), stat)
         if actual == expected:
@@ -128,7 +129,7 @@ def install(module, root, plan):
     def save(native, data, filename, *args, **kwargs):
         saved = native(data, filename, *args, **kwargs)
         if saved and filename in names:
-            path = project_path(root, "translated/" + filename)
+            path = live_path(root, "translated/" + filename)
             raw = path.read_bytes()
             if not isinstance(decode_json(raw), (dict, list)):
                 raise ValueError("The engine checkpoint is not game JSON.")
@@ -162,7 +163,7 @@ def install(module, root, plan):
                 expected = (record.get("files") or {}).get(path.name)
                 output = root / "translated" / path.name
                 if expected and output.is_file():
-                    raw = project_path(root, "translated/" + path.name).read_bytes()
+                    raw = live_path(root, "translated/" + path.name).read_bytes()
                     if digest(raw) == expected and isinstance(
                         decode_json(raw), (dict, list)
                     ):

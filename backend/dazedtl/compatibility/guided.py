@@ -5,7 +5,7 @@ from pathlib import Path
 
 from dazedtl import system
 from dazedtl.storage import staging_folder, write_json
-from dazedtl.translation.files import digest, project_path, read_json
+from dazedtl.translation.files import digest, live_path, project_path, read_json
 
 
 def file_titles(native):
@@ -381,11 +381,11 @@ def phased_workflows(workspace, lock, operations, manual):
                         marker = identity + ":" + name
                         if collected.get(marker) == expected:
                             continue
-                        output = project_path(source / "translated", name)
+                        output = live_path(source / "translated", name)
                         working = project_path(
                             self.folder(project["id"]) / "files", name
                         )
-                        destination = project_path(
+                        destination = live_path(
                             self.folder(project["id"]),
                             "translated/" + name,
                             exists=False,

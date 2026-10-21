@@ -7,7 +7,7 @@ from pathlib import Path
 
 from dazedtl import system
 from dazedtl.storage import write_json
-from dazedtl.translation.files import digest, project_path, read_json
+from dazedtl.translation.files import digest, live_path, read_json
 
 from .process_view import ledger, queue, saved
 from .transmission import REFUSED
@@ -56,7 +56,7 @@ def binding(root, job, plan, *, quote=None):
         or plan.get("mode") != "batch"
         or plan.get("batch_link")
         or job.get("plan_hash")
-        != digest(system.read_bytes(project_path(root, "plan.json")))
+        != digest(system.read_bytes(live_path(root, "plan.json")))
         or not requests
         or not state.get("run_id")
         or set(state.get("file_set") or []) != set(plan.get("selected") or [])
@@ -178,7 +178,7 @@ def prepare_continuation(root, job, plan, *, explicit=False):
     job["dazedtl_continue_batch"] = True
     if state["status"] == "fetched":
         write_json(
-            project_path(root, "log/batch_state.json"),
+            live_path(root, "log/batch_state.json"),
             {**state, "status": "partially_submitted"},
         )
     return approval
@@ -202,7 +202,7 @@ def install_worker(root, plan):
     creates = 0
 
     def approved():
-        job = read_json(project_path(root, "job.json"))
+        job = read_json(live_path(root, "job.json"))
         value = approved_binding(root, job, plan)
         translation.BATCH_QUEUE_EXPECTED = {
             "run_id": value["run_id"],
@@ -256,7 +256,7 @@ def install_worker(root, plan):
                 else "partially_submitted",
                 request_count=len(submitted),
             )
-            write_json(project_path(root, "log/batch_state.json"), state)
+            write_json(live_path(root, "log/batch_state.json"), state)
         if not known:
             record_submit(
                 [info],
@@ -277,7 +277,7 @@ def install_worker(root, plan):
         ):
             return native(provider, requests, **kwargs)
         if provider == "openrouter":
-            job = read_json(project_path(root, "job.json"))
+            job = read_json(live_path(root, "job.json"))
             if (
                 active_task is not None
                 and active_task.should_stop
@@ -312,7 +312,7 @@ def install_worker(root, plan):
         # A client that cannot be built fails before the journal, never sent.
         client = kwargs.get("client") or providers.get_client(provider)
         kwargs["client"] = client.with_options(max_retries=0)
-        path = project_path(root, "log/" + JOURNAL, exists=False)
+        path = live_path(root, "log/" + JOURNAL, exists=False)
         state = saved(root, "batch_state.json")
         intent = {
             "approval": approval,
@@ -365,11 +365,11 @@ def install_worker(root, plan):
         except Exception:
             if creates == before:
                 try:
-                    job = read_json(project_path(root, "job.json"))
+                    job = read_json(live_path(root, "job.json"))
                     journal = saved(root, JOURNAL)
                     if job.get(APPROVAL) and not unresolved(journal.get("intent")):
                         write_json(
-                            project_path(root, "log/" + JOURNAL, exists=False),
+                            live_path(root, "log/" + JOURNAL, exists=False),
                             {**journal, "unsent": {"approval": job[APPROVAL]}},
                         )
                 except OSError, ValueError:
@@ -383,7 +383,7 @@ def install_worker(root, plan):
     translation.submitTranslationBatches.layer(LAYER, submission)
 
     def wait(native, task, estimate):
-        if read_json(project_path(root, "job.json")).get(APPROVAL):
+        if read_json(live_path(root, "job.json")).get(APPROVAL):
             approved()
             task._batch_pending_estimate = estimate
             return not task.should_stop
