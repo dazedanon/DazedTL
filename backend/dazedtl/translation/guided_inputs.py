@@ -494,16 +494,16 @@ class GuidedInputs:
                 progress("Preparing source copy: " + name)
                 write_bytes(self.path("files", name), raw)
                 if refresh:
-                    self.path("translated", name).unlink(missing_ok=True)
+                    system.unlink(self.path("translated", name), missing_ok=True)
             if refresh:
-                cache.unlink(missing_ok=True)
+                system.unlink(cache, missing_ok=True)
             else:
                 write_json(self.index, {**record, "inputs": {**previous, **current}})
         except Exception:
             for (group, name), raw in old.items():
                 path = self.path(group, name)
                 if raw is None:
-                    path.unlink(missing_ok=True)
+                    system.unlink(path, missing_ok=True)
                 else:
                     write_bytes(path, raw)
             if cache_bytes is not None:
@@ -512,7 +512,7 @@ class GuidedInputs:
                 if indexed:
                     write_json(self.index, record)
                 else:
-                    self.index.unlink(missing_ok=True)
+                    system.unlink(self.index, missing_ok=True)
             raise
         return {
             "files": len(replacements),

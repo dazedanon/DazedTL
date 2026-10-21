@@ -9,6 +9,7 @@ can restore.
 
 from copy import deepcopy
 
+from dazedtl import system
 from dazedtl.actions import label, named
 from dazedtl.storage import write_json
 from dazedtl.translation.files import read_json
@@ -86,7 +87,7 @@ class TextFit:
         if self.waiting(project_id):
             return None
         if not applied:
-            path.unlink(missing_ok=True)
+            system.unlink(path, missing_ok=True)
             return None
         backend = self.guided.backend
         if backend.running() or self.guided.translation.jobs.running():
@@ -108,7 +109,7 @@ class TextFit:
         except OSError, ValueError:
             # Another operation won the race; the next look starts it.
             return None
-        path.unlink(missing_ok=True)
+        system.unlink(path, missing_ok=True)
         return job
 
     def _areas(self, job):

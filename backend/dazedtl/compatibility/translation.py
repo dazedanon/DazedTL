@@ -1080,8 +1080,8 @@ class TranslationEngine:
                         player_permissions(archive.getinfo(game_archive))
             system.replace(temporary, output)
         finally:
-            temporary.unlink(missing_ok=True)
-            rebuilt.unlink(missing_ok=True)
+            system.unlink(temporary, ignore_errors=True)
+            system.unlink(rebuilt, ignore_errors=True)
         packaged = sorted(
             (tracked - omitted) | ({game_archive} if game_archive else set())
         )

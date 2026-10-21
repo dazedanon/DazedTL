@@ -8,6 +8,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from dazedtl import system
 from dazedtl.storage import write_json
 
 # The selected project's operations an external assistant may call: every
@@ -112,4 +113,4 @@ class LocalAPI:
         self.server.shutdown()
         self.server.server_close()
         self.thread.join(timeout=1)
-        self.path.unlink(missing_ok=True)
+        system.unlink(self.path, missing_ok=True)

@@ -287,7 +287,7 @@ def _store_content(root, path, fingerprint, size, data, contents, stopped):
             contents.made.add(shard)
         system.replace(temporary, output)
     except BaseException:
-        temporary.unlink(missing_ok=True)
+        system.unlink(temporary, ignore_errors=True)
         raise
     contents.created[output] = size
 
@@ -442,7 +442,7 @@ def snapshot(
         try:
             if not published:
                 for path in contents.created:
-                    path.unlink(missing_ok=True)
+                    system.unlink(path, missing_ok=True)
         finally:
             lock.close()
 
@@ -736,7 +736,7 @@ def reset(
     ):
         path = _child(root, name)
         if path.is_dir() and not any(path.iterdir()):
-            path.rmdir()
+            system.rmdir(path)
     for name in before["directories"]:
         _child(root, name).mkdir(parents=True, exist_ok=True)
     for name in changed:
@@ -755,7 +755,7 @@ def reset(
                 target.chmod(stat.S_IREAD | stat.S_IWRITE)
             system.replace(temporary, target)
         finally:
-            temporary.unlink(missing_ok=True)
+            system.unlink(temporary, ignore_errors=True)
         count += 1
         progress(count, name)
     return {"restored": len(changed), "set_aside": len(extras)}

@@ -246,10 +246,7 @@ def _discard_unused(folder):
 def _discard_candidates(base):
     """Removes a finished batch's frozen copies of what it wrote."""
     for path in base.glob("*.after"):
-        try:
-            path.unlink(missing_ok=True)
-        except OSError:
-            pass
+        system.unlink(path, ignore_errors=True)
 
 
 def load(folder, plan):

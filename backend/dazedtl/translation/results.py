@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 
+from dazedtl import system
 from dazedtl.freshness import signature, signature_settled
 from dazedtl.storage import write_json
 
@@ -292,7 +293,7 @@ class Results:
                     and entry.is_file(follow_symlinks=False)
                 ):
                     try:
-                        os.unlink(entry.path)
+                        system.unlink(entry.path)
                     except OSError:
                         # A reader holds it on Windows; the next export tries again.
                         continue

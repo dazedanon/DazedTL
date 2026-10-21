@@ -9,6 +9,7 @@ project helper, which share its one dispatch, keep their answers meanwhile.
 import hashlib
 from pathlib import Path
 
+from dazedtl import system
 from dazedtl.settings.execution import worker_secret
 from dazedtl.storage import write_json
 
@@ -94,7 +95,7 @@ def scope_coverage(engine, workspace, project_id, root, units):
     go to a file by location, so the extractor can be fixed."""
     path = census_path(workspace, project_id)
     if not path.exists():
-        coverage_path(workspace, project_id).unlink(missing_ok=True)
+        system.unlink(coverage_path(workspace, project_id), missing_ok=True)
         return None, None
     value = read_json(path)
     state = lifecycle(workspace, project_id)
