@@ -10,7 +10,13 @@ from pathlib import Path
 from dazedtl import system
 from dazedtl.storage import write_json
 from dazedtl.translation import publication
-from dazedtl.translation.files import decode_json, digest, project_path, read_json
+from dazedtl.translation.files import (
+    decode_json,
+    digest,
+    live_path,
+    project_path,
+    read_json,
+)
 
 # Where each QA stage stands for the page's activity line.
 ACTIVITY_STAGES = ("screen", "deep", "sweep", "editorial")
@@ -843,9 +849,7 @@ def prepare_publication(plan):
         output_folder = Path(saved["folder"]) if saved else folder
         layout = fitting_layout(plan)
         for name in options["files"]:
-            path = project_path(
-                output_folder, "translated/" + name
-            )  # platform: F13 converts it to live_path
+            path = live_path(output_folder, "translated/" + name)
             output = path.read_bytes()
             if saved and digest(output) != saved["outputs"].get(name):
                 raise ValueError("Saved Batch output changed. Review this Batch again.")
