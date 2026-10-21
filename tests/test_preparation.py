@@ -15,7 +15,7 @@ class PreparationTests(unittest.TestCase):
             game, folder = root / "game", root / "profile"
             write_json(game / "data/Items.json", [None])
             (game / "js").mkdir()
-            (game / "js/plugins.js").write_text("[]")
+            (game / "js/plugins.js").write_text("[]", encoding="utf-8")
             folder.mkdir()
             native = {
                 "id": "one",
@@ -93,7 +93,7 @@ class PreparationTests(unittest.TestCase):
                 if plan["action"] == "gameupdate":
                     path = root / "game/gameupdate/patch-config.txt"
                     path.parent.mkdir()
-                    path.write_text("repo=YOUR_PATCH_REPO")
+                    path.write_text("repo=YOUR_PATCH_REPO", encoding="utf-8")
                 return {"config_written": False}
 
             result = preparation.run(
@@ -132,7 +132,11 @@ class PreparationTests(unittest.TestCase):
             self.assertTrue(preparation.state(native, root / "profile")["complete"])
             # The config follows Settings and the game's repository afterwards,
             # so writing it again keeps the preparation receipt.
-            (root / "game/gameupdate/patch-config.txt").write_text("repo=filled-in")
+            (root / "game/gameupdate/patch-config.txt").write_text(
+                "repo=filled-in", encoding="utf-8"
+            )
             self.assertTrue(preparation.state(native, root / "profile")["complete"])
-            (root / "game/gameupdate/other.txt").write_text("changed helper file")
+            (root / "game/gameupdate/other.txt").write_text(
+                "changed helper file", encoding="utf-8"
+            )
             self.assertFalse(preparation.state(native, root / "profile")["complete"])

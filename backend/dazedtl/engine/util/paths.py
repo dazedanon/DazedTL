@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import os
-import secrets
-import shutil
 import stat
 import tempfile
-import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import lru_cache
 from pathlib import Path
+
+from util import system
 
 # Product identity (QSettings / desktop / window titles).
 ORG_NAME = "DazedTranslations"
@@ -324,77 +323,11 @@ def game_metadata_dir(game_root: str | Path, *, create: bool = False) -> Path:
     return metadata
 
 
-def _retryable_file_error(error: OSError) -> bool:
-    """Whether a replace or delete may succeed once another handle closes.
-
-    Windows refuses to replace or delete a file that another reader has open,
-    such as the app's poll reading a run's evidence while its worker writes.
-    """
-    return isinstance(error, PermissionError) or getattr(error, "winerror", None) in {
-        5,  # ERROR_ACCESS_DENIED
-        32,  # ERROR_SHARING_VIOLATION
-        33,  # ERROR_LOCK_VIOLATION
-    }
-
-
-def _retry_file_operation(operation) -> None:
-    delay = 0.05
-    for attempt in range(8):
-        try:
-            operation()
-            return
-        except OSError as error:
-            if not _retryable_file_error(error) or attempt == 7:
-                raise
-            time.sleep(delay)
-            delay = min(delay * 2, 0.5)
-
-
-def replace_with_retry(source: str | Path, target: str | Path) -> None:
-    """os.replace that waits up to about two seconds for a reader to finish."""
-    _retry_file_operation(lambda: os.replace(source, target))
-
-
-def unlink_with_retry(path: str | Path) -> None:
-    """Path.unlink that waits up to about two seconds for a reader to finish."""
-    _retry_file_operation(Path(path).unlink)
-
-
-def new_folder(parent: str | Path, prefix: str) -> Path:
-    """Create a uniquely named folder in ``parent`` that keeps its permissions.
-
-    tempfile.mkdtemp's mode 0o700 becomes an owner-only ACL on Windows, which
-    locks the app out of files an elevated assistant writes there; see the
-    agent boundary in docs/architecture.md. The app's dazedtl.storage.new_folder
-    does the same.
-    """
-    parent = Path(parent)
-    for _attempt in range(100):
-        folder = parent / (prefix + secrets.token_hex(8))
-        try:
-            folder.mkdir()
-        except FileExistsError:
-            continue
-        return folder
-    raise FileExistsError(f"No unused folder name in {parent}")
-
-
-@contextmanager
-def staging_folder(parent: str | Path, prefix: str):
-    """A new_folder that is removed on exit unless it was renamed away, like
-    tempfile.TemporaryDirectory."""
-    folder = new_folder(parent, prefix)
-    try:
-        yield folder
-    finally:
-        if folder.is_dir() and not folder.is_symlink():
-
-            def writable(function, path, _error):
-                # Windows refuses to delete read-only files.
-                os.chmod(path, stat.S_IWRITE)
-                function(path)
-
-            shutil.rmtree(folder, onexc=writable)
+# The platform layer's file rules, under the names engine code calls.
+replace_with_retry = system.replace
+unlink_with_retry = system.unlink
+new_folder = system.new_folder
+staging_folder = system.staging_folder
 
 
 migrate_root_data_files()

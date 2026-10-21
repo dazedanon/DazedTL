@@ -25,8 +25,8 @@ from dazedtl.images.native_translation import ImageNativeTranslation
 from dazedtl.plugins import PluginService
 from dazedtl.projects.store import Projects
 from dazedtl.settings.store import Settings
-from dazedtl.stdio import private_stdin
 from dazedtl.storage import WorkspaceLock
+from dazedtl.system import private_stdin
 from dazedtl.translation.assistant_tasks import AssistantTasks
 from dazedtl.translation.guided import Guided
 from dazedtl.translation.playtest import Playtest

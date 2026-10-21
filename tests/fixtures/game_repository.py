@@ -27,6 +27,7 @@ def git(game, *arguments):
         capture_output=True,
         text=True,
         check=True,
+        encoding="utf-8",
     ).stdout
 
 

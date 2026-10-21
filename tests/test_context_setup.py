@@ -49,7 +49,7 @@ class ContextSetupTests(unittest.TestCase):
         C.request(self.request_path, "game", {"request_id": "speaker-request"})
         self.assertEqual(self.inspect()["status"], "waiting")
         for doc in self.docs.values():
-            Path(doc["path"]).write_text("")
+            Path(doc["path"]).write_text("", encoding="utf-8")
         self.assertEqual(self.inspect()["status"], "ready")
         request = C.request(
             self.request_path, "game", {"request_id": "speaker-request"}
@@ -69,7 +69,9 @@ class ContextSetupTests(unittest.TestCase):
         self.native.update(engine_options={"NAMES": True}, phase1_comments=True)
         self.docs["glossary"]["text"] = "Updated glossary"
         self.docs["glossary"]["revision"] = "changed"
-        Path(self.docs["glossary"]["path"]).write_text("Updated glossary")
+        Path(self.docs["glossary"]["path"]).write_text(
+            "Updated glossary", encoding="utf-8"
+        )
         for report in (
             {"project_id": "another game"},
             {"documents": {"glossary": {"revision": "old"}}},
@@ -79,9 +81,9 @@ class ContextSetupTests(unittest.TestCase):
             observed = self.inspect()
             self.assertEqual(observed["status"], "ready")
             self.assertFalse(observed["documents"]["glossary"]["needsReview"])
-        (self.root / C.REPORT).write_text("unfinished report")
-        self.request_path.write_text("unfinished request")
-        self.review_path.write_text("unfinished review")
+        (self.root / C.REPORT).write_text("unfinished report", encoding="utf-8")
+        self.request_path.write_text("unfinished request", encoding="utf-8")
+        self.review_path.write_text("unfinished review", encoding="utf-8")
         self.assertEqual(self.inspect()["status"], "ready")
         Path(self.docs["game"]["path"]).unlink()
         self.assertNotEqual(self.inspect()["status"], "ready")
@@ -95,7 +97,7 @@ class ContextSetupTests(unittest.TestCase):
         request = C.request(
             self.request_path, "game", {"request_id": "speaker-request"}
         )
-        (self.root / "windows.js").write_text("window evidence")
+        (self.root / "windows.js").write_text("window evidence", encoding="utf-8")
         report = {
             "version": 1,
             "request_id": request["request_id"],
@@ -134,7 +136,7 @@ class ContextSetupTests(unittest.TestCase):
             self.assertIsNone(self.inspect()["layout"])
             self.assertEqual(self.inspect()["status"], "ready")
         write_json(self.root / C.REPORT, report)
-        (self.root / "windows.js").write_text("changed geometry")
+        (self.root / "windows.js").write_text("changed geometry", encoding="utf-8")
         self.assertIsNone(self.inspect()["layout"])
         self.assertEqual(self.inspect()["status"], "ready")
         C.review(self.review_path, self.docs, self.native, "game", "old", "empty")

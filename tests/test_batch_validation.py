@@ -180,7 +180,8 @@ class BatchValidationTests(unittest.TestCase):
                 + responses[key]["text"]
                 + "\n"
                 for key in ("first", "second")
-            )
+            ),
+            encoding="utf-8",
         )
         return job, plan, queue, responses, before, after
 
@@ -330,8 +331,8 @@ class BatchValidationTests(unittest.TestCase):
             + results["bad"]["text"]
             + "\n\n"
         )
-        (root / "log/translation.txt").write_text(good)
-        (root / "log/mismatchHistory.txt").write_text(bad)
+        (root / "log/translation.txt").write_text(good, encoding="utf-8")
+        (root / "log/mismatchHistory.txt").write_text(bad, encoding="utf-8")
         return job, queue, results
 
     def test_one_bad_response_does_not_block_validated_or_rejected_requests_in_the_same_file(
@@ -404,7 +405,9 @@ class BatchValidationTests(unittest.TestCase):
                         {"status": "fetched", "batches": []},
                     )
                 if change == "conflict":
-                    with (root / "log/translation.txt").open("a") as stream:
+                    with (root / "log/translation.txt").open(
+                        "a", encoding="utf-8"
+                    ) as stream:
                         stream.write(
                             "[BATCH] Applied provider batch result\nInput:\n"
                             + queue["bad"]["payload"]
@@ -443,7 +446,8 @@ class BatchValidationTests(unittest.TestCase):
             (root / "log/mismatchHistory.txt").write_text(
                 "Validation mismatch: Items.json\nOriginal text kept after 1 attempts.\nInput:\n"
                 + queue["bad"]["payload"]
-                + "\nProvider output:\nNot JSON at all\n\n"
+                + "\nProvider output:\nNot JSON at all\n\n",
+                encoding="utf-8",
             )
             rows = list(request_scope.requests(root, job))
             self.assertEqual(
@@ -465,7 +469,8 @@ class BatchValidationTests(unittest.TestCase):
                 + queue["bad"]["payload"]
                 + "\nProvider output:\n"
                 + results["bad"]["text"]
-                + "\n\n"
+                + "\n\n",
+                encoding="utf-8",
             )
             self.assertEqual(
                 [row["state"] for row in request_scope.requests(root, job)],

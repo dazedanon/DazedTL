@@ -629,7 +629,8 @@ class CompatibilityContracts(unittest.TestCase):
             write_json(folder / "job.json", job)
             module = source / "desktop/backend/manual.py"
             module.parent.mkdir(parents=True)
-            module.write_text("""import json, threading
+            module.write_text(
+                """import json, threading
 from pathlib import Path
 from tests.engine import point
 launch_worker = point(lambda *_args, **_kwargs: None)
@@ -643,17 +644,21 @@ class ManualJobs:
         self.load_saved()
     def folder(self, identity): return self.root/'jobs'/identity
     def load_saved(self):
-        self.jobs['fixture'] = json.loads((self.folder('fixture')/'job.json').read_text())
+        self.jobs['fixture'] = json.loads((self.folder('fixture')/'job.json').read_text(encoding='utf-8'))
     def _event(self, job, event):
         if event['event'] == 'log': return
         job.update(status='canceled' if job['phase']=='canceled' else 'complete' if event['args'][0] else 'failed', message=event['args'][1])
     def _launch(self, job, resume): job['status'] = 'running'
-""")
+""",
+                encoding="utf-8",
+            )
             controller = manual_jobs(
                 source, source / "profile", threading.RLock(), False
             )
             self.assertEqual(controller.jobs["fixture"]["status"], "canceled")
-            self.assertEqual(json.loads((folder / "job.json").read_text()), job)
+            self.assertEqual(
+                json.loads((folder / "job.json").read_text(encoding="utf-8")), job
+            )
             # Retry must not inherit canceled phase and hide a subsequent paid failure.
             retry = deepcopy(controller.jobs["fixture"])
             controller._launch(retry, True)
@@ -778,7 +783,8 @@ class ManualJobs:
         with TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "modules").mkdir()
-            (root / "modules/rpgmakermvmz.py").write_text("""
+            (root / "modules/rpgmakermvmz.py").write_text(
+                """
 HEADER_MAPPINGS_357 = {"Case/Plugin": (["message"], "font")}
 PATTERNS_355655 = {"gameVariables.setValue": ("text(.+)", False)}
 def parse(codeList, i, headerString, jaString):
@@ -795,7 +801,9 @@ def parse(codeList, i, headerString, jaString):
             pass
         if "AlwaysCheckedChoice":
             pass
-""")
+""",
+                encoding="utf-8",
+            )
             rows = {row["key"]: row for row in catalog(root)["controls"]}
             self.assertEqual(rows["CODE357"]["builtins"], ["BuiltIn"])
             self.assertEqual(rows["CODE355655"]["builtins"], ["_Text"])
@@ -809,12 +817,16 @@ def parse(codeList, i, headerString, jaString):
             # new registry entry does not.
             module = root / "modules/rpgmakermvmz.py"
             before = catalog(root)["fingerprint"]
-            module.write_text(module.read_text() + "\ndef fixed():\n    pass\n")
+            module.write_text(
+                module.read_text(encoding="utf-8") + "\ndef fixed():\n    pass\n",
+                encoding="utf-8",
+            )
             self.assertEqual(catalog(root)["fingerprint"], before)
             module.write_text(
-                module.read_text().replace(
+                module.read_text(encoding="utf-8").replace(
                     '"Case/Plugin"', '"Case/Plugin": (["message"], "font"), "New"'
-                )
+                ),
+                encoding="utf-8",
             )
             self.assertNotEqual(catalog(root)["fingerprint"], before)
 
@@ -880,11 +892,13 @@ def parse(codeList, i, headerString, jaString):
             write_json(game / "data/Items.json", [None])
             (game / "img").mkdir()
             (game / "img/title.png").write_bytes(b"generated asset fixture")
-            (game / "README.md").write_text("Repository metadata")
+            (game / "README.md").write_text("Repository metadata", encoding="utf-8")
             # A working GameUpdate config joins the proposal so the published
             # patch carries it.
             (game / "gameupdate").mkdir()
-            (game / "gameupdate/patch-config.txt").write_text("repo=fixture")
+            (game / "gameupdate/patch-config.txt").write_text(
+                "repo=fixture", encoding="utf-8"
+            )
             preparation = ModuleType("util.project_preparation")
             preparation.rpgmaker_layout = lambda _: {
                 "engine": "MVMZ",
@@ -1047,7 +1061,8 @@ def parse(codeList, i, headerString, jaString):
             source = Path(temporary)
             module = source / "desktop/backend/manual.py"
             module.parent.mkdir(parents=True)
-            module.write_text("""import subprocess, sys, threading
+            module.write_text(
+                """import subprocess, sys, threading
 from pathlib import Path
 from tests.engine import point
 @point
@@ -1070,7 +1085,9 @@ class ManualJobs:
     def launch(self):
         return launch_worker([sys.executable, '-u', str(Path(__file__).with_name('manual_worker.py')), str(self.workspace/'run')],
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, env={})
-""")
+""",
+                encoding="utf-8",
+            )
             with patch("subprocess.Popen") as launch:
                 controller = manual_jobs(source, source / "profile", None, False)
                 run = source / "profile/run"
@@ -1256,7 +1273,9 @@ class ManualJobs:
                 )
                 self.assertEqual(
                     json.loads(
-                        (phases.folder("owner") / "translated/System.json").read_text()
+                        (phases.folder("owner") / "translated/System.json").read_text(
+                            encoding="utf-8"
+                        )
                     ),
                     {"translated": "System.json"},
                 )
@@ -1383,9 +1402,9 @@ class ManualJobs:
                 *("sfx_reference", "reference_games", "skills/__init__"),
                 *("skills/contexts", "skills/system"),
             ):
-                (util / (name + ".py")).write_text("")
+                (util / (name + ".py")).write_text("", encoding="utf-8")
             rows, compiler = compile_requests(engine, "unused", {}, plan, "English")
-            Path(folder, "util/vocab.py").write_text("# changed")
+            Path(folder, "util/vocab.py").write_text("# changed", encoding="utf-8")
             self.assertEqual(
                 compile_requests(engine, "unused", {}, plan, "English")[1], compiler
             )
@@ -1609,6 +1628,7 @@ print((root / ".gitignore").read_text() == text)
                 capture_output=True,
                 text=True,
                 check=True,
+                encoding="utf-8",
             )
         self.assertEqual(result.stdout.strip(), "True")
 
@@ -1644,6 +1664,7 @@ except ValueError as error:
                 capture_output=True,
                 text=True,
                 check=True,
+                encoding="utf-8",
             )
         self.assertIn("lacks or ignores: winhttp.dll", result.stdout)
 
@@ -1717,6 +1738,7 @@ print(json.dumps(results))
                 capture_output=True,
                 text=True,
                 check=True,
+                encoding="utf-8",
             )
         self.assertEqual(
             json.loads(result.stdout),

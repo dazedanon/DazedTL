@@ -3,89 +3,30 @@
 import hashlib
 import json
 import os
-import secrets
-import shutil
-import stat
-import tempfile
 import time
 from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
+
+# The writers and folders moved to the platform layer; these names stay for
+# their many callers.
+from .system import new_folder, staging_folder, write_bytes, write_json
+
+__all__ = [
+    "WorkspaceError",
+    "exclusive",
+    "new_folder",
+    "read_versioned_json",
+    "staging_folder",
+    "write_bytes",
+    "write_json",
+]
 
 
 class WorkspaceError(ValueError):
     def __init__(self, code, message):
         super().__init__(message)
         self.code = code
-
-
-def write_json(path, value):
-    write_bytes(
-        path, (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
-    )
-
-
-def write_bytes(path, content):
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(prefix=".saving-", dir=path.parent)
-    try:
-        with os.fdopen(descriptor, "wb") as stream:
-            stream.write(content)
-            stream.flush()
-            os.fsync(stream.fileno())
-        _replace(temporary, path)
-    finally:
-        Path(temporary).unlink(missing_ok=True)
-
-
-def _replace(temporary, path):
-    """Replace atomically; on Windows a reader briefly blocks the replacement."""
-    for attempt in range(40):
-        try:
-            os.replace(temporary, path)
-            return
-        except PermissionError:
-            if os.name != "nt" or attempt == 39:
-                raise
-            time.sleep(0.025)
-
-
-def new_folder(parent, prefix):
-    """Creates a uniquely named folder in parent that keeps its permissions.
-
-    tempfile.mkdtemp's mode 0o700 becomes an owner-only ACL on Windows, which
-    locks the app out of files an elevated assistant writes there; see the
-    agent boundary in docs/architecture.md. The engine's util.paths.new_folder
-    does the same.
-    """
-    parent = Path(parent)
-    for _attempt in range(100):
-        folder = parent / (prefix + secrets.token_hex(8))
-        try:
-            folder.mkdir()
-        except FileExistsError:
-            continue
-        return folder
-    raise FileExistsError(f"No unused folder name in {parent}")
-
-
-@contextmanager
-def staging_folder(parent, prefix):
-    """A new_folder that is removed on exit unless it was renamed away, like
-    tempfile.TemporaryDirectory."""
-    folder = new_folder(parent, prefix)
-    try:
-        yield folder
-    finally:
-        if folder.is_dir() and not folder.is_symlink():
-            shutil.rmtree(folder, onexc=_writable)
-
-
-def _writable(function, path, _error):
-    # Windows refuses to delete read-only files, such as restored ones.
-    os.chmod(path, stat.S_IWRITE)
-    function(path)
 
 
 def read_versioned_json(path, default, upgrades, validate):

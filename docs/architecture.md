@@ -1285,7 +1285,7 @@ On Windows every copied task opens with a [note](../backend/dazedtl/translation/
 An assistant may run elevated, for example from an administrator PowerShell, and on Windows the files it writes then belong to Administrators.
 The app's normal session can still open them where the folder grants the user access, but not where it grants access only to each file's owner.
 Python's `mode=0o700`, which `tempfile.mkdtemp` and `TemporaryDirectory` use, makes exactly that owner-only folder on Windows.
-So a folder that stays in the workspace, a game or an output folder, or whose files move there, comes from `new_folder` or `staging_folder` in [storage](../backend/dazedtl/storage.py) or the engine's [paths](../backend/dazedtl/engine/util/paths.py), and keeps the permissions of the folder it is made in; tempfile remains for scratch that nothing moves out of.
+So a folder that stays in the workspace, a game or an output folder, or whose files move there, comes from `new_folder` or `staging_folder` in the [platform layer](../backend/dazedtl/system.py), and keeps the permissions of the folder it is made in; tempfile remains for scratch that nothing moves out of.
 
 A compiled plan freezes sources, full context, field constraints, provider parameters, rates, and connection identity.
 Its plan.json keeps each long context text that repeats, such as the system prompt every request and its provider payload hold, once under its hash ([plan_file](../backend/dazedtl/translation/plan_file.py)), which made a 2,648-request plan 55 MB instead of 165 MB.
