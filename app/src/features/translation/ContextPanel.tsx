@@ -11,11 +11,13 @@ import {
   useShortcut,
 } from "../../state/useShortcut";
 import { ActionBar } from "../../ui/ActionBar";
+import { ActionControl } from "../../ui/ActionControl";
 import { Button } from "../../ui/Button";
 import { DocumentEditor } from "../../ui/DocumentEditor";
 import { Feedback, Message } from "../../ui/Feedback";
 import { PageBody } from "../../ui/PageLayout";
 import { HelpPopover } from "../../ui/HelpPopover";
+import { checkoutRefusal } from "./checkout";
 
 export function ContextPanel({
   state,
@@ -45,9 +47,10 @@ export function ContextPanel({
   const name = names.includes(selected) ? selected : names[0] || selected;
   const dirty = !!draft.drafts[name];
   const disabled = state.active || action.busy || draft.committing;
+  const refused = checkoutRefusal(state);
   const save = () => void action.run(() => draft.save(name), "Context saved.");
   const body = useRef<HTMLDivElement>(null);
-  useShortcut(saveKey, dirty && !disabled ? save : null, body, {
+  useShortcut(saveKey, dirty && !disabled && !refused ? save : null, body, {
     inFields: true,
   });
   return (
@@ -92,15 +95,15 @@ export function ContextPanel({
             Discard draft
           </Button>
         )}
-        <Button
+        <ActionControl
+          label="Save context"
           variant={dirty ? "primary" : "default"}
           title={`Save context (${shortcutLabel.save})`}
           aria-keyshortcuts={shortcutKeys.save}
-          disabled={disabled || !dirty}
+          disabled={disabled || !dirty || !!refused}
+          disabledReason={dirty ? refused : ""}
           onClick={save}
-        >
-          Save context
-        </Button>
+        />
         {copy(dirty ? "default" : "primary")}
       </ActionBar>
     </>

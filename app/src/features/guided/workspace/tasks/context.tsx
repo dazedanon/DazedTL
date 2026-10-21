@@ -19,6 +19,7 @@ import { GuidanceEditor } from "../../GuidanceEditor";
 import { LayoutMeasurements } from "../../LayoutMeasurements";
 import { widthsSaveNotice } from "../../lineWidths";
 import { textLocation } from "../../textLocation";
+import { checkoutRefusal } from "../../../translation/checkout";
 import { sinceLabel } from "../../../assistant/assistantTasks";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import { shortcutKeys, shortcutLabel } from "../../../../state/useShortcut";
@@ -183,11 +184,7 @@ export function guidanceView(w: GuidedWorkspace): TaskView {
     saveDocuments,
     translation,
   } = w;
-  // Guidance is the game's tracked files, so it saves only once the notice
-  // above is resolved; the edits stay drafts meanwhile.
-  const refused = translation.checkoutIssue
-    ? "Resolve the game folder notice above first."
-    : "";
+  const refused = checkoutRefusal(translation);
   let content: ReactNode;
   content = (
     <>
