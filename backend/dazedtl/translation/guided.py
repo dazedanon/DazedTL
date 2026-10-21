@@ -508,7 +508,9 @@ class Guided:
         with self.observations.read():
             return self.observations.once(("fitted", native["id"]), read)
 
-    def readiness(self, project_id, native, value, source_status=None):
+    def applied_outputs(self, native):
+        """The translated files, which of them the game holds, and which of
+        those were edited by hand since."""
         folder = self.backend.workflows.folder(native["id"])
         inputs = self.inputs(native)
         outputs = [
@@ -537,6 +539,10 @@ class Guided:
                 applied.append(name)
                 if not matches:
                     edited.append(name)
+        return outputs, applied, edited
+
+    def readiness(self, project_id, native, value, source_status=None):
+        outputs, applied, edited = self.applied_outputs(native)
         state = lifecycle(self.translation.workspace, project_id)
         current = False
         try:
@@ -563,9 +569,7 @@ class Guided:
             )
         except OSError, ValueError, KeyError:
             pass
-        # New Line widths fit the applied text again once nothing else runs.
-        fit = self.text_fit.advance(project_id, native, applied)
-        latest = fit or self.text_fit.latest(native)
+        latest = self.text_fit.latest(native)
         return {
             **self.backend.guided_text_state(
                 native, self.saved_form(project_id)["text"]["focus"]
@@ -649,7 +653,21 @@ class Guided:
         self.options_draft(project_id, None)
         return self.preferences(result["project"])
 
+    def start_queued(self, project_id):
+        """Start queued work, such as a fit of new Line widths, before a
+        snapshot reads what runs, so that snapshot already lists it."""
+        if not self.text_fit.pending(project_id):
+            return
+        with self.observations.read():
+            _, native = self.record(project_id)
+            native = self.backend.workflows.state(native["id"])["project"]
+            supported = self.supported_files(native)
+            native["files"] = [r for r in native["files"] if r["name"] in supported]
+            _, applied, _ = self.applied_outputs(native)
+            self.text_fit.advance(project_id, native, applied)
+
     def state(self, project_id):
+        self.start_queued(project_id)
         self.ace_widths(project_id)
         self.comment_text(project_id)
         with self.observations.read():
