@@ -33,6 +33,7 @@ from collections.abc import Callable, Collection, Iterable
 from pathlib import Path
 from typing import Any
 
+from util import system
 from util.paths import replace_with_retry
 
 from . import ruby_marshal as rm
@@ -1698,7 +1699,7 @@ def _replace(path: Path, data: bytes) -> None:
         # scanner, holds the file.
         replace_with_retry(temporary, path)
     except BaseException:
-        Path(temporary).unlink(missing_ok=True)
+        system.unlink(temporary, ignore_errors=True)
         raise
 
 

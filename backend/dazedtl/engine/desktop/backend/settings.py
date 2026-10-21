@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from util import system
 from util import api_keys
 from util.engine_options import ENGINE_PRESETS, engine_options, validate_engine_options
 from util.paths import PROJECT_ROOT
@@ -156,7 +157,7 @@ class SettingsStore:
         normalized = validate_values(values)
         normalized_engines = validate_engine_options(engines, self.code_root)
         atomic_json(self.path, {"version": 1, "revision": revision + 1, "values": normalized, "engines": normalized_engines})
-        (self.root / "draft.json").unlink(missing_ok=True)
+        system.unlink(self.root / "draft.json", missing_ok=True)
         return self.describe()
 
     def save_draft(self, revision, values, engines):

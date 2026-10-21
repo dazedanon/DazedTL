@@ -7,6 +7,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from dazedtl import system
 from dazedtl.storage import write_bytes, write_json
 
 from .files import decode_json, digest, project_path, read_json
@@ -457,7 +458,7 @@ class GuidedInputs:
                 or (self.folder / "source-history").is_symlink()
             ):
                 raise ValueError("The phase cache cannot be a symbolic link.")
-            cache_bytes = cache.read_bytes() if cache.is_file() else None
+            cache_bytes = system.read_bytes(cache) if cache.is_file() else None
             archive = self.folder / "source-history" / uuid.uuid4().hex
             write_json(archive / "source-inputs.json", record)
             for (group, name), raw in old.items():
@@ -493,16 +494,16 @@ class GuidedInputs:
                 progress("Preparing source copy: " + name)
                 write_bytes(self.path("files", name), raw)
                 if refresh:
-                    self.path("translated", name).unlink(missing_ok=True)
+                    system.unlink(self.path("translated", name), missing_ok=True)
             if refresh:
-                cache.unlink(missing_ok=True)
+                system.unlink(cache, missing_ok=True)
             else:
                 write_json(self.index, {**record, "inputs": {**previous, **current}})
         except Exception:
             for (group, name), raw in old.items():
                 path = self.path(group, name)
                 if raw is None:
-                    path.unlink(missing_ok=True)
+                    system.unlink(path, missing_ok=True)
                 else:
                     write_bytes(path, raw)
             if cache_bytes is not None:
@@ -511,7 +512,7 @@ class GuidedInputs:
                 if indexed:
                     write_json(self.index, record)
                 else:
-                    self.index.unlink(missing_ok=True)
+                    system.unlink(self.index, missing_ok=True)
             raise
         return {
             "files": len(replacements),

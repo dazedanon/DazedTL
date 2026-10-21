@@ -6,11 +6,13 @@ import os
 import stat
 import subprocess
 import sys
+import threading
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from dazedtl import storage, system
+from dazedtl.translation.files import read_json
 
 from tests.engine import engine_package
 
@@ -91,6 +93,7 @@ class HeldFileTests(unittest.TestCase):
             "run records": lambda path: atomic_json(path, "new"),
             "Ace data": lambda path: rv2json._replace(path, b'"new"\n'),
             "deletes": system.unlink,
+            "cleanups": lambda path: system.unlink(path, ignore_errors=True),
             "renames": lambda path: system.rename(path, path.with_name("moved")),
             "folders": lambda path: system.remove_tree(path.parent),
             "folder renames": lambda path: system.rename(
@@ -111,10 +114,53 @@ class HeldFileTests(unittest.TestCase):
                         self.assertFalse(folder.exists())
                     elif name == "folder renames":
                         self.assertTrue(folder.with_name("moved").is_dir())
-                    elif name == "deletes":
+                    elif name in {"deletes", "cleanups"}:
                         self.assertEqual(os.listdir(folder), [])
                     elif name == "renames":
                         self.assertEqual(os.listdir(folder), ["moved"])
                     else:
                         self.assertEqual(json.loads(path.read_bytes()), "new")
                         self.assertEqual(os.listdir(folder), ["file.json"])
+
+    def test_folder_deletes_wait_and_cleanups_leave_what_cannot_go(self):
+        with TemporaryDirectory() as root:
+            folder = Path(root, "empty")
+            folder.mkdir()
+            with system.held_open(folder, attempts=3) as reader:
+                system.rmdir(folder)
+            self.assertEqual(reader.attempts, 0)
+            self.assertFalse(folder.exists())
+            path = Path(root, "kept.tmp")
+            path.write_bytes(b"")
+            with system.held_open(path, attempts=8):
+                system.unlink(path, ignore_errors=True)
+            with system.held_open(path, attempts=8), self.assertRaises(OSError):
+                system.unlink(path)
+            system.rmdir(root, ignore_errors=True)
+            self.assertTrue(path.exists())
+
+    def test_each_reader_waits_for_a_writer_replacing_its_file(self):
+        # Windows refuses to open a file while it is being replaced, which
+        # failed a Batch estimate reading job.json as its worker saved it.
+        from desktop.backend.manual import ManualJobs
+        from util.freshness import Digests
+
+        record = {"id": "run", "version": 2, "status": "done"}
+        readers = {
+            "bytes": system.read_bytes,
+            "text": system.read_text,
+            "checked JSON": read_json,
+            "digests": lambda path: Digests().file(path),
+            "manual runs": lambda path: ManualJobs(
+                path.parents[3], threading.Lock()
+            ).load_saved(),
+        }
+        with TemporaryDirectory() as root:
+            for name, read in readers.items():
+                with self.subTest(name):
+                    path = Path(root, name, "manual/jobs/run/job.json")
+                    path.parent.mkdir(parents=True)
+                    path.write_text(json.dumps(record), encoding="utf-8")
+                    with system.held_open(path, attempts=3) as reader:
+                        read(path)
+                    self.assertEqual(reader.attempts, 0)

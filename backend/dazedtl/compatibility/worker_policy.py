@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Any, cast
 
+from dazedtl import system
 from dazedtl.settings.preferences import (
     BATTLE_MESSAGE_USERS_LEVELS,
     CHOICE_COLLECTION,
@@ -87,7 +88,7 @@ def install(*, coordinator=False):
     from desktop.backend import manual_environment
 
     def prepare(native_prepare, root):
-        plan = json.loads((Path(root) / "plan.json").read_text(encoding="utf-8"))
+        plan = json.loads(system.read_text(Path(root) / "plan.json"))
         policy = plan.get("dazedtl_request_policy")
         grouping_root = root
         if plan.get("batch_link"):
@@ -96,7 +97,7 @@ def install(*, coordinator=False):
             grouping_root = batch_root(root, plan)
             original_plan = Path(grouping_root) / "plan.json"
             policy = (
-                json.loads(original_plan.read_text(encoding="utf-8")).get(
+                json.loads(system.read_text(original_plan)).get(
                     "dazedtl_request_policy"
                 )
                 if original_plan.is_file() and not original_plan.is_symlink()

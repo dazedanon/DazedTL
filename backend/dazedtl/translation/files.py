@@ -6,6 +6,7 @@ import os
 import stat
 from pathlib import Path
 
+from dazedtl import system
 from dazedtl.storage import write_json
 
 
@@ -53,7 +54,7 @@ def read_json(path, *, limit: int | None = 128_000_000):
         and path.stat().st_size > limit
     ):
         raise ValueError("Choose a regular JSON file within the supported size limit.")
-    return decode_json(path.read_bytes())
+    return decode_json(system.read_bytes(path))
 
 
 def project_path(root, relative, *, exists=True):
@@ -76,6 +77,37 @@ def project_path(root, relative, *, exists=True):
             raise ValueError("Project operations cannot follow symbolic links.")
     if not path.resolve().is_relative_to(root) or path == root:
         raise ValueError("Choose a file inside the selected game.")
+    if exists and not path.is_file():
+        raise ValueError("The selected project file is missing.")
+    return path
+
+
+def live_path(root, relative, *, exists=True):
+    """project_path for a file other processes replace, such as a running
+    run's job.json or its translated outputs. It checks the folder holding
+    the file and the file's own name but never resolves the file: on Windows,
+    resolving a file replaced meanwhile keeps a \\?\\ prefix that no longer
+    lies inside root."""
+    if not isinstance(relative, str) or "\\" in relative:
+        raise ValueError("Use a project-relative path with forward slashes.")
+    parent, _, name = relative.rpartition("/")
+    if name.casefold() in {"", ".", "..", ".git"}:
+        raise ValueError("Choose a file inside the selected game.")
+    if parent:
+        folder = project_path(root, parent, exists=False)
+    else:
+        folder = Path(root).resolve(strict=True)
+        if not folder.is_dir():
+            raise ValueError("The selected game folder is unavailable.")
+    path = folder / name
+    if Path(relative).anchor or path.parent != folder:
+        # A rooted path, or a drive-relative name such as C:x on Windows,
+        # would leave the folder.
+        raise ValueError(
+            "Files must stay inside the selected game and outside Git internals."
+        )
+    if path.is_symlink() or getattr(path, "is_junction", lambda: False)():
+        raise ValueError("Project operations cannot follow symbolic links.")
     if exists and not path.is_file():
         raise ValueError("The selected project file is missing.")
     return path

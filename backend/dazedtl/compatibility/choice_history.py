@@ -4,7 +4,7 @@ import json
 from collections import Counter, defaultdict
 from functools import lru_cache
 
-from dazedtl.translation.files import project_path, read_json
+from dazedtl.translation.files import live_path, project_path, read_json
 
 from .process_view import _read_cached, _verified_digest, file_stamp
 
@@ -67,8 +67,8 @@ def choice_outputs(source, source_stamp, output, output_stamp):
 
 def saved_choices(root, filename):
     plan_path, job_path = (
-        project_path(root, "plan.json"),
-        project_path(root, "job.json"),
+        live_path(root, "plan.json"),
+        live_path(root, "job.json"),
     )
     plan = _read_cached(str(plan_path), file_stamp(plan_path))
     job = _read_cached(str(job_path), file_stamp(job_path))
@@ -88,7 +88,7 @@ def saved_choices(root, filename):
     )
     source, output = (
         project_path(root, "files/" + filename),
-        project_path(root, "translated/" + filename),
+        live_path(root, "translated/" + filename),
     )
     source_stamp, output_stamp = file_stamp(source), file_stamp(output)
     if (

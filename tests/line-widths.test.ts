@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { widthsSaveNotice } from "../app/src/features/guided/lineWidths.ts";
+import {
+  fitRunning,
+  widthsSaveNotice,
+} from "../app/src/features/guided/lineWidths.ts";
 
 test("saving Line widths says when With portrait was lowered to match Dialogue", () => {
   const widths = {
@@ -26,4 +29,27 @@ test("saving Line widths says when With portrait was lowered to match Dialogue",
   );
   // Nothing saved in this visit reports nothing.
   assert.equal(widthsSaveNotice({ ...notice, fitted: "" }), "");
+});
+
+test("a fit counts as running from the read that starts it until it ends", () => {
+  const before = { id: "old", status: "complete" };
+  // The read that starts a fit names it before it lists it.
+  assert.ok(fitRunning({ named: "new", opened: "old", listed: before }));
+  assert.ok(
+    fitRunning({
+      named: "new",
+      opened: "old",
+      listed: { id: "new", status: "running" },
+    }),
+  );
+  assert.ok(
+    !fitRunning({
+      named: "new",
+      opened: "old",
+      listed: { id: "new", status: "failed" },
+    }),
+  );
+  // A fit from before this visit that the list no longer holds has ended.
+  assert.ok(!fitRunning({ named: "old", opened: "old", listed: undefined }));
+  assert.ok(!fitRunning({ named: null, opened: null, listed: undefined }));
 });

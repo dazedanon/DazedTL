@@ -13,7 +13,7 @@ from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from dazedtl import foreign_work
+from dazedtl import foreign_work, system
 from dazedtl.compatibility.images import ImageCompatibility
 from dazedtl.foreign_work import ForeignWorkError
 from dazedtl.freshness import Basis, Digests, compare
@@ -2321,7 +2321,9 @@ class ImageService:
         root, index = self.record(project_id)[1], self._index(project_id)
         for identity in identities:
             row = index.get(identity)
-            project_path(root, row["editable"], exists=False).unlink(missing_ok=True)
+            system.unlink(
+                project_path(root, row["editable"], exists=False), missing_ok=True
+            )
         self.refresh_assets(project_id, identities)
 
     def _preview_mutation(self, project_id, action, options):

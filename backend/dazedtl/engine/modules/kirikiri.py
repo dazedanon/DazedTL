@@ -228,10 +228,7 @@ def save_progress_lines(lines, filename, encoding="cp932"):
         finally:
             # Ensure temp file removed if it still exists
             if tmp_path and os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except OSError:
-                    pass
+                system.unlink(tmp_path, ignore_errors=True)
             tmp_fd = None
             tmp_path = None
 

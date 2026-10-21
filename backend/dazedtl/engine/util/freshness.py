@@ -38,6 +38,8 @@ import time
 from dataclasses import dataclass
 from typing import Mapping
 
+from util import system
+
 # File times advance in ticks of milliseconds, so a file written twice within
 # one tick can keep its stat signature. Caches keyed by signatures keep only
 # files that have been still for longer than this.
@@ -120,7 +122,7 @@ class Digests:
         key = os.fspath(path)
 
         def read():
-            with open(key, "rb") as stream:
+            with system.open_read(key) as stream:
                 return hashlib.file_digest(stream, "sha256").hexdigest()
 
         return self.remember(key, info or os.lstat(key), read)

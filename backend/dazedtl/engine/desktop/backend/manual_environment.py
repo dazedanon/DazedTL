@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from util import extensions
+from util import extensions, system
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 @extensions.point
 def prepare(root):
     root = Path(root).resolve()
-    plan = json.loads((root / "plan.json").read_text(encoding="utf-8"))
+    plan = json.loads(system.read_text(root / "plan.json"))
     os.chdir(root)
     os.environ.update({"PYTHON_DOTENV_DISABLED": "1", "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8",
                        "TIKTOKEN_CACHE_DIR": str(ROOT / "data/tokenizers"),

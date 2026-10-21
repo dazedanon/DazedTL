@@ -390,7 +390,7 @@ def apply_loaded_correction_map(
         raise
     finally:
         for temporary in temporaries.values():
-            temporary.unlink(missing_ok=True)
+            system.unlink(temporary, ignore_errors=True)
     regression = _regression_check_loaded(
         task,
         before,

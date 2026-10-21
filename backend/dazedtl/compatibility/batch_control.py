@@ -6,7 +6,7 @@ from copy import deepcopy
 from typing import Any
 
 from dazedtl.storage import write_json
-from dazedtl.translation.files import digest, project_path
+from dazedtl.translation.files import digest, live_path
 
 from .batch_evidence import extends
 from .process_view import batch_results, evidence_root, queue, saved
@@ -237,7 +237,7 @@ def collect(
                 "The saved Batch changed during collection. Try again after the worker stops."
             )
         for name in ("batch_results.json", "batch_history.json", "batch_state.json"):
-            project_path(evidence, "log/" + name, exists=False)
+            live_path(evidence, "log/" + name, exists=False)
         # The final fetched marker is written last. A retry never creates requests.
         write_json(evidence / "log/batch_results.json", results)
         write_json(evidence / "log/batch_history.json", history)

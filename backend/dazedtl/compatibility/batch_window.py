@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from dazedtl.storage import WorkspaceError, WorkspaceLock, write_json
-from dazedtl.translation.files import digest, project_path
+from dazedtl.translation.files import digest, live_path, project_path
 
 from .batch_continuation import (
     JOURNAL,
@@ -274,7 +274,7 @@ class BatchWindow:
                 if submitted == set(requests):
                     if state.get("status") != "submitted":
                         write_json(
-                            project_path(self.root, "log/batch_state.json"),
+                            live_path(self.root, "log/batch_state.json"),
                             {**state, "status": "submitted"},
                         )
                     return 0
@@ -359,7 +359,7 @@ class BatchWindow:
                     )
                     if sum(costs.values()) > limit:
                         state.setdefault("sequential_token_limit", limit)
-                    write_json(project_path(self.root, "log/batch_state.json"), state)
+                    write_json(live_path(self.root, "log/batch_state.json"), state)
                     self.record(
                         [info],
                         model=state["model"],

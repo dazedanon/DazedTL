@@ -209,7 +209,7 @@ def _atomic_write(path: Path, data: bytes) -> None:
             handle.write(data)
         system.replace(temp_path, path)
     except Exception:
-        temp_path.unlink(missing_ok=True)
+        system.unlink(temp_path, ignore_errors=True)
         raise
 
 
@@ -259,14 +259,8 @@ def migrate_legacy_editable_workspace(game_root: str | Path) -> int:
         reverse=True,
     )
     for directory in directories:
-        try:
-            directory.rmdir()
-        except OSError:
-            pass
-    try:
-        legacy.rmdir()
-    except OSError:
-        pass
+        system.rmdir(directory, ignore_errors=True)
+    system.rmdir(legacy, ignore_errors=True)
     _ensure_image_manager_ignores(root)
     return moved
 
@@ -285,7 +279,7 @@ def clean_runtime_image_duplicates(game_root: str | Path) -> int:
         if not destination.exists():
             shutil.move(str(source), str(destination))
         elif source.read_bytes() == destination.read_bytes():
-            source.unlink()
+            system.unlink(source)
         else:
             relative = source.relative_to(root)
             conflict_root = root / ".dazedtl" / "runtime_plain_conflicts"
@@ -333,7 +327,7 @@ def decrypt_assets(
                 if progress:
                     progress(f"Moving editable copy for {asset.asset_id}")
                 _atomic_write(asset.plain_path, asset.runtime_plain_path.read_bytes())
-                asset.runtime_plain_path.unlink()
+                system.unlink(asset.runtime_plain_path)
                 result.completed += 1
                 continue
             if progress:
@@ -377,13 +371,13 @@ def remove_editable_assets(
             _path_inside(workspace, asset.plain_path)
             if progress:
                 progress(f"Removing {asset.asset_id} from editable images")
-            asset.plain_path.unlink()
+            system.unlink(asset.plain_path)
             result.completed += 1
 
             parent = asset.plain_path.parent
             while parent != workspace:
                 try:
-                    parent.rmdir()
+                    system.rmdir(parent)
                 except OSError:
                     break
                 parent = parent.parent

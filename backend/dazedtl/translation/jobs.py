@@ -54,7 +54,7 @@ def scratch(identity):
 def remove_scratch(identity):
     folder = scratch(identity)
     if folder.is_symlink():
-        folder.unlink()
+        system.unlink(folder)
         return
 
     def retry(function, path, _error):
@@ -582,7 +582,7 @@ class Jobs:
                 "Reconcile the uncertain provider submission before resuming."
             )
         stop = self.store.folder(identity) / "stop.json"
-        stop.unlink(missing_ok=True)
+        system.unlink(stop, missing_ok=True)
         job.update(
             status="running",
             message="Starting…"
@@ -664,7 +664,7 @@ class Jobs:
         return self.store.view(job)
 
     def close(self):
-        self.owner_path.unlink(missing_ok=True)
+        system.unlink(self.owner_path, missing_ok=True)
         for identity in self.processes:
             job = self.store.record(identity)
             self.store.stop(identity, job["project_id"])

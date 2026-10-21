@@ -277,7 +277,7 @@ class ImageCompatibility:
         for path, value in previous.items():
             try:
                 if value is None:
-                    path.unlink(missing_ok=True)
+                    system.unlink(path, missing_ok=True)
                 else:
                     write_bytes(path, value)
             except OSError:

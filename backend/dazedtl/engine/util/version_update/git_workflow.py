@@ -888,10 +888,7 @@ def _write_json_atomic(path: Path, payload: Mapping[str, object]) -> None:
             os.close(descriptor)
         except OSError:
             pass
-        try:
-            Path(temporary_name).unlink()
-        except FileNotFoundError:
-            pass
+        system.unlink(temporary_name, ignore_errors=True)
         raise
 
 
@@ -1057,10 +1054,7 @@ def _load_pending_asset_plan(
 
 
 def _clear_pending_asset_plan(repo: Path, game_prefix: str) -> None:
-    try:
-        _asset_state_path(repo, game_prefix, "pending-assets").unlink()
-    except FileNotFoundError:
-        pass
+    system.unlink(_asset_state_path(repo, game_prefix, "pending-assets"), missing_ok=True)
 
 
 def _ensure_local_excludes(repo: Path) -> None:
@@ -1111,7 +1105,7 @@ def _reject_original_checked_out_elsewhere(repo: Path) -> None:
 def _temporary_index() -> tuple[str, dict[str, str]]:
     descriptor, name = tempfile.mkstemp(prefix="dazedtl-git-index-")
     os.close(descriptor)
-    os.unlink(name)
+    system.unlink(name)
     return name, {"GIT_INDEX_FILE": name}
 
 
@@ -1437,7 +1431,7 @@ def _sync_external_assets(
                 destination = destinations[change.path]
                 if change.change == "Removed":
                     if destination.exists():
-                        destination.unlink()
+                        system.unlink(destination)
                 else:
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     system.replace(staged[change.path], destination)
@@ -1450,7 +1444,7 @@ def _sync_external_assets(
                 try:
                     if backup is None:
                         if destination.exists():
-                            destination.unlink()
+                            system.unlink(destination)
                     else:
                         destination.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(backup, destination)
@@ -1483,10 +1477,7 @@ def _materialize_normalized_text(files: list[_SourceFile]) -> None:
                 os.close(descriptor)
             except OSError:
                 pass
-            try:
-                Path(temporary_name).unlink()
-            except FileNotFoundError:
-                pass
+            system.unlink(temporary_name, ignore_errors=True)
             raise
 
 
@@ -1599,10 +1590,7 @@ def _write_tree_from_folder(
             ignored_paths=tuple(sorted(ignored)),
         )
     finally:
-        try:
-            Path(index_name).unlink()
-        except FileNotFoundError:
-            pass
+        system.unlink(index_name, ignore_errors=True)
 
 
 def _commit_tree(
@@ -2429,10 +2417,7 @@ def _preserve_tool_owned_paths(
         tree = _run_git(repo, "write-tree", env=index_env).stdout.strip()
         return replace(build, tree=tree)
     finally:
-        try:
-            Path(index_name).unlink()
-        except FileNotFoundError:
-            pass
+        system.unlink(index_name, ignore_errors=True)
 
 
 def _preserve_unbased_translation_assets(
@@ -2482,10 +2467,7 @@ def _preserve_unbased_translation_assets(
         tree = _run_git(repo, "write-tree", env=index_env).stdout.strip()
         return replace(build, tree=tree), tuple(sorted(preserved))
     finally:
-        try:
-            Path(index_name).unlink()
-        except FileNotFoundError:
-            pass
+        system.unlink(index_name, ignore_errors=True)
 
 
 def _replacement_outcome(

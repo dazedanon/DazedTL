@@ -650,7 +650,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         # to the attempt set aside.
         records = Path(workspace) / "translation/projects" / job["project_id"]
         for name in ("engine.json", "assistant.json"):
-            (records / name).unlink(missing_ok=True)
+            system.unlink(records / name, missing_ok=True)
     elif action == "census":
         result = take_census(
             engine,

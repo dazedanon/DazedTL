@@ -310,10 +310,11 @@ _ESTIMATE_STATIC_TOKENS_FILE = Path("log/estimate_static_tokens.json")
 
 
 @contextmanager
-def _estimate_state_lock():
-    """Serialize estimate-only state shared by concurrent file workers."""
-    _ESTIMATE_STATE_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(_ESTIMATE_STATE_LOCK_FILE, "a+b") as lock_file:
+def _file_lock(path):
+    """Cross-process lock held on `path` while the block runs, so concurrent
+    file workers serialize a read-merge-write of a file they share."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a+b") as lock_file:
         if os.name == "nt":
             import msvcrt
 
@@ -322,7 +323,13 @@ def _estimate_state_lock():
                 lock_file.write(b"\0")
                 lock_file.flush()
             lock_file.seek(0)
-            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+            # LK_LOCK gives up after 10 one-second tries; keep waiting.
+            while True:
+                try:
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+                    break
+                except OSError:
+                    continue
             try:
                 yield
             finally:
@@ -336,6 +343,11 @@ def _estimate_state_lock():
                 yield
             finally:
                 fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def _estimate_state_lock():
+    """Serialize estimate-only state shared by concurrent file workers."""
+    return _file_lock(_ESTIMATE_STATE_LOCK_FILE)
 
 def _load_estimate_written_sizes():
     """Load persisted written-sizes set from disk (for GUI subprocess sharing)."""
@@ -365,11 +377,7 @@ def clear_estimate_written_sizes():
     global _estimate_written_sizes
     with _estimate_state_lock():
         _estimate_written_sizes = set()
-        try:
-            if _ESTIMATE_SIZES_FILE.exists():
-                _ESTIMATE_SIZES_FILE.unlink()
-        except Exception:
-            pass
+        system.unlink(_ESTIMATE_SIZES_FILE, ignore_errors=True)
 
 
 def _estimate_static_token_count(static_system, model):
@@ -767,27 +775,9 @@ _REQUEST_CONTEXT_KINDS = {
 }
 _cache = None
 
-@contextmanager
 def _translation_cache_file_lock():
     """Cross-process lock for translation_cache.json."""
-    CACHE_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(CACHE_LOCK_FILE, "a+b") as lock_file:
-        if os.name == "nt":
-            import msvcrt
-            lock_file.seek(0)
-            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
-            try:
-                yield
-            finally:
-                lock_file.seek(0)
-                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    return _file_lock(CACHE_LOCK_FILE)
 
 _CACHE_SQLITE_HEADER = b"SQLite format 3\x00"
 _CACHE_SCHEMA = (
@@ -850,7 +840,7 @@ def _ensure_cache_database():
     )
     try:
         if tmp_file.exists():
-            tmp_file.unlink()
+            system.unlink(tmp_file)
         _initialize_cache_database(tmp_file, legacy)
         system.replace(tmp_file, CACHE_FILE)
     finally:
@@ -858,11 +848,7 @@ def _ensure_cache_database():
             tmp_file,
             tmp_file.with_name(tmp_file.name + "-journal"),
         ):
-            try:
-                if leftover.exists():
-                    leftover.unlink()
-            except OSError:
-                pass
+            system.unlink(leftover, ignore_errors=True)
 
 
 def _cache_connection():
@@ -944,7 +930,7 @@ def _write_cache_to_disk(cache):
     )
     try:
         if tmp_file.exists():
-            tmp_file.unlink()
+            system.unlink(tmp_file)
         _initialize_cache_database(tmp_file, cache)
         system.replace(tmp_file, CACHE_FILE)
     finally:
@@ -952,11 +938,7 @@ def _write_cache_to_disk(cache):
             tmp_file,
             tmp_file.with_name(tmp_file.name + "-journal"),
         ):
-            try:
-                if leftover.exists():
-                    leftover.unlink()
-            except OSError:
-                pass
+            system.unlink(leftover, ignore_errors=True)
 
 def _is_pending_cache_entry(value):
     return isinstance(value, dict) and value.get(CACHE_PENDING_MARKER) is True
@@ -1051,11 +1033,7 @@ def clear_cache():
                 CACHE_FILE.with_name(CACHE_FILE.name + "-wal"),
                 CACHE_FILE.with_name(CACHE_FILE.name + "-shm"),
             ):
-                try:
-                    if path.exists():
-                        path.unlink()
-                except Exception:
-                    pass
+                system.unlink(path, ignore_errors=True)
 
 def load_cache():
     """Load the translation cache from disk."""
@@ -1425,6 +1403,7 @@ def cache_translation(
 
 # Variable translation map (code 122 <-> code 111 consistency)
 VAR_MAP_FILE = Path("log/var_translation_map.json")
+VAR_MAP_LOCK_FILE = Path("log/var_translation_map.lock")
 VAR_MAP_LOCK = threading.Lock()
 _var_map = None
 
@@ -1433,11 +1412,7 @@ def clear_var_map():
     global _var_map
     with VAR_MAP_LOCK:
         _var_map = {}
-        try:
-            if VAR_MAP_FILE.exists():
-                VAR_MAP_FILE.unlink()
-        except Exception:
-            pass
+        system.unlink(VAR_MAP_FILE, ignore_errors=True)
 
 def _load_var_map():
     """Load the variable translation map from disk (always re-reads to pick up
@@ -1446,37 +1421,29 @@ def _load_var_map():
     _var_map = {}
     try:
         if VAR_MAP_FILE.exists():
-            with open(VAR_MAP_FILE, "r", encoding="utf-8") as f:
-                _var_map = json.load(f)
+            _var_map = json.loads(system.read_bytes(VAR_MAP_FILE))
     except Exception:
         _var_map = {}
     return _var_map
 
 def _save_var_map():
     """Save the variable translation map to disk.
-    Re-reads the file first and merges so entries from other subprocesses
-    are never lost."""
+    Re-reads the file and merges under a cross-process lock, so entries other
+    file workers saved are never lost; a re-read that fails raises instead of
+    counting as empty."""
     global _var_map
     if _var_map is None:
         return
-    try:
-        VAR_MAP_FILE.parent.mkdir(parents=True, exist_ok=True)
-        # Re-read the on-disk version and merge our entries on top
+    with _file_lock(VAR_MAP_LOCK_FILE):
         disk_map = {}
-        try:
-            if VAR_MAP_FILE.exists():
-                with open(VAR_MAP_FILE, "r", encoding="utf-8") as f:
-                    disk_map = json.load(f)
-        except Exception:
-            disk_map = {}
+        if VAR_MAP_FILE.exists():
+            disk_map = json.loads(system.read_text(VAR_MAP_FILE))
         disk_map.update(_var_map)
         _var_map = disk_map
         tmp_file = VAR_MAP_FILE.with_suffix(".tmp")
         with open(tmp_file, "w", encoding="utf-8", newline="\n") as f:
             json.dump(_var_map, f, ensure_ascii=False, indent=2)
         system.replace(tmp_file, VAR_MAP_FILE)
-    except Exception:
-        pass
 
 def get_var_translation(original):
     """Look up a cached variable translation. Returns the translation or None."""
@@ -1562,27 +1529,9 @@ def get_batch_phase():
     return phase if phase in ("collect", "consume", "estimate") else None
 
 
-@contextmanager
 def _batch_file_lock():
     """Cross-process lock for the batch queue/state/results files."""
-    BATCH_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(BATCH_LOCK_FILE, "a+b") as lock_file:
-        if os.name == "nt":
-            import msvcrt
-            lock_file.seek(0)
-            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
-            try:
-                yield
-            finally:
-                lock_file.seek(0)
-                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    return _file_lock(BATCH_LOCK_FILE)
 
 
 @contextmanager
@@ -1633,11 +1582,10 @@ def _read_batch_file(path, *, strict=False):
     error = None
     try:
         if path.exists():
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if isinstance(data, dict):
-                    return data
-                error = "document is not a JSON object"
+            data = json.loads(system.read_bytes(path))
+            if isinstance(data, dict):
+                return data
+            error = "document is not a JSON object"
     except Exception as exc:
         error = str(exc)
     if error is not None:
@@ -1777,7 +1725,7 @@ def _clear_batch_queue_parts(*, strict=False, queue_file=None):
                 raise
     try:
         if parts_dir.exists():
-            parts_dir.rmdir()
+            system.rmdir(parts_dir)
     except Exception:
         if strict:
             raise
@@ -1788,7 +1736,7 @@ def _clear_batch_queue_storage(*, strict=False, queue_file=None):
     queue_file = Path(queue_file or _active_batch_queue_file())
     try:
         if queue_file.exists():
-            queue_file.unlink()
+            system.unlink(queue_file)
     except Exception:
         if strict:
             raise
@@ -2277,7 +2225,7 @@ def clearBatchFiles(*, strict=False):
             for path in (BATCH_STATE_FILE, BATCH_RESULTS_FILE):
                 try:
                     if path.exists():
-                        path.unlink()
+                        system.unlink(path)
                 except Exception:
                     if strict:
                         raise

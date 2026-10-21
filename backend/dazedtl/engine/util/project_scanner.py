@@ -286,7 +286,7 @@ def wolf_repair_nested_data_dir(game_root: str | Path) -> bool:
         for child, dest in planned:
             system.rename(child, dest)
             completed.append((child, dest))
-        inner.rmdir()
+        system.rmdir(inner)
     except OSError as exc:
         rollback_failures: list[str] = []
         for child, dest in reversed(completed):

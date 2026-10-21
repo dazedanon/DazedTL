@@ -27,7 +27,7 @@ def read_document(root, name, default=None):
         return {} if default is None else default
     if path.is_symlink() or not path.resolve().is_relative_to(Path(root).resolve()) or path.stat().st_size > 256_000_000:
         raise ValueError('Batch recovery files must be regular files inside their run folder, below 256 MB.')
-    result = json.loads(path.read_text(encoding='utf-8'))
+    result = json.loads(system.read_bytes(path))
     if not isinstance(result, dict):
         raise ValueError('This batch recovery file is malformed. It has been preserved.')
     return result
@@ -120,7 +120,7 @@ def recovery_hashes(root):
             raise ValueError('Batch recovery files cannot be symbolic links.')
         for item in paths:
             if item.is_file() and not item.name.endswith('.lock'):
-                result[item.relative_to(root).as_posix()] = digest(item.read_bytes())
+                result[item.relative_to(root).as_posix()] = digest(system.read_bytes(item))
     return result
 
 
@@ -140,9 +140,9 @@ def confirm_profile(plan):
     root = Path(plan['source']['root'])
     plan_path = Path(plan['source']['plan_root']) / 'plan.json'
     prepared = plan['prepared']
-    if plan_path.is_symlink() or digest(plan_path.read_bytes()) != prepared['plan_hash']:
+    if plan_path.is_symlink() or digest(system.read_bytes(plan_path)) != prepared['plan_hash']:
         raise ValueError('The saved translation plan changed. Prepare recovery again.')
-    frozen = json.loads(plan_path.read_text(encoding='utf-8'))
+    frozen = json.loads(system.read_text(plan_path))
     if batch_root(plan_path.parent, frozen) != root:
         raise ValueError('The batch folder changed. Prepare recovery again.')
     with translation._batch_file_lock():
@@ -186,9 +186,9 @@ class Batches:
             raise ValueError('Select an available batch run.')
         if source.get('job_id'):
             path = Path(source['plan_root']) / 'plan.json'
-            if path.is_symlink() or digest(path.read_bytes()) != self.manual.jobs[source['job_id']]['plan_hash']:
+            if path.is_symlink() or digest(system.read_bytes(path)) != self.manual.jobs[source['job_id']]['plan_hash']:
                 raise ValueError('The saved translation plan changed. Recovery was blocked.')
-            if str(batch_root(path.parent, json.loads(path.read_text(encoding='utf-8')))) != source['root']:
+            if str(batch_root(path.parent, json.loads(system.read_text(path)))) != source['root']:
                 raise ValueError('The saved batch folder changed. Recovery was blocked.')
         return source
 
@@ -249,7 +249,7 @@ class Batches:
         if action == 'activate':
             original = self.manual.jobs[source['job_id']]
             plan_path = Path(source['plan_root']) / 'plan.json'
-            if plan_path.is_symlink() or digest(plan_path.read_bytes()) != original['plan_hash']:
+            if plan_path.is_symlink() or digest(system.read_bytes(plan_path)) != original['plan_hash']:
                 raise ValueError('The saved translation plan changed. Recovery was blocked.')
         if action == 'import':
             from util.translation_task import translation_module
@@ -292,18 +292,18 @@ class Batches:
         result = job.get('result') or {}
         identity = result.get('job_id', '')
         folder = self.manual.folder(identity)
-        saved_plan = json.loads((folder / 'plan.json').read_text(encoding='utf-8'))
+        saved_plan = json.loads(system.read_text(folder / 'plan.json'))
         if recovery_hashes(batch_root(folder, saved_plan)) != result.get('hashes'):
             raise ValueError('The batch files changed after activation. Prepare recovery again.')
         plan_path = folder / 'plan.json'
-        if plan_path.is_symlink() or digest(plan_path.read_bytes()) != result.get('plan_hash'):
+        if plan_path.is_symlink() or digest(system.read_bytes(plan_path)) != result.get('plan_hash'):
             raise ValueError('The saved translation plan changed. Recovery was blocked.')
         return result
 
     def resume(self, operation_id):
         result = self.prepared(operation_id)
         folder = self.manual.folder(result['job_id'])
-        plan = json.loads((folder / 'plan.json').read_text(encoding='utf-8'))
+        plan = json.loads(system.read_text(folder / 'plan.json'))
         if recovery_profile(batch_root(folder, plan), plan) is not None:
             raise ValueError('Review and confirm the original RPG Maker settings before resuming this legacy batch.')
         return self.manual.resume_batch(result['job_id'], result)
@@ -392,7 +392,7 @@ def run_action(plan, log):
             return clean(result)
         if action == 'activate':
             plan_root = Path(plan['source'].get('plan_root') or root)
-            original = json.loads((plan_root / 'plan.json').read_text(encoding='utf-8'))
+            original = json.loads(system.read_text(plan_root / 'plan.json'))
             if batch_root(plan_root, original) != root:
                 raise ValueError('The original batch folder changed. Recovery was blocked.')
             if original['mode'] != 'batch':
@@ -416,7 +416,7 @@ def run_action(plan, log):
             if state is None:
                 state = history.activate_for_resume(identity)
             return {'state': state, 'hashes': recovery_hashes(root), 'job_id': plan['source']['job_id'], 'batch_id': identity,
-                    'plan_hash': digest((plan_root / 'plan.json').read_bytes()),
+                    'plan_hash': digest(system.read_bytes(plan_root / 'plan.json')),
                     'profile_confirmation': recovery_profile(root, original),
                     'message': 'Recovery is ready. Review the next step before resuming the saved engine.'}
         raise ValueError('Unsupported batch action.')
@@ -484,7 +484,7 @@ def import_run(plan, row, log):
     if link:
         for saved in manual.jobs.values():
             if saved.get('batch_root') == str(root):
-                frozen = json.loads((manual.folder(saved['id']) / 'plan.json').read_text(encoding='utf-8'))
+                frozen = json.loads(system.read_text(manual.folder(saved['id']) / 'plan.json'))
                 if (frozen.get('batch_link') == link and frozen['engine'] == engine
                         and frozen['engines'] == config['engines'] and frozen['settings'] == config['values']):
                     return {'message': 'This queue already has a linked manual workspace. Prepare recovery there.',
@@ -511,7 +511,7 @@ def import_run(plan, row, log):
                     shutil.copyfile(root / name, destination)
                 if recovery_hashes(root) != before or recovery_hashes(target) != before:
                     raise ValueError('Original recovery files changed during import. Retry after the original tool is idle.')
-        frozen = json.loads((target / 'plan.json').read_text())
+        frozen = json.loads(system.read_text(target / 'plan.json'))
         if row.get('runtime_profile'):
             frozen['runtime_profile'] = row['runtime_profile']
         for item in inventory['files']:
@@ -542,7 +542,7 @@ def import_run(plan, row, log):
             manual.jobs[job['id']]['version'] = 2
         atomic_json(target / 'plan.json', frozen)
         atomic_json(target / 'prepared.json', {'ready': True})
-        manual.jobs[job['id']]['plan_hash'] = digest((target / 'plan.json').read_bytes())
+        manual.jobs[job['id']]['plan_hash'] = digest(system.read_bytes(target / 'plan.json'))
         manual.save(manual.jobs[job['id']])
         return {'message': ('Legacy inputs imported; the queue remains linked to its original folder, which must stay available. '
                             if link else 'Legacy inputs and recovery data imported. ')

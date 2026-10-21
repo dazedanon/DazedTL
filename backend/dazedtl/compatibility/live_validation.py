@@ -5,7 +5,7 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
-from dazedtl.translation.files import project_path
+from dazedtl.translation.files import live_path, project_path
 
 from .batch_validation import canonical, source_value
 from .process_view import (
@@ -20,7 +20,7 @@ from .process_view import (
 def finished_files(root):
     try:
         job_path, plan_path = (
-            project_path(root, name) for name in ("job.json", "plan.json")
+            live_path(root, name) for name in ("job.json", "plan.json")
         )
         job = _read_cached(str(job_path), file_stamp(job_path))
         if (
@@ -39,7 +39,7 @@ def finished_files(root):
         )
         result = set()
         for name in complete:
-            path = project_path(root, "translated/" + name, exists=False)
+            path = live_path(root, "translated/" + name, exists=False)
             if path.is_file() and job.get("outputs", {}).get(name) == _verified_digest(
                 path
             ):

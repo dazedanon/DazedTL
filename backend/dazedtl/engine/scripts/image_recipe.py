@@ -213,7 +213,7 @@ def _write_png(pixels, mode: str, output: Path, *, like: Path | None, replace: b
         temporary.write_bytes(data)
         system.replace(temporary, output)
     finally:
-        temporary.unlink(missing_ok=True)
+        system.unlink(temporary, ignore_errors=True)
 
 
 def _diff_image(np, candidate, accepted):

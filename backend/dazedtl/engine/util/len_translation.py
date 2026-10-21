@@ -451,7 +451,7 @@ def _write_atomic(path: Path, text: str) -> None:
             temporary.chmod(path.stat().st_mode)
         system.replace(temporary, path)
     finally:
-        temporary.unlink(missing_ok=True)
+        system.unlink(temporary, ignore_errors=True)
 
 
 def _prepare_local_work(project: LenProject) -> None:

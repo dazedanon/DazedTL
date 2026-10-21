@@ -190,10 +190,7 @@ def save_progress_lines(lines, filename, encoding="utf-8"):
             system.replace(tmp_path, os.path.join("translated", filename))
         finally:
             if os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except OSError:
-                    pass
+                system.unlink(tmp_path, ignore_errors=True)
     except Exception:
         traceback.print_exc()
 

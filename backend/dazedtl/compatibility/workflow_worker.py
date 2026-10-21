@@ -8,10 +8,11 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from dazedtl import system
 from dazedtl.diagnostics import record_crashes, watch_action, worker_failure
 
 try:
-    action = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["action"]
+    action = json.loads(system.read_bytes(sys.argv[1]))["action"]
 except OSError, ValueError, KeyError, TypeError, IndexError:
     action = "unknown"  # The engine's worker reports the unreadable plan.
 action = str(action)

@@ -334,10 +334,7 @@ def save_progress_json(data, filename):
             system.replace(tmp_path, target)
         finally:
             if os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except OSError:
-                    pass
+                system.unlink(tmp_path, ignore_errors=True)
     except Exception:
         traceback.print_exc()
 

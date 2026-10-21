@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
+from util import system
 from util.translation import (
     BATCH_LOCK,
     BATCH_QUEUE_FILE,
@@ -528,11 +529,7 @@ def _remove_active_batch_ids(batch_ids: list[str]) -> None:
                     state["batches"] = []
                     _write_batch_file(BATCH_STATE_FILE, state)
                 else:
-                    try:
-                        if BATCH_STATE_FILE.exists():
-                            BATCH_STATE_FILE.unlink()
-                    except Exception:
-                        pass
+                    system.unlink(BATCH_STATE_FILE, ignore_errors=True)
                     # Submit leaves the collect queue on disk until fetch. Once
                     # every submitted id is canceled, that queue is leftover and
                     # must not block Batch History recovery.
@@ -798,11 +795,7 @@ def _discard_stale_canceled_active_state(state: dict) -> dict:
         entry = _find_entry(history, bid)
         if (entry or {}).get("status") not in (STATUS_CANCELED, STATUS_ERROR):
             return state
-    try:
-        if BATCH_STATE_FILE.exists():
-            BATCH_STATE_FILE.unlink()
-    except Exception:
-        pass
+    system.unlink(BATCH_STATE_FILE, ignore_errors=True)
     _clear_batch_queue_file()
     return {}
 

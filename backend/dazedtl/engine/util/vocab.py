@@ -116,11 +116,7 @@ def restore_batch_glossary_freeze_from_state() -> bool:
 
 def clear_batch_glossary_freeze() -> None:
     """Drop the collect-time glossary freeze, if present."""
-    try:
-        if BATCH_GLOSSARY_FREEZE_FILE.exists():
-            BATCH_GLOSSARY_FREEZE_FILE.unlink()
-    except Exception:
-        pass
+    system.unlink(BATCH_GLOSSARY_FREEZE_FILE, ignore_errors=True)
 
 
 def read_translation_glossary() -> str:

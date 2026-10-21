@@ -794,11 +794,7 @@ def saveProgress(data, filename, *, force=False):
                 shutil.move(tmp_path, final_path)
             except Exception:
                 # Ensure tmp is cleaned up if move failed
-                try:
-                    if os.path.exists(tmp_path):
-                        os.remove(tmp_path)
-                except Exception:
-                    pass
+                system.unlink(tmp_path, ignore_errors=True)
                 raise last_err
         THREAD_CTX.last_progress_save_at = now
         return True

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from dazedtl.freshness import Digests, signature, signature_settled
-from dazedtl.translation.files import digest, project_path, read_json
+from dazedtl.translation.files import digest, live_path, read_json
 
 # The engine's names pass translates the speakers of every file in one list and
 # records its requests under this name (engine util/speakers.NAMES_FILE).
@@ -113,8 +113,8 @@ def consumed_files(root, *, allow_mismatches=False):
     ):
         return frozenset()
     try:
-        job_path = project_path(root, "job.json")
-        plan_path = project_path(root, "plan.json")
+        job_path = live_path(root, "job.json")
+        plan_path = live_path(root, "plan.json")
         job = _read_cached(str(job_path), file_stamp(job_path))
         if (
             job.get("mode") != "batch"
@@ -135,7 +135,7 @@ def consumed_files(root, *, allow_mismatches=False):
             complete -= set(job.get("mismatches", {}))
         verified = set()
         for name in complete:
-            path = project_path(root, "translated/" + name, exists=False)
+            path = live_path(root, "translated/" + name, exists=False)
             if path.is_file() and job.get("outputs", {}).get(name) == _verified_digest(
                 path
             ):

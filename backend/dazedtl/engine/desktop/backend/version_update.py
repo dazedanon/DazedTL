@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import uuid
 
+from util import system
 from .project import atomic_json, digest
 from .workflow_actions import json_value
 
@@ -98,9 +99,9 @@ class VersionUpdates:
             if not job or job['project_id'] != project_id or job['action'] != 'preview' or job['status'] != 'complete':
                 raise ValueError('Preview the update before applying it.')
             saved = self.operations.root / preview_job / 'plan.json'
-            if saved.is_symlink() or digest(saved.read_bytes()) != job['plan_hash']:
+            if saved.is_symlink() or digest(system.read_bytes(saved)) != job['plan_hash']:
                 raise ValueError('The preview changed. Preview the update again.')
-            original_plan = json.loads(saved.read_text(encoding='utf-8'))
+            original_plan = json.loads(system.read_text(saved))
             if original_plan['values'] != values or original_plan['source'] != record['source']:
                 raise ValueError('The update selection changed. Preview it again.')
             plan['preview'] = job['result']['preview']
