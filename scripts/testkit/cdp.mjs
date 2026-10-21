@@ -195,39 +195,47 @@ export class Page {
   }
 
   /**
+   * The center of the enabled control whose accessible name matches, when it
+   * shows uncovered, after scrolling it into view; otherwise null.
+   * @param {string | RegExp} name
+   */
+  locate(name) {
+    const pattern =
+      typeof name === "string"
+        ? `^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`
+        : name.source;
+    return this.evaluate(`(() => {
+      const pattern = new RegExp(${JSON.stringify(pattern)});
+      const label = (element) =>
+        (element.getAttribute("aria-label") || element.textContent).replace(/\\s+/g, " ").trim();
+      const found = [
+        ...document.querySelectorAll("button, a, label, [role=button], [role=tab], [role=radio], [role=option]"),
+      ].find(
+        (element) =>
+          element.getClientRects().length &&
+          pattern.test(label(element)) &&
+          !element.disabled &&
+          element.getAttribute("aria-disabled") !== "true",
+      );
+      if (!found) return null;
+      found.scrollIntoView({ block: "center" });
+      const box = found.getBoundingClientRect();
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+      const top = document.elementFromPoint(x, y);
+      return top && (top === found || found.contains(top)) ? { x, y } : null;
+    })()`);
+  }
+
+  /**
    * Clicks the enabled control whose accessible name matches, with mouse input
    * at its center, so a covered or disabled control fails as it would for a user.
    * @param {string | RegExp} name
    */
   async click(name, timeout = 60_000) {
-    const pattern =
-      typeof name === "string"
-        ? `^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`
-        : name.source;
     const at = await until(
       `an enabled "${name}" control`,
-      () =>
-        this.evaluate(`(() => {
-          const pattern = new RegExp(${JSON.stringify(pattern)});
-          const label = (element) =>
-            (element.getAttribute("aria-label") || element.textContent).replace(/\\s+/g, " ").trim();
-          const found = [
-            ...document.querySelectorAll("button, a, label, [role=button], [role=tab], [role=radio], [role=option]"),
-          ].find(
-            (element) =>
-              element.getClientRects().length &&
-              pattern.test(label(element)) &&
-              !element.disabled &&
-              element.getAttribute("aria-disabled") !== "true",
-          );
-          if (!found) return null;
-          found.scrollIntoView({ block: "center" });
-          const box = found.getBoundingClientRect();
-          const x = box.x + box.width / 2;
-          const y = box.y + box.height / 2;
-          const top = document.elementFromPoint(x, y);
-          return top && (top === found || found.contains(top)) ? { x, y } : null;
-        })()`),
+      () => this.locate(name),
       timeout,
     );
     for (const type of ["mousePressed", "mouseReleased"])
