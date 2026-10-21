@@ -124,6 +124,15 @@ const kinds: Record<TextLine["kind"], string> = {
   replaced: "Translation replaced",
   edited: "Changed",
 };
+/** A checkpoint's line reads Added or Removed when it has one side only. */
+const kindLabel = (line: TextLine) =>
+  line.kind !== "edited"
+    ? kinds[line.kind]
+    : line.before === null
+      ? "Added"
+      : line.after === null
+        ? "Removed"
+        : kinds.edited;
 
 /** A line's versions: the old release's, the new one's and its translation. */
 function lineRows(line: TextLine): LineChangeRow[] {
@@ -190,7 +199,7 @@ function FileLines({ file, close }: { file: FileText; close: () => void }) {
         <ol className="version-lines">
           {file.lines.map((line, index) => (
             <li key={index}>
-              <strong>{kinds[line.kind]}</strong>
+              <strong>{kindLabel(line)}</strong>
               <LineChange rows={lineRows(line)} />
             </li>
           ))}

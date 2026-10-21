@@ -41,6 +41,7 @@ from dazedtl import system
 
 from .checkpoint_commits import (
     ACTION_TRAILER,
+    OUTSIDE,
     OUTSIDE_EDITS,
     STAGE_TRAILER,
     WAITING,
@@ -205,6 +206,16 @@ def _blocker_view(found):
     return {"commit": later.commit, "title": later.title, "files": files}
 
 
+def _outside_view(entry, outside):
+    """The edits made outside DazedTL to a checkpoint's files, which become
+    the later checkpoint its undo waits for once DazedTL next changes the
+    game; no commit names them yet."""
+    files = sorted(set(entry.changes) & set(outside))
+    if not files:
+        return None
+    return {"commit": "", "title": OUTSIDE.summary, "files": files}
+
+
 def blocker(root, commit):
     """The later checkpoint to undo before this one, as {commit, title,
     files}, or None when it undoes on its own; the one rule the Checkpoints
@@ -244,6 +255,7 @@ def timeline(root):
     entries = _log(root)
     current = _current_span(entries)
     blockers = _blockers(current)
+    outside = edited_outside(root)
     versions = []
     head = next((entry for entry in entries if entry.listed), None)
     for entry in entries:
@@ -279,6 +291,7 @@ def timeline(root):
                 "restorable": in_current,
                 "blocker": (
                     _blocker_view(blockers[entry.commit])
+                    or _outside_view(entry, outside)
                     if in_current and not entry.boundary
                     else None
                 ),
@@ -287,7 +300,7 @@ def timeline(root):
     store = root / ".dazedtl" / "backups"
     return {
         "version": versions[0]["version"] if versions else "",
-        "outside": edited_outside(root),
+        "outside": outside,
         "versions": versions,
         "backups": str(store) if store.is_dir() and any(store.iterdir()) else None,
     }
@@ -430,9 +443,9 @@ def _apply(game, root, plan, stopped):
     return len(plan)
 
 
-def _when(entry):
-    moment = datetime.fromisoformat(entry.time).astimezone()
-    return f"{moment:%b} {moment.day}, {moment:%H:%M}"
+def _quoted(title):
+    """A title in quotes, single ones inside a title already quoting another."""
+    return f"‘{title}’" if "“" in title else f"“{title}”"
 
 
 def _restorable(entries, commit):
@@ -451,7 +464,7 @@ def go_back(root, commit, stopped=lambda: False, log=lambda _line: None):
     root = Path(root).resolve()
     entries = _log(root)
     target = entries[_restorable(entries, commit)]
-    change = Change(f"Went back to “{target.title}” ({_when(target)})", None, BACK)
+    change = Change(f"Went back to {_quoted(target.title)}", None, BACK)
     with running(change), write_game(root, log=log) as game:
         # The gateway recorded the edits made outside DazedTL first.
         entries = _log(root)
@@ -479,7 +492,7 @@ def undo(root, commit, stopped=lambda: False, log=lambda _line: None):
         raise ValueError(
             "A game version's first checkpoint can't be undone; go back to it instead."
         )
-    change = Change(f"Undid “{target.title}”", None, UNDO)
+    change = Change(f"Undid {_quoted(target.title)}", None, UNDO)
     with running(change), write_game(root, log=log) as game:
         entries = _log(root)
         index = _restorable(entries, commit)
@@ -488,7 +501,7 @@ def undo(root, commit, stopped=lambda: False, log=lambda _line: None):
         if found is not None:
             later, files = found
             raise ValueError(
-                f"Undo the later “{later.title}” first; it also changed "
+                f"Undo the later {_quoted(later.title)} first; it also changed "
                 f"{_names(files)}."
             )
         state = _Game(root, target)

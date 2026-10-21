@@ -538,9 +538,15 @@ def listed():
 
 
 before_first = (kept / "data/Items.json").read_bytes()
-write("data/Items.json", b'["first"]', summary="First", stage="Translate")
+# Two messages, each after its face, the first translated into fewer rows
+# than its source.
+FIRST = '["Actor1", "村長", "おお、ミカよ。", "森の奥に杖がある。", "Actor1", "ミカ"]'.encode()
+SECOND = (
+    b'["Actor1", "Elder", "Oh, Mika. A staff lies in the forest.", "Actor1", "Mika"]'
+)
+write("data/Items.json", FIRST, summary="First", stage="Translate")
 first = tip()
-write("data/Items.json", b'["second"]', summary="Second", stage="Translate")
+write("data/Items.json", SECOND, summary="Second", stage="Translate")
 second = tip()
 rows = {row["commit"]: row for row in listed()}
 assert rows[second]["current"] and rows[second]["group"] == "Translate", rows[second]
@@ -560,18 +566,30 @@ shown = checkpoints.changes(kept, second)
 assert shown["file_changes"] == [
     {"path": "data/Items.json", "change": "Changed", "result": ""}
 ], shown
-assert shown["text"]["edited"] == 1, shown
-assert shown["text"]["files"][0]["lines"][0]["before"] == "first", shown
+assert [
+    (line["before"], line["after"]) for line in shown["text"]["files"][0]["lines"]
+] == [
+    ("村長", "Elder"),
+    ("おお、ミカよ。", "Oh, Mika. A staff lies in the forest."),
+    ("森の奥に杖がある。", None),
+    ("ミカ", "Mika"),
+], shown
 checkpoints.undo(kept, second)
 clean()
 assert history()[0] == "Undid “Second”|checkpoint_undo|", history()
-assert (kept / "data/Items.json").read_bytes() == b'["first"]'
+assert (kept / "data/Items.json").read_bytes() == FIRST
 checkpoints.undo(kept, first)
 clean()
 assert (kept / "data/Items.json").read_bytes() == before_first
-# Edits made outside DazedTL show until DazedTL's next change saves them.
+# Edits made outside DazedTL show until DazedTL's next change saves them,
+# and an undo of the same file waits for them, as it would once saved.
 (kept / "data/Items.json").write_text("[null]\n")
 assert checkpoints.timeline(kept)["outside"] == ["data/Items.json"]
+assert listed()[0]["blocker"] == {
+    "commit": "",
+    "title": "Edits made outside DazedTL",
+    "files": ["data/Items.json"],
+}, listed()[0]
 # Going back puts a file the patch didn't hold then to the original game's
 # bytes, here a plugin the patch took in later, which stays in it; a file
 # neither held whose original the patch-only original branch lacks stays.
@@ -599,7 +617,7 @@ complete = _commit_tree(kept, tree, "original: complete", ("original",))
 git(kept, "update-ref", "refs/heads/original", complete)
 checkpoints.go_back(kept, oldest["commit"])
 clean()
-assert history()[0].startswith("Went back to “Apply selected saved outputs” ("), (
+assert history()[0] == "Went back to “Apply selected saved outputs”|checkpoint_back|", (
     history()
 )
 assert history()[1] == "Edits made outside DazedTL|outside_edits|", history()
@@ -613,7 +631,7 @@ copies.mkdir()
 saved = checkpoints.save_copy(kept, second, copies)
 copy = Path(saved["folder"])
 assert copy.parent == copies and copy.name.startswith("checkpoints (1.0, "), copy
-assert (copy / "data/Items.json").read_bytes() == b'["second"]'
+assert (copy / "data/Items.json").read_bytes() == SECOND
 assert (copy / "data/Map001.json").read_text() == git(
     kept, "show", second + ":data/Map001.json"
 )

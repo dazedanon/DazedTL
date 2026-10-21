@@ -240,7 +240,7 @@
   color: var(--color-muted);
   font-size: var(--font-control);
 }
-.checkpoints-version {
+.checkpoints-number {
   font-size: var(--font-page-title);
   font-weight: var(--weight-semibold);
   overflow-wrap: anywhere;
@@ -318,24 +318,22 @@
 .action-row:has(.checkpoints-feedback) {
   align-items: start;
 }
-.checkpoints-copied {
-  display: flex;
-  gap: var(--space-2);
-  align-items: baseline;
-  justify-content: flex-end;
-  overflow-wrap: anywhere;
-}
 .checkpoints-backups {
   margin-top: var(--space-5);
   color: var(--color-muted);
   font-size: var(--font-control);
 }
+/* Right-aligned feedback flows as one paragraph led by its icon, as an
+   action control's does. */
+@container (width > 36rem) {
+  .checkpoints-feedback > .feedback:not(.error),
+  .checkpoints-feedback > span > .feedback {
+    display: block;
+  }
+}
 @container (max-width: 36rem) {
   .checkpoints-feedback,
   .checkpoints-head > .checkpoints-outside {
     text-align: start;
-  }
-  .checkpoints-copied {
-    justify-content: flex-start;
   }
 }

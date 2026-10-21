@@ -22,7 +22,7 @@ export const day = (time: string) =>
     month: "short",
     day: "numeric",
   });
-const fileName = (path: string) => path.split("/").pop() || path;
+export const fileName = (path: string) => path.split("/").pop() || path;
 export const plural = (count: number, word: string) =>
   `${count.toLocaleString()} ${word}${count === 1 ? "" : "s"}`;
 
@@ -46,6 +46,9 @@ export function blockedBy(row: Checkpoint) {
       : names.length > 1
         ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`
         : names[0];
+  // Edits made outside DazedTL become a checkpoint only with its next change.
+  if (!later.commit)
+    return `${shared} ${later.files.length === 1 ? "was" : "were"} edited outside DazedTL since; go back to before this change instead.`;
   return `Undo the later “${later.title}” first; it also changed ${shared}.`;
 }
 

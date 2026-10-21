@@ -363,44 +363,37 @@ def text_changes(game_root: str | Path, preview: UpdatePreview) -> TextChanges:
     )
 
 
-def _keyed(path: str, raw: bytes | None) -> dict | None:
-    """A file's strings by where they sit: a JSON file's and a plugin
-    registry's by key, a script's by line."""
+def _ordered(path: str, raw: bytes | None) -> list[str] | None:
+    """A file's strings in the order they appear: a JSON file's and a plugin
+    registry's values, a script's lines."""
     if is_plugin_registry(path) or not path.casefold().endswith(".js"):
         document = (_plugins if is_plugin_registry(path) else _parse)(raw)
-        return None if document is None else dict(_strings(document))
+        return None if document is None else [value for _key, value in _strings(document)]
     lines = _script(raw)
-    return None if lines is None else {index: line.strip() for index, line in enumerate(lines)}
+    return None if lines is None else [line.strip() for line in lines]
 
 
 def _edits(path, old, new, budget) -> FileText:
-    """A checkpoint's lines of one file, before and after."""
+    """A checkpoint's lines of one file, before and after. They line up by
+    text, since a translated message may hold fewer rows than its source,
+    and a changed run of lines pairs by position, as a translation's lines
+    share no words with the text they replace."""
     text = FileText(path)
-    if isinstance(next(iter(old or new or {0: ""})), int):
-        # A script's lines shift when one is added, so they pair by text.
-        before, after = list((old or {}).values()), list((new or {}).values())
-        blocks = SequenceMatcher(None, before, after, autojunk=False).get_opcodes()
-        pairs = [
-            pair
-            for tag, start, end, new_start, new_end in blocks
-            if tag != "equal"
-            for pair in _pairs(
-                list(enumerate(before[start:end])), list(enumerate(after[new_start:new_end]))
-            )
-        ]
-        changes = [(was[1], now[1]) for was, now in pairs]
-    else:
-        keys = list(dict.fromkeys([*(new or {}), *(old or {})]))
-        changes = [((old or {}).get(key), (new or {}).get(key)) for key in keys]
-    for was, now in changes:
-        if was == now or not (was or now):
+    for tag, start, end, new_start, new_end in SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
+        if tag == "equal":
             continue
-        text.edited += 1
-        if len(text.lines) < FILE_LINES and budget[0] > 0:
-            text.lines.append(LineChange("edited", was or None, None, now or None))
-            budget[0] -= 1
-        else:
-            text.more += 1
+        was, now = old[start:end], new[new_start:new_end]
+        for index in range(max(len(was), len(now))):
+            before = was[index] if index < len(was) else None
+            after = now[index] if index < len(now) else None
+            if not (before or after):
+                continue
+            text.edited += 1
+            if len(text.lines) < FILE_LINES and budget[0] > 0:
+                text.lines.append(LineChange("edited", before or None, None, after or None))
+                budget[0] -= 1
+            else:
+                text.more += 1
     return text
 
 
@@ -412,7 +405,7 @@ def checkpoint_text(repo: Path, files: dict[str, tuple[str, str]]) -> dict:
     budget = [ALL_LINES]
     found = []
     for path, (old, new) in sorted(readable.items()):
-        before, after = (_keyed(path, contents.get(blob)) if blob.strip("0") else {} for blob in (old, new))
+        before, after = (_ordered(path, contents.get(blob)) if blob.strip("0") else [] for blob in (old, new))
         if before is None or after is None:
             continue
         text = _edits(path, before, after, budget)

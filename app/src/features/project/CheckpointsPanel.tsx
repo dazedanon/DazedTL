@@ -19,16 +19,16 @@ import { Button } from "../../ui/Button";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Feedback, Message } from "../../ui/Feedback";
 import { HelpPopover } from "../../ui/HelpPopover";
-import { JobStatus } from "../../ui/JobStatus";
 import { Menu, MenuItem, MenuSeparator } from "../../ui/Menu";
 import { Modal } from "../../ui/Modal";
-import { PathText } from "../../ui/PathText";
 import { StatusIcon } from "../../ui/StatusIcon";
+import { sentence } from "../../ui/displayText";
 import { VersionChanges } from "../translation/VersionChanges";
 import {
   blockedBy,
   changedFiles,
   day,
+  fileName,
   plural,
   readKey,
   runs,
@@ -94,15 +94,20 @@ export function CheckpointsPanel({
     : busy
       ? "Wait for the current work to finish."
       : "";
-  const latest = (commit: string) =>
-    state.jobs
-      .filter(
-        (job) =>
-          job.kind === "operation" &&
-          operations.includes(job.action || "") &&
-          job.target === commit,
-      )
-      .sort((a, b) => b.created.localeCompare(a.created))[0];
+  // Only the newest go back, undo or copy reports, beside its checkpoint,
+  // until the user starts another.
+  const newest = state.jobs
+    .filter(
+      (job) =>
+        job.kind === "operation" &&
+        operations.includes(job.action || "") &&
+        !earlierSuccess(job),
+    )
+    .sort((a, b) => b.created.localeCompare(a.created))[0];
+  const reported =
+    newest && (!action.key || action.key.endsWith(`:${newest.target}`))
+      ? newest
+      : undefined;
   const start = (operation: Operation, row: Checkpoint) =>
     action.run(
       async () => {
@@ -129,7 +134,7 @@ export function CheckpointsPanel({
       {configured && (
         <div className="checkpoints-head">
           <span className="checkpoints-label">Game version</span>
-          <strong className="checkpoints-version">
+          <strong className="checkpoints-number">
             {timeline?.version || state.git?.original_version || "Not recorded"}
           </strong>
           {boundary && (
@@ -221,7 +226,7 @@ export function CheckpointsPanel({
                     error={
                       action.key.endsWith(`:${row.commit}`) ? action.error : ""
                     }
-                    job={latest(row.commit)}
+                    job={reported?.target === row.commit ? reported : undefined}
                     start={(operation) => start(operation, row)}
                     view={() => setViewing(row)}
                   />
@@ -282,7 +287,7 @@ function CheckpointRow({
 }) {
   const application = useApplication();
   const action = useAction({ observer: application });
-  const job = reported && !earlierSuccess(reported) ? reported : undefined;
+  const job = reported;
   const running = !!job && ["ready", "running", "waiting"].includes(job.status);
   const result = job?.result as
     { files?: number; folder?: string } | null | undefined;
@@ -297,27 +302,29 @@ function CheckpointRow({
     />
   ) : job?.status === "complete" ? (
     job.action === "checkpoint_copy" ? (
-      <div className="feedback checkpoints-copied" role="status">
-        <StatusIcon status="done" size={15} />
-        <span>
-          Saved a copy to <PathText path={result?.folder || ""} wrap />{" "}
-          <ActionControl
-            inline
-            variant="link"
-            label="Open folder"
-            icon={<FolderOpen size={14} aria-hidden="true" />}
-            disabled={action.busy}
-            error={action.error}
-            onClick={() =>
-              action.run(
-                () => window.dazedtl.openFolder("output", result?.folder ?? ""),
-                "",
-                "open",
-              )
-            }
+      <>
+        {/* The folder's name says which copy; the user chose where. */}
+        <span title={result?.folder}>
+          <Feedback
+            notice={`Saved a copy: ${fileName(result?.folder || "")}`}
           />
         </span>
-      </div>
+        <ActionControl
+          inline
+          variant="link"
+          label="Open folder"
+          icon={<FolderOpen size={14} aria-hidden="true" />}
+          disabled={action.busy}
+          error={action.error}
+          onClick={() =>
+            action.run(
+              () => window.dazedtl.openFolder("output", result?.folder ?? ""),
+              "",
+              "open",
+            )
+          }
+        />
+      </>
     ) : (
       <Feedback
         notice={
@@ -330,7 +337,7 @@ function CheckpointRow({
       />
     )
   ) : job ? (
-    <JobStatus compact job={job} />
+    <Feedback error={job.message || sentence(job.status)} />
   ) : null;
   const disabled = !!blocked || !!pending || running;
   return (
@@ -352,8 +359,15 @@ function CheckpointRow({
         variant="quiet"
         className="checkpoints-more"
         label={`Actions for ${row.title}`}
-        aria-label={`More actions for ${row.title}`}
-        title={blocked || "Go back, undo or save a copy"}
+        aria-label={`More actions for ${row.title}, ${when(row.time)}`}
+        title={
+          blocked ||
+          (!row.restorable
+            ? "Save a copy"
+            : row.kind === "change"
+              ? "Go back, undo or save a copy"
+              : "Go back or save a copy")
+        }
         disabled={disabled}
         trigger={<MoreHorizontal size={16} aria-hidden="true" />}
       >
