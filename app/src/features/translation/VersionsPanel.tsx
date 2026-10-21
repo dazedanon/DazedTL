@@ -151,7 +151,9 @@ export function VersionsPanel({
       // Only this update's own step reports beside its control, never the
       // same step of an earlier update.
       job={
-        !choosing || action.key === name
+        (!choosing || action.key === name) &&
+        // A cancelled update's comparison no longer applies.
+        !(session.aborted && name === "version_preview")
           ? session.current.find((job) => job.action === name)
           : undefined
       }
