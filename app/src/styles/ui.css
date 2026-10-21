@@ -627,14 +627,16 @@ main:has(> .page-layout--wide) {
   display: inline-flex;
   margin-inline-end: var(--space-2);
 }
-.action-bar .action-control-feedback > .job-status-status--compact > p,
+.action-bar .action-control-feedback > .job-status-status--compact > p {
+  margin: 0;
+  line-height: inherit;
+}
 .action-bar
   .action-control-feedback
   > .job-status-status--compact
   > p
   > .expandable-text {
-  display: inline;
-  line-height: inherit;
+  display: block;
 }
 /* Two lines of a result fit beside the button, so a result that wraps keeps
    the bar's height. */
