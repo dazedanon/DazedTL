@@ -126,6 +126,23 @@ GAME_TOOL_GITIGNORE_BLOCK = "\n".join(
         GAME_TOOL_GITIGNORE_END,
     )
 ) + "\n"
+# Assistant-led's blocks ignore the allowlist's files, its work with
+# `/.dazedtl/**` and its patch with `/*`, so the allowlist comes after them.
+LEN_WORK_GITIGNORE_BEGIN = "# BEGIN DazedTL Len project work"
+LEN_WORK_GITIGNORE_END = "# END DazedTL Len project work"
+LEN_PATCH_GITIGNORE_BEGIN = "# BEGIN DazedTL Len patch files"
+LEN_PATCH_GITIGNORE_END = "# END DazedTL Len patch files"
+# The files describing a game's repository, which every commit of it holds.
+GAME_REPOSITORY_METADATA = (".gitignore", ".gitattributes", "README.md")
+# The portable files are in a game's Git history and remotes but never in
+# what players download: `git archive`, which builds a patch's ZIP and the
+# forges' downloads GameUpdate applies, leaves them out.
+GAME_TOOL_GITATTRIBUTES_RULE = "/.dazedtl export-ignore"
+GAME_TOOL_GITATTRIBUTES_BLOCK = (
+    "# DazedTL's glossary, settings and skills stay out of players' downloads.\n"
+    + GAME_TOOL_GITATTRIBUTES_RULE
+    + "\n"
+)
 
 _ROOT_DATA_FILES = (
     "prompt.txt",
@@ -170,7 +187,8 @@ def normalize_game_tool_gitignore_text(
     *,
     path_label: str = ".gitignore",
 ) -> str:
-    """Return content with one canonical managed block in its existing position."""
+    """Return content with one canonical managed block in its existing position,
+    or below the Assistant-led blocks that would otherwise override it."""
     pieces: list[str] = []
     first_block_piece: int | None = None
     cursor = 0
@@ -235,30 +253,23 @@ def normalize_game_tool_gitignore_text(
             index += 1
         return "".join(cleaned_lines)
 
+    rest = "".join(pieces)
     if first_block_piece is not None:
-        before = without_legacy_rules("".join(pieces[:first_block_piece])).rstrip(
-            "\r\n"
-        )
-        after = without_legacy_rules("".join(pieces[first_block_piece:])).strip(
-            "\r\n"
-        )
-        normalized = f"{before}\n\n" if before else ""
-        normalized += GAME_TOOL_GITIGNORE_BLOCK
-        if after:
-            normalized += f"\n{after}\n"
-        return normalized
-
-    prefix = without_legacy_rules("".join(pieces)).rstrip("\r\n")
-    image_section = ""
-    image_start = prefix.find(GAME_IMAGE_PATCH_GITIGNORE_COMMENT)
-    if image_start >= 0:
-        image_section = prefix[image_start:].strip("\r\n")
-        prefix = prefix[:image_start].rstrip("\r\n")
-    if prefix:
-        prefix += "\n\n"
-    normalized = prefix + GAME_TOOL_GITIGNORE_BLOCK
-    if image_section:
-        normalized += "\n" + image_section + "\n"
+        offset = len("".join(pieces[:first_block_piece]))
+    else:
+        image = rest.find(GAME_IMAGE_PATCH_GITIGNORE_COMMENT)
+        offset = image if image >= 0 else len(rest)
+    # Later rules win, so the allowlist moves below a block ignoring its files.
+    for marker in (LEN_WORK_GITIGNORE_END, LEN_PATCH_GITIGNORE_END):
+        found = rest.rfind(marker)
+        if found >= offset:
+            offset = rest.find("\n", found) + 1 or len(rest)
+    before = without_legacy_rules(rest[:offset]).rstrip("\r\n")
+    after = without_legacy_rules(rest[offset:]).strip("\r\n")
+    normalized = f"{before}\n\n" if before else ""
+    normalized += GAME_TOOL_GITIGNORE_BLOCK
+    if after:
+        normalized += f"\n{after}\n"
     return normalized
 
 
@@ -266,8 +277,8 @@ def ensure_game_tool_gitignore(game_root: str | Path) -> bool:
     """Allowlist portable translation settings while ignoring other tool state.
 
     The managed block replaces older ``/.dazedtl/`` rules. Its existing position
-    is retained to avoid meaningless Git churn; only portable glossary/settings/
-    skills are exposed.
+    is retained to avoid meaningless Git churn unless a block that would
+    override it comes later; only portable glossary/settings/skills are exposed.
     """
     root = Path(game_root).expanduser().resolve()
     if not root.is_dir():
@@ -306,6 +317,42 @@ def ensure_game_tool_gitignore(game_root: str | Path) -> bool:
         system.unlink(temporary, ignore_errors=True)
         raise
     return True
+
+
+def is_portable_game_file(relative: str) -> bool:
+    """Whether a game-relative path is a glossary, settings or skill file the
+    managed .gitignore block leaves to Git."""
+    parts = tuple(relative.split("/"))
+    return parts in {
+        (".dazedtl", GLOSSARY_FILENAME),
+        (".dazedtl", "settings.json"),
+    } or (len(parts) == 3 and parts[:2] == (".dazedtl", "skills") and parts[2].endswith(".md"))
+
+
+def portable_game_files(game_root: str | Path) -> list[str]:
+    """The game's portable files that exist, as game-relative paths."""
+    root = Path(game_root)
+    metadata = root / GAME_METADATA_RELATIVE
+    skills = metadata / "skills"
+    candidates = [metadata / GLOSSARY_FILENAME, metadata / "settings.json"]
+    if skills.is_dir() and not skills.is_symlink():
+        candidates.extend(skills.iterdir())
+    return sorted(
+        relative
+        for path in candidates
+        if path.is_file()
+        and is_portable_game_file(relative := path.relative_to(root).as_posix())
+    )
+
+
+def game_tool_gitattributes_text(existing: str) -> str:
+    """Return a game's .gitattributes with the rule keeping the portable files
+    out of archives, adding it once."""
+    if GAME_TOOL_GITATTRIBUTES_RULE in {line.strip() for line in existing.splitlines()}:
+        return existing
+    if existing and not existing.endswith("\n"):
+        existing += "\n"
+    return existing + GAME_TOOL_GITATTRIBUTES_BLOCK
 
 
 def game_metadata_dir(game_root: str | Path, *, create: bool = False) -> Path:

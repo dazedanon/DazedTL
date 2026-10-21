@@ -584,6 +584,8 @@ class GuidedActions:
 
     def confirm(self, context, plan):
         """Freezes a reviewed plan behind a one-use token."""
+        from util.paths import GAME_REPOSITORY_METADATA
+
         project_id, action = context.project_id, context.action
         project = context.project
         native, release_status = context.native, context.release_status
@@ -674,7 +676,7 @@ class GuidedActions:
                     if archive
                     else ""
                 ),
-                "generated": [".gitignore", ".gitattributes", "README.md"]
+                "generated": list(GAME_REPOSITORY_METADATA)
                 + ([archive] if archive else []),
             }
             if action == "release_patch"

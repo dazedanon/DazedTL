@@ -1749,19 +1749,27 @@ class ManualJobs:
     def test_progress_reports_leave_a_checkpointed_gitignore_unchanged(self):
         # A checkpoint after an image apply leaves the image rules between
         # Len's work block and its patch block. Moving the work block again
-        # dirtied the committed .gitignore, so packaging refused.
+        # dirtied the committed .gitignore, so packaging refused. A new work
+        # block goes above the patch rules, leaving the portable-settings
+        # allowlist last: below the work block's rules, it hid the glossary.
         script = """
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 sys.path.insert(0, sys.argv[1])
 from util.len_translation import _WORK_IGNORE_BLOCK, _prepare_local_work
+from util.paths import GAME_TOOL_GITIGNORE_BLOCK
 root = Path(sys.argv[2])
+patch = "# BEGIN DazedTL Len patch files\\n/*\\n# END DazedTL Len patch files\\n"
 text = (_WORK_IGNORE_BLOCK + "\\n# DazedTL selected image patches\\n!/img/\\n"
-        "\\n# BEGIN DazedTL Len patch files\\n/*\\n# END DazedTL Len patch files\\n")
+        "\\n" + patch + "\\n" + GAME_TOOL_GITIGNORE_BLOCK)
 (root / ".gitignore").write_text(text)
 _prepare_local_work(SimpleNamespace(game_root=root, work_root=root / "work"))
 print((root / ".gitignore").read_text() == text)
+(root / ".gitignore").write_text(patch + "\\n" + GAME_TOOL_GITIGNORE_BLOCK)
+_prepare_local_work(SimpleNamespace(game_root=root, work_root=root / "work"))
+result = (root / ".gitignore").read_text()
+print(result.index(_WORK_IGNORE_BLOCK) < result.index(patch) and result.endswith(patch + "\\n" + GAME_TOOL_GITIGNORE_BLOCK))
 """
         with TemporaryDirectory() as folder:
             result = subprocess.run(
@@ -1771,7 +1779,7 @@ print((root / ".gitignore").read_text() == text)
                 check=True,
                 encoding="utf-8",
             )
-        self.assertEqual(result.stdout.strip(), "True")
+        self.assertEqual(result.stdout.split(), ["True", "True"])
 
     def test_git_setup_accepts_declared_files_the_patch_will_add(self):
         # A Unity mod patch delivers only files the original lacks, such as

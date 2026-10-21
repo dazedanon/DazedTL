@@ -421,6 +421,7 @@ def runtime_files(source):
         patch_manifest,
         updater_config,
     )
+    from util.paths import GAME_REPOSITORY_METADATA
     from util.project_preparation import rpgmaker_layout
     from util.version_update.git_workflow import _run_git
 
@@ -454,11 +455,7 @@ def runtime_files(source):
     tracked = _run_git(root, "ls-files", "-z", check=False)
     if tracked.returncode == 0:
         for relative in tracked.stdout.split("\0"):
-            if relative and relative not in {
-                ".gitignore",
-                ".gitattributes",
-                "README.md",
-            }:
+            if relative and relative not in GAME_REPOSITORY_METADATA:
                 path = root / relative
                 if path.is_file():
                     paths.append(path)

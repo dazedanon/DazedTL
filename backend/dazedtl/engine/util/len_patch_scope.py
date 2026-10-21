@@ -15,7 +15,11 @@ from typing import Any
 from util.gameupdate_config import CONFIG, file_values
 from util.len_git import git_status
 from util.len_translation import LenProject, _write_atomic
-from util.paths import PROJECT_ROOT, normalize_game_tool_gitignore_text
+from util.paths import (
+    GAME_REPOSITORY_METADATA, LEN_PATCH_GITIGNORE_BEGIN, LEN_PATCH_GITIGNORE_END, PROJECT_ROOT,
+    game_tool_gitattributes_text, is_portable_game_file, normalize_game_tool_gitignore_text,
+    portable_game_files,
+)
 from util.playtest.fixes import MAIN as FIXES_MAIN
 from util.playtest.fixes import NAME as FIXES_PLUGIN
 from util.playtest.fixes import PLUGIN as FIXES_FILE
@@ -33,9 +37,11 @@ from util.version_update.git_workflow import (
 )
 from util import system
 
-_BEGIN = "# BEGIN DazedTL Len patch files"
-_END = "# END DazedTL Len patch files"
-_METADATA = {".gitignore", ".gitattributes", "README.md"}
+_BEGIN = LEN_PATCH_GITIGNORE_BEGIN
+_END = LEN_PATCH_GITIGNORE_END
+_METADATA = set(GAME_REPOSITORY_METADATA)
+# DazedTL writes these rules into every patch; the rest of the metadata is the game's.
+_RULES = (".gitignore", ".gitattributes")
 _PLUGIN_REGISTRIES = ("js/plugins.js", "www/js/plugins.js")
 
 
@@ -51,6 +57,12 @@ def _path(value: str) -> str:
             or parts[-1].endswith(("_key.txt", "_keys.txt", ".log", ".tmp"))):
         raise GitWorkflowError(f"Local state or unsafe path cannot enter the patch: {value!r}")
     return value
+
+
+def repository_files(root: Path) -> set[str]:
+    """The repository metadata a patch keeps: DazedTL's rule files and the
+    game's own metadata it holds."""
+    return {p for p in _METADATA if (root / p).exists()} | set(_RULES)
 
 
 def updater_config(root: Path) -> bool:
@@ -223,7 +235,8 @@ def _escape(path: str) -> str:
 
 
 def scope_ignore(existing: str, paths: set[str]) -> str:
-    """Place exact-path rules last, after shared managed settings and project rules."""
+    """Place exact-path rules after the project's rules, followed only by the
+    portable-settings allowlist they would otherwise override."""
     if existing.count(_BEGIN) != existing.count(_END) or existing.count(_BEGIN) > 1:
         raise GitWorkflowError("The Len patch .gitignore block is incomplete or duplicated")
     if _BEGIN in existing:
@@ -231,14 +244,13 @@ def scope_ignore(existing: str, paths: set[str]) -> str:
         if end < start:
             raise GitWorkflowError("The Len patch .gitignore block is out of order")
         existing = existing[:start] + existing[end + len(_END):]
-    existing = normalize_game_tool_gitignore_text(existing).rstrip()
     directories = {p[:i] for p in paths for i, c in enumerate(p) if c == "/"}
     lines = [_BEGIN, "# Only reviewed runtime patch files and repository metadata belong in Git.", "/*"]
     for directory in sorted(directories, key=lambda p: (p.count("/"), p)):
         lines.extend(["!/" + _escape(directory) + "/", "/" + _escape(directory) + "/*"])
     lines.extend("!/" + _escape(p) for p in sorted(paths))
     lines.append(_END)
-    return existing + "\n\n" + "\n".join(lines) + "\n"
+    return normalize_game_tool_gitignore_text(existing.rstrip() + "\n\n" + "\n".join(lines) + "\n")
 
 
 def _blob_metadata(repo: Path, objects: set[str]) -> dict[str, tuple[str, int]]:
@@ -334,14 +346,20 @@ def _sync_patch_scope(project: LenProject, document: object, original_game: Path
         selected[CONFIG] = {} if CONFIG in originals else {"original_sha256": None}
     assets = _load_asset_manifest(repo, "")
     asset_metadata = _load_asset_manifest_metadata(repo, "")
-    metadata = {p for p in _METADATA if (repo / p).exists()} | {".gitignore"}
-    files = {p: _file(repo, p) for p in selected}
-    files.update({p: _file(repo, p) for p in metadata if p != ".gitignore"})
-    ignore = repo / ".gitignore"
-    if ignore.exists() or ignore.is_symlink():
-        _file(repo, ".gitignore")
-    before_ignore = ignore.read_bytes() if ignore.exists() else None
-    policy = scope_ignore((before_ignore or b"").decode("utf-8", errors="surrogateescape"), set(selected) | metadata)
+    metadata = repository_files(repo)
+    # The game's glossary, settings and skills follow the translation in Git,
+    # never the untranslated original.
+    portable = set(portable_game_files(repo))
+    files = {p: _file(repo, p) for p in chain(selected, portable)}
+    files.update({p: _file(repo, p) for p in metadata if p not in _RULES})
+    before_rules = {}
+    for name in _RULES:
+        if (repo / name).exists() or (repo / name).is_symlink():
+            _file(repo, name)
+        before_rules[name] = (repo / name).read_bytes() if (repo / name).exists() else None
+    before_text = {name: (raw or b"").decode("utf-8", errors="surrogateescape") for name, raw in before_rules.items()}
+    rules = {".gitignore": scope_ignore(before_text[".gitignore"], set(selected) | metadata),
+             ".gitattributes": game_tool_gitattributes_text(before_text[".gitattributes"])}
     source = original_game.expanduser().resolve() if original_game is not None else None
     if source is not None and (source == repo or not source.is_dir()):
         raise GitWorkflowError("Use a separate, matching untranslated backup as the original")
@@ -403,7 +421,7 @@ def _sync_patch_scope(project: LenProject, document: object, original_game: Path
     result = {"dry_run": dry_run, "translation_branch": state["translation_branch"],
               "patch_files": len(selected), "original_files": len(original_payload),
               "translation_only_files": sorted(set(selected) - set(original_payload)),
-              "untrack": sorted(old_tracked - set(selected) - metadata),
+              "untrack": sorted(old_tracked - set(selected) - metadata - portable),
               "original_commit": original_ref, "main_committed": False,
               "local_files_deleted": False}
     if dry_run:
@@ -423,11 +441,13 @@ def _sync_patch_scope(project: LenProject, document: object, original_game: Path
     before_assets = asset_path.read_bytes() if asset_path.exists() else None
     new_original = original_ref
     acquired = False
-    applied_ignore = False
+    applied_rules = []
+    rules_written = False
     moved_original = False
     try:
-        ignore_oid = _run_git(repo, "hash-object", "-w", "--no-filters", "--stdin", input_text=policy).stdout.strip()
-        payload_entries[".gitignore"] = ("100644", ignore_oid)
+        for name, text in rules.items():
+            oid = _run_git(repo, "hash-object", "-w", "--no-filters", "--stdin", input_text=text).stdout.strip()
+            payload_entries[name] = ("100644", oid)
         original_payload.update({p: payload_entries[p] for p in metadata})
         main_tree = _tree(repo, payload_entries, index_env)
         source_tree = _tree(repo, original_payload, original_env)
@@ -440,13 +460,17 @@ def _sync_patch_scope(project: LenProject, document: object, original_game: Path
                 or _run_git(repo, "symbolic-ref", "--short", "HEAD").stdout.strip() != state["current_branch"]
                 or (asset_path.read_bytes() if asset_path.exists() else None) != before_assets
                 or _run_git(repo, "diff", "--cached", "--quiet", check=False).returncode != 0
-                or (ignore.read_bytes() if ignore.exists() else None) != before_ignore
-                or _hash_paths(repo, files, write=False) != {p: v for p, v in payload_entries.items() if p != ".gitignore"}
+                or any(((repo / n).read_bytes() if (repo / n).exists() else None) != b for n, b in before_rules.items())
+                or _hash_paths(repo, files, write=False) != {p: v for p, v in payload_entries.items() if p not in _RULES}
                 or _hash_paths(repo, original_files, write=False) != source_entries):
             raise GitWorkflowError("The game, source, index or branch changed during patch review; retry after reviewing those changes")
-        _write_atomic(ignore, policy)
-        applied_ignore = True
-        checks = old_tracked | set(payload_entries)
+        for name, text in rules.items():
+            if text.encode("utf-8", errors="surrogateescape") != before_rules[name]:
+                applied_rules.append(name)
+                _write_atomic(repo / name, text)
+        rules_written = True
+        # The allowlist never hides a removed skill, which leaves Git with the commit.
+        checks = {p for p in old_tracked if not is_portable_game_file(p)} | set(payload_entries)
         ignored = _run_git(repo, "check-ignore", "--no-index", "-z", "--stdin", check=False,
                            input_text="\0".join(sorted(checks)) + "\0")
         if ignored.returncode not in {0, 1}:
@@ -468,11 +492,12 @@ def _sync_patch_scope(project: LenProject, document: object, original_game: Path
     except Exception:
         if moved_original:
             _run_git(repo, "update-ref", "refs/heads/original", original_ref, new_original)
-        if applied_ignore:
-            if before_ignore is None:
-                system.unlink(ignore)
+        for name in applied_rules:
+            if before_rules[name] is None:
+                system.unlink(repo / name)
             else:
-                _write_atomic(ignore, before_ignore.decode("utf-8", errors="surrogateescape"))
+                _write_atomic(repo / name, before_text[name])
+        if rules_written:
             if before_assets is None:
                 system.unlink(asset_path, missing_ok=True)
             else:

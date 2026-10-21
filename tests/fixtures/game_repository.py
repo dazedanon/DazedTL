@@ -289,13 +289,44 @@ with engine.context():
         "repo=published",
         "branch=main",
     ], config.read_text()
-    assert updater.CONFIG in checkpoint()
-    assert "!/gameupdate/patch-config.txt" in (published / ".gitignore").read_text()
+    # Git keeps the glossary, settings and skills with the translation. The
+    # patch's `/*` used to follow their allowlist and hid them: a game whose
+    # .gitignore still has that order is repaired by its next checkpoint.
+    from util.paths import GAME_TOOL_GITIGNORE_BEGIN, GAME_TOOL_GITIGNORE_END
+
+    (published / ".dazedtl/glossary.txt").write_text("魔法 (Magic)\n")
+    (published / ".dazedtl/skills/game.md").write_text("A magical girl story.\n")
+    ignore = published / ".gitignore"
+    text = ignore.read_text()
+    start = text.index(GAME_TOOL_GITIGNORE_BEGIN)
+    end = text.index(GAME_TOOL_GITIGNORE_END) + len(GAME_TOOL_GITIGNORE_END) + 1
+    ignore.write_text(text[start:end] + "\n" + text[:start] + text[end:])
+    portable = [
+        ".dazedtl/glossary.txt",
+        ".dazedtl/settings.json",
+        ".dazedtl/skills/game.md",
+    ]
+    assert git(published, "check-ignore", *portable).split() == portable
+    tracked = checkpoint()
+    assert updater.CONFIG in tracked and set(portable) <= set(tracked), tracked
+    assert ".dazedtl/skills/notes/style.md" not in tracked, tracked
+    assert "!/gameupdate/patch-config.txt" in ignore.read_text()
     assert updater.status(published, defaults)["committed"]
+    # Players never download them: a forge's archive, which GameUpdate
+    # applies, and the local ZIP both leave them out.
+    archived = temporary / "archive.zip"
+    git(published, "archive", "--format=zip", "--output", str(archived), "HEAD")
+    assert not any(
+        name.startswith(".dazedtl") for name in zipfile.ZipFile(archived).namelist()
+    )
     # A local patch ZIP is no verified public version, so it leaves the config out.
     packaged = engine.package(published, options, manifest, temporary / "deliveries")
     names = zipfile.ZipFile(packaged["path"]).namelist()
     assert "data/System.json" in names and updater.CONFIG not in names, names
+    assert not any(name.startswith(".dazedtl") for name in names), names
+    # A removed skill leaves Git with the next checkpoint.
+    (published / ".dazedtl/skills/game.md").unlink()
+    assert ".dazedtl/skills/game.md" not in checkpoint()
     # DazedTL's own file follows Settings; a hand edit is reported, not overwritten.
     moved = {**defaults, "host": "gitlab.com"}
     assert updater.reconcile(published, moved)["state"] == "ready"

@@ -963,7 +963,8 @@ class TranslationEngine:
         return list(patch_manifest(manifest))
 
     def audit_scope(self, source, manifest):
-        from util.len_patch_scope import patch_manifest, scope_ignore
+        from util.len_patch_scope import patch_manifest, repository_files, scope_ignore
+        from util.paths import GAME_REPOSITORY_METADATA, portable_game_files
         from util.version_update.git_workflow import unfinished_bootstrap
 
         from .game_write import write_game
@@ -977,10 +978,19 @@ class TranslationEngine:
                 raise ValueError("The game's ignore file cannot be a symbolic link.")
             previous = ignore.read_text(encoding="utf-8") if ignore.exists() else ""
             with write_game(source, pack=False):
+                # The baseline keeps the rule files, as each checkpoint does,
+                # so its glossary never goes without the archive rule.
                 write_bytes(
-                    ignore, scope_ignore(previous, set(entries)).encode("utf-8")
+                    ignore,
+                    scope_ignore(
+                        previous, set(entries) | repository_files(Path(source))
+                    ).encode("utf-8"),
                 )
-        allowed = set(entries) | {".gitignore", ".gitattributes", "README.md"}
+        allowed = (
+            set(entries)
+            | set(GAME_REPOSITORY_METADATA)
+            | set(portable_game_files(source))
+        )
         with system.staging_folder(
             tempfile.gettempdir(), "dazedtl-scope-"
         ) as temporary:
@@ -1057,6 +1067,7 @@ class TranslationEngine:
         from util.ace.actions import patch_archive
         from util.gameupdate_config import CONFIG
         from util.len_patch_scope import patch_manifest
+        from util.paths import GAME_REPOSITORY_METADATA, is_portable_game_file
         from util.release_package import ReleasePackageError, _release_patch_sha
         from util.version_update.git_workflow import _run_git
 
@@ -1076,7 +1087,10 @@ class TranslationEngine:
         )
         # Saving a translation version commits a working config with the patch.
         scope = set(patch_manifest(manifest)) | ({CONFIG} & tracked)
-        allowed = scope | {".gitignore", ".gitattributes", "README.md"}
+        # The game's glossary, settings and skills are committed, but the
+        # .gitattributes rule committed with them keeps them out of the ZIP.
+        portable = set(filter(is_portable_game_file, tracked))
+        allowed = scope | set(GAME_REPOSITORY_METADATA) | portable
         if tracked - allowed or scope - tracked:
             raise ValueError(
                 "The committed files do not match the reviewed runtime patch manifest."
@@ -1128,7 +1142,7 @@ class TranslationEngine:
             system.unlink(temporary, ignore_errors=True)
             system.unlink(rebuilt, ignore_errors=True)
         packaged = sorted(
-            (tracked - omitted) | ({game_archive} if game_archive else set())
+            (tracked - omitted - portable) | ({game_archive} if game_archive else set())
         )
         write_json(
             output.with_suffix(".json"),

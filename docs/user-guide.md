@@ -287,6 +287,9 @@ The file holds these keys:
 
 A file with only `username`, `repo` and `branch` uses GitLab on `gitgud.io`.
 
+Each translation version also commits the game's glossary, settings and skills in its `.dazedtl` folder, so they are pushed to the repository with the translation.
+Players never get them: the game's `.gitattributes` keeps `.dazedtl` out of the downloads GameUpdate applies and out of patch ZIPs.
+
 Before building a clean game ZIP for players, save the translation version and push it to the repository branch it tracks.
 **Release** then writes that commit into the ZIP's `gameupdate/previous_patch_sha.txt`, so GameUpdate knows which version players start from; the game folder itself doesn't change.
 Without the pushed commit, the clean ZIP leaves out `patch-config.txt`, as patch ZIPs always do, so GameUpdate stays off in it.

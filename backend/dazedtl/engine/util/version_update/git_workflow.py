@@ -27,7 +27,12 @@ from typing import Iterable, Mapping
 import jsbeautifier
 
 from util import system
-from util.paths import ensure_game_tool_gitignore, staging_folder
+from util.paths import (
+    ensure_game_tool_gitignore,
+    game_tool_gitattributes_text,
+    is_portable_game_file,
+    staging_folder,
+)
 from util.playtest import fixes
 
 from .json_merge import merge_json
@@ -757,9 +762,8 @@ def _source_files(source: Path, *, format_json: bool) -> list[_SourceFile]:
             continue
         # DazedTL keeps only its glossary, settings and skill notes in Git;
         # its work, backups and tool environments there are never tracked.
-        if relative.parts[:1] == (".dazedtl",) and (
-            len(relative.parts) > 3
-            or (len(relative.parts) == 3 and relative.parts[1] != "skills")
+        if relative.parts[:1] == (".dazedtl",) and not is_portable_game_file(
+            relative.as_posix()
         ):
             continue
         if candidate.is_symlink():
@@ -1071,19 +1075,25 @@ def _ensure_local_excludes(repo: Path) -> None:
 
 
 def _install_game_gitignore(game_root: Path, *, preserve_game_files: bool = False) -> bool:
-    """Keep the portable DazedTL settings rules in the game's .gitignore.
+    """Keep the portable DazedTL settings rules in the game's .gitignore, and
+    those settings out of the archives players download.
 
     Projects that preserve game files also get attributes that keep native
     payload bytes exact across clones. Project rules are never replaced.
     """
-    if preserve_game_files:
-        attributes = game_root / ".gitattributes"
-        if attributes.is_symlink() or (attributes.exists() and not attributes.is_file()):
-            raise GitWorkflowError("The game .gitattributes must be a regular file")
-        if not attributes.exists():
-            # This travels with clones; repo-local core.autocrlf alone does not.
-            with attributes.open("xb") as handle:
-                handle.write(b"# Preserve native game payload bytes across platforms.\n* -text\n")
+    attributes = game_root / ".gitattributes"
+    if attributes.is_symlink() or (attributes.exists() and not attributes.is_file()):
+        raise GitWorkflowError("The game .gitattributes must be a regular file")
+    if attributes.exists():
+        existing = attributes.read_bytes().decode("utf-8", errors="surrogateescape")
+    elif preserve_game_files:
+        # This travels with clones; repo-local core.autocrlf alone does not.
+        existing = "# Preserve native game payload bytes across platforms.\n* -text\n"
+    else:
+        existing = ""
+    updated = game_tool_gitattributes_text(existing)
+    if not attributes.exists() or updated != existing:
+        attributes.write_bytes(updated.encode("utf-8", errors="surrogateescape"))
     return ensure_game_tool_gitignore(game_root)
 
 

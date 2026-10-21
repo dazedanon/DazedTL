@@ -12,8 +12,8 @@ from types import SimpleNamespace
 
 from util import system
 from util.paths import (
-    DATA_DIR, GLOSSARY_BASE_SEPARATOR, SKILLS_DIR, game_glossary_path, runtime_data_file,
-    runtime_data_files_pinned, prepare_game_translation_context, read_game_glossary,
+    DATA_DIR, GLOSSARY_BASE_SEPARATOR, LEN_PATCH_GITIGNORE_BEGIN, LEN_WORK_GITIGNORE_BEGIN,
+    LEN_WORK_GITIGNORE_END, SKILLS_DIR, game_glossary_path, runtime_data_file, runtime_data_files_pinned, prepare_game_translation_context, read_game_glossary,
 )
 from util.skills import load_generic_project_setup, load_project_setup, load_system_prompt
 from util.reference_games import load_registry, reference_context
@@ -22,8 +22,8 @@ from util.project_preparation import rpgmaker_layout
 
 BUNDLED_SKILL = SKILLS_DIR / "game-translation"
 WORKSPACE_RELATIVE = Path(".dazedtl") / "len-method"
-_WORK_IGNORE_BEGIN = "# BEGIN DazedTL Len project work"
-_WORK_IGNORE_END = "# END DazedTL Len project work"
+_WORK_IGNORE_BEGIN = LEN_WORK_GITIGNORE_BEGIN
+_WORK_IGNORE_END = LEN_WORK_GITIGNORE_END
 _WORK_IGNORE_BLOCK = f"""{_WORK_IGNORE_BEGIN}
 # Len work, guidance, translation stores and QA artifacts stay local.
 # Runtime patch files are selected separately with git-scope.
@@ -455,7 +455,9 @@ def _write_atomic(path: Path, text: str) -> None:
 
 
 def _prepare_local_work(project: LenProject) -> None:
-    """Keep all Len working state local, after the shared portable-settings rules."""
+    """Keep all Len working state local, before the patch rules and the
+    portable-settings allowlist after them, which Git setup and each
+    checkpoint put in that order."""
     ignore = project.game_root / ".gitignore"
     text = ignore.read_text(encoding="utf-8", errors="surrogateescape") if ignore.exists() else ""
     if text.count(_WORK_IGNORE_BEGIN) != text.count(_WORK_IGNORE_END) or text.count(_WORK_IGNORE_BEGIN) > 1:
@@ -468,12 +470,12 @@ def _prepare_local_work(project: LenProject) -> None:
         # A current block anywhere above the patch rules already keeps the work
         # local. A checkpoint can leave the image patch rules after it, and
         # moving it again would change a committed .gitignore.
-        patch = text.find("# BEGIN DazedTL Len patch files")
+        patch = text.find(LEN_PATCH_GITIGNORE_BEGIN)
         if text[start:end] + "\n" == _WORK_IGNORE_BLOCK and (patch < 0 or end < patch):
             project.work_root.mkdir(parents=True, exist_ok=True)
             return
         text = text[:start] + text[end:]
-    patch_start = text.find("# BEGIN DazedTL Len patch files")
+    patch_start = text.find(LEN_PATCH_GITIGNORE_BEGIN)
     if patch_start >= 0:
         updated = text[:patch_start].rstrip() + "\n\n" + _WORK_IGNORE_BLOCK + "\n" + text[patch_start:].lstrip("\r\n")
     else:
