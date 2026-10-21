@@ -24,3 +24,4 @@
 - **Maps & events:** translated scrolling text now lays its lines over its own rows instead of adding a row per line, so translating it again no longer changes its event and saved games stay at their place.
 - **Text QA:** a correction that makes choice help shorter, or fitting it to narrower Line widths, no longer leaves an empty line above the game's own rows such as "(1/3)".
 - **Assistant-led:** fitting choice help to Line widths now keeps a row the assistant left as the game wrote it, such as "(1/3)", on its own line instead of running it into the text around it.
+- **Text QA:** a line you answer **Keep current text** for now stays settled: once QA's corrections apply, the playtest's problem on it reads "Text QA reviewed it" instead of waiting for QA's next round, and the next round no longer asks about it again, including for answers given in 2.24.0.
