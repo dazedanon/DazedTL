@@ -284,7 +284,10 @@ class GuidedRelease:
         return sorted(names | set(translation)) if names else None
 
     def release_ready(self, project_id, native, value):
-        self.guided.translation.ready(project_id)
+        # Writing GameUpdate's config is a checkpoint, which the release
+        # binds, so it goes first.
+        self.guided.translation.game_update.require_ready(project_id)
+        status = self.guided.translation.ready(project_id)
         self.guided.pending_run(value)
         source_status = self.guided.inputs(native).status(
             sorted(self.guided.supported_files(native))
@@ -298,9 +301,7 @@ class GuidedRelease:
             )
         if not self.ace_packing(native)["current"]:
             raise ValueError(self.ace_packing(native)["message"])
-        self.guided.translation.game_update.require_ready(project_id)
-        # Writing GameUpdate's config is a checkpoint, which the release binds.
-        return self.guided.translation.ready(project_id)
+        return status
 
     def patch_manifest(self, project_id, paths, action):
         from .release import packing_paths

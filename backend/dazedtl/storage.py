@@ -157,7 +157,23 @@ class WorkspaceLock:
 def exclusive(path):
     """Holds an exclusive lock on path, waiting while another thread or
     process holds it."""
-    while (handle := hold(path)) is None:
-        time.sleep(0.05)
-    with handle:
-        yield
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+b") as handle:
+        if os.name == "nt":
+            import msvcrt
+
+            # Windows' locking only tries, so it is tried again.
+            while not _try_lock(handle, path):
+                time.sleep(0.05)
+            try:
+                yield
+            finally:
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            # Closing the handle releases the lock.
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            yield

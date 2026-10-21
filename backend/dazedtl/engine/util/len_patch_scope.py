@@ -384,6 +384,12 @@ def _sync_patch_scope(project: LenProject, document: object, original_game: Path
     original_ref = state["original_commit"]
     head = state["translation_commit"]
     originals = _tree_files(repo, original_ref, "")
+    # The patch only grows: every DazedTL change is a checkpoint that lets
+    # the files it wrote in, so a manifest naming fewer keeps the rest.
+    metadata_names = repository_files(repo)
+    for name in _tree_files(repo, head, ""):
+        if name not in selected and name not in metadata_names and not is_portable_game_file(name):
+            selected[name] = {} if name in originals else {"original_sha256": None}
     if updater_config(repo) and CONFIG not in selected:
         # A working GameUpdate config joins every patch, so the published
         # translation tells players' GameUpdate where to download it from.

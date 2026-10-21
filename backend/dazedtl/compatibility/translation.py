@@ -1039,7 +1039,13 @@ class TranslationEngine:
         from .checkpoint_commits import outside_edits
         from .game_write import _checkout
 
-        if _checkout(Path(source).resolve()) is not None:
+        try:
+            configured = _checkout(Path(source).resolve()) is not None
+        except ValueError:
+            # A checkout that can't take work, such as one mid-merge, keeps
+            # its edits for the operation's own refusal to explain.
+            return
+        if configured:
             outside_edits(source)
 
     def package(

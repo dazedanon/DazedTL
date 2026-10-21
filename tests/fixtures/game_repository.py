@@ -452,4 +452,10 @@ assert sorted([changed(), changed("HEAD~1")]) == [
     ["data/Items.json"],
     ["data/Map001.json"],
 ], history()
+# An assistant's older git-scope with a shorter manifest keeps the files
+# DazedTL's checkpoints let into the patch.
+from util.len_patch_scope import sync_patch_scope
+
+scoped = sync_patch_scope(LenProject(kept), ["data/Map001.json"], dry_run=True)
+assert not scoped["untrack"], scoped
 print("ok")
