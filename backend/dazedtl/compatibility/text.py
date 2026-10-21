@@ -843,7 +843,9 @@ def prepare_publication(plan):
         output_folder = Path(saved["folder"]) if saved else folder
         layout = fitting_layout(plan)
         for name in options["files"]:
-            path = project_path(output_folder, "translated/" + name)
+            path = project_path(
+                output_folder, "translated/" + name
+            )  # platform: F13 converts it to live_path
             output = path.read_bytes()
             if saved and digest(output) != saved["outputs"].get(name):
                 raise ValueError("Saved Batch output changed. Review this Batch again.")

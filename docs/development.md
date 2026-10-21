@@ -48,7 +48,7 @@ It checks formatting, that stylesheets use the [design tokens](architecture.md#v
 It lints with type-aware [Oxlint](../.oxlintrc.json) (including the React hooks rules) and [Ruff](../pyproject.toml), and type-checks the renderer, the Electron main process and DazedTL-owned Python with [Pyright](../pyproject.toml).
 Of the bundled engine, only Text QA ([util/qa](../backend/dazedtl/engine/util/qa/__init__.py)) gets the same Ruff rules, through its own [settings](../backend/dazedtl/engine/util/qa/ruff.toml), and Pyright.
 Ruff also rejects file and process calls that go around the [platform layer](../backend/dazedtl/system.py), in the bundled engine too through its own [settings](../backend/dazedtl/engine/ruff.toml), and text files opened without an encoding.
-[platform_calls](../scripts/platform_calls.py) adds the calls Ruff cannot see, in the files Ruff checks: `Path.replace` and `Path.rename`, and raw reads of run records such as `job.json` and `plan.json`.
+[platform_calls](../scripts/platform_calls.py) adds the calls Ruff cannot see, in the files Ruff checks: `Path.replace`, `Path.rename`, `Path.unlink` and `Path.rmdir`, raw reads of run records such as `job.json` and `plan.json`, and `project_path` of files a run replaces.
 Launching builds a missing renderer without these checks.
 Format with `node scripts/format.mjs`; it applies Prettier and Ruff defaults and leaves the bundled engine, Markdown and JSON unchanged.
 

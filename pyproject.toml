@@ -24,6 +24,9 @@ ignore = ["TRY004"]
 "subprocess.check_output".msg = "Use dazedtl.system.run (engine: util.system)."
 "os.replace".msg = "Use dazedtl.system.replace (engine: util.system)."
 "os.rename".msg = "Use dazedtl.system.rename (engine: util.system)."
+"os.remove".msg = "Use dazedtl.system.unlink (engine: util.system)."
+"os.unlink".msg = "Use dazedtl.system.unlink (engine: util.system)."
+"os.rmdir".msg = "Use dazedtl.system.rmdir (engine: util.system)."
 "shutil.rmtree".msg = "Use dazedtl.system.remove_tree (engine: util.system)."
 "tempfile.mkdtemp".msg = "Use dazedtl.system.new_folder (engine: util.system)."
 "tempfile.TemporaryDirectory".msg = "Use dazedtl.system.staging_folder (engine: util.system)."
@@ -41,8 +44,10 @@ ignore = ["TRY004"]
 # Stands in for an outside assistant, which has only the project helper.
 "scripts/testkit/assistant.py" = ["TID251"]
 # A single call that must stay raw is marked `# noqa: TID251 - <reason>`.
-# scripts/platform_calls.py applies these ignores and marks to Path.replace,
-# Path.rename and raw reads of run records, which this rule cannot see.
+# scripts/platform_calls.py applies these ignores to the calls this rule cannot
+# see (Path.replace, rename, unlink and rmdir, raw reads of run records and
+# project_path of live run files); a call it must spare is marked
+# `# platform: <reason>`.
 
 [tool.pyright]
 # Checks the app's Python and the engine's Text QA package (util/qa); the rest
