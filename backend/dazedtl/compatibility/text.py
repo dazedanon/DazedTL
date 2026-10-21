@@ -222,7 +222,7 @@ def _set_aside(plan, log):
         number += 1
         target = folder.with_name(f"{folder.name}-unreadable-{number}")
     try:
-        folder.rename(target)
+        system.rename(folder, target)
     except OSError as error:
         raise ValueError(
             "Couldn't set the unreadable QA task aside. Close programs using its "

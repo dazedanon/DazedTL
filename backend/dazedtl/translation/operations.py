@@ -94,7 +94,7 @@ def reconcile_source_backup(workspace, project_id, source, state):
         state.pop("workspace_backup")
         write_json(lifecycle_path(workspace, project_id), state)
     if "engine" in retired and read_json(identification) == retired["engine"]:
-        identification.rename(archive / "engine.json")
+        system.rename(identification, archive / "engine.json")
 
 
 BACKUP_RECORDS = ("source_backup", "game_backup", "prepared_source", "workspace_backup")

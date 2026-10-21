@@ -285,7 +285,7 @@ def _store_content(root, path, fingerprint, size, data, contents, stopped):
         if shard not in contents.made:
             shard.mkdir(exist_ok=True)
             contents.made.add(shard)
-        temporary.replace(output)
+        system.replace(temporary, output)
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise
@@ -673,7 +673,7 @@ def restore(
             raise ValueError(
                 "The restore destination appeared during recovery. It was left unchanged."
             )
-        temporary.rename(target)
+        system.rename(temporary, target)
     return {
         "path": str(target),
         "files": len(value["files"]),
@@ -723,7 +723,7 @@ def reset(
         target = _child(archive, name)
         target.parent.mkdir(parents=True, exist_ok=True)
         try:
-            _child(root, name).rename(target)
+            system.rename(_child(root, name), target)
         except FileNotFoundError:
             continue
         count += 1
@@ -750,12 +750,10 @@ def reset(
         temporary = target.with_name(".dazedtl-restore-" + uuid.uuid4().hex)
         try:
             _copy(original, before, name, temporary, stopped)
-            try:
-                temporary.replace(target)
-            except PermissionError:
-                # Windows refuses to replace a read-only file.
+            # Windows refuses to replace a read-only file.
+            if target.exists() and not target.stat().st_mode & stat.S_IWRITE:
                 target.chmod(stat.S_IREAD | stat.S_IWRITE)
-                temporary.replace(target)
+            system.replace(temporary, target)
         finally:
             temporary.unlink(missing_ok=True)
         count += 1

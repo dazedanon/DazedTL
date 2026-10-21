@@ -1078,7 +1078,7 @@ class TranslationEngine:
                             rebuilt, game_archive, compress_type=zipfile.ZIP_STORED
                         )
                         player_permissions(archive.getinfo(game_archive))
-            temporary.replace(output)
+            system.replace(temporary, output)
         finally:
             temporary.unlink(missing_ok=True)
             rebuilt.unlink(missing_ok=True)
