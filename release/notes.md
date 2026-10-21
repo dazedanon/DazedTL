@@ -2,6 +2,7 @@
 
 ### Changed
 
+- **Translation versions:** each translation version now commits the game's glossary, settings and skills (`.dazedtl/glossary.txt`, `.dazedtl/settings.json` and `.dazedtl/skills/*.md`), so they are in the game's Git history and pushed to its repository with the translation; before, the patch rules hid them from Git, and a Guided game's glossary was in no backup. Players never get them: the game's `.gitattributes` now keeps `.dazedtl` out of the downloads GameUpdate applies and out of patch ZIPs. A game set up before gets both with its next translation version.
 - **Context:** cost estimates made before this update read outdated once and refresh on the next estimate, because Maps & events now sends less; runs already approved or sent carry on as they were.
 
 ### Fixed
