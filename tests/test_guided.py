@@ -11,6 +11,7 @@ from tempfile import TemporaryDirectory
 from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock, patch
 
+from dazedtl.compatibility import original_files
 from dazedtl.compatibility.game_write import write_game
 from dazedtl.projects.store import Projects
 from dazedtl.storage import write_json
@@ -22,7 +23,6 @@ from dazedtl.translation import (
     preparation,
     speaker_setup,
 )
-from dazedtl.translation.backups import snapshot, store_path
 from dazedtl.translation.files import digest, evidence, read_json
 from dazedtl.translation.guided import Guided, retained_position
 from dazedtl.translation.guided_inputs import GuidedInputs
@@ -382,11 +382,6 @@ class GuidedTests(unittest.TestCase):
         }
         self.guided = Guided(
             self.backend, self.projects, self.settings, self.translation
-        )
-        saved = snapshot(self.source, store_path(self.source), source_game=True)
-        write_json(
-            lifecycle_path(self.translation.workspace, self.identity),
-            {"version": 1, "source_backup": saved},
         )
 
     def test_file_preview_uses_actual_files_without_selection_or_request_receipts(self):
@@ -2606,7 +2601,7 @@ class GuidedTests(unittest.TestCase):
             self.guided.export(self.identity, "paid-run")
         self.assertEqual(self.backend.manual.export.call_count, 1)
 
-    def test_agent_modes_drafts_and_missing_backup_cannot_start_or_mutate(self):
+    def test_agent_modes_and_unsaved_drafts_cannot_start(self):
         for mode in ("agent", "offline", "live", "unknown"):
             with self.subTest(mode=mode), self.assertRaises(ValueError):
                 self.guided.preview(self.identity, "start", options={"mode": mode})
@@ -2623,9 +2618,6 @@ class GuidedTests(unittest.TestCase):
             self.identity, preferences["revision"], preferences["values"]
         )
         self.assertIsNotNone(self.preview()["token"])
-        lifecycle_path(self.translation.workspace, self.identity).unlink()
-        with self.assertRaises(ValueError):
-            self.guided.preview(self.identity, "format_data")
         self.assertEqual(self.started, [])
 
     def test_temporary_preparation_rechecks_inputs_and_fresh_translate_discards_only_unapproved_work(
@@ -3068,7 +3060,7 @@ class GuidedTests(unittest.TestCase):
             self.guided.execute(self.identity, preview["token"])
         self.translation.operation.assert_not_called()
 
-    def test_immediate_preparation_keeps_one_use_execution_and_backup_checks(self):
+    def test_immediate_preparation_keeps_one_use_execution_checks(self):
         self.backend.workflows.preview = lambda _owner, action, options: {
             "token": action + "-token",
             "options": options,
@@ -3116,11 +3108,6 @@ class GuidedTests(unittest.TestCase):
         self.assertTrue(
             self.guided.preview(self.identity, "inspector_remove")["confirmation"]
         )
-        preview = self.guided.preview(self.identity, "format_data")
-        shutil.rmtree(self.source / ".dazedtl")
-        with self.assertRaises(ValueError):
-            self.guided.execute(self.identity, preview["token"])
-        self.assertEqual(self.backend.workflows.execute.call_count, len(immediate))
 
     def test_new_paid_reviews_allow_overlap_and_retain_historical_receipts(self):
         # Reproduce old-format all-rejected history, then change a receipt to
@@ -3842,26 +3829,6 @@ class GuidedTests(unittest.TestCase):
         self.guided.comment_text(self.identity)
         self.assertFalse(self.backend.workflows.projects["native"]["phase1_comments"])
 
-    def test_deleted_backup_can_be_replaced_but_cannot_authorize_preparation(self):
-        with self.assertRaises(ValueError):
-            self.guided.preview(self.identity, "backup_source")
-        previous = read_json(lifecycle_path(self.translation.workspace, self.identity))
-        shutil.rmtree(self.source / ".dazedtl")
-        with self.assertRaises(ValueError):
-            self.guided.preview(self.identity, "format_data")
-        preview = self.guided.preview(self.identity, "backup_source")
-        self.assertEqual(
-            preview["destination"], str(self.source / ".dazedtl/backups/v2")
-        )
-        self.guided.execute(self.identity, preview["token"])
-        self.translation.operation.assert_called_once_with(
-            self.identity, "backup_source", {}
-        )
-        self.assertEqual(
-            read_json(lifecycle_path(self.translation.workspace, self.identity)),
-            previous,
-        )
-
     def test_estimate_freezes_estimate_mode_without_changing_the_saved_api_choice(self):
         observed = []
 
@@ -3884,24 +3851,21 @@ class GuidedTests(unittest.TestCase):
 
     def test_checkpoint_manifest_distinguishes_new_plugins_from_original_assets(self):
         write_json(self.source / "new-plugin.js", {"fixture": True})
-        path = lifecycle_path(self.translation.workspace, self.identity)
         # A game set up with its translation already in Git has no prepared
-        # source, and its setup backup holds that translation's additions,
+        # record, and the game as found holds that translation's additions,
         # such as GameUpdate's config, which the checkpoint cannot supply as
         # originals.
         config = self.source / "gameupdate/patch-config.txt"
         config.parent.mkdir()
         config.write_text("owner=translator", encoding="utf-8")
-        saved = snapshot(self.source, store_path(self.source), source_game=True)
-        write_json(path, {"version": 1, "source_backup": saved})
+        original_files.record(self.source, original_files.FOUND)
         self.assertEqual(
             self.guided.patch_manifest(
                 self.identity, ["gameupdate/patch-config.txt"], "checkpoint"
             )["files"]["gameupdate/patch-config.txt"],
             {"original_sha256": None},
         )
-        state = read_json(path)
-        write_json(path, {**state, "prepared_source": state["source_backup"]})
+        original_files.record(self.source, original_files.PREPARED, "1.0")
         write_json(self.source / "added-later.js", {"fixture": True})
         manifest = self.guided.patch_manifest(
             self.identity, ["Items.json", "added-later.js"], "checkpoint"
@@ -4345,9 +4309,13 @@ class GuidedTests(unittest.TestCase):
             self.folder / "applied-outputs.json",
             {"version": 1, "files": {"Items.json": digest(raw)}},
         )
-        state = read_json(lifecycle_path(self.translation.workspace, self.identity))
-        state["guided_review"] = {"evidence": evidence(self.source, ["Items.json"])}
-        write_json(lifecycle_path(self.translation.workspace, self.identity), state)
+        write_json(
+            lifecycle_path(self.translation.workspace, self.identity),
+            {
+                "version": 1,
+                "guided_review": {"evidence": evidence(self.source, ["Items.json"])},
+            },
+        )
         first = self.guided.readiness(self.identity, self.native, {"jobs": []})
         self.assertTrue(first["review_current"])
         # An Apply that fitted the output to the Line widths on the way wrote

@@ -13,6 +13,10 @@ skills), runs inside `write_game`, which holds the rules such writes share:
   saving the packing receipt Release checks when the game has a Guided
   workspace. The game reads nothing else while an RGSS archive sits beside
   Game.exe, so a write that packs refuses before writing anything then.
+- Before the outermost write to a game whose Git is not set up, the game as
+  it is then is recorded in its Git repository as the original game's files
+  ([original_files](original_files.py)), unless a record is there already,
+  so no write of DazedTL's changes a file whose original is not kept.
 - Once the outermost write to a game whose Git is set up succeeds, its change
   is one checkpoint commit on the translation branch
   ([checkpoint_commits](checkpoint_commits.py)), so every change DazedTL
@@ -104,8 +108,11 @@ def _checkout(root):
     takes a checkpoint of each write, or None; refuses while the checkout
     can't take the write."""
     # A game takes translation work only in a repository of its own; one
-    # without, before version tracking is set up, has no checkout to keep.
-    if not (root / ".git").exists():
+    # without, before version tracking is set up, has no checkout to keep,
+    # nor has one holding only the record of the game's original files.
+    from . import original_files
+
+    if not (root / ".git").exists() or original_files.unborn(root):
         return None
     from util.len_git import git_status
     from util.len_translation import LenProject
@@ -175,6 +182,11 @@ def write_game(
     root = Path(root).resolve()
     outermost = str(root) not in writing.get()
     status = _checkout(root)
+    # A folder that isn't there yet holds no original files to keep.
+    if outermost and status is None and root.is_dir():
+        from . import original_files
+
+        original_files.ensure_found(root, log)
     # A VX Ace game's text DazedTL writes is always its ace_json.
     native = {"source": str(root), "data": str(root / "ace_json"), "engine": "ACE"}
     ace = pack and (root / "ace_json").is_dir()

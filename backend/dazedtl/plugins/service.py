@@ -12,14 +12,11 @@ from pathlib import Path, PurePosixPath
 from dazedtl import foreign_work, freshness
 from dazedtl.foreign_work import ForeignWorkError
 from dazedtl.storage import write_bytes, write_json
-from dazedtl.translation import backups, reference_folders
+from dazedtl.translation import originals as game_originals
+from dazedtl.translation import reference_folders
 from dazedtl.translation.files import decode_json, digest, project_path, read_json
 from dazedtl.translation.helper_command import helper_command, windows_note
-from dazedtl.translation.operations import (
-    lifecycle,
-    lifecycle_path,
-    require_source_backup,
-)
+from dazedtl.translation.operations import lifecycle, lifecycle_path
 
 from . import ruby
 from .documents import (
@@ -819,31 +816,25 @@ class PluginService:
         project, root = self.record(project_id)
         if project["engine"] == "ACE":
             return self.ace_original_context(project_id)
-        state = lifecycle(self.translation.workspace, project_id)
-        require_source_backup(root, state)
-        record = state["source_backup"]
-        location = backups.lookup(root, Path(record["path"]).parent, record["id"])
-        manifest = backups.manifest(location, root)
+        original = game_originals.require(self.translation.workspace, project_id, root)
         names = [
             name
-            for name in manifest["files"]
+            for name in original.files
             if name.startswith(prefix + "data/") and name.endswith(".json")
         ]
-        if not names or prefix + "js/plugins.js" not in manifest["files"]:
+        if not names or prefix + "js/plugins.js" not in original.files:
             raise ValueError(
                 "The preserved original lacks the Japanese database or plugin configuration. Recover the matching original source before editing."
             )
-        keys, hashes = set(), {name: manifest["files"][name] for name in names}
-        with backups.materialized(
-            location, files=[*names, prefix + "js/plugins.js"]
-        ) as (original, _):
+        keys, hashes = set(), {name: original.files[name] for name in names}
+        with original.materialized([*names, prefix + "js/plugins.js"]) as folder:
             for name in names:
                 data_keys(
-                    read_json(original / name),
+                    read_json(folder / name),
                     Path(name).name.removesuffix(".json") in DATABASE,
                     keys,
                 )
-            raw = (original / (prefix + "js/plugins.js")).read_bytes()
+            raw = (folder / (prefix + "js/plugins.js")).read_bytes()
             parsed = self.documents.parse(
                 [
                     {
@@ -860,9 +851,10 @@ class PluginService:
             structural_keys = sorted(keys)
             for entry in parsed["plugins"]:
                 nested_keys(entry["parameters"], keys)
-        hashes[prefix + "js/plugins.js"] = manifest["files"][prefix + "js/plugins.js"]
+        hashes[prefix + "js/plugins.js"] = original.files[prefix + "js/plugins.js"]
         return {
-            "backupId": record["id"],
+            # Saved scans and requests name the original by this key.
+            "backupId": original.id,
             "hashes": hashes,
             "keys": sorted(keys),
             "structuralKeys": structural_keys,
@@ -875,11 +867,8 @@ class PluginService:
         original's RGSS archive or, for a game that came unencrypted, its
         Data files. RGSS3 reads only the archive while one exists."""
         _, root = self.record(project_id)
-        state = lifecycle(self.translation.workspace, project_id)
-        require_source_backup(root, state)
-        record = state["source_backup"]
-        location = backups.lookup(root, Path(record["path"]).parent, record["id"])
-        files = backups.manifest(location, root)["files"]
+        original = game_originals.require(self.translation.workspace, project_id, root)
+        files = original.files
         archives = [
             name
             for name in files
@@ -902,8 +891,8 @@ class PluginService:
         binding = digest(hashes)
         keys = self.ace_keys.get(binding)
         if keys is None:
-            with backups.materialized(location, files=names) as (original, _):
-                data = self.translation.engine.ace_data(original, names)
+            with original.materialized(names) as folder:
+                data = self.translation.engine.ace_data(folder, names)
             if not data:
                 raise missing
             found = set()
@@ -912,7 +901,7 @@ class PluginService:
                 event_script_keys(value, found)
             keys = self.ace_keys[binding] = sorted(found)
         return {
-            "backupId": record["id"],
+            "backupId": original.id,
             "hashes": hashes,
             "keys": keys,
             "structuralKeys": [],
@@ -1800,13 +1789,12 @@ class PluginService:
         issue = value.get("originalIssue", "")
         if issue and not value["originals"]:
             try:
-                require_source_backup(
-                    self.record(project_id)[1],
-                    lifecycle(self.translation.workspace, project_id),
+                game_originals.require(
+                    self.translation.workspace, project_id, self.record(project_id)[1]
                 )
             except OSError, ValueError:
                 return issue
-            return "The original backup is available now. Copy the plugin task again so its investigation can check the original text."
+            return "The original game files are available now. Copy the plugin task again so its investigation can check the original text."
         return issue
 
     def action(self, project_id, action, options=None):

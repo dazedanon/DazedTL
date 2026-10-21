@@ -53,12 +53,14 @@ A lost response may follow a completed action, so inspect saved state and runs b
 Use state before starting.
 Every Assistant-led helper call also records when the assistant last reached the project, which Progress shows before its first report.
 Starting a project over is the user's choice in the app; the helper cannot.
-It reports the portable options, current Git and backup state, saved progress, pending drafts, frozen runs, and any saved phased run requiring recovery.
+It reports the portable options, current Git state, whether the original game files are recorded, saved progress, pending drafts, frozen runs, and any saved phased run requiring recovery.
 Record the detected engine with identify and a project-relative investigation report.
 Operation commands return saved job IDs; inspect them with run until they complete, fail, stop, or await approval or provider results.
 `run --wait MINUTES` waits in one command and returns as soon as the run's state changes, so a long Batch costs the assistant one turn per wait instead of one per poll.
 
-Source backup precedes runtime preparation.
+DazedTL keeps the original game's files in the game's own Git repository, under the private ref `refs/dazedtl/originals`, which no branch push sends ([original_files](../backend/dazedtl/compatibility/original_files.py)).
+It records the game as it is before its first write to a game whose Git is not set up, and an assistant runs record_original before changing the game's files with its own tools.
+Git setup records the prepared game too, and a game update the new release; projects set up before then keep reading their backups ([originals](../backend/dazedtl/translation/originals.py)).
 RPG Maker preparation uses the existing shared helper; Ace and other formats require their engine's extraction/conversion route first.
 Git setup requires a source version and a reviewed runtime manifest for a fresh baseline.
 The untranslated flag is an attestation after source inspection, not permission to label English as an original.
@@ -100,7 +102,7 @@ Move game text only with scripts, never by pasting or retyping it.
 ## Census and scope
 
 Scope is mechanical: DazedTL counts the original game's Japanese text itself, and the assistant never decides what is in scope.
-The census helper command runs an operation that reads the prepared source backup, never the working copy, and saves its count in the profile.
+The census helper command runs an operation that reads the recorded prepared game, never the working copy, and saves its count in the profile.
 The authoritative readers, rules and coverage are in [census.py](../backend/dazedtl/translation/census.py).
 It reads RPG Maker MV/MZ JSON and plugins, JavaScript, KAG/Tyrano and Ren'Py scripts, decompiled YU-RIS scripts, HTML, text and YAML.
 It opens RGSS archives and XP/VX/Ace data, Electron asar and unencrypted xp3 archives, and Wolf data through the bundled WolfDawn.
@@ -245,27 +247,22 @@ write_rpgmaker and rebase_rpgmaker, which an assistant runs once per file, wait 
 These checkpoints let the files the runtime manifest Git setup registered lists into the patch.
 Changes made to the game outside DazedTL are saved as a checkpoint of their own before the next other change DazedTL makes, a package or a game update's preview.
 The checkpoint operation is kept for assistants started before then: it saves what waits in the patch as one checkpoint, with its `message` as the summary when given, and files its optional runtime `manifest` lists that the patch lacks join the patch.
-The `original` branch holds the original of every file, so a checkpoint reads no backup.
-Source, prepared-source and workspace snapshots reuse identical file content.
-The backup store never includes itself; an unchanged snapshot reuses its ID.
-Use backup_workspace for a recovery milestone without a patch commit.
+A file outside the patch takes its original bytes from the `original` branch or the game's record of its original files, so a checkpoint reads no backup.
 Do not create parallel full workspace copies or checkpoint ZIPs.
 Routine progress reports remain lightweight.
-Preserve older backups; no automatic cleanup or conversion is performed.
-The backup result reports bytes_total, bytes_added, bytes_reused and reused_snapshot.
-Packaging reuses matching saved content.
-Use backups to list local restore points and older profile backups. restore_backup takes backup_id and destination, which must name a new directory outside the game.
+DazedTL takes no new backups; older ones are preserved, with no automatic cleanup or conversion.
+Use backups to list them, including older profile backups. restore_backup takes backup_id and destination, which must name a new directory outside the game.
 It verifies content and never overwrites existing files.
-Snapshot IDs remain valid after moving the entire store with the game; engine source readers use temporary verified materialization.
+write_rpgmaker's `backup_id` names a saved original to read its source path from: a commit of `refs/dazedtl/originals` or an older backup.
 Standalone recovery without an app profile is documented in the [user guide](user-guide.md#backups-from-before-checkpoints).
 Package requires current reported QA for the runtime manifest Git setup or the last checkpoint named, saves outstanding changes, and creates a local patch from the files the translation branch tracks.
 It does not create remotes, push, or upload.
 Writing the game's complete `gameupdate/patch-config.txt` saves it with the patch, so manifests need not list it; the package leaves it out unless the existing GameUpdate checks find the commit is the verified public version, which they then stamp.
 Every checkpoint, package and QA record also carries DazedTL's other files the game holds, so manifests need not list them either: GameUpdate's launchers and scripts, the update check and Forge plugins Set up installs, and the playtest's fixes plugin with the `js/main.js` that loads it.
-A package refuses a `plugins.js` that switches on a plugin whose file neither the patch nor the original game holds, naming the plugin, since players' game would stop at start; the original game's plugins are those its Git records or prepared backup list, never DazedTL's own, such as TL Inspector.
-It likewise refuses a `js/main.js` that loads the playtest's fixes the patch lacks, or fixes no `js/main.js` in the patch loads; without a prepared backup or Git copy, the original of the `js/main.js` loading the fixes is that file without the loading line.
+A package refuses a `plugins.js` that switches on a plugin whose file neither the patch nor the original game holds, naming the plugin, since players' game would stop at start; the original game's plugins are those its Git records or an older prepared backup list, never DazedTL's own, such as TL Inspector.
+It likewise refuses a `js/main.js` that loads the playtest's fixes the patch lacks, or fixes no `js/main.js` in the patch loads; without a recorded or Git copy, the original of the `js/main.js` loading the fixes is that file without the loading line.
 
-For an official update, stage_update preserves the new original and creates a separate working copy.
+For an official update, stage_update records the new release's files in the game's Git and creates a separate working copy.
 A folder holding fewer than half of the game's files is staged as a patch unless `patch` says otherwise, and version_preview then compares a staged release only as what it was staged as.
 Complete the relevant engine preparation there, then use version_preview and version_apply with its saved preview ID.
 Continue/abort operate on the preserved Git recovery state.

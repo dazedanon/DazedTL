@@ -18,9 +18,9 @@ from dazedtl.compatibility.images import ImageCompatibility
 from dazedtl.foreign_work import ForeignWorkError
 from dazedtl.freshness import Basis, Digests, compare
 from dazedtl.storage import write_bytes, write_json
+from dazedtl.translation import originals as game_originals
 from dazedtl.translation.files import decode_json, digest, project_path, read_json
 from dazedtl.translation.helper_command import windows_note
-from dazedtl.translation.operations import lifecycle, require_source_backup
 
 from . import recipes
 from .inventory import (
@@ -2339,7 +2339,7 @@ class ImageService:
         identities = self._chosen(project_id, options)
         self.refresh_assets(project_id, identities)
         root, index = self.record(project_id)[1], self._index(project_id)
-        require_source_backup(root, lifecycle(self.translation.workspace, project_id))
+        game_originals.require(self.translation.workspace, project_id, root)
         # Apply to game takes the list's translated images and leaves the rest
         # of the list, still being translated, out of the review.
         if action == "apply" and options.get("ready_only"):
@@ -2434,7 +2434,7 @@ class ImageService:
         if not plan["assets"]:
             raise ValueError("No images were included. Nothing was applied.")
         root, profile = self.record(project_id)[1], self._profile(project_id)
-        require_source_backup(root, lifecycle(self.translation.workspace, project_id))
+        game_originals.require(self.translation.workspace, project_id, root)
         identities = [row["id"] for row in plan["assets"]]
         self.refresh_assets(project_id, identities)
         index = self._index(project_id)

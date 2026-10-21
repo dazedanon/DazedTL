@@ -4,12 +4,11 @@ An Assistant-led project changes the game folder in many places: preparation,
 Git baselines, the canary and injected translations, and the assistant's work
 records under .dazedtl/len-method and the playtest's fixes under
 .dazedtl/playtest. Starting over puts the game files back to
-the original saved before setup and moves everything else aside under a dated
-folder, so the next starting prompt begins again from preparation. Nothing is
-deleted: backups of the game and project files come first, and files the
-original lacks are moved, not removed. Save games, the project's options and
-Image Manager work stay, and the glossary and notes stay unless the user lets
-them go.
+the original recorded before setup ([originals](originals.py)) and moves
+everything else aside under a dated folder, so the next starting prompt begins
+again from preparation. Nothing is deleted: files the original lacks are
+moved, not removed. Save games, the project's options and Image Manager work
+stay, and the glossary and notes stay unless the user lets them go.
 """
 
 import re
@@ -21,7 +20,7 @@ from typing import Any
 from dazedtl import system
 from dazedtl.foreign_work import ARCHIVE
 
-from . import backups
+from . import originals
 from .files import project_path
 from .project import WORK
 
@@ -79,34 +78,18 @@ def _shown(path):
 
 
 def run(
-    source, state, documents, keep_context, *, stopped, progress
+    source, state, original, documents, keep_context, *, stopped, progress
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Starts the project over; returns its new lifecycle and a summary."""
+    """Starts the project over from `original`, the game as DazedTL found
+    it, or with the game's files as they are without one; returns its new
+    lifecycle and a summary."""
     root = Path(source).resolve(strict=True)
-    store = backups.store_path(root)
-    original = None
-    if state.get("source_backup"):
-        record = state["source_backup"]
-        original = backups.lookup(root, Path(record["path"]).parent, record["id"])
-        backups.verify(original, full=False, stopped=stopped)
     renewed: dict[str, Any] = {"version": 1}
-    if original:
-        progress("Backing up the game as it is now.")
+    # A backup from before original files were kept in Git stays the
+    # project's original; a Git record moves aside with the game's history,
+    # and the next setup records the game, now its original again.
+    if state.get("source_backup"):
         renewed["source_backup"] = state["source_backup"]
-        renewed["game_backup"] = backups.snapshot(
-            root,
-            store,
-            source_game=True,
-            stopped=stopped,
-            progress=lambda count, path: progress(
-                f"Backed up {count:,} game file{'' if count == 1 else 's'} · {path}"
-            ),
-        )
-    if (root / ".dazedtl").is_dir():
-        progress("Backing up the project files.")
-        renewed["workspace_backup"] = backups.snapshot(
-            root / ".dazedtl", store, stopped=stopped
-        )
     archive = _archive(root)
     relative = archive.relative_to(root).as_posix()
     kept = set()
@@ -119,12 +102,16 @@ def run(
             kept.add(name)
         else:
             _move(path, archive / "context" / name)
-    result: dict[str, Any] = {"archive": relative, "restored": 0, "set_aside": 0}
+    result: dict[str, Any] = {
+        "archive": relative,
+        "original": original is not None,
+        "restored": 0,
+        "set_aside": 0,
+    }
     if original:
         progress("Putting back the original game files.")
-        result |= backups.reset(
+        result |= originals.reset(
             original,
-            Path(renewed["game_backup"]["path"]),
             root,
             archive / "game-files",
             keep=lambda name: save_game(name) or name in kept,

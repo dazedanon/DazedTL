@@ -54,12 +54,7 @@ import { fitRunning } from "../lineWidths";
 import { initialPosition, stagesFor } from "../workflow";
 
 /** The operations setting up a game runs, in order. */
-export const setupSteps = [
-  "backup_source",
-  "ace_extract",
-  "prepare_game",
-  "git_setup",
-] as const;
+export const setupSteps = ["ace_extract", "prepare_game", "git_setup"] as const;
 export type SetupStep = (typeof setupSteps)[number];
 import {
   type GuidedIntent,
@@ -227,12 +222,7 @@ export function useGuidedWorkspace({
   const running = !!application.snapshot?.application.running;
   const operationBusy =
     action.busy || speakerAction.busy || draft.committing || context.committing;
-  const sourceBackup = translation.lifecycle.source_backup;
-  const preserved = !!sourceBackup && sourceBackup.available !== false;
-  // The original backup the game folder already holds, offered to a project
-  // without one, such as after the game was moved or copied.
-  const storedOriginal = translation.storedOriginal;
-  const baseline = preserved && !!translation.git?.configured;
+  const baseline = !!translation.git?.configured;
   const job = state.run;
   const findings = state.speakerSetup;
   const scan = state.speakerScan;
@@ -303,7 +293,6 @@ export function useGuidedWorkspace({
     activeOperation &&
     ((taskId === "setup" &&
       [
-        "backup_source",
         "prepare_game",
         "format_data",
         "format_plugins",
@@ -872,10 +861,7 @@ export function useGuidedWorkspace({
           ? state.estimates[options.phase as Phase]?.job || undefined
           : undefined
         : operationJob(name, options);
-    const current =
-      name === "backup_source" && recorded?.status === "complete"
-        ? undefined
-        : recorded;
+    const current = recorded;
     const active =
       current && ["ready", "running", "waiting"].includes(current.status);
     const row: ActionView = ACTIONS[name];
@@ -1206,23 +1192,21 @@ export function useGuidedWorkspace({
   // one that arrived with ace_json converted.
   const aceNeedsExport =
     state.engine === "ACE" && (!state.files.length || !!state.encrypted.length);
-  // Setting up backs up the original, prepares the game files and saves the
-  // version in sequence from one click. Each step keeps its own preview and
-  // execution checks, and a replacement backup keeps its review. A step that
+  // Setting up prepares the game files and saves the version in sequence
+  // from one click; the first change to the game keeps its original files in
+  // Git. Each step keeps its own preview and execution checks. A step that
   // fails, stops or whose review is declined ends the sequence; the next
   // click resumes from the first step that is not done. The sequence has its
   // own action, so navigation and Stop stay available while it runs.
   const setupAction = useAction({ observer: application });
   const gitConfigured = !!translation.git?.configured;
-  const setupStep: SetupStep | null = !preserved
-    ? "backup_source"
-    : aceNeedsExport
-      ? "ace_extract"
-      : !(preparationComplete || gitConfigured)
-        ? "prepare_game"
-        : !gitConfigured
-          ? "git_setup"
-          : null;
+  const setupStep: SetupStep | null = aceNeedsExport
+    ? "ace_extract"
+    : !(preparationComplete || gitConfigured)
+      ? "prepare_game"
+      : !gitConfigured
+        ? "git_setup"
+        : null;
   const setupJobs = Object.fromEntries(
     setupSteps.map((name) => [name, operationJob(name)]),
   ) as Record<SetupStep, Job | undefined>;
@@ -1236,9 +1220,7 @@ export function useGuidedWorkspace({
   // Preparation's stage rows reset when the game files change, retiring an
   // older failure that no longer applies.
   const stoppedJob =
-    setupStep === "backup_source" ||
-    setupStep === "ace_extract" ||
-    setupStep === "git_setup"
+    setupStep === "ace_extract" || setupStep === "git_setup"
       ? setupJobs[setupStep]
       : undefined;
   const setupFailure =
@@ -1259,7 +1241,6 @@ export function useGuidedWorkspace({
     taskId,
     // The backend starts the next step only once no worker is running.
     running,
-    storedOriginal: storedOriginal?.id,
     // Finished operations by id, with how they ended.
     finished: new Map(
       [...state.operations, ...translation.jobs]
@@ -1356,22 +1337,12 @@ export function useGuidedWorkspace({
                 "Setup stopped before this step finished.",
             );
           tried.add(step);
-          // A game folder that already holds its original takes it over
-          // instead of saving its current files as the original.
-          const stored = latestObserved.current.storedOriginal;
-          const name =
-            step === "backup_source" && stored ? "use_source_backup" : step;
-          const options =
-            step === "git_setup"
-              ? setupOptions()
-              : stored && name === "use_source_backup"
-                ? { backup_id: stored }
-                : {};
-          const result = await preparePreview(name, options);
-          setPreviewRequest({ name, options });
+          const options = step === "git_setup" ? setupOptions() : {};
+          const result = await preparePreview(step, options);
+          setPreviewRequest({ name: step, options });
           if (result.confirmation) {
-            // A replacement backup keeps its review; the sequence continues
-            // once the user approves it and ends if they cancel.
+            // A step that keeps its review continues the sequence once the
+            // user approves it and ends it if they cancel.
             executed.current = null;
             setInspectRelease(false);
             setPreview(result);
@@ -1550,9 +1521,6 @@ export function useGuidedWorkspace({
     inspectorReturnFocus,
     reapplyRun,
     running,
-    sourceBackup,
-    storedOriginal,
-    preserved,
     baseline,
     job,
     findings,

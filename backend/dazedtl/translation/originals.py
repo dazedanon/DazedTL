@@ -1,0 +1,316 @@
+"""Where a project reads the original game's files.
+
+A game's original files are recorded in its own Git repository
+([original_files](../compatibility/original_files.py)). A project set up
+before that keeps reading the backups it saved then, through the records its
+`lifecycle.json` still holds, which DazedTL no longer writes:
+
+- `found`, the game before DazedTL changed it, which plugin lookups, release
+  file lists and Start over read: an old project's `source_backup` while it
+  is readable, else the Git record.
+- `prepared`, the game as its current version's baseline was made, which
+  the census, checkpoint sources and packaging read: the Git record of that
+  version, else an old `prepared_source`, else `found`.
+
+Each is an `Original` with the same reads, so no reader knows which kind it
+has.
+"""
+
+from __future__ import annotations
+
+import stat
+import uuid
+from contextlib import contextmanager
+from pathlib import Path
+
+from dazedtl import system
+from dazedtl.compatibility import original_files
+
+from . import backups
+
+
+class Original:
+    """One saved state of the game's files. `files` maps each file to an
+    identity of its content, which another state's identity of the same
+    content equals; `id` names the state for saved work keyed on it."""
+
+    id: str
+    files: dict[str, str]
+
+    def peek(self, name, size):
+        raise NotImplementedError
+
+    def extract(self, names, target, stopped=lambda: False):
+        """Writes `names` under `target`, a new or empty folder."""
+        raise NotImplementedError
+
+    def identify(self, root, names, stopped=lambda: False):
+        """The content identities of files of the game at `root`."""
+        raise NotImplementedError
+
+    @contextmanager
+    def materialized(self, files=None, stopped=lambda: False):
+        """The saved files, or those of `files` it holds, as normal files in
+        a temporary folder, for engine tools."""
+        names = (
+            list(self.files)
+            if files is None
+            else [name for name in files if name in self.files]
+        )
+        with original_files.temporary("dazedtl-originals-") as target:
+            self.extract(names, target, stopped)
+            yield target
+
+
+class _Recorded(Original):
+    def __init__(self, root, commit):
+        self.root = Path(root)
+        self.id = commit
+        self.entries = original_files.files(root, commit)
+        self.files = {name: row[1] for name, row in self.entries.items()}
+
+    def peek(self, name, size):
+        return original_files.peek(self.root, self.entries[name][1], size)
+
+    def extract(self, names, target, stopped=lambda: False):
+        original_files.write(
+            self.root,
+            [(self.entries[n][1], n, self.entries[n][2]) for n in names],
+            target,
+            stopped,
+        )
+        for name in names:
+            if self.entries[name][0] == "100755":
+                path = Path(target) / name
+                path.chmod(path.stat().st_mode | 0o111)
+
+    def identify(self, root, names, stopped=lambda: False):
+        return original_files.identities(self.root, Path(root), names, stopped)
+
+
+class _Saved(Original):
+    """A snapshot in an old backup store."""
+
+    def __init__(self, location, value):
+        self.location = location
+        self.value = value
+        self.id = value["id"]
+        self.files = value["files"]
+
+    def peek(self, name, size):
+        return backups.peek(self.location, name, size)
+
+    def extract(self, names, target, stopped=lambda: False):
+        for name in names:
+            output = Path(target) / name
+            output.parent.mkdir(parents=True, exist_ok=True)
+            backups._copy(self.location, self.value, name, output, stopped)
+
+    def identify(self, root, names, stopped=lambda: False):
+        result = {}
+        for name in names:
+            path = Path(root) / name
+            if path.is_file():
+                result[name] = backups._hash_file(path, stopped)
+        return result
+
+
+def _saved(workspace, project_id, root, record):
+    """An old backup record's snapshot, or None once it can't be read."""
+    if not isinstance(record, dict):
+        return None
+    try:
+        location = backups.lookup(
+            root,
+            Path(record.get("path") or Path(workspace) / "backups" / project_id).parent,
+            record["id"],
+        )
+        value = backups.verify(location, source=root, full=False)
+    except OSError, ValueError, KeyError, TypeError:
+        return None
+    return _Saved(location, value) if value["kind"] == "source" else None
+
+
+def _lifecycle(workspace, project_id, state):
+    if state is not None:
+        return state
+    from .operations import lifecycle
+
+    return lifecycle(workspace, project_id)
+
+
+def _record(root, kind, version=None):
+    row = original_files.chosen(root, kind, version)
+    return _Recorded(root, row.commit) if row else None
+
+
+def found(workspace, project_id, root, state=None):
+    """The game as DazedTL found it, or None."""
+    root = Path(root)
+    state = _lifecycle(workspace, project_id, state)
+    return _saved(workspace, project_id, root, state.get("source_backup")) or (
+        _record(root, original_files.FOUND)
+    )
+
+
+def _current_version(root):
+    from util.version_update.git_workflow import ORIGINAL_BRANCH
+
+    from dazedtl.compatibility.checkpoint_commits import _git
+
+    log = _git(root, "log", "-1", "--format=%B", ORIGINAL_BRANCH, "--", check=False)
+    if log.returncode:
+        return None
+    return original_files._trailer(log.stdout, original_files.VERSION_TRAILER)
+
+
+def recorded_now(root):
+    """The Git record of the game as its current version is, the one a
+    patch for the next version is laid over: its prepared record, else the
+    game as found; None without either."""
+    root = Path(root)
+    row = original_files.chosen(
+        root, original_files.PREPARED, _current_version(root)
+    ) or original_files.chosen(root, original_files.FOUND)
+    return row.commit if row else None
+
+
+def prepared(workspace, project_id, root, state=None, *, or_found=True):
+    """The game as its current version's baseline was made, else, unless
+    `or_found` is false, as DazedTL found it; or None."""
+    root = Path(root)
+    state = _lifecycle(workspace, project_id, state)
+    recorded = None
+    if original_files.recorded(root):
+        version = _current_version(root)
+        recorded = _record(root, original_files.PREPARED, version)
+    return (
+        recorded
+        or _saved(workspace, project_id, root, state.get("prepared_source"))
+        or (found(workspace, project_id, root, state) if or_found else None)
+    )
+
+
+MISSING = (
+    "DazedTL has no record of this game's original files, and its backup from"
+    " before checkpoints can't be read. Put the original game back in its"
+    " folder and set it up again."
+)
+
+
+def require(workspace, project_id, root, state=None):
+    """`found`, refusing without it."""
+    original = found(workspace, project_id, root, state)
+    if original is None:
+        raise ValueError(MISSING)
+    return original
+
+
+def available(workspace, project_id, root, state=None):
+    """Whether the game's original files are recorded, without reading
+    them, for polls: a Git record or an old backup record."""
+    state = _lifecycle(workspace, project_id, state)
+    return original_files.recorded(root) or bool(state.get("source_backup"))
+
+
+def by_id(workspace, project_id, root, identity, state=None):
+    """The saved state an assistant named: a Git record's commit or an old
+    backup's ID."""
+    for row in original_files.records(root):
+        if row.commit == identity:
+            return _Recorded(root, row.commit)
+    try:
+        location = backups.lookup(
+            root, Path(workspace) / "backups" / project_id, identity
+        )
+        value = backups.verify(location, source=root, full=False)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise ValueError("No saved original has that ID.") from error
+    return _Saved(location, value)
+
+
+def game_names(workspace, project_id, root, state=None):
+    """Every file name the game's records and old backups hold: its
+    original, the prepared game and each update."""
+    root = Path(root)
+    state = _lifecycle(workspace, project_id, state)
+    names = set()
+    for row in original_files.records(root):
+        names.update(original_files.files(root, row.commit))
+    names |= backups.game_files(
+        root,
+        [
+            state[key]
+            for key in ("source_backup", "prepared_source", "game_backup")
+            if state.get(key)
+        ],
+    )
+    return names
+
+
+def reset(
+    original,
+    root,
+    archive,
+    *,
+    keep=lambda _name: False,
+    stopped=lambda: False,
+    progress=lambda _count, _path: None,
+):
+    """Puts a game folder back to `original` in place.
+
+    Only files that differ are written. Files the original lacks move into
+    `archive` instead of being deleted, and `keep` names files left as they
+    are, such as save games. Each file is written beside its target before
+    it replaces it, so an interruption leaves whole files, and running it
+    again finishes the job.
+    """
+    root = Path(root).resolve(strict=True)
+    current = original_files.inventory(root, stopped)
+    extras = sorted(n for n in current if n not in original.files and not keep(n))
+    candidates = [n for n in original.files if not keep(n)]
+    present = original.identify(root, [n for n in candidates if n in current], stopped)
+    changed = [n for n in candidates if present.get(n) != original.files[n]]
+    count = 0
+    emptied = set()
+    for name in extras:
+        if stopped():
+            raise InterruptedError("Stopped before every original file was put back.")
+        target = Path(archive) / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            system.rename(root / name, target)
+        except FileNotFoundError:
+            continue
+        emptied.update(str(parent) for parent in Path(name).parents if parent.parts)
+        count += 1
+        progress(count, name)
+    # Folders left empty by files set aside go; other folders stay.
+    for name in sorted(emptied, key=lambda item: item.count("/"), reverse=True):
+        path = root / name
+        if path.is_dir() and not any(path.iterdir()):
+            system.rmdir(path)
+    if not changed:
+        return {"restored": 0, "set_aside": len(extras)}
+    with system.staging_folder(
+        root, ".dazedtl-restore-" + uuid.uuid4().hex[:8]
+    ) as staged:
+        original.extract(changed, staged, stopped)
+        for name in changed:
+            if stopped():
+                raise InterruptedError(
+                    "Stopped before every original file was put back."
+                )
+            target = root / name
+            if target.is_dir():
+                raise ValueError(
+                    f"{name} is a folder holding files kept in place. Move them, then try again."
+                )
+            target.parent.mkdir(parents=True, exist_ok=True)
+            # Windows refuses to replace a read-only file.
+            if target.exists() and not target.stat().st_mode & stat.S_IWRITE:
+                target.chmod(stat.S_IREAD | stat.S_IWRITE)
+            system.replace(staged / name, target)
+            count += 1
+            progress(count, name)
+    return {"restored": len(changed), "set_aside": len(extras)}

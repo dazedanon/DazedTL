@@ -129,7 +129,7 @@ try:
     call("guided_file_preview", {"project_id": project_id, "name": "Items.json"})
     call(
         "guided_preview",
-        {"project_id": project_id, "action": "backup_source", "options": {}},
+        {"project_id": project_id, "action": "prepare_game", "options": {}},
     )
     for method in (
         "translation_state",

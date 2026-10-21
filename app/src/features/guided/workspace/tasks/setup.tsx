@@ -1,4 +1,5 @@
-/** Set up: back up the original, prepare the game files and save its version. */
+/** Set up: prepare the game files and save its version; the first change
+ * keeps the original files in Git. */
 import type { ReactNode } from "react";
 import type { Job } from "../../../../api/contracts";
 import { ActionControl } from "../../../../ui/ActionControl";
@@ -47,9 +48,6 @@ export function setupView(w: GuidedWorkspace): TaskView {
     action,
     disabled,
     setPanel,
-    sourceBackup,
-    storedOriginal,
-    preserved,
     gitConfigured,
     preparation,
     preparationComplete,
@@ -68,7 +66,7 @@ export function setupView(w: GuidedWorkspace): TaskView {
     fields,
     advance,
   } = w;
-  const done = preserved && gitConfigured && !aceNeedsExport;
+  const done = gitConfigured && !aceNeedsExport;
   const setupRunning = setupAction.busy || setupWorking;
   // The step setup runs next shows why it stopped until a newer attempt starts.
   const stepStatus = (name: SetupStep, complete: boolean): DisplayState =>
@@ -79,23 +77,6 @@ export function setupView(w: GuidedWorkspace): TaskView {
         : setupStep === name && setupFailure
           ? "blocked"
           : "not_started";
-
-  const backup = stepStatus("backup_source", preserved);
-  const backupDetail =
-    backup === "done" ? (
-      <>{`${sourceBackup!.files.toLocaleString()} original files backed up.`}</>
-    ) : backup === "working" ? (
-      setupJobs.backup_source!.message || "Backing up…"
-    ) : backup === "blocked" ? undefined : storedOriginal && !sourceBackup ? (
-      `This folder already holds a backup of the original from ${new Date(storedOriginal.created).toLocaleString()} (${storedOriginal.files.toLocaleString()} files), saved before it was moved, copied or opened in another profile. Setup uses it.`
-    ) : sourceBackup ? (
-      <>
-        {sourceBackup.issue ||
-          "The original backup is unavailable. Setting up saves the current game instead; it cannot recover the missing original."}
-      </>
-    ) : (
-      "An untouched copy you can restore. Later steps read the original text from it."
-    );
 
   const ace = stepStatus("ace_extract", !aceNeedsExport);
   const aceDetail =
@@ -110,6 +91,8 @@ export function setupView(w: GuidedWorkspace): TaskView {
         : undefined;
 
   const prepared = preparationComplete || gitConfigured;
+  // A setup that did a step finishes; one that did none starts.
+  const started = prepared || (state.engine === "ACE" && !aceNeedsExport);
   const runningStage = preparation.stages.find(
     (stage) => stage.status === "running",
   );
@@ -205,22 +188,6 @@ export function setupView(w: GuidedWorkspace): TaskView {
         </fieldset>
       )}
       <ActionList>
-        <StepRow
-          status={backup}
-          title="Back up the original"
-          detail={backupDetail}
-        >
-          {/* Its review says what saving the current files replaces. */}
-          {backup === "not_started" &&
-            storedOriginal &&
-            !sourceBackup &&
-            w.task(
-              "backup_source",
-              "Back up current files instead",
-              {},
-              disabled || setupRunning || running,
-            )}
-        </StepRow>
         {state.engine === "ACE" && (
           <StepRow status={ace} title="Convert Ace data" detail={aceDetail} />
         )}
@@ -253,7 +220,7 @@ export function setupView(w: GuidedWorkspace): TaskView {
   const setupError = setupRunning ? "" : setupAction.error || setupFailure;
   const run = !done && (
     <ActionControl
-      label={preserved ? "Finish setup" : "Set up this game"}
+      label={started ? "Finish setup" : "Set up this game"}
       variant="primary"
       disabled={disabled || setupRunning || !!blocked}
       disabledReason={blocked}
@@ -264,9 +231,9 @@ export function setupView(w: GuidedWorkspace): TaskView {
       onClick={startSetup}
     />
   );
-  // Backups and preparation can stop between files or stages.
+  // Preparation can stop between stages.
   const secondary = localOperation &&
-    ["backup_source", "prepare_game"].includes(localOperation.action || "") && (
+    localOperation.action === "prepare_game" && (
       <Button
         disabled={action.busy}
         onClick={() => stopOperation(localOperation)}

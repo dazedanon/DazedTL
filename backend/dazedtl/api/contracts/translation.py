@@ -1,4 +1,4 @@
-"""Len's method translation projects, runs and backups."""
+"""Len's method translation projects and runs, and backups from before checkpoints."""
 
 from typing import Literal, NotRequired, TypedDict
 
@@ -228,8 +228,6 @@ class DeliveryRecord(TypedDict):
     game_version: str
     updater_stamp: bool
     files: NotRequired[int]
-    # The workspace snapshot packaging takes, also kept as workspace_backup.
-    backup: NotRequired[BackupRecord]
 
 
 class VersionUpdate(TypedDict):
@@ -238,19 +236,13 @@ class VersionUpdate(TypedDict):
 
 
 class Lifecycle(typing_extensions.TypedDict, extra_items=object):
-    """Saved lifecycle evidence; further keys are internal to the backend."""
+    """Saved lifecycle evidence; further keys are internal to the backend,
+    such as the backup records projects set up before their original files
+    were kept in Git still hold."""
 
     version: int
-    # The original the project was set up from; later game backups never
-    # replace it while it is available.
-    source_backup: NotRequired[BackupRecord]
-    # The latest game backup saved after the original.
-    game_backup: NotRequired[BackupRecord]
-    prepared_source: NotRequired[BackupRecord]
-    workspace_backup: NotRequired[BackupRecord]
     guided_review: NotRequired[GuidedReviewRecord]
     delivery: NotRequired[DeliveryRecord]
-    incoming_source: NotRequired[BackupRecord]
     incoming_version: NotRequired[str]
     version_update: NotRequired[VersionUpdate]
     discarded_release: NotRequired[str]
@@ -357,9 +349,9 @@ class TranslationState(ProjectOptions):
     git: GitStatus | None
     gameUpdate: GameUpdateStatus
     lifecycle: Lifecycle
-    # The original backup the game folder already holds, offered to a project
-    # without one, such as after the game was moved or copied.
-    storedOriginal: NotRequired[BackupSnapshot]
+    # Whether the game's original files are kept: in its Git repository, or
+    # in a backup saved before that.
+    originalsRecorded: bool
     jobs: list[TranslationJob]
     active: bool
     warnings: list[str]
@@ -481,20 +473,6 @@ class ReleaseInspection(TypedDict):
     version: str
     game: ReleaseLayout
     patch: ReleaseLayout
-
-
-class BackupRecord(TypedDict):
-    id: str
-    path: str
-    files: int
-    kind: NotRequired[Literal["source", "workspace"]]
-    version: NotRequired[int]
-    available: NotRequired[bool]
-    issue: NotRequired[str]
-    bytes_total: NotRequired[int]
-    bytes_added: NotRequired[int]
-    bytes_reused: NotRequired[int]
-    reused_snapshot: NotRequired[bool]
 
 
 class BackupSnapshot(TypedDict):

@@ -18,7 +18,15 @@ from dazedtl.settings.execution import (
 )
 from dazedtl.storage import write_bytes, write_json
 
-from . import backups, delivery, organize, progress_report, repricing, run_compiler
+from . import (
+    backups,
+    delivery,
+    organize,
+    originals,
+    progress_report,
+    repricing,
+    run_compiler,
+)
 from .compilation import verify_compilation
 from .files import digest, evidence, project_path, read_json, verify_evidence
 from .game_update import GameUpdate
@@ -27,7 +35,6 @@ from .jobs import Jobs, declined_message, now
 from .operations import (
     checkout_issue,
     lifecycle,
-    reconcile_missing_backups,
     require_baseline,
     runtime_manifest,
 )
@@ -74,9 +81,7 @@ def changed_since(current, frozen_sha256, frozen, *, reprice=True):
 assistant_request = ContextVar("assistant_request", default=False)
 
 OPERATIONS = {
-    "backup_source": (history_label("backup_source"), set()),
-    "use_source_backup": (history_label("use_source_backup"), {"backup_id"}),
-    "backup_workspace": ("Back up project files", set()),
+    "record_original": ("Record the original game files", set()),
     "restore_backup": (
         "Restore backup into a new folder",
         {"backup_id", "destination"},
@@ -148,7 +153,6 @@ class Translation:
         self.projects = projects
         self.settings = settings
         self.engine = engine
-        self.originals = {}
         self.jobs = jobs or Jobs(workspace, settings.adapter.allow_providers)
         self.contacts = {}
         self.contact_lock = threading.Lock()
@@ -384,37 +388,6 @@ class Translation:
         )
         engine = self.engine.detect(project.root)
         saved_lifecycle = lifecycle(self.workspace, project_id)
-        stored = (
-            None
-            if saved_lifecycle.get("source_backup")
-            else self.stored_original(project.root)
-        )
-        titles = {
-            "source_backup": "Source backup",
-            "game_backup": "Latest game backup",
-            "prepared_source": "Prepared original backup",
-            "workspace_backup": "Workspace backup",
-        }
-        for key, kind in (
-            ("source_backup", "source"),
-            ("game_backup", "source"),
-            ("prepared_source", "source"),
-            ("workspace_backup", "workspace"),
-        ):
-            if saved_lifecycle.get(key):
-                saved_lifecycle[key] = backups.record_status(
-                    project.root, saved_lifecycle[key], kind=kind, reuse=True
-                )
-        # A deleted store leaves nothing to recover, so retire its records
-        # instead of warning about them on every read. A store that kept its
-        # snapshots but lost a recorded one still warns, for recovery.
-        reconcile_missing_backups(
-            self.workspace, project_id, project.root, saved_lifecycle
-        )
-        for key, title in titles.items():
-            entry = saved_lifecycle.get(key)
-            if entry and not entry["available"]:
-                warnings.append(title + " is unavailable. " + entry["issue"])
         if identification.is_file():
             identified = read_json(identification)
             try:
@@ -437,22 +410,8 @@ class Translation:
             "git": git,
             "gameUpdate": self.game_update.state(project_id),
             "lifecycle": saved_lifecycle,
-            **(
-                {
-                    "storedOriginal": {
-                        key: stored[key]
-                        for key in (
-                            "id",
-                            "kind",
-                            "created",
-                            "files",
-                            "version",
-                            "bytes_total",
-                        )
-                    }
-                }
-                if stored
-                else {}
+            "originalsRecorded": originals.available(
+                self.workspace, project_id, project.root, saved_lifecycle
             ),
             "jobs": self.job_views(saved_jobs, selected["options"]["mode"]),
             "active": self.jobs.running(project_id),
@@ -574,19 +533,19 @@ This project uses the new DazedTL app as its state and execution owner. Keep the
 After a connection failure, inspect state and the relevant run before retrying any state-changing command; a lost response does not prove the action failed. Never blindly repeat a paid submission or project operation. The helper prints structured JSON; never copy API keys or the local connection token into game files, prompts, or arguments. If the app remains unreachable with permitted access, save local work and resume with the same prompt once the app is available. The app does not run the coding assistant itself.
 
 1. Inspect saved state, artifacts, existing Git branches and runs. Identify the engine using identify --engine <name> --evidence <project-relative investigation report>. Reuse valid work. When resuming, check the game files against Git and any saved hashes before trusting earlier notes, since a crash can undo a finished step such as a canary restore; restore and recheck anything changed, and record only checks whose output you saw. Do not re-submit in-flight work or regenerate reviewed translations merely because a session resumed. If state includes a legacyRun, recover it with legacy --action resume/export; only the user approves its submissions, in DazedTL. Preserve and review its exported results before importing matching receipts into the new request store.
-2. Before modifying runtime game files, run operation backup_source and wait for its saved job to complete. Use the app backup operations for all source and workspace backups. They keep a deduplicated store in .dazedtl/backups/v2, exclude .dazedtl/backups from workspace snapshots, and reuse unchanged files and snapshots. Do not create additional full workspace copies, timestamped checkpoint directories or ZIPs inside .dazedtl. Keep existing older backups; never manually edit or prune the managed store. Investigate the engine and adapt Len's tools in .dazedtl/len-method/work. RPG Maker uses operation rpgmaker_prepare. For VX Ace it first converts Data into ace_json, the files you translate and write, and sets an archive beside Game.exe aside in .dazedtl/ace, since the game reads nothing else while it is there. Honor the saved Forge choice. Other engines keep their native preparation and byte-preservation rules.
-3. Prepare a complete runtime patch-file manifest and establish Git through operation git_setup, supplying the actual game version, manifest, and untranslated-source attestation after inspecting the game. Existing baselines and branches must be reused. Never place English on original. The helper retains a second prepared-source snapshot for source mappings. Do not invent a source release number; use initial-unversioned when no official label exists. Then prove the delivery path with the skill's canary before bulk translation: write a few visible strings through the real injection path, verify that they read back from the installed files and survive the engine's round trip, read the window title with a script where the engine allows, and restore the game byte for byte, checked against hashes saved before the canary. Looking at the running game is optional; if you cannot capture it, record the visual check as pending and continue.
+2. Before modifying runtime game files yourself, run operation record_original and wait for its saved job to complete. DazedTL keeps the original game's files in the game's own Git repository, under refs/dazedtl/originals, and records them itself before its first write to the game. Do not create full workspace copies, timestamped checkpoint directories or ZIPs inside .dazedtl. Keep existing older backups in .dazedtl/backups; never manually edit or prune them. Investigate the engine and adapt Len's tools in .dazedtl/len-method/work. RPG Maker uses operation rpgmaker_prepare. For VX Ace it first converts Data into ace_json, the files you translate and write, and sets an archive beside Game.exe aside in .dazedtl/ace, since the game reads nothing else while it is there. Honor the saved Forge choice. Other engines keep their native preparation and byte-preservation rules.
+3. Prepare a complete runtime patch-file manifest and establish Git through operation git_setup, supplying the actual game version, manifest, and untranslated-source attestation after inspecting the game. Existing baselines and branches must be reused. Never place English on original. DazedTL records the prepared game's files in Git too, for source mappings. Do not invent a source release number; use initial-unversioned when no official label exists. Then prove the delivery path with the skill's canary before bulk translation: write a few visible strings through the real injection path, verify that they read back from the installed files and survive the engine's round trip, read the window title with a script where the engine allows, and restore the game byte for byte, checked against hashes saved before the canary. Looking at the running game is optional; if you cannot capture it, record the visual check as pending and continue.
 4. Complete the shared setup investigation. Keep glossary, context and voice guidance in their shared files; preserve user edits. Record what runtime substitutions stand for, such as \\N[1] or \\V[3] or the engine's equivalents, in game.md, which every request carries. Then run census, which counts every piece of Japanese text in the original game itself, and wait for its run. What it counts is the scope: every map, event, scene, database entry, plugin and script, including ones that look unused. Never leave text out because of its content; scope is not yours to decide. If census lists archives it can't read, decode them with Len's tools into a folder in the game and run census --decoded <folder>.
 5. Write Len's extractor for this engine as code and save everything in scope as source units in the format units-format prints: one unit per message the player reads at once, with lines the engine stores separately, such as RPG Maker's consecutive 401 commands, joined by newlines; IDs your injector maps back, scene and group keys in play order, each line's kind, the speaker the engine's own evidence names (nameplates, face or speaker codes) or null, and literal protected tokens and layout bounds. Never inherit the previous speaker or infer identity or gender from speech style; unknown speakers are valid. Apart from requests you translate or review yourself, move game text only with scripts: never paste, retype, summarize or quote Japanese or translated game text in your replies or in files you write by hand. Run organize --input <project-relative units file>, adding --complete once the units cover the census, as API estimates require. It groups the lines into requests, compiles the run and replies with counts; when it names text that isn't extracted, fix the extractor and organize again, using the locations in census-uncovered.json. Text players never see, such as file names, internal names, comments, script code and another language's translation table, can be set aside only by rules in .dazedtl/len-method/work/scope-rules.json: version 1, rules of kind, field and reason (asset_name, identifier, comment, script_code, not_displayed or other_language), each optionally limited to files matching a path pattern (file) or to exact runs (values), such as a script format's Japanese command words. Dialogue, choices and names in formats DazedTL reads itself can't be set aside. Keep the units file unchanged while its run is in use. The translating model reads the surrounding Japanese, so scene and line notes are not needed.
 6. Assistant only: read request --run <id> --index <n>, translate with your own session using every context field, perform the source-checked dialogue pass, and save a JSON receipt with request_sha256 and translations. Use accept --run <id> --batch <id> --input <project-relative receipt>. If you won't translate a request, run decline --run <id> --batch <id> --reason <one line without game text> instead of softening, shortening or leaving out lines, and go on with the next; declining is the only way not to translate something, and its lines stay in scope. When only declined requests remain, don't report them as a blocker: Progress shows them to the user, who has another model translate them. Report next_action as waiting for the declined lines, finish all independent work, then wait with run --run <id> --wait <minutes> until they are saved. DazedTL makes no translation API calls in this mode unless the user approves one for declined lines. Follow the user's delegation instructions.
 7. Live API or API Batch: if no API connection is saved, finish all independent work first, then ask the user to add one in DazedTL's Settings. Inspect the run and its quote with run --run <id>; don't read requests merely to check them. Only the user approves spending, with the button on DazedTL's Progress tab, which starts the run; you can't start a run they haven't approved there. Tell them the estimate is ready there and report that as the progress blocker, finish all independent work, then wait with run --run <id> --wait <minutes> until it starts. Each new organize or compile replaces the estimate waiting for approval, so prepare one only when its inputs or the API settings changed. DazedTL runs the job; while it works, continue independent work such as images and fitting or injection tools. To wait, use run --run <id> --wait <minutes>, which returns when the run finishes or changes state, with a command timeout longer than the wait, instead of polling repeatedly. Resume saved jobs the user approved with start --run <id>. If the connection cannot run Batch, or a Batch run fails, prepare a Live quote for the remaining work and ask the user to approve it; never replace Batch with Live silently. Reconcile uncertain submissions before any retry; use attach-batch only with the matching provider job ID. Prepare a new remaining-work quote for failed requests. Do not ask the user to return to the app or copy another prompt at routine phase boundaries.
-8. Save translation records and report progress after each saved milestone, before waits, and at least every ten minutes. Use progress --input <project-relative report> for the maintained Len progress format. Routine progress reporting is lightweight; use operation backup_workspace for meaningful recovery milestones. DazedTL saves your changes to the game in its Git history itself, as checkpoints: each operation that writes the game, each progress report for the phase you were in and each run's end. Don't commit them yourself. Keep detailed evidence in status.md. Translation counts, source-checked review, images, injection, runtime QA and packaging are separate. Check every accepted line mechanically with scripts: IDs, protected tokens, layout bounds and untranslated text. Review accepted requests with review only after actually checking them, and any qa_notes they carry, against the Japanese; review the ones you are willing to read, record the rest as not reviewed in status.md, and go on. Preserve intentional ambiguity in the translation; retain any unresolved blocker in status.md. Fingerprints are evidence, not counters to fabricate. For a correction, include the current result_sha256 as replaces_sha256 in the receipt and use accept again. It archives the previous result and invalidates affected review/QA; ordinary retries cannot overwrite accepted translations.{images}
-{injection}. Get the translations with results --run <id>, which writes them by line ID to a file, and inject from that file with scripts. For RPG Maker, first measure the game's message and help windows as text-fitting describes and write the widths you find as JSON (width, faceWidth, listWidth, noteWidth, messageRows). Confirm them on screen: for MV/MZ with playtest --layout FILE --wait 10, and for VX Ace, which that check can't play, by running the game yourself, since its scripts often change the stock windows' {ace_widths}. Then save that file's project-relative path as widths with operation line_widths, which also fits text you wrote earlier to them, and put each message's lines in the commands that held its Japanese, stage translated JSON and use operation write_rpgmaker with matching source, translated and output paths (or a registered backup_id). This preserves _original, refuses unsafe structural remapping and fits the text to the saved Line widths, laying each message out over its own commands, so don't wrap it yourself; shorten the text its result lists under misfits, which a window of fixed height cuts off, and write that file again. After an official source update, use rebase_rpgmaker with the current expected_original_commit when old metadata needs rebasing; it requires source bytes matching that exact original-branch file. Ordinary corrections keep their existing Japanese. Other engines retain native source/injection sidecars, fit using the actual engine/renderer and use their own verified reconstruction tools. Record unresolved extraction explicitly.
+8. Save translation records and report progress after each saved milestone, before waits, and at least every ten minutes. Use progress --input <project-relative report> for the maintained Len progress format. Routine progress reporting is lightweight. DazedTL saves your changes to the game in its Git history itself, as checkpoints: each operation that writes the game, each progress report for the phase you were in and each run's end. Don't commit them yourself. Keep detailed evidence in status.md. Translation counts, source-checked review, images, injection, runtime QA and packaging are separate. Check every accepted line mechanically with scripts: IDs, protected tokens, layout bounds and untranslated text. Review accepted requests with review only after actually checking them, and any qa_notes they carry, against the Japanese; review the ones you are willing to read, record the rest as not reviewed in status.md, and go on. Preserve intentional ambiguity in the translation; retain any unresolved blocker in status.md. Fingerprints are evidence, not counters to fabricate. For a correction, include the current result_sha256 as replaces_sha256 in the receipt and use accept again. It archives the previous result and invalidates affected review/QA; ordinary retries cannot overwrite accepted translations.{images}
+{injection}. Get the translations with results --run <id>, which writes them by line ID to a file, and inject from that file with scripts. For RPG Maker, first measure the game's message and help windows as text-fitting describes and write the widths you find as JSON (width, faceWidth, listWidth, noteWidth, messageRows). Confirm them on screen: for MV/MZ with playtest --layout FILE --wait 10, and for VX Ace, which that check can't play, by running the game yourself, since its scripts often change the stock windows' {ace_widths}. Then save that file's project-relative path as widths with operation line_widths, which also fits text you wrote earlier to them, and put each message's lines in the commands that held its Japanese, stage translated JSON and use operation write_rpgmaker with matching source, translated and output paths (or with backup_id, a commit of refs/dazedtl/originals or a backup from backups, naming the saved original the source path is read from). This preserves _original, refuses unsafe structural remapping and fits the text to the saved Line widths, laying each message out over its own commands, so don't wrap it yourself; shorten the text its result lists under misfits, which a window of fixed height cuts off, and write that file again. After an official source update, use rebase_rpgmaker with the current expected_original_commit when old metadata needs rebasing; it requires source bytes matching that exact original-branch file. Ordinary corrections keep their existing Japanese. Other engines retain native source/injection sidecars, fit using the actual engine/renderer and use their own verified reconstruction tools. Record unresolved extraction explicitly.
 {qa}. Inject and verify the actual installed game. Keep the runtime manifest complete: every file the patch changes or adds, which checkpoints take into the patch. Complete targeted structural, source/live and runtime QA; unavailable checks remain pending. For RPG Maker MV/MZ, the release playtest is DazedTL's too: after injection, run playtest --run --wait 20, which checks the game's files and plays it in a hidden window without writing to it, and read the report playtest --report names. Each problem names its fix: translate `plugin-files` and `translate` problems, Japanese a plugin or the game's data still holds, through your extraction and injection steps; leave `text-qa` problems, its findings in translated text, to text QA, which reviews them; and a `game` problem is {fixes} Run it again with --stops FILE for places its report lists as not reached when you know the event or map that leads there. Report anything still out of reach as a coverage gap; never ask the user to play. For RPG Maker MV/MZ and VX Ace, text QA is DazedTL's own: after injection and any playtest, run qa --prepare and follow the README of the task it names until qa reports the task complete, shortening the plugin labels qa lists as squeezed on the game's screens as its next step says, then run qa --apply --wait 60, which applies the findings through DazedTL as their own checkpoint. The user answers QA's open questions in DazedTL while apply waits. For MV/MZ, run playtest --run --wait 20 again after QA's apply, fix what it finds the same way, and report its problems and coverage. DazedTL shows QA's stage and counts on Progress from its task, so report the qa phase without QA counts. Use operation package for a local Git patch after QA is complete; it needs organize --complete after the latest census, with every unit it accepted in your text export. Public publishing, uploads, remotes and pushes remain separate requests.
 
-For official updates, use stage_update with the new official folder/version to preserve it and create a working copy. A folder holding fewer than half of the game's files is staged as a patch, whose files are copied over the game while every file it leaves out stays; pass patch true or false to override that, and check the returned layout for the folder that lined up with the game. It applies shared preparation to MV/MZ; complete the relevant skill's decryption, conversion or other prerequisites for other engines in the returned copy. Preview that prepared original with version_preview, inspect its saved result, then version_apply with that preview_id. Preserve conflict recovery and continue/abort through the helper. Use version_handoff after a completed update. Extract the updated game's units with current source mappings and organize them again; requests whose lines and context are unchanged keep their translations, and positional offsets alone are not stable across releases.
+For official updates, use stage_update with the new official folder/version to record its files in the game's Git and create a working copy. A folder holding fewer than half of the game's files is staged as a patch, whose files are copied over the game while every file it leaves out stays; pass patch true or false to override that, and check the returned layout for the folder that lined up with the game. It applies shared preparation to MV/MZ; complete the relevant skill's decryption, conversion or other prerequisites for other engines in the returned copy. Preview that prepared original with version_preview, inspect its saved result, then version_apply with that preview_id. Preserve conflict recovery and continue/abort through the helper. Use version_handoff after a completed update. Extract the updated game's units with current source mappings and organize them again; requests whose lines and context are unchanged keep their translations, and positional offsets alone are not stable across releases.
 
-Use backups to list restore points, including older profile backups. operation restore_backup accepts backup_id and an absolute destination for a new folder outside the game; it verifies all restored bytes and never overwrites an existing folder.
+Use backups to list backups saved before the original game's files were kept in Git, including older profile backups. operation restore_backup accepts backup_id and an absolute destination for a new folder outside the game; it verifies all restored bytes and never overwrites an existing folder.
 
 Finish the local delivery. Stop early only for a question from the list above, recorded as the blocker with the exact next action; continue automatically across every routine phase.
 
@@ -736,19 +695,6 @@ Additional project instructions:
             )
         _job, steps = self.jobs.store.load(preparation["id"], project_id)
         return self._prepare(project_id, steps["action"], steps["arguments"])
-
-    def stored_original(self, root):
-        """The original backup a game folder already holds, for a project
-        without one; kept until the store's snapshots change."""
-        try:
-            signature = (backups.store_path(root) / "snapshots").stat().st_mtime_ns
-        except OSError, ValueError:
-            return None
-        saved = self.originals.get(str(root))
-        if not saved or saved[0] != signature:
-            saved = (signature, backups.original(root))
-            self.originals[str(root)] = saved
-        return saved[1]
 
     def backups(self, project_id):
         _record, project = self.project(project_id)
@@ -1477,7 +1423,6 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
         if not isinstance(arguments, dict) or set(arguments) - specification[1]:
             raise ValueError("Unknown operation or operation fields.")
         required = {
-            "use_source_backup": {"backup_id"},
             "restore_backup": {"backup_id", "destination"},
             "git_setup": {"version"},
             "line_widths": {"widths"},

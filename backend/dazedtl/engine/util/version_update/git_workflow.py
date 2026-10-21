@@ -51,6 +51,8 @@ RELEASE_TRAILER = "DazedTL-Release"
 _TOOL_NAME = "DazedMTLTool"
 _TOOL_EMAIL = "local@dazedmtl.invalid"
 _ZERO_OID = "0" * 40
+# DazedTL's own refs outside the branches, never pushed with them.
+_PRIVATE_REFS = "refs/dazedtl/"
 # Commands that take the index lock before they change anything, so one that
 # found the lock held can run again. A `git status` holds it briefly while it
 # refreshes the index, including the app's own polls; waiting here, rather
@@ -1688,7 +1690,13 @@ def unfinished_bootstrap(game_root: str | Path) -> bool:
     if head != f"refs/heads/{TRANSLATION_BRANCH}" or remotes.strip():
         return False
     listed = _run_git(repo, "for-each-ref", "--format=%(refname)%00%(objectname)").stdout
-    refs = dict(line.split("\x00") for line in listed.splitlines())
+    # DazedTL's private refs, such as the record of the original game's files
+    # the game-write gateway makes before the first write, are not branches.
+    refs = {
+        name: value
+        for name, value in (line.split("\x00") for line in listed.splitlines())
+        if not name.startswith(_PRIVATE_REFS)
+    }
     original = refs.pop(f"refs/heads/{ORIGINAL_BRANCH}", None)
     translation = refs.pop(f"refs/heads/{TRANSLATION_BRANCH}", None)
     if refs or (translation and not original):

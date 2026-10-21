@@ -86,7 +86,6 @@ function Workspace(
     setupNotice,
     bodyRef,
     headingRef,
-    preserved,
     baseline,
     changed,
     activeOperation,
@@ -383,7 +382,7 @@ function Workspace(
                       "refresh_sources",
                       "Reload from game…",
                       {},
-                      !preserved || !!activeOperation,
+                      !!activeOperation,
                       "default",
                       changed,
                     )}

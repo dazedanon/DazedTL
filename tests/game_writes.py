@@ -47,11 +47,15 @@ OUTSIDE = {
     # Start over puts back the original game whole and sets its Git history
     # aside, so it must run whatever state the checkout is in, and the Data
     # it restores is the original's, with nothing to pack.
-    "translation/backups.py:reset": "Start over",
+    "translation/originals.py:reset": "Start over",
     "translation/start_over.py:_move": "Start over",
-    # A restored backup is a new copy of the game, never the game itself.
+    # A restored backup or recorded original is a new copy of the game's
+    # files, never the game itself.
     "translation/backups.py:_extract": "backups",
     "translation/backups.py:_copy": "backups",
+    "translation/originals.py:_Saved.extract": "originals",
+    "translation/originals.py:_Recorded.extract": "originals",
+    "compatibility/original_files.py:write": "originals",
     # Save a copy writes a checkpoint's game into a new folder outside it.
     "compatibility/checkpoint_history.py:save_copy": "Checkpoints",
 }

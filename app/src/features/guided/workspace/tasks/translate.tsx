@@ -36,7 +36,6 @@ export function phaseView(w: GuidedWorkspace): TaskView {
     openProject,
     setRunHistory,
     inspectionTarget,
-    preserved,
     baseline,
     changed,
     enabledCodes,
@@ -177,7 +176,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
         "refresh_sources",
         "Reload from game…",
         {},
-        !preserved || !selectedNames.length || !!activeOperation,
+        !selectedNames.length || !!activeOperation,
         "default",
         selectedNames,
       )}

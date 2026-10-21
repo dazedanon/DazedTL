@@ -10,9 +10,11 @@ version, and commits that change nothing are not listed.
 
 What a file is at a checkpoint (`_Game.wanted`): its content in the
 checkpoint's tree. A file the patch did not hold then is the original game's,
-so it takes the `original` branch's bytes for that version. A file neither
-holds did not exist then and goes, unless the original branch holds only the
-patch too, when its earlier bytes are unknown and it stays as it is.
+so it takes the `original` branch's bytes for that version, or, since that
+branch holds only the patch too, the bytes the game's record of its original
+files has for that version ([original_files](original_files.py)). A file none
+of them holds did not exist then and goes, unless the game has no record for
+that version, when its earlier bytes are unknown and it stays as it is.
 
 Going back and undoing write through the game-write gateway, which first
 records the edits made outside DazedTL as their own checkpoint and then makes
@@ -343,9 +345,11 @@ class _Game:
         self.root = root
         tip = _git(root, "rev-parse", "--verify", "-q", ORIGINAL, check=False)
         self.original_tip = tip.stdout.strip() if tip.returncode == 0 else ""
+        self.oldest = None
         self.original = self._original(target.version)
-        # The original branch made from the patch alone, as an Assistant-led
-        # baseline is, can't say what a file outside it was.
+        self.recorded = self._recorded(target.version)
+        # The original branch made from the patch alone, as every baseline
+        # is, can't say what a file outside it was; the record can.
         from util.paths import LEN_PATCH_GITIGNORE_BEGIN
 
         rules = (
@@ -355,9 +359,27 @@ class _Game:
             if self.original_tip
             else ""
         )
-        self.complete = (
+        self.complete = self.recorded is not None or (
             bool(self.original_tip) and LEN_PATCH_GITIGNORE_BEGIN not in rules
         )
+
+    def _recorded(self, version):
+        """The recorded original game's files at `version`: its prepared
+        record, or for the first version the game as DazedTL found it; None
+        without either."""
+        from . import original_files
+
+        row = original_files.chosen(self.root, original_files.PREPARED, version)
+        if row is None and version is not None and version == self.oldest:
+            row = original_files.chosen(self.root, original_files.FOUND)
+        if row is None:
+            return None
+        return {
+            path: (mode, blob)
+            for path, (mode, blob, _size) in original_files.files(
+                self.root, row.commit
+            ).items()
+        }
 
     def _original(self, version):
         """The original game's files at `version`: the branch's tip while it
@@ -370,7 +392,7 @@ class _Game:
         log = _git(
             self.root, "log", "--first-parent", "--format=%H%x1f%B%x1e", ORIGINAL
         ).stdout
-        newest = None
+        newest, chosen = None, None
         for record in log.split("\x1e"):
             if "\x1f" not in record:
                 continue
@@ -378,13 +400,13 @@ class _Game:
             recorded = _trailer(message, VERSION_TRAILER)
             if recorded is None:
                 continue
+            self.oldest = recorded
             newest = newest or recorded
-            if recorded == version:
+            if chosen is None and recorded == version:
                 # Commits after the version's own, such as a completed
                 # original, belong to it while no newer version followed.
-                commit = self.original_tip if recorded == newest else identity
-                break
-        return _tree_files(self.root, commit, "")
+                chosen = self.original_tip if recorded == newest else identity
+        return _tree_files(self.root, chosen or commit, "")
 
     def wanted(self, path, tree):
         """The (mode, blob) the file has as of the target, None when it
@@ -393,6 +415,8 @@ class _Game:
             return tree[path]
         if path in self.original:
             return self.original[path]
+        if self.recorded is not None and path in self.recorded:
+            return self.recorded[path]
         # The glossary, settings and skills are DazedTL's, never the
         # original game's, so one the target lacked didn't exist then.
         if path.startswith(".dazedtl/"):

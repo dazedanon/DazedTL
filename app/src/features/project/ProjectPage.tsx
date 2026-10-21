@@ -533,9 +533,7 @@ function ProjectHistory({
     inspection,
     guided.runs.find((run) => run.id === inspection?.id),
   );
-  const backup = translation.lifecycle.source_backup;
-  const baseline =
-    !!backup && backup.available !== false && !!translation.git?.configured;
+  const baseline = !!translation.git?.configured;
   // A text QA batch, a glossary fix batch from before Text QA took the
   // glossary over, a playtest fix batch or a fit to new Line widths restores
   // from here, once no later batch in the game changed the same files.

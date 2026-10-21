@@ -24,7 +24,7 @@ The Qt GUI from `DazedMTLTool` is the reference for guided workflow ordering and
 The Translation service owns project operations, request plans, accepted results, and run recovery for both the UI and the external agent helper.
 Len's maintained skills own engine investigation and methodology; the compatibility layer supplies the existing context, Git, preparation, injection, and provider helpers.
 The preserved runner continues to own parsing, speaker preparation, phase profiles, glossary collection and Batch receipts.
-App workers own source backup, Git baselines, checkpoints and local patch packaging for both approaches.
+App workers own the record of original game files, Git baselines, checkpoints and local patch packaging for both approaches.
 The Guided [workspace hook](../app/src/features/guided/workspace/useGuidedWorkspace.tsx) owns shared state, navigation and action review; each task's body and footer controls come from its [task view](../app/src/features/guided/workspace/tasks/index.ts).
 Its backend, [Guided](../backend/dazedtl/translation/guided.py), composes collaborators for [action review and execution](../backend/dazedtl/translation/guided_actions.py), [run inspection](../backend/dazedtl/translation/guided_inspection.py), the [release form](../backend/dazedtl/translation/guided_release.py) and [context setup](../backend/dazedtl/translation/guided_context.py).
 Each workflow action is one row of the [action registry](../backend/dazedtl/actions.py), which says how it is reviewed and run and what its review and History call it; Guided's checks, the worker and, through the generated contracts, the renderer read it.
@@ -151,7 +151,7 @@ Neither Apply nor packaging manufactures a user-review record or completes Len's
 The [plugin service](../backend/dazedtl/plugins/service.py) owns retained investigation, working copies and checked publication for MV/MZ plugins and VX Ace's Ruby scripts in `ace_json/scripts`.
 The assistant decides which plugin text players see and the user reviews neither files nor strings, so Apply to game writes every checked file in one click, checking and backing up each first.
 An Acorn AST inventory binds reports to exact source bytes without evaluating plugin code; the [Ruby reader](../backend/dazedtl/plugins/ruby.py) gives Ace's script literals the same inventory in Python, so no Ruby ships.
-Original Japanese comes from a verified source backup even after runtime JSON has been translated, so a task cannot start without it.
+Original Japanese comes from the game's recorded original files even after runtime JSON has been translated, so a task cannot start without them.
 Lookup values, code keys, expressions, serialization structure and control tokens stay protected by the app and are never asked about.
 One copied task covers every plugin file through the [project helper](translation-contract.md#project-helper); each result stays bound to the request that asked for it, and the helper cannot preview or restore runtime files; only the final check's assistant may apply, through the same Apply to game path.
 Labels Text QA's capture found squeezed in a plugin file come to Plugin files, because QA never writes plugin files; the assistant shortens each in a copy of its own and confirms it on screen in the [game window](../backend/dazedtl/engine/util/rpgmaker_window/launcher.cjs) with the copies served in place of the game's files.
@@ -250,9 +250,8 @@ Translation follows the working Qt GUI's task order through [workflow.ts](../app
 A stage holds the tasks that share its purpose, so no stage exists only to host one optional workspace, and optional work never holds up the next step.
 A stage of optional tasks only is done once opened with every required task before it done, because looking at what it offers is all it asks.
 Tabs and Continue keep drafts and allow navigation regardless of completion; they never save review receipts or complete skipped tasks, and status checks stay at execution and explicit save boundaries.
-Set up's one action runs the backup, file preparation and version baseline as separate steps, each through its own preview and execution, so every step keeps its checks and receipts.
-Routine setup steps and local estimation consume their preview right after the click; replacement backups, paid work, runtime replacement and file resync keep their review.
-The original-backup record lives in the profile while snapshots live in the game's own store, so a moved or copied game is offered its earliest snapshot as the original (`use_source_backup`) instead of saving its current, possibly translated, files.
+Set up's one action runs file preparation and the version baseline as separate steps, each through its own preview and execution, so every step keeps its checks and receipts; the first step's write records the original game files first.
+Routine setup steps and local estimation consume their preview right after the click; paid work, runtime replacement and file resync keep their review.
 Each task applies its own work and shows what it has not applied, with no cross-task reminder list; applied Translate output has no restore of its own, since it is a [checkpoint](#checkpoints) Git can undo.
 
 #### Working copies
@@ -273,7 +272,7 @@ Event text findings ([event_text](../backend/dazedtl/translation/event_text.py))
 
 Its API run panel holds the assistant's estimate and its button is the only approval: the project helper resumes only runs the user approved there, and each new estimate replaces the one waiting ([newest_estimate](../backend/dazedtl/translation/jobs.py)).
 The assistant's own plan pays for every turn, so new games start on API Batch, or Live when the connection cannot batch.
-Start over moves the attempt, its Git history and the playtest's fixes to `.dazedtl/archived` instead of deleting them, after saving backups; only the user can start it, so the project helper has no route to it.
+Start over puts back the original game files and moves the attempt, its Git history and the playtest's fixes to `.dazedtl/archived` instead of deleting them; only the user can start it, so the project helper has no route to it.
 
 #### Publication
 
@@ -336,7 +335,7 @@ Electron owns the native renderer-crash/unresponsive dialog and reloads only on 
 Project-format changes increment `SCHEMA_VERSION` and register consecutive upgrades in [projects/store.py](../backend/dazedtl/projects/store.py); [`read_versioned_json`](../backend/dazedtl/storage.py) validates the result, backs up the original bytes and replaces the file atomically.
 Whether saved work is still current has one rule, explained in [freshness](../backend/dazedtl/engine/util/freshness.py): saved work is keyed on its inputs and an explicit version, never on hashes of source files, so an update alone never outdates it.
 A Text QA task is keyed the same way, on what it reviews and `QA_RULES_VERSION` in [qa/schema](../backend/dazedtl/engine/util/qa/schema.py), bumped only for a change that makes saved reviews wrong or unreadable; the [previous-release QA check](development.md#previous-release-qa-check) fails when a change breaks the previous release's tasks without that bump.
-Portable workflow options live in the game's .dazedtl/len-method/workflow.json and snapshots in its .dazedtl/backups/v2 store; guidance stays in the game's own files, which Git tracks with the translation and archives leave out ([paths](../backend/dazedtl/engine/util/paths.py) holds both rules); the app profile holds connections, recoverable drafts, run plans and receipts, and older full-copy backups.
+Portable workflow options live in the game's .dazedtl/len-method/workflow.json and its original files in its Git repository; guidance stays in the game's own files, which Git tracks with the translation and archives leave out ([paths](../backend/dazedtl/engine/util/paths.py) holds both rules); the app profile holds connections, recoverable drafts, run plans and receipts, and older full-copy backups.
 Project opening and selection publish their in-memory ownership only after backend persistence succeeds, and removing a game from the recent list hides its record instead of deleting it, so its runs keep their owner.
 Engine-owned settings and run formats remain the adapter's responsibility.
 
@@ -380,7 +379,7 @@ On Windows every copied task opens with a [note](../backend/dazedtl/translation/
 
 A compiled plan freezes sources, full context, field constraints, provider parameters, rates and connection identity, and the run's record and approval bind the plan file's exact bytes ([plan_file](../backend/dazedtl/translation/plan_file.py)).
 Tracked game sources bind to their original-branch blobs; untracked exports, guidance and the plan file bind to their exact bytes.
-Organize derives plans from engine-neutral source units that Len's extractor saves, so parsing and injection stay in Len's per-engine tools and the assistant never rewrites the game's text; a census from the prepared source backup decides scope, so the extractor cannot narrow it.
+Organize derives plans from engine-neutral source units that Len's extractor saves, so parsing and injection stay in Len's per-engine tools and the assistant never rewrites the game's text; a census from the recorded prepared game decides scope, so the extractor cannot narrow it.
 Organize and compile run in an operation worker ([run_compiler](../backend/dazedtl/translation/run_compiler.py)), and the run's worker compiles every request again and compares before it sends anything, so a big plan never holds the app's other requests.
 Accepted results are keyed by logical source and context rather than Japanese text alone, and frozen plans and approvals are never migrated in place.
 Submission intent is durable before provider calls and raw receipts before acceptance; for compiled plans an uncertain submission blocks overlapping work.
@@ -389,7 +388,7 @@ Workers hold per-run locks and stop issuing work after losing their owning proce
 An ended worker cannot clean up after itself, so each run worker keeps its temporary files in a [folder of its own](../backend/dazedtl/translation/jobs.py) that the app removes once it sees the worker gone.
 Closing or pausing cannot undo an already submitted provider request.
 
-Git baselines and backup records gate new translation work, and the game-write gateway refuses writes while the checkout is off the translation branch or mid-operation; [checkout_issue](../backend/dazedtl/translation/operations.py) names the problem for both the refusal and the warning every Guided task shows.
+Git baselines gate new translation work, and the game-write gateway refuses writes while the checkout is off the translation branch or mid-operation; [checkout_issue](../backend/dazedtl/translation/operations.py) names the problem for both the refusal and the warning every Guided task shows.
 Work DazedTL starts by itself as it polls, such as a queued Line widths fit or reused paid names, waits for Git instead of failing ([checkout_waiting](../backend/dazedtl/translation/guided.py)).
 Start over is the one writer to the game itself that the [write check](../tests/game_writes.py) lets past it: it puts back the original game whole and sets the Git history aside, so it must run whatever state the checkout is in.
 Reviewed runtime manifests control patch scope, and all .dazedtl work stays outside both branches.
@@ -418,7 +417,7 @@ The game-write gateway records one when the outermost write to a game succeeds, 
 Before each write and each game update, changes made outside DazedTL get a checkpoint of their own, so a DazedTL checkpoint never mixes them in and nothing waits for a clean worktree; the checkout refusals (wrong branch, unfinished merge, unfinished asset restore) stay.
 A checkpoint's subject is its stage and a plain summary on one line, named by the action's [registry](../backend/dazedtl/actions.py) row or the writer's summary, with `DazedTL-Action` and `DazedTL-Stage` trailers beside the `DazedTL-Version` ones, so checkpoints group by stage without a saved record; DazedTL is the author of all of them.
 One save the user asks for is one write, so one checkpoint: Save guidance sends every document it saves in one request and skips those whose file already holds their text, and saving options writes Line widths only when they differ from the ones the game already uses, its engine's stock ones until any are saved, so those stay implicit.
-The translation branch is patch-scoped: the files a write names that the patch lacks join it through the .gitignore patch block, and a file outside the patch is the original game's, which the `original` branch holds, so restoring never deletes it.
+The translation branch is patch-scoped: the files a write names that the patch lacks join it through the .gitignore patch block, and a file outside the patch is the original game's, which the game's [original files](#original-game-files) hold, so restoring never deletes it.
 Release packages what the branch tracks and refuses plugins players would lack there; the reviewed runtime manifest no longer decides the scope.
 Commits to one repository take turns through a lock in its Git folder, and each write in progress registers the files it declared, so two writes at once each commit their own.
 Assistant-led writes the game with its own tools too, so the app commits what waits in the patch at each progress report and when a translation run ends, named for the reported phase ([progress_report](../backend/dazedtl/translation/progress_report.py)), and the assistant's writes of one file each wait for that phase's checkpoint; the helper's `checkpoint` operation stays for older runs.
@@ -427,18 +426,21 @@ Assistant-led writes the game with its own tools too, so the app commits what wa
 The Project page's Checkpoints tab reads them from the branch's log ([checkpoint_history](../backend/dazedtl/compatibility/checkpoint_history.py), whose docstring holds the rules) when it opens and after a write moves the branch, never on a poll, and groups them by game version, which a `DazedTL-Version` trailer starts, and by stage.
 Go back, undo and save a copy are operations only the user starts, so the project helper has no route to them.
 Going back and undoing write through the gateway, so each is a checkpoint, and stay within the current game version; they leave the rule files that set the patch's scope as they are, since it only grows.
-A file outside the patch at the target takes the `original` branch's bytes; one the original lacks, because it holds only the patch too, stays as it is rather than being guessed at or removed.
+A file outside the patch at the target takes the `original` branch's bytes, or, since that branch holds only the patch too, the recorded original files' bytes for that version; without a record for it, a file neither holds stays as it is rather than being guessed at or removed.
 An undo waits for the newest later checkpoint that changed one of its files unless the file is again as it left it, so undoing in turn never loops; [blocker](../backend/dazedtl/compatibility/checkpoint_history.py) is that one rule.
 Save a copy writes the game as of a checkpoint into a new folder outside it, and Electron opens only the folders the backend returns.
 
-## Backup storage
+## Original game files
 
-Agent operations share [backups.py](../backend/dazedtl/translation/backups.py): complete path-to-content manifests over content-addressed objects shared across a game's snapshots, with no delta chain or live-file hardlinks.
-Content is verified before reuse and publication and again at restore, presentation checks that a snapshot's files still exist, and Electron opens only backup folders the backend returns as available.
-Existing snapshots are never pruned, and a failed capture removes only unpublished objects it created.
-A poll's availability check is reused while the snapshot's manifest and object folders keep their times, so a payload changed in place is noticed only by the full hash checks at restore and reuse.
-The project's `source_backup` stays the original it was set up from while it is readable, because plugin lookup evidence and release original bindings read the original.
-The independent scripts/backups.py reader can recover a moved game without its former app profile, and restoring a workspace never transplants connections, paid-job ownership or spending authorizations from another profile.
+A game's original files are kept in its own Git repository under the private ref `refs/dazedtl/originals`, whose commits each hold every file of the game folder but `.git` and `.dazedtl` in native bytes ([original_files](../backend/dazedtl/compatibility/original_files.py), whose docstring holds the kinds of record).
+The `original` branch can't hold them: every baseline is patch-scoped, holding only the files a patch can change, and that branch is published with the translation, while a private ref is never pushed with the branches.
+The game-write gateway records the game as found before the first write to a game whose Git is not set up, so the repository may start with that record alone, and a baseline made there treats it as a fresh one.
+Git setup records the prepared game, and a game update records the release it stages and the prepared release it applies, laid over the current record when it is a patch.
+Nothing is removed from the ref, and a record is never rewritten.
+
+[originals](../backend/dazedtl/translation/originals.py) is the one place readers get the original files: the plugin lookups, release file lists, census, checkpoint sources, Start over and an assistant's `backup_id`.
+DazedTL takes no backups now; a project set up before keeps reading the backups its `lifecycle.json` records name from the game's `.dazedtl/backups/v2` store, which [backups](../backend/dazedtl/translation/backups.py) only reads, and existing stores are never removed.
+The independent scripts/backups.py reader can recover a moved game from such a store without its former app profile, and restoring never overwrites an existing folder.
 
 ## Distribution and updates
 

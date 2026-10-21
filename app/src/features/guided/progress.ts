@@ -63,9 +63,7 @@ export function completedTasks(
     assistantTasks = [],
   }: { values?: Values; widthsDirty?: boolean } & ObservedWork = {},
 ) {
-  const sourceBackup = translation.lifecycle.source_backup;
-  const preserved = !!sourceBackup && sourceBackup.available !== false;
-  const baseline = preserved && !!translation.git?.configured;
+  const baseline = !!translation.git?.configured;
   const phaseComplete = (
     target: "database" | "dialogue" | "advanced" | "variables",
   ) =>

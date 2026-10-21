@@ -26,11 +26,8 @@ Flags:
   asks for no confirmation.
 - `one_click`: routine work that starts on one click; its review keeps the
   same one-use plan and execution checks without asking the user.
-- `ready`: needs the translation to be ready to take work: a source backup and
-  Git baseline, and a checkout on the translation branch with no unfinished
-  Git operation.
-- `source_backup`: makes or chooses the source backup, so it runs before one
-  exists.
+- `ready`: needs the translation to be ready to take work: a Git baseline,
+  and a checkout on the translation branch with no unfinished Git operation.
 - `writes_text`: writes the game's text, which on VX Ace the game-write
   gateway packs into Data, so its review refuses while an RGSS archive sits
   beside Game.exe.
@@ -94,7 +91,6 @@ class ActionSpec:
     read_only: bool = False
     one_click: bool = False
     ready: bool = False
-    source_backup: bool = False
     writes_text: bool = False
     restorable: bool = False
     isolated: bool = False
@@ -109,23 +105,8 @@ class ActionSpec:
 ROWS = (
     ActionSpec("start", "Translate", "run", stage="Translate", ready=True),
     # Lifecycle
-    ActionSpec(
-        "backup_source",
-        "Back up original game",
-        "lifecycle",
-        stage="Set up",
-        source_backup=True,
-    ),
-    ActionSpec(
-        "use_source_backup",
-        "Use the game's saved original",
-        "lifecycle",
-        stage="Set up",
-        source_backup=True,
-        one_click=True,
-    ),
-    # Setup saves the version from the form it shows, right after backing up
-    # and preparing; execution rechecks the same scope.
+    # Setup saves the version from the form it shows, right after preparing;
+    # execution rechecks the same scope.
     ActionSpec(
         "git_setup", "Record game version", "lifecycle", stage="Set up", one_click=True
     ),
@@ -476,6 +457,11 @@ ROWS = (
         "background",
         stage="Context",
         handler="dazedtl.compatibility.speaker_scan:run_scan",
+    ),
+    # Backups Set up took before the game's original files were kept in Git.
+    ActionSpec("backup_source", "Back up original game", "retired", stage="Set up"),
+    ActionSpec(
+        "use_source_backup", "Use the game's saved original", "retired", stage="Set up"
     ),
     # A glossary fix batch from before Text QA took the glossary over.
     ActionSpec(

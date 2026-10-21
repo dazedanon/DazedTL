@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 from dazedtl.actions import ACTIONS, GUIDED, spec
 from dazedtl.storage import write_json
 
-from . import backups, preparation
+from . import preparation
 from .files import digest, evidence, project_path, read_json, verify_evidence
 from .operations import lifecycle, verify_guided_review
 
@@ -207,10 +207,6 @@ class GuidedActions:
                 raise ValueError(blocked)
         self.guided.settings.prepare_engine()
         value = self.guided.backend.workflows.state(native["id"])
-        # Readiness checks the source backup itself, reading every saved
-        # file's record, so ready actions skip this separate check.
-        if not row.source_backup and not row.ready:
-            self.guided.source_preserved(project_id)
         self.require_ready(
             project_id,
             native,
@@ -361,7 +357,7 @@ class GuidedActions:
         return ActionPlan(label, paths, options, run_inputs=run_inputs, quote=quote)
 
     def plan_lifecycle(self, context):
-        """Backups, version baselines, resync and release lifecycle operations."""
+        """Version baselines, resync and release lifecycle operations."""
         project_id, action = context.project_id, context.action
         project = context.project
         native, files = context.native, context.files
@@ -376,39 +372,10 @@ class GuidedActions:
             if action == "guided_review"
             else {"output"}
             if action == "release_patch"
-            else {"backup_id"}
-            if action == "use_source_backup"
             else set()
         )
         if set(options) - allowed:
             raise ValueError("Unknown guided action option.")
-        if action in {"backup_source", "use_source_backup"}:
-            saved = lifecycle(self.guided.translation.workspace, project_id).get(
-                "source_backup"
-            )
-            # Saving the current files when the folder holds its original
-            # says so on the review's button.
-            if (
-                action == "backup_source"
-                and not saved
-                and backups.original(project["source"])
-            ):
-                label = "Back up current files"
-            if (
-                saved
-                and backups.record_status(project["source"], saved, kind="source")[
-                    "available"
-                ]
-            ):
-                raise ValueError(
-                    "The original is already preserved. Use workspace backups for later milestones."
-                )
-        if action == "use_source_backup":
-            stored = backups.original(project["source"])
-            if not stored or stored["id"] != options.get("backup_id"):
-                raise ValueError(
-                    "The game's saved backups changed. Review setup again before using one."
-                )
         if action == "refresh_sources":
             if (
                 not isinstance(files, list)
@@ -605,11 +572,7 @@ class GuidedActions:
             }
         }
         destination = (
-            str(backups.store_path(project["source"]))
-            if action in {"backup_source", "use_source_backup"}
-            else options["output"]
-            if action == "release_patch"
-            else project["source"]
+            options["output"] if action == "release_patch" else project["source"]
         )
         archive = (
             self.guided.backend.guided_ace_archive(project["source"])
@@ -639,19 +602,8 @@ class GuidedActions:
             }
             if action == "start" and quote
             else None,
-            "confirmation": (
-                # Replacing an original, or saving the current files when the
-                # game folder already holds one, keeps its review.
-                bool(
-                    lifecycle(self.guided.translation.workspace, project_id).get(
-                        "source_backup"
-                    )
-                    or backups.original(project["source"])
-                )
-                if action == "backup_source"
-                else not ACTIONS[action].one_click
-                and not (action == "start" and options["mode"] == "estimate")
-            ),
+            "confirmation": not ACTIONS[action].one_click
+            and not (action == "start" and options["mode"] == "estimate"),
             "package": {
                 "included": len(shown),
                 "excluded": int(omitted),
@@ -700,10 +652,6 @@ class GuidedActions:
         row = ACTIONS[action]
         if action != "start":
             self.guided.idle(isolated_workers=row.isolated)
-        # Readiness checks the source backup itself, reading every saved
-        # file's record, so ready actions skip this separate check.
-        if not row.source_backup and not row.ready:
-            self.guided.source_preserved(project_id)
         self.require_ready(
             project_id,
             native,

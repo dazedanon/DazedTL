@@ -10,11 +10,12 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from dazedtl.compatibility import original_files
 from dazedtl.storage import write_json
-from dazedtl.translation.backups import game_files, snapshot, store_path
 from dazedtl.translation.files import digest, evidence, read_json
 from dazedtl.translation.game_update import ABSENT, GameUpdate
 from dazedtl.translation.operations import execute, lifecycle, lifecycle_path
+from dazedtl.translation.originals import game_names
 from dazedtl.translation.release import (
     applied_assets,
     archive_stem,
@@ -127,10 +128,11 @@ class ReleaseTests(unittest.TestCase):
             )
             with self.assertRaises(ValueError):
                 write_archive(root, output, scope, lambda _: None, folder=top)
-            # Only the game, as its snapshots have it, and the translation's
-            # files ship; files added while working stay out, and a folder of
-            # only such files is one entry. A spelling's case doesn't matter.
-            snapshot(root, store_path(root), source_game=True)
+            # Only the game, as its recorded original files have it, and the
+            # translation's files ship; files added while working stay out,
+            # and a folder of only such files is one entry. A spelling's case
+            # doesn't matter.
+            original_files.record(root, original_files.FOUND)
             for name in (
                 "ci.html",
                 "Dictionaries/en-US-9-0.bdic",
@@ -139,7 +141,8 @@ class ReleaseTests(unittest.TestCase):
             ):
                 (root / name).parent.mkdir(exist_ok=True)
                 (root / name).write_text("added while translating", encoding="utf-8")
-            scope = inventory(root, None, game_files(root) | {"www/data/map001.json"})
+            known = game_names(None, None, root, {"version": 1})
+            scope = inventory(root, None, known | {"www/data/map001.json"})
             self.assertLessEqual(
                 {"ci.html", "Dictionaries/", "www/data/notes.txt"},
                 {row["path"] for row in scope["exclusions"]},
@@ -262,11 +265,7 @@ class ReleaseTests(unittest.TestCase):
             write_json(game / "data.json", {"line": "translated"})
             manifest_path = ".dazedtl/guided/runtime-manifest.json"
             write_json(game / manifest_path, {"files": {"data.json": {}}})
-            saved = snapshot(game, store_path(game), source_game=True)
-            write_json(
-                lifecycle_path(workspace, "owner"),
-                {"version": 1, "source_backup": saved},
-            )
+            write_json(lifecycle_path(workspace, "owner"), {"version": 1})
             inputs = {"version": 1, "inputs": {}}
             write_json(workspace / "inputs.json", inputs)
             status = {

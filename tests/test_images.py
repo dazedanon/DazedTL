@@ -20,11 +20,11 @@ from dazedtl.images import ImageService, recipes, validation
 from dazedtl.images.inventory import png_metadata
 from dazedtl.projects.store import Projects
 from dazedtl.storage import write_bytes, write_json
-from dazedtl.translation.backups import snapshot, store_path
 from dazedtl.translation.files import digest, read_json
 from dazedtl.translation.operations import lifecycle_path
 from PIL import Image
 
+from tests.fixtures import old_backup
 from tests.game_writes import game_write
 from tests.test_image_families import TEXTS, backdrop, letter
 from tests.test_image_families import png as rgba_png
@@ -139,10 +139,11 @@ class ImageTests(unittest.TestCase):
             self.projects, self.translation, None, self.backend, adapter=self.adapter
         )
         self.scan()
-        saved = snapshot(self.game, store_path(self.game), source_game=True)
+        # A project set up before original files were kept in Git reads its
+        # backup.
         write_json(
             lifecycle_path(self.profile, self.identity),
-            {"version": 1, "source_backup": saved},
+            {"version": 1, "source_backup": old_backup.snapshot(self.game)},
         )
 
     def scan(self):

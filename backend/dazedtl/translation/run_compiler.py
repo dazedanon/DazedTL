@@ -13,7 +13,7 @@ from dazedtl import system
 from dazedtl.settings.execution import worker_secret
 from dazedtl.storage import write_json
 
-from . import census, organize, progress_report
+from . import census, organize, originals, progress_report
 from .compilation import compile_requests
 from .files import evidence, project_path, read_json, verify_evidence
 from .jobs import RunStore, now
@@ -98,8 +98,7 @@ def scope_coverage(engine, workspace, project_id, root, units):
         system.unlink(coverage_path(workspace, project_id), missing_ok=True)
         return None, None
     value = read_json(path)
-    state = lifecycle(workspace, project_id)
-    snapshot = state.get("prepared_source") or state.get("source_backup")
+    snapshot = originals.prepared(workspace, project_id, root)
     rules_file = project_path(root, SCOPE_RULES, exists=False)
     rules = census.rules_input(
         read_json(rules_file) if rules_file.exists() else None,
@@ -113,7 +112,7 @@ def scope_coverage(engine, workspace, project_id, root, units):
         rules,
     )
     report.update(
-        stale=not snapshot or value.get("snapshot") != snapshot["id"],
+        stale=not snapshot or value.get("snapshot") != snapshot.id,
         source="assistant_dump" if value["decoded"] else "tool",
         needs_dump=[] if value["decoded"] else value["needs_dump"],
         unreadable=len(value["unreadable"]),

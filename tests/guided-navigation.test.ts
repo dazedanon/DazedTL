@@ -18,7 +18,7 @@ import { guidedProgress } from "../app/src/features/guided/progress.ts";
 
 test("saved runs choose their owning task instead of native progress labels", () => {
   const translation = {
-    lifecycle: { source_backup: { available: true } },
+    lifecycle: {},
     git: { configured: true },
   } as TranslationState;
   const state = {
@@ -187,7 +187,8 @@ test("phase navigation restores an available task and falls back for removed or 
   );
   assert.deepEqual(
     initialPosition(state, {
-      lifecycle: { source_backup: { available: true } },
+      lifecycle: {},
+      git: { configured: true },
     } as TranslationState),
     { step: "context", task: "names" },
   );
@@ -195,7 +196,7 @@ test("phase navigation restores an available task and falls back for removed or 
 
 test("the Project page continues with the next step and keeps a later saved position", () => {
   const translation = {
-    lifecycle: { source_backup: { available: true } },
+    lifecycle: {},
     git: { configured: false },
   } as TranslationState;
   const state = {

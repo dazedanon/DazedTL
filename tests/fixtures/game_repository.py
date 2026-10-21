@@ -591,31 +591,36 @@ assert listed()[0]["blocker"] == {
     "files": ["data/Items.json"],
 }, listed()[0]
 # Going back puts a file the patch didn't hold then to the original game's
-# bytes, here a plugin the patch took in later, which stays in it. The
+# bytes, here a plugin the patch took in later, which stays in it; the
+# `original` branch holds only the patch, so they come from the game's record
+# of its original files, which the first write made before setup. The
 # glossary is DazedTL's, so going back to before it removes it; going back
 # and undoing it once did nothing, as if it were an unknown original file.
+from dazedtl.compatibility import original_files
+
 plugin = "js/plugins/TitleMessage.js"
 oldest = listed()[-2]
 assert oldest["title"] == "Apply selected saved outputs", oldest
 assert listed()[-1]["title"] == "Set up the game at version 1.0", listed()
 native = (root / "tests/fixtures/mz-game" / plugin).read_bytes()
-blob = git(kept, "hash-object", "-w", str(root / "tests/fixtures/mz-game" / plugin))
-index = temporary / "original-index"
-plumbing = {"GIT_INDEX_FILE": str(index)}
-_run_git(kept, "read-tree", "original", env=plumbing)
-_run_git(
-    kept,
-    "update-index",
-    "--add",
-    "--cacheinfo",
-    f"100644,{blob.strip()},{plugin}",
-    env=plumbing,
+assert plugin not in git(kept, "ls-tree", "-r", "--name-only", "original").split()
+[found] = original_files.records(kept)
+assert found.kind == original_files.FOUND, found
+recorded = original_files.files(kept, found.commit)
+# The game as found, before the write that gave it DazedTL's ignore rules.
+assert plugin in recorded and ".gitignore" not in recorded, sorted(recorded)
+assert "refs/dazedtl/originals" not in git(kept, "for-each-ref", "refs/heads")
+# A game update that came as a patch is laid over the game's record, so the
+# next version's record still holds every file the patch leaves out.
+patched = temporary / "patched-release"
+(patched / "data").mkdir(parents=True)
+(patched / "data/System.json").write_text('{"gameTitle": "1.1"}')
+update = original_files.record(
+    kept, original_files.PREPARED, "1.1", folder=patched, over=found.commit
 )
-tree = _run_git(kept, "write-tree", env=plumbing).stdout.strip()
-from util.version_update.git_workflow import _commit_tree
-
-complete = _commit_tree(kept, tree, "original: complete", ("original",))
-git(kept, "update-ref", "refs/heads/original", complete)
+laid = original_files.files(kept, update)
+assert set(laid) == set(recorded) and laid[plugin] == recorded[plugin], laid
+assert laid["data/System.json"] != recorded["data/System.json"], laid
 checkpoints.go_back(kept, oldest["commit"])
 clean()
 assert history()[0] == "Went back to “Apply selected saved outputs”|checkpoint_back|", (

@@ -1,17 +1,18 @@
-"""Preparation and delivery compose preserved engine operations with backups."""
+"""Preparation and delivery compose preserved engine operations with the
+game's recorded original files."""
 
 import tempfile
-import uuid
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from dazedtl import system
+from dazedtl.compatibility import original_files
 from dazedtl.compatibility.checkpoint_commits import for_action, in_phase, running
 from dazedtl.storage import staging_folder, write_json
 
-from . import backups, progress_report
+from . import backups, originals, progress_report
 from .files import digest, evidence, project_path, read_json, verify_evidence
 
 
@@ -50,91 +51,6 @@ def backup_path(workspace, project_id, source, identity):
     return backups.lookup(source, Path(workspace) / "backups" / project_id, identity)
 
 
-def reconcile_source_backup(workspace, project_id, source, state):
-    """Retire missing auxiliary records after a source backup has been saved."""
-    retired = {}
-    saved = state.get("workspace_backup")
-    if saved:
-        try:
-            backups.lookup(source, Path(saved["path"]).parent, saved["id"])
-        except backups.BackupMissing:
-            retired["workspace_backup"] = saved
-        except OSError, ValueError, KeyError, TypeError:
-            pass  # Unreadable or damaged artifacts still need recovery, not cleanup.
-
-    identification = (
-        Path(workspace) / "translation/projects" / project_id / "engine.json"
-    )
-    try:
-        identified = read_json(identification)
-        paths = identified["evidence"]
-        if isinstance(paths, dict) and paths:
-            for name in paths:
-                try:
-                    project_path(source, name, exists=False).stat()
-                except FileNotFoundError:
-                    continue
-                break
-            else:
-                retired["engine"] = identified
-    except OSError, ValueError, KeyError, TypeError:
-        pass
-
-    if not retired:
-        return
-    archive = (
-        Path(workspace)
-        / "backups/stale-project-records"
-        / project_id
-        / uuid.uuid4().hex
-    )
-    write_json(
-        archive / "records.json",
-        {"version": 1, "source_backup": state["source_backup"]["id"], **retired},
-    )
-    if "workspace_backup" in retired:
-        state.pop("workspace_backup")
-        write_json(lifecycle_path(workspace, project_id), state)
-    if "engine" in retired and read_json(identification) == retired["engine"]:
-        system.rename(identification, archive / "engine.json")
-
-
-BACKUP_RECORDS = ("source_backup", "game_backup", "prepared_source", "workspace_backup")
-
-
-def reconcile_missing_backups(workspace, project_id, source, state):
-    """Retire backup records whose store is gone so their "unavailable"
-    warnings clear on their own, for example after the user deletes .dazedtl.
-    Each record must already carry record_status's `available`. A store that
-    still holds snapshots but misses a recorded one is left alone: that is
-    possible corruption to recover from, not a deliberate reset. Retired
-    records are archived beside reconcile_source_backup's for an audit trail.
-    """
-    try:
-        if (backups.store_path(source) / "snapshots").exists():
-            return ()
-    except OSError:
-        return ()
-    retired = {
-        key: state[key]
-        for key in BACKUP_RECORDS
-        if isinstance(state.get(key), dict) and state[key].get("available") is False
-    }
-    if not retired:
-        return ()
-    archive = (
-        Path(workspace)
-        / "backups/stale-project-records"
-        / project_id
-        / uuid.uuid4().hex
-    )
-    write_json(archive / "records.json", {"version": 1, "records": retired})
-    for key in retired:
-        state.pop(key, None)
-    write_json(lifecycle_path(workspace, project_id), state)
-    return tuple(retired)
-
-
 def runtime_manifest(source, relative):
     """A saved runtime patch manifest with DazedTL's own files the game holds,
     GameUpdate's, the plugins Set up installs and the playtest's fixes, which
@@ -144,15 +60,6 @@ def runtime_manifest(source, relative):
     return with_dazedtl_files(source, read_json(project_path(source, relative)))
 
 
-@contextmanager
-def backup_files(
-    workspace, project_id, source, identity, *, files=None, stopped=lambda: False
-):
-    path = backup_path(workspace, project_id, source, identity)
-    with backups.materialized(path, files=files, stopped=stopped) as restored:
-        yield restored
-
-
 def census_path(workspace, project_id):
     return Path(workspace) / "translation/projects" / project_id / "census.json"
 
@@ -160,17 +67,16 @@ def census_path(workspace, project_id):
 def take_census(
     engine, workspace, project_id, source, state, decoded, stopped, progress
 ):
-    """The census of the untranslated game, read from its prepared source
-    backup rather than the working copy, which gains English as work goes
+    """The census of the untranslated game, read from its recorded prepared
+    original rather than the working copy, which gains English as work goes
     on. The assistant's decoded dump, if named, adds engines the tool can't
     decode itself."""
     from . import census
 
-    snapshot = state.get("prepared_source") or state.get("source_backup")
-    if not snapshot:
-        raise ValueError("Back up the original game before taking its census.")
-    path = backup_path(workspace, project_id, source, snapshot["id"])
-    names = sorted(backups.manifest(path)["files"])
+    snapshot = originals.prepared(workspace, project_id, source, state)
+    if snapshot is None:
+        raise ValueError(originals.MISSING)
+    names = sorted(snapshot.files)
     folder = None
     if decoded:
         folder = project_path(source, decoded.rstrip("/"), exists=False)
@@ -184,13 +90,10 @@ def take_census(
             if item.is_file() and not item.is_symlink():
                 yield item.relative_to(folder).as_posix(), item.read_bytes()
 
-    def peek(name, size):
-        return backups.peek(path, name, size)
-
     with (
-        backups.materialized(
-            path, files=census.wanted(names, peek), stopped=stopped
-        ) as (root, _manifest),
+        snapshot.materialized(
+            files=census.wanted(names, snapshot.peek), stopped=stopped
+        ) as root,
         system.staging_folder(tempfile.gettempdir(), "dazedtl-census-") as work,
     ):
         result = census.scan(
@@ -199,9 +102,9 @@ def take_census(
             engine.census_decoders(root, work),
             dump(folder) if folder else None,
             progress,
-            peek,
+            snapshot.peek,
         )
-    result.update(snapshot=snapshot["id"], decoded_folder=decoded or None)
+    result.update(snapshot=snapshot.id, decoded_folder=decoded or None)
     write_json(census_path(workspace, project_id), result)
     kinds = {}
     for entry in result["entries"]:
@@ -239,19 +142,6 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
     source, options = Path(plan["source"]), plan["options"]
     arguments = plan["arguments"]
     state = lifecycle(workspace, job["project_id"])
-    destination = backups.store_path(source)
-
-    def restored(identity, files=None):
-        return resources.enter_context(
-            backup_files(
-                workspace,
-                job["project_id"],
-                source,
-                identity,
-                files=files,
-                stopped=stopped,
-            )
-        )
 
     def save(change, manifest_path=None):
         """A checkpoint of the changes waiting in the patch, whose scope takes
@@ -264,56 +154,26 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         return engine.git_status(source, options)["translation_commit"]
 
     def original_names():
-        """The original game's files the source backup lists, which hold
-        plugins with local-looking names Git's inventory leaves out."""
-        snapshot = state.get("prepared_source") or state.get("source_backup")
-        if not snapshot:
-            return ()
+        """The original game's files, which hold plugins with local-looking
+        names Git's inventory leaves out."""
         try:
-            path = backup_path(workspace, job["project_id"], source, snapshot["id"])
-            return list(backups.manifest(path)["files"])
-        except OSError, ValueError, KeyError:
-            # Git's inventory alone still names every other original file.
-            return ()
+            snapshot = originals.prepared(workspace, job["project_id"], source, state)
+        except OSError, ValueError:
+            snapshot = None
+        # Git's inventory alone still names every other original file.
+        return list(snapshot.files) if snapshot else ()
 
     action = plan["action"]
-    if action in {"backup_source", "backup_workspace"}:
-        root = source if action == "backup_source" else source / ".dazedtl"
-        # Checked first: an identical snapshot would make a missing original
-        # look available again.
-        preserved = action == "backup_source" and original_available(source, state)
-        result = backups.snapshot(
-            root,
-            destination,
-            source_game=action == "backup_source",
-            stopped=stopped,
-            progress=lambda count, path: progress(
-                f"Backed up {count:,} file{'' if count == 1 else 's'} · {path}"
-            ),
-        )
-        if action == "backup_workspace":
-            state["workspace_backup"] = result
-        elif preserved:
-            # A later game backup never replaces the original it was set up
-            # from; it is recorded as the latest one.
-            state["game_backup"] = result
-        else:
-            state["source_backup"] = result
-    elif action == "use_source_backup":
-        # A moved, copied or reinstalled game keeps its original in its own
-        # store; a project without one takes over the snapshot it showed.
-        if state.get("source_backup"):
-            raise ValueError("This project already has an original backup.")
-        saved = backups.original(source)
-        if not saved or saved["id"] != arguments["backup_id"]:
-            raise ValueError(
-                "The game's saved backups changed. Review setup again before using one."
-            )
-        backups.verify(saved["path"], source=source, full=False)
-        result = {key: value for key, value in saved.items() if key != "created"}
-        state["source_backup"] = result
+    if action == "record_original":
+        # The gateway records the game before DazedTL's first write; an
+        # assistant about to change it with its own tools asks first. A game
+        # whose Git is set up holds translation, never its original.
+        if not engine.git_status(source, options)["configured"]:
+            original_files.ensure_found(source, progress)
+        result = {
+            "recorded": originals.available(workspace, job["project_id"], source, state)
+        }
     elif action == "rpgmaker_prepare":
-        require_source_backup(source, state)
         data = (
             project_path(source, arguments["data_path"] + "/System.json").parent
             if arguments.get("data_path")
@@ -322,21 +182,23 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         result = engine.rpgmaker_prepare(source, options, data, log=progress)
         state["preparation"] = {"complete": True}
     elif action == "git_setup":
-        require_source_backup(source, state)
         current = engine.git_status(source, options)
         if not current["configured"]:
             if not arguments.get("manifest"):
                 raise ValueError(
                     "Review a runtime patch manifest and ignore rules before creating a Git baseline."
                 )
+            original_files.ensure_found(source, progress)
             manifest = read_json(project_path(source, arguments["manifest"]))
             engine.audit_scope(source, manifest)
-            snapshot = backups.snapshot(
-                source, destination, source_game=True, stopped=stopped
+            original_files.record(
+                source,
+                original_files.PREPARED,
+                arguments["version"],
+                stopped=stopped,
+                progress=progress,
             )
-            state["prepared_source"] = snapshot
-            write_json(lifecycle_path(workspace, job["project_id"]), state)
-        # An untranslated game is its own original: the snapshot above holds
+        # An untranslated game is its own original: the record above holds
         # exactly these files, so Git reads them in place.
         result = engine.git_setup(
             source,
@@ -366,14 +228,15 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         output = project_path(source, arguments["output"], exists=False)
         staged = project_path(source, arguments["translated"])
         if arguments.get("backup_id"):
-            root, manifest = restored(arguments["backup_id"], [arguments["source"]])
+            saved = originals.by_id(
+                workspace, job["project_id"], source, arguments["backup_id"], state
+            )
+            if arguments["source"] not in saved.files:
+                raise ValueError("That saved original has no such file.")
+            root = resources.enter_context(
+                saved.materialized([arguments["source"]], stopped)
+            )
             original = project_path(root, arguments["source"])
-            if manifest["files"].get(arguments["source"]) != digest(
-                original.read_bytes()
-            ):
-                raise ValueError(
-                    "The backup source bytes changed. Restore the matching original before injection."
-                )
         else:
             original = project_path(source, arguments["source"])
         if action == "rebase_rpgmaker":
@@ -533,10 +396,6 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             original_names=original_names(),
         )
         state["delivery"] = result
-        state["workspace_backup"] = backups.snapshot(
-            source / ".dazedtl", destination, stopped=stopped
-        )
-        result["backup"] = state["workspace_backup"]
     elif action == "stage_update":
         official = Path(arguments["official"]).expanduser().resolve(strict=True)
         if (
@@ -546,14 +405,13 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             or source.is_relative_to(official)
         ):
             raise ValueError("Choose a separate new official game folder.")
-        pristine = backups.snapshot(
-            official,
-            destination,
-            source_game=True,
+        pristine = original_files.record(
+            source,
+            original_files.UPDATE,
+            arguments["version"],
+            folder=official,
             stopped=stopped,
-            progress=lambda count, path: progress(
-                f"Backed up {count:,} new-original file{'' if count == 1 else 's'} · {path}"
-            ),
+            progress=progress,
         )
         staged = (
             Path(workspace)
@@ -565,8 +423,10 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         progress("Creating an isolated working copy of the new original.")
         staged.parent.mkdir(parents=True, exist_ok=True)
         copy = staged.with_name(job["id"] + ".release")
-        backups.restore(pristine["path"], copy, stopped=stopped)
+        recorded = originals.by_id(workspace, job["project_id"], source, pristine)
+        copy.mkdir()
         try:
+            recorded.extract(list(recorded.files), copy, stopped)
             # The copy is laid out as the game: a release inside an extra
             # folder, or a patch for the game's www folder, lines up with it.
             layout = engine.release_stage(
@@ -592,7 +452,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         result = {
             "official": str(staged),
             "version": arguments["version"],
-            "source_backup": pristine,
+            "original": pristine,
             "engine": kind,
             "patch": patch,
             "layout": layout,
@@ -623,21 +483,36 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             allow_pending=operation in {"continue", "abort"},
         )
         if operation == "apply":
-            state["incoming_source"] = backups.snapshot(
-                Path(arguments["official"]),
-                destination,
-                source_game=True,
-                stopped=stopped,
+            # Readers take the prepared record of the version the `original`
+            # branch is at, so this one counts once the update completes. A
+            # patch holds only some of the game's files, so it is laid over
+            # the current version's record; without one it records nothing,
+            # rather than a game missing every file the patch leaves out.
+            over = (
+                originals.recorded_now(source)
+                if arguments.get("patch_overlay")
+                else None
             )
+            if over or not arguments.get("patch_overlay"):
+                original_files.record(
+                    source,
+                    original_files.PREPARED,
+                    arguments["version"],
+                    folder=Path(arguments["official"]),
+                    over=over,
+                    stopped=stopped,
+                    progress=progress,
+                )
             state["incoming_version"] = arguments["version"]
             write_json(lifecycle_path(workspace, job["project_id"]), state)
         result = engine.version(source, operation, arguments)
         if operation in {"apply", "continue"}:
             state.pop("delivery", None)
             if result.get("complete"):
-                state["prepared_source"] = state.pop(
-                    "incoming_source", state.get("prepared_source")
-                )
+                # An update applied before its record was kept in Git saved
+                # a backup of its release instead.
+                if "incoming_source" in state:
+                    state["prepared_source"] = state.pop("incoming_source")
                 state["version_update"] = {
                     "version": state.pop("incoming_version", ""),
                     "complete": True,
@@ -651,6 +526,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         state, result = start_over(
             source,
             state,
+            originals.found(workspace, job["project_id"], source, state),
             engine.documents(source),
             arguments["keep_context"],
             stopped=stopped,
@@ -691,40 +567,16 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         )
     elif action == "discard_release":
         # A staged release the user decided against stops offering its review;
-        # its preserved backup stays in Backups.
+        # its record stays among the game's original files.
         state["discarded_release"] = arguments["stage"]
         result = {"stage": arguments["stage"]}
     else:
         raise ValueError("Unknown project operation.")
     write_json(lifecycle_path(workspace, job["project_id"]), state)
-    if action in {"backup_source", "use_source_backup"}:
-        reconcile_source_backup(workspace, job["project_id"], source, state)
     return result
 
 
-def original_available(source, state):
-    try:
-        require_source_backup(source, state)
-    except OSError, ValueError:
-        return False
-    return True
-
-
-def require_source_backup(source, state):
-    if not state.get("source_backup"):
-        raise ValueError("Back up the original game before translation.")
-    record = state["source_backup"]
-    path = backups.lookup(source, Path(record["path"]).parent, record["id"])
-    saved = backups.verify(path, source=source, full=False)
-    if saved["kind"] != "source":
-        raise ValueError(
-            "The source backup is unavailable. Restore it before continuing."
-        )
-    return saved
-
-
 def require_baseline(engine, source, options, state, *, allow_pending=False):
-    require_source_backup(source, state)
     status = engine.git_status(source, options)
     if status.get("repo_root") != str(Path(source).resolve()):
         raise ValueError("The selected game must own its version-tracking repository.")

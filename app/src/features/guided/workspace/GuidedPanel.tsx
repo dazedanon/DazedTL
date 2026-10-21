@@ -42,7 +42,6 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
     setSpeakerTab,
     fileScope,
     running,
-    preserved,
     baseline,
     findings,
     scan,
@@ -421,8 +420,6 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
                       : item.id === "gameupdate"
                         ? "Recreate GameUpdate files"
                         : "Rerun " + item.title.toLowerCase(),
-                    {},
-                    !preserved,
                   )}
                 </ActionRow>
               ))}

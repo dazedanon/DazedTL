@@ -4,7 +4,7 @@ tells an assistant to, and game text moves only through DazedTL's operations.
 
     python scripts/testkit/assistant.py STEP --helper-json HELPER --game GAME
 
-STEP is setup (identify, back up, prepare, set up Git), organize (list the
+STEP is setup (identify, record the original, prepare, set up Git), organize (list the
 game's Japanese as source units and organize them into a run), translate
 [--requests N] (answer the run's requests in order, the first N only when
 given), write (write every saved translation into the game, checking that
@@ -89,7 +89,7 @@ class Assistant:
         )
         engine = "RPG Maker VX Ace" if self.ace else "RPG Maker MZ"
         self.helper("identify", "--engine", engine, "--evidence", f"{WORK}/engine.md")
-        self.operation("backup_source")
+        self.operation("record_original")
         self.operation("rpgmaker_prepare")
         files = sorted(
             f"{self.data}/{path.name}"

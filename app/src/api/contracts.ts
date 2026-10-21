@@ -1261,8 +1261,6 @@ export type PackageSummary = {
 
 export type GuidedAction =
   | "start"
-  | "backup_source"
-  | "use_source_backup"
   | "git_setup"
   | "guided_review"
   | "guided_package"
@@ -1566,7 +1564,6 @@ export type DeliveryRecord = {
   game_version: string;
   updater_stamp: boolean;
   files?: number;
-  backup?: BackupRecord;
 };
 
 export type VersionUpdate = {
@@ -1574,16 +1571,13 @@ export type VersionUpdate = {
   complete: boolean;
 };
 
-/** Saved lifecycle evidence; further keys are internal to the backend. */
+/** Saved lifecycle evidence; further keys are internal to the backend,
+such as the backup records projects set up before their original files
+were kept in Git still hold. */
 export type Lifecycle = {
   version: number;
-  source_backup?: BackupRecord;
-  game_backup?: BackupRecord;
-  prepared_source?: BackupRecord;
-  workspace_backup?: BackupRecord;
   guided_review?: GuidedReviewRecord;
   delivery?: DeliveryRecord;
-  incoming_source?: BackupRecord;
   incoming_version?: string;
   version_update?: VersionUpdate;
   discarded_release?: string;
@@ -1677,7 +1671,7 @@ export type TranslationState = ProjectOptions & {
   git: GitStatus | null;
   gameUpdate: GameUpdateStatus;
   lifecycle: Lifecycle;
-  storedOriginal?: BackupSnapshot;
+  originalsRecorded: boolean;
   jobs: TranslationJob[];
   active: boolean;
   warnings: string[];
@@ -1788,20 +1782,6 @@ export type ReleaseInspection = {
   version: string;
   game: ReleaseLayout;
   patch: ReleaseLayout;
-};
-
-export type BackupRecord = {
-  id: string;
-  path: string;
-  files: number;
-  kind?: "source" | "workspace";
-  version?: number;
-  available?: boolean;
-  issue?: string;
-  bytes_total?: number;
-  bytes_added?: number;
-  bytes_reused?: number;
-  reused_snapshot?: boolean;
 };
 
 export type BackupSnapshot = {
@@ -3500,18 +3480,6 @@ export const ACTIONS = {
     restorable: false,
     reports_outcome: false,
   },
-  backup_source: {
-    label: "Back up original game",
-    family: "lifecycle",
-    restorable: false,
-    reports_outcome: false,
-  },
-  use_source_backup: {
-    label: "Use the game's saved original",
-    family: "lifecycle",
-    restorable: false,
-    reports_outcome: false,
-  },
   git_setup: {
     label: "Record game version",
     family: "lifecycle",
@@ -3762,6 +3730,18 @@ export const ACTIONS = {
   speaker_scan: {
     label: "Scan speaker names",
     family: "background",
+    restorable: false,
+    reports_outcome: false,
+  },
+  backup_source: {
+    label: "Back up original game",
+    family: "retired",
+    restorable: false,
+    reports_outcome: false,
+  },
+  use_source_backup: {
+    label: "Use the game's saved original",
+    family: "retired",
     restorable: false,
     reports_outcome: false,
   },

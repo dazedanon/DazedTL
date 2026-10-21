@@ -1,17 +1,14 @@
-"""Small real files protect deduplicated recovery and the no-overwrite boundary."""
+"""Backups saved before checkpoints stay restorable, and never into existing files."""
 
-import os
-import shutil
-import time
 import unittest
-from contextlib import nullcontext
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
 
-from dazedtl.storage import WorkspaceLock, write_json
+from dazedtl.storage import write_json
 from dazedtl.translation import backups
 from dazedtl.translation.files import digest
+
+from tests.fixtures import old_backup
 
 
 class BackupTests(unittest.TestCase):
@@ -29,202 +26,10 @@ class BackupTests(unittest.TestCase):
             '{"line":"English"}', encoding="utf-8"
         )
 
-    def objects(self):
-        return {
-            path.name: path.read_bytes()
-            for path in (self.store / "objects").glob("*/*")
-        }
-
-    def test_saved_reference_does_not_claim_missing_payloads_or_deleted_store_are_available(
-        self,
-    ):
-        saved = backups.snapshot(self.game, self.store, source_game=True)
-        before = dict(saved)
-        self.assertTrue(
-            backups.record_status(self.game, saved, kind="source")["available"]
-        )
-        blob = next((self.store / "objects").glob("*/*"))
-        content = blob.read_bytes()
-        blob.write_bytes(content + b"changed size")
-        self.assertFalse(
-            backups.record_status(self.game, saved, kind="source")["available"]
-        )
-        blob.write_bytes(content)
-        next((self.store / "objects").glob("*/*")).unlink()
-        self.assertFalse(
-            backups.record_status(self.game, saved, kind="source")["available"]
-        )
-        backups.snapshot(self.game, self.store, source_game=True)
-        self.assertTrue(
-            backups.record_status(self.game, saved, kind="source")["available"]
-        )
-        shutil.rmtree(self.work)
-        missing = backups.record_status(self.game, saved, kind="source")
-        self.assertFalse(missing["available"])
-        self.assertTrue(missing["issue"])
-        self.assertFalse(self.work.exists())
-        self.assertEqual(saved, before)
-
-    def test_a_polls_reused_backup_check_still_sees_a_removed_object(self):
-        # Polls reuse the check while the store's folders are unchanged; a
-        # removed object changes its folder, so it never reads as available.
-        saved = backups.snapshot(self.game, self.store, source_game=True)
-        settled = time.time_ns() - 3600 * 10**9
-        objects = self.store / "objects"
-        for path in (
-            objects,
-            *objects.iterdir(),
-            Path(saved["path"]) / "manifest.json",
-        ):
-            os.utime(path, ns=(settled, settled))
-
-        def available():
-            return backups.record_status(self.game, saved, kind="source", reuse=True)[
-                "available"
-            ]
-
-        self.assertTrue(available())
-        with patch.object(
-            backups, "_available_objects", side_effect=AssertionError("checked again")
-        ):
-            self.assertTrue(available())
-        next(objects.glob("*/*")).unlink()
-        self.assertFalse(available())
-
-    def test_checkpoint_reuses_content_and_remains_independently_restorable_after_move(
-        self,
-    ):
-        original = backups.snapshot(self.game, self.store, source_game=True)
-        (self.work / "copied-asset.bin").write_bytes(self.asset.read_bytes())
-        (self.work / "empty").mkdir()
-        script = self.work / "tool.sh"
-        script.write_bytes(b"#!/bin/sh\nexit 0\n")
-        script.chmod(0o755)
-        (self.work / "backups/earlier-manual-copy").mkdir()
-        (self.work / "backups/earlier-manual-copy/keep.txt").write_text(
-            "Earlier user backup", encoding="utf-8"
-        )
-        first = backups.snapshot(self.work, self.store)
-        objects = self.objects()
-        again = backups.snapshot(self.work, self.store)
-        self.assertEqual(first["id"], again["id"])
-        self.assertEqual(again["bytes_added"], 0)
-        self.assertTrue(again["reused_snapshot"])
-        self.assertEqual(self.objects(), objects)
-        self.assertEqual(first["bytes_reused"], self.asset.stat().st_size)
-        self.assertFalse(
-            any(
-                name.startswith("backups/")
-                for name in backups.manifest(first["path"])["files"]
-            )
-        )
-        self.assertEqual(len(list((self.store / "snapshots").iterdir())), 2)
-        # An in-place edit must never modify the older backup or its shared asset.
-        (self.work / "translations.json").write_text(
-            '{"line":"Corrected English"}', encoding="utf-8"
-        )
-        changed = backups.snapshot(self.work, self.store)
-        self.assertEqual(
-            changed["bytes_added"], (self.work / "translations.json").stat().st_size
-        )
-        moved = self.root / "moved-game"
-        self.game.rename(moved)
-        available = backups.record_status(moved, first, kind="workspace")
-        self.assertTrue(available["available"])
-        self.assertTrue(Path(available["path"]).is_relative_to(moved))
-        for identity, expected in (
-            (first["id"], '{"line":"English"}'),
-            (changed["id"], '{"line":"Corrected English"}'),
-        ):
-            with self.subTest(identity=identity):
-                saved = backups.lookup(moved, self.root / "absent-profile", identity)
-                target = self.root / identity
-                backups.restore(saved, target)
-                self.assertEqual(
-                    (target / "translations.json").read_text(encoding="utf-8"), expected
-                )
-                self.assertTrue((target / "empty").is_dir())
-                self.assertEqual(
-                    (target / "copied-asset.bin").read_bytes(),
-                    (moved / "runtime.bin").read_bytes(),
-                )
-                if os.name != "nt":
-                    self.assertEqual((target / "tool.sh").stat().st_mode & 0o777, 0o755)
-                    # A restored game gets a plain folder's permissions, which on
-                    # Windows let the app open what an elevated assistant writes.
-                    plain = self.root / ("plain-" + identity)
-                    plain.mkdir()
-                    self.assertEqual(target.stat().st_mode, plain.stat().st_mode)
-                (target / "copied-asset.bin").write_bytes(b"independent restored edits")
-                backups.verify(saved)
-                with self.assertRaises(ValueError):
-                    backups.restore(saved, moved / "unsafe-restore")
-        self.assertTrue(
-            (moved / ".dazedtl/backups/earlier-manual-copy/keep.txt").is_file()
-        )
-        self.assertEqual(
-            len(backups.catalog(moved, self.root / "absent-profile")["snapshots"]), 3
-        )
-        backups.verify(
-            backups.lookup(moved, self.root / "absent-profile", original["id"])
-        )
-
-    def test_cancelled_changed_or_failed_capture_leaves_previous_snapshots_and_no_new_payloads(
-        self,
-    ):
-        saved = backups.snapshot(self.work, self.store)
-        previous = self.objects()
-        for failure in (
-            "cancel",
-            "source_changed",
-            "inventory_changed",
-            "write_failed",
-        ):
-            with self.subTest(failure=failure):
-                current = self.work / "translations.json"
-                current.write_text(failure, encoding="utf-8")
-                stop = [False]
-
-                def progressed(_count, _name):
-                    if failure == "cancel":
-                        stop[0] = True
-                    if failure == "source_changed":
-                        current.write_text("Another writer's update", encoding="utf-8")
-                    if failure == "inventory_changed":
-                        (self.work / "new-file.txt").write_text(
-                            "Added while backing up", encoding="utf-8"
-                        )
-
-                writer = patch(
-                    "dazedtl.translation.backups.write_json",
-                    side_effect=OSError("No disk space"),
-                )
-                with (
-                    writer if failure == "write_failed" else nullcontext(),
-                    self.assertRaises((InterruptedError, ValueError, OSError)),
-                ):
-                    backups.snapshot(
-                        self.work,
-                        self.store,
-                        stopped=lambda: stop[0],
-                        progress=progressed,
-                    )
-                self.assertEqual(self.objects(), previous)
-                self.assertEqual(list((self.store / "temporary").iterdir()), [])
-                self.assertEqual(len(list((self.store / "snapshots").iterdir())), 1)
-                backups.verify(saved["path"])
-                (self.work / "new-file.txt").unlink(missing_ok=True)
-        lock = WorkspaceLock(self.store)
-        try:
-            with self.assertRaises(ValueError):
-                backups.snapshot(self.work, self.store)
-        finally:
-            lock.close()
-
     def test_corruption_and_destination_races_never_publish_a_restore_or_overwrite_user_files(
         self,
     ):
-        saved = backups.snapshot(self.work, self.store)
+        saved = old_backup.snapshot(self.game)
         target = self.root / "restored"
         target.mkdir()
         (target / "keep.txt").write_text("User work", encoding="utf-8")
@@ -285,22 +90,10 @@ class BackupTests(unittest.TestCase):
                     backups.restore(directory, self.root / "bad-manifest")
         self.assertFalse((self.root / "bad-manifest").exists())
 
-    def test_links_and_unmanaged_nested_stores_are_rejected(self):
-        with self.assertRaises(ValueError):
-            backups.snapshot(self.game, self.game / "other-backups", source_game=True)
+    def test_restores_refuse_linked_payloads(self):
+        saved = old_backup.snapshot(self.game)
         elsewhere = self.root / "elsewhere"
         elsewhere.mkdir()
-        self.store.parent.mkdir(parents=True)
-        self.store.symlink_to(elsewhere, target_is_directory=True)
-        with self.assertRaises(ValueError):
-            backups.snapshot(self.work, self.store)
-        self.store.unlink()
-        link = self.work / "linked"
-        link.symlink_to(self.asset)
-        with self.assertRaises(ValueError):
-            backups.snapshot(self.work, self.store)
-        link.unlink()
-        saved = backups.snapshot(self.work, self.store)
         blob = next((self.store / "objects").glob("*/*"))
         content = blob.read_bytes()
         blob.unlink()
@@ -309,15 +102,13 @@ class BackupTests(unittest.TestCase):
         blob.symlink_to(external)
         with self.assertRaises(ValueError):
             backups.restore(saved["path"], self.root / "linked-restore")
-        self.assertFalse(
-            backups.record_status(self.work, saved, kind="workspace")["available"]
-        )
+        with self.assertRaises(ValueError):
+            backups.verify(saved["path"], full=False)
         blob.unlink()
         blob.write_bytes(content)
         shard = blob.parent
         moved = elsewhere / shard.name
         shard.rename(moved)
         shard.symlink_to(moved, target_is_directory=True)
-        self.assertFalse(
-            backups.record_status(self.work, saved, kind="workspace")["available"]
-        )
+        with self.assertRaises(ValueError):
+            backups.verify(saved["path"], full=False)

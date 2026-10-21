@@ -17,7 +17,7 @@ from .guided_inputs import GuidedInputs
 from .guided_inspection import RunInspection
 from .guided_release import GuidedRelease
 from .guided_runs import GuidedRuns
-from .operations import checkout_issue, lifecycle, require_source_backup
+from .operations import checkout_issue, lifecycle
 from .text_fit import TextFit
 
 STEPS = {"setup", "context", "translate", "check", "release"}
@@ -854,12 +854,6 @@ class Guided:
         self.projects._get(data, project_id)["phase"] = phase
         self.projects._commit(data)
         return self.state(project_id)
-
-    def source_preserved(self, project_id):
-        project, _ = self.record(project_id)
-        state = lifecycle(self.translation.workspace, project_id)
-        require_source_backup(project["source"], state)
-        return state
 
     def clean(self, project_id):
         self.translation.clean_drafts(project_id)

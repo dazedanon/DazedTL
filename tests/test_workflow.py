@@ -11,12 +11,12 @@ from unittest.mock import Mock, patch
 
 from dazedtl.api.contracts.validation import check_response
 from dazedtl.api.server import assistant_dispatch
+from dazedtl.compatibility import original_files
 from dazedtl.projects.store import Projects
 from dazedtl.settings.execution import configuration, connection_summary, worker_secret
 from dazedtl.settings.store import Settings
 from dazedtl.storage import WorkspaceLock, write_json
 from dazedtl.translation import delivery, progress_report
-from dazedtl.translation.backups import materialized, snapshot, store_path
 from dazedtl.translation.compilation import compile_requests
 from dazedtl.translation.files import digest, evidence, read_json
 from dazedtl.translation.game_update import ABSENT
@@ -35,6 +35,8 @@ from dazedtl.translation.requests import plan_input
 from dazedtl.translation.results import EXPORT, Results
 from dazedtl.translation.run_compiler import CENSUS_UNCOVERED, SCOPE_RULES
 from dazedtl.translation.service import IMAGE_UNITS, Translation
+
+from tests.fixtures import old_backup
 
 
 class Engine:
@@ -160,11 +162,6 @@ class WorkflowTests(unittest.TestCase):
         self.project = ProjectWorkspace(self.game)
         self.project.save(
             self.project.read()["revision"], {**DEFAULTS, "include_images": False}
-        )
-        backup = snapshot(self.game, store_path(self.game), source_game=True)
-        write_json(
-            lifecycle_path(self.profile, self.identity),
-            {"version": 1, "source_backup": backup},
         )
         connection = {
             "id": "connection",
@@ -541,11 +538,7 @@ class WorkflowTests(unittest.TestCase):
         )
 
         def back_up():
-            state = lifecycle(self.profile, self.identity)
-            state["source_backup"] = snapshot(
-                self.game, store_path(self.game), source_game=True
-            )
-            write_json(lifecycle_path(self.profile, self.identity), state)
+            original_files.record(self.game, original_files.PREPARED)
 
         def census():
             take_census(
@@ -960,8 +953,8 @@ class WorkflowTests(unittest.TestCase):
             ),
         )
 
-    def test_backups_and_conflict_recovery_are_real_prerequisites(self):
-        state = read_json(lifecycle_path(self.profile, self.identity))
+    def test_conflict_recovery_is_a_real_prerequisite(self):
+        state = lifecycle(self.profile, self.identity)
         self.engine.pending = ["CHERRY_PICK_HEAD"]
         with self.assertRaises(ValueError):
             require_baseline(self.engine, self.game, DEFAULTS, state)
@@ -982,26 +975,6 @@ class WorkflowTests(unittest.TestCase):
             str(refused.exception), self.service.state(self.identity)["warnings"]
         )
         self.engine.branch = "main"
-        (Path(state["source_backup"]["path"]) / "manifest.json").unlink()
-        with self.assertRaises(ValueError):
-            self.prepared(self.service.compile(self.identity, self.plan_path))
-        for action, arguments in (
-            ("rpgmaker_prepare", {}),
-            ("git_setup", {"version": "1.0"}),
-        ):
-            with self.subTest(action=action), self.assertRaises(ValueError):
-                execute(
-                    self.engine,
-                    self.profile,
-                    {"project_id": self.identity},
-                    {
-                        "source": str(self.game),
-                        "options": DEFAULTS,
-                        "action": action,
-                        "arguments": arguments,
-                    },
-                    lambda: False,
-                )
 
     def test_current_selection_excludes_drafts_and_secrets_while_saved_runs_keep_their_route(
         self,
@@ -1068,10 +1041,11 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(job["action"], action)
 
     def test_start_over_restores_the_original_and_sets_the_attempt_aside(self):
-        # Starting over must put every original file back and move what the
-        # attempt added aside instead of deleting it, keeping save games, the
-        # notes the user keeps, the project's options and the backups; a paid
+        # Starting over must put every original file back from Git and move
+        # what the attempt added aside instead of deleting it, keeping save
+        # games, the notes the user keeps and the project's options; a paid
         # API run still waiting at its provider must refuse it.
+        original_files.record(self.game, original_files.FOUND)
         self.projects.choose_method(self.identity, "len")
         run = self.prepared(self.service.compile(self.identity, self.plan_path))
         job, _plan = self.service.jobs.store.load(run["id"])
@@ -1081,15 +1055,12 @@ class WorkflowTests(unittest.TestCase):
             self.service.start_over(self.identity, True)
         original = (self.game / "source.json").read_bytes()
         write_json(self.game / "source.json", {"line": "Yes."})
-        translated = (self.game / "source.json").read_bytes()
         (self.game / "js").mkdir()
         (self.game / "js/Forge.js").write_text("added by setup", encoding="utf-8")
         # The game's plugin list makes the folder a game's for the write check.
         (self.game / "js/plugins.js").write_text("var $plugins = [];", encoding="utf-8")
         (self.game / "save").mkdir()
         (self.game / "save/file1.rmmzsave").write_text("progress", encoding="utf-8")
-        (self.game / ".git").mkdir()
-        (self.game / ".git/HEAD").write_text("ref: refs/heads/main", encoding="utf-8")
         (self.game / WORK / "progress.json").write_text("{}", encoding="utf-8")
         # The playtest's fixes for this attempt; the next began from them.
         (self.game / ".dazedtl/playtest").mkdir()
@@ -1118,7 +1089,6 @@ class WorkflowTests(unittest.TestCase):
             state = lifecycle(self.profile, self.identity)
             return state, self.game / state["started_over"]["archive"]
 
-        before = lifecycle(self.profile, self.identity)
         state, archive = start_over(True)
         self.assertEqual((self.game / "source.json").read_bytes(), original)
         self.assertFalse((self.game / "js").exists())
@@ -1137,286 +1107,25 @@ class WorkflowTests(unittest.TestCase):
         self.assertTrue(self.project.path.is_file())
         self.assertEqual(glossary.read_text(encoding="utf-8"), "Lili (リリ)")
         self.assertFalse((records / "assistant.json").exists())
-        self.assertEqual(state["source_backup"], before["source_backup"])
-        with materialized(state["game_backup"]["path"]) as (saved, _manifest):
-            self.assertEqual((saved / "source.json").read_bytes(), translated)
-        # Running it again on the original changes no game file, and lets the
-        # notes go when the user chose not to keep them.
+        self.assertNotIn("game_backup", state)
+        self.assertFalse((self.game / ".dazedtl/backups").exists())
+        # A project set up before original files were kept in Git starts
+        # over from its backup. Running it again on the original changes no
+        # game file, and lets the notes go when the user chose not to keep
+        # them.
+        saved = old_backup.snapshot(self.game)
+        write_json(
+            lifecycle_path(self.profile, self.identity),
+            {**state, "source_backup": saved},
+        )
         state, archive = start_over(False)
+        self.assertEqual(state["source_backup"], saved)
         self.assertEqual((self.game / "source.json").read_bytes(), original)
         self.assertFalse(glossary.exists())
         self.assertEqual(
             (archive / "context/.dazedtl/glossary.txt").read_text(encoding="utf-8"),
             "Lili (リリ)",
         )
-
-    def test_backup_never_recurses_into_itself_or_copies_git_and_work_records_as_source(
-        self,
-    ):
-        (self.game / ".git").mkdir()
-        (self.game / ".git/config").write_text("local Git state", encoding="utf-8")
-        with self.assertRaises(ValueError):
-            snapshot(self.game, self.game / "backups", source_game=True)
-        result = snapshot(self.game, self.profile / "more-backups", source_game=True)
-        files = read_json(Path(result["path"]) / "manifest.json")["files"]
-        self.assertEqual(set(files), {"source.json"})
-        with materialized(result["path"]) as (restored, _manifest):
-            self.assertEqual(
-                digest((restored / "source.json").read_bytes()), files["source.json"]
-            )
-
-    def test_fresh_source_backup_retires_deleted_workspace_and_investigation_records(
-        self,
-    ):
-        report = WORK + "/work/investigation.md"
-        (self.game / report).write_text("Engine investigation", encoding="utf-8")
-        self.service.identify(self.identity, "MVMZ", report)
-        run = self.prepared(self.service.compile(self.identity, self.plan_path))
-        run_folder = self.service.jobs.store.folder(run["id"])
-        saved_run = {
-            path.name: path.read_bytes()
-            for path in run_folder.iterdir()
-            if path.is_file()
-        }
-        self.service.draft(
-            self.identity,
-            "options",
-            {"revision": "saved", "options": {**DEFAULTS, "instructions": "Unsaved"}},
-        )
-        draft_path = self.service.draft_path(self.identity)
-        saved_draft = draft_path.read_bytes()
-        state = lifecycle(self.profile, self.identity)
-        state["prepared_source"] = state["source_backup"]
-        state["git"] = {"original_commit": "retained"}
-        state["workspace_backup"] = snapshot(
-            self.game / ".dazedtl", store_path(self.game)
-        )
-        write_json(lifecycle_path(self.profile, self.identity), state)
-        engine_path = lifecycle_path(self.profile, self.identity).with_name(
-            "engine.json"
-        )
-        identified = read_json(engine_path)
-        shutil.rmtree(self.game / ".dazedtl")
-        result = execute(
-            self.engine,
-            self.profile,
-            {"project_id": self.identity},
-            {
-                "source": str(self.game),
-                "options": DEFAULTS,
-                "action": "backup_source",
-                "arguments": {},
-            },
-            lambda: False,
-        )
-        current = lifecycle(self.profile, self.identity)
-        self.assertEqual(
-            current,
-            {
-                **{
-                    key: value
-                    for key, value in state.items()
-                    if key != "workspace_backup"
-                },
-                "source_backup": result,
-            },
-        )
-        self.assertFalse(engine_path.exists())
-        archive = next(
-            (self.profile / "backups/stale-project-records" / self.identity).iterdir()
-        )
-        self.assertEqual(
-            read_json(archive / "records.json")["workspace_backup"],
-            state["workspace_backup"],
-        )
-        self.assertEqual(read_json(archive / "engine.json"), identified)
-        self.assertEqual(draft_path.read_bytes(), saved_draft)
-        self.assertEqual(
-            {
-                path.name: path.read_bytes()
-                for path in run_folder.iterdir()
-                if path.is_file()
-            },
-            saved_run,
-        )
-        # State no longer promotes these retired references to Overview warnings.
-        current = self.service.state(self.identity)
-        self.assertEqual(current["warnings"], [])
-        self.assertTrue(current["lifecycle"]["source_backup"]["available"])
-        # A later game backup, such as after translating, keeps the original.
-        write_json(self.game / "source.json", {"line": "Yes."})
-        later = execute(
-            self.engine,
-            self.profile,
-            {"project_id": self.identity},
-            {
-                "source": str(self.game),
-                "options": DEFAULTS,
-                "action": "backup_source",
-                "arguments": {},
-            },
-            lambda: False,
-        )
-        saved = lifecycle(self.profile, self.identity)
-        self.assertEqual(saved["source_backup"], result)
-        self.assertEqual(saved["game_backup"], later)
-        self.assertEqual(len(list(archive.parent.iterdir())), 1)
-
-    def test_deleting_the_backup_store_clears_its_stale_unavailable_warnings(self):
-        # Deleting .dazedtl by hand leaves lifecycle records pointing at a store
-        # that is gone; nothing can recover them, so state retires the records
-        # instead of repeating their warnings on every read.
-        state = lifecycle(self.profile, self.identity)
-        state["workspace_backup"] = snapshot(
-            self.game / ".dazedtl", store_path(self.game)
-        )
-        write_json(lifecycle_path(self.profile, self.identity), state)
-        # A single snapshot missing while the store still stands is possible
-        # corruption: it keeps warning and its record so recovery stays offered.
-        shutil.rmtree(Path(state["workspace_backup"]["path"]))
-        kept = self.service.state(self.identity)
-        self.assertTrue(any("Workspace backup" in note for note in kept["warnings"]))
-        self.assertIn("workspace_backup", lifecycle(self.profile, self.identity))
-        # Deleting the whole store leaves nothing to recover, so its records and
-        # their warnings retire, archived for an audit trail.
-        shutil.rmtree(self.game / ".dazedtl")
-        cleared = self.service.state(self.identity)
-        self.assertEqual(cleared["warnings"], [])
-        current = lifecycle(self.profile, self.identity)
-        self.assertNotIn("source_backup", current)
-        self.assertNotIn("workspace_backup", current)
-        archive = next(
-            (self.profile / "backups/stale-project-records" / self.identity).iterdir()
-        )
-        self.assertEqual(
-            read_json(archive / "records.json")["records"]["source_backup"]["id"],
-            state["source_backup"]["id"],
-        )
-
-    def test_moved_game_takes_over_the_original_its_own_store_holds(self):
-        # A moved, copied or reinstalled game opens as a new project whose
-        # profile has no record of the original the game's store already holds.
-        original = lifecycle(self.profile, self.identity)["source_backup"]
-        write_json(self.game / "source.json", {"line": "Yes."})
-        snapshot(self.game, store_path(self.game), source_game=True)
-        moved = self.root / "moved"
-        self.game.rename(moved)
-        identity = self.projects.open({"source": str(moved), "engine": "MVMZ"})["id"]
-        self.engine.detect = lambda _source: "MVMZ"
-        self.engine.documents = lambda _source: {}
-        stored = self.service.state(identity)["storedOriginal"]
-        # The earliest game snapshot is the original, not a later backup.
-        self.assertEqual(stored["id"], original["id"])
-
-        def use(backup_id):
-            return execute(
-                self.engine,
-                self.profile,
-                {"project_id": identity},
-                {
-                    "source": str(moved),
-                    "options": DEFAULTS,
-                    "action": "use_source_backup",
-                    "arguments": {"backup_id": backup_id},
-                },
-                lambda: False,
-            )
-
-        with self.assertRaisesRegex(ValueError, "saved backups changed"):
-            use("0" * 32)
-        use(stored["id"])
-        state = self.service.state(identity)
-        self.assertEqual(state["lifecycle"]["source_backup"]["id"], original["id"])
-        self.assertTrue(state["lifecycle"]["source_backup"]["available"])
-        self.assertNotIn("storedOriginal", state)
-        with self.assertRaisesRegex(ValueError, "already has an original"):
-            use(stored["id"])
-
-    def test_source_backup_preserves_existing_or_damaged_artifacts_and_prepared_baselines(
-        self,
-    ):
-        report = WORK + "/work/investigation.md"
-        (self.game / report).write_text("Engine investigation", encoding="utf-8")
-        self.service.identify(self.identity, "MVMZ", report)
-        state = lifecycle(self.profile, self.identity)
-        state["workspace_backup"] = snapshot(
-            self.game / ".dazedtl", store_path(self.game)
-        )
-        state["prepared_source"] = {
-            **state["source_backup"],
-            "id": "e" * 32,
-            "path": str(self.root / "missing-prepared"),
-        }
-        write_json(lifecycle_path(self.profile, self.identity), state)
-        engine_path = lifecycle_path(self.profile, self.identity).with_name(
-            "engine.json"
-        )
-        identified = engine_path.read_bytes()
-        for damaged in (False, True):
-            with self.subTest(damaged=damaged):
-                if damaged:
-                    (
-                        Path(state["workspace_backup"]["path"]) / "manifest.json"
-                    ).write_text("damaged manifest", encoding="utf-8")
-                    (self.game / report).write_text(
-                        "Changed evidence still needs review", encoding="utf-8"
-                    )
-                execute(
-                    self.engine,
-                    self.profile,
-                    {"project_id": self.identity},
-                    {
-                        "source": str(self.game),
-                        "options": DEFAULTS,
-                        "action": "backup_source",
-                        "arguments": {},
-                    },
-                    lambda: False,
-                )
-                current = lifecycle(self.profile, self.identity)
-                self.assertEqual(current["workspace_backup"], state["workspace_backup"])
-                self.assertEqual(current["prepared_source"], state["prepared_source"])
-                self.assertEqual(engine_path.read_bytes(), identified)
-                self.assertFalse(
-                    (self.profile / "backups/stale-project-records").exists()
-                )
-
-    def test_failed_or_cancelled_source_backup_retains_stale_records(self):
-        report = WORK + "/work/investigation.md"
-        (self.game / report).write_text("Engine investigation", encoding="utf-8")
-        self.service.identify(self.identity, "MVMZ", report)
-        state = lifecycle(self.profile, self.identity)
-        state["workspace_backup"] = snapshot(
-            self.game / ".dazedtl", store_path(self.game)
-        )
-        state_path = lifecycle_path(self.profile, self.identity)
-        write_json(state_path, state)
-        engine_path = state_path.with_name("engine.json")
-        original = (state_path.read_bytes(), engine_path.read_bytes())
-        shutil.rmtree(self.game / ".dazedtl")
-        for cancelled in (True, False):
-            with self.subTest(cancelled=cancelled):
-                if not cancelled:
-                    (self.game / "source.json").unlink()
-                with self.assertRaises(InterruptedError if cancelled else ValueError):
-                    execute(
-                        self.engine,
-                        self.profile,
-                        {"project_id": self.identity},
-                        {
-                            "source": str(self.game),
-                            "options": DEFAULTS,
-                            "action": "backup_source",
-                            "arguments": {},
-                        },
-                        lambda: cancelled,
-                    )
-                self.assertEqual(
-                    (state_path.read_bytes(), engine_path.read_bytes()), original
-                )
-                self.assertFalse(
-                    (self.profile / "backups/stale-project-records").exists()
-                )
 
     def test_helper_checkpoints_save_through_git_with_dazedtls_own_files(self):
         # The helper's checkpoint once restored originals from the backup and
@@ -1470,7 +1179,17 @@ class WorkflowTests(unittest.TestCase):
                 lambda: False,
             )
 
+        # An assistant records the game before its own tools change it, and
+        # Git setup the prepared game. A game whose Git is set up holds
+        # translation, so it is never recorded as the original.
+        configured[0] = True
+        self.assertFalse(operation("record_original")["recorded"])
+        self.assertEqual(original_files.records(self.game), [])
+        configured[0] = False
+        self.assertTrue(operation("record_original")["recorded"])
         operation("git_setup", version="1.0", untranslated=True, manifest=manifest_path)
+        kinds = [row.kind for row in original_files.records(self.game)]
+        self.assertEqual(kinds, [original_files.FOUND, original_files.PREPARED])
         write_json(self.game / "source.json", {"line": "Yes."})
         (self.game / "js/plugins/DazedTL_Fixes.js").write_text(
             "// Fix\n", encoding="utf-8"
@@ -1501,7 +1220,7 @@ class WorkflowTests(unittest.TestCase):
         state = lifecycle(self.profile, self.identity)
         self.assertNotIn("checkpoint", state)
         self.assertNotIn("workspace_backup", state)
-        packaged = operation("package")
+        operation("package")
         # Edits made outside DazedTL get their own checkpoint before the
         # package's.
         self.engine.outside_edits.assert_called_once()
@@ -1512,16 +1231,6 @@ class WorkflowTests(unittest.TestCase):
         operation("checkpoint", manifest=other_manifest)
         with self.assertRaisesRegex(ValueError, "runtime manifest before packaging"):
             operation("package")
-        restored = self.root / "recovered-work"
-        operation(
-            "restore_backup",
-            backup_id=packaged["backup"]["id"],
-            destination=str(restored),
-        )
-        self.assertEqual(
-            read_json(restored / "len-method/work/patch-files.json"), ["source.json"]
-        )
-        self.assertFalse((restored / "backups").exists())
         official = self.root / "new-official"
         official.mkdir()
         (official / "native.bin").write_bytes(b"new official bytes\r\n")
@@ -1529,6 +1238,15 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(
             (Path(staged["official"]) / "native.bin").read_bytes(),
             b"new official bytes\r\n",
+        )
+        # The new release's files are kept in the game's Git as they came.
+        update = original_files.records(self.game)[-1]
+        self.assertEqual(
+            (update.commit, update.kind, update.version),
+            (staged["original"], original_files.UPDATE, "1.1"),
+        )
+        self.assertEqual(
+            list(original_files.files(self.game, update.commit)), ["native.bin"]
         )
         # A staged patch compares only as a patch: as a complete game it
         # would remove every file it leaves out.

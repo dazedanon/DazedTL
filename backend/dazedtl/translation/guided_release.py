@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from dazedtl.storage import write_json
 
-from . import backups
+from . import originals as game_originals
 from .files import read_json
 from .operations import lifecycle
 
@@ -264,18 +264,12 @@ class GuidedRelease:
         return sorted(paths)
 
     def release_known(self, project_id, source):
-        """The files a clean game ZIP may hold: the game's, as its saved
-        snapshots have them, and the translation's runtime files. None when
-        either is unknown, so the ZIP then keeps every other file; an applied
-        image edited outside Images, for one, still packages."""
-        state = lifecycle(self.guided.translation.workspace, project_id)
-        names = backups.game_files(
-            source,
-            [
-                state[key]
-                for key in ("source_backup", "prepared_source", "game_backup")
-                if state.get(key)
-            ],
+        """The files a clean game ZIP may hold: the game's, as its recorded
+        original files have them, and the translation's runtime files. None
+        when either is unknown, so the ZIP then keeps every other file; an
+        applied image edited outside Images, for one, still packages."""
+        names = game_originals.game_names(
+            self.guided.translation.workspace, project_id, source
         )
         try:
             translation = self.release_paths(project_id, source, "release")
@@ -312,19 +306,16 @@ class GuidedRelease:
             originals = self.guided.translation.engine.source_bindings(
                 project["source"], paths
             )
-            state = lifecycle(self.guided.translation.workspace, project_id)
-            # Only the prepared source can supply an original at the
-            # checkpoint; a setup backup of a game that was already
-            # translated holds its additions, such as GameUpdate's config.
-            saved = state.get("prepared_source")
-            source_files = {}
-            if saved:
-                location = backups.lookup(
-                    project["source"], Path(saved["path"]).parent, saved["id"]
-                )
-                source_files = backups.manifest(location, source=project["source"])[
-                    "files"
-                ]
+            # Only the prepared game can supply an original at the
+            # checkpoint; the game as found, when it was already translated,
+            # holds its additions, such as GameUpdate's config.
+            saved = game_originals.prepared(
+                self.guided.translation.workspace,
+                project_id,
+                project["source"],
+                or_found=False,
+            )
+            source_files = saved.files if saved else {}
             from util.playtest.fixes import patch_files as fixes
 
             # The main.js loading the playtest's fixes is the game's own,

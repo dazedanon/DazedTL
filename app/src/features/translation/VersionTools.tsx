@@ -28,9 +28,6 @@ export function VersionTools({
   );
   const [untranslated, setUntranslated] = useState(false);
   const [original, setOriginal] = useState("");
-  const preserved =
-    !!state.lifecycle.source_backup &&
-    state.lifecycle.source_backup.available !== false;
   return (
     <div className="version-form">
       <p className="muted">
@@ -86,19 +83,12 @@ export function VersionTools({
         )}
         <div className="actions">
           {["MVMZ", "ACE"].includes(state.engine) &&
-            control(
-              "rpgmaker_prepare",
-              "Prepare RPG Maker files",
-              {},
-              !preserved,
-            )}
+            control("rpgmaker_prepare", "Prepare RPG Maker files")}
           {control(
             "git_setup",
             "Record game version",
             { version, manifest, untranslated, original },
-            !preserved ||
-              !version.trim() ||
-              (!untranslated && !original.trim()),
+            !version.trim() || (!untranslated && !original.trim()),
           )}
         </div>
       </Section>

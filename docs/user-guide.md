@@ -50,7 +50,8 @@ You can move between tasks at any time; Alt+Left and Alt+Right (Option on macOS)
 ### 1. Set up
 
 **Set up this game** asks for the game's version and whether it already contains translations.
-It then backs up the original, prepares the game files and starts version tracking, so later game updates can be merged.
+It then prepares the game files and starts version tracking, so later game updates can be merged.
+Before its first change, DazedTL keeps a copy of every original game file in the game folder's Git history, which you never publish; nothing else is backed up.
 From then on DazedTL saves every change it makes to the game, such as an Apply, a Plugin files change or QA's corrections, as its own checkpoint in the game folder's Git history, so there is nothing to save by hand.
 Changes you make to the game outside DazedTL are saved as a checkpoint of their own, **Edits made outside DazedTL**, the next time DazedTL changes the game.
 If a step fails, the reason appears beside the button and **Finish setup** carries on.
@@ -249,7 +250,7 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
    In **Assistant only**, lines your assistant won't translate appear under **Declined lines** while it carries on.
    Estimate them with your API connection and approve, or copy a prompt that has another coding assistant translate only those lines; your assistant picks up the translations once they're saved.
 5. To try again from scratch, stop your assistant and choose **Start over…** on **Progress**.
-   It puts back the original game files and moves the attempt, including the playtest's fixes, to `.dazedtl/archived`; backups, save games, Image Manager work and your options stay, and so do the glossary and notes unless you clear **Keep glossary and notes**.
+   It puts back the original game files and moves the attempt, including the playtest's fixes, to `.dazedtl/archived`; save games, Image Manager work, older backups and your options stay, and so do the glossary and notes unless you clear **Keep glossary and notes**.
 
 Your assistant's session uses its own plan in every mode, so on a limited plan pick a smaller model or lower reasoning effort.
 
@@ -332,7 +333,8 @@ For Assistant-led, **Copy post-update task** gives your assistant the update to 
 
 ### Backups from before checkpoints
 
-The backups DazedTL saved before checkpoints stay in the game's `.dazedtl/backups` folder, and **Checkpoints** opens it.
+DazedTL no longer takes backups; the ones it saved before checkpoints stay in the game's `.dazedtl/backups` folder, and **Checkpoints** opens it.
+A game set up then keeps reading its original files from them.
 These commands, run from the DazedTL folder, list, check and restore them; your coding assistant can run them for you.
 On Windows, use `.venv\Scripts\python` instead of `.venv/bin/python`.
 

@@ -77,8 +77,7 @@ declare global {
       chooseFolder(): Promise<string | null>;
       chooseEditor(): Promise<string | null>;
       openFolder(
-        kind:
-          "project" | "workspace" | "projectWorkspace" | "output" | "backup",
+        kind: "project" | "workspace" | "projectWorkspace" | "output",
         path?: string,
       ): Promise<void>;
       /** A desktop notification while the window is in the background. */

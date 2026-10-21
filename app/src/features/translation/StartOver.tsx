@@ -93,9 +93,7 @@ function StartOverDialog({
       {done ? (
         <DialogBody>
           <p>
-            {state.lifecycle.source_backup
-              ? "The original game files are back. "
-              : ""}
+            {job?.result?.original ? "The original game files are back. " : ""}
             The earlier attempt is in <PathText path={archive} wrap />.
           </p>
           <p>Copy the starting prompt to begin again.</p>
@@ -103,13 +101,13 @@ function StartOverDialog({
       ) : (
         <DialogBody>
           <p>
-            {state.lifecycle.source_backup
+            {state.originalsRecorded
               ? "DazedTL puts back the original game files and moves your assistant's work and the game's Git history to .dazedtl/archived."
-              : "DazedTL moves your assistant's work to .dazedtl/archived. The game has no original backup yet, so its files stay as they are."}{" "}
+              : "DazedTL moves your assistant's work to .dazedtl/archived. DazedTL has not kept the game's original files yet, so its files stay as they are."}{" "}
             The next starting prompt begins again from preparation.
           </p>
           <p className="muted">
-            Backups, save games, Image Manager work and your options stay.
+            Save games, Image Manager work, older backups and your options stay.
           </p>
           {paidRun && (
             <Notice tone="warning">

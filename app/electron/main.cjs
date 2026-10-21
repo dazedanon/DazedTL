@@ -44,7 +44,6 @@ app.setPath(
 const protocol = require("../../backend/dazedtl/api/protocol.json");
 const methods = new Set(Object.keys(protocol.methods));
 const outputs = new Set();
-const backupFolders = new Set();
 // Shown notifications stay until the user returns, so they can leave the
 // notification center then instead of lingering there.
 const notices = new Set();
@@ -413,17 +412,6 @@ app
         )
           outputs.add(result.backups);
         if (method === "workspace_snapshot") {
-          backupFolders.clear();
-          for (const key of [
-            "source_backup",
-            "game_backup",
-            "prepared_source",
-            "workspace_backup",
-          ]) {
-            const backup = result?.translation?.lifecycle?.[key];
-            if (backup?.available === true && typeof backup.path === "string")
-              backupFolders.add(backup.path);
-          }
           for (const artifact of result?.guided?.artifacts || []) {
             if (
               artifact.available === true &&
@@ -538,19 +526,11 @@ app
             ? path.join(currentSource, ".dazedtl", "len-method")
             : kind === "workspace"
               ? backend.workspace
-              : kind === "backup"
-                ? backupFolders.has(target)
-                  ? target
-                  : ""
-                : outputs.has(target)
-                  ? target
-                  : "";
+              : outputs.has(target)
+                ? target
+                : "";
       if (!folder || !fs.statSync(folder).isDirectory())
         throw new Error("Choose an available folder.");
-      if (kind === "backup" && fs.realpathSync(folder) !== path.resolve(folder))
-        throw new Error(
-          "The backup location changed. Refresh its status before opening it.",
-        );
       if (
         kind === "projectWorkspace" &&
         !fs

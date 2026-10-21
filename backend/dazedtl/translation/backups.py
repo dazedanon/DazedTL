@@ -1,21 +1,19 @@
-"""Portable, immutable file snapshots; old full-copy backups remain readable."""
+"""The backups DazedTL saved before it kept a game's original files in Git.
+
+They stay readable, so projects set up then keep their original
+([originals](originals.py)) and scripts/backups.py can still restore them;
+nothing writes new ones or removes old ones.
+"""
 
 import hashlib
 import os
-import queue
 import re
 import stat
 import sys
-import tempfile
-import threading
-import uuid
-from contextlib import contextmanager
-from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
 from dazedtl import system
-from dazedtl.freshness import settled, signature
-from dazedtl.storage import WorkspaceLock, staging_folder, write_json
+from dazedtl.storage import staging_folder
 
 from .files import digest, read_json
 
@@ -61,57 +59,31 @@ def _relative(name):
     return name
 
 
-def _child(root, name, folders=None):
+def _child(root, name):
     """``name`` under ``root``, refusing a link at any step."""
-    *parents, leaf = _relative(name).split("/")
-    path = _folder(root, parents, folders) / leaf
-    _refuse_link(path)
-    return path
-
-
-def _folder(root, parts, folders=None):
-    """The folder ``parts`` under ``root``, refusing a link at any step. A
-    snapshot passes ``folders`` to check each folder once rather than once
-    per file; its final inventory walk would still find a link that appears
-    later."""
     path = Path(root)
-    _refuse_link(path, folders)
-    for part in parts:
+    _refuse_link(path)
+    for part in _relative(name).split("/"):
         path /= part
-        _refuse_link(path, folders)
+        _refuse_link(path)
     return path
 
 
-def _refuse_link(path, folders=None):
-    if folders is not None and path in folders:
-        return
+def _refuse_link(path):
     if _linked(path):
         raise ValueError("Backup operations cannot follow symbolic links or junctions.")
-    if folders is not None:
-        folders.add(path)
 
 
 def store_path(game):
     return _child(Path(game).resolve(strict=True), STORE_RELATIVE)
 
 
-def _store(root, *, create=False):
+def _store(root):
     root = Path(root)
     if _linked(root) or root.exists() and not root.is_dir():
         raise ValueError("Choose a regular backup store directory.")
-    marker = _child(root, "store.json")
-    if not marker.exists() and create:
-        if root.exists() and any(root.iterdir()):
-            raise ValueError(
-                "This backup directory contains unrecognized files. They were left unchanged."
-            )
-        root.mkdir(parents=True, exist_ok=True)
-        write_json(marker, {"version": 2})
-    if read_json(marker, limit=4096) != {"version": 2}:
+    if read_json(_child(root, "store.json"), limit=4096) != {"version": 2}:
         raise ValueError("Unsupported backup store. Its contents were left unchanged.")
-    if create:
-        for name in ("objects", "snapshots", "temporary"):
-            _child(root, name).mkdir(exist_ok=True)
     return root
 
 
@@ -126,325 +98,16 @@ def _hash_file(path, stopped=lambda: False):
     return value.hexdigest()
 
 
-def _signature(path):
-    """The file's stat signature and permissions, which a backup keeps."""
-    value = path.stat()
-    return (*signature(value), stat.S_IMODE(value.st_mode) & 0o777)
-
-
-def _inventory(source, source_game, stopped):
-    files, directories = {}, []
-
-    def failed(error):
-        raise error
-
-    for directory, names, entries in os.walk(source, followlinks=False, onerror=failed):
-        _cancel(stopped)
-        relative = Path(directory).relative_to(source)
-        if relative == Path("."):
-            excluded = (
-                {".git", ".dazedtl"}
-                if source_game
-                else ({"backups"} if source.name == ".dazedtl" else set())
-            )
-            names[:] = [name for name in names if name not in excluded]
-            entries = [name for name in entries if name not in excluded]
-        for name in names + entries:
-            path = Path(directory) / name
-            entry = path.relative_to(source).as_posix()
-            try:
-                _relative(entry)
-            except ValueError:
-                # A stray file, such as a pager's "\x1bq", is easy to remove
-                # once named.
-                raise ValueError(
-                    f"Backups can't keep the name {entry!r}."
-                    " Rename it or move it out of the folder, then try again."
-                ) from None
-            if _linked(path):
-                raise ValueError(
-                    "Backup stopped at a symbolic link or junction. Preserve that source explicitly."
-                )
-        directories.extend(
-            (Path(directory) / name).relative_to(source).as_posix() for name in names
-        )
-        for name in entries:
-            path = Path(directory) / name
-            if not stat.S_ISREG(path.stat().st_mode):
-                raise ValueError("Backups support regular files only.")
-            files[path.relative_to(source).as_posix()] = _signature(path)
-    return files, sorted(directories)
-
-
 def _object(root, fingerprint):
     if not isinstance(fingerprint, str) or not _HASH.fullmatch(fingerprint):
         raise ValueError("Invalid backup content hash.")
     return _child(root, "objects/" + fingerprint[:2] + "/" + fingerprint)
 
 
-# Several files at once hide each file's waits for its creation and disk
-# flush, which dominate a game of many small files, most of all on Windows.
-_WORKERS = 8
-# A file up to this size is read once and stored from memory; a larger one is
-# hashed, then copied.
-_BUFFERED = 16 * 1024 * 1024
-
-
-class _Contents:
-    """What one snapshot's threads stored, with each content hash stored or
-    checked by one thread: Windows refuses to replace a file another thread
-    is reading, as happens when a game holds two identical files. ``folders``
-    holds the folders already checked for links, ``made`` the object folders
-    known to exist: on Windows, making one that exists costs a failed
-    create and another look."""
-
-    def __init__(self):
-        self.lock = threading.Lock()
-        self.claims = {}
-        self.created = {}
-        self.folders = set()
-        self.made = set()
-
-    def claim(self, fingerprint):
-        """True for the first thread with this content; later ones wait for it."""
-        with self.lock:
-            settled = self.claims.get(fingerprint)
-            if settled is None:
-                self.claims[fingerprint] = threading.Event()
-                return True
-        settled.wait()
-        return False
-
-    def settle(self, fingerprint):
-        self.claims[fingerprint].set()
-
-
-def _keep(root, source, name, signature, contents, stopped):
-    """Stores one source file under its content hash and returns the hash."""
-    _cancel(stopped)
-    path = _child(source, name, contents.folders)
-    with path.open("rb") as stream:
-        info = os.fstat(stream.fileno())
-        if not stat.S_ISREG(info.st_mode):
-            raise ValueError("Backups support regular files only.")
-        # A read sized to the file: one sized to the limit allocates the
-        # limit for every file, which costs Windows more than the reading.
-        data = stream.read() if info.st_size <= _BUFFERED else None
-    if data is None:
-        fingerprint, size = _hash_file(path, stopped), info.st_size
-    else:
-        fingerprint, size = hashlib.sha256(data).hexdigest(), len(data)
-    if contents.claim(fingerprint):
-        try:
-            _store_content(root, path, fingerprint, size, data, contents, stopped)
-        finally:
-            contents.settle(fingerprint)
-    if _signature(path) != signature:
-        raise ValueError(
-            "A source file changed during backup. Retry when its writer finishes."
-        )
-    return fingerprint
-
-
-def _store_content(root, path, fingerprint, size, data, contents, stopped):
-    """Content the store holds is checked by size, as reading it back costs
-    more than the backup: its file was synced before taking its name, and
-    restores check its hash. New content is synced before taking its name.
-    One lstat both finds the object and refuses a link in its place, and a
-    temporary file's exclusive creation refuses anything in its place."""
-    shard = _folder(root, ("objects", fingerprint[:2]), contents.folders)
-    output = shard / fingerprint
-    try:
-        held = output.lstat()
-    except FileNotFoundError:
-        pass
-    else:
-        if not stat.S_ISREG(held.st_mode) or held.st_size != size:
-            raise ValueError(
-                "Stored backup content is damaged. Preserve the store and recover it from a trusted copy."
-            )
-        return
-    temporary = _folder(root, ("temporary",), contents.folders) / uuid.uuid4().hex
-    try:
-        with temporary.open("xb") as outgoing:
-            if data is None:
-                copied = hashlib.sha256()
-                with path.open("rb") as incoming:
-                    while block := incoming.read(1024 * 1024):
-                        _cancel(stopped)
-                        copied.update(block)
-                        outgoing.write(block)
-                if copied.hexdigest() != fingerprint:
-                    raise ValueError(
-                        "A source file changed during backup. Retry when its writer finishes."
-                    )
-            else:
-                outgoing.write(data)
-            outgoing.flush()
-            os.fsync(outgoing.fileno())
-        if shard not in contents.made:
-            shard.mkdir(exist_ok=True)
-            contents.made.add(shard)
-        system.replace(temporary, output)
-    except BaseException:
-        system.unlink(temporary, ignore_errors=True)
-        raise
-    contents.created[output] = size
-
-
-def _keep_all(root, source, names, signatures, contents, stopped, progress):
-    """Stores every named file on several threads; each takes the next name
-    when it finishes one. Returns each file's content hash."""
-    queued, lock = iter(names), threading.Lock()
-    stored, finished, failed = {}, queue.SimpleQueue(), threading.Event()
-
-    def halted():
-        return failed.is_set() or stopped()
-
-    def work():
-        try:
-            while not failed.is_set():
-                with lock:
-                    name = next(queued, None)
-                if name is None:
-                    return
-                stored[name] = _keep(
-                    root, source, name, signatures[name], contents, halted
-                )
-                finished.put(name)
-        except BaseException as error:  # noqa: BLE001 - the main thread raises it
-            failed.set()
-            finished.put(error)
-
-    threads = [
-        threading.Thread(target=work, name="backup", daemon=True)
-        for _ in range(_WORKERS)
-    ]
-    for thread in threads:
-        thread.start()
-    try:
-        for count in range(1, len(names) + 1):
-            name = finished.get()
-            if isinstance(name, BaseException):
-                raise name
-            progress(count, name)
-    except BaseException:
-        # Threads stop at their next block; the snapshot removes what they
-        # stored.
-        failed.set()
-        raise
-    finally:
-        for thread in threads:
-            thread.join()
-    return stored
-
-
 def _identity(value):
     return digest(
         {key: value[key] for key in ("kind", "files", "sizes", "modes", "directories")}
     )
-
-
-def snapshot(
-    source,
-    destination,
-    *,
-    source_game=False,
-    stopped=lambda: False,
-    progress=lambda _count, _path: None,
-):
-    source = Path(source).resolve(strict=True)
-    destination = Path(destination).absolute()
-    if not source.is_dir():
-        raise ValueError("Choose an existing directory to back up.")
-    if destination.is_relative_to(source):
-        permitted = source / (STORE_RELATIVE if source_game else "backups/v2")
-        if destination != permitted or not source_game and source.name != ".dazedtl":
-            raise ValueError(
-                "Only the managed .dazedtl/backups/v2 store may be inside a snapshot source."
-            )
-        _child(source, destination.relative_to(source).as_posix())
-    destination = destination.resolve()
-    if destination.is_relative_to(source):
-        permitted = source / (STORE_RELATIVE if source_game else "backups/v2")
-        if destination != permitted or not source_game and source.name != ".dazedtl":
-            raise ValueError(
-                "Keep nested backups in the managed .dazedtl/backups/v2 store."
-            )
-    if source.is_relative_to(destination):
-        raise ValueError("The snapshot source cannot be inside its backup store.")
-    root = _store(destination, create=True)
-    _child(root, "workspace.lock")
-    lock = WorkspaceLock(root)
-    contents, published = _Contents(), False
-    try:
-        before, directories = _inventory(source, source_game, stopped)
-        if not before:
-            raise ValueError("There are no files to back up.")
-        value = {
-            "version": 2,
-            "source": str(source),
-            "kind": "source" if source_game else "workspace",
-            "created": datetime.now(UTC).isoformat(),
-            "files": {},
-            "sizes": {},
-            "modes": {},
-            "directories": directories,
-        }
-        names = sorted(before)
-        stored = _keep_all(root, source, names, before, contents, stopped, progress)
-        for name in names:
-            value["files"][name] = stored[name]
-            value["sizes"][name], value["modes"][name] = (
-                before[name][2],
-                before[name][5],
-            )
-        added = sum(contents.created.values())
-        if _inventory(source, source_game, stopped) != (before, directories):
-            raise ValueError(
-                "The source inventory changed during backup. No snapshot was published."
-            )
-        _cancel(stopped)
-        value["fingerprint"] = _identity(value)
-        value["id"] = value["fingerprint"][:32]
-        final = _child(root, "snapshots/" + value["id"])
-        reused = final.exists()
-        if reused:
-            previous = manifest(final)
-            if previous["fingerprint"] != value["fingerprint"]:
-                raise ValueError(
-                    "The existing snapshot identity is inconsistent; it was not replaced."
-                )
-            value = previous
-        else:
-            temporary = _child(root, "temporary/" + uuid.uuid4().hex)
-            temporary.mkdir()
-            try:
-                write_json(temporary / "manifest.json", value)
-                system.replace(temporary, final)
-            finally:
-                if temporary.exists():
-                    system.remove_tree(temporary)
-        published = True
-        total = sum(value["sizes"].values())
-        return {
-            "id": value["id"],
-            "path": str(final),
-            "files": len(value["files"]),
-            "kind": value["kind"],
-            "version": 2,
-            "bytes_total": total,
-            "bytes_added": added,
-            "bytes_reused": total - added,
-            "reused_snapshot": reused,
-        }
-    finally:
-        try:
-            if not published:
-                for path in contents.created:
-                    system.unlink(path, missing_ok=True)
-        finally:
-            lock.close()
 
 
 def manifest(directory, source=None):
@@ -617,23 +280,6 @@ def peek(directory, name, size):
         return reader.read(size)
 
 
-@contextmanager
-def materialized(directory, *, files=None, stopped=lambda: False):
-    """Supply verified normal files to engine tools without retaining another copy."""
-    value = manifest(directory)
-    names = (
-        list(value["files"])
-        if files is None
-        else [name for name in files if name in value["files"]]
-    )
-    with system.staging_folder(tempfile.gettempdir(), "dazedtl-restore-") as target:
-        if files is None:
-            for name in value.get("directories", []):
-                _child(target, name).mkdir(parents=True, exist_ok=True)
-        _extract(directory, value, target, names, stopped, lambda *_args: None)
-        yield target, value
-
-
 def restore(
     directory,
     destination,
@@ -683,84 +329,6 @@ def restore(
     }
 
 
-def reset(
-    original,
-    current,
-    game,
-    archive,
-    *,
-    keep=lambda _name: False,
-    stopped=lambda: False,
-    progress=lambda _count, _path: None,
-):
-    """Puts a game folder back to its ``original`` snapshot in place.
-
-    ``current`` is a snapshot of the folder taken just before, so only the
-    files that differ are written. Files the original lacks move into
-    ``archive`` instead of being deleted, and ``keep`` names files left as
-    they are, such as save games. Each file is written and synced beside its
-    target before it replaces it, so an interruption leaves whole files, and
-    running it again finishes the job.
-    """
-    root = Path(game).resolve(strict=True)
-    before, after = manifest(original), manifest(current, root)
-    if before["kind"] != "source" or after["kind"] != "source":
-        raise ValueError("Only a game-file backup can put the game back.")
-    verify(original, full=False, stopped=stopped)
-    extras = sorted(
-        name
-        for name in after["files"]
-        if name not in before["files"] and not keep(name)
-    )
-    changed = [
-        name
-        for name in before["files"]
-        if not keep(name) and after["files"].get(name) != before["files"][name]
-    ]
-    count = 0
-    for name in extras:
-        _cancel(stopped)
-        target = _child(archive, name)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            system.rename(_child(root, name), target)
-        except FileNotFoundError:
-            continue
-        count += 1
-        progress(count, name)
-    # Folders the original lacks go once empty; kept files hold theirs.
-    for name in sorted(
-        set(after["directories"]) - set(before["directories"]),
-        key=lambda item: item.count("/"),
-        reverse=True,
-    ):
-        path = _child(root, name)
-        if path.is_dir() and not any(path.iterdir()):
-            system.rmdir(path)
-    for name in before["directories"]:
-        _child(root, name).mkdir(parents=True, exist_ok=True)
-    for name in changed:
-        _cancel(stopped)
-        target = _child(root, name)
-        if target.is_dir():
-            raise ValueError(
-                f"{name} is a folder holding files kept in place. Move them, then try again."
-            )
-        target.parent.mkdir(parents=True, exist_ok=True)
-        temporary = target.with_name(".dazedtl-restore-" + uuid.uuid4().hex)
-        try:
-            _copy(original, before, name, temporary, stopped)
-            # Windows refuses to replace a read-only file.
-            if target.exists() and not target.stat().st_mode & stat.S_IWRITE:
-                target.chmod(stat.S_IREAD | stat.S_IWRITE)
-            system.replace(temporary, target)
-        finally:
-            system.unlink(temporary, ignore_errors=True)
-        count += 1
-        progress(count, name)
-    return {"restored": len(changed), "set_aside": len(extras)}
-
-
 def lookup(game, legacy_root, identity):
     if not isinstance(identity, str) or not _ID.fullmatch(identity):
         raise ValueError("Choose a saved backup ID.")
@@ -775,116 +343,6 @@ def lookup(game, legacy_root, identity):
             continue
         return path
     raise BackupMissing("The backup is unavailable. Its files were not changed.")
-
-
-# Polls show whether each saved backup is still there. A snapshot's manifest
-# never changes, and adding or removing an object changes its shard folder's
-# modification time; a poll reuses a check while these times hold. An object
-# changed in place keeps them, so restores still verify every hash.
-_CHECKED = {}
-
-
-def _stamp(path):
-    value = os.lstat(path)
-    return (value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
-
-
-def _store_stamps(directory, value):
-    objects = Path(directory).parent.parent / "objects"
-    return (
-        _stamp(Path(directory) / "manifest.json"),
-        _stamp(objects),
-        *(
-            _stamp(objects / prefix)
-            for prefix in sorted({f[:2] for f in value["files"].values()})
-        ),
-    )
-
-
-def _checked(location, game):
-    """verify(full=False) for a poll, reused while the snapshot's manifest and
-    object folders are unchanged."""
-    cached = _CHECKED.get(location)
-    try:
-        if cached and _store_stamps(location, cached[1]) == cached[0]:
-            return cached[1]
-    except OSError:
-        pass
-    value = manifest(location, game)
-    if value["version"] != 2:
-        return verify(location, source=game, full=False)
-    before = _store_stamps(location, value)
-    _available_objects(location, value, lambda: False)
-    # A store that changed during the check, or too recently for its times
-    # to show the next change, is checked again next time.
-    if _store_stamps(location, value) == before and settled(
-        *(stamp[2] for stamp in before)
-    ):
-        if len(_CHECKED) > 64:
-            _CHECKED.clear()
-        _CHECKED[location] = (before, value)
-    return value
-
-
-def record_status(game, record, *, kind, reuse=False):
-    """Inspect saved references without recreating stores or hashing every
-    blob. A poll passes `reuse` to skip checks whose store has not changed."""
-    result = dict(record)
-    try:
-        location = lookup(game, Path(record["path"]).parent, record["id"])
-        result["path"] = str(location)
-        value = (
-            _checked(location, game)
-            if reuse
-            else verify(location, source=game, full=False)
-        )
-        if value["kind"] != kind:
-            raise ValueError("The saved backup has the wrong content type.")
-    except BackupMissing:
-        # Its own message suits a refused restore; status callers prefix a title.
-        result.update(available=False, issue="Its saved files could not be found.")
-    except (ValueError, OSError, KeyError, TypeError) as exc:
-        result.update(
-            available=False,
-            issue=str(exc)
-            if isinstance(exc, ValueError)
-            else "The saved backup could not be read.",
-        )
-    else:
-        result.update(available=True, issue="")
-    return result
-
-
-def original(game):
-    """The earliest game snapshot in the game's own store, where setup saves
-    the original first. A project opened on a moved, copied or reinstalled
-    game can take it over instead of saving its current files as the original.
-    """
-    root = store_path(game) / "snapshots"
-    if _linked(root) or not root.is_dir():
-        return None
-    found = []
-    for folder in root.iterdir():
-        if not _ID.fullmatch(folder.name):
-            continue
-        try:
-            value = manifest(folder)
-        except OSError, ValueError, TypeError:
-            continue
-        if value["kind"] == "source" and value["version"] == 2:
-            found.append((value["created"], str(folder), value))
-    if not found:
-        return None
-    created, path, value = min(found)
-    return {
-        "id": value["id"],
-        "path": path,
-        "files": len(value["files"]),
-        "kind": "source",
-        "version": 2,
-        "bytes_total": sum(value["sizes"].values()),
-        "created": created,
-    }
 
 
 def game_files(game, records=()):

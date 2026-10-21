@@ -29,7 +29,7 @@ export const workflow: WorkflowStage[] = [
         id: "setup",
         title: "Set up this game",
         description:
-          "Back up the original, prepare its files and save its version so later game updates can be merged.",
+          "Prepare its files and save its version so later game updates can be merged. The first change keeps the original files in Git.",
       },
     ],
   },
@@ -259,10 +259,7 @@ export function initialPosition(
     return { step, task: "names" };
   if (saved?.tasks.some((task) => task.id === state.task))
     return { step, task: state.task! };
-  const preserved =
-    translation.lifecycle.source_backup &&
-    translation.lifecycle.source_backup.available !== false;
-  if (!preserved) return { step: "setup", task: "setup" };
+  if (!translation.git?.configured) return { step: "setup", task: "setup" };
   if (unfinishedRun(state))
     return {
       step: runStage(state),

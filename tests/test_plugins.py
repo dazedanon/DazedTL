@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from dazedtl.api.contracts.validation import check_response
+from dazedtl.compatibility import original_files
 from dazedtl.compatibility.game_write import GameWrite, write_game
 from dazedtl.compatibility.translation import TranslationEngine
 from dazedtl.foreign_work import ForeignWorkError
@@ -24,10 +25,10 @@ from dazedtl.plugins.service import (
 )
 from dazedtl.projects.store import Projects
 from dazedtl.storage import write_bytes, write_json
-from dazedtl.translation.backups import snapshot, store_path
 from dazedtl.translation.files import digest, read_json
 from dazedtl.translation.operations import lifecycle_path
 
+from tests.fixtures import old_backup
 from tests.game_writes import game_write
 
 
@@ -110,11 +111,7 @@ class PluginTests(unittest.TestCase):
         self.service = PluginService(
             self.projects, self.translation, self.backend, documents=self.documents
         )
-        saved = snapshot(self.game, store_path(self.game), source_game=True)
-        write_json(
-            lifecycle_path(self.profile, self.identity),
-            {"version": 1, "source_backup": saved},
-        )
+        original_files.record(self.game, original_files.FOUND)
 
     def write(self, path, value):
         write_bytes(self.game / path, value.encode())
@@ -927,9 +924,9 @@ class PluginTests(unittest.TestCase):
             )
 
     def test_missing_originals_and_dynamic_configuration_never_authorize_edits(self):
-        lifecycle_path(self.profile, self.identity).unlink()
+        shutil.rmtree(self.game / ".git")
         # Without the original Japanese, lookup values cannot be protected.
-        with self.assertRaisesRegex(ValueError, "Back up the original"):
+        with self.assertRaisesRegex(ValueError, "no record of this game's original"):
             self.service.action(self.identity, "plugin_task")
         self.assertEqual(self.service.state(self.identity)["counts"]["selected"], 0)
         self.write("www/js/plugins.js", "var $plugins = dangerous();")
@@ -1354,12 +1351,11 @@ class AceScriptTests(unittest.TestCase):
                 game_write=recorded,
             ),
         )
+        # A project set up before original files were kept in Git reads its
+        # backup.
         write_json(
             lifecycle_path(profile, identity),
-            {
-                "version": 1,
-                "source_backup": snapshot(game, store_path(game), source_game=True),
-            },
+            {"version": 1, "source_backup": old_backup.snapshot(game)},
         )
         task = service.action(identity, "plugin_task")
         self.assertIn("Ruby scripts", task["text"])
