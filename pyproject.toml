@@ -39,15 +39,9 @@ ignore = ["TRY004"]
 # Calls made before the platform layer, converted file by file: remove a file
 # once it has none. Never add one; use the layer, or mark a call that must stay
 # raw with `# noqa: TID251 - <reason>`.
-"backend/dazedtl/compatibility/estimate_pricing.py" = ["TID251"]
-"backend/dazedtl/compatibility/full_estimate.py" = ["TID251"]
 "backend/dazedtl/compatibility/images.py" = ["TID251"]
-"backend/dazedtl/compatibility/model_defaults.py" = ["TID251"]
 "backend/dazedtl/compatibility/playtest.py" = ["TID251"]
-"backend/dazedtl/compatibility/preparations.py" = ["TID251"]
-"backend/dazedtl/compatibility/speaker_scan.py" = ["TID251"]
 "backend/dazedtl/compatibility/text.py" = ["TID251"]
-"backend/dazedtl/compatibility/translation.py" = ["TID251"]
 "backend/dazedtl/foreign_work.py" = ["TID251"]
 "backend/dazedtl/images/recipes.py" = ["TID251"]
 "backend/dazedtl/plugins/documents.py" = ["TID251"]

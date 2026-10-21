@@ -1,7 +1,8 @@
 """Discard only app-created, unapproved preparation; retain all paid evidence."""
 
-import shutil
 import sqlite3
+
+from dazedtl import system
 
 from .process_view import evidence_root, saved
 
@@ -50,4 +51,4 @@ def discard(job, root):
         raise ValueError("This run may contain approved work. Keep it for recovery.")
     if root.is_symlink() or root.parent.is_symlink() or root.parent.parent.is_symlink():
         raise ValueError("Temporary preparation must stay inside its run folder.")
-    shutil.rmtree(root)
+    system.remove_tree(root)

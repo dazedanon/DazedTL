@@ -7,15 +7,14 @@ again with Claude's own free token count, as a Batch review prices it.
 """
 
 import json
-import os
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from pathlib import Path
 
+from dazedtl import system
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest, project_path
 
@@ -83,8 +82,7 @@ def run(plan, log):
     folder = Path(plan["folder"])
     options = plan["options"]
     report = Activity(log, options["tasks"])
-    with tempfile.TemporaryDirectory(prefix="full-estimate-", dir=folder) as temporary:
-        root = Path(temporary)
+    with system.staging_folder(folder, "full-estimate-") as root:
         report("Copying the game's current text")
         inventory = stage(root / "source", folder, plan["project"], options["files"])
         report.copied()
@@ -214,7 +212,7 @@ def estimate_task(directory, folder, plan, inventory, task, log):
 def launch(directory, env, label, phase, log):
     """Runs the engine's estimate worker and returns its estimate."""
     with (directory / "log/startup.txt").open("a", encoding="utf-8") as errors:
-        process = subprocess.Popen(
+        process = system.popen(
             [sys.executable, "-u", str(WORKER), str(directory)],
             cwd=directory,
             env={**env, "PYTHONDONTWRITEBYTECODE": "1"},
@@ -224,7 +222,7 @@ def launch(directory, env, label, phase, log):
             text=True,
             encoding="utf-8",
             bufsize=1,
-            start_new_session=os.name != "nt",
+            group=True,
         )
         estimate = failure = None
         shown = 0.0
