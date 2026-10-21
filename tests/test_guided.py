@@ -4234,10 +4234,20 @@ class GuidedTests(unittest.TestCase):
         same = {"listWidth": 30}
         self.guided.text_fit.request(self.identity, self.native, same, same)
         self.assertTrue(self.guided.text_fit.pending(self.identity))
+        # New message rows rewrap nothing but check again what does not fit.
+        (self.guided.path(self.identity, "text-fit")).unlink()
+        jobs = self.backend.operations.jobs
+        jobs["fit"]["status"] = "complete"
+        self.guided.text_fit.request(
+            self.identity, self.native, {"messageRows": 4}, {"messageRows": 3}
+        )
+        self.assertTrue(self.guided.text_fit.pending(self.identity))
+        self.assertEqual(
+            read_json(self.guided.path(self.identity, "text-fit"))["areas"], []
+        )
         # The newest fit's misfits show while its text is the game's: until
         # another write to the game's text or new widths.
         listed = {"misfits": result["misfits"], "misfit_count": 1}
-        jobs = self.backend.operations.jobs
         jobs["fit"].update(
             status="complete", result={**listed, "widths": self.native["widths"]}
         )

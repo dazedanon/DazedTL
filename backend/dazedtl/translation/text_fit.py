@@ -20,8 +20,10 @@ LABEL = label(ACTION)
 # of what it could not fit no longer holds.
 WRITES = named(writes_text=True)
 # The Line widths entries that move where text wraps. Message rows only
-# change where a long message goes on to its next page.
+# change where a long message goes on to its next page, so new rows rewrap
+# nothing but check again what a window of fixed height cuts off.
 AREAS = ("width", "faceWidth", "listWidth", "noteWidth")
+ROWS = "messageRows"
 
 
 class TextFit:
@@ -39,7 +41,8 @@ class TextFit:
         failed = self.latest(native)
         if failed and failed.get("status") in {"failed", "interrupted", "stopped"}:
             changed |= set(self._areas(failed))
-        if not changed or native["engine"] not in {"MVMZ", "ACE"}:
+        checked = changed or before.get(ROWS) != after.get(ROWS)
+        if not checked or native["engine"] not in {"MVMZ", "ACE"}:
             return
         path = self._path(project_id)
         queued = set(read_json(path).get("areas", [])) if path.exists() else set()
