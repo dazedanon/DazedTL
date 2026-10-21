@@ -16,7 +16,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { root, python } from "./dependencies.mjs";
 import { Page, until, message } from "./testkit/cdp.mjs";
 import { freePort, startApp, stopApp, running } from "./testkit/app.mjs";
-import { startDisplay, stopGroup } from "./testkit/display.mjs";
+import { startDisplay, stopGroup, virtualDisplay } from "./testkit/display.mjs";
 import { gameName, makeGame, variants } from "./testkit/games.mjs";
 import { scenarios } from "./testkit/scenarios.mjs";
 import { checkout, previousRelease } from "./testkit/checkout.mjs";
@@ -80,7 +80,10 @@ async function startProvider(state) {
   );
 }
 
-/** A display for the app: a private KWin on Linux, else the current one. */
+/**
+ * A display for the app on Linux: a private KWin, or the Xvfb display CI's
+ * xvfb-run offers. Never the desktop's, so the app's window stays off it.
+ */
 async function startScreen(state) {
   if (process.platform !== "linux") return {};
   if (state.display?.group && alive(state.display.group))
@@ -91,10 +94,14 @@ async function startScreen(state) {
       log: path.join(state.work, "logs/display.log"),
     });
   } catch (error) {
-    // CI runs under xvfb-run, which offers its own display.
-    if (!process.env.DISPLAY) throw error;
-    console.log(`Using DISPLAY ${process.env.DISPLAY}: ${message(error)}`);
-    state.display = { env: { DISPLAY: process.env.DISPLAY } };
+    state.display = virtualDisplay();
+    if (!state.display)
+      throw new Error(
+        `${message(error)} Without it the app would open on your desktop, so it does not start.`,
+      );
+    console.log(
+      `Using Xvfb DISPLAY ${state.display.env.DISPLAY}: ${message(error)}`,
+    );
   }
   writeState(state);
   return state.display.env;
@@ -135,7 +142,7 @@ async function stopAll(state) {
   if (state.provider.pid && alive(state.provider.pid))
     process.kill(state.provider.pid, "SIGTERM");
   state.provider.pid = 0;
-  if (state.display?.group) stopGroup(state.display.group);
+  if (state.display?.group) await stopGroup(state.display.group);
   state.display = null;
   state.app = null;
   writeState(state);
@@ -352,7 +359,7 @@ try {
       );
       process.exitCode = result.status ?? 1;
     } finally {
-      if (display) stopGroup(display.group);
+      if (display) await stopGroup(display.group);
     }
   } else await build(command);
 } catch (error) {

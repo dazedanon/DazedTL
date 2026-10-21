@@ -18,14 +18,14 @@ const displays = () =>
       : [],
   );
 
-/** Process ids and groups of every Xwayland, by display number. */
-function xwaylands() {
+/** Process groups of every X server run by `program`, by display number. */
+function servers(program) {
   const found = new Map();
   for (const pid of fs.readdirSync("/proc")) {
     if (!/^\d+$/.test(pid)) continue;
     try {
       const args = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0");
-      if (!args[0]?.endsWith("Xwayland")) continue;
+      if (path.basename(args[0] || "") !== program) continue;
       const group = Number(
         fs
           .readFileSync(`/proc/${pid}/stat`, "utf8")
@@ -39,6 +39,17 @@ function xwaylands() {
     }
   }
   return found;
+}
+
+/**
+ * The display `DISPLAY` names when an Xvfb serves it, as under xvfb-run on
+ * CI; never a desktop's own display, which a test window would draw on.
+ */
+export function virtualDisplay() {
+  const number = /^:(\d+)(\.\d+)?$/.exec(process.env.DISPLAY || "")?.[1];
+  return number && servers("Xvfb").has(number)
+    ? { env: { DISPLAY: `:${number}` } }
+    : null;
 }
 
 /**
@@ -72,6 +83,8 @@ export async function startDisplay({ name, log, width = 1400, height = 1000 }) {
     { detached: true, stdio: ["ignore", output, output] },
   );
   fs.closeSync(output);
+  let exited = false;
+  child.on("exit", () => (exited = true));
   child.unref();
   const group = child.pid;
   try {
@@ -80,18 +93,23 @@ export async function startDisplay({ name, log, width = 1400, height = 1000 }) {
     const number = await until(
       `the private display ${name}`,
       () => {
+        if (exited) return "exited";
         for (const candidate of displays()) {
           if (before.has(candidate)) continue;
           spawnSync("xdpyinfo", ["-display", `:${candidate}`], {
             stdio: "ignore",
             timeout: 5000,
           });
-          if (xwaylands().get(candidate) === group) return candidate;
+          if (servers("Xwayland").get(candidate) === group) return candidate;
         }
         return null;
       },
       30_000,
     );
+    if (number === "exited")
+      throw new Error(
+        `KWin for the private display ${name} exited: ${fs.readFileSync(log, "utf8").trim().split("\n").slice(-3).join(" ")}`,
+      );
     return {
       display: `:${number}`,
       wayland: name,
@@ -104,18 +122,30 @@ export async function startDisplay({ name, log, width = 1400, height = 1000 }) {
       },
     };
   } catch (error) {
-    stopGroup(group);
+    await stopGroup(group);
     throw error;
   }
 }
 
-/** Ends a process group, such as a display or an app started detached. */
-export function stopGroup(group) {
+/**
+ * Ends a process group, such as a display or an app started detached, and
+ * waits until it has, so a display started next can take its socket name.
+ */
+export async function stopGroup(group, timeout = 10_000) {
   if (!group) return;
+  const signal = (name) => {
+    try {
+      process.kill(-group, name);
+      return true;
+    } catch {
+      return false; // Already gone.
+    }
+  };
+  if (!signal("SIGTERM")) return;
   try {
-    process.kill(-group, "SIGTERM");
+    await until("the process group to end", () => !signal(0), timeout);
   } catch {
-    // Already gone.
+    signal("SIGKILL");
   }
 }
 

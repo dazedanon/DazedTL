@@ -53,8 +53,12 @@ export class Page {
       const value = decodeURI(url);
       return process.platform === "win32" ? value.toLowerCase() : value;
     };
+    // The window names the page by its real path, past any linked folder
+    // such as a worktree's .runtime shared with the main checkout.
     const own = spelling(
-      pathToFileURL(path.join(root, "app/dist/index.html")).href,
+      pathToFileURL(
+        path.join(fs.realpathSync.native(root), "app/dist/index.html"),
+      ).href,
     );
     const target = await until(
       "DazedTL to accept DevTools connections",
