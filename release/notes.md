@@ -23,5 +23,6 @@
 - **Translate:** a game variable translated while several files translate at once keeps its translation everywhere it appears; before, one file could drop the names another had just translated, so the same variable could come out two ways.
 - **Translate:** on Windows, a Batch cost estimate or run no longer stops with "Permission denied" on `job.json` when it reads its saved run while that run is being saved, which left **Submit Batch** unavailable.
 - **Translate:** once every saved translation is in the game, **Apply** is disabled with "Saved translations applied." beside it, and Translate on finished files shows "No new translation requests" in a small dialog instead of a tall, mostly empty one.
+- **Translate:** an estimate or start that fails now shows its message in a small dialog that fits it, like the no-requests result, instead of a tall, mostly empty one.
 - **History:** a run's first **Apply** from Translate is listed as "Apply selected saved outputs" instead of "Reapply saved run output", which now names only applying a run's saved output again.
 - **Release:** a VX Ace game whose folder is named in Japanese now opens Release with a clean game ZIP name it can build, the folder name in English letters or `translated-game.zip`, instead of a rejected Japanese one; while a name is rejected, **View files & exclusions** says why beside it.

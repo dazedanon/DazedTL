@@ -66,7 +66,10 @@ export function TranslationFlowDialog({
       label="Translate selected text"
       size={value.stage === "empty" ? "sm" : "md"}
       className={`guided-sheet translation-review translation-flow${
-        value.stage === "empty" ? " translation-flow--result" : ""
+        // A result, unlike work in progress, sizes the sheet to its content.
+        value.stage === "empty" || value.stage === "error"
+          ? " translation-flow--result"
+          : ""
       }`}
       dismissible={loading || !flow.busy}
       onDismiss={flow.cancel}
@@ -114,7 +117,7 @@ export function TranslationFlowDialog({
             }
           />
           {/* The sheet keeps its size while work runs, so a status sits in its
-              centre; a no-requests result sizes it to its one line. */}
+              centre; a no-requests or failed result sizes it to its message. */}
           <DialogBody
             className={
               loading || value.stage === "empty"
