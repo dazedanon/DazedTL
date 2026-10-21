@@ -10,6 +10,7 @@ binds to are unchanged.
 from copy import deepcopy
 from datetime import datetime
 
+from dazedtl.actions import label
 from dazedtl.freshness import Basis, compare
 
 from . import repricing
@@ -220,7 +221,7 @@ class FullEstimate:
                 "project": deepcopy(native),
                 "folder": str(folder),
                 "action": ACTION,
-                "label": "Estimate the translation cost",
+                "label": label(ACTION),
                 "guard": self.guided.backend.guided_guard(native, folder),
                 "options": {
                     "fingerprint": self.fingerprint(tasks),

@@ -14,6 +14,7 @@ from dazedtl.api.contracts.guided import (
     EventTextPicker,
     EventTextRequest,
     FileTextPreview,
+    GuidedAction,
     GuidedForm,
     GuidedOptions,
     GuidedPreferences,
@@ -446,7 +447,7 @@ class GuidedPhaseSelectRequest(TypedDict):
 
 class GuidedPreviewRequest(TypedDict):
     project_id: str
-    action: str
+    action: GuidedAction
     files: NotRequired[list[str]]
     options: NotRequired[dict[str, object]]
 

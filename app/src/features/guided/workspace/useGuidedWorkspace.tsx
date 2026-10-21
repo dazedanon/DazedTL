@@ -1,17 +1,20 @@
 import { FolderOpen } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { api } from "../../../api/client";
-import type {
-  AssistantTaskKind,
-  GuidedForm,
-  GuidedOptions,
-  GuidedState,
-  GuidedStep,
-  Job,
-  Phase,
-  Preview,
-  ReleaseDestination,
-  TranslationState,
+import {
+  ACTIONS,
+  type ActionView,
+  type AssistantTaskKind,
+  type GuidedAction,
+  type GuidedForm,
+  type GuidedOptions,
+  type GuidedState,
+  type GuidedStep,
+  type Job,
+  type Phase,
+  type Preview,
+  type ReleaseDestination,
+  type TranslationState,
 } from "../../../api/contracts";
 import { useApplication } from "../../../app/ApplicationProvider";
 import { flushDrafts } from "../../../state/leaveGuards";
@@ -174,7 +177,7 @@ export function useGuidedWorkspace({
   const [preview, setPreview] = useState<Preview | null>(null);
   const [attemptedPreview, setAttemptedPreview] = useState("");
   const [previewRequest, setPreviewRequest] = useState<{
-    name: string;
+    name: GuidedAction;
     options: Record<string, unknown>;
     files?: string[];
   } | null>(null);
@@ -329,7 +332,8 @@ export function useGuidedWorkspace({
   const qa = state.readiness.qa;
   const qaStatus = qa.status;
   const release = fields.release;
-  const releaseAction = release.kind === "game" ? "release" : "release_patch";
+  const releaseAction: GuidedAction =
+    release.kind === "game" ? "release" : "release_patch";
   const releasePath = childPath(release.directory, release.name);
   const artifact = state.artifacts.find((item) => item.kind === release.kind);
   // Release checks its destination while it is typed, so Build never learns of
@@ -674,7 +678,7 @@ export function useGuidedWorkspace({
     }
   };
   const preparePreview = async (
-    name: string,
+    name: GuidedAction,
     options: Record<string, unknown>,
     files?: string[],
   ) => {
@@ -684,7 +688,7 @@ export function useGuidedWorkspace({
     return api.preview(project.id, name, files, requestOptions);
   };
   const review = (
-    name: string,
+    name: GuidedAction,
     options: Record<string, unknown> = {},
     files?: string[],
     inspectOnly = false,
@@ -840,7 +844,7 @@ export function useGuidedWorkspace({
     translationFlow.claimed,
   ]);
   const task = (
-    name: string,
+    name: GuidedAction,
     label: string,
     options: Record<string, unknown> = {},
     /** True, or the reason shown beside the disabled control. */
@@ -861,7 +865,7 @@ export function useGuidedWorkspace({
         : recorded;
     const active =
       current && ["ready", "running", "waiting"].includes(current.status);
-    const publicationReview = ["export_selected", "qa_apply"].includes(name);
+    const row: ActionView = ACTIONS[name];
     const finishedHere =
       current?.status === "complete" &&
       current.id === started[actionKey(name, options)]?.id;
@@ -876,34 +880,10 @@ export function useGuidedWorkspace({
     const releaseBuild = ["release", "release_patch"].includes(name);
     const builtHere = releaseBuild && finishedHere;
     // Prepare's stage rows record each preparation tool's outcome.
-    const preparationTool = [
-      "format_data",
-      "format_plugins",
-      "gameupdate",
-    ].includes(name);
-    // A tool row's own status says whether the tool is installed, the
-    // editor search lists what it found, and the glossary and QA rows state
-    // the result of their scan or preparation.
-    const toolChange =
-      preparationTool ||
-      [
-        "inspector_install",
-        "inspector_remove",
-        "forge_install",
-        "forge_remove",
-        "editors",
-        "qa_prepare",
-      ].includes(name);
+    const preparationTool = !!row.step;
     // A tool row reports only its latest change, so installing again
     // replaces the earlier removal's result.
-    const toolCounterpart = (
-      {
-        inspector_install: "inspector_remove",
-        inspector_remove: "inspector_install",
-        forge_install: "forge_remove",
-        forge_remove: "forge_install",
-      } as Record<string, string>
-    )[name];
+    const toolCounterpart = row.counterpart;
     const superseded =
       !!toolCounterpart &&
       !!current &&
@@ -916,10 +896,7 @@ export function useGuidedWorkspace({
     const display =
       superseded ||
       (current?.status === "complete" &&
-        (publicationReview ||
-          releaseBuild ||
-          toolChange ||
-          name === "ace_pack" ||
+        (row.reports_outcome ||
           (qaOperation && (!qa.current || current.result?.task !== qa.task))))
         ? undefined
         : current;
@@ -1188,24 +1165,24 @@ export function useGuidedWorkspace({
     names: readonly string[] = values.selected,
     scope: "database" | "dialogue" | null = null,
   ) => <ActionList>{fileRow(names, scope)}</ActionList>;
-  const formatActions = [
+  const formatActions: { id: GuidedAction; title: string; hint: string }[] = [
     {
       id: "format_data",
-      title: "Format game data",
+      title: ACTIONS.format_data.step,
       hint: "Prepare the JSON used by the translation phases.",
     },
     ...(state.hasPlugins
       ? [
           {
-            id: "format_plugins",
-            title: "Format plugins.js",
+            id: "format_plugins" as const,
+            title: ACTIONS.format_plugins.step,
             hint: "Prepare the game’s plugin configuration.",
           },
         ]
       : []),
     {
       id: "gameupdate",
-      title: "Create GameUpdate files",
+      title: ACTIONS.gameupdate.step,
       hint: "Add player patch support.",
     },
   ];

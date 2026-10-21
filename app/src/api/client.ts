@@ -10,6 +10,7 @@ import type {
   GuidedPreferences,
   GuidedStep,
   GuidedForm,
+  GuidedAction,
   Documents,
   SettingsPayload,
   ConnectionInput,
@@ -209,7 +210,7 @@ export const api = {
     request("guided_phase_select", { project_id, phase }),
   preview: (
     project_id: string,
-    action: string,
+    action: GuidedAction,
     files?: string[],
     options?: Record<string, unknown>,
   ) => request("guided_preview", { project_id, action, files, options }),

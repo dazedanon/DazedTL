@@ -26,92 +26,20 @@ from dazedtl.compatibility.runtime import activate
 source = activate()
 from desktop.backend import worker_failures, workflow_actions
 
-from dazedtl.compatibility.guided import (
-    apply_selected,
-    publish_ace,
-    run_ace,
-    run_release,
-)
-from dazedtl.compatibility.translation import TranslationEngine, explained
-from dazedtl.translation.guided_inputs import GuidedInputs
-
-original = workflow_actions.run_action
+from dazedtl import actions
+from dazedtl.compatibility.guided import publish_ace
+from dazedtl.compatibility.translation import explained
 
 
-def run_action(plan, log):
+def run_action(engine, plan, log):
+    """Runs a plan with its action's handler, or the engine's own run."""
+    handler = actions.handler(plan["action"])
+    if handler is None:
+        return engine(plan, log)
     # Every write to the game's text also packs an Ace game's native data.
-    if plan["action"] == "fit_text":
-        from dazedtl.compatibility.text import run_fit
-
-        return publish_ace(plan, log, run_fit)
-    if plan.get("publication"):
-        from dazedtl.compatibility.text import run_publication
-
-        return publish_ace(plan, log, run_publication)
-    if plan["action"] in {"qa_prepare", "qa_status"}:
-        from dazedtl.compatibility.text import run_qa
-
-        return run_qa(plan, log)
-    if plan["action"] == "release_playtest":
-        from dazedtl.compatibility.playtest import run_playtest
-
-        return run_playtest(plan, log)
-    if plan["action"] == "playtest_fix":
-        from dazedtl.compatibility.playtest import run_fixes
-
-        return run_fixes(plan, log)
-    if plan["action"] == "layout_capture":
-        from dazedtl.compatibility.playtest import run_layout
-
-        return run_layout(plan, log)
-    if plan["action"] == "label_capture":
-        from dazedtl.compatibility.playtest import run_labels
-
-        return run_labels(plan, log)
-    if plan["action"] in {
-        "prepare_game",
-        "format_data",
-        "format_plugins",
-        "gameupdate",
-    }:
-        from dazedtl.translation.preparation import run
-
-        workflow_actions.validate_plan(plan)
-        return run(plan, log, original, workflow_actions.action_guard)
-    if plan["action"] == "speaker_scan":
-        from dazedtl.compatibility.speaker_scan import run_scan
-
-        return run_scan(plan, log)
-    if plan["action"] == "full_estimate":
-        from dazedtl.compatibility.full_estimate import run
-
-        return run(plan, log)
-    if plan["action"] == "release":
-        return run_release(plan, log)
-    if plan["action"] == "export_selected":
-        return publish_ace(plan, log, apply_selected)
-    if plan["action"] == "refresh_sources":
-        workflow_actions.validate_plan(plan)
-        engine = TranslationEngine(Path(plan["folder"]).parent.parent)
-        project = plan["project"]
-        inputs = GuidedInputs(
-            plan["folder"],
-            project["source"],
-            project["data"],
-            engine.source_bindings,
-            engine.original_bytes,
-            native_exports=project["engine"] == "ACE",
-        )
-        return inputs.prepare(
-            plan["options"]["files"],
-            refresh=True,
-            expected=plan["options"]["sources"],
-            retired=plan["options"]["retired"],
-            progress=log,
-        )
-    return (
-        run_ace(plan, log) if plan["action"].startswith("ace_") else original(plan, log)
-    )
+    if actions.ACTIONS[plan["action"]].publication:
+        return publish_ace(plan, log, handler)
+    return handler(plan, log)
 
 
 class Progress:
@@ -139,7 +67,7 @@ def reported(native, error):
     native(error)
 
 
-workflow_actions.run_action = run_action
+workflow_actions.run_action.layer("dazedtl-actions", run_action)
 worker_failures.reported.layer("dazedtl-diagnostics", reported)
 # The worker keeps standard output as its event stream before redirecting it.
 sys.stdout = Progress(sys.stdout, watch_action(action))

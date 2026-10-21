@@ -2,6 +2,7 @@
 
 from typing import Annotated, Literal, NotRequired, TypedDict
 
+from dazedtl import actions
 from dazedtl.api.contracts.common import (
     Documents,
     EngineValue,
@@ -993,6 +994,22 @@ class PackageSummary(TypedDict):
     generated: NotRequired[list[str]]
 
 
+# The registry builds the names' Literal from its rows, which only a run sees.
+type GuidedAction = actions.GuidedAction  # pyright: ignore[reportInvalidTypeForm]
+type ActionFamily = actions.Family
+
+
+class ActionView(TypedDict):
+    """An action's row in the registry, as the renderer reads it."""
+
+    label: str
+    family: ActionFamily
+    restorable: bool
+    reports_outcome: bool
+    step: NotRequired[str]
+    counterpart: NotRequired[GuidedAction]
+
+
 class Preview(TypedDict):
     publication: NotRequired[list[PublicationChange]]
     run: NotRequired[PreviewRun | None]
@@ -1005,7 +1022,7 @@ class Preview(TypedDict):
     label: str
     destination: str
     files: int
-    action: str
+    action: GuidedAction
     paths: list[str]
     confirmation: bool
     options: dict[str, object]

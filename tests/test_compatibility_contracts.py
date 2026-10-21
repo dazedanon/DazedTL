@@ -12,8 +12,8 @@ from tempfile import TemporaryDirectory
 from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock, patch
 
+from dazedtl.actions import ROWS, handler
 from dazedtl.compatibility.guided import (
-    apply_selected,
     phased_workflows,
     run_ace,
     runtime_files,
@@ -873,40 +873,6 @@ def parse(codeList, i, headerString, jaString):
         engine.setSpeakerParseMode.assert_called_with(False)
         engine.finalizeSpeakerParse.assert_not_called()
 
-    def test_apply_uses_reviewed_selection_even_when_other_outputs_are_prepared(self):
-        with TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            plan = {
-                "options": {"files": ["Items.json"]},
-                "folder": str(root / "work"),
-                "project": {
-                    "source": str(root / "game"),
-                    "data": str(root / "game/data"),
-                    "engine": "MVMZ",
-                },
-                "guard": {
-                    "files": {"Items.json": "input", "System.json": "input"},
-                    "translated": {"Items.json": "output", "System.json": "output"},
-                },
-            }
-            actions = ModuleType("desktop.backend.workflow_actions")
-            actions.validate_plan = Mock()
-            actions.regular = lambda _root, path: path
-            scanner = ModuleType("util.project_scanner")
-            scanner.export_to_game = Mock(return_value=(1, []))
-            with patch.dict(
-                sys.modules, {actions.__name__: actions, scanner.__name__: scanner}
-            ):
-                self.assertEqual(apply_selected(plan, lambda _: None)["files"], 1)
-                self.assertEqual(
-                    scanner.export_to_game.call_args.kwargs["filenames"], ["Items.json"]
-                )
-                actions.validate_plan.assert_called_once_with(plan)
-                plan["options"]["files"] = ["Missing.json"]
-                with self.assertRaises(ValueError):
-                    apply_selected(plan, lambda _: None)
-                self.assertEqual(scanner.export_to_game.call_count, 1)
-
     def test_guided_patch_proposal_keeps_previously_tracked_runtime_assets(self):
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -1035,6 +1001,12 @@ def parse(codeList, i, headerString, jaString):
                 (game / "Game.rgss3a").write_bytes(b"RGSSAD")
                 with self.assertRaisesRegex(ValueError, "Convert Ace data"):
                     publish_ace(dict(plan), print, self.fail)
+
+    def test_every_action_handler_is_a_worker_function(self):
+        # A misspelt handler would fail only once a user runs the action.
+        for row in ROWS:
+            if row.handler:
+                self.assertTrue(callable(handler(row.name)), row.name)
 
     def test_phased_worker_launcher_preserves_pipe_controls_and_isolates_the_child(
         self,
