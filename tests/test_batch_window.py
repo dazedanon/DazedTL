@@ -213,9 +213,11 @@ class BatchWindowTests(unittest.TestCase):
             entered, release = threading.Event(), threading.Event()
             failures = []
 
+            # The waits only bound a hang; a slow runner can take over a
+            # second to start the worker.
             def submit(*a, **k):
                 entered.set()
-                if not release.wait(1):
+                if not release.wait(10):
                     raise TimeoutError("Fixture was not released")
                 return {"id": "paid-first"}
 
@@ -230,11 +232,11 @@ class BatchWindowTests(unittest.TestCase):
             worker = threading.Thread(target=fill)
             worker.start()
             try:
-                self.assertTrue(entered.wait(1))
+                self.assertTrue(entered.wait(10))
                 self.assertEqual(second.fill(task2), 0)
             finally:
                 release.set()
-                worker.join(1)
+                worker.join(10)
             self.assertFalse(worker.is_alive())
             self.assertEqual(failures, [])
             self.assertEqual(second.fill(task2), 0)
