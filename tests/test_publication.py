@@ -57,7 +57,7 @@ class PublicationTests(unittest.TestCase):
         # made in between must be backed up again before it is overwritten.
         during = b'{"text":"manual edit while publishing"}'
 
-        def editing(path, raw):
+        def editing(path, raw, mode=0o644):
             write_bytes(path, raw)
             if path == self.root / "data/A.json":
                 write_bytes(self.root / "data/B.json", during)
@@ -152,7 +152,7 @@ class PublicationTests(unittest.TestCase):
     def test_write_then_raise_rolls_back_the_attempted_batch_and_retains_backups(self):
         plan = p.freeze(self.folder, self.root, self.after, "export_selected")
 
-        def failing(path, raw):
+        def failing(path, raw, mode=0o644):
             write_bytes(path, raw)
             if path == self.root / "data/B.json" and raw == self.after["data/B.json"]:
                 raise OSError("generated second-file write failure")
@@ -201,7 +201,7 @@ class PublicationTests(unittest.TestCase):
     ):
         plan = p.freeze(self.folder, self.root, self.after, "fit_text")
 
-        def failing(path, raw):
+        def failing(path, raw, mode=0o644):
             if path == self.root / "data/A.json" and raw == self.before["data/A.json"]:
                 raise OSError("generated rollback failure")
             write_bytes(path, raw)
