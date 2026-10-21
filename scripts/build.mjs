@@ -36,6 +36,11 @@ const checks = [
     { env: { OXLINT_TSGOLINT_PATH: tsgolint } },
   ),
   { command: ruff, args: ["check", "--quiet", "."] },
+  // Text files name their encoding; PLW1514 is a preview rule (pyproject.toml).
+  {
+    command: ruff,
+    args: ["check", "--quiet", "--preview", "--select", "PLW1514", "."],
+  },
   node("pyright/index.js", []),
   node("typescript/bin/tsc", ["-p", "app/electron"]),
   node("typescript/bin/tsc", ["--noEmit"], { cwd: app }),

@@ -2,20 +2,63 @@
 # and is not installed as a package.
 
 [tool.ruff]
-# Formats and lints the app's Python. The bundled engine keeps its own style and line endings.
+# Formats and lints the app's Python. The bundled engine keeps its own style and
+# line endings: its own ruff.toml checks only the platform rules below.
 target-version = "py314"
-extend-exclude = ["backend/dazedtl/engine"]
 force-exclude = true
 
 [tool.ruff.lint]
+# Files and processes go through the platform layer (backend/dazedtl/system.py),
+# which keeps the Windows rules. Text files also name their encoding: PLW1514
+# is a preview rule, so scripts/build.mjs checks it in a run of its own.
+extend-select = ["TID251"]
 # ValueError is the API's user-facing validation error; TypeError would surface
 # as an internal failure, so isinstance checks keep raising ValueError.
 ignore = ["TRY004"]
 
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"subprocess.Popen".msg = "Use dazedtl.system.popen (engine: util.system)."
+"subprocess.run".msg = "Use dazedtl.system.run (engine: util.system)."
+"subprocess.call".msg = "Use dazedtl.system.run (engine: util.system)."
+"subprocess.check_call".msg = "Use dazedtl.system.run (engine: util.system)."
+"subprocess.check_output".msg = "Use dazedtl.system.run (engine: util.system)."
+"os.replace".msg = "Use dazedtl.system.replace (engine: util.system)."
+"os.rename".msg = "Use dazedtl.system.replace (engine: util.system)."
+"shutil.rmtree".msg = "Use dazedtl.system.remove_tree (engine: util.system)."
+"tempfile.mkdtemp".msg = "Use dazedtl.system.new_folder (engine: util.system)."
+"tempfile.TemporaryDirectory".msg = "Use dazedtl.system.staging_folder (engine: util.system)."
+
 [tool.ruff.lint.per-file-ignores]
 # Tests define per-iteration fakes that run inside their own loop iteration, and
 # collect worker-thread exceptions broadly so assertions can report them.
-"tests/**" = ["B023", "BLE001"]
+# They also make scratch folders with tempfile and drive processes directly:
+# the platform rules bind the shipped code.
+"tests/**" = ["B023", "BLE001", "TID251"]
+# The platform layer is the one place the calls it replaces are made.
+"backend/dazedtl/system.py" = ["TID251"]
+# Calls made before the platform layer, converted file by file: remove a file
+# once it has none. Never add one; use the layer, or mark a call that must stay
+# raw with `# noqa: TID251 - <reason>`.
+"backend/dazedtl/compatibility/estimate_pricing.py" = ["TID251"]
+"backend/dazedtl/compatibility/full_estimate.py" = ["TID251"]
+"backend/dazedtl/compatibility/images.py" = ["TID251"]
+"backend/dazedtl/compatibility/model_defaults.py" = ["TID251"]
+"backend/dazedtl/compatibility/playtest.py" = ["TID251"]
+"backend/dazedtl/compatibility/preparations.py" = ["TID251"]
+"backend/dazedtl/compatibility/speaker_scan.py" = ["TID251"]
+"backend/dazedtl/compatibility/text.py" = ["TID251"]
+"backend/dazedtl/compatibility/translation.py" = ["TID251"]
+"backend/dazedtl/foreign_work.py" = ["TID251"]
+"backend/dazedtl/images/recipes.py" = ["TID251"]
+"backend/dazedtl/plugins/documents.py" = ["TID251"]
+"backend/dazedtl/translation/backups.py" = ["TID251"]
+"backend/dazedtl/translation/jobs.py" = ["TID251"]
+"backend/dazedtl/translation/operations.py" = ["TID251"]
+"backend/dazedtl/translation/publication.py" = ["TID251"]
+"backend/dazedtl/translation/release.py" = ["TID251"]
+"backend/dazedtl/translation/start_over.py" = ["TID251"]
+"scripts/qa_upgrade.py" = ["TID251"]
+"scripts/testkit/assistant.py" = ["TID251"]
 
 [tool.pyright]
 # Checks the app's Python; the bundled engine is resolved but not checked.

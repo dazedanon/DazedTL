@@ -49,7 +49,7 @@ class ContextSetupTests(unittest.TestCase):
         C.request(self.request_path, "game", {"request_id": "speaker-request"})
         self.assertEqual(self.inspect()["status"], "waiting")
         for doc in self.docs.values():
-            Path(doc["path"]).write_text("")
+            Path(doc["path"]).write_text("", encoding="utf-8")
         self.assertEqual(self.inspect()["status"], "ready")
         request = C.request(
             self.request_path, "game", {"request_id": "speaker-request"}
@@ -69,7 +69,9 @@ class ContextSetupTests(unittest.TestCase):
         self.native.update(engine_options={"NAMES": True}, phase1_comments=True)
         self.docs["glossary"]["text"] = "Updated glossary"
         self.docs["glossary"]["revision"] = "changed"
-        Path(self.docs["glossary"]["path"]).write_text("Updated glossary")
+        Path(self.docs["glossary"]["path"]).write_text(
+            "Updated glossary", encoding="utf-8"
+        )
         for report in (
             {"project_id": "another game"},
             {"documents": {"glossary": {"revision": "old"}}},

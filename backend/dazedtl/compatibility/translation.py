@@ -97,7 +97,7 @@ class TranslationEngine:
 
         # Engine helpers may print. Never mix them into the application's RPC stream.
         with (
-            open(os.devnull, "w") as sink,
+            open(os.devnull, "w", encoding="utf-8") as sink,
             runtime_data_profile(self.profile),
             redirect_stdout(sink),
         ):

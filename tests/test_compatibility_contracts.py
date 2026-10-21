@@ -1383,7 +1383,7 @@ class ManualJobs:
             ):
                 (util / (name + ".py")).write_text("")
             rows, compiler = compile_requests(engine, "unused", {}, plan, "English")
-            Path(folder, "util/vocab.py").write_text("# changed")
+            Path(folder, "util/vocab.py").write_text("# changed", encoding="utf-8")
             self.assertEqual(
                 compile_requests(engine, "unused", {}, plan, "English")[1], compiler
             )

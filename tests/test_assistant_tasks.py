@@ -19,7 +19,7 @@ class AssistantTaskTests(unittest.TestCase):
             tasks = AssistantTasks(folder)
             report = Path(folder, "report.json")
             # A result from an earlier copy must not finish the new one.
-            report.write_text("{}")
+            report.write_text("{}", encoding="utf-8")
             os.utime(report, (1_000_000_000, 1_000_000_000))
             handoff = {"kind": "qa", "requestId": "task", "expects": [report]}
             tasks.copied(PROJECT, handoff)
@@ -27,7 +27,7 @@ class AssistantTaskTests(unittest.TestCase):
             self.assertLess(row["resultAt"], row["copiedAt"])
             # Saved after the copy; set explicitly, since file times come
             # from a coarser clock than the copy time.
-            report.write_text('{"saved": true}')
+            report.write_text('{"saved": true}', encoding="utf-8")
             later = time.time() + 1
             os.utime(report, (later, later))
             [row] = tasks.view(PROJECT)
@@ -37,7 +37,7 @@ class AssistantTaskTests(unittest.TestCase):
             last = Path(folder, "last.json")
             tasks.copied(PROJECT, {**handoff, "finish": last})
             self.assertIsNone(tasks.view(PROJECT)[0]["finishedAt"])
-            last.write_text("{}")
+            last.write_text("{}", encoding="utf-8")
             os.utime(last, (later, later))
             [row] = tasks.view(PROJECT)
             self.assertGreaterEqual(row["finishedAt"], row["copiedAt"])
@@ -80,7 +80,7 @@ class AssistantTaskTests(unittest.TestCase):
                 # A report still being written has no outcome yet.
                 ('{"status": "pass', None),
             ):
-                report.write_text(text)
+                report.write_text(text, encoding="utf-8")
                 moment += 1
                 os.utime(report, (moment, moment))
                 validation = tasks.view(PROJECT)[0]["validation"]
