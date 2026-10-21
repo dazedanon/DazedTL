@@ -835,6 +835,21 @@ try:
                 max(widest_line(item["parameters"][0]) for item in refitted[1:5]) <= 24
             )
             game.write_bytes(before)
+            # A staged copy of the game taken before wider widths were saved
+            # is written as if fitted at them, not with the narrower rows; at
+            # the widths it was fitted at, it is written as it is.
+            snapshot = temporary / "snapshot"
+            snapshot.write_bytes(before)
+            write_rpgmaker_json(
+                files["source"], snapshot, game, Layout.from_widths(tight)
+            )
+            assert game.read_bytes() == before
+            wide = Layout.from_widths({**tight, "width": 40, "faceWidth": 40})
+            assert fit_game(game.parent, wide)["fitted"]
+            widened = game.read_bytes()
+            assert write_rpgmaker_json(files["source"], snapshot, game, wide)["fitted"]
+            assert game.read_bytes() == widened, game.read_text(encoding="utf-8")
+            game.write_bytes(before)
             # A choice's help is fitted too, kept on the comment as written:
             # its Japanese, marker first, on the 108.
             asked = [
