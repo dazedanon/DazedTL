@@ -101,7 +101,7 @@ Run them outside a sandbox such as Claude Code's bwrap: KWin needs a writable `/
 `node scripts/scenario.mjs list` describes each scenario and game variant:
 
 - `fresh`, `opened`, `set-up` and `translated`: the Guided journey up to that point, Live translation applied.
-- `update-stopped`: translated, then version 1.1 brought in under Versions, its apply stopped at Git's conflict in a database file the translation changed, as an interrupted update leaves it, so Versions offers to continue or cancel.
+- `update-stopped`: translated, then version 1.1 brought in under Checkpoints, its apply stopped at Git's conflict in a database file the translation changed, as an interrupted update leaves it, so Checkpoints offers to continue or cancel.
 - `qa-done`: Text QA reviewed by a scripted assistant through the project helper, one correction applied.
 - `assistant-led`: an Assistant-led project in agent mode, set up and organized, its first request translated.
 - `assistant-written`: the assistant translates every request and writes them into the game, failing if the write changes the choice labels (402) or help markers (108) the game finds by their Japanese.

@@ -297,10 +297,10 @@ const assistantWrite = [
 
 const stoppedUpdate = [
   [
-    "Open Versions, the translation's Apply already its checkpoint",
+    "Open Checkpoints, the translation's Apply already its checkpoint",
     async ({ page }) => {
       await page.click("Project");
-      await page.click("Versions");
+      await page.click("Checkpoints");
       await page.waitText("Start game update");
     },
   ],
@@ -342,7 +342,7 @@ const stoppedUpdate = [
           .result;
       const stage = done("stage_update");
       // The app's Apply resolves conflicts at once; stopping before that is
-      // what an update interrupted mid-apply leaves for Versions.
+      // what an update interrupted mid-apply leaves for Checkpoints.
       execFileSync(
         state.env?.DAZEDTL_PYTHON || python,
         [
@@ -358,7 +358,7 @@ const stoppedUpdate = [
         { encoding: "utf8" },
       );
       await page.waitText("Finish the interrupted update");
-      await until("Versions to offer to cancel the update", () =>
+      await until("Checkpoints to offer to cancel the update", () =>
         page.locate("Cancel update & restore translation"),
       );
     },
@@ -390,7 +390,7 @@ export const scenarios = {
   },
   "update-stopped": {
     description:
-      "Translated and applied, then version 1.1 brought in under Versions, its apply stopped at Git's conflict in Actors.json; Versions offers to continue or cancel.",
+      "Translated and applied, then version 1.1 brought in under Checkpoints, its apply stopped at Git's conflict in Actors.json; Checkpoints offers to continue or cancel.",
     steps: () => [open, ...setup, ...translateAll, ...stoppedUpdate],
   },
   "qa-done": {
