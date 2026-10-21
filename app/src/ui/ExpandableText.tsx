@@ -1,4 +1,10 @@
-import { useId, useLayoutEffect, useRef, useState } from "react";
+import {
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Button } from "./Button";
 
 /** Show a readable excerpt while keeping the complete retained text available. */
@@ -11,6 +17,7 @@ export function ExpandableText({
   limit = 480,
   tail = false,
   lines = 0,
+  lead,
 }: {
   text: string;
   label: string;
@@ -22,6 +29,8 @@ export function ExpandableText({
   tail?: boolean;
   /** Inline text only: excerpt by rendered lines, so the height holds at every width. */
   lines?: number;
+  /** Inline text only: reads in the same lines before the text, such as a status. */
+  lead?: ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
@@ -89,6 +98,7 @@ export function ExpandableText({
         aria-label={fill ? label : undefined}
       >
         {shortened && floated && button}
+        {appearance === "inline" && lead}
         {clamped || !shortened || expanded
           ? text
           : tail

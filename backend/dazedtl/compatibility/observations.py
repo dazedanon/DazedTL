@@ -75,6 +75,11 @@ def _stamp_folder(folder, rows):
             _stamp_folder(entry.path, rows)
 
 
+# A poll reads every saved run's plan header and process summary, so these keep
+# a whole history; request views are only read on a miss and stay bounded.
+RUN_SUMMARIES = 4096
+
+
 class RunObservations:
     def __init__(self):
         # Each thread has its own observation, so a background thread never
@@ -147,7 +152,7 @@ class RunObservations:
             if signature[0] == stamp(path):
                 self.plans[path] = (signature, value)
                 self.plans.move_to_end(path)
-                while len(self.plans) > 128:
+                while len(self.plans) > RUN_SUMMARIES:
                     self.plans.popitem(last=False)
             return value
 
@@ -173,7 +178,7 @@ class RunObservations:
         self.processes.pop(root, None)
         if self.unchanged(root, stamp):
             self.processes[root] = (signature, value)
-            while len(self.processes) > 128:
+            while len(self.processes) > RUN_SUMMARIES:
                 self.processes.popitem(last=False)
         return deepcopy(value)
 

@@ -27,43 +27,48 @@ export function JobStatus({
   const detail = completion ? message.slice(completion.length).trim() : message;
   const state = job.status.replaceAll("_", " ");
 
+  const stateLabel = (
+    <span className="job-status-state" data-state={job.status}>
+      {active ? (
+        <LoaderCircle
+          size={15}
+          className="job-status-spinner"
+          aria-hidden="true"
+        />
+      ) : job.status === "complete" ? (
+        <Check size={15} aria-hidden="true" />
+      ) : null}
+      {compact && !active ? `Last run: ${state}` : sentence(state)}
+    </span>
+  );
+
   return (
     <div
       className={`job-status-status${compact ? " job-status-status--compact" : ""}`}
       role="status"
       aria-atomic="true"
     >
-      <div className="job-status-heading">
-        {!compact && <strong>{job.label}</strong>}
-        <span className="job-status-state" data-state={job.status}>
-          {active ? (
-            <LoaderCircle
-              size={15}
-              className="job-status-spinner"
-              aria-hidden="true"
-            />
-          ) : job.status === "complete" ? (
-            <Check size={15} aria-hidden="true" />
-          ) : null}
-          {compact && !active ? `Last run: ${state}` : sentence(state)}
-        </span>
-      </div>
-      {detail && (
+      {compact && detail ? (
+        // Beside a control, the state and a long detail read as one sentence
+        // that stays two lines, like an action's other results.
         <p>
-          {compact ? (
-            // Beside a control, a long detail stays an excerpt like an
-            // action's error.
-            <ExpandableText
-              key={detail}
-              text={detail}
-              label={`${job.label} details`}
-              appearance="inline"
-              limit={120}
-            />
-          ) : (
-            detail
-          )}
+          <ExpandableText
+            key={detail}
+            text={detail}
+            label={`${job.label} details`}
+            appearance="inline"
+            lines={2}
+            lead={<>{stateLabel} </>}
+          />
         </p>
+      ) : (
+        <>
+          <div className="job-status-heading">
+            {!compact && <strong>{job.label}</strong>}
+            {stateLabel}
+          </div>
+          {detail && <p>{detail}</p>}
+        </>
       )}
     </div>
   );
