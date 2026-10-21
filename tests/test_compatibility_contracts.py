@@ -1055,7 +1055,9 @@ def parse(codeList, i, headerString, jaString):
             game = Path(temporary)
             for folder in ("data", "gameupdate", ".git"):
                 (game / folder).mkdir()
-            (game / "gameupdate/patch.ps1").write_text("# GameUpdate\n")
+            (game / "gameupdate/patch.ps1").write_text(
+                "# GameUpdate\n", encoding="utf-8"
+            )
             status = {
                 "configured": True,
                 "pending_operations": ["MERGE_HEAD"],
@@ -1089,9 +1091,9 @@ def parse(codeList, i, headerString, jaString):
             )
 
     def test_assistant_led_writes_to_ace_json_pack_the_games_data(self):
-        # The game reads only Data: Assistant-led's writes and Line widths
-        # refits once left it untranslated while ace_json and the patch
-        # moved on.
+        # The game reads only Data: Assistant-led's preparation, writes and
+        # Line widths refits once left it as it was while ace_json and the
+        # patch moved on.
         def events(document):
             # The JSON lists a map's events, Ruby's Hash maps them by ID.
             found = document["events"]
@@ -1111,6 +1113,17 @@ def parse(codeList, i, headerString, jaString):
             fixture = Path(__file__).resolve().parent / "fixtures/ace"
             for folder in ("Data", "ace_json"):
                 shutil.copytree(fixture / folder, game / folder)
+            engine = TranslationEngine.__new__(TranslationEngine)
+            engine.profile = Path(temporary) / "profile"
+            engine.profile.mkdir()
+            options = {
+                "mode": "agent",
+                "include_images": False,
+                "instructions": "",
+                "include_glossary_base": False,
+                "install_forge": False,
+            }
+            engine.rpgmaker_prepare(game, options)
             exports = game / "ace_json/Map001.json"
             document = json.loads(exports.read_text(encoding="utf-8"))
             for event in events(document):
@@ -1119,7 +1132,6 @@ def parse(codeList, i, headerString, jaString):
                         command["parameters"][0] = "Lovely weather today, isn't it?"
             staged = game / ".dazedtl/len-method/work/Map001.json"
             write_json(staged, document)
-            engine = TranslationEngine.__new__(TranslationEngine)
 
             def played():
                 data = TranslationEngine.ace_data(game, ["Data/Map001.rvdata2"])
@@ -1138,6 +1150,24 @@ def parse(codeList, i, headerString, jaString):
             written = messages(json.loads(exports.read_text(encoding="utf-8")))
             self.assertEqual(played(), written)
             self.assertEqual(written, ["Lovely weather\ntoday, isn't it?"])
+
+            # Rebasing onto a new original, whose bytes Git holds.
+            def git(_root, *arguments, **_options):
+                answers = {"rev-parse": "original", "hash-object": "blob"}
+                if arguments[:2] == ("rev-parse", "original:ace_json/Map001.json"):
+                    return SimpleNamespace(stdout="blob\n")
+                return SimpleNamespace(stdout=answers[arguments[0]] + "\n")
+
+            for event in events(document):
+                for command in event["pages"][0]["list"]:
+                    if command["code"] == 401:
+                        command["parameters"][0] = "Fine day."
+            write_json(staged, document)
+            with patch("util.version_update.git_workflow._run_git", git):
+                engine.rebase_rpgmaker(
+                    game, fixture / "ace_json/Map001.json", staged, exports, "original"
+                )
+            self.assertEqual(played(), ["Fine day."])
 
     def test_every_action_handler_is_a_worker_function(self):
         # A misspelt handler would fail only once a user runs the action.

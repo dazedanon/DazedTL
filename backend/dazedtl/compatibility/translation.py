@@ -695,6 +695,22 @@ class TranslationEngine:
         return rv2json.script_names(Path(root))
 
     def rpgmaker_prepare(self, source, options, data_path=None, log=None):
+        """Prepares a game's RPG Maker files for translation, in one write
+        to the game."""
+        from .game_write import write_game
+
+        with write_game(source, log=log or (lambda _line: None)) as game:
+            # Formatting changes a VX Ace game's exports, which it reads once
+            # packed into Data.
+            game.watch(data_path or "ace_json")
+            return self._prepare(source, options, data_path, log)
+
+    def rpgmaker_prepare_release(self, staged, options, log=None):
+        """Prepares a new version's copy staged for a game update, which is
+        not the game, as the game's files were."""
+        return self._prepare(staged, options, None, log)
+
+    def _prepare(self, source, options, data_path, log):
         from desktop.backend.cli_environment import public_values
         from util.len_translation import setup_forge
         from util.project_preparation import prepare_rpgmaker

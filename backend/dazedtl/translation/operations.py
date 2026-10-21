@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from dazedtl import system
-from dazedtl.compatibility.game_write import write_game
 from dazedtl.storage import staging_folder, write_json
 
 from . import backups
@@ -307,11 +306,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             if arguments.get("data_path")
             else None
         )
-        with write_game(source, log=progress) as game:
-            # Formatting changes a VX Ace game's exports, which it reads once
-            # packed into Data.
-            game.watch(data or "ace_json")
-            result = engine.rpgmaker_prepare(source, options, data, log=progress)
+        result = engine.rpgmaker_prepare(source, options, data, log=progress)
         state["preparation"] = {"complete": True}
     elif action == "git_setup":
         require_source_backup(source, state)
@@ -582,7 +577,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         elif not patch and (
             kind == "MVMZ" or kind == "ACE" and (staged / "ace_json").is_dir()
         ):
-            engine.rpgmaker_prepare(staged, options, log=progress)
+            engine.rpgmaker_prepare_release(staged, options, log=progress)
             prepared = True
         result = {
             "official": str(staged),
