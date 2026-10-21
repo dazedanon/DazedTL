@@ -205,6 +205,15 @@ try:
                 assert "Drop honorifics." in load_system_prompt(guidance)
                 assert len(built) == 2, built
 
+        # Git tracks a skill whatever case its extension is in, so the prompt
+        # lists it on every platform.
+        from util.skills import list_custom_skill_paths
+
+        (guidance / ".dazedtl/skills/Style.MD").write_text(
+            "Be terse.", encoding="utf-8"
+        )
+        assert [p.name for p in list_custom_skill_paths(guidance)] == ["Style.MD"]
+
         # A real saved run recorded this pre-version byte hash; it must still pass
         # the native resume guard, alongside plans that record the version.
         engine = "RPG Maker MV/MZ"

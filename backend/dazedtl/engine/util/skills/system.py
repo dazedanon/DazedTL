@@ -22,6 +22,7 @@ from util.paths import (
     PROMPT_PATH, runtime_data_file,
     ensure_game_tool_gitignore,
     game_metadata_dir,
+    is_portable_game_file,
     prepare_game_translation_context,
 )
 
@@ -275,7 +276,9 @@ def list_custom_skill_paths(game_root: str | Path | None) -> list[Path]:
         return []
     reserved = {n.lower() for n in GAME_SKILL_RESERVED_NAMES}
     out: list[Path] = []
-    for path in sorted(skills.glob("*.md"), key=lambda p: p.name.lower()):
+    for path in sorted(skills.iterdir(), key=lambda p: p.name.lower()):
+        if not is_portable_game_file((GAME_SKILLS_RELATIVE / path.name).as_posix()):
+            continue
         if path.name.lower() in reserved:
             continue
         if path.is_symlink() or not path.is_file():
