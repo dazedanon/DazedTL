@@ -91,7 +91,11 @@ class HeldFileTests(unittest.TestCase):
             "run records": lambda path: atomic_json(path, "new"),
             "Ace data": lambda path: rv2json._replace(path, b'"new"\n'),
             "deletes": system.unlink,
+            "renames": lambda path: system.rename(path, path.with_name("moved")),
             "folders": lambda path: system.remove_tree(path.parent),
+            "folder renames": lambda path: system.rename(
+                path.parent, path.parent.with_name("moved")
+            ),
         }
         with TemporaryDirectory() as root:
             for name, write in writers.items():
@@ -105,8 +109,12 @@ class HeldFileTests(unittest.TestCase):
                     self.assertEqual(reader.attempts, 0)
                     if name == "folders":
                         self.assertFalse(folder.exists())
+                    elif name == "folder renames":
+                        self.assertTrue(folder.with_name("moved").is_dir())
                     elif name == "deletes":
                         self.assertEqual(os.listdir(folder), [])
+                    elif name == "renames":
+                        self.assertEqual(os.listdir(folder), ["moved"])
                     else:
                         self.assertEqual(json.loads(path.read_bytes()), "new")
                         self.assertEqual(os.listdir(folder), ["file.json"])

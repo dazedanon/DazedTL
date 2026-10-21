@@ -7,9 +7,9 @@ them). The engine imports this module as util.system.
 
 Files
 - Another process reading a file, such as the app's poll or a virus scanner,
-  makes Windows refuse to replace or delete it ("Access is denied", WinError 5
-  or 32), so replace, unlink, remove_tree and the writers wait up to about two
-  seconds for it to let go.
+  makes Windows refuse to replace, rename or delete it ("Access is denied",
+  WinError 5 or 32), so replace, rename, unlink, remove_tree and the writers
+  wait up to about two seconds for it to let go.
 - Saved files are written whole through a file beside them, as UTF-8 with
   "\\n" line ends, so a crash never leaves half a file and Windows never adds
   "\\r".
@@ -60,6 +60,7 @@ __all__ = [
     "private_stdin",
     "project_relative",
     "remove_tree",
+    "rename",
     "replace",
     "run",
     "staging_folder",
@@ -96,8 +97,8 @@ class Reader:
 
 @contextmanager
 def held_open(path, attempts=2):
-    """Test seam: the next ``attempts`` replaces or deletes of ``path``, or
-    removals of a folder holding it, fail as Windows fails them while another
+    """Test seam: the next ``attempts`` replaces, renames or deletes of
+    ``path``, or renames or removals of a folder holding it, fail as Windows fails them while another
     process has the file open. Retries after a simulated failure do not wait.
     Yields the Reader, whose attempts reach 0 once the writer met them all.
     """
@@ -151,6 +152,13 @@ def _retried(operation, path, tree=False):
 def replace(source, target):
     """os.replace, waiting for a reader of target to let go."""
     _retried(lambda: os.replace(source, target), target)
+
+
+def rename(source, target):
+    """os.rename, waiting for a reader of source, or of a file inside the
+    folder source names, to let go. Unlike replace it fails on Windows when
+    target exists."""
+    _retried(lambda: os.rename(source, target), source, tree=True)
 
 
 def unlink(path, missing_ok=False):
