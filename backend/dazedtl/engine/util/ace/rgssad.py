@@ -9,7 +9,9 @@ files that already exist are left alone. Unlike it, ".." in a name never
 leads outside the target folder.
 
 While a game has an archive, RPG Maker reads the archived copy of a file and
-never a loose one, and loads its scripts only from the archive.
+never a loose one, and loads its scripts only from the archive. Probes on a
+real game confirmed that it ignores loose copies and rejects an archive
+without its scripts, so a rebuilt archive must hold all of them.
 """
 
 from __future__ import annotations

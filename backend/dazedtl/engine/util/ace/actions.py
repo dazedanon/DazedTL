@@ -18,8 +18,9 @@ ACTIONS = ("ace_decrypt", "ace_extract", "ace_pack")
 # VX Ace data: MV/MZ's template literal, maybe ending in ";". Ruby runs a
 # string between backticks as a shell command, so the game froze there.
 _TEMPLATE_OPERAND = re.compile(r"`((?:\\.|[^`\\])*)`(;?)", re.S)
-# Where Set up keeps an encrypted game's original archive. The game reads
-# its extracted files only while no archive sits beside Game.exe.
+# Where Set up keeps an encrypted game's original archive, out of releases and
+# Git, which never see it. The game reads its extracted files only while no
+# archive sits beside Game.exe.
 ORIGINALS = Path(".dazedtl/ace")
 
 

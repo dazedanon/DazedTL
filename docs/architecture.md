@@ -370,105 +370,31 @@ Contract checks are a development aid; domain operations remain responsible for 
 
 ## Translation execution and the agent boundary
 
-The generated starting prompt uses scripts/project.py against an authenticated loopback endpoint in the running backend.
-The connection descriptor is local to the profile, permission-restricted, and removed on shutdown.
-Its token is never embedded in a handoff.
+The generated starting prompt uses scripts/project.py against an authenticated loopback endpoint in the running backend, whose connection descriptor is local to the profile, permission-restricted and removed on shutdown; its token is never embedded in a handoff.
 Agent operations use the same locked dispatch and project/run ownership checks as Electron; the helper has no settings or general shell endpoint.
-The app controls its workers.
-External assistant activity is reported from saved artifacts and must not be represented as an app-owned process.
-On Windows every copied task opens with a [note](../backend/dazedtl/translation/helper_command.py) naming DazedTL's own Python with `-X utf8` and its bundled Git, because a fresh Windows has neither on `PATH`, only the Microsoft Store placeholder for Python, and Python writes pipes in the ANSI code page, which cannot hold the Japanese an assistant's own scripts print.
+The app controls its workers; external assistant activity is reported from saved artifacts and must not be represented as an app-owned process.
+On Windows every copied task opens with a [note](../backend/dazedtl/translation/helper_command.py) naming DazedTL's own Python with `-X utf8` and its bundled Git, because a fresh Windows has neither on `PATH`, and Python writes pipes in the ANSI code page, which cannot hold the Japanese an assistant's scripts print.
 
-An assistant may run elevated, for example from an administrator PowerShell, and on Windows the files it writes then belong to Administrators.
-The app's normal session can still open them where the folder grants the user access, but not where it grants access only to each file's owner.
-Python's `mode=0o700`, which `tempfile.mkdtemp` and `TemporaryDirectory` use, makes exactly that owner-only folder on Windows.
-So a folder that stays in the workspace, a game or an output folder, or whose files move there, comes from `new_folder` or `staging_folder` in the [platform layer](../backend/dazedtl/system.py), and keeps the permissions of the folder it is made in; tempfile remains for scratch that nothing moves out of.
-
-A compiled plan freezes sources, full context, field constraints, provider parameters, rates, and connection identity.
-Its plan.json keeps each long context text that repeats, such as the system prompt every request and its provider payload hold, once under its hash ([plan_file](../backend/dazedtl/translation/plan_file.py)), which made a 2,648-request plan 55 MB instead of 165 MB.
-Reading it rebuilds the identical plan, and the run's record and approval bind the file's exact bytes; plans saved whole before this keep loading by their digest.
-A worker reads its plan once and rereads only the run's record each time it polls a Batch.
-Tracked game-source dependencies bind to their original-branch blobs; untracked source exports, project guidance and the plan file bind to their exact bytes.
-Both API transports consume the same logical request builder.
-Request IDs, speaker/scene context and protected tokens survive adapter conversion.
-Organize derives version-two plans from engine-neutral source units that Len's extractor saves, so parsing and injection stay in Len's per-engine tools and the assistant never rewrites the game's text.
-Organize and compile start such an operation: the app checks drafts, ownership and the settings the run freezes, and the [run compiler](../backend/dazedtl/translation/run_compiler.py) groups the units, compiles, prices and saves the run in its worker, since thousands of requests take tens of seconds; the helper waits and replies with the run.
-Approving an estimate checks its sources, scope and baseline in the app, and the run's worker compiles every request again and compares them before it sends anything, so a big plan never holds the app's other requests while that runs.
-A census the tool takes from the prepared source backup decides scope; organize --complete requires its coverage, so the assistant's extractor can't narrow it.
-An Assistant only run can mark requests declined; an API run compiled from the same plan finishes them, and the declined run reads them as accepted once their results exist.
-Version-two source plans require per-line text types and explicit nullable speakers.
-Unknown speakers remain valid; only explicit source ambiguity notes create targeted review flags.
-Classification and notes enter the same context/fingerprint in every mode.
-Existing unversioned plans are accepted only when validating saved runs.
-A compiler update may resume them when the complete logical requests and provider payloads still match; frozen plans and approvals are never migrated in place.
-Accepted results are keyed by logical source/context rather than Japanese text alone.
-Location hashes do not change their identity.
-Explicit corrections retain history, require the current result hash, and invalidate affected review/injection/QA evidence.
-
-Submission intent is durable before provider calls, and raw receipts are durable before acceptance.
-A Live run saves its record after every paid call; a Batch collection saves it about once a second and at the end, since an interrupted collection rebuilds acceptance from the saved receipts and results and collects the same provider job again.
-A worker rebuilds acceptance only on its first poll; it saved every later change itself, so a waiting Batch does not reread every saved result.
-SDK-level paid retries are disabled.
-For compiled agent plans, an uncertain submission blocks overlapping work; Guided fresh-run review follows the separate policy above.
-Attaching a provider job still requires matching returned request IDs.
-Approval receipts bind the project, immutable plan and quote with a profile-local signature.
-Before approval, a quote whose settings only price its requests differently (see [Estimates and approval](#estimates-and-approval)) shows at the current prices with an approval token derived from them; approving with that token freezes the run's plan again with the current settings under the same run ID, since nothing has been sent or authorized, and a Batch runner counts each request's tokens for OpenAI's allowance when it packs them.
-Any other settings change outdates the quote, and Progress's Estimate again repeats the organize or compile that made the run.
-A saved boolean alone cannot authorize a worker.
-Workers hold per-run locks and stop issuing work after losing their owning process.
-Closing asks workers to stop at a checkpoint and a few seconds later ends any still running, with the processes they started.
-An ended worker cannot clean up after itself, so each run worker keeps its temporary files, such as a restored game copy, in a [folder of its own](../backend/dazedtl/translation/jobs.py) that the app removes once it sees the worker gone, or at the next start.
-A backend still busy 12 seconds after closing is ended with every process it started, workers in sessions of their own included, so a hung Git command cannot keep holding the game or its index; their runs read as interrupted on the next start, and approved Batch queues continue as after any interruption.
+A compiled plan freezes sources, full context, field constraints, provider parameters, rates and connection identity, and the run's record and approval bind the plan file's exact bytes ([plan_file](../backend/dazedtl/translation/plan_file.py)).
+Tracked game sources bind to their original-branch blobs; untracked exports, guidance and the plan file bind to their exact bytes.
+Organize derives plans from engine-neutral source units that Len's extractor saves, so parsing and injection stay in Len's per-engine tools and the assistant never rewrites the game's text; a census from the prepared source backup decides scope, so the extractor cannot narrow it.
+Organize and compile run in an operation worker ([run_compiler](../backend/dazedtl/translation/run_compiler.py)), and the run's worker compiles every request again and compares before it sends anything, so a big plan never holds the app's other requests.
+Accepted results are keyed by logical source and context rather than Japanese text alone, and frozen plans and approvals are never migrated in place.
+Submission intent is durable before provider calls and raw receipts before acceptance; for compiled plans an uncertain submission blocks overlapping work.
+Approval receipts bind the project, immutable plan and quote with a profile-local signature; a saved boolean alone cannot authorize a worker.
+Workers hold per-run locks and stop issuing work after losing their owning process; closing asks them to stop at a checkpoint and then ends any still running with the processes they started, so a hung Git command cannot keep holding the game.
+An ended worker cannot clean up after itself, so each run worker keeps its temporary files in a [folder of its own](../backend/dazedtl/translation/jobs.py) that the app removes once it sees the worker gone.
 Closing or pausing cannot undo an already submitted provider request.
 
-Git baselines and backup records gate new translation work.
-Index writes wait up to ten seconds while another Git process holds the index lock, as any `git status` does while it refreshes the index, so status polls keep that refresh while workers write ([_run_git](../backend/dazedtl/engine/util/version_update/git_workflow.py)).
-Every change to a game's files goes through the [game-write gateway](../backend/dazedtl/compatibility/game_write.py), which refuses it while the checkout is off the translation branch or has an unfinished Git operation or asset sync; [checkout_issue](../backend/dazedtl/translation/operations.py) names the problem for both the refusal and a translation warning that every Guided task shows.
-Reviewed runtime manifests control patch scope; all .dazedtl work stays outside both branches.
-DazedTL's own runtime files a game holds join every manifest that checkpoints, packages and QA records read ([dazedtl_files](../backend/dazedtl/engine/util/len_patch_scope.py)), and Guided proposes the same list: an assistant's manifest of data and `plugins.js` alone gave players a `plugins.js` loading a plugin the patch lacked, so the game stopped at boot.
-Set up's files take the prepared game's copies as their originals, as `plugins.js` does; a game whose prepared backup lacks them, such as one set up after its Git baseline, gets them as translation-only additions instead of a checkpoint that fails.
-[sync_patch_scope](../backend/dazedtl/engine/util/len_patch_scope.py) also refuses a `plugins.js` that switches on a plugin neither the patch nor the original game holds, so a plugin an assistant writes, or Guided's TL Inspector, which DazedTL leaves to the manifest, cannot reach players without its file.
-The checkpoint passes the prepared backup's file list along with the restored originals because Git's ignored-asset inventory leaves out local-looking names such as a `Save…` plugin, and DazedTL's own plugins never count as the original game's because Git set up on a prepared game records them.
-The MV/MZ writer retains source metadata on ordinary corrections.
-The explicit rebase route proves its source matches a reviewed original-branch blob before rebuilding metadata for a new source version.
-Official update operations reuse the existing preview hashes, conflict recovery and native-byte rules.
-New originals are staged separately for engine preparation.
-Staging lays the copy out as the game ([release_layout](../backend/dazedtl/engine/util/version_update/release_layout.py)): the release folder that lines up with the game's paths, compared case-insensitively, supplies the files, and a patch takes the game's spelling of each path it replaces.
-A release holding fewer than half of the game's files is a patch, copied over the previous version so the files it leaves out stay; an MV/MZ patch gets the same data and plugin formatting as the game's own files, so it merges line by line.
-The preview also reads the Japanese strings of the changed JSON files and plugins as lines ([text_changes](../backend/dazedtl/engine/util/version_update/text_changes.py)): releases line up by text, a translation by position, and the merged result says which translations survive, so the review counts what applying will really drop.
-A plugin registry's settings read by plugin, and a plugin script's strings are its lines holding Japanese in quotes.
-Applying cherry-picks the release, and a file Git cannot merge cleanly is resolved by [merged_file](../backend/dazedtl/engine/util/version_update/git_workflow.py)'s rules, which the preview and the line view follow too: prepared game data merges by value ([json_merge](../backend/dazedtl/engine/util/version_update/json_merge.py)), the plugin registry by plugin and value ([script_merge](../backend/dazedtl/engine/util/version_update/script_merge.py)), anything else by hunk with the release winning.
-Formatted JSON repeats each command's lines, so Git can line a command the release inserted up against a translated one and conflict; by value, whatever the release left keeps its translation and source note, and whatever it changed comes from the release untranslated.
-Plugin settings and plugin command arguments hold JSON inside strings, such as a whole quest list in one setting, so the merge by value reads those values too; otherwise a release that adds a quest returns every translated quest to Japanese.
-`plugins.js` keeps each setting on one line, so Git conflicts wherever the release changes a translated setting, and the plugins the translation registered lost their registrations where the release registered its own; merged by plugin, they stay where they loaded, in the release's layout.
-A translation that added or removed data the release also changed, such as a line wrapped onto two in a conversation the release edits, or a release file not in the prepared format, falls back to the hunk merge.
-After a plugin script's hunk merge, each translated line the release left as it was goes back in, where the translation only rewrote text in quotes; code the translation rewrote stays as Git merged it.
-The hunk merge lines files up with Git's histogram diff, as the cherry-pick's own merge does: the default diff stops searching after a few hundred changed lines and pairs formatted JSON's repeated lines with the wrong commands, so the release won conflicts it never had and replaced translations it left unchanged.
-`git merge-file` takes the histogram diff from Git 2.44; an older Git keeps the default.
-A local delivery packages only reviewed Git files.
-Public publication remains a separate action.
-Ace preparation runs in Python on every platform: `util/ace` ports RV2JSON 1.2.1 and RPGMakerDecrypter's archive reading instead of shipping their Windows executables.
-The port writes RV2JSON's JSON and Ruby 3.4's Marshal bytes so games and existing `ace_json` exports read the same; it departs only where RV2JSON broke games or hid text: it finds data files in any case, keeps Change Vehicle BGM audio as objects, adds the equipment type names to `System.json` as `equipTypes` and packs translated map names into `MapInfos.rvdata2`, a Hash by map ID whose integer keys RV2JSON's update never matched.
-[The Ace fixture](../tests/fixtures/ace/regenerate.py) records RV2JSON's own output for synthetic editor-shaped data, so conversion tests need neither Ruby nor real games.
-RGSS3 reads only the archive while `Game.rgss3a` exists, scripts included, and probes on a real game confirmed it ignores loose copies and rejects an archive without its scripts.
-So Set up keeps an encrypted game's archive in `.dazedtl/ace`, where releases and Git never see it, and patches carry it rebuilt with the game's current files; the rebuild keeps the original header, order and keys, so it reproduces an unchanged archive byte for byte.
-Games also arrive with `ace_json` converted and the archive still beside Game.exe, from DazedMTLTool, which only told users to delete it, or from a manual RPGMakerDecrypter and RV2JSON conversion.
-Convert Ace data is done only once no archive sits in the game root, which an opened project's state shows on every Guided task; it keeps existing `ace_json`, since converting again would overwrite its translations, writes only the exports it lacks ([actions](../backend/dazedtl/engine/util/ace/actions.py)) and sets the archive aside.
-Until then packing refuses, and so do Apply and Release, which pack or check its receipt.
-The game reads only Data, so the game-write gateway packs what a write changed in `ace_json` once it succeeds ([pack_ace](../backend/dazedtl/compatibility/guided.py)), and refuses such a write before anything is written while the game still reads its archive.
-Packing saves a receipt bound to every current JSON input and its corresponding native output, and Set up's conversion saves the first one, since JSON just converted from Data holds what Data does.
-From a current receipt a pack converts only the data files whose exports changed since.
-Without one, such as for `ace_json` an earlier tool converted or Data an assistant wrote with its own tools, as Len's method does, a write packs only the exports it touched and leaves the rest of Data as it is.
-Ace Release requires a current receipt, so `ace_json` edited or converted outside the app needs Pack outside edits, which packs everything and which Check and Release show only then.
-The window caption comes from `Game.ini`'s Title, not the data, so packing writes the game title there as the editor does when it saves, and its receipt binds `Game.ini` with the data; older receipts count as outdated, so a game packed before this packs once more.
-Game.exe reads that file with `GetPrivateProfileStringW`, which decodes a file without a byte order mark with the player's ANSI code page, and mkxp-z, which plays Ace games on Linux, the Steam Deck and Android (JoiPlay), [reads it as bytes](https://github.com/mkxp-z/mkxp-z/blob/dev/src/util/iniconfig.cpp), so in UTF-16 it finds no `Scripts=` and starts the game as RPG Maker XP.
-Only ASCII reads alike in both, so the title is written in ASCII, accents and full-width forms taking their plain letters, letters such as Æ and ß their ASCII spellings and symbols such as ♥ left out, and only its line changes; a file already in UTF-16 keeps its encoding.
-A title that would keep only a fragment in ASCII, such as a version number without the Japanese name beside it, leaves the old title in place.
-Git holds no original of the converted JSON, so Event text sources reads a translated command's original text from the `_original` the engine keeps, and lists the converted `ace_json/scripts` as dependencies.
-Ace data is translated by the MV/MZ engine, and an Ace project's runs set its `VXACE` option from the project's engine ([phase_workflow](../backend/dazedtl/engine/desktop/backend/workflow.py)), so the frozen plan and Batch runtime profile carry it.
-With it, a translated text variable (code 122) is written as a Ruby double-quoted string, since Ace evaluates the operand with Ruby, where the template literal MV/MZ reads runs a shell command.
-Earlier versions wrote Ace's as template literals, so packing writes each translated one, which keeps its `_original`, as the Ruby string holding the same text and leaves the JSON as it is ([ruby_text_variables](../backend/dazedtl/engine/util/ace/actions.py)); a literal that interpolates or holds a character code is left and logged, and receipts from before count as outdated, so those games pack once more.
-Copied Names & glossary and Line widths tasks tell an Ace assistant where its data and scripts are and that the code-101 nameplate rules, slip check and layout check are MV/MZ only, since VX Ace's Show Text has no nameplate.
-Guided checkpoint manifests derive translation-only additions from the registered original and saved source inventory, retaining previously tracked runtime assets when switching workflows.
+Git baselines and backup records gate new translation work, and the game-write gateway refuses writes while the checkout is off the translation branch or mid-operation; [checkout_issue](../backend/dazedtl/translation/operations.py) names the problem for both the refusal and the warning every Guided task shows.
+Reviewed runtime manifests control patch scope, and all .dazedtl work stays outside both branches.
+DazedTL's own runtime files a game holds join every manifest ([dazedtl_files](../backend/dazedtl/engine/util/len_patch_scope.py)), because an assistant's manifest of data and `plugins.js` alone once gave players a `plugins.js` loading a plugin the patch lacked.
+Official game updates are staged and merged by [version_update](../backend/dazedtl/engine/util/version_update), whose modules explain why each kind of file merges as it does; a local delivery packages only reviewed Git files, and public publication remains a separate action.
+
+VX Ace preparation runs in Python on every platform: [util/ace](../backend/dazedtl/engine/util/ace) ports RV2JSON 1.2.1 and RPGMakerDecrypter's archive reading instead of shipping their Windows executables, and [the Ace fixture](../tests/fixtures/ace/regenerate.py) records RV2JSON's own output, so conversion tests need neither Ruby nor real games.
+RGSS3 reads only the archive while `Game.rgss3a` exists, so Set up keeps an encrypted game's archive in `.dazedtl/ace`, out of releases and Git, and patches carry it rebuilt from the game's current files.
+The game reads only Data, so the game-write gateway packs what a write changed in `ace_json` ([pack_ace](../backend/dazedtl/compatibility/guided.py)), and Release requires a current packing receipt.
+Ace data is translated by the MV/MZ engine with its `VXACE` option set from the project's engine ([phase_workflow](../backend/dazedtl/engine/desktop/backend/workflow.py)), so frozen plans carry it.
 
 ## Windows
 

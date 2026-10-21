@@ -5,6 +5,10 @@ the previous version. Either can sit inside an extra folder, and a patch can
 start below the game's root, such as an MV patch holding ``data/`` for the
 game's ``www/data/``. Paths line up case-insensitively, as they do on
 Windows, where these releases are made and applied.
+
+A patch keeps the files it leaves out because the previous version stays under
+it. An MV/MZ patch is previewed with the same data and plugin formatting as
+the game's own files (git_workflow._source_files), so it merges line by line.
 """
 
 from __future__ import annotations

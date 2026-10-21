@@ -1,4 +1,11 @@
-"""Engine-independent Git workflow for official game version updates."""
+"""Engine-independent Git workflow for official game version updates.
+
+Each module explains why its kind of file merges as it does: release_layout
+stages a release as the game, text_changes reads its text as lines for the
+preview, json_merge carries translations by value in game data, script_merge
+does the same for the plugin registry and plugin scripts, and git_workflow
+resolves everything else by hunk with the release winning.
+"""
 
 from .git_workflow import (
     ORIGINAL_BRANCH,
