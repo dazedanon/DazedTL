@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { app, root, dependencies } from "./dependencies.mjs";
+import { app, root, dependencies, python } from "./dependencies.mjs";
 const modules = dependencies();
 const ruff = path.join(
   root,
@@ -41,6 +41,8 @@ const checks = [
     command: ruff,
     args: ["check", "--quiet", "--preview", "--select", "PLW1514", "."],
   },
+  // Path.replace and Path.rename, which TID251 cannot see.
+  { command: python, args: ["-I", "scripts/platform_calls.py", ruff] },
   node("pyright/index.js", []),
   node("typescript/bin/tsc", ["-p", "app/electron"]),
   node("typescript/bin/tsc", ["--noEmit"], { cwd: app }),
