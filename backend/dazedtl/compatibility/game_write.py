@@ -27,9 +27,14 @@ from pathlib import Path
 
 from dazedtl.system import unlink, write_bytes
 from dazedtl.translation.files import digest, project_path
+from dazedtl.translation.git_status_cache import RepositoryStatusCache
 
 # The game folders a gateway is writing to in this context.
 writing = ContextVar("game_writes", default=frozenset())
+# Git's metadata alone decides whether a checkout can take a write, so while
+# it is unchanged a write's check costs a few file stats, not a dozen Git
+# processes, which Windows starts slowly.
+_statuses = RepositoryStatusCache(stable=True)
 
 
 class GameWrite:
@@ -100,7 +105,7 @@ def _checkout(root):
 
     from dazedtl.translation.operations import checkout_issue
 
-    status = git_status(LenProject(root))
+    status = _statuses.get(str(root), root, lambda: git_status(LenProject(root)))
     if status.get("configured") and (issue := checkout_issue(status)):
         raise ValueError(issue)
 
