@@ -612,10 +612,10 @@ def checkout_issue(status, *, allow_pending=False):
     if not allow_pending and pending:
         return (
             f"The game folder has an unfinished Git {PENDING_GIT.get(pending[0], 'operation')}. "
-            "Finish or cancel it under Versions, or in Git, to continue."
+            "Finish or cancel it under Checkpoints, or in Git, to continue."
         )
     if not allow_pending and status.get("asset_sync_pending"):
-        return "The last game update has not finished restoring game assets. Finish it under Versions to continue."
+        return "The last game update has not finished restoring game assets. Finish it under Checkpoints to continue."
     current, branch = status.get("current_branch"), status.get("translation_branch")
     if current != branch:
         return (
