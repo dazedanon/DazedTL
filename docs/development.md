@@ -96,6 +96,7 @@ A failure means a change made saved QA work stale: keep what names a task as it 
 
 `node scripts/scenario.mjs <scenario>` builds a known state to reproduce a bug in: a scratch profile and workspace, a copy of a fixture game and a free stand-in provider, never your own profile or games.
 It drives this checkout's app through the same steps a user takes, in a private virtual KWin on Linux (or an Xvfb `DISPLAY`, as under `xvfb-run`; never your desktop's), and closes it again; most scenarios build in under 20 seconds.
+Run them outside a sandbox such as Claude Code's bwrap: KWin needs a writable `/tmp` and `/dev/dri`, so the scenario stops at once with that advice.
 `node scripts/scenario.mjs list` describes each scenario and game variant:
 
 - `fresh`, `opened`, `set-up` and `translated`: the Guided journey up to that point, Live translation applied.

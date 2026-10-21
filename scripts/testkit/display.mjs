@@ -62,6 +62,21 @@ export async function startDisplay({ name, log, width = 1400, height = 1000 }) {
     throw new Error("A private display needs Linux with KWin.");
   if (spawnSync("which", ["kwin_wayland"]).status !== 0)
     throw new Error("A private display needs kwin_wayland.");
+  // A sandbox such as Claude Code's bwrap leaves /tmp read-only, where the
+  // bus and X sockets go, and hides /dev/dri, without which KWin crashes.
+  const sandboxed = (() => {
+    if (!fs.existsSync("/dev/dri")) return "/dev/dri is missing";
+    try {
+      fs.accessSync("/tmp", fs.constants.W_OK);
+      return null;
+    } catch {
+      return "/tmp is read-only";
+    }
+  })();
+  if (sandboxed)
+    throw new Error(
+      `A private display cannot start here: ${sandboxed}. Run scenarios outside the sandbox.`,
+    );
   const before = displays();
   const output = fs.openSync(log, "a");
   const child = spawn(
