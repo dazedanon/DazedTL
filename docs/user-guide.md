@@ -76,7 +76,7 @@ If your assistant cannot measure the game's windows, its task still finishes and
 If the app cannot use your assistant's report, Line widths says why; copy the measurement task again or keep the current widths.
 Message rows is how many rows one message window shows; a longer message starts its next page after a sentence, and Text QA keeps its corrections within it.
 Saving new widths after you apply translations rewraps the text DazedTL applied that no longer fits, and says so beside **Save line widths**; files you translated another way stay as they are.
-Wider widths also join again the lines DazedTL broke to fit narrower ones, where the message then takes fewer rows.
+Wider widths also join again the lines and pages DazedTL broke to fit narrower ones, where the message then takes fewer rows; Apply does the same for text translated while the widths were narrower.
 Text that does not fit even rewrapped, such as help that needs more rows than its window shows, is listed under **Too long to fit** with its file and place, until you apply text again or change the widths; shorten it in Text QA or the translation.
 With portrait is never wider than Dialogue, so saving a narrower Dialogue lowers it and says so.
 While a game update waits on conflicts, or another Git problem the page names, the widths save and the rewrap waits until it is resolved.

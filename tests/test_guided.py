@@ -4138,6 +4138,32 @@ class GuidedTests(unittest.TestCase):
                 applied[1]["description"], "Restores a little\nhealth to every ally."
             )
             self.assertEqual(applied[2], output[2])
+            # A message translated at a narrower Dialogue width is applied as
+            # the game's widths lay it out.
+            from util.rpgmaker_rewrap import Layout, fit_document
+
+            message = [
+                {"code": 101, "parameters": ["", 0, 0, 2]},
+                {
+                    "code": 401,
+                    "parameters": ["The forest road is dangerous, so be careful."],
+                },
+                {"code": 0, "parameters": []},
+            ]
+
+            def translated():
+                return {"events": [None, {"pages": [{"list": deepcopy(message)}]}]}
+
+            narrow, direct = translated(), translated()
+            fit_document(narrow, "Map001.json", Layout(30, 30, 50, 50, 4))
+            fit_document(direct, "Map001.json", Layout(50, 40, 50, 50, 4))
+            self.assertNotEqual(narrow, direct)
+            write_json(self.source / "Map001.json", {"events": []})
+            write_json(self.folder / "translated/Map001.json", narrow)
+            apply = plan("export_selected", {"files": ["Map001.json"]})
+            prepare_publication(apply)
+            run_publication(apply, lambda _: None)
+            self.assertEqual(read_json(self.source / "Map001.json"), direct)
             # The bytes Apply fitted are no later edit for the next Apply.
             again = plan("export_selected", {"files": ["Items.json"]})
             rows = prepare_publication(again)["publication"]

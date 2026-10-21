@@ -854,7 +854,11 @@ def prepare_publication(plan):
                 )
             document = decode_json(output)
             outputs[name] = digest(output)
-            fitted = fit_output(document, name, layout)[0] if layout else None
+            # Translation fitted the output to the widths of its run, which
+            # may be narrower than the game's now.
+            fitted = (
+                fit_output(document, name, layout, resized=True)[0] if layout else None
+            )
             if fitted is not None:
                 candidates[(prefix / name).as_posix()] = fitted
                 written[name] = digest(fitted)
