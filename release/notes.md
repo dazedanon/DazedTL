@@ -21,3 +21,6 @@
 - **Text QA:** the playtest now matches an untranslated message it sees with the line it lists as never translated, and a message whose speaker name alone was translated counts as never translated.
 - **Text QA:** an applied correction now colors only the words it changed, instead of the whole new line, so an unchanged second row no longer looks changed.
 - **Playtest:** a placeholder glyph such as ◯ that the message window draws is now reported once per message, instead of once for the whole run.
+- **Maps & events:** translated scrolling text now lays its lines over its own rows instead of adding a row per line, so translating it again no longer changes its event and saved games stay at their place.
+- **Text QA:** a correction that makes choice help shorter, or fitting it to narrower Line widths, no longer leaves an empty line above the game's own rows such as "(1/3)".
+- **Assistant-led:** fitting choice help to Line widths now keeps a row the assistant left as the game wrote it, such as "(1/3)", on its own line instead of running it into the text around it.
