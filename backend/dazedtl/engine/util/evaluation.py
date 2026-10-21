@@ -71,6 +71,7 @@ from util.translation import (
     validate_translation_content,
     translation_content_warnings,
 )
+from util import system
 
 
 EVALUATION_VERSION = 9
@@ -1646,7 +1647,7 @@ def prune_completed_evaluations(
         resolved = run_dir.resolve()
         if resolved.parent != archive_boundary or run_dir.is_symlink():
             continue
-        shutil.rmtree(resolved)
+        system.remove_tree(resolved)
         removed.append(resolved)
     return removed
 
@@ -1783,7 +1784,7 @@ def _discard_superseded_prepared_runs(project_root: str | Path) -> list[Path]:
         resolved = run_dir.resolve()
         if resolved.parent != work_boundary or run_dir.is_symlink():
             continue
-        shutil.rmtree(resolved)
+        system.remove_tree(resolved)
         removed.append(resolved)
     return removed
 

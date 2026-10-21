@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import signal
 import stat
 import subprocess
 import sys
@@ -20,13 +19,14 @@ from .project import atomic_json, digest, file_digest
 from .settings import SettingsStore
 from util import extensions
 # images and operations import system_environment from here.
+from util import system
 from util.system import system_environment
 
 
 @extensions.point
 def launch_worker(arguments, **kwargs):
     """Starts a run's worker process; a host may launch its own worker instead."""
-    return subprocess.Popen(arguments, **kwargs)
+    return system.popen(arguments, **kwargs)
 
 
 @extensions.point
@@ -433,7 +433,7 @@ class ManualJobs:
                     self._launch(job, False)
             except Exception:
                 if identity not in self.jobs:
-                    shutil.rmtree(directory)
+                    system.remove_tree(directory)
                 raise
             return json.loads(json.dumps(job))
 
@@ -498,7 +498,7 @@ class ManualJobs:
             with (directory / "log/startup.txt").open("a", encoding="utf-8") as error_log:
                 process = launch_worker([sys.executable, "-u", str(Path(__file__).with_name("manual_worker.py")), str(directory)],
                                         cwd=directory, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=error_log,
-                                        text=True, encoding="utf-8", bufsize=1, start_new_session=os.name != "nt")
+                                        text=True, encoding="utf-8", bufsize=1, group=True)
                 with self.lock:
                     self.process = process
                     if self.stopping.is_set():
@@ -677,9 +677,6 @@ class ManualJobs:
         with self.lock:
             process = self.process
             if process and process.poll() is None:
-                if os.name == "nt":
-                    subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-                else:
-                    os.killpg(process.pid, signal.SIGTERM)
+                system.stop_tree(process)
         if self.worker:
             self.worker.join(timeout=3)

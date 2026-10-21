@@ -17,6 +17,7 @@ from tqdm import tqdm
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost
 # from modules.json import translateSimpleKeyValueJSON
 import tempfile
+from util import system
 
 # Boilerplate Globals
 MODEL = os.getenv("model")
@@ -182,7 +183,7 @@ def save_progress_json(data, filename):
         final_path = os.path.join("translated", filename)
         with open(tmp_path, "w", encoding="utf-8", newline="\n") as outFile:
             json.dump(data, outFile, ensure_ascii=False, indent=4)
-        os.replace(tmp_path, final_path)
+        system.replace(tmp_path, final_path)
     except Exception:
         traceback.print_exc()
 

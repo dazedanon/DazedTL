@@ -14,6 +14,7 @@ from retry import retry
 from tqdm import tqdm
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost
 import tempfile
+from util import system
 
 # Globals
 MODEL = os.getenv("model")
@@ -196,7 +197,7 @@ def save_progress_lines(lines, filename, encoding="utf_8"):
                 # Retry a few times in case another process/thread still has the file open momentarily.
                 for attempt in range(5):
                     try:
-                        os.replace(tmp_path, dest_path)
+                        system.replace(tmp_path, dest_path)
                         break
                     except PermissionError:
                         if attempt == 4:

@@ -48,6 +48,7 @@ from util.rpgmaker_markers import comment_markers, game_plugins
 from util.rpgmaker_files import mvmz_file_kind
 from util.id_ranges import id_in_ranges
 from util.source_text import holds_source
+from util import system
 
 # Globals
 MODEL = os.getenv("model")
@@ -771,7 +772,7 @@ def saveProgress(data, filename, *, force=False):
         last_err = None
         for attempt in range(attempts):
             try:
-                os.replace(tmp_path, final_path)
+                system.replace(tmp_path, final_path)
                 last_err = None
                 break
             except PermissionError as e:
@@ -7654,7 +7655,7 @@ def finalizeSpeakerParse():
         tmp_path = vocab_path.with_suffix(vocab_path.suffix + f".{os.getpid()}.{threading.get_ident()}.tmp")
         tmp_path.write_text(new_content, encoding="utf-8", newline="\n")
         try:
-            os.replace(tmp_path, vocab_path)
+            system.replace(tmp_path, vocab_path)
         except Exception:
             try:
                 shutil.move(str(tmp_path), str(vocab_path))

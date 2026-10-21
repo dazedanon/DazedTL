@@ -26,6 +26,10 @@ def start(directory, workspace, plan):
     from desktop.backend.manual import worker_environment
     from util.batch_providers import detect_batch_provider
 
+    # Run as the count process, this file imports dazedtl only once its
+    # folder is on the path.
+    from dazedtl import system
+
     settings = plan.get("settings") or {}
     if (
         not plan.get("key_name")
@@ -42,7 +46,7 @@ def start(directory, workspace, plan):
     log = Path(directory) / "log"
     log.mkdir(exist_ok=True)
     with (log / "startup.txt").open("a", encoding="utf-8") as errors:
-        return subprocess.Popen(
+        return system.popen(
             [sys.executable, "-u", str(Path(__file__).resolve()), str(directory)],
             cwd=directory,
             env={**worker_environment(workspace, plan), "PYTHONDONTWRITEBYTECODE": "1"},

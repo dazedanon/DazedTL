@@ -14,6 +14,7 @@ from retry import retry
 from tqdm import tqdm
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost
 import tempfile
+from util import system
 
 # Globals
 MODEL = os.getenv("model")
@@ -172,7 +173,7 @@ def save_progress_json(data, filename):
         try:
             with os.fdopen(tmp_fd, "w", encoding="utf-8", newline="\n") as tmp_file:
                 json.dump(data, tmp_file, ensure_ascii=False, indent=4)
-            os.replace(tmp_path, os.path.join("translated", filename))
+            system.replace(tmp_path, os.path.join("translated", filename))
         finally:
             if os.path.exists(tmp_path):
                 try:

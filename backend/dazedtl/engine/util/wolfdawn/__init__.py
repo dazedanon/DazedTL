@@ -20,7 +20,6 @@ from __future__ import annotations
 import io
 import json
 import re
-import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -28,6 +27,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Optional, Sequence, Union
+from util import system
 
 __all__ = [
     "WolfDawnError",
@@ -471,7 +471,7 @@ def _run(args: Sequence[str], log_fn=None) -> WolfResult:
     """Run ``wolf <args...>`` and capture output. Ensures the binary exists first."""
     binary = ensure_wolf_binary(log_fn=log_fn)
     argv = [str(binary), *[str(a) for a in args]]
-    proc = subprocess.run(
+    proc = system.run(
         argv,
         capture_output=True,
         text=True,

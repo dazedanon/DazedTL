@@ -31,6 +31,7 @@ from util.version_update.git_workflow import (
     _load_asset_manifest_metadata, _message, _open_index_lock, _reject_original_checked_out_elsewhere,
     _run_git, _save_asset_manifest, _temporary_index, _tree_files,
 )
+from util import system
 
 _BEGIN = "# BEGIN DazedTL Len patch files"
 _END = "# END DazedTL Len patch files"
@@ -248,7 +249,7 @@ def _blob_metadata(repo: Path, objects: set[str]) -> dict[str, tuple[str, int]]:
     with tempfile.TemporaryFile() as requests:
         requests.write(("\n".join(sorted(objects)) + "\n").encode("ascii"))
         requests.seek(0)
-        with subprocess.Popen(["git", "-C", str(repo), "cat-file", "--batch"],
+        with system.popen(["git", "-C", str(repo), "cat-file", "--batch"],
                               stdin=requests, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as process:
             for _ in objects:
                 header = process.stdout.readline().decode("ascii").split()
@@ -302,8 +303,8 @@ def sync_patch_scope(project: LenProject, document: object, *, original_game: Pa
     `original_names` lists all of the untranslated game's files when
     `original_game` holds only the patch's, as a restored backup does.
     """
-    with tempfile.TemporaryDirectory(prefix="dazedtl-original-") as derived:
-        return _sync_patch_scope(project, document, original_game, original_names, dry_run, Path(derived))
+    with system.staging_folder(tempfile.gettempdir(), "dazedtl-original-") as derived:
+        return _sync_patch_scope(project, document, original_game, original_names, dry_run, derived)
 
 
 def _sync_patch_scope(project: LenProject, document: object, original_game: Path | None,

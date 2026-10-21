@@ -6,10 +6,10 @@ import hashlib
 import json
 import os
 import re
-import subprocess
 from pathlib import Path
 
 from util.freshness import Digests
+from util import system
 from util.paths import replace_with_retry
 from util.project_preparation import rpgmaker_layout
 from util.rpgmaker_qa_manifest import pointer, resolve_pointer, _mechanical_evidence
@@ -114,7 +114,7 @@ def snapshot(source: Path, destination: Path, *, original: bool) -> dict:
     revision = "working files"
     if original:
         def git(*args):
-            return subprocess.run(["git", "-C", str(source), *args], check=True, capture_output=True, timeout=30).stdout
+            return system.run(["git", "-C", str(source), *args], check=True, capture_output=True, timeout=30).stdout
         revision = git("rev-parse", "--verify", "refs/heads/original^{commit}").decode().strip()
         for entry in git("ls-tree", "-rz", revision).split(b"\0"):
             if not entry:
@@ -135,7 +135,7 @@ def snapshot(source: Path, destination: Path, *, original: bool) -> dict:
             raise ValueError("The original branch contains no supported RPG Maker JSON data.")
         # One cat-file process instead of one Git process per map.
         request = "".join(oid + "\n" for oid in selected.values()).encode()
-        output = subprocess.run(["git", "-C", str(source), "cat-file", "--batch"], input=request,
+        output = system.run(["git", "-C", str(source), "cat-file", "--batch"], input=request,
                                 capture_output=True, check=True, timeout=60).stdout
         offset = 0
         for name in selected:

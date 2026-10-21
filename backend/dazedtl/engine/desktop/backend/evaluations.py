@@ -6,8 +6,9 @@ import os
 from pathlib import Path
 import re
 import sys
-import tempfile
 import uuid
+
+from util import system
 
 from .project import atomic_json, digest
 from .batches import redact
@@ -292,8 +293,7 @@ def _execute(plan, project, vault, log, stopped):
             # Shared prompt loading migrates portable context. Do that only in
             # an isolated snapshot, never in the original game selected for evaluation.
             from .manual import snapshot_context
-            with tempfile.TemporaryDirectory(prefix='context-', dir=project) as temporary:
-                temp = Path(temporary)
+            with system.staging_folder(project, 'context-') as temp:
                 context_plan = {'context_source': str(engine.resolve_evaluation_game_root(source) or source)}
                 snapshot_context(temp, context_plan, project.parent)
                 root, saved = engine.prepare_run(project, data, rows, game_root=temp / 'game', content_selection=selection,
@@ -307,8 +307,8 @@ def _execute(plan, project, vault, log, stopped):
             raise ValueError('Choose one saved evaluation folder containing state.json and manifest.json.')
         if source.is_relative_to(project) or any(p.is_symlink() for p in source.rglob('*')):
             raise ValueError('Choose an original evaluation folder with regular files outside this profile.')
-        with tempfile.TemporaryDirectory(prefix='legacy-', dir=project) as temporary:
-            archive = engine.export_run_archive(source, Path(temporary) / 'legacy.dazedeval')
+        with system.staging_folder(project, 'legacy-') as temporary:
+            archive = engine.export_run_archive(source, temporary / 'legacy.dazedeval')
             root = engine.import_run_archive(project, archive)
         result['message'] = 'Legacy run imported. Active provider jobs remain paused until their original credentials are bound.'
     elif action == 'archive_import':

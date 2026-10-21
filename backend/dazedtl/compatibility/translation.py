@@ -10,6 +10,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Any
 
+from dazedtl import system
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest
 from dazedtl.translation.git_status_cache import RepositoryStatusCache, file_signature
@@ -22,7 +23,7 @@ from .openrouter_batch import ResultsUnavailable
 def _git(arguments, purpose, timeout=120):
     """Runs Git for its raw output; a failure says what it was for in words."""
     try:
-        result = subprocess.run(
+        result = system.run(
             ["git", *arguments], capture_output=True, timeout=timeout, check=False
         )
     except subprocess.TimeoutExpired as exc:
@@ -554,7 +555,7 @@ class TranslationEngine:
             requests.write("".join(blob + "\n" for blob in blobs).encode("ascii"))
             requests.seek(0)
             try:
-                process = subprocess.Popen(
+                process = system.popen(
                     ["git", "-C", str(source), "cat-file", "--batch"],
                     stdin=requests,
                     stdout=subprocess.PIPE,
@@ -904,7 +905,9 @@ class TranslationEngine:
             previous = ignore.read_text(encoding="utf-8") if ignore.exists() else ""
             write_bytes(ignore, scope_ignore(previous, set(entries)).encode("utf-8"))
         allowed = set(entries) | {".gitignore", ".gitattributes", "README.md"}
-        with tempfile.TemporaryDirectory(prefix="dazedtl-scope-") as temporary:
+        with system.staging_folder(
+            tempfile.gettempdir(), "dazedtl-scope-"
+        ) as temporary:
             _git(
                 ["init", "--bare", "--quiet", temporary],
                 "prepare the scope check",
