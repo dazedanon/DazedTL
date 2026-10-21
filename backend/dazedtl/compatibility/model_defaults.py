@@ -8,6 +8,7 @@ import time
 from copy import deepcopy
 from pathlib import Path
 
+from dazedtl import system
 from dazedtl.settings.preferences import text
 from dazedtl.storage import write_json
 
@@ -85,7 +86,7 @@ class ModelDefaults:
             output_cost="-1",
         )
         try:
-            result = subprocess.run(
+            result = system.run(
                 [
                     sys.executable,
                     str(Path(__file__).with_name("pricing_worker.py")),

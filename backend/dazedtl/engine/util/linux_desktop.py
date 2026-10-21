@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from util.paths import APP_NAME, ICON_PATH, LEGACY_APP_NAME, PROJECT_ROOT
+from util import system
 
 DESKTOP_ID = APP_NAME
 LAUNCH_SCRIPT = PROJECT_ROOT / "scripts" / "launch.sh"
@@ -73,6 +74,6 @@ def _refresh_desktop_database(applications_dir: Path) -> None:
         ["kbuildsycoca5", "--noincremental"],
     ):
         try:
-            subprocess.run(cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            system.run(cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except OSError:
             pass

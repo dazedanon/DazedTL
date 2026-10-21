@@ -8,6 +8,8 @@ import sys
 import shutil
 import uuid
 
+from util import system
+
 from .project import atomic_json, digest
 
 LABELS = {'refresh': 'Refresh provider status', 'cancel': 'Cancel provider batch',
@@ -547,5 +549,5 @@ def import_run(plan, row, log):
                            + 'Select the new manual run in Batch history and prepare recovery.',
                 'job_id': job['id'], 'source_id': 'manual:' + job['id'], 'batch_id': row['id']}
     except Exception:
-        shutil.rmtree(target)
+        system.remove_tree(target)
         raise

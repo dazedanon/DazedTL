@@ -16,6 +16,7 @@ from util.paths import (
     ensure_game_tool_gitignore,
     game_metadata_dir,
 )
+from util import system
 
 GAME_SETTINGS_RELATIVE = Path(".dazedtl") / "settings.json"
 WRAP_WIDTH_KEYS = ("width", "faceWidth", "listWidth", "noteWidth")
@@ -308,7 +309,7 @@ def _update_settings(root: Path, update) -> Path:
             handle.write(_serialize(data))
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
+        system.replace(temporary, path)
     finally:
         if temporary.exists():
             temporary.unlink()

@@ -15,6 +15,7 @@ from tqdm import tqdm
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost
 from util.speakers import strip_speaker_prefix
 import tempfile
+from util import system
 
 # Globals
 MODEL = os.getenv("model")
@@ -186,7 +187,7 @@ def save_progress_lines(lines, filename, encoding="utf-8"):
         try:
             with os.fdopen(tmp_fd, "w", encoding=encoding, newline="\n", errors="ignore") as tmp_file:
                 tmp_file.writelines(lines)
-            os.replace(tmp_path, os.path.join("translated", filename))
+            system.replace(tmp_path, os.path.join("translated", filename))
         finally:
             if os.path.exists(tmp_path):
                 try:

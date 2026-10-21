@@ -14,8 +14,6 @@ from __future__ import annotations
 import json
 import os
 import queue
-import shutil
-import signal
 import subprocess
 import sys
 import tempfile
@@ -25,6 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from util import system
 from util.paths import PROJECT_ROOT
 
 # The application's Electron, which the app names for its workers.
@@ -117,7 +116,7 @@ def run(
     out.mkdir(parents=True, exist_ok=True)
     progress = _Progress(log, starting)
     software = False
-    temporary = Path(tempfile.mkdtemp(prefix="dazedtl-game-"))
+    temporary = system.new_folder(tempfile.gettempdir(), "dazedtl-game-")
     try:
         while True:
             started, errors = _attempt(
@@ -175,7 +174,7 @@ def _attempt(
     errors_path = temporary / "electron.log"
     started = False
     with errors_path.open("wb") as errors:
-        process = subprocess.Popen(
+        process = system.popen(
             command,
             cwd=temporary,
             env=environment,
@@ -185,9 +184,8 @@ def _attempt(
             text=True,
             encoding="utf-8",
             errors="replace",
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             # Its own process group, so ending it ends Electron's helpers.
-            start_new_session=os.name != "nt",
+            group=True,
         )
         lines: queue.Queue[str | None] = queue.Queue()
 
@@ -268,27 +266,18 @@ class _Progress:
             self.say(self.pending)
 
 
-def _end(process: subprocess.Popen) -> None:
+def _end(process: system.Process) -> None:
     """Ends Electron and the processes it started, which may outlive it."""
-    if os.name == "nt":
-        if process.poll() is None:
-            subprocess.run(
-                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
-        return
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except OSError:
-        pass
+    system.stop_tree(process, force=True)
 
 
 def _remove(folder: Path) -> None:
     """Removes the run's profile and plan, which Windows keeps locked until
     Electron's helpers have exited."""
-    for _ in range(40):
-        shutil.rmtree(folder, ignore_errors=True)
-        if not folder.exists():
+    # remove_tree waits for each held file itself; this bounds the whole wait.
+    deadline = time.monotonic() + 10
+    while True:
+        system.remove_tree(folder, ignore_errors=True)
+        if not folder.exists() or time.monotonic() > deadline:
             return
         time.sleep(0.25)

@@ -2,9 +2,9 @@
 
 import os
 import shutil
-import tempfile
 from pathlib import Path
 
+from dazedtl import system
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, project_path
 from dazedtl.translation.speaker_setup import SCAN_VERSION
@@ -88,10 +88,7 @@ def run_scan(plan, log):
     sources = {}
     # Copies, logs and any parser caches stay in the app profile. The scanner
     # receives no vault, has no provider transport, and never finalizes names.
-    with tempfile.TemporaryDirectory(
-        prefix="speaker-scan-", dir=plan["folder"]
-    ) as temporary:
-        root = Path(temporary)
+    with system.staging_folder(plan["folder"], "speaker-scan-") as root:
         for directory in (
             root / "files",
             root / "game" / relative_data,

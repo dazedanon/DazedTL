@@ -42,6 +42,7 @@ from util.batch_providers import KIMI_API_URL, is_kimi_api
 from util import extensions
 from util.sfx_reference import build_sfx_reference_text
 from util.vocab import decorative_glossary_alias, split_glossary_row
+from util import system
 
 class _LazyModule:
     """A provider SDK that loads on its first real use.
@@ -355,7 +356,7 @@ def _save_estimate_written_sizes():
         )
         with open(tmp, "w", encoding="utf-8", newline="\n") as f:
             json.dump(list(_estimate_written_sizes), f)
-        os.replace(tmp, _ESTIMATE_SIZES_FILE)
+        system.replace(tmp, _ESTIMATE_SIZES_FILE)
     except Exception:
         pass
 
@@ -425,7 +426,7 @@ def _estimate_static_token_count(static_system, model):
                 json.dumps(cache, ensure_ascii=False, separators=(",", ":")),
                 encoding="utf-8", newline="\n",
             )
-            os.replace(tmp, _ESTIMATE_STATIC_TOKENS_FILE)
+            system.replace(tmp, _ESTIMATE_STATIC_TOKENS_FILE)
         except Exception:
             pass
         return token_count
@@ -851,7 +852,7 @@ def _ensure_cache_database():
         if tmp_file.exists():
             tmp_file.unlink()
         _initialize_cache_database(tmp_file, legacy)
-        os.replace(tmp_file, CACHE_FILE)
+        system.replace(tmp_file, CACHE_FILE)
     finally:
         for leftover in (
             tmp_file,
@@ -945,7 +946,7 @@ def _write_cache_to_disk(cache):
         if tmp_file.exists():
             tmp_file.unlink()
         _initialize_cache_database(tmp_file, cache)
-        os.replace(tmp_file, CACHE_FILE)
+        system.replace(tmp_file, CACHE_FILE)
     finally:
         for leftover in (
             tmp_file,

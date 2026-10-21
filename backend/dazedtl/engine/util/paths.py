@@ -301,7 +301,7 @@ def ensure_game_tool_gitignore(game_root: str | Path) -> bool:
             handle.flush()
             os.fsync(handle.fileno())
         os.chmod(temporary, original_mode)
-        os.replace(temporary, path)
+        system.replace(temporary, path)
     except Exception:
         temporary.unlink(missing_ok=True)
         raise
@@ -560,7 +560,7 @@ def ensure_game_glossary(game_root: str | Path | None) -> Path:
             handle.write(_seed_game_glossary_text())
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
+        system.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
     return path

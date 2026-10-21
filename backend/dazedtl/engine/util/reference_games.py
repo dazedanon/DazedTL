@@ -31,6 +31,7 @@ from util.project_scanner import (
 from util import rpgmaker_blocks as blocks
 from util.rpgmaker_qa_manifest import build_manifest
 from util.source_text import holds_source
+from util import system
 
 
 REGISTRY_SCHEMA = "dazedtl-reference-games-v1"
@@ -336,8 +337,7 @@ def _find_ace_binary_root(staging: Path) -> Path:
 
 
 def _materialize_ace(info: dict[str, Any], destination: Path, log_fn: Callable[[str], None]) -> None:
-    with tempfile.TemporaryDirectory(prefix="dazedtl-reference-ace-") as temporary:
-        staging = Path(temporary)
+    with system.staging_folder(tempfile.gettempdir(), "dazedtl-reference-ace-") as staging:
         source_data = info.get("data")
         if source_data is not None:
             shutil.copytree(Path(source_data), staging / "Data")
@@ -401,8 +401,7 @@ def _materialize_wolf(info: dict[str, Any], destination: Path, log_fn: Callable[
     archives = layout.get("archives") or []
     if not archives:
         raise RuntimeError("WOLF reference has no usable Data folder or archives")
-    with tempfile.TemporaryDirectory(prefix="dazedtl-reference-wolf-") as temporary:
-        staging = Path(temporary)
+    with system.staging_folder(tempfile.gettempdir(), "dazedtl-reference-wolf-") as staging:
         staged_archives = []
         for archive in archives:
             archive = Path(archive)
@@ -500,7 +499,7 @@ def add_game_pair_reference(
                 raise RuntimeError(f"Reference cache target appeared unexpectedly: {target}")
             staging.rename(target)
         except Exception:
-            shutil.rmtree(staging, ignore_errors=True)
+            system.remove_tree(staging, ignore_errors=True)
             raise
     ensure_game_tool_gitignore(current)
     return add_paired_reference(current, title, source_data, translated_data)

@@ -25,6 +25,7 @@ from util.wolfdawn import codes as wolf_codes
 from util.wolfdawn import db_dat_sibling
 from util import wolfdawn
 from util.wolfdawn.inject import NAMES_JSON, orig_base_for, repair_inject_json
+from util import system
 
 _DB_LOC_RE = re.compile(
     r"^db\s+type\s+(?P<type>\d+)\s+row\s+(?P<row>\d+)\s+field\s+(?P<field>\d+)\s*$",
@@ -392,7 +393,7 @@ def _precheck_strings_file(
 
     doc = _load_doc(inject_src)
 
-    with tempfile.TemporaryDirectory(prefix="wolf-precheck-") as tmp:
+    with system.staging_folder(tempfile.gettempdir(), "wolf-precheck-") as tmp:
         out = Path(tmp) / Path(entry["base"]).name
         res = wolfdawn.strings_inject(
             str(inject_src),
