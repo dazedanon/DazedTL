@@ -268,6 +268,9 @@ class ObservationTests(unittest.TestCase):
                 project_path(root, "www/data/Map001.json"),
             )
             self.assertEqual(live_path(root, "www/data/Map001.json"), path)
+            write_json(root / "Map001.json", {})
+            with self.assertRaises(ValueError):
+                live_path(root, "/Map001.json")  # Rooted, not inside root.
             try:
                 (root / "www/data/Linked.json").symlink_to(path)
             except OSError:  # Windows without the symbolic link privilege
@@ -276,7 +279,6 @@ class ObservationTests(unittest.TestCase):
                 "www/data/Linked.json",
                 "www/data/Missing.json",
                 "../Map001.json",
-                "/Map001.json",
                 "www\\data\\Map001.json",
             ):
                 with self.assertRaises(ValueError) as expected:

@@ -100,8 +100,9 @@ def live_path(root, relative, *, exists=True):
         if not folder.is_dir():
             raise ValueError("The selected game folder is unavailable.")
     path = folder / name
-    if Path(relative).is_absolute() or path.parent != folder:
-        # A drive-relative name such as C:x would leave the folder on Windows.
+    if Path(relative).anchor or path.parent != folder:
+        # A rooted path, or a drive-relative name such as C:x on Windows,
+        # would leave the folder.
         raise ValueError(
             "Files must stay inside the selected game and outside Git internals."
         )
