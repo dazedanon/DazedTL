@@ -1,5 +1,8 @@
 # Architecture
 
+This page maps who owns what, the reasons behind decisions, and the rules that span modules.
+Behavior that one module owns is described in that module's docstring and pinned by its tests; follow the links.
+
 ## Ownership
 
 | Location | Responsibility |
@@ -22,11 +25,12 @@ The Translation service owns project operations, request plans, accepted results
 Len's maintained skills own engine investigation and methodology; the compatibility layer supplies the existing context, Git, preparation, injection, and provider helpers.
 The preserved runner continues to own parsing, speaker preparation, phase profiles, glossary collection and Batch receipts.
 App workers own source backup, Git baselines, checkpoints and local patch packaging for both approaches.
-The Translation workspace composes file selection, preferences and the preserved phased runner.
-Its [workspace hook](../app/src/features/guided/workspace/useGuidedWorkspace.tsx) owns shared state, navigation and action review; each task's body and footer controls come from its [task view](../app/src/features/guided/workspace/tasks/index.ts), with sheets and dialogs as separate components.
+The Guided [workspace hook](../app/src/features/guided/workspace/useGuidedWorkspace.tsx) owns shared state, navigation and action review; each task's body and footer controls come from its [task view](../app/src/features/guided/workspace/tasks/index.ts).
 Its backend, [Guided](../backend/dazedtl/translation/guided.py), composes collaborators for [action review and execution](../backend/dazedtl/translation/guided_actions.py), [run inspection](../backend/dazedtl/translation/guided_inspection.py), the [release form](../backend/dazedtl/translation/guided_release.py) and [context setup](../backend/dazedtl/translation/guided_context.py).
 Each workflow action is one row of the [action registry](../backend/dazedtl/actions.py), which says how it is reviewed and run and what its review and History call it; Guided's checks, the worker and, through the generated contracts, the renderer read it.
-Working-copy ownership and resync behavior are described under [Workflow and shared presentation](#workflow-and-shared-presentation).
+Every change to a game's files goes through the [game-write gateway](../backend/dazedtl/compatibility/game_write.py); its docstring holds the rules.
+Files and processes go through the [platform layer](../backend/dazedtl/system.py); see [Windows](#windows).
+Working copies are described under [Workflow and shared presentation](#workflow-and-shared-presentation).
 
 ## Engine and resources
 
