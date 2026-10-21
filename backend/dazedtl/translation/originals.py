@@ -21,7 +21,7 @@ from __future__ import annotations
 import stat
 import uuid
 from contextlib import contextmanager
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from dazedtl import system
 from dazedtl.compatibility import original_files
@@ -285,7 +285,9 @@ def reset(
             system.rename(root / name, target)
         except FileNotFoundError:
             continue
-        emptied.update(str(parent) for parent in Path(name).parents if parent.parts)
+        emptied.update(
+            parent.as_posix() for parent in PurePosixPath(name).parents if parent.parts
+        )
         count += 1
         progress(count, name)
     # Folders left empty by files set aside go; other folders stay.

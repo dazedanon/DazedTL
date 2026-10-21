@@ -447,7 +447,7 @@ def _blob_contents(root, blobs):
         read = _blobs(Path(root), chunk)
         for blob in chunk:
             if blob not in read:
-                raise ValueError("Git could not read a file of that checkpoint.")
+                raise ValueError("Git could not read a saved file of the game.")
             yield blob, read[blob]
 
 
