@@ -6,7 +6,6 @@ import os
 import re
 import secrets
 import shutil
-import signal
 import stat
 import subprocess
 import sys
@@ -16,6 +15,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+from dazedtl import system
 from dazedtl.diagnostics import FOLDER
 from dazedtl.storage import WorkspaceError, WorkspaceLock, write_bytes, write_json
 
@@ -67,7 +67,9 @@ def remove_scratch(identity):
             pass  # Still in use; the next start removes it.
 
     if folder.exists():
-        shutil.rmtree(folder, onexc=retry)
+        # Raw on purpose: a poll runs this when it sees the worker gone, so it
+        # skips held files at once instead of waiting as remove_tree does.
+        shutil.rmtree(folder, onexc=retry)  # noqa: TID251
 
 
 class RunStore:
@@ -643,13 +645,13 @@ class Jobs:
                 TEMP=str(temporary), TMP=str(temporary), TMPDIR=str(temporary)
             )
             # Only structured job records cross into the UI; raw provider output is never logged.
-            self.processes[identity] = subprocess.Popen(
+            self.processes[identity] = system.popen(
                 arguments,
                 cwd=self.store.folder(identity),
                 env=environment,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                start_new_session=os.name != "nt",
+                group=True,
             )
         except OSError:
             remove_scratch(identity)
@@ -670,15 +672,7 @@ class Jobs:
         for process in self.processes.values():
             if process.poll() is None:
                 # The whole tree, or a Git command the worker waits on outlives it.
-                if os.name == "nt":
-                    subprocess.run(
-                        ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        check=False,
-                    )
-                else:
-                    os.killpg(process.pid, signal.SIGTERM)
+                system.stop_tree(process)
         # Then their temporary files can go now rather than at the next start.
         self.wait(1)
         self.reconcile()

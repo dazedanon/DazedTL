@@ -4,7 +4,6 @@ import hashlib
 import os
 import queue
 import re
-import shutil
 import stat
 import sys
 import tempfile
@@ -14,6 +13,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
+from dazedtl import system
 from dazedtl.freshness import settled, signature
 from dazedtl.storage import WorkspaceLock, staging_folder, write_json
 
@@ -421,10 +421,10 @@ def snapshot(
             temporary.mkdir()
             try:
                 write_json(temporary / "manifest.json", value)
-                temporary.rename(final)
+                system.replace(temporary, final)
             finally:
                 if temporary.exists():
-                    shutil.rmtree(temporary)
+                    system.remove_tree(temporary)
         published = True
         total = sum(value["sizes"].values())
         return {
@@ -626,8 +626,7 @@ def materialized(directory, *, files=None, stopped=lambda: False):
         if files is None
         else [name for name in files if name in value["files"]]
     )
-    with tempfile.TemporaryDirectory(prefix="dazedtl-restore-") as temporary:
-        target = Path(temporary)
+    with system.staging_folder(tempfile.gettempdir(), "dazedtl-restore-") as target:
         if files is None:
             for name in value.get("directories", []):
                 _child(target, name).mkdir(parents=True, exist_ok=True)

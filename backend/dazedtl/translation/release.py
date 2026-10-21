@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from stat import S_IFREG
 
+from dazedtl import system
 from dazedtl.freshness import Basis, compare
 
 from .files import evidence, project_path, read_json
@@ -521,7 +522,7 @@ def publish(staged, output, expected, *, stopped=lambda: False):
         raise ValueError(
             "The destination changed while packaging. Choose the output again."
         )
-    os.replace(staged, output)
+    system.replace(staged, output)
     identity = stamp(output)
     return {
         "path": str(output),

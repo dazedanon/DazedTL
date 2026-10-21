@@ -13,11 +13,11 @@ import hashlib
 import json
 import subprocess
 import sys
-import tempfile
 from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+from dazedtl import system
 from dazedtl.storage import write_bytes
 from dazedtl.translation.files import digest, project_path, read_json
 
@@ -252,15 +252,15 @@ def reproduce(root, entry):
     result with the recorded output hash."""
     folder = project_path(root, RESOURCES + "/work/.reproduce", exists=False).parent
     folder.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="reproduce-", dir=folder) as temporary:
-        output = Path(temporary) / "output.png"
+    with system.staging_folder(folder, "reproduce-") as temporary:
+        output = temporary / "output.png"
         command = []
         for part in entry["command"]:
             for name, value in {**TOOLS, "{output}": str(output)}.items():
                 part = part.replace(name, value)
             command.append(part)
         try:
-            finished = subprocess.run(
+            finished = system.run(
                 command,
                 cwd=root,
                 capture_output=True,
