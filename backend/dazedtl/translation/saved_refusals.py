@@ -58,7 +58,7 @@ def find(document, original=lambda: None):
     a value without `_original` may hold a note."""
     # QA's inventory pairs each `_original` with the text the game shows;
     # importing its mapping keeps QA's extractor hash, and its tasks, current.
-    from util.rpgmaker_qa_manifest import _live_mapping, _read_live, _string_leaves
+    from util.rpgmaker_qa_manifest import live_mapping, read_live, string_leaves
 
     found, covered = [], set()
 
@@ -66,12 +66,12 @@ def find(document, original=lambda: None):
         if isinstance(value, dict):
             code = value.get("code") if isinstance(value.get("code"), int) else None
             if value.get("_original") is not None:
-                for relative, source in _string_leaves(value["_original"]):
-                    mapping = _live_mapping(value, path, relative, code, listed, index)
+                for relative, source in string_leaves(value["_original"]):
+                    mapping = live_mapping(value, path, relative, code, listed, index)
                     if mapping is None:
                         continue
                     try:
-                        live, transform = _read_live(document, mapping[0], code)
+                        live, transform = read_live(document, mapping[0], code)
                     except KeyError, IndexError, TypeError, ValueError:
                         continue
                     covered.update(mapping[0])

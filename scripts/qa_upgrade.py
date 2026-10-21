@@ -251,7 +251,7 @@ def apply(qa, task, undo=False):
     shutil.rmtree(staging, ignore_errors=True)
     shutil.copytree(descriptor["data_root"], staging / "data")
     shutil.copyfile(task / "inventory.json", staging / "inventory.json")
-    regression = qa._apply_loaded_correction_map(
+    regression = qa.apply_loaded_correction_map(
         staging,
         {**descriptor, "data_root": str(staging / "data")},
         selected,
@@ -267,23 +267,19 @@ def apply(qa, task, undo=False):
     shutil.rmtree(staging)
 
 
-def change_detectors(qa):
+def change_detectors():
     """Stands in for an update that changes what QA derives from the text:
     the manifest builder, the verifier and apply's regression check all give
     every line one more mechanical flag."""
-    from util import rpgmaker_qa_manifest as manifest
-    from util import rpgmaker_qa_verify as verify
+    from util.qa import mechanical
 
-    def more(evidence):
-        def changed(*arguments):
-            value = evidence(*arguments)
-            return {**value, "flags": [*value["flags"], "changed-detector"]}
+    evidence = mechanical.evidence
 
-        return changed
+    def changed(*arguments):
+        value = evidence(*arguments)
+        return {**value, "flags": [*value["flags"], "changed-detector"]}
 
-    manifest._mechanical_evidence = more(manifest._mechanical_evidence)
-    verify._mechanical = more(verify._mechanical)
-    qa._mechanical_evidence = more(qa._mechanical_evidence)
+    mechanical.evidence = changed
 
 
 def new():
@@ -293,7 +289,7 @@ def new():
     task."""
     from util import rpgmaker_qa as qa
 
-    change_detectors(qa)
+    change_detectors()
     saved = json.loads((work / "upgrade.json").read_text(encoding="utf-8"))
     bumped = saved["rules_version"] != qa.QA_RULES_VERSION
     storage = Path(saved["storage"])

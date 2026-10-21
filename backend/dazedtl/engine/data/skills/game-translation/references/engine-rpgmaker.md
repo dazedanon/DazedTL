@@ -27,7 +27,7 @@ Text is human-editable JSON on MV/MZ - no repack, loose-file override. Decrypt e
   `tools/install_patch_plugin.py`, and `js_plugins/GakuenTL_Patch.js` (a
   load-time repair for display text a save cached from the pre-patch build).
 - `RP/RPG Maker MVMZ (BroodGeneral)/` - the MZ-flavoured pipeline (`tl.py` + `batches.py` + `rpgmvtl/`). Take its `helpwrap.py`, its `122`-display-variable subset, `clean_text.py`, `reflow_help.py`, `fix_plugin_strings.py`, `decrypt_rpgmv.py`/`encrypt_rpgmv.py`, and its native `101 parameters[4]` speaker handling, which MV does not have.
-- `DAZEDTL_ROOT/` - GUI multi-engine tool with the most mature RPG Maker coverage anywhere. `modules/rpgmakermvmz.py` is the authority on per-event-code behaviour, `util/rpgmaker_qa.py` on post-translation QA, and `data/skills/*.md` on the per-game audits below. Read it before writing a new extractor.
+- `DAZEDTL_ROOT/` - GUI multi-engine tool with the most mature RPG Maker coverage anywhere. `modules/rpgmakermvmz.py` is the authority on per-event-code behaviour, `util/qa/` on post-translation QA, and `data/skills/*.md` on the per-game audits below. Read it before writing a new extractor.
 - Decrypt/dump helpers: `tools/Game Archives/RPG Maker MZ/` (`decrypt_rpgmz_data.js`, `decrypt_rpgmz_audio.js`, `run_runtime_image_dump.js`).
 
 ---

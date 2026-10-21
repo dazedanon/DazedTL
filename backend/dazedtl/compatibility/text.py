@@ -183,7 +183,7 @@ def _prepared(plan):
         )
     # A task from before an update still shows what it found and applies it;
     # only one in review under an older rules version stops.
-    root, task, checkpoint = qa._read_task(task_path)
+    root, task, checkpoint = qa.read_task(task_path)
     if (
         task["game_root"] != plan["project"]["source"]
         or task["data_root"] != plan["project"]["data"]
@@ -194,7 +194,7 @@ def _prepared(plan):
     )
     if document and (
         document.get("schema") != qa.FINDINGS_SCHEMA
-        or document.get("task_sha256") != qa._sha256(qa._canonical_bytes(task))
+        or document.get("task_sha256") != qa.task_sha256(task)
     ):
         raise ValueError("Saved findings belong to another QA task.")
     return saved, root, task, checkpoint, document
@@ -477,8 +477,8 @@ def qa_outside(task):
     captured = qa.interface_capture(root)
     if not captured or not (captured["folder"] / "screens.json").is_file():
         return []
-    _places, outside = qa._interface_places(
-        captured["folder"], qa._read_json(root / "inventory.json")
+    _places, outside = qa.interface_places(
+        captured["folder"], read_json(root / "inventory.json")
     )
     return outside
 
@@ -557,7 +557,6 @@ def qa_report(plan):
     judged, defects no correction could fix, Japanese never translated, by
     file and plugin, and text the game squeezes or cuts off that QA holds no
     line of."""
-    from util import rpgmaker_qa as qa
     from util.rpgmaker_qa_preflight import read_sources
 
     state = qa_state(plan)
@@ -573,7 +572,7 @@ def qa_report(plan):
         "not_reviewed": document.get("not_reviewed", []),
         "not_corrected": not_corrected(document),
         "notes": review_notes(document),
-        "not_translated": read_sources(qa._read_json(root / "preflight.json")),
+        "not_translated": read_sources(read_json(root / "preflight.json")),
         "interface_outside": [
             {"text": row["text"], "title": row["title"]} for row in outside
         ],
@@ -930,7 +929,7 @@ def prepare_publication(plan):
         again = action == "qa_apply" and set(chosen + proposals) <= undone
         if action == "qa_apply" and not again and not state["current"]:
             raise ValueError(state["message"])
-        task_root, task, _checkpoint = qa._read_task(state["task"])
+        task_root, task, _checkpoint = qa.read_task(state["task"])
         try:
             selected = qa.correction_map(
                 task_root, chosen, proposals, undo=action == "qa_undo"
@@ -950,7 +949,7 @@ def prepare_publication(plan):
             )
             scratch_task = {**task, "data_root": str(scratch)}
             try:
-                qa._apply_loaded_correction_map(
+                qa.apply_loaded_correction_map(
                     staging,
                     scratch_task,
                     selected,

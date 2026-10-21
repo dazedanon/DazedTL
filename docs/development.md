@@ -46,6 +46,7 @@ For focused iteration, use `.venv/bin/python -I -B -m unittest discover -s tests
 Run `node scripts/build.mjs` separately for static checks and the renderer build.
 It checks formatting, that stylesheets use the [design tokens](architecture.md#visual-design), that the [generated API contracts](architecture.md#api-changes) are current and that tracked paths fit the [Windows path budget](architecture.md#distribution-and-updates).
 It lints with type-aware [Oxlint](../.oxlintrc.json) (including the React hooks rules) and [Ruff](../pyproject.toml), and type-checks the renderer, the Electron main process and DazedTL-owned Python with [Pyright](../pyproject.toml).
+Of the bundled engine, only Text QA ([util/qa](../backend/dazedtl/engine/util/qa/__init__.py)) gets the same Ruff rules, through its own [settings](../backend/dazedtl/engine/util/qa/ruff.toml), and Pyright.
 Ruff also rejects file and process calls that go around the [platform layer](../backend/dazedtl/system.py), in the bundled engine too through its own [settings](../backend/dazedtl/engine/ruff.toml), and text files opened without an encoding.
 Launching builds a missing renderer without these checks.
 Format with `node scripts/format.mjs`; it applies Prettier and Ruff defaults and leaves the bundled engine, Markdown and JSON unchanged.

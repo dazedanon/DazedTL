@@ -462,11 +462,10 @@ class PublicationTests(unittest.TestCase):
             "created_at": "2026-10-07T10:00:00+00:00",
         }
         engine = ModuleType("util.rpgmaker_qa")
-        engine._read_task = lambda path: (Path(path), task, {"stage": "complete"})
+        engine.read_task = lambda path: (Path(path), task, {"stage": "complete"})
         engine.rules_changed = lambda task, checkpoint: False
         engine.FINDINGS_SCHEMA = "findings"
-        engine._sha256 = lambda value: "task"
-        engine._canonical_bytes = lambda value: b""
+        engine.task_sha256 = lambda task: "task"
         engine.status = lambda root: {"stage": "complete"}
         engine.answers = lambda root: {}
         refreshed = []
@@ -662,7 +661,7 @@ class PublicationTests(unittest.TestCase):
         with patch.dict(sys.modules, {"util": package, "util.rpgmaker_qa": engine}):
             text._set_aside(plan, log.append)
             self.assertEqual((log, task_dir.is_dir()), ([], True))
-            engine._read_task = denied
+            engine.read_task = denied
             with self.assertRaises(PermissionError) as raised:
                 text.qa_state(plan)
             state = text.qa_unreadable(plan, raised.exception)

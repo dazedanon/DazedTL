@@ -43,9 +43,31 @@ ignore = ["TRY004"]
 # A single call that must stay raw is marked `# noqa: TID251 - <reason>`.
 
 [tool.pyright]
-# Checks the app's Python; the bundled engine is resolved but not checked.
+# Checks the app's Python and the engine's Text QA package (util/qa); the rest
+# of the bundled engine is resolved but not checked. An exclude wins over an
+# include, so the engine's other folders are listed one by one.
 include = ["backend/dazedtl", "tests", "scripts"]
-exclude = ["backend/dazedtl/engine", "**/__pycache__"]
+exclude = [
+  "**/__pycache__",
+  "backend/dazedtl/engine/assets",
+  "backend/dazedtl/engine/data",
+  "backend/dazedtl/engine/desktop",
+  "backend/dazedtl/engine/gameupdate",
+  "backend/dazedtl/engine/modules",
+  "backend/dazedtl/engine/scripts",
+  "backend/dazedtl/engine/util/*.py",
+  "backend/dazedtl/engine/util/ace",
+  "backend/dazedtl/engine/util/forge",
+  "backend/dazedtl/engine/util/imagetools",
+  "backend/dazedtl/engine/util/playtest",
+  "backend/dazedtl/engine/util/rpgmaker_screens",
+  "backend/dazedtl/engine/util/rpgmaker_window",
+  "backend/dazedtl/engine/util/skills",
+  "backend/dazedtl/engine/util/tl_inspector",
+  "backend/dazedtl/engine/util/translation_update_check",
+  "backend/dazedtl/engine/util/version_update",
+  "backend/dazedtl/engine/util/wolfdawn",
+]
 extraPaths = ["backend", "backend/dazedtl/engine"]
 venvPath = "."
 venv = ".venv"
