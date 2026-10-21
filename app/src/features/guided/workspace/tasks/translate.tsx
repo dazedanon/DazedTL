@@ -265,17 +265,17 @@ export function phaseView(w: GuidedWorkspace): TaskView {
                 : noRemainingWork
                   ? "Checked these files: no new API requests are needed."
                   : "Translate prepares an estimate for your approval.";
+  const footerGuidance =
+    (runNotices.includes(action.key) && action.notice) ||
+    translationFlow.notice ||
+    guidance;
   actionContext = (
     <div className="translation-action-scope">
       <strong>
         {selectedNames.length} selected
         {applyFiles.length ? ` · ${applyFiles.length} saved` : ""}
       </strong>
-      <small>
-        {(runNotices.includes(action.key) && action.notice) ||
-          translationFlow.notice ||
-          guidance}
-      </small>
+      <small title={footerGuidance}>{footerGuidance}</small>
     </div>
   );
   const secondary = (

@@ -323,6 +323,10 @@
 }
 .translation-action-scope small {
   display: block;
+  /* A guidance line shortens with the bar's room; its title has all of it. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--color-muted);
   font: inherit;
 }
