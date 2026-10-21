@@ -23,7 +23,7 @@ from util.rpgmaker_files import mvmz_file_kind
 
 
 from util.signals import TaskSignal
-from util import extensions
+from util import extensions, system
 
 
 def _strip_ansi(text):
@@ -644,7 +644,7 @@ class TranslationTaskCore:
             filename_arg = "--files-from-stdin" if multi_file else filename
             if self.should_stop:
                 return "Stopped"
-            process = subprocess.Popen(
+            process = system.popen(
                 [
                     sys.executable,
                     str(runner_script),
@@ -885,7 +885,7 @@ class TranslationTaskCore:
         if self.should_stop:
             return
         try:
-            process = subprocess.Popen(
+            process = system.popen(
                 [
                     sys.executable,
                     str(self.runner_script),
@@ -1094,15 +1094,13 @@ class TranslationTaskCore:
             if failures is None or failures:
                 return
             path = self.project_root / "log/speaker_scan.json"
-            temporary = path.with_name(path.name + ".tmp")
-            temporary.write_text(
+            system.write_text(
+                path,
                 json.dumps(
                     {"version": 1, "inputs": self.speaker_scan, "collected": collected},
                     ensure_ascii=False,
                 ),
-                encoding="utf-8",
             )
-            os.replace(temporary, path)
         except Exception as exc:
             self.emit_log(f"Speaker scan for the Batch was not saved: {exc}")
 

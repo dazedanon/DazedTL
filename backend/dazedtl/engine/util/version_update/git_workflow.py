@@ -26,6 +26,7 @@ from typing import Iterable, Mapping
 
 import jsbeautifier
 
+from util import system
 from util.paths import ensure_game_tool_gitignore, staging_folder
 from util.playtest import fixes
 
@@ -344,7 +345,7 @@ def _run_git(
     deadline = None
     while True:
         try:
-            raw = subprocess.run(
+            raw = system.run(
                 command,
                 check=False,
                 capture_output=True,
@@ -2528,7 +2529,7 @@ def _replacement_outcome(
 def _git_bytes(repo: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
     """Runs Git for file content as bytes, which text decoding could alter."""
     try:
-        return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, timeout=120)
+        return system.run(["git", "-C", str(repo), *args], capture_output=True, timeout=120)
     except (OSError, subprocess.SubprocessError) as exc:
         raise GitWorkflowError(f"git {_command_name(args)} could not run") from exc
 
