@@ -397,13 +397,12 @@ write(
 clean()
 assert "js/plugins/TitleMessage.js" in git(kept, "ls-files").split()
 # Saving Guided options keeps the Line widths a game already uses, its
-# defaults while it has none saved, implicit: they once became a "Save Line
-# widths" checkpoint the user never asked for.
-from util.game_settings import normalize_wrap_widths, wrap_widths_saved
+# engine's stock ones while it has none saved, implicit: they once became a
+# "Save Line widths" checkpoint the user never asked for.
+from util.game_settings import DEFAULT_WRAP_WIDTHS, wrap_widths_saved
 
-stock = normalize_wrap_widths(None)
-assert wrap_widths_saved(kept, stock, stock)
-assert not wrap_widths_saved(kept, {**stock, "width": 64}, stock)
+assert wrap_widths_saved(kept, DEFAULT_WRAP_WIDTHS)
+assert not wrap_widths_saved(kept, {**DEFAULT_WRAP_WIDTHS, "width": 64})
 # Line widths, which the game's settings keep, named or not.
 with write_game(kept, pack=False, summary="Save Line widths", stage="Context"):
     save_game_wrap_widths(kept, {"width": 60})

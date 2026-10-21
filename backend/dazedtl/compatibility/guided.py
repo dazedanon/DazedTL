@@ -276,7 +276,6 @@ def phased_workflows(workspace, lock, operations, manual):
                 or wrap_widths_saved(
                     project["source"],
                     normalize_wrap_widths(values["widths"], defaults=project["widths"]),
-                    project["widths"],
                 )
             ):
                 return super().update(project_id, revision, values)

@@ -169,7 +169,7 @@ class Workflows:
                            narrative_groups=[g.key for g in distribution.groups if g.key in selected and g.tier == db.TIER_NARRATIVE],
                            defer_groups=[g.key for g in distribution.groups if g.key not in selected])
             db.save_db_profile(work, profile)
-        if "widths" in values and not wrap_widths_saved(project["source"], updated["widths"], project["widths"]):
+        if "widths" in values and not wrap_widths_saved(project["source"], updated["widths"]):
             save_game_wrap_widths(project["source"], updated["widths"])
         updated["revision"] += 1
         self.projects[project_id] = updated
