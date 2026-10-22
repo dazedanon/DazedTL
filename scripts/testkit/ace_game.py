@@ -4,8 +4,9 @@ would, with this checkout's own Ace conversion, for scripts/testkit/games.mjs.
     python scripts/testkit/ace_game.py extract|pack|encrypt GAME
 
 extract writes the game's Data as JSON into ace_json, pack writes ace_json
-back into Data and removes it, and encrypt packs Data into an encrypted
-Game.rgss3a, as shipped games have it, and removes Data.
+back into Data (its data files, not its scripts) and removes it, and encrypt
+packs Data into an encrypted Game.rgss3a, as shipped games have it, and
+removes Data.
 """
 
 import sys
@@ -25,7 +26,14 @@ def main() -> None:
     if command == "extract":
         actions.run(game, "ace_extract", log=lambda _line: None)
     elif command == "pack":
-        actions.run(game, "ace_pack", log=lambda _line: None)
+        # The data files only, as the editor saves them: packing the scripts
+        # from their file names would rename one whose name a file can't
+        # hold, a change the developer never made.
+        exports = (game / "ace_json").glob("*.json", case_sensitive=False)
+        data = [path.stem for path in exports]
+        if not data:
+            sys.exit(f"{game} has no ace_json to pack.")
+        actions.run(game, "ace_pack", log=lambda _line: None, only=data)
         remove_tree(game / "ace_json")
     elif command == "encrypt":
         data = game / "Data"
