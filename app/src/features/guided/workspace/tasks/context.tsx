@@ -257,6 +257,7 @@ export function layoutView(w: GuidedWorkspace): TaskView {
     feedback,
     copyTask,
     widths,
+    discardWidths,
     textFit,
     handoff,
     localOperation,
@@ -437,7 +438,22 @@ export function layoutView(w: GuidedWorkspace): TaskView {
   return {
     content,
     // The fit shows in this footer, not in a row that moves the page.
-    secondary: localOperation && stopControl(localOperation),
+    secondary: (
+      <>
+        {widthsDirty && (
+          <ActionControl
+            label="Discard draft"
+            variant="quiet"
+            disabled={disabled}
+            {...feedback("widths:discard", "Discarding…")}
+            onClick={() =>
+              action.run(discardWidths, "Draft discarded.", "widths:discard")
+            }
+          />
+        )}
+        {localOperation && stopControl(localOperation)}
+      </>
+    ),
     action: saveControl,
     next: advance(undefined, undefined, pending ? "quiet" : "primary"),
     save: disabled || refused ? undefined : saveLayout,
