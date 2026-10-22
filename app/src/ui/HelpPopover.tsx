@@ -1,6 +1,25 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { CircleHelp } from "lucide-react";
 
+/** The right edge of the room a button's page offers: its scrolling
+ * container's content, which stops short of that container's scrollbar. */
+function roomRight(element: HTMLElement) {
+  for (
+    let parent = element.parentElement;
+    parent;
+    parent = parent.parentElement
+  ) {
+    if (/auto|scroll/.test(getComputedStyle(parent).overflowY)) {
+      const box = parent.getBoundingClientRect();
+      return Math.min(
+        window.innerWidth,
+        box.left + parent.clientLeft + parent.clientWidth,
+      );
+    }
+  }
+  return window.innerWidth;
+}
+
 export function HelpPopover({
   label,
   children,
@@ -20,7 +39,7 @@ export function HelpPopover({
     const anchor = button.current.getBoundingClientRect();
     const box = popover.current.getBoundingClientRect();
     const gap = 8;
-    popover.current.style.left = `${Math.max(gap, Math.min(anchor.left, window.innerWidth - box.width - gap))}px`;
+    popover.current.style.left = `${Math.max(gap, Math.min(anchor.left, roomRight(button.current) - box.width - gap))}px`;
     popover.current.style.top = `${Math.max(
       gap,
       anchor.bottom + gap + box.height <= window.innerHeight
