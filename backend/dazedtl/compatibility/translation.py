@@ -1272,7 +1272,7 @@ class TranslationEngine:
                 )
             )
         if action == "continue":
-            return value(git.continue_with_official(source))
+            return value(git.continue_with_official(source, options.get("release")))
         if action == "abort":
             return value(git.abort_update(source))
         if action == "handoff":
