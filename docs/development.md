@@ -190,11 +190,11 @@ Set `DAZEDTL_RELEASE_KEY` to keep the private key somewhere else.
 ### Landing
 
 `node scripts/land.mjs` lands a finished branch on `dev` from its worktree, on Linux or macOS.
-It refuses `dev`, `main` and uncommitted changes, then takes the landing lock, the ref `refs/dazedtl/land-lock` in the shared repository, through Git's compare-and-swap ref updates ([land-lock.mjs](../scripts/land-lock.mjs)).
+It refuses `dev`, `main` and uncommitted changes, formats the branch with `format.mjs` and commits what that changed as `style: format`, so a landing never fails on formatting alone, then takes the landing lock, the ref `refs/dazedtl/land-lock` in the shared repository, through Git's compare-and-swap ref updates ([land-lock.mjs](../scripts/land-lock.mjs)).
 Its holder renews it every five minutes; one whose process has gone, or that nobody renewed for 20 minutes, is taken over.
 Under the lock it merges `dev` into the branch, runs the tests and build checks, waits while your own DazedTL runs from the main checkout, and fast-forwards the main checkout's `dev`, which must be checked out there without uncommitted changes to tracked files, never overwriting a file the checkout ignores.
 It then pushes `dev` to each mirror, trying a refused push again a minute later; a mirror that still refuses is reported and the landing still counts.
-A last line says how long it took, in total and per stage (lock wait, merge, test, build, push), so a slow landing shows where the time went.
+A last line says how long it took, in total and per stage (format, lock wait, merge, test, build, push), so a slow landing shows where the time went.
 In the merge, both sides' [release notes](#release-notes) join under their headings through [changelog.mjs](../scripts/changelog.mjs), and conflicts only in the [generated API contracts](architecture.md#api-changes) are resolved by writing them again.
 Any other conflict stops it with exit code 2 and leaves the merge in progress with everything else merged, so you resolve only the listed files, commit and land again; a merge started again by hand would merge the notes as text.
 

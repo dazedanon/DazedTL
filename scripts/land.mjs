@@ -1,7 +1,8 @@
 // Lands a finished branch on dev from its worktree, one landing at a time:
-// merges dev in, runs the tests and build, fast-forwards the main checkout's
-// dev and pushes it to every mirror. CI then runs on dev, and the session that
-// cuts the next release answers for a run still red. Runs on Linux and macOS.
+// formats it, merges dev in, runs the tests and build, fast-forwards the main
+// checkout's dev and pushes it to every mirror. CI then runs on dev, and the
+// session that cuts the next release answers for a run still red. Runs on
+// Linux and macOS.
 // See "Landing" in docs/development.md.
 //
 //   node scripts/land.mjs
@@ -152,6 +153,12 @@ export async function land(cwd, deps) {
   );
   await warnRedDev(deps, main);
   const time = timer(deps.now);
+  const unformatted = await formatBranch(git, top, deps.run, log);
+  if (unformatted) {
+    for (const line of unformatted.report) log(line);
+    return unformatted.code;
+  }
+  time.lap("format");
   const { code, report } = await withLock(
     git,
     { branch, worktree: top },
@@ -161,6 +168,41 @@ export async function land(cwd, deps) {
   for (const line of report) log(line);
   log(time.summary());
   return code;
+}
+
+/**
+ * Formats the branch at `top` with format.mjs, which knows what to leave
+ * alone, and commits what it changed as `style: format`, so a landing never
+ * fails on formatting alone. Resolves null when the branch is formatted,
+ * else exit code 1 and the report.
+ * @param {ReturnType<typeof gitIn>} git
+ * @param {string} top
+ * @param {Deps["run"]} run
+ * @param {Deps["log"]} log
+ * @returns {Promise<{ code: number, report: string[] } | null>}
+ */
+export async function formatBranch(git, top, run, log) {
+  const formatted = await run(top, process.execPath, ["scripts/format.mjs"]);
+  if (formatted.status !== 0)
+    return {
+      code: 1,
+      report: [tail(formatted.output), "node scripts/format.mjs failed."],
+    };
+  const changed = lines(git(["diff", "--name-only"]).stdout);
+  if (!changed.length) return null;
+  git(["add", "--update"]);
+  const commit = git([
+    "commit",
+    "--quiet",
+    "-m",
+    "style: format",
+    "-m",
+    `- Format ${changed.join(", ")} as format.mjs does`,
+  ]);
+  if (commit.status !== 0)
+    return { code: 1, report: [tail(commit.stdout + commit.stderr)] };
+  log(`Formatted ${changed.join(", ")}; committed as "style: format".`);
+  return null;
 }
 
 /**

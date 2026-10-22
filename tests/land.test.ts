@@ -9,7 +9,7 @@ import {
   lockRef,
   releaseLock,
 } from "../scripts/land-lock.mjs";
-import { mergeDev, timer } from "../scripts/land.mjs";
+import { formatBranch, mergeDev, timer } from "../scripts/land.mjs";
 import { notesTemplate } from "../scripts/changelog.mjs";
 
 test("a landing waits for a live lock and takes over a dead or unrenewed one", async (t) => {
@@ -111,4 +111,27 @@ test("a conflicting merge of dev stays in progress with the release notes merged
     fs.readFileSync(path.join(dir, "release/notes.md"), "utf8"),
     notes("Base.", "Dev.", "Work."),
   );
+});
+
+test("a landing commits what the formatter changed, and only that", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-land-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const git = gitIn(dir);
+  git(["init", "-q", "-b", "work"]);
+  git(["config", "user.name", "Test"]);
+  git(["config", "user.email", "test@example.com"]);
+  fs.writeFileSync(path.join(dir, "code.mjs"), "let a=1\n");
+  git(["add", "-A"]);
+  git(["commit", "-qm", "work"]);
+  // The stand-in formatter rewrites the file the way Prettier would.
+  const format = async () => {
+    fs.writeFileSync(path.join(dir, "code.mjs"), "let a = 1;\n");
+    return { status: 0, output: "" };
+  };
+  assert.equal(await formatBranch(git, dir, format, () => {}), null);
+  assert.equal(git(["log", "-1", "--format=%s"]).stdout, "style: format\n");
+  assert.equal(git(["status", "--porcelain"]).stdout, "");
+  // A formatted branch gets no commit.
+  assert.equal(await formatBranch(git, dir, format, () => {}), null);
+  assert.equal(git(["rev-list", "--count", "HEAD"]).stdout, "2\n");
 });
