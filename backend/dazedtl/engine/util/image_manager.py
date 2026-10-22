@@ -401,12 +401,9 @@ def prepare_plain_assets_for_patch(
 
 def _remove_stage(transaction_root: Path) -> None:
     """Remove a finished transaction's folder and the staging folder holding it."""
-    if transaction_root.exists():
-        system.remove_tree(transaction_root)
-    try:
-        transaction_root.parent.rmdir()
-    except OSError:
-        pass  # Another transaction is still staging, or it never existed.
+    system.remove_tree(transaction_root, missing_ok=True)
+    # Not empty while another transaction is still staging.
+    system.rmdir(transaction_root.parent, ignore_errors=True)
 
 
 def _prepare_assets_transaction(
