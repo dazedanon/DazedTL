@@ -16,7 +16,7 @@ from dazedtl.projects.store import Projects
 from dazedtl.settings.execution import configuration, connection_summary, worker_secret
 from dazedtl.settings.store import Settings
 from dazedtl.storage import WorkspaceLock, write_json
-from dazedtl.translation import delivery, progress_report
+from dazedtl.translation import delivery, progress_report, publication
 from dazedtl.translation.compilation import compile_requests
 from dazedtl.translation.files import evidence, read_json
 from dazedtl.translation.game_update import ABSENT
@@ -1060,6 +1060,21 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Pause this project's API run"):
             self.service.start_over(self.identity, True)
         original = (self.game / "source.json").read_bytes()
+        # A Guided Apply put a translation in; starting over takes it out,
+        # so its records must stop reading it as applied, as an undo's do.
+        publications = self.root / "publications"
+        publications.mkdir()
+        publication.publish(
+            publications,
+            self.game,
+            publication.freeze(
+                publications,
+                self.game,
+                {"source.json": b'{"line": "Yes!"}'},
+                "export_selected",
+                outputs={"source.json": "translated"},
+            ),
+        )
         write_json(self.game / "source.json", {"line": "Yes."})
         (self.game / "js").mkdir()
         (self.game / "js/Forge.js").write_text("added by setup", encoding="utf-8")
@@ -1098,6 +1113,7 @@ class WorkflowTests(unittest.TestCase):
                     "options": DEFAULTS,
                     "action": "start_over",
                     "arguments": {"keep_context": keep_context},
+                    "publications": str(publications),
                 },
                 lambda: False,
             )
@@ -1123,6 +1139,11 @@ class WorkflowTests(unittest.TestCase):
         )
         self.assertEqual(git("show", "HEAD~1:js/Forge.js"), "added by setup")
         self.assertEqual(len(original_files.records(self.game)), 1)
+        self.assertEqual(
+            [row["state"] for row in publication.history(publications)],
+            ["complete", "restored"],
+        )
+        self.assertEqual(read_json(publications / "applied-outputs.json")["files"], {})
         self.assertTrue((archive / "len-method/progress.json").is_file())
         self.assertFalse((self.game / ".dazedtl/playtest").exists())
         self.assertTrue((archive / "playtest/DazedTL_Fixes.js").is_file())
