@@ -48,6 +48,18 @@ export const jobTime = (job: { updated?: string; created?: string }) =>
   Date.parse(job.updated || job.created || "") || 0;
 export const fileCount = (count: number) =>
   `${count} ${count === 1 ? "file" : "files"}`;
+/** Whether any run or operation started after `job` ended, such as an
+ * estimate or an Apply after a reload, so `job`'s result is no longer the
+ * latest news. */
+export const workSince = (
+  job: { id: string; updated?: string; created?: string },
+  jobs: readonly { id: string; created?: string }[],
+) =>
+  jobs.some(
+    (other) =>
+      other.id !== job.id &&
+      (Date.parse(other.created || "") || 0) > jobTime(job),
+  );
 export const pathKey = (name: string) => name;
 export type Panel =
   | "files"

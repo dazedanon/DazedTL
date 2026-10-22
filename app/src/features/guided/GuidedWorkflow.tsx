@@ -345,8 +345,9 @@ function Workspace(
               !hostedFooter && (
                 <Notice tone="warning">
                   <span>
-                    {fileCount(changed.length)} changed in the game. Reload them
-                    from the game before new work.
+                    {fileCount(changed.length)} changed in the game. Reload{" "}
+                    {changed.length === 1 ? "it" : "them"} from the game before
+                    new work.
                   </span>
                   {position.step !== "translate" &&
                     task(

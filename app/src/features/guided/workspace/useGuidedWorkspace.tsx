@@ -66,6 +66,7 @@ import {
   advancedCodes,
   fileCount,
   jobTime,
+  workSince,
   runNotices,
 } from "./model";
 import { selectionNames } from "../../../ui/displayText";
@@ -952,7 +953,14 @@ export function useGuidedWorkspace({
           notice={
             !active &&
             current?.status === "complete" &&
-            current.id === started[name]?.id
+            current.id === started[name]?.id &&
+            // The next work, such as translating or applying the reloaded
+            // files, ends the reload's news.
+            !workSince(current, [
+              ...state.runs,
+              ...state.operations,
+              ...translation.jobs,
+            ])
               ? `${typeof current.result?.files === "number" ? fileCount(current.result.files) : "Files"} reloaded from the game.`
               : ""
           }
