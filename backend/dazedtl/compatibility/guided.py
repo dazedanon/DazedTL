@@ -2,7 +2,7 @@
 
 import re
 import shutil
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from dazedtl import system
 from dazedtl.storage import staging_folder, write_json
@@ -600,6 +600,51 @@ def convert_ace(root, log, folder=None):
         # A data file the game lacks has JSON but nothing to pack into;
         # without a receipt, writes pack only what they touch.
         log("No packing receipt was saved: " + str(error))
+
+
+def describe_ace_update(root, release, preview):
+    """Says in a previewed VX Ace update what finishing it does with the
+    game's binary files, as `finish_ace_update` does it: a data file packs
+    from the merged ace_json, so Git's verdict on the file itself is not the
+    result, and the release's archive replaces the one kept for patches. Only
+    for a release converted as the game is."""
+    from util.ace import actions
+
+    from dazedtl.translation.release import packing_target
+
+    root, changes = Path(root), list(preview["file_changes"])
+    if not (release and ace_converted(root) and ace_converted(release)):
+        return
+    packed = {
+        packing_target(change["path"])
+        for change in changes
+        if change["path"].startswith("ace_json/") and change["change"] != "Removed"
+    }
+    for change in changes:
+        path = PurePosixPath(change["path"])
+        if (
+            path.parent.name == "Data"
+            and path.suffix == ".rvdata2"
+            and path.stem.casefold() in packed
+        ):
+            change["result"] = "Packed from the merged text after the update"
+            change["whole_file_replaced"] = False
+    archive = actions.original_archive(Path(release))
+    if archive is not None and archive.is_file():
+        changes.append(
+            {
+                "path": archive.name,
+                "change": "Modified",
+                "added_lines": None,
+                "deleted_lines": None,
+                "is_image": False,
+                "translation_changed": False,
+                "already_present": False,
+                "whole_file_replaced": False,
+                "result": "Replaces the archive kept for patches",
+            }
+        )
+    preview["file_changes"] = changes
 
 
 def finish_ace_update(root, release, folder, log):
