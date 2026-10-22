@@ -1,4 +1,4 @@
-import type { PluginState } from "../../api/contracts.ts";
+import type { PluginReceipt, PluginState } from "../../api/contracts.ts";
 import type { DisplayState } from "../../ui/displayStatus.ts";
 
 /** Plugin files the assistant still has to investigate or translate. */
@@ -54,4 +54,30 @@ export function pluginTaskState(
     return "not_started";
   if (pluginFilesBlocked(state).length) return "blocked";
   return counts.applied ? "applied" : "done";
+}
+
+/**
+ * Recovery's rows, newest application first: one per application, whose
+ * newest receipt says whether it is in the game, since undoing it or bringing
+ * it back, here or from Checkpoints, records a receipt of its own. A restore
+ * that names no application, as a reviewed restore of backups, keeps a row.
+ */
+export function recoveryRows(receipts: PluginReceipt[]) {
+  const byId = new Map(receipts.map((receipt) => [receipt.id, receipt]));
+  const origin = (receipt: PluginReceipt): string => {
+    if (receipt.mode === "apply") return receipt.applies || receipt.id;
+    const taken = receipt.restores && byId.get(receipt.restores);
+    return taken ? origin(taken) : receipt.id;
+  };
+  const rows = new Map<
+    string,
+    { application: PluginReceipt; latest: PluginReceipt }
+  >();
+  for (const receipt of receipts) {
+    const row = rows.get(origin(receipt));
+    if (row) row.latest = receipt;
+    else if (receipt.mode === "apply" || !receipt.restores)
+      rows.set(origin(receipt), { application: receipt, latest: receipt });
+  }
+  return [...rows.values()].reverse();
 }

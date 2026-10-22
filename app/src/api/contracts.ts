@@ -2501,6 +2501,8 @@ export type PluginReceipt = {
   /** Restores in one click by undoing its checkpoint, or, interrupted, by putting its files back from the checkpoint before it; else by a reviewed restore of the backups it saved. */
   undo: boolean;
   restoreIssue?: string;
+  restores?: string;
+  applies?: string;
 };
 
 export type PluginCounts = {

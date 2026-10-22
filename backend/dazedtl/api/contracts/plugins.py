@@ -49,6 +49,10 @@ class PluginReceipt(TypedDict):
     # Why an application taken over from another project cannot be
     # restored, or the later checkpoint to undo first.
     restoreIssue: NotRequired[str]
+    # A restore names the application it took out through Git, and an
+    # application a checkpoint undo brought back names the one it carries.
+    restores: NotRequired[str]
+    applies: NotRequired[str]
 
 
 class PluginCounts(TypedDict):

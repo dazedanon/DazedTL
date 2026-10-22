@@ -410,6 +410,8 @@ def receipt_view(receipt, files, issue=""):
                 "conflicts",
                 "manifest",
                 "restoreIssue",
+                "restores",
+                "applies",
             ),
         ),
         **({"restoreIssue": issue} if issue and restorable else {}),

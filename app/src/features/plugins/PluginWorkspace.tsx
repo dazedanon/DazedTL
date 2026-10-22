@@ -33,6 +33,7 @@ import {
   pluginFilesBlocked,
   pluginFilesLeft,
   pluginTaskState,
+  recoveryRows,
 } from "./pluginTask";
 
 const fileCount = (count: number, noun = "file") =>
@@ -534,79 +535,78 @@ export function PluginWorkspace({
           />
           <DialogBody className="plugin-review-body">
             <ActionList>
-              {state.receipts
-                .slice()
-                .reverse()
-                .map((receipt) => {
-                  const problem = [
-                    receipt.failure,
-                    ...receipt.conflicts,
-                    receipt.restoreIssue,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ");
-                  return (
-                    <ActionRow
-                      key={receipt.id}
-                      title={receiptTitle(receipt)}
-                      description={
-                        <>
-                          {[
-                            new Date(receipt.saved).toLocaleString(),
-                            selectionNames(
-                              receipt.files.map((file) =>
-                                fileName(file.destination),
-                              ),
+              {recoveryRows(state.receipts).map(({ application, latest }) => {
+                const receipt = latest;
+                // Taken out since, here or from Checkpoints.
+                const undone = !!receipt.restores;
+                const problem = [
+                  receipt.failure,
+                  ...receipt.conflicts,
+                  receipt.restoreIssue,
+                ]
+                  .filter(Boolean)
+                  .join(" · ");
+                const saved = new Date(receipt.saved).toLocaleString();
+                return (
+                  <ActionRow
+                    key={application.id}
+                    title={receiptTitle(undone ? application : receipt)}
+                    description={
+                      <>
+                        {[
+                          undone ? `Undone ${saved}` : saved,
+                          selectionNames(
+                            receipt.files.map((file) =>
+                              fileName(file.destination),
                             ),
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")}
-                          {problem && (
-                            <span className="plugin-receipt-problem">
-                              {problem}
-                            </span>
-                          )}
-                        </>
-                      }
-                    >
-                      {/* An undone application keeps its result beside it. */}
-                      {(receipt.restorable && receipt.undo) ||
-                      action.key === "undo:" + receipt.id ? (
+                          ),
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                        {problem && (
+                          <span className="plugin-receipt-problem">
+                            {problem}
+                          </span>
+                        )}
+                      </>
+                    }
+                  >
+                    {undone ? null : receipt.restorable && receipt.undo ? (
+                      <ActionControl
+                        label="Undo"
+                        pendingText="Undoing…"
+                        disabled={busy}
+                        {...feedback("undo:" + receipt.id)}
+                        onClick={() =>
+                          void run(
+                            "undo",
+                            { receipt: receipt.id },
+                            "",
+                            "undo:" + receipt.id,
+                          )
+                        }
+                      />
+                    ) : (
+                      receipt.restorable && (
                         <ActionControl
-                          label="Undo"
-                          pendingText="Undoing…"
-                          disabled={busy || !receipt.restorable}
-                          {...feedback("undo:" + receipt.id)}
-                          onClick={() =>
-                            void run(
-                              "undo",
+                          label="Review restore"
+                          disabled={busy}
+                          {...feedback("preview_restore:" + receipt.id)}
+                          onClick={async () => {
+                            const result = await run(
+                              "preview_restore",
                               { receipt: receipt.id },
-                              "Undone.",
-                              "undo:" + receipt.id,
-                            )
-                          }
+                              "",
+                              "preview_restore:" + receipt.id,
+                            );
+                            if (result.ok) setRecovery(false);
+                          }}
                         />
-                      ) : (
-                        receipt.restorable && (
-                          <ActionControl
-                            label="Review restore"
-                            disabled={busy}
-                            {...feedback("preview_restore:" + receipt.id)}
-                            onClick={async () => {
-                              const result = await run(
-                                "preview_restore",
-                                { receipt: receipt.id },
-                                "",
-                                "preview_restore:" + receipt.id,
-                              );
-                              if (result.ok) setRecovery(false);
-                            }}
-                          />
-                        )
-                      )}
-                    </ActionRow>
-                  );
-                })}
+                      )
+                    )}
+                  </ActionRow>
+                );
+              })}
             </ActionList>
           </DialogBody>
         </Modal>
