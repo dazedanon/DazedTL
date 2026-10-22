@@ -28,7 +28,8 @@ type Props = Omit<ComponentProps<"input">, "value" | "onChange" | "list"> & {
 /**
  * Editable suggestions, fixed choices, or searchable selection in a bounded
  * popup. The top-layer list scrolls within the available window height and
- * opens above the field when space below is limited. It stands in for the
+ * opens above the field when space below is limited, and follows the field
+ * when the page moves it. It stands in for the
  * native datalist popup, so typed values and keyboard selection are kept
  * here; choice labels hide the automatic selection highlight (ui.css) while
  * still replacing on typing, and typed queries and editable text keep normal
@@ -141,6 +142,19 @@ export function ComboBox({
       if (!popup.contains(event.target as Node)) close();
     };
     position();
+    // The field can move without resizing, such as a row appearing above it
+    // after the list opened; the list follows it.
+    let frame = 0;
+    let placed = anchor.getBoundingClientRect();
+    const follow = () => {
+      const now = anchor.getBoundingClientRect();
+      if (now.top !== placed.top || now.left !== placed.left) {
+        placed = now;
+        position();
+      }
+      frame = requestAnimationFrame(follow);
+    };
+    frame = requestAnimationFrame(follow);
     const resize = new ResizeObserver(position);
     resize.observe(anchor);
     resize.observe(popup);
@@ -148,6 +162,7 @@ export function ComboBox({
     window.addEventListener("scroll", scroll, true);
     document.addEventListener("pointerdown", outside);
     return () => {
+      cancelAnimationFrame(frame);
       resize.disconnect();
       window.removeEventListener("resize", position);
       window.removeEventListener("scroll", scroll, true);
