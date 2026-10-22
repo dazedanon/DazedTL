@@ -23,3 +23,4 @@
 - **Text QA:** on a VX Ace game, Pack outside edits no longer flashes in the Text QA header right after Apply corrections.
 - **Translate:** a line left in Japanese, such as one the model gave back unchanged, reads "still in Japanese" in a file's status and Inspect's **Lines left** instead of "never translated", which was wrong once the line had been sent.
 - **Translate:** a VX Ace game that still reads its `Game.rgss3a` no longer lists its files as **Applied**; they read **Ready to apply**, **Apply** says to convert Ace data in Set up first, and the notice no longer names an Assistant-led operation or sits beside Set up's own messages.
+- **Translate:** at narrow widths the footer's count no longer wraps onto a second line; "Saved translations applied." goes once a later run leaves files to apply; the **Lines** heading matches the others; and **Needs review** has its own mark instead of the eye of the row's Inspect button.
