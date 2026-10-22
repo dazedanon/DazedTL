@@ -1728,6 +1728,9 @@ class GuidedTests(unittest.TestCase):
             return {"token": token, "confirmation": True, "options": {}}
 
         self.backend.workflows.preview = preview
+        self.backend.phase_files = lambda _native, phase: (
+            ["Items.json"] if phase == "database" else ["Map001.json"]
+        )
         self.backend.guided_export_preview = lambda *args, **kw: (
             ExistingBackend.guided_export_preview(self.backend, *args, **kw)
         )
@@ -1749,7 +1752,7 @@ class GuidedTests(unittest.TestCase):
             self.assertEqual(review["paths"], ["Items.json"])
             self.assertEqual(review["options"]["run_id"], identity)
             # History listed a run's first Apply as a reapply.
-            self.assertEqual(review["label"], "Apply selected saved outputs")
+            self.assertEqual(review["label"], "Apply Database files")
             self.assertEqual(read_json(self.source / "Items.json"), [{"name": "薬"}])
             write_json(self.source / "Items.json", [{"name": "Edit after review"}])
             edited = (self.source / "Items.json").read_bytes()
@@ -1814,7 +1817,7 @@ class GuidedTests(unittest.TestCase):
                 self.guided.preview(
                     self.identity, "export_selected", options={"run_id": newer["id"]}
                 )["label"],
-                "Reapply saved run output",
+                "Reapply Database files",
             )
             # A later run that saved the copy unchanged added none of its text.
             unchanged = {**newer, "id": "unchanged-run", "created": "later"}
@@ -1842,7 +1845,7 @@ class GuidedTests(unittest.TestCase):
             )
             self.assertEqual(
                 (again["paths"], again["label"]),
-                (["Items.json"], "Reapply saved run output"),
+                (["Items.json"], "Reapply Database files"),
             )
             job["mode"] = "batch"
             for files in (

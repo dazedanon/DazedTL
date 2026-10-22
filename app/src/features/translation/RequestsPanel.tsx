@@ -18,6 +18,7 @@ import {
   runMode,
   unconfirmedBatch,
 } from "./apiRun";
+import { OperationEntry, projectActivity } from "../guided/ActivityHistory";
 import { LenRunInspector, type RunView } from "./LenRunInspector";
 
 const money = (value: number) => "$" + value.toFixed(4);
@@ -39,6 +40,8 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
   const jobs = state.jobs.filter(
     (job) => job.kind === "translation" && listedRun(job),
   );
+  // Start over and the other operations this game has run.
+  const activity = projectActivity([], state.jobs);
   const inspected = jobs.find((job) => job.id === inspecting.run);
   // The run lists showing all their rows, as `${run}:${list}`.
   const [expanded, setExpanded] = useState<string[]>([]);
@@ -307,6 +310,17 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
           active={state.active}
           onClose={() => inspect("")}
         />
+      )}
+      {!!activity.length && (
+        <Section title="Other activity">
+          <div className="guided-history">
+            <ActionList compact>
+              {activity.map((job) => (
+                <ActionRow key={job.id} label={<OperationEntry job={job} />} />
+              ))}
+            </ActionList>
+          </div>
+        </Section>
       )}
       <Section title="Request plan">
         <p className="muted">

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { FolderOpen, MoreHorizontal } from "lucide-react";
 import { api } from "../../api/client";
 import { messageOf } from "../../api/errors";
@@ -27,6 +27,7 @@ import { VersionChanges } from "../translation/VersionChanges";
 import {
   blockedBy,
   changedFiles,
+  copyName,
   day,
   fileName,
   plural,
@@ -142,7 +143,7 @@ export function CheckpointsPanel({
           {boundary && (
             <small>
               {boundary.kind === "update"
-                ? `Updated ${day(boundary.time)}${boundary.release ? ` · ${boundary.release}` : ""}`
+                ? `Updated ${day(boundary.time)}${boundary.release === "patch" ? " · Patch" : ""}`
                 : `Set up ${day(boundary.time)}`}
             </small>
           )}
@@ -228,7 +229,18 @@ export function CheckpointsPanel({
                     error={
                       action.key.endsWith(`:${row.commit}`) ? action.error : ""
                     }
-                    job={reported?.target === row.commit ? reported : undefined}
+                    job={
+                      // A finished go back or undo is the list's new top
+                      // checkpoint, so its result sits by that one, which
+                      // the list scrolls into view.
+                      reported &&
+                      (reported.status === "complete" &&
+                      reported.action !== "checkpoint_copy"
+                        ? row.current
+                        : reported.target === row.commit)
+                        ? reported
+                        : undefined
+                    }
                     start={(operation) => start(operation, row)}
                     view={() => setViewing(row)}
                   />
@@ -306,7 +318,9 @@ function CheckpointRow({
   ) : job?.status === "complete" ? (
     job.action === "checkpoint_copy" ? (
       <>
-        <Feedback notice={`Saved a copy: ${fileName(result?.folder || "")}`} />
+        <Feedback
+          notice={`Saved a copy: ${copyName(fileName(result?.folder || ""))}`}
+        />
         <ActionControl
           inline
           variant="link"
@@ -331,8 +345,8 @@ function CheckpointRow({
               ? "The game already matched this checkpoint."
               : "Nothing to undo; its files were already as before it."
             : job.action === "checkpoint_back"
-              ? `Went back; ${plural(result.files, "file")} changed. Undo it from the top of the list.`
-              : `Undone; ${plural(result.files, "file")} changed. Undo the new checkpoint to put it back.`
+              ? `Went back; ${plural(result.files, "file")} changed. Undo this checkpoint to put it back.`
+              : `Undone; ${plural(result.files, "file")} changed. Undo this checkpoint to put it back.`
         }
       />
     )
@@ -340,6 +354,13 @@ function CheckpointRow({
     <Feedback error={job.message || sentence(job.status)} />
   ) : null;
   const disabled = !!blocked || !!pending || running;
+  const feedbackBox = useRef<HTMLDivElement>(null);
+  const reportedId = job?.status === "complete" ? job.id : "";
+  const top = row.current;
+  useEffect(() => {
+    if (reportedId && top)
+      feedbackBox.current?.scrollIntoView?.({ block: "nearest" });
+  }, [reportedId, top]);
   return (
     <ActionRow
       label={
@@ -417,6 +438,7 @@ function CheckpointRow({
       </Menu>
       {feedback && (
         <div
+          ref={feedbackBox}
           className="action-row-feedback"
           // A copy's folder name says which copy; the user chose where.
           title={job?.action === "checkpoint_copy" ? result?.folder : undefined}
