@@ -260,6 +260,8 @@ Tabs and Continue keep drafts and allow navigation regardless of completion; the
 Set up's one action runs file preparation and the version baseline as separate steps, each through its own preview and execution, so every step keeps its checks and receipts; the first step's write records the original game files first.
 Routine setup steps and local estimation consume their preview right after the click; paid work, runtime replacement and file resync keep their review.
 Each task applies its own work and shows what it has not applied, with no cross-task reminder list; applied Translate output has no restore of its own, since it is a [checkpoint](#checkpoints) Git can undo.
+A Translate task is done, and counts in its stage, only once every file it covers reads Applied or Done, so saved work waiting for Apply keeps it open; `translationTaskComplete` in [translationView.ts](../app/src/features/guided/translationView.ts) decides it for every place that shows it.
+Other event text reads its files from its own runs, so text another task translated in a file is not its to apply.
 
 #### Working copies
 

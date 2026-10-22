@@ -204,24 +204,34 @@ export function fileRun(
 }
 const translatedCache = new WeakMap<
   Job[],
-  { retired: readonly string[]; names: Set<string> }
+  Map<string, { retired: readonly string[]; names: Set<string> }>
 >();
 const noneRetired: readonly string[] = [];
 /**
- * Files a current run changed or sent requests for, in any phase. A rerun
- * reads the earlier run's output and reuses the results of earlier requests,
- * so only a file outside this set still holds the game's own text, and a run
- * that sent nothing for it found nothing to translate.
+ * Files a current run changed or sent requests for, in any phase or, with
+ * `phase`, in that task's runs only. A rerun reads the earlier run's output
+ * and reuses the results of earlier requests, so only a file outside this set
+ * still holds the game's own text, and a run that sent nothing for it found
+ * nothing to translate. An event-code task asks for its own runs: text
+ * another task translated in the file is not this task's to apply.
  */
 export function translatedFiles(
   runs: Job[],
   retired: readonly string[] = noneRetired,
+  phase?: Phase,
 ) {
-  const cached = translatedCache.get(runs);
+  let phases = translatedCache.get(runs);
+  if (!phases) translatedCache.set(runs, (phases = new Map()));
+  const cached = phases.get(phase ?? "");
   if (cached?.retired === retired) return cached.names;
   const names = new Set<string>();
   for (const run of runs) {
-    if (run.mode === "estimate" || run.temporary || retired.includes(run.id))
+    if (
+      run.mode === "estimate" ||
+      run.temporary ||
+      retired.includes(run.id) ||
+      (phase && run.logicalPhase !== phase)
+    )
       continue;
     const add = (name: string) => {
       if (!run.retiredFiles?.includes(name)) names.add(name);
@@ -233,7 +243,7 @@ export function translatedFiles(
     for (const name of Object.keys(run.outputs || {}))
       if (!run.changedOutputs || run.changedOutputs.includes(name)) add(name);
   }
-  translatedCache.set(runs, { retired, names });
+  phases.set(phase ?? "", { retired, names });
   return names;
 }
 /**
@@ -367,7 +377,7 @@ function runLines(
     nothingFound(
       name,
       latest,
-      !translatedFiles(state.runs, state.sourceStatus.retired).has(name),
+      !translatedFiles(state.runs, state.sourceStatus.retired, phase).has(name),
     )
   )
     return { done: 0, total: 0 };
@@ -413,33 +423,34 @@ export function eventTaskFiles(
     .map((file) => file.name);
 }
 /**
- * Database and map tasks are done when no file in their group has lines
- * left and no run still works on one, independently of the next action's
- * selection. Event-code tasks cover eventTaskFiles and combine each file's
- * latest run, so re-running some files keeps the rest.
+ * A translation task is done when every file it covers is in the game or has
+ * nothing to translate (its row reads Applied or Done) and no run still works
+ * on one; saved work waiting for Apply keeps it open. Database and map tasks
+ * cover their group's files, independently of the next action's selection.
+ * Event-code tasks cover eventTaskFiles and combine each file's latest run,
+ * so re-running some files keeps the rest. Every place that shows a task's
+ * done state asks this.
  */
 export function translationTaskComplete(
-  state: Pick<GuidedState, "files" | "runs" | "sourceStatus">,
+  state: Pick<GuidedState, "files" | "runs" | "sourceStatus" | "readiness">,
   phase: Phase,
   names: readonly string[] = state.files
     .filter((file) => file.group === phase)
     .map((file) => file.name),
 ) {
   if (!names.length) return false;
+  const finished = (status: { state: DisplayState }) =>
+    status.state === "applied" || status.state === "done";
   if (countedPhase(phase))
     return names.every((name) => {
-      const counted = state.sourceStatus.lines?.[name];
       const run = fileRun(state.runs, phase, name, state.sourceStatus.retired);
       // A worker may still write a file it already saved.
       return (
         !state.sourceStatus.changed.includes(name) &&
         !(run && activeWorker(run)) &&
-        !runActivity(name, run) &&
-        !!counted &&
-        counted.translated === counted.lines
+        finished(countedFileStatus(state, phase, name, run))
       );
     });
-  const translated = translatedFiles(state.runs, state.sourceStatus.retired);
   return names.every((name) => {
     if (
       state.sourceStatus.changed.includes(name) ||
@@ -447,7 +458,8 @@ export function translationTaskComplete(
     )
       return false;
     const run = fileRun(state.runs, phase, name, state.sourceStatus.retired);
-    if (settledWithoutRequests(state, phase, name, run)) return true;
+    if (settledWithoutRequests(state, phase, name, run))
+      return finished(translationFileStatus(state, phase, name, run));
     if (
       !run ||
       run.temporary ||
@@ -464,9 +476,7 @@ export function translationTaskComplete(
     )
       return false;
     return (
-      ["ready", "applied", "done"].includes(
-        fileStatus(name, run, false, !translated.has(name)).state,
-      ) ||
+      finished(translationFileStatus(state, phase, name, run)) ||
       (run.mode === "batch" &&
         !run.outputs?.[name] &&
         !!run.process?.noRequestFiles?.includes(name))
@@ -485,7 +495,7 @@ export function translationFileStatus(
     name,
     run,
     settledWithoutRequests(state, phase, name, run),
-    !translatedFiles(state.runs, state.sourceStatus.retired).has(name),
+    !translatedFiles(state.runs, state.sourceStatus.retired, phase).has(name),
     state.sourceStatus.lines?.[name]?.otherNotes,
   );
 }
