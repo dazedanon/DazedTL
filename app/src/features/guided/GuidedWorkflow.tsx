@@ -6,7 +6,7 @@ import { saveKey, taskKey, useShortcut } from "../../state/useShortcut";
 import { ActionBar } from "../../ui/ActionBar";
 import { Button } from "../../ui/Button";
 import { Message } from "../../ui/Feedback";
-import { Notice } from "../../ui/Notice";
+import { GameWarnings, Notice } from "../../ui/Notice";
 import { FeedbackOwners, useOwnedFeedback } from "../../ui/FeedbackOwners";
 import { JobStatus } from "../../ui/JobStatus";
 import { PageBody, PageLayout, PageMessages } from "../../ui/PageLayout";
@@ -318,11 +318,7 @@ function Workspace(
             <Message message={state.collectionError} />
             {/* Problems that refuse work on every task, such as a game
                 folder checked out off its translation branch. */}
-            {translation.warnings.map((warning) => (
-              <Notice key={warning} tone="warning">
-                <span>{warning}</span>
-              </Notice>
-            ))}
+            <GameWarnings warnings={translation.warnings} />
             {/* A converted Ace game still reading its archive shows none of
                 the translation; Set up's own row says so there, and before
                 setup the steps already send the user to it. */}

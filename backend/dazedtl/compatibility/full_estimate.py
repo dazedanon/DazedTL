@@ -15,6 +15,7 @@ from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from pathlib import Path
 
 from dazedtl import system
+from dazedtl.actions import stopped_note
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest, project_path
 
@@ -230,7 +231,7 @@ def launch(directory, env, label, phase, log):
             assert process.stdout is not None  # Opened above.
             for line in process.stdout:
                 if log.stopped():
-                    raise InterruptedError("Stopped. No cost was estimated.")
+                    raise InterruptedError(stopped_note("full_estimate"))
                 try:
                     event = json.loads(line)
                 except ValueError:

@@ -69,10 +69,7 @@ function ciScenarios() {
 const results = [];
 /** A file or folder name for the check `name`. */
 const slug = (name) => name.replace(/[^\w.-]+/g, "_");
-// A scenario's display is named after its folder, which this check's own
-// folder name keeps apart from other sessions' scenarios.
-const folder = (name) =>
-  path.join(work, `${slug(name)}-${path.basename(work).slice(-6)}`);
+const folder = (name) => path.join(work, slug(name));
 
 /** Runs `args` with Node once, its output in `log`; resolves whether it passed. */
 function attempt(args, log) {
@@ -120,6 +117,9 @@ async function run(name, args, kept = "") {
     () => kept && fs.rmSync(kept, { recursive: true, force: true }),
   );
   Object.assign(result, outcome, { seconds: (Date.now() - started) / 1000 });
+  // A check that passed leaves only its log, since the live tests' installs
+  // take gigabytes; its app has exited, so nothing writes there any more.
+  if (outcome.passed && kept) fs.rmSync(kept, { recursive: true, force: true });
   console.log(
     `${outcome.flaky ? "flaky " : outcome.passed ? "passed" : "FAILED"}  ${name} (${result.seconds.toFixed(0)} s)`,
   );
@@ -167,12 +167,6 @@ await pool([
       folder("qa-upgrade"),
     ),
 ]);
-
-// A check that passed leaves only its log, since the live tests' installs
-// take gigabytes; once all have ended, as an app's last writes have too.
-for (const result of results)
-  if (result.passed && result.kept)
-    fs.rmSync(result.kept, { recursive: true, force: true });
 
 const width = Math.max(...results.map((result) => result.name.length));
 console.log(`\n${"Check".padEnd(width)}  Result  Time   Log`);

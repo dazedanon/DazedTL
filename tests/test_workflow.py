@@ -958,7 +958,7 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             require_baseline(self.engine, self.game, DEFAULTS, state)
         # Plugin files and Images, which need no baseline, refuse it too.
-        with self.assertRaisesRegex(ValueError, "unfinished Git cherry-pick"):
+        with self.assertRaisesRegex(ValueError, "interrupted update"):
             self.service.writable(self.identity)
         self.assertTrue(
             require_baseline(

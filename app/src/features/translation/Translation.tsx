@@ -26,6 +26,7 @@ import { ActionControl } from "../../ui/ActionControl";
 import { Tabs, TabPanel, type Tab } from "../../ui/Tabs";
 import { Button } from "../../ui/Button";
 import { Feedback, Message } from "../../ui/Feedback";
+import { GameWarnings } from "../../ui/Notice";
 import { FeedbackOwners, useOwnedFeedback } from "../../ui/FeedbackOwners";
 import type { ProjectLink } from "../guided/workspace/model";
 import type { SettingsSection } from "../settings/Settings";
@@ -319,11 +320,9 @@ function Workspace({
           }
           onDismiss={action.clear}
         />
-        {[...state.warnings, ...(state.progress?.warnings || [])].map(
-          (warning) => (
-            <Message key={warning} message={warning} />
-          ),
-        )}
+        <GameWarnings
+          warnings={[...state.warnings, ...(state.progress?.warnings || [])]}
+        />
       </PageMessages>
       <TabPanel id="translation" value={view}>
         {view === "progress" && (

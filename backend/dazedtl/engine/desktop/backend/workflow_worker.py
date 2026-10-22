@@ -28,7 +28,8 @@ def main():
         """Reports a status line, and optionally where the action stands as
         structured `activity` of its own shape, which the next line replaces."""
         if canceled.is_set():
-            raise InterruptedError("Stopped at a safe boundary. Completed writes were retained; review the destination before retrying.")
+            from dazedtl.actions import stopped_note
+            raise InterruptedError(stopped_note(plan.get("action")))
         emit("log", message=str(message), activity=activity)
     log.stopped = canceled.is_set
     sys.stdout = sys.stderr
