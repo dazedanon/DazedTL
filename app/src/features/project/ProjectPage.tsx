@@ -636,7 +636,9 @@ function ProjectHistory({
                       pendingText="Undoing…"
                       pending={undo.busy}
                       error={undo.error}
-                      job={undone}
+                      // A finished undo says so; the batch then reads restored.
+                      job={undone?.status === "complete" ? undefined : undone}
+                      notice={undone?.status === "complete" ? "Undone." : ""}
                       disabled={!baseline || !!restoreBlocked || undo.busy}
                       disabledReason={restoreBlocked}
                       onClick={() =>
