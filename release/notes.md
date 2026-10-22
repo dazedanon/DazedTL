@@ -14,5 +14,6 @@
 
 ### Fixed
 
+- **Translate:** a reply with one line still in Japanese no longer throws away the whole request: only that line keeps its original text, **Inspect** names it, and the next Translate sends it again; a kaomoji such as (ﾟдﾟ) the model keeps from the source no longer counts as Japanese.
 - **Checkpoints:** undoing a change or going back past it now shows QA corrections, Plugin files changes and translated images as undone in **History** and their tasks too, and undoing that undo shows them applied again.
 - **Release:** building the patch ZIP after a game update no longer fails with "The untranslated source baseline changed. Prepare a new request plan for this game version."
