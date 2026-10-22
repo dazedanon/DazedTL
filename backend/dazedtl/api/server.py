@@ -316,7 +316,7 @@ class Application:
                                         "label": receipt_label(row),
                                         "status": row["status"],
                                         "message": "",
-                                        "updated": row["saved"],
+                                        "updated": row.get("saved") or "",
                                     }
                                     for row in (plugins or {}).get("receipts", [])[-1:]
                                 ),

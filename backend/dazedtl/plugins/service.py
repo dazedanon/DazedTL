@@ -389,7 +389,7 @@ APPLY_SUMMARY = "Apply plugin file changes"
 
 def receipt_label(receipt):
     """An application or restore as the project's activity names it."""
-    return APPLY_SUMMARY if receipt["mode"] == "apply" else "Restore plugin files"
+    return APPLY_SUMMARY if receipt.get("mode") == "apply" else "Restore plugin files"
 
 
 def receipt_view(receipt, files, issue=""):
