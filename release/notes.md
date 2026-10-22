@@ -10,3 +10,4 @@
 - **Release:** after going back in Checkpoints to the files a patch ZIP was built from, Last saved patch ZIP no longer reads "Outdated · Game files changed since this build".
 - **Inspect run:** an open Choose request list stays under its field when a row appears above the field, instead of staying put and covering it.
 - **Translate:** a task no longer shows its done mark while files still read **Ready to apply**, such as after **Start over** or a new **Other event text** run, and **Other event text** no longer reads files only **Maps & events** translated as **Applied** with no lines.
+- **Translate:** after a game update, **Apply** is unavailable while a file it would apply reads **Outdated**, with "Reload changed files from the game first." beside it, instead of putting the old translation over the update's file.
