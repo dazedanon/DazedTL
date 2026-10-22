@@ -1777,6 +1777,12 @@ main:has(> .page-layout--wide) {
   overflow-wrap: anywhere;
   direction: ltr;
 }
+/* A folder or file name stays whole unless it is wider than the line. */
+.path-text-part {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
 /* A line of facts that ends in a path: the facts keep their width and the
    path gives way. */
 .path-line {
