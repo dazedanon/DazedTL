@@ -460,6 +460,7 @@ def undo(folder, root, identity, records, *, original=None, log=lambda _: None):
             check=unchanged,
             log=log,
             original=original,
+            folder=folder,
         )
         _restored(folder, root, record, result["commit"])
     return {
