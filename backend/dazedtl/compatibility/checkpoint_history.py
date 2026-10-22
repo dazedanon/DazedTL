@@ -648,9 +648,7 @@ def go_back(
     root = Path(root).resolve()
     entries = _log(root)
     target = entries[_restorable(entries, commit)]
-    change = Change(
-        f"Went back to {_quoted(target.title)}", None, BACK, target.commit
-    )
+    change = Change(f"Went back to {_quoted(target.title)}", None, BACK, target.commit)
     with running(change), write_game(root, folder, log=log, restores=True) as game:
         # The gateway recorded the edits made outside DazedTL first.
         entries = _log(root)
