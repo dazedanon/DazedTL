@@ -260,9 +260,21 @@ class GuidedInputs:
                 identity = saved["identity"]
         return {"relative": relative, "identity": identity}
 
+    def identities(self, names):
+        """Each file's original identity: as its source pass recorded it,
+        else as one would record it now, so a file no run has bound yet,
+        such as in a game copied after translating, reads the same original."""
+        recorded = self.record()["inputs"]
+        unbound = [name for name in names if name not in recorded]
+        current = self.sources(unbound, recorded) if unbound else {}
+        return {
+            name: (recorded.get(name) or current.get(name) or {}).get("identity", {})
+            for name in names
+        }
+
     def original_document(self, name):
         """The game file as the original version has it, when Git keeps one."""
-        blob = self.record()["inputs"].get(name, {}).get("identity", {}).get("original")
+        blob = self.identities([name])[name].get("original")
         if not blob:
             return None
         try:
@@ -294,7 +306,7 @@ class GuidedInputs:
 
         from .file_lines import count
 
-        identities = self.record()["inputs"]
+        identities = self.identities(list(phases))
         result, names, used = {}, {}, set()
         for name, phase in phases.items():
             try:
@@ -306,7 +318,7 @@ class GuidedInputs:
                     else digest(path.read_bytes()),
                     phase,
                     markers if phase == "dialogue" else None,
-                    identities.get(name, {}).get("identity", {}).get("original"),
+                    identities[name].get("original"),
                 )
                 if key not in LINE_COUNTS:
                     LINE_COUNTS[key] = count(
@@ -342,10 +354,10 @@ class GuidedInputs:
     def original_names(self, names):
         """The original game file's map display name for each named file,
         read once per original version; None where no original is known."""
-        identities = self.record()["inputs"]
+        identities = self.identities(list(names))
         blobs = {}
         for name in names:
-            identity = identities.get(name, {}).get("identity", {})
+            identity = identities[name]
             native = identity.get("native_original") or {}
             blob = identity.get("original") or native.get("blob")
             if blob:
