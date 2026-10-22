@@ -249,14 +249,18 @@ export function translatedFiles(
 /**
  * Saved working outputs holding translation, and those in the game: a file
  * whose own lines are translated, or one a run changed, such as with Other
- * event text.
+ * event text. With an event-code `phase`, only the files that task's own runs
+ * translated, so its Apply counts its own work, not another task's.
  */
 export function savedTranslations(
   state: Pick<GuidedState, "runs" | "sourceStatus" | "readiness">,
+  phase?: Phase,
 ) {
-  const changed = translatedFiles(state.runs, state.sourceStatus.retired);
+  const own = phase && !countedPhase(phase) ? phase : undefined;
+  const changed = translatedFiles(state.runs, state.sourceStatus.retired, own);
   const translated = (name: string) =>
-    changed.has(name) || !!state.sourceStatus.lines?.[name]?.translated;
+    changed.has(name) ||
+    (!own && !!state.sourceStatus.lines?.[name]?.translated);
   return {
     outputs: state.readiness.outputs.filter(translated),
     applied: state.readiness.applied.filter(translated),
@@ -292,6 +296,17 @@ export function settledWithoutRequests(
     !!checked && (!run || (!activeWorker(run) && (run.created || "") < checked))
   );
 }
+/**
+ * Why Apply is unavailable for `files`: the game changed one since its
+ * working copy, as a game update does, so its translated copy still holds the
+ * old text and the backend refuses it until Reload from game.
+ */
+export const reloadBeforeApply = (
+  files: readonly string[],
+  changed: readonly string[],
+) =>
+  files.some((name) => changed.includes(name)) &&
+  "Reload changed files from the game first.";
 /** Database files and Maps & events read each file's lines from the file. */
 export const countedPhase = (phase: Phase) =>
   phase === "database" || phase === "dialogue";

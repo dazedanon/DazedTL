@@ -21,3 +21,15 @@ export function Notice({
     </div>
   );
 }
+
+/**
+ * The problems that refuse work on the whole game, such as a game folder
+ * left mid-update, as the one amber notice every screen shows them with.
+ */
+export function GameWarnings({ warnings }: { warnings: readonly string[] }) {
+  return warnings.map((warning) => (
+    <Notice key={warning} tone="warning">
+      <span>{warning}</span>
+    </Notice>
+  ));
+}

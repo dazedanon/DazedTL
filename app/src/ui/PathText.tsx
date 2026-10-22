@@ -1,4 +1,5 @@
 import { homeRelative } from "./displayPath";
+import { useStartEllipsis } from "./startEllipsis";
 
 /**
  * A read-only path shown home-relative, keeping its end in view when it is
@@ -15,9 +16,13 @@ export function PathText({
   wrap?: boolean;
   className?: string;
 }) {
+  const text = homeRelative(path);
+  const { ref, shown } = useStartEllipsis<HTMLSpanElement>(text, !wrap);
   return (
     <span
+      ref={ref}
       className={`path-text${wrap ? " path-text--wrap" : ""} ${className}`}
+      data-shown={shown}
       title={path}
       onCopy={(event) => {
         const selection = document.getSelection();
@@ -36,17 +41,15 @@ export function PathText({
           right-to-left box that moves the ellipsis to the start. */}
       <bdi>
         {wrap
-          ? homeRelative(path)
-              .split(/(?<=[/\\])/)
-              .map((part, index) => (
-                // A wrapped path breaks between its folders, never inside a
-                // name such as a date stamp.
-                <span key={index} className="path-text-part">
-                  {part}
-                  <wbr />
-                </span>
-              ))
-          : homeRelative(path)}
+          ? text.split(/(?<=[/\\])/).map((part, index) => (
+              // A wrapped path breaks between its folders, never inside a
+              // name such as a date stamp.
+              <span key={index} className="path-text-part">
+                {part}
+                <wbr />
+              </span>
+            ))
+          : text}
       </bdi>
     </span>
   );

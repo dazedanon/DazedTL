@@ -548,7 +548,10 @@ function releasing({ patch = false } = {}) {
         const text = await page.text();
         // The heading's version runs into the counts after it.
         const heading = `Review update to ${release.version}`;
-        const review = text.slice(text.indexOf(heading) + heading.length);
+        const after = text.slice(text.indexOf(heading) + heading.length);
+        // The checkpoints of each version follow the review.
+        const end = after.search(/\nVersion \d/);
+        const review = end < 0 ? after : after.slice(0, end);
         // Counts keep their words together with no-break spaces.
         const count = (words) =>
           Number(
@@ -559,12 +562,16 @@ function releasing({ patch = false } = {}) {
         const files = count("added") + count("changed") + count("removed");
         const lines = count("lines? to translate");
         const stay = count("translations? stays?");
-        // The release changes a profile and describes an armor, and Set up's own
-        // files read as changes too; every other translation stays.
+        // The release changes a profile and describes an armor, and every
+        // other translation stays. Set up's own files, such as Forge, are
+        // none of its changes. VX Ace's archive patch also changes their
+        // Data files and, until its Scripts.rvdata2 is staged as Set up
+        // left it, that one too.
         if (
           count("removed") ||
           review.includes("applying it removes them") ||
-          files > 6 ||
+          /Forge|plugins\.js/.test(review) ||
+          files > (patch ? 5 : 2) ||
           lines < 1 ||
           lines > 3 ||
           stay < 1

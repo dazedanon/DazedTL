@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from dazedtl import system
+from dazedtl.actions import stopped_note
 from dazedtl.compatibility import original_files
 from dazedtl.compatibility.checkpoint_commits import for_action, in_phase, running
 from dazedtl.storage import staging_folder, write_json
@@ -281,7 +282,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         package_git = git_identity(engine.git_status(source, options))
         verify_evidence(source, payload["evidence"])
         if stopped():
-            raise InterruptedError("Release stopped. Its checkpoint was kept.")
+            raise InterruptedError(stopped_note(action))
         output.parent.mkdir(parents=True, exist_ok=True)
         with staging_folder(output.parent, ".dazedtl-patch-") as temporary:
             manifest = runtime_manifest(source, payload["manifest"])
@@ -387,7 +388,12 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             prepared = engine.rpgmaker_prepare_patch(staged, source, log=progress)
             prepared = prepared is not None
         elif not patch and kind in {"MVMZ", "ACE"}:
-            engine.rpgmaker_prepare_release(staged, options, log=progress)
+            baseline = originals.prepared(
+                workspace, job["project_id"], source, state, or_found=False
+            )
+            engine.rpgmaker_prepare_release(
+                staged, options, baseline.files if baseline else None, log=progress
+            )
             prepared = True
         result = {
             "official": str(staged),
@@ -594,10 +600,15 @@ def checkout_issue(status, *, allow_pending=False):
     """Why the game's Git checkout cannot take translation work, or ""."""
     pending = status.get("pending_operations") or []
     if not allow_pending and pending:
-        return (
-            f"The game folder has an unfinished Git {PENDING_GIT.get(pending[0], 'operation')}. "
-            "Finish or cancel it under Checkpoints, or in Git, to continue."
-        )
+        kind = PENDING_GIT.get(pending[0], "operation")
+        # A game update applies its changes by cherry-pick, and Checkpoints
+        # names what it left as the interrupted update.
+        if kind == "cherry-pick":
+            return (
+                "A game update was interrupted. Finish the interrupted update, "
+                "or cancel it, under Checkpoints to continue."
+            )
+        return f"The game folder has an unfinished Git {kind}. Finish or cancel it in Git to continue."
     if not allow_pending and status.get("asset_sync_pending"):
         return "The last game update has not finished restoring game assets. Finish it under Checkpoints to continue."
     current, branch = status.get("current_branch"), status.get("translation_branch")

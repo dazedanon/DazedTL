@@ -393,6 +393,12 @@ class Guided:
             self.backend.phase_files(native, "dialogue")
         )
 
+    def changed_sources(self, native, files=None):
+        """The files, every supported one by default, that the game changed
+        since their working copies were made, such as by a game update."""
+        files = self.supported_files(native) if files is None else files
+        return self.inputs(native).status(sorted(files))["changed"]
+
     def inputs(self, native):
         return GuidedInputs(
             self.backend.workflows.folder(native["id"]),

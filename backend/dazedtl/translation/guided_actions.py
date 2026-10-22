@@ -64,13 +64,25 @@ class GuidedActions:
         """Translation readiness and unchanged sources for publishing actions."""
         if ACTIONS[action].ready:
             self.guided.translation.ready(project_id)
-        if (
-            ACTIONS[action].family == "text"
-            and self.guided.inputs(native).status(
-                sorted(self.guided.supported_files(native))
-            )["changed"]
-        ):
+        if ACTIONS[action].family == "text" and self.guided.changed_sources(native):
             raise ValueError(changed)
+
+    def require_current_sources(self, native, files):
+        """Refuse an Apply of a file the game changed since its working copy.
+
+        A game update records the new release's file as the original, so its
+        translated copy still holds the old release's text; Apply would put
+        that over the update until Reload from game brings the new text in.
+        """
+        changed = self.guided.changed_sources(native, files)
+        if changed:
+            named = ", ".join(changed[:3]) + (
+                f" and {len(changed) - 3} more" if len(changed) > 3 else ""
+            )
+            raise ValueError(
+                f"{named} changed in the game. Reload "
+                f"{'it' if len(changed) == 1 else 'them'} from the game before applying."
+            )
 
     def require_idle_files(self, native, files):
         """Refuse a run on files an unfinished run will still save results into.
@@ -292,9 +304,7 @@ class GuidedActions:
         if not paths:
             raise ValueError("Select game files belonging to this phase first.")
         self.require_idle_files(native, paths)
-        if self.guided.inputs(native).status(
-            sorted(self.guided.supported_files(native))
-        )["changed"]:
+        if self.guided.changed_sources(native):
             raise ValueError(
                 "The original source changed. Review source changes and refresh the working copies before preparing a new run."
             )
@@ -454,6 +464,8 @@ class GuidedActions:
                     "No saved translation output is available for these files yet."
                 )
             options = {"files": paths}
+        if action == "export_selected":
+            self.require_current_sources(native, paths)
         if action == "release":
             from .release import destination, game_folder
 
@@ -679,6 +691,8 @@ class GuidedActions:
                 )
             if action == "release":
                 self.guided.backend.guided_release_validate(token)
+            if action == "export_selected":
+                self.require_current_sources(native, confirmed["paths"])
             return self.guided.backend.workflows.execute(token)
         if (
             confirmed["guard"]
