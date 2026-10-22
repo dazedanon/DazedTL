@@ -677,6 +677,9 @@ clean()
 assert history()[0] == "Undid “Apply QA corrections”|checkpoint_undo|", history()
 assert (kept / items).read_bytes() == before_qa
 assert [row["state"] for row in publication.history(texts)] == ["complete", "restored"]
+# A restored batch still reads as undone through Git, so History keeps its
+# Undo control, with its result, rather than offering a reviewed restore.
+assert publication.undoes(publication.history(texts)[1])
 try:
     publication.undo(texts, kept, applied)
 except ValueError as reason:

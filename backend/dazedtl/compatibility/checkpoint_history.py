@@ -639,7 +639,12 @@ def to_original(game, keep=lambda _path: False, stopped=lambda: False, original=
         for path in set(state.original) | set(head)
         if state.original.get(path) != head.get(path) and not keep(path)
     }
-    return _apply(game, root, _plan(state, paths, state.original), stopped, state)
+    plan = {
+        path: wanted
+        for path, wanted in _plan(state, paths, state.original).items()
+        if wanted != head.get(path)
+    }
+    return _apply(game, root, plan, stopped, state)
 
 
 def undo(

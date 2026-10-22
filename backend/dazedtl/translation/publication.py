@@ -411,9 +411,10 @@ def undoes(record):
     """Whether a batch restores by undoing its checkpoint, or, stopped
     midway, by putting its files back as the checkpoint before it had them;
     a batch from before receipts named them restores from its saved copies."""
-    if record["state"] == "complete":
-        return bool(record.get("commit"))
-    return record["state"] in IN_EFFECT and bool(record.get("parent"))
+    if record.get("commit"):
+        return True
+    # One restored since still reads as undone, not as one with copies.
+    return record["state"] != "complete" and bool(record.get("parent"))
 
 
 def _undoable(folder, root, identity):
