@@ -674,9 +674,13 @@ export function useGuidedWorkspace({
   // Apply packs an Ace game's data, so its packing control shows only while
   // the data is outdated, and after a pack from this visit to confirm it.
   const packJob = operationJob("ace_pack");
+  // A write of the game reads outdated between its ace_json and its pack, so
+  // the control waits for the write to finish.
+  const writing = !!activeOperation && activeOperation.action !== "ace_pack";
   const acePackShown =
     state.engine === "ACE" &&
     !state.encrypted.length &&
+    !writing &&
     (!state.acePacking.current ||
       (packJob?.status === "complete" &&
         packJob.id === started[actionKey("ace_pack", {})]?.id));
