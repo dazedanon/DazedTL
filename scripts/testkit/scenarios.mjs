@@ -6,13 +6,15 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { python } from "../dependencies.mjs";
 import { until } from "./cdp.mjs";
-import { gameName, makeGame } from "./games.mjs";
+import { contentFolder, gameName, makeRelease, release } from "./games.mjs";
+import { translated } from "./provider.mjs";
 import {
   connect,
   openGame,
   setUp,
   translateTask,
   applyTask,
+  buildPatch,
 } from "./journey.mjs";
 
 /** Runs a Python script of the scenario's checkout, as an assistant's shell does. */
@@ -343,7 +345,8 @@ const assistantWrite = [
   },
 ];
 
-const stoppedUpdate = [
+/** Brings in version 1.1 under Checkpoints, up to its preview. */
+const updateGame = [
   [
     "Open Checkpoints, the translation's Apply already its checkpoint",
     async ({ page }) => {
@@ -353,30 +356,28 @@ const stoppedUpdate = [
     },
   ],
   [
-    "Bring in version 1.1, which changes a profile the translation changed",
+    "Bring in version 1.1, which changes a profile the translation changed and describes an armor",
     async ({ page, state }) => {
-      if (state.variants[0] === "ace")
-        throw new Error("The update changes the MZ game's Actors.json.");
-      const release = path.join(
+      const folder = path.join(
         state.work,
-        "リリース 1.1",
+        `リリース ${release.version}`,
         gameName(state.variants),
       );
-      await makeGame(state.variants, release);
-      const file = path.join(release, "data/Actors.json");
-      const actors = JSON.parse(fs.readFileSync(file, "utf8"));
-      actors[1].profile = "森の村に住む元気な女の子。\n伝説の杖を探している。";
-      fs.writeFileSync(file, JSON.stringify(actors));
+      await makeRelease(state.variants, folder);
       await page.click("Start game update");
       // Typed, as a user may instead of choosing it in the folder dialog.
-      await page.type("#update-official-folder", release);
+      await page.type("#update-official-folder", folder);
       await page.waitText("Complete game");
-      await page.type("#update-version", "1.1");
+      await page.type("#update-version", release.version);
       await page.click("Prepare new release");
       await page.click("Preview changes", 5 * 60_000);
-      await page.waitText("Apply update to 1.1", 5 * 60_000);
+      await page.waitText(`Apply update to ${release.version}`, 5 * 60_000);
     },
   ],
+];
+
+const stoppedUpdate = [
+  ...updateGame,
   [
     "Apply it, stopping at the conflict as an apply the app closed during does",
     async ({ page, state }) => {
@@ -413,6 +414,231 @@ const stoppedUpdate = [
   ],
 ];
 
+const ace = (state) => state.variants[0] === "ace";
+
+/** The game's database file `name` as JSON; a VX Ace game's converted copy. */
+function gameJson(state, name) {
+  const folder = ace(state)
+    ? path.join(state.game, "ace_json")
+    : path.join(contentFolder(state.variants, state.game), "data");
+  return JSON.parse(fs.readFileSync(path.join(folder, name), "utf8"));
+}
+
+/** The bytes of the game's data files, which Apply writes, by path. */
+function gameData(state) {
+  const folders = ace(state)
+    ? ["Data", "ace_json"]
+    : [
+        path.relative(state.game, contentFolder(state.variants, state.game)),
+      ].map((folder) => path.posix.join(folder, "data"));
+  const files = new Map();
+  for (const folder of folders)
+    for (const entry of fs.readdirSync(path.join(state.game, folder), {
+      withFileTypes: true,
+    }))
+      if (entry.isFile())
+        files.set(
+          `${folder}/${entry.name}`,
+          fs.readFileSync(path.join(state.game, folder, entry.name)),
+        );
+  return files;
+}
+
+/**
+ * The text a player's game reads from the patch's database file `name`:
+ * an Ace game's packed Data, whose strings Ruby keeps as UTF-8, or an MV or
+ * MZ file without the `_original` copies DazedTL keeps in it.
+ */
+function patchText(state, files, name) {
+  const entry = ace(state)
+    ? `Data/${path.basename(name, ".json")}.rvdata2`
+    : path.posix.join(
+        path.relative(state.game, contentFolder(state.variants, state.game)),
+        "data",
+        name,
+      );
+  const data = files.get(entry);
+  if (!data) throw new Error(`The patch ZIP lacks ${entry}.`);
+  return ace(state)
+    ? data.toString("utf8")
+    : JSON.stringify(JSON.parse(data.toString("utf8")), (key, value) =>
+        key === "_original" ? undefined : value,
+      );
+}
+
+/** Requires the patch's database to hold the game's translated `texts`
+ * and none of the Japanese `left` texts. */
+function requirePatchText(state, files, name, texts, left = []) {
+  const text = patchText(state, files, name);
+  const missing = texts.filter((value) => !text.includes(value));
+  if (texts.some((value) => !translated(value)) || missing.length)
+    throw new Error(
+      `The patch ZIP's ${name} lacks the translation ${JSON.stringify(missing.length ? missing : texts)}.`,
+    );
+  const kept = left.filter((value) => text.includes(value));
+  if (kept.length)
+    throw new Error(`The patch ZIP's ${name} holds ${JSON.stringify(kept)}.`);
+}
+
+/** The Status column of file `name` in the open translation task. */
+async function fileStatus(page, name) {
+  const lines = (await page.text()).split("\n");
+  const at = lines.indexOf(name, lines.indexOf("Status"));
+  return at < 0 ? null : lines[at + 2];
+}
+
+/** The armor version 1.1 describes. */
+const armor = (state) => gameJson(state, "Armors.json")[1];
+
+/** Releases, updates, releases again and undoes, the Apply before the undo
+ * kept to compare with. */
+function releasing() {
+  let before;
+  return [
+    [
+      "Build a patch ZIP of the translation",
+      async ({ page, state }) => {
+        const files = await buildPatch(page);
+        // The first actor's words, all translated.
+        const [, actor] = gameJson(state, "Actors.json");
+        requirePatchText(state, files, "Actors.json", [
+          actor.name,
+          actor.nickname,
+          actor.profile,
+        ]);
+      },
+    ],
+    ...updateGame,
+    [
+      "Check the preview's counts stay within the release's changes",
+      async ({ page }) => {
+        const text = await page.text();
+        // The heading's version runs into the counts after it.
+        const heading = `Review update to ${release.version}`;
+        const review = text.slice(text.indexOf(heading) + heading.length);
+        // Counts keep their words together with no-break spaces.
+        const count = (words) =>
+          Number(
+            new RegExp(`(\\d[\\d,]*)\\s${words.replaceAll(" ", "\\s")}`).exec(
+              review,
+            )?.[1] ?? 0,
+          );
+        const files = count("added") + count("changed") + count("removed");
+        const lines = count("lines? to translate");
+        const stay = count("translations? stays?");
+        // The release changes a profile and describes an armor, and Set up's own
+        // files read as changes too; every other translation stays.
+        if (
+          count("removed") ||
+          review.includes("applying it removes them") ||
+          files > 6 ||
+          lines < 1 ||
+          lines > 3 ||
+          stay < 1
+        )
+          throw new Error(
+            `The preview reads out of bounds: ${review.split("\n").slice(0, 4).join(" | ")}`,
+          );
+      },
+    ],
+    [
+      "Apply the update, keeping the translation, the changed file Outdated",
+      async ({ page, state }) => {
+        await page.click(`Apply update to ${release.version}`);
+        await page.waitText("Translate the new text", 5 * 60_000);
+        await page.idle();
+        const actors = gameJson(state, "Actors.json");
+        if (!translated(actors[1].name) || !translated(actors[1].nickname))
+          throw new Error(
+            `The update lost the translation: ${actors[1].name}, ${actors[1].nickname}.`,
+          );
+        if (actors[1].profile !== release.profile)
+          throw new Error(
+            `The update kept no new profile: ${JSON.stringify(actors[1].profile)}.`,
+          );
+        if (armor(state).description !== release.description)
+          throw new Error("The update brought in no armor description.");
+        // An Ace game reads only an archive beside it, untranslated.
+        const archive = fs
+          .readdirSync(state.game)
+          .find((name) => /^game\.rgss/i.test(name));
+        if (archive)
+          throw new Error(`The update put ${archive} beside the game's Data.`);
+        // The task opens with the files the update changed selected.
+        await page.click("Open Database files");
+        await page.waitText("Reload from game…");
+        for (const name of ["Actors.json", "Armors.json"]) {
+          const status = await fileStatus(page, name);
+          if (!status || ["Applied", "Done", "Ready to apply"].includes(status))
+            throw new Error(`After the update ${name} reads ${status}.`);
+        }
+      },
+    ],
+    [
+      "Reload, translate and apply what the update brought, then build the patch again",
+      async ({ page, state }) => {
+        await page.click("Reload from game…");
+        await page.click("Reload files");
+        await page.waitText("reloaded from the game");
+        await page.idle();
+        await translateTask(page, "Database files");
+        before = gameData(state);
+        await applyTask(
+          page,
+          "Database files",
+          () =>
+            translated(gameJson(state, "Actors.json")[1].profile) &&
+            translated(armor(state).description),
+        );
+        const files = await buildPatch(page);
+        requirePatchText(
+          state,
+          files,
+          "Actors.json",
+          [gameJson(state, "Actors.json")[1].profile],
+          [release.profile],
+        );
+        requirePatchText(
+          state,
+          files,
+          "Armors.json",
+          [armor(state).description],
+          [release.description],
+        );
+      },
+    ],
+    [
+      "Undo that Apply in Checkpoints",
+      async ({ page, state }) => {
+        await page.click("Project");
+        await page.click("Checkpoints");
+        // The newest checkpoint comes first.
+        await page.click(/^More actions for Apply Database files,/);
+        await page.click(/^Undo this change/);
+        await page.waitText("Undone;");
+        await page.idle();
+        const now = gameData(state);
+        const differ = [...new Set([...now.keys(), ...before.keys()])].filter(
+          (name) => !now.get(name)?.equals(before.get(name) ?? Buffer.alloc(0)),
+        );
+        if (differ.length)
+          throw new Error(
+            `After the undo the game's ${differ.join(", ")} differ from before the Apply.`,
+          );
+        await page.click("Translation");
+        await page.click(/^3Translate/);
+        await page.click("Database files");
+        await page.waitText("Reload from game…");
+        const status = await fileStatus(page, "Actors.json");
+        if (status !== "Ready to apply")
+          throw new Error(`After the undo Actors.json reads ${status}.`);
+        await page.click(/^5Release/);
+        await page.waitText("Last saved patch ZIP\nOutdated");
+      },
+    ],
+  ];
+}
+
 /**
  * @type {Record<string, { description: string, game?: string,
  *   from?: "previous", upgrade?: boolean,
@@ -440,6 +666,22 @@ export const scenarios = {
     description:
       "Translated and applied, then version 1.1 brought in under Checkpoints, its apply stopped at Git's conflict in Actors.json; Checkpoints offers to continue or cancel.",
     steps: () => [open, ...setup, ...translateAll, ...stoppedUpdate],
+  },
+  released: {
+    description:
+      "Translated, applied and released as a patch ZIP, then updated to version 1.1 to the end, its new text translated and released again, and that Apply undone in Checkpoints.",
+    steps: () => [open, ...setup, ...translateAll, ...releasing()],
+  },
+  "released-ace": {
+    description:
+      "released on a VX Ace game shipped as an encrypted Game.rgss3a, its 1.1 encrypted too.",
+    game: "ace+encrypted",
+    steps: () => [open, ...setup, ...translateAll, ...releasing()],
+  },
+  "released-mv": {
+    description: "released on an RPG Maker MV game deployed in www.",
+    game: "mv",
+    steps: () => [open, ...setup, ...translateAll, ...releasing()],
   },
   "qa-done": {
     description:

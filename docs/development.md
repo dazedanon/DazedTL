@@ -110,6 +110,8 @@ Run them outside a sandbox such as Claude Code's bwrap: KWin needs a writable `/
 
 - `fresh`, `opened`, `set-up` and `translated`: the Guided journey up to that point, Live translation applied.
 - `update-stopped`: translated, then version 1.1 brought in under Checkpoints, its apply stopped at Git's conflict in a database file the translation changed, as an interrupted update leaves it, so Checkpoints offers to continue or cancel.
+- `released`, `released-ace` and `released-mv`: the release journey on MZ, an encrypted VX Ace game and a deployed MV game.
+  Translated and applied, a patch ZIP built and its files checked, version 1.1 (encrypted for Ace) applied to the end, the files it changed checked Outdated, their new text translated, applied and released again, then that Apply undone in Checkpoints; each fails at the first step that goes wrong.
 - `qa-done`: Text QA reviewed by a scripted assistant through the project helper, one correction applied.
 - `plugins-applied`: `qa-done` on the `plugin-text` game, then its Plugin files translated by a scripted assistant and applied, so Checkpoints holds both applications.
 - `assistant-led`: an Assistant-led project in agent mode, set up and organized, its first request translated.
@@ -119,7 +121,8 @@ Run them outside a sandbox such as Claude Code's bwrap: KWin needs a writable `/
 - `paged`: the `long-dialogue` game, translated and applied, then the Line widths narrowed to 24 characters and two rows; fails unless the game shows the long message laid out for them with every word.
 - `playtested`: translated, then played by the release playtest, which prints its problems.
 
-`--game` lays [game variants](../tests/fixtures/game-variants) over the MZ fixture game, joined with `+`, such as `--game choice-help+hud+playable`; `ace` takes the VX Ace fixture instead.
+`--game` lays [game variants](../tests/fixtures/game-variants) over the MZ fixture game, joined with `+`, such as `--game choice-help+hud+playable`.
+`mv` first lays the MZ fixture out as a deployed MV game, its files in `www`; `ace` takes the VX Ace fixture instead, and `ace+encrypted` ships its Data in an encrypted `Game.rgss3a`.
 `long-dialogue` adds a traveler whose message the stand-in translates into a long English one, so a scenario can page it at narrow Line widths.
 `playable` adds RPG Maker MV's open-source engine, downloaded once into `.runtime`, so the playtest and Text QA's screen captures can run the game.
 `--from <ref>` builds the scenario with another commit or tag, from a worktree in `.runtime/checkouts`, such as the commit before a fix: `node scripts/scenario.mjs playtested --from 8ec7da3a` shows the playtest giving a HUD's Japanese the open message's identity.

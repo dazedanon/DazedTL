@@ -4,10 +4,12 @@
 // files are copied over the game; its variant.json may add plugins to
 // js/plugins.js, values to System.json, maps to MapInfos.json, events to
 // Map001 and commands to the village chief's event there, and set the
-// stand-in provider's mode, such as lines it refuses.
+// stand-in provider's mode, such as lines it refuses. makeRelease builds the
+// developer's next version of a game.
 import fs from "node:fs";
 import path from "node:path";
-import { root } from "../dependencies.mjs";
+import { execFileSync } from "node:child_process";
+import { root, python } from "../dependencies.mjs";
 import { makePlayable } from "./playable.mjs";
 
 const fixtures = path.join(root, "tests/fixtures");
@@ -16,6 +18,7 @@ const overlays = path.join(fixtures, "game-variants");
 /** Base games, one of which comes first in a variant list. */
 const bases = {
   mz: "The RPG Maker MZ fixture game (tests/fixtures/mz-game).",
+  mv: "The MZ fixture game laid out as a deployed RPG Maker MV game: its data, js and img in www, NW.js's package.json beside it.",
   ace: "The RPG Maker VX Ace fixture game (tests/fixtures/ace).",
 };
 
@@ -33,7 +36,9 @@ export const variants = {
       .map((name) => [name, described(name)]),
   ),
   playable:
-    "MZ only: RPG Maker MV's open-source engine, placeholder images and no sound, so the game runs in the release playtest.",
+    "MV and MZ: RPG Maker MV's open-source engine, placeholder images and no sound, so the game runs in the release playtest.",
+  encrypted:
+    "VX Ace only: the game's Data packed into an encrypted Game.rgss3a, as shipped Ace games are.",
 };
 
 const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
@@ -119,17 +124,38 @@ export function addVariant(game, name) {
 export const gameName = (names) =>
   names[0] === "ace" ? "オークの逆襲 体験版" : "魔法少女の冒険 体験版";
 
+/** The folder holding a game's data, js and img: www in a deployed MV game. */
+export const contentFolder = (names, game) =>
+  names[0] === "mv" ? path.join(game, "www") : game;
+
+/** Runs scripts/testkit/ace_game.py's `command` on the Ace game. */
+const aceGame = (command, game) =>
+  execFileSync(
+    python,
+    [
+      "-X",
+      "utf8",
+      path.join(import.meta.dirname, "ace_game.py"),
+      command,
+      game,
+    ],
+    { encoding: "utf8" },
+  );
+
 /**
  * Builds a game from `names`: a base game first (mz when left out), then
  * variants in order. Returns the stand-in provider's mode the variants ask
  * for, such as lines to refuse.
  * @param {string[]} names
  * @param {string} game the new game folder
+ * @param {(data: string) => void} [change] edits the database's JSON folder
+ *   before the game is packed or encrypted
  */
-export async function makeGame(names, game) {
+export async function makeGame(names, game, change) {
   const [base, ...rest] = names[0] in bases ? names : ["mz", ...names];
   if (base === "ace") {
-    if (rest.length) throw new Error("Variants apply to the MZ game only.");
+    if (rest.some((name) => name !== "encrypted"))
+      throw new Error("Only the encrypted variant applies to the Ace game.");
     // The fixture's other folders are the conversion tests' expected output.
     fs.cpSync(path.join(fixtures, "ace/Data"), path.join(game, "Data"), {
       recursive: true,
@@ -138,13 +164,83 @@ export async function makeGame(names, game) {
       path.join(game, "Game.ini"),
       "[Game]\r\nRTP=RPGVXAce\r\nLibrary=System\\RGSS301.dll\r\nScripts=Data\\Scripts.rvdata2\r\nTitle=オークの逆襲\r\n",
     );
+    if (change) {
+      // Edited as JSON, then saved back as the editor saves it.
+      aceGame("extract", game);
+      change(path.join(game, "ace_json"));
+      aceGame("pack", game);
+    }
+    if (rest.includes("encrypted")) aceGame("encrypt", game);
     return {};
+  }
+  if (rest.includes("encrypted"))
+    throw new Error("The encrypted variant applies to the Ace game only.");
+  if (base === "mv") {
+    // Deployed, MV keeps the game in www and NW.js's package.json beside it.
+    const www = contentFolder(names, game);
+    const mode = await makeGame(["mz", ...rest], www, change);
+    const manifest = readJson(path.join(www, "package.json"));
+    fs.writeFileSync(
+      path.join(game, "package.json"),
+      JSON.stringify({ ...manifest, name: "", main: "www/index.html" }),
+    );
+    for (const name of ["package.json", "game.rmmzproject"])
+      fs.rmSync(path.join(www, name));
+    return mode;
   }
   fs.cpSync(path.join(fixtures, "mz-game"), game, { recursive: true });
   const mode = {};
   for (const name of rest)
     if (name !== "playable") Object.assign(mode, addVariant(game, name));
+  change?.(path.join(game, "data"));
   // The engine goes in last, over every variant's data.
   if (rest.includes("playable")) await makePlayable(game);
   return mode;
+}
+
+/** Edits the JSON database file `name` in the folder `data`. */
+function edit(data, name, change) {
+  const file = path.join(data, name);
+  const value = readJson(file);
+  change(value);
+  fs.writeFileSync(file, JSON.stringify(value));
+}
+
+/** What version 1.1 changes: a profile the translation changed gets a new
+ * second line, and the first armor a description no one translated yet. */
+export const release = {
+  version: "1.1",
+  profile: "森の村に住む元気な女の子。\n伝説の杖を探している。",
+  description: "軽くて丈夫な木の盾。",
+};
+
+/**
+ * Builds the developer's version 1.1 (`release`) of the game `names` builds,
+ * at `folder`, laid out and encrypted as the game is.
+ * @param {string[]} names
+ * @param {string} folder
+ */
+export function makeRelease(names, folder) {
+  return makeGame(names, folder, (data) => {
+    edit(data, "Actors.json", (actors) => {
+      actors[1].profile = release.profile;
+    });
+    edit(data, "Armors.json", (armors) => {
+      // The MZ game has no armor yet, and VX Ace's packing only changes the
+      // records a game has, so the Ace armor gets a description it lacked.
+      armors[1] ??= {
+        id: 1,
+        atypeId: 1,
+        description: "",
+        etypeId: 2,
+        traits: [],
+        iconIndex: 128,
+        name: "木の盾",
+        note: "",
+        params: [0, 0, 0, 5, 0, 0, 0, 0],
+        price: 50,
+      };
+      armors[1].description = release.description;
+    });
+  });
 }

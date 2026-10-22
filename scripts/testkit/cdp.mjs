@@ -209,7 +209,7 @@ export class Page {
       const label = (element) =>
         (element.getAttribute("aria-label") || element.textContent).replace(/\\s+/g, " ").trim();
       const found = [
-        ...document.querySelectorAll("button, a, label, [role=button], [role=tab], [role=radio], [role=option]"),
+        ...document.querySelectorAll("button, a, label, [role=button], [role=tab], [role=radio], [role=option], [role=menuitem]"),
       ].find(
         (element) =>
           element.getClientRects().length &&

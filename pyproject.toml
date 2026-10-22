@@ -97,5 +97,6 @@ root = "backend"
 
 [[tool.pyright.executionEnvironments]]
 root = "scripts"
-# qa_upgrade.py and the testkit's helpers load the engine's util package too.
-extraPaths = ["backend", "backend/dazedtl/engine"]
+# qa_upgrade.py and the testkit's helpers load the engine's util package too,
+# and the testkit's Ace games the tests' archive writer.
+extraPaths = [".", "backend", "backend/dazedtl/engine"]

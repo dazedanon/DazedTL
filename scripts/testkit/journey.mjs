@@ -1,6 +1,9 @@
 // The steps of a Guided translation as a user takes them, shared by the live
 // test and test scenarios. Each drives the window with clicks; only what a
 // user does in a native dialog or with their clipboard goes another way.
+import fs from "node:fs";
+import path from "node:path";
+import { entries } from "../zip.mjs";
 import { Page, until } from "./cdp.mjs";
 import { model } from "./provider.mjs";
 
@@ -128,4 +131,47 @@ export async function applyTask(page, task, check) {
   // Apply's own follow-up work runs on after the files change, and the app
   // refuses the next action until it ends.
   await page.idle();
+}
+
+/** DazedTL's own files, which a release never carries: Ace's JSON export,
+ * the project's folder and the game repository's Git files. */
+const ownFile = /^(ace_json\/|\.dazedtl\/|\.git|README\.md$)/;
+
+/**
+ * Builds a patch ZIP from Release where it suggests, replacing an earlier
+ * one, and returns its files' bytes by path. It must hold none of DazedTL's
+ * own files.
+ * @param {Page} page
+ * @returns {Promise<Map<string, Buffer>>}
+ */
+export async function buildPatch(page) {
+  // A started stage also reads "In progress" to screen readers.
+  await page.click(/^5Release/);
+  await page.click(/^Patch ZIP/);
+  const [folder, name] = await page.evaluate(
+    `[document.querySelector("[aria-label='Save in']").value, document.querySelector(".guided-package-fields input").value]`,
+  );
+  const archive = path.join(
+    folder,
+    name.endsWith(".zip") ? name : `${name}.zip`,
+  );
+  const earlier = fs.statSync(archive, { throwIfNoEntry: false })?.mtimeMs;
+  await page.click("Review & build patch ZIP");
+  await page.click(/^(Replace & build|Build) patch ZIP$/);
+  await until(
+    "the build to finish",
+    async () =>
+      fs.statSync(archive, { throwIfNoEntry: false })?.mtimeMs !== earlier &&
+      !(await page.call("workspace_snapshot")).application.running,
+    5 * 60_000,
+  );
+  const files = new Map(
+    [...entries(fs.readFileSync(archive))]
+      .filter((entry) => entry.type === "file")
+      .map((entry) => [entry.path, entry.data]),
+  );
+  const own = [...files.keys()].filter((name) => ownFile.test(name));
+  if (own.length)
+    throw new Error(`The patch ZIP holds DazedTL's own ${own.join(", ")}.`);
+  return files;
 }

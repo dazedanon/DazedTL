@@ -34,6 +34,7 @@ import {
   connect,
   translateTask,
   applyTask,
+  buildPatch,
 } from "./testkit/journey.mjs";
 
 const windows = process.platform === "win32";
@@ -633,26 +634,8 @@ async function liveJourney() {
   );
 
   await step("Build a patch ZIP", async () => {
-    const archive = path.join(
-      path.dirname(game),
-      `${path.basename(game)}-patch.zip`,
-    );
-    await page.click("5Release");
-    await page.click(/^Patch ZIP/);
-    await page.click("Review & build patch ZIP");
-    await page.click("Build patch ZIP");
-    await until(
-      "the build to finish",
-      async () => !(await page.call("workspace_snapshot")).application.running,
-      5 * 60_000,
-    );
-    const actors = [...entries(fs.readFileSync(archive))].find(
-      (entry) => entry.path === "data/Actors.json",
-    );
-    if (
-      !actors ||
-      !translated(JSON.parse(actors.data.toString("utf8"))[1].name)
-    )
+    const actors = (await buildPatch(page)).get("data/Actors.json");
+    if (!actors || !translated(JSON.parse(actors.toString("utf8"))[1].name))
       throw new Error("The patch ZIP lacks the translated database.");
     await shot("released");
     for (const file of fs.readdirSync(path.join(game, "data")))
