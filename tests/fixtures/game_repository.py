@@ -655,7 +655,7 @@ rows = [
 back = rows[0]["commit"]
 index = next(i for i, row in enumerate(rows) if row["commit"] == oldest["commit"])
 marked = [row["commit"] for row in rows if row["taken_out_by"]]
-assert marked and set(row["taken_out_by"] for row in rows) == {"", back}, rows
+assert marked and {row["taken_out_by"] for row in rows} == {"", back}, rows
 assert rows[index]["taken_out_by"] == "", rows[index]
 assert all(not row["taken_out_by"] for row in rows[index:]), rows
 assert (kept / plugin).read_bytes() == native
