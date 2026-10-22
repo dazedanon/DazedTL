@@ -10,7 +10,4 @@
 - **History:** the Database files and Maps & events applies are named for their task instead of both reading "Apply selected saved outputs", and History's Undo names the batch it undid.
 - **Checkpoints:** after Go back or Undo, the result sits by the new top checkpoint; Save a copy's result no longer splits the folder's date and its Open folder link matches the message; the update header no longer reads "· complete" in lowercase.
 - **Release:** the patch ZIP no longer carries the game repository's `.gitignore`, `.gitattributes` and `README.md` at its root.
-- **Inspect run:** a Batch request's Response tab shows the Original and Translation table, as a Live one does, instead of the reply's raw JSON, and the request list is wide enough to read "Passed, 12 lines kept in Japanese" on one line.
-- **Progress:** after changing a game from Guided steps to Assistant-led, Progress no longer says your assistant has started preparing the game before you have copied its prompt.
-
 - **Translate:** opening the Images tab no longer shifts the stage strip and task tabs sideways; only the image grid and preview use the full window width.
