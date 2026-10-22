@@ -66,6 +66,7 @@ import {
   advancedCodes,
   fileCount,
   jobTime,
+  workSince,
   runNotices,
 } from "./model";
 import { selectionNames } from "../../../ui/displayText";
@@ -388,11 +389,14 @@ export function useGuidedWorkspace({
       ...current,
       text: { ...current.text, [key]: value },
     }));
-  const save = async () => {
+  // Saves the options when something changed; Line widths pass `always` to
+  // save unchanged ones too, which retries a fit that failed or was stopped.
+  const saveOptions = async (always: boolean) => {
     await flushDrafts();
-    if (draft.session.getSnapshot().dirty || state.optionsDraft)
+    if (always || draft.session.getSnapshot().dirty || state.optionsDraft)
       await draft.save();
   };
+  const save = () => saveOptions(false);
   const translationFlow = useTranslationFlow({
     projectId: project.id,
     phase,
@@ -664,6 +668,13 @@ export function useGuidedWorkspace({
         fitJob.status !== "complete")
         ? fitJob
         : undefined,
+    // The newest fit ended without fitting; saving the same widths again
+    // starts it over, so the save writes even with nothing changed.
+    stopped:
+      !!fitJob &&
+      !fitState.pending &&
+      !fitting &&
+      ["failed", "interrupted", "stopped"].includes(fitJob.status),
     // The text the newest fit could not fit, while the game holds it.
     misfits: heldFit.misfits,
     misfitCount: heldFit.misfit_count,
@@ -952,7 +963,14 @@ export function useGuidedWorkspace({
           notice={
             !active &&
             current?.status === "complete" &&
-            current.id === started[name]?.id
+            current.id === started[name]?.id &&
+            // The next work, such as translating or applying the reloaded
+            // files, ends the reload's news.
+            !workSince(current, [
+              ...state.runs,
+              ...state.operations,
+              ...translation.jobs,
+            ])
               ? `${typeof current.result?.files === "number" ? fileCount(current.result.files) : "Files"} reloaded from the game.`
               : ""
           }
@@ -1650,6 +1668,7 @@ export function useGuidedWorkspace({
     saveDocuments,
     widths,
     discardWidths,
+    saveOptions,
     textFit,
     fileSummary,
     fileRow,

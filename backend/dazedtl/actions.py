@@ -89,8 +89,7 @@ SETUP_STOPPED = (
 STEP_STOPPED = "The step did not finish. Setting up again runs it again from its start."
 TOOL_STOPPED = "It did not finish. Running it again starts it over."
 FIT_STOPPED = (
-    "Text already fitted stays as it is. Saving changed line widths fits the "
-    "text again."
+    "Text already fitted stays as it is. Saving the line widths fits the text again."
 )
 ESTIMATE_STOPPED = "No new estimate was saved. Estimating again starts over."
 RELEASE_STOPPED = (
