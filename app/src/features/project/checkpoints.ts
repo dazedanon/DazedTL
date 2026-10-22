@@ -1,4 +1,8 @@
-import type { Checkpoint, GitStatus } from "../../api/contracts.ts";
+import type {
+  Checkpoint,
+  GitStatus,
+  TranslationJob,
+} from "../../api/contracts.ts";
 
 /**
  * What the Checkpoints tab reads its timeline for: the project and the
@@ -8,6 +12,27 @@ import type { Checkpoint, GitStatus } from "../../api/contracts.ts";
  */
 export function readKey(projectId: string, git: GitStatus | null | undefined) {
   return git?.configured ? `${projectId}\n${git.translation_commit}` : null;
+}
+
+/**
+ * Whether a go back, undo or copy reports beside `row`: a finished go back
+ * or undo that changed files beside the checkpoint it made, its result's
+ * commit, which stays where it is when later checkpoints come; anything
+ * else, such as one that found nothing to change and made none, beside the
+ * row it was started from.
+ */
+export function reportsBeside(
+  job: Pick<TranslationJob, "status" | "action" | "target" | "result">,
+  row: Checkpoint,
+) {
+  const made = job.result as { files?: number; commit?: unknown } | null;
+  if (
+    job.status === "complete" &&
+    job.action !== "checkpoint_copy" &&
+    made?.files
+  )
+    return made.commit === row.commit;
+  return job.target === row.commit;
 }
 
 export const when = (time: string) =>

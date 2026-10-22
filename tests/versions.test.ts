@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type {
+  Checkpoint,
   GitStatus,
   TranslationJob,
   TranslationState,
 } from "../app/src/api/contracts.ts";
-import { readKey } from "../app/src/features/project/checkpoints.ts";
+import {
+  readKey,
+  reportsBeside,
+} from "../app/src/features/project/checkpoints.ts";
 import {
   finishedUpdateSummary,
   guidedUpdateTasks,
@@ -219,6 +223,34 @@ test("the Checkpoints tab reads Git again only once a write moves the branch", (
     key,
   );
   assert.equal(readKey("game", { ...git, configured: false }), null);
+});
+
+test("an undo's result stays beside the checkpoint it made", () => {
+  // It followed whichever row was current, so a later checkpoint, such as
+  // installing Forge, read "Undone; 2 files changed".
+  const row = (commit: string, current: boolean) =>
+    ({ commit, current }) as Checkpoint;
+  const undo = {
+    status: "complete",
+    action: "checkpoint_undo",
+    target: "applied",
+    result: { files: 2, commit: "undid" },
+  };
+  assert.equal(reportsBeside(undo, row("undid", false)), true);
+  assert.equal(reportsBeside(undo, row("forge", true)), false);
+  // One that found nothing to undo made no checkpoint, and one still
+  // running made none yet: each reports by the row it was started from.
+  assert.equal(
+    reportsBeside(
+      { ...undo, result: { files: 0, commit: "forge" } },
+      row("applied", false),
+    ),
+    true,
+  );
+  assert.equal(
+    reportsBeside({ ...undo, status: "running" }, row("applied", false)),
+    true,
+  );
 });
 
 test("an Apply under way is not an interrupted update, and a stopped one is", () => {

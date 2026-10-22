@@ -32,6 +32,7 @@ import {
   fileName,
   plural,
   readKey,
+  reportsBeside,
   runs,
   when,
 } from "./checkpoints";
@@ -230,14 +231,7 @@ export function CheckpointsPanel({
                       action.key.endsWith(`:${row.commit}`) ? action.error : ""
                     }
                     job={
-                      // A finished go back or undo is the list's new top
-                      // checkpoint, so its result sits by that one, which
-                      // the list scrolls into view.
-                      reported &&
-                      (reported.status === "complete" &&
-                      reported.action !== "checkpoint_copy"
-                        ? row.current
-                        : reported.target === row.commit)
+                      reported && reportsBeside(reported, row)
                         ? reported
                         : undefined
                     }
@@ -356,6 +350,8 @@ function CheckpointRow({
   const disabled = !!blocked || !!pending || running;
   const feedbackBox = useRef<HTMLDivElement>(null);
   const reportedId = job?.status === "complete" ? job.id : "";
+  // Only a result by the newest checkpoint, as one just made, is scrolled to;
+  // opening the tab later leaves an older one where it is.
   const top = row.current;
   useEffect(() => {
     if (reportedId && top)
