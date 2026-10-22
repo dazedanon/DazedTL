@@ -28,6 +28,7 @@ import { shortcutKeys, shortcutLabel } from "../../../state/useShortcut";
 import { ActionControl } from "../../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../../ui/ActionList";
 import { Button } from "../../../ui/Button";
+import { NumberInput } from "../../../ui/NumberInput";
 import { projectActivity } from "../ActivityHistory";
 import type { RequestInspectionTarget } from "../ProcessPanel";
 import { investigationResults } from "../contextView";
@@ -1161,21 +1162,20 @@ export function useGuidedWorkspace({
       ).map(([key, label, min, max]) => (
         <label key={key}>
           {label}
-          <input
+          <NumberInput
             aria-label={
               key === "messageRows"
                 ? "Rows a message window shows"
                 : label + " width in characters"
             }
-            type="number"
             min={min}
             max={max}
+            // The save reports a width outside its range, as before.
+            clamp={false}
+            empty={0}
             value={values.widths[key]}
-            onChange={(event) =>
-              edit("widths", {
-                ...values.widths,
-                [key]: Number(event.target.value),
-              })
+            onChange={(number) =>
+              edit("widths", { ...values.widths, [key]: number })
             }
           />
         </label>

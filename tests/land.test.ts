@@ -9,6 +9,7 @@ import {
   lockRef,
   releaseLock,
 } from "../scripts/land-lock.mjs";
+import { timer } from "../scripts/land.mjs";
 
 test("a landing waits for a live lock and takes over a dead or unrenewed one", async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-land-"));
@@ -43,4 +44,19 @@ test("a landing waits for a live lock and takes over a dead or unrenewed one", a
   assert.equal(releaseLock(git, ten), false);
   assert.equal(releaseLock(git, eleven), true);
   assert.equal(git(["rev-parse", "-q", "--verify", lockRef]).stdout, "");
+});
+
+test("a landing's timing line gives the total and each stage reached", () => {
+  let clock = 0;
+  const time = timer(() => clock);
+  clock = 4_000;
+  time.lap("lock wait");
+  clock = 5_000;
+  time.lap("merge");
+  clock = 95_400;
+  time.lap("test");
+  assert.equal(
+    time.summary(),
+    "Took 95 s: lock wait 4 s, merge 1 s, test 90 s.",
+  );
 });
