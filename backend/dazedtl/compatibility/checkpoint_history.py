@@ -623,7 +623,7 @@ def go_back(
     entries = _log(root)
     target = entries[_restorable(entries, commit)]
     change = Change(f"Went back to {_quoted(target.title)}", None, BACK)
-    with running(change), write_game(root, folder, log=log) as game:
+    with running(change), write_game(root, folder, log=log, restores=True) as game:
         # The gateway recorded the edits made outside DazedTL first.
         entries = _log(root)
         index = _restorable(entries, commit)
@@ -656,7 +656,7 @@ def put_back(
     root = Path(root).resolve()
     with (
         running(Change(summary, None, UNDO)),
-        write_game(root, folder, log=log) as game,
+        write_game(root, folder, log=log, restores=True) as game,
     ):
         check()
         entries = _log(root)
@@ -724,7 +724,7 @@ def undo(
             "A game version's first checkpoint can't be undone; go back to it instead."
         )
     change = Change(" ".join(_undoing(target)), None, UNDO)
-    with running(change), write_game(root, folder, log=log) as game:
+    with running(change), write_game(root, folder, log=log, restores=True) as game:
         entries = _log(root)
         index = _restorable(entries, commit)
         target = entries[index]

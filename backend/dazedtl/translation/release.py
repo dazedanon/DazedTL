@@ -356,20 +356,38 @@ def unpacked(inputs, outputs):
     return [name for name in inputs if packing_target(name) not in packed]
 
 
-def packing_receipt(native, folder, inputs):
+def output_target(name):
+    """The export a native file the receipt names is packed from, as
+    `packing_target` names it: Game.ini holds System's title."""
+    path = PurePosixPath(name)
+    return "system" if name.casefold() == "game.ini" else path.stem.casefold()
+
+
+def packing_receipt(native, folder, inputs, restored=()):
     """The game's saved packing receipt, what changed in ``inputs``, its
     current exports, since it was saved, and the native files to pack again.
 
     The receipt is None when there is none, an older packing version saved
-    it, or the native files it describes changed since; the game's data is
-    current while there is a receipt and nothing changed or is unpacked."""
+    it, or the native files it describes changed since, other than the
+    `restored` ones a checkpoint restore wrote itself, which are packed
+    again; the game's data is current while there is a receipt and nothing
+    changed or is unpacked."""
     try:
         path = Path(folder) / "ace-packing.json"
         saved = read_json(path) if path.exists() else {}
+        # Git and the file system may name a file in other letter cases.
+        named = {name.casefold() for name in restored}
+        restored = [name for name in saved["outputs"] if name.casefold() in named]
+        kept = [name for name in saved["outputs"] if name not in restored]
         if not (
             saved.get("source") == native["source"]
             and isinstance(saved["inputs"], dict)
-            and saved["outputs"] == evidence(native["source"], list(saved["outputs"]))
+            and all(
+                saved["outputs"][name] == value
+                for name, value in (
+                    evidence(native["source"], kept) if kept else {}
+                ).items()
+            )
         ):
             return None, None, None
     except OSError, ValueError, KeyError, TypeError, AttributeError:
@@ -384,7 +402,8 @@ def packing_receipt(native, folder, inputs):
         *(change.added + change.changed if change else ()),
         *unpacked(inputs, saved["outputs"]),
     ]
-    return saved, change, {packing_target(name) for name in names}
+    targets = {packing_target(name) for name in names}
+    return saved, change, targets | set(map(output_target, restored))
 
 
 def packing_state(native, folder):
