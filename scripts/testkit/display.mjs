@@ -6,6 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 import { until } from "./cdp.mjs";
 
 const sockets = "/tmp/.X11-unix";
@@ -62,6 +63,19 @@ export function virtualDisplay() {
   return number && servers("Xvfb").has(number)
     ? { env: { DISPLAY: `:${number}` } }
     : null;
+}
+
+/**
+ * A name for a private display that no other run shares: KWin locks
+ * /run/user/<uid>/<name>.lock, so the work folder's last part alone, which two
+ * runs may have in common, is not enough.
+ */
+export function displayName(/** @type {string} */ work) {
+  const part = path
+    .basename(work)
+    .replace(/[^\w.-]+/g, "_")
+    .slice(0, 24);
+  return `dazedtl-${part}-${crypto.randomBytes(3).toString("hex")}`;
 }
 
 /**
