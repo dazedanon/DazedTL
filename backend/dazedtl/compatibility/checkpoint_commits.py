@@ -34,6 +34,8 @@ checkpoint, or the outside-edits step, leaves those to it, and takes only its
 own files while a write that said nothing runs. The commit is built in a
 temporary index, so the user's staged changes stay as they are, and Git
 commands that take the index lock wait for a leftover one as `_run_git` does.
+The game's index lock is taken before the branch moves (`_move`), so one a
+crashed Git left fails the write with nothing committed, never after.
 """
 
 from __future__ import annotations
@@ -230,7 +232,16 @@ def _commit(root, paths, change):
     that changes nothing."""
     from util.version_update.git_workflow import _commit_tree, _temporary_index
 
-    head, before = _git(root, "rev-parse", "HEAD", "HEAD^{tree}").stdout.split()
+    found = _git(
+        root,
+        "rev-parse",
+        "--path-format=absolute",
+        "--git-path",
+        "index",
+        "HEAD",
+        "HEAD^{tree}",
+    ).stdout.splitlines()
+    game_index, head, before = Path(found[0]), found[1], found[2]
     listed = "".join(path + "\0" for path in sorted(paths))
     index, environment = _temporary_index()
     try:
@@ -252,27 +263,54 @@ def _commit(root, paths, change):
         return None
     text = message(change)
     commit = _commit_tree(Path(root), tree, text, (head,))
-    # Moves the branch only if nothing else moved it since.
-    _git(
-        root,
-        "update-ref",
-        "-m",
-        "checkpoint: " + text.splitlines()[0],
-        "HEAD",
-        commit,
-        head,
-    )
-    # The game's index takes what was committed, as `git commit` leaves it.
-    _git(
-        root,
-        "reset",
-        "-q",
-        "--pathspec-from-file=-",
-        "--pathspec-file-nul",
-        env={"GIT_LITERAL_PATHSPECS": "1"},
-        input_text=listed,
-    )
+    _move(root, game_index, head, commit, text.splitlines()[0], listed)
     return commit
+
+
+def _move(root, game_index, head, commit, subject, listed):
+    """Moves the branch from `head` to `commit`, and the game's index takes
+    the `listed` files as committed, as `git commit` leaves it. The new index
+    is made under the index lock, taken first and waited for as `_run_git`
+    waits: a lock a crashed Git left fails the write with nothing committed,
+    and once the branch moved nothing fails it."""
+    from util.version_update.git_workflow import _open_index_lock, _temporary_index
+
+    lock = game_index.with_name(game_index.name + ".lock")
+    staged, environment = _temporary_index()
+    try:
+        handle = _open_index_lock(lock)
+        try:
+            with handle:
+                if game_index.is_file():
+                    system.write_bytes(staged, game_index.read_bytes())
+                    _git(
+                        root,
+                        "reset",
+                        "-q",
+                        commit,
+                        "--pathspec-from-file=-",
+                        "--pathspec-file-nul",
+                        env={**environment, "GIT_LITERAL_PATHSPECS": "1"},
+                        input_text=listed,
+                    )
+                else:
+                    _git(root, "read-tree", commit, env=environment)
+                handle.write(Path(staged).read_bytes())
+            # Moves the branch only if nothing else moved it since.
+            _git(
+                root, "update-ref", "-m", "checkpoint: " + subject, "HEAD", commit, head
+            )
+        except BaseException:
+            system.unlink(lock, missing_ok=True, ignore_errors=True)
+            raise
+        try:
+            system.replace(lock, game_index)
+        except OSError:
+            # The checkpoint stands; Git shows its files as staged until the
+            # next checkpoint that takes them.
+            system.unlink(lock, missing_ok=True, ignore_errors=True)
+    finally:
+        system.unlink(staged, ignore_errors=True)
 
 
 def _waiting(folder):

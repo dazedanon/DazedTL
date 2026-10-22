@@ -456,6 +456,24 @@ for failure in (ValueError("Refused."), InterruptedError("Stopped.")):
         pass
     assert git(kept, "rev-parse", "HEAD") == head, failure
     git(kept, "checkout", "--", "data/Map001.json")
+# An index lock a crashed Git left fails the write before its checkpoint, never
+# after: the branch once moved and the write still failed, so its receipt never
+# named the checkpoint.
+from util.version_update import git_workflow
+
+stale = kept / ".git/index.lock"
+stale.write_bytes(b"")
+try:
+    with patch.object(git_workflow, "INDEX_LOCK_WAIT", 0.2):
+        write("data/Map001.json", b'{"by": "a write over a stale lock"}')
+except GitWorkflowError as error:
+    assert "index.lock" in str(error), error
+else:
+    raise AssertionError("A write committed over a stale index lock.")
+finally:
+    stale.unlink()
+assert git(kept, "rev-parse", "HEAD") == head
+git(kept, "checkout", "--", "data/Map001.json")
 clean()
 meeting = threading.Barrier(2)
 errors = []
