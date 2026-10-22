@@ -13,7 +13,8 @@ game's checkpoints move ([images](../images/service.py)). Records from
 before applies named their checkpoint stay as they are.
 
 History's Undo, Plugin files' Recovery and the Checkpoints tab all undo
-through `undo` or `go_back` here, so their records follow the same way.
+through `undo` or `go_back` here, so their records follow the same way;
+Start over, which takes out every checkpoint, calls `follow` itself.
 """
 
 from dataclasses import dataclass

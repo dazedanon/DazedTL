@@ -496,6 +496,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             configured=bool(engine.git_status(source, options).get("configured")),
             stopped=stopped,
             progress=progress,
+            publications=plan.get("publications"),
         )
         # The engine the assistant identified and when it last called belong
         # to the attempt set aside.

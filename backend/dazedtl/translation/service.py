@@ -1417,11 +1417,16 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
                     "Pause this project's API run, or settle its uncertain "
                     "submission, before starting over."
                 )
+        # The text batches whose records follow, as after an undo.
+        folder = checkpoint_records.publications(
+            self.settings.adapter, self.projects.get(project_id)
+        )
         return self._operation(
             project_id,
             "start_over",
             {"keep_context": keep_context},
             USER_OPERATIONS["start_over"],
+            {"publications": str(folder)} if folder is not None else None,
         )
 
     def _operation(self, project_id, action, arguments, specification, extra=None):

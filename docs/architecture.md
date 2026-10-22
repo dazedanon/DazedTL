@@ -280,6 +280,7 @@ Event text findings ([event_text](../backend/dazedtl/translation/event_text.py))
 Its API run panel holds the assistant's estimate and its button is the only approval: the project helper resumes only runs the user approved there, and each new estimate replaces the one waiting ([newest_estimate](../backend/dazedtl/translation/jobs.py)).
 The assistant's own plan pays for every turn, so new games start on API Batch, or Live when the connection cannot batch.
 Start over is one checkpoint back to the original game's current version, so the attempt stays in the game's Git history and the record of its original files stays too; what Git doesn't keep, the assistant's work, the playtest's fixes and files outside the patch the original lacks, moves to `.dazedtl/archived` instead of being deleted.
+It takes out every checkpoint, so the records of applied Guided text and Plugin files follow it as they follow an undo ([checkpoint_records](../backend/dazedtl/translation/checkpoint_records.py)), and nothing reads as in the game.
 The project's glossary, settings and skills are never the original game's, so Start over leaves them as they are, while going back and undoing take them back to the checkpoint like any file.
 Only the user can start it, so the project helper has no route to it.
 
