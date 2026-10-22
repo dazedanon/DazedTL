@@ -12,7 +12,7 @@ true background, so rebuild a member's background here before inpainting it.
   python image_family.py check --project GAME --asset img/pictures/Namecut12.png --candidate WORK/Namecut12_clean.png
 
 Project commands read DazedTL's image inventory and every member's untranslated
-original (its frozen copy, the Qt backup or the runtime file). Every command
+original (its frozen copy, an older publisher's backup or the runtime file). Every command
 prints JSON; errors print {"ok": false, ...} to stderr and exit 2, and a check
 that finds problems exits 1.
 """

@@ -149,11 +149,17 @@ class ImageCompatibility:
         return value
 
     def original_bytes(self, root, row, key):
-        """Adopt the Qt publisher's preserved original without changing its backup."""
-        backup = project_path(
-            root, ".dazedtl/image_backups/" + row["runtime"], exists=False
+        """The original Prepare freezes: an older publisher's backup of the
+        image, which it only reads, else the runtime file."""
+        from dazedtl.images import families
+
+        relative, _encrypted = families.original_file(root, row)
+        original = project_path(root, relative)
+        origin = (
+            "Runtime source before image preparation"
+            if relative == row["runtime"]
+            else "Preserved Qt image backup"
         )
-        original = backup if backup.exists() else project_path(root, row["runtime"])
         if original.stat().st_size > 128_000_000:
             raise ValueError(
                 "The preserved original exceeds the supported image size limit."
@@ -168,13 +174,7 @@ class ImageCompatibility:
             from util.rpgmaker_images import decrypt_image_bytes
 
             plain = decrypt_image_bytes(raw, key)
-        return (
-            plain,
-            raw,
-            "Preserved Qt image backup"
-            if backup.exists()
-            else "Runtime source before image preparation",
-        )
+        return plain, raw, origin
 
     @staticmethod
     def _asset(root, row):

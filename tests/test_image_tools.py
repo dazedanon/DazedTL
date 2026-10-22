@@ -144,3 +144,35 @@ class VisualCppRuntimeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PublishTests(unittest.TestCase):
+    def test_publishing_an_edit_keeps_no_copy_of_the_image_it_replaces(self):
+        # The game's record of its original files keeps the original; the
+        # publisher once copied it into .dazedtl/image_backups as well.
+        from util.image_manager import (
+            PROFILE_GENERIC,
+            ImageAsset,
+            prepare_profile_assets_for_patch,
+        )
+
+        def png(color):
+            output = io.BytesIO()
+            Image.new("RGBA", (4, 4), color).save(output, "PNG")
+            return output.getvalue()
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            runtime, editable = root / "img/A.png", root / ".dazedtl/images/img/A.png"
+            for path, color in ((runtime, (1, 2, 3, 255)), (editable, (9, 9, 9, 255))):
+                path.parent.mkdir(parents=True)
+                path.write_bytes(png(color))
+            asset = ImageAsset(
+                "img/A.png", Path("img/A.png"), editable, None, runtime, PROFILE_GENERIC
+            )
+            result = prepare_profile_assets_for_patch(
+                PROFILE_GENERIC, root, [asset], None
+            )
+            self.assertEqual((result.errors, result.completed), ([], 1))
+            self.assertEqual(runtime.read_bytes(), editable.read_bytes())
+            self.assertFalse((root / ".dazedtl/image_backups").exists())

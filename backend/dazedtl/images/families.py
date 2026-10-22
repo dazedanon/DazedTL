@@ -32,6 +32,9 @@ SKETCH = 24
 CROWD = 32
 REPRESENTATIVES = 4
 VERSION = 3
+# Where image publishers before DazedTL kept the original of each runtime
+# image they replaced. Nothing writes it now; an older game's copies there are
+# only read.
 BACKUPS = ".dazedtl/image_backups/"
 
 
@@ -225,8 +228,10 @@ def group_size(width, height, members, count):
 
 
 def original_file(root, row):
-    """Where an inventory row's untranslated original is: its frozen copy, the
-    Qt publisher's backup, or the runtime file, and whether it is encrypted."""
+    """Where an inventory row's untranslated original is: its frozen copy, an
+    older publisher's backup, or the runtime file, and whether it is
+    encrypted. DazedTL freezes an image's original before it changes the
+    image."""
     if row.get("frozen"):
         return row["frozen"], False
     if not row.get("runtime"):

@@ -43,7 +43,8 @@ Use these exact local paths with platform-appropriate command quoting:
 
 Do not modify runtime game images or unrelated project files; the Image Manager will patch
 validated edits later.
-When the task supplies frozen originals, they are the verified originals; otherwise keep verified originals under `.dazedtl/image_backups`.
+When the task supplies frozen originals, they are the verified originals; otherwise the runtime images are, or, for an image an earlier publisher replaced, its read-only copy under `.dazedtl/image_backups`.
+Make no backups: DazedTL keeps the game's original files in the game's own Git record.
 Keep user-supplied clean art under `.dazedtl/clean_images`, the work log, recipes and reusable resources under the directory above, and disposable candidates under that resource directory's `work/` subtree or in an isolated temporary directory.
 None of these may be placed inside the editable image folder where the Image Manager could mistake them for patchable assets.
 Work through all editable PNGs without asking for confirmation unless a hard safety rule below requires review.
@@ -114,7 +115,7 @@ When complete source-language removal is in scope, translate visible source text
 asset unless the user explicitly excludes it, even when the file appears to be an authoring or
 reference composite.
 
-The task context grants editing authority only for existing PNGs inside the editable image folder, verified backups under `.dazedtl/image_backups`, and the work log, recipes and reusable support files under `.dazedtl/image_translation_resources`.
+The task context grants editing authority only for existing PNGs inside the editable image folder and the work log, recipes and reusable support files under `.dazedtl/image_translation_resources`.
 Treat `.dazedtl/clean_images` as read-only supplied input unless the user explicitly asks to change it.
 
 ### 1a. Load reusable project resources
@@ -134,12 +135,10 @@ Do not create empty placeholder subdirectories.
 
 ### 2. Preserve originals
 
-Create or verify a backup before changing any material asset.
-When the task supplies a frozen original with its hash, that file is the verified original: check its hash and render from it, without making another backup.
+When the task supplies a frozen original with its hash, that file is the verified original: check its hash and render from it.
+Otherwise render from the runtime image, or from an earlier publisher's copy under `.dazedtl/image_backups` where one exists.
+Never change a verified original and make no backups of your own; DazedTL keeps the game's original files in the game's Git record.
 
-- Keep the original filename and relative directory structure in the backup.
-- Never overwrite the only copy.
-- Reuse an existing verified backup rather than replacing it with a modified file.
 - Render candidate output to a temporary path outside the editable image folder first.
 
 ### 3. Inspect every source image
@@ -588,7 +587,7 @@ samples show all intended artwork and no source glyphs at original resolution.
 For translucent assets, the representative gate also requires clean alpha-only views and clean
 diagnostic composites; structural metadata such as `RGBA` or “alpha present” is not sufficient.
 
-After the representative gate passes, render the entire candidate set from the backup.
+After the representative gate passes, render the entire candidate set from the verified originals.
 Use one shared renderer and one accepted layout for exact duplicates and template families while applying explicit per-variant label and art-state inventories so that reuse does not erase progression differences.
 
 When user visual approval is required, present proof in a form the user can actually inspect while
@@ -671,7 +670,7 @@ fails a hard check may be installed.
 After validation:
 
 - Copy or move the candidate over its matching file in the editable image folder.
-- Preserve the backup outside that folder.
+- Leave the verified original unchanged.
 - Re-run structural checks on the installed file.
 - Compare each installed file against its validated candidate byte-for-byte or by cryptographic hash.
 - Open at least one important installed asset from its final path to confirm that validation did not stop at the temporary candidate.
@@ -683,7 +682,7 @@ Create or update exactly one UTF-8 Markdown log at:
 `{{GAME_ROOT}}/.dazedtl/image_translation_resources/image_translation_log.md`
 
 Keep the log lightweight and reviewable. Do not create per-image logs or embed images, binary
-data, or long command output. Include a short run summary with the backup location and validation
+data, or long command output. Include a short run summary with the validation
 status, followed by one table row per text region with these columns:
 
 | Image | Region / role | Coordinates `(x, y, width, height)` | Original text | Translated text | Disposition | Notes |
@@ -760,9 +759,8 @@ Store only the subdirectories the project needs:
 - `work/` for regenerable candidates. Treat this subtree as disposable and never as the only copy
   of an accepted source or reusable asset.
 
-Keep user-supplied clean artwork in `{{GAME_ROOT}}/.dazedtl/clean_images` and verified originals in
-`.dazedtl/image_backups`; reference and hash them from the resource manifest rather than
-duplicating them without need. Record every clean input's target mapping and semantic role.
+Keep user-supplied clean artwork in `{{GAME_ROOT}}/.dazedtl/clean_images`; reference and hash it
+and the verified originals from the resource manifest rather than duplicating them without need. Record every clean input's target mapping and semantic role.
 
 Preserve enough information to reproduce the accepted result exactly: translated strings,
 coordinates and anchors, font files and hashes, sizes, colors, strokes, gradients, shadows, alpha
@@ -857,9 +855,9 @@ Do not paste full image files, large encoded data, or unrelated source code.
   verifying its dimensions, color mode, alpha plane, and composited edges.
 - Never accept a transparent candidate with seams, matte halos, square corners, or color fringes
   on any diagnostic or available runtime background, even if its standalone preview looks clean.
-- Never modify files outside the editable image folder except for verified originals under
-  `.dazedtl/image_backups`, the work log, recipes and reusable support files under
-  `.dazedtl/image_translation_resources`, and isolated temporary validation artifacts. Treat
+- Never modify files outside the editable image folder except for the work log, recipes and
+  reusable support files under `.dazedtl/image_translation_resources`, and isolated temporary
+  validation artifacts. Treat
   `.dazedtl/clean_images` as read-only unless the user explicitly authorizes changes. Inside the
   editable image folder, create no non-image artifact.
 

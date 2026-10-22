@@ -23,7 +23,7 @@ from dazedtl.translation.files import decode_json, digest, project_path, read_js
 from dazedtl.translation.git_status_cache import repository_signature
 from dazedtl.translation.helper_command import windows_note
 
-from . import recipes
+from . import families, recipes
 from .inventory import (
     Index,
     PreviewCache,
@@ -2471,7 +2471,7 @@ class ImageService:
     def _original_runtime(self, project_id, root, rows, issues=None, keep=True):
         """The game's bytes each image had when Prepare kept its original,
         for Restore: a copy Prepare saved before restores read Git, else the
-        game's record of its original files, else the image tool's own
+        game's record of its original files, else an older publisher's
         backup. An image none of them holds is refused, or, given `issues`,
         named there with why, so a preview reads every image in one pass;
         without `keep` it holds their hashes, not their bytes."""
@@ -2509,7 +2509,7 @@ class ImageService:
             raw = found.get(row["runtime"])
             if raw is None or hashed(raw) != row["runtimeBackupHash"]:
                 backup = project_path(
-                    root, ".dazedtl/image_backups/" + row["runtime"], exists=False
+                    root, families.BACKUPS + row["runtime"], exists=False
                 )
                 raw = backup.read_bytes() if backup.is_file() else None
                 if raw is not None and not keep:
