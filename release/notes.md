@@ -11,3 +11,4 @@
 - **Checkpoints:** after Go back or Undo, the result sits by the new top checkpoint; Save a copy's result no longer splits the folder's date and its Open folder link matches the message; the update header no longer reads "· complete" in lowercase.
 - **Release:** the patch ZIP no longer carries the game repository's `.gitignore`, `.gitattributes` and `README.md` at its root.
 - **Translate:** opening the Images tab no longer shifts the stage strip and task tabs sideways; only the image grid and preview use the full window width.
+- **Translate:** **Apply** on Maps & events now puts in the files' newest translations, including Other event text's saved output for the same files, instead of copying the earlier run's files again while saying "Saved translations applied." and leaving the files at **Ready to apply**; its review names the files that carry another task's translations, and only Run history's Reapply says "Reapplying makes no API requests."
