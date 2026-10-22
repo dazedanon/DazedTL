@@ -111,6 +111,9 @@ A refusal cannot enter game dialogue; a Guided phase puts the source back for li
 An old interrupted Live run without request evidence flags only its shared files and phase in the overlap advisory, since its send outcomes cannot be rebuilt locally.
 Readers for older runs ([live_validation](../backend/dazedtl/compatibility/live_validation.py), [choice_history](../backend/dazedtl/compatibility/choice_history.py)) settle a historical request only when the frozen plan, output hashes, submission mapping and exact source identity all match; otherwise it stays unresolved, and missing bodies are never invented.
 Grouping a retry with its original is presentation only: receipt indices, submission guards and billed usage stay intact.
+The engine's response check reads Japanese left in a reply by the same rule as file status ([source_text](../backend/dazedtl/engine/util/source_text.py) `left_in`), so punctuation, kaomoji and censor masks the source holds pass.
+A reply whose only faults are some lines' content is validated and saved but for those lines, which keep their original text; the receipt names them for Inspect, they are not saved for reuse, and the next Translate sends them again.
+A reply with the wrong lines, placeholders or control codes is still rejected whole.
 
 ### Result reuse
 

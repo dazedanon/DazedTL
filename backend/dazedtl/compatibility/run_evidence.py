@@ -111,6 +111,15 @@ def stretch_notes(group, values, saved, source):
     return STRETCHES + "\n" + "\n".join(notes)
 
 
+def kept(source, response):
+    """Whether a line of a kept response kept its original text because it
+    failed validation (translation keep_original_lines): it is no
+    translation to reuse, so the next run sends it again."""
+    from util.source_text import left_in
+
+    return response == source and bool(left_in(source, response))
+
+
 def source_text(value, config):
     """Source-language text, which the shared translator sends; it cleans the rest."""
     pattern = getattr(config, "langRegex", None)
@@ -154,7 +163,13 @@ class Evidence:
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS requests (id INTEGER PRIMARY KEY, params TEXT, state TEXT, usage TEXT, error TEXT)"
             )
-            for name in ("sources", "filename", "response", "raw_response"):
+            for name in (
+                "sources",
+                "filename",
+                "response",
+                "raw_response",
+                "kept_lines",
+            ):
                 if name not in columns(connection):
                     connection.execute(
                         "ALTER TABLE requests ADD COLUMN " + name + " TEXT"
@@ -522,6 +537,26 @@ class Evidence:
                 return result
 
             translation.cache_translation.layer(LAYER, cached)
+
+            def kept_lines(
+                native,
+                payload,
+                language,
+                cache_context=None,
+                request_context=None,
+                lines=None,
+            ):
+                native(payload, language, cache_context, request_context, lines)
+                current = getattr(self.local, "current", None)
+                if current is not None and lines:
+                    with self.connect() as connection:
+                        connection.execute(
+                            "UPDATE requests SET kept_lines=? WHERE id=? AND state='validated'",
+                            (json.dumps(lines), current),
+                        )
+
+            if getattr(translation, "keep_original_lines", None) is not None:
+                translation.keep_original_lines.layer(LAYER, kept_lines)
         call_signature = signature(translation.translateAI)
 
         def validated(native, *args, **kwargs):
@@ -704,6 +739,7 @@ class Evidence:
                                     for owner, source, response in zip(
                                         owners, values, output
                                     )
+                                    if not kept(source, response)
                                     for key, _ in owner
                                 ],
                             )
@@ -711,7 +747,10 @@ class Evidence:
                                 "INSERT OR REPLACE INTO validated_provenance VALUES (?,?)",
                                 [
                                     (key, name)
-                                    for owner in owners
+                                    for owner, source, response in zip(
+                                        owners, values, output
+                                    )
+                                    if not kept(source, response)
                                     for key, name in owner
                                 ],
                             )

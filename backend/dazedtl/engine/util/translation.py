@@ -42,6 +42,7 @@ from util.batch_providers import KIMI_API_URL, is_kimi_api
 from util import extensions
 from util.sfx_reference import build_sfx_reference_text
 from util.vocab import decorative_glossary_alias, split_glossary_row
+from util.source_text import left_in
 from util import system
 
 class _LazyModule:
@@ -493,45 +494,6 @@ def validate_placeholders(original_text, translated_text, replacements):
     is_valid = len(missing) == 0 and len(extra) == 0
     return is_valid, missing, extra
 
-_PRESERVED_KAOMOJI_RE = re.compile(
-    r"(?P<open>[（(])"
-    r"(?P<face>[^（）()\r\n\s]{1,32})"
-    r"(?P<close>[）)])"
-    r"(?P<flourish>[ゝゞヽヾ])?"
-)
-
-
-def _strip_source_preserved_kaomoji_flourishes(
-    source_text, translated_text, lang_regex
-):
-    """Ignore an exact decorative suffix on a source-preserved kaomoji.
-
-    Japanese iteration marks can be decorative flourishes outside a kaomoji,
-    as in ``(｀・ω・´)ゞ``. They are also legitimate Japanese characters, so
-    ignore only the suffix when the complete symbol-heavy emoticon was preserved
-    byte-for-byte and its interior contains no source-language text.
-    """
-    residue = str(translated_text)
-    for match in _PRESERVED_KAOMOJI_RE.finditer(str(source_text)):
-        flourish = match.group("flourish")
-        if not flourish:
-            continue
-        face = match.group("face")
-        symbol_count = sum(
-            unicodedata.category(char)[:1] in {"P", "S"} for char in face
-        )
-        if symbol_count < 2 or re.search(lang_regex, face):
-            continue
-        token = match.group(0)
-        index = residue.find(token)
-        if index >= 0:
-            suffix_index = index + len(token) - len(flourish)
-            residue = (
-                residue[:suffix_index] + residue[suffix_index + len(flourish):]
-            )
-    return residue
-
-
 def validate_translation_content(
     original_items, translated_items, langRegex, target_language=None
 ):
@@ -621,40 +583,21 @@ def validate_translation_content(
                 reasons.append(f"Line{i+1}: Runaway translation (output {len(trans_str)} chars exceeds cap) for '{orig_str[:50]}...'")
                 continue
 
-            # Check 5: Source-language residue must not survive in player text.
-            # Japanese inside protected runtime-code parameters is absent here
-            # and is restored only after validation. Ignore ideographic spaces:
-            # RPG Maker choice lists commonly use U+3000 as intentional visual
-            # padding, and preserving that layout is not untranslated content.
-            # Also ignore CJK quotation marks: engines whose langRegex includes
-            # the U+300C-U+303F block would otherwise reject English that keeps
-            # stylistic wrappers such as 〝loanword〟 or leftover 「」.
-            # A source 〇 is an author's censor mask that the translation keeps
-            # (うん〇 -> sh〇t); a retry can only reproduce it.
-            residue_text = _strip_source_preserved_kaomoji_flourishes(
-                orig_str, trans_str, langRegex
-            )
-            if "〇" in orig_str:
-                residue_text = residue_text.replace("〇", "")
-            residue_text = (
-                residue_text.replace("\u3000", "")
-                .replace("「", "")
-                .replace("」", "")
-                .replace("『", "")
-                .replace("』", "")
-                .replace("〝", "")
-                .replace("〞", "")
-                .replace("〟", "")
-            )
-            if normalized_target == "chinese" and re.search(
-                r"[ぁ-ゖァ-ヺー\uFF66-\uFF9F]", residue_text
+            # Check 5: Japanese must not survive in player text, by the one
+            # rule for what needs translating (util/source_text), which lets a
+            # translation keep the source's punctuation, kaomoji and censor
+            # masks. Japanese inside protected runtime-code parameters is
+            # absent here and is restored only after validation.
+            left = left_in(orig_str, trans_str)
+            if normalized_target == "chinese" and any(
+                re.search(r"[ぁ-ゖァ-ヺ\uFF66-\uFF9D]", run) for run in left
             ):
                 invalid_indices.append(i)
                 reasons.append(
                     f"Line{i+1}: Japanese kana remains in Chinese translation"
                 )
                 continue
-            if not target_uses_cjk and re.search(langRegex, residue_text):
+            if not target_uses_cjk and left:
                 invalid_indices.append(i)
                 reasons.append(f"Line{i+1}: Source-language text remains in translation")
                 continue
@@ -1399,6 +1342,34 @@ def cache_translation(
             if _cache is None:
                 _cache = {}
             _cache[key] = translation
+
+
+@extensions.point
+def keep_original_lines(
+    payload, language, cache_context=None, request_context=None, lines=None
+):
+    """A response was kept but for *lines*, {line number: reason}, which
+    keep their original text because they failed validation."""
+
+
+def _log_kept_lines(config, filename, payload, output, kept, attempts, pbar):
+    """Record the lines a kept response left in their original text."""
+    if pbar:
+        pbar.write(
+            f"Kept the response but for {len(kept)} line(s), which keep their "
+            "original text. Check mismatch log."
+        )
+    try:
+        output = format_translation_response_for_log(output)
+    except Exception:
+        pass
+    with open(config.mismatchLogPath, "a+", encoding="utf-8") as mismatchFile:
+        mismatchFile.write(f"Lines kept in Japanese: {filename}\n")
+        mismatchFile.write(f"After {attempts} attempts:\n")
+        for reason in kept.values():
+            mismatchFile.write(f"{reason}\n")
+        mismatchFile.write(f"Input:\n{payload}\n")
+        mismatchFile.write(f"Provider output:\n{output}\n\n")
 
 
 # Variable translation map (code 122 <-> code 111 consistency)
@@ -6077,11 +6048,16 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                         content_ok = False
                         break
             else:
-                content_ok, _invalid_indices, _content_reasons = validate_translation_content(
+                _content_ok, invalid_indices, _content_reasons = validate_translation_content(
                     protected_source_values,
                     cached_content_values,
                     config.langRegex,
                     config.language,
+                )
+                # A line a kept response left in its original text is
+                # cached as its source (keep_original_lines).
+                content_ok = len(invalid_indices) < len(cached_values) and all(
+                    cached_values[j] == source_values[j] for j in invalid_indices
                 )
             if len(source_values) != len(cached_values) or not controls_ok or not content_ok:
                 # Ignore stale/corrupt cache entries. A successful live result
@@ -6246,8 +6222,13 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
         from_batch = False
         numLines = len(clean_tItem) if isinstance(tItem, list) else 1
 
+        # The last attempt's lines that passed, when only some failed:
+        # (lines, {failed index: reason}).
+        partial = None
+
         for attempt in range(max_retries + 1):
             is_valid = True
+            partial = None
 
             # On retries, prepend the correction note to the USER message so the
             # cached static_system block is never modified (avoids cache busting).
@@ -6484,8 +6465,30 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                                         config.language,
                                     )
 
+                                # Strip "Placeholder Text" from individual lines (AI placeholder for untranslatable input)
+                                # Also apply the 「→" / 」→" replacements here per-line (safe now that JSON is parsed)
+                                def _clean_extracted_line(line):
+                                    if not isinstance(line, str):
+                                        return line
+                                    line = line.replace("Placeholder Text", "").strip()
+                                    return convert_corner_brackets(line, config.convertQuotes)
+
                                 if not content_valid:
                                     is_valid = False
+                                    failed = dict(zip(invalid_indices, content_reasons))
+                                    if len(failed) < len(extracted):
+                                        # The other lines are good: if no
+                                        # attempt passes whole, keep them and
+                                        # only these lines' original text.
+                                        partial = (
+                                            [
+                                                protected_items[j]
+                                                if j in failed
+                                                else _clean_extracted_line(line)
+                                                for j, line in enumerate(extracted)
+                                            ],
+                                            failed,
+                                        )
                                     if pbar:
                                         pbar.write(f"Invalid translation content detected:")
                                         for reason in content_reasons[:5]:  # Show first 5 issues
@@ -6503,14 +6506,6 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                                         for warning in content_warnings[:5]:
                                             pbar.write(f"  - {warning}")
                                     # Set translations (line count matches, placeholders valid, and content is good)
-                                    # Strip "Placeholder Text" from individual lines (AI placeholder for untranslatable input)
-                                    # Also apply the 「→" / 」→" replacements here per-line (safe now that JSON is parsed)
-                                    def _clean_extracted_line(line):
-                                        if not isinstance(line, str):
-                                            return line
-                                        line = line.replace("Placeholder Text", "").strip()
-                                        return convert_corner_brackets(line, config.convertQuotes)
-
                                     final_translations = [
                                         _clean_extracted_line(line) for line in extracted
                                     ]
@@ -6600,12 +6595,18 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
         
         # --- End of Retry Block ---
 
-        # After the loop, handle the final result
+        # After the loop, handle the final result. A response whose only
+        # faults are some lines' content keeps its other lines.
+        kept_lines = {}
+        if final_translations is None and partial is not None:
+            final_translations, kept_lines = partial
         if final_translations is not None: # Success case
             # Restore protected script codes
             if isinstance(tItem, list):
                 for j in range(len(final_translations)):
-                    if j in all_replacements:
+                    if j in kept_lines:
+                        final_translations[j] = clean_tItem[j]
+                    elif j in all_replacements:
                         final_translations[j] = restore_script_codes(
                             final_translations[j],
                             all_replacements[j],
@@ -6620,6 +6621,22 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                         config.language,
                         cache_context=key_context,
                         request_context=request_context,
+                    )
+                    if kept_lines:
+                        keep_original_lines(
+                            subbedT,
+                            config.language,
+                            key_context,
+                            request_context,
+                            {
+                                j + 1: re.sub(r"^Line\d+: ", "", reason)
+                                for j, reason in kept_lines.items()
+                            },
+                        )
+                if kept_lines:
+                    _log_kept_lines(
+                        config, filename, subbedT, last_raw_translation,
+                        kept_lines, max_retries + 1, pbar,
                     )
 
                 # Re-insert skipped items at original positions

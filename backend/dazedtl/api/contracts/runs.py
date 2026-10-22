@@ -168,6 +168,8 @@ class ProcessRequest(TypedDict):
     sourceItems: int
     files: NotRequired[dict[str, int]]
     providerFinished: NotRequired[bool]
+    # Lines a validated response left in their original text.
+    keptLines: NotRequired[int]
 
 
 class SubmittedRequests(TypedDict):
@@ -274,11 +276,20 @@ class UnusedResponse(TypedDict):
     appliedRequests: list[int]
 
 
+class KeptLine(TypedDict):
+    """A line a validated response left in its original text, as `source`
+    names it, and why it failed validation."""
+
+    line: str
+    reason: str
+
+
 class RunPayload(TypedDict):
     responseOrigin: NotRequired[Literal["validated", "log"] | None]
     responseAttempts: NotRequired[list[ResponseAttempt]]
     translations: NotRequired[object]
     unused: NotRequired[UnusedResponse | None]
+    keptLines: NotRequired[list[KeptLine] | None]
     index: int
     total: int
     state: str

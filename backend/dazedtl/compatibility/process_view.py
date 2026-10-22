@@ -197,6 +197,7 @@ def _ledger_records(root, signature, consumed, filename=None):
             "raw_response",
             "clarification_of",
             "retry_of",
+            "kept_lines",
         )
         if filename is not None and "filename" not in names:
             return []
@@ -224,7 +225,15 @@ def _ledger_records(root, signature, consumed, filename=None):
     result = []
     for row in rows:
         entry: dict[str, Any] = dict(zip(fields, row))
-        for key in ("params", "error", "usage", "sources", "response", "raw_response"):
+        for key in (
+            "params",
+            "error",
+            "usage",
+            "sources",
+            "response",
+            "raw_response",
+            "kept_lines",
+        ):
             entry[key] = json.loads(entry[key]) if entry[key] is not None else None
         source = source_values(entry["params"]) or {}
         keys = entry["sources"] or []
@@ -671,6 +680,9 @@ def attempts(rows):
             parent["indices"].append(row["index"])
             parent["state"] = row["state"]
             parent.pop("providerFinished", None)
+            parent.pop("keptLines", None)
+            if row.get("keptLines"):
+                parent["keptLines"] = row["keptLines"]
             if row.get("providerFinished"):
                 parent["providerFinished"] = True
             owners[row["index"]] = parent
@@ -686,6 +698,8 @@ def attempts(rows):
             request["files"] = row["files"]
         if row.get("providerFinished"):
             request["providerFinished"] = True
+        if row.get("keptLines"):
+            request["keptLines"] = row["keptLines"]
         result.append(request)
         owners[row["index"]] = request
     return result
@@ -908,6 +922,8 @@ def request_view(root, job):
                 row.update(file=None, names=True)
             if item.get("providerFinished"):
                 row["providerFinished"] = True
+            if item.get("keptLines"):
+                row["keptLines"] = len(item["keptLines"])
             if ledger and item["index"] < len(ledger):
                 for key in ("clarificationOf", "retryOf"):
                     if key in ledger[item["index"]]:
@@ -1435,6 +1451,15 @@ def batch_payload(index, total, entry, custom_id, params, response, state, error
     }
 
 
+def kept_lines(lines):
+    """The lines a kept response left in their original text, from the
+    {line number: reason} the engine's keep_original_lines names."""
+    return [
+        {"line": f"Line{number}", "reason": reason}
+        for number, reason in sorted(lines.items(), key=lambda item: int(item[0]))
+    ]
+
+
 def live_payload(row, index, total):
     params = row["params"]
     return {
@@ -1457,6 +1482,9 @@ def live_payload(row, index, total):
         if row["raw_response"] is not None
         else row["response"],
         "translations": row["response"] if row["state"] == "validated" else None,
+        "keptLines": kept_lines(row["kept_lines"])
+        if row.get("kept_lines") and row["state"] == "validated"
+        else None,
         "responseOrigin": row.get("responseOrigin")
         if row["raw_response"] is None or row.get("responseOrigin") == "log"
         else None,
@@ -1534,6 +1562,7 @@ def payload(root, index, job=None, prepared=False):
                 ],
             }
         value["unused"] = unused
+        value["keptLines"] = row.get("keptLines")
         from dazedtl.translation.refusals import MESSAGE, refused
 
         from .batch_refusals import records as clarification_records

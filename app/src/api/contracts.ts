@@ -211,6 +211,7 @@ export type ProcessRequest = {
   sourceItems: number;
   files?: Record<string, number>;
   providerFinished?: boolean;
+  keptLines?: number;
 };
 
 export type SubmittedRequests = {
@@ -315,11 +316,19 @@ export type UnusedResponse = {
   appliedRequests: number[];
 };
 
+/** A line a validated response left in its original text, as `source`
+names it, and why it failed validation. */
+export type KeptLine = {
+  line: string;
+  reason: string;
+};
+
 export type RunPayload = {
   responseOrigin?: "validated" | "log" | null;
   responseAttempts?: ResponseAttempt[];
   translations?: unknown;
   unused?: UnusedResponse | null;
+  keptLines?: KeptLine[] | null;
   index: number;
   total: number;
   state: string;

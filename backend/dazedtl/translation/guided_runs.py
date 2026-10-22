@@ -13,7 +13,7 @@ from .files import digest, read_json
 PHASES = ("database", "dialogue", "advanced", "variables")
 # Raise when the same inputs and settings would estimate a phase differently.
 # It is part of every estimate's fingerprint, so raising it outdates them all.
-RUN_VERSION = 4
+RUN_VERSION = 5
 
 
 class GuidedRuns:

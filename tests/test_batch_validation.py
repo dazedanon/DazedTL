@@ -21,7 +21,8 @@ class BatchValidationTests(unittest.TestCase):
     ):
         # A crash during validation or a changed reply must never inherit a
         # rejection receipt that releases its paid-work guard. Accepted chunks
-        # remain accepted when a later chunk fails in the same native call.
+        # remain accepted when a later chunk fails in the same native call,
+        # and one kept but for a line failing validation names that line.
         with TemporaryDirectory() as directory:
             root = Path(directory)
             sources = ["薬", "毒", "盾"]
@@ -50,6 +51,12 @@ class BatchValidationTests(unittest.TestCase):
                         translator.cache_translation(
                             payload, ["Potion"], "English", request_context="frozen"
                         )
+                        translator.keep_original_lines(
+                            payload,
+                            "English",
+                            request_context="frozen",
+                            lines={2: "Empty translation"},
+                        )
                     if key == "interrupted":
                         raise InterruptedError("Stopped while validating")
                 return text
@@ -62,6 +69,7 @@ class BatchValidationTests(unittest.TestCase):
                     lambda payload, *_: responses[by_source[payload]]
                 ),
                 cache_translation=point(lambda *_: None),
+                keep_original_lines=point(lambda *_: None),
             )
             install(Evidence(root, "batch"), translator)
             translator.translateAI(["good", "bad"], filename="Items.json")
@@ -73,6 +81,10 @@ class BatchValidationTests(unittest.TestCase):
                 {"good": "validated", "bad": "rejected"},
             )
             self.assertEqual(rows["bad"]["error"]["code"], "validation_failed")
+            self.assertEqual(
+                rows["good"]["keptLines"],
+                [{"line": "Line2", "reason": "Empty translation"}],
+            )
             before = {
                 path: path.read_bytes() for path in root.rglob("*") if path.is_file()
             }

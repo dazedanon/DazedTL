@@ -21,6 +21,7 @@ from .process_view import (
     consumed_files,
     evidence_root,
     file_stamp,
+    kept_lines,
     ledger,
     ledger_stamp,
     saved,
@@ -68,6 +69,11 @@ def install(evidence, translation):
             "CREATE TABLE IF NOT EXISTS batch_validation "
             "(request_key TEXT PRIMARY KEY, filename TEXT, source TEXT, response_hash TEXT, state TEXT)"
         )
+        # The lines a validated response left in their original text.
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS batch_kept_lines "
+            "(request_key TEXT PRIMARY KEY, lines TEXT)"
+        )
     local = threading.local()
     call_signature = signature(translation.translateAI)
 
@@ -93,6 +99,9 @@ def install(evidence, translation):
                             "received",
                         ),
                     )
+                    connection.execute(
+                        "DELETE FROM batch_kept_lines WHERE request_key=?", (key,)
+                    )
         return response
 
     def accepted(
@@ -111,6 +120,22 @@ def install(evidence, translation):
                     [(key,) for key in matching],
                 )
         return result
+
+    def kept(
+        native, payload, language, cache_context=None, request_context=None, lines=None
+    ):
+        native(payload, language, cache_context, request_context, lines)
+        matching = [
+            key
+            for key, args in (getattr(local, "call", None) or {}).items()
+            if args == (payload, language, cache_context, request_context)
+        ]
+        if matching and lines:
+            with evidence.connect() as connection:
+                connection.executemany(
+                    "INSERT OR REPLACE INTO batch_kept_lines VALUES (?,?)",
+                    [(key, json.dumps(lines)) for key in matching],
+                )
 
     def validated(native, *args, **kwargs):
         previous = getattr(local, "call", None), getattr(local, "filename", None)
@@ -133,6 +158,8 @@ def install(evidence, translation):
     translation.require_batch_result.layer(LAYER, received)
     translation.cache_translation.layer(LAYER, accepted)
     translation.translateAI.layer(LAYER, validated)
+    if getattr(translation, "keep_original_lines", None) is not None:
+        translation.keep_original_lines.layer(LAYER, kept)
 
 
 @lru_cache(maxsize=8)
@@ -145,8 +172,17 @@ def validation_receipts(root, stamp):
             "SELECT 1 FROM sqlite_master WHERE name='batch_validation'"
         ).fetchone():
             return []
+        kept = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='batch_kept_lines'"
+        ).fetchone()
         return connection.execute(
-            "SELECT request_key,filename,source,response_hash,state FROM batch_validation"
+            "SELECT v.request_key,filename,source,response_hash,state,"
+            + (
+                "k.lines FROM batch_validation v LEFT JOIN batch_kept_lines k "
+                "ON k.request_key=v.request_key"
+                if kept
+                else "NULL FROM batch_validation v"
+            )
         ).fetchall()
 
 
@@ -154,7 +190,7 @@ def recorded_outcomes(root, queued, responses):
     if not (root / "log/dazedtl-process.sqlite3").is_file():
         return {}
     result = {}
-    for key, filename, source, response_hash, state in validation_receipts(
+    for key, filename, source, response_hash, state, kept in validation_receipts(
         str(root), ledger_stamp(root)
     ):
         entry = queued.get(key)
@@ -169,6 +205,8 @@ def recorded_outcomes(root, queued, responses):
         ):
             continue
         result[key] = {"state": state}
+        if state == "validated" and kept:
+            result[key]["keptLines"] = kept_lines(json.loads(kept))
         if state == "rejected":
             result[key]["error"] = {
                 "code": "validation_failed",

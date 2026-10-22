@@ -14,6 +14,7 @@ from .process_view import (
     batch_state,
     consumed_files,
     evidence_root,
+    kept_lines,
     ledger_records,
     queue,
     saved,
@@ -251,6 +252,7 @@ def requests(root, job, queued=None, records=None):
                 "response": results.get(key),
                 "error": receipt.get("error"),
                 "unused": receipt.get("unused"),
+                "keptLines": receipt.get("keptLines"),
             }
         return
     rows = ledger_records(root) if records is None else records
@@ -267,6 +269,9 @@ def requests(root, job, queued=None, records=None):
                 "file": row["filename"],
                 "response": row["response"],
                 "error": row["error"],
+                "keptLines": kept_lines(row["kept_lines"])
+                if row.get("kept_lines") and state == "validated"
+                else None,
             }
         if rows:
             return

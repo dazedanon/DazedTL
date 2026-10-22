@@ -2524,13 +2524,16 @@ try:
                                                 "content": json.dumps(
                                                     {
                                                         key: "Potion"
-                                                        if key == "Line1"
+                                                        if required == ["Line1"]
                                                         else ""
-                                                        for key in row["body"][
-                                                            "response_format"
-                                                        ]["json_schema"]["schema"][
-                                                            "required"
+                                                        for required in [
+                                                            row["body"][
+                                                                "response_format"
+                                                            ]["json_schema"]["schema"][
+                                                                "required"
+                                                            ]
                                                         ]
+                                                        for key in required
                                                     }
                                                 )
                                             }
@@ -2695,7 +2698,7 @@ try:
                 < 1e-12
             )
             # Schema-shaped responses can fail native content validation without
-            # being refusals. Retain the failed body and generic outcome before
+            # being refusals; here every line comes back empty. Retain the failed body and generic outcome before
             # the file finishes, even when human-readable logs are unavailable.
             # A call gathering several files' lines, as the grouped map display
             # names do, reports the rejection for those files, not its caller.
@@ -2729,7 +2732,7 @@ try:
                 "Weapons.json": ["rejected"],
             }
             assert json.loads(batch_rows[1]["response"]["text"]) == {
-                "Line1": "Potion",
+                "Line1": "",
                 "Line2": "",
             }
             assert batch_rows[1]["error"]["code"] == "validation_failed", batch_rows[1]
@@ -2847,12 +2850,14 @@ try:
         # MV/MZ counts U+3007 as Japanese, so English keeping the source's 〇
         # censor mask was retried and then left untranslated. A mask the
         # author did not write still fails.
+        # A kaomoji the source has, such as (ﾟдﾟ) or ヽ(・∀・)ﾉ, is no
+        # Japanese left either; a kanji is, even one the source has.
         assert translation.validate_translation_content(
-            ["うん〇だ！", "うんこだ！"],
-            ["Sh〇t!", "Sh〇t!"],
+            ["うん〇だ！", "うんこだ！", "な、何だ(ﾟдﾟ)", "やった ヽ(・∀・)ﾉ", "剣だ"],
+            ["Sh〇t!", "Sh〇t!", "W-what?! (ﾟдﾟ)", "Yay ヽ(・∀・)ﾉ", "The 剣"],
             parser.LANGREGEX,
             "English",
-        )[1] == [1]
+        )[1] == [1, 4]
         live_root = temporary / "live"
         live_root.mkdir()
         os.chdir(live_root)
@@ -3010,6 +3015,41 @@ try:
         assert sources[0] == sources[1] and sources[1] != sources[2] != sources[3], (
             sources
         )
+        # One line still in Japanese keeps only that line's original text: the
+        # rest of the response is saved, and a kaomoji whose ﾟ the source also
+        # has is no Japanese left. The kept line is not saved for reuse, so the
+        # next run sends it again.
+        bodies.append('{"translations":["What?! (ﾟдﾟ)","Sword","盾"]}')
+        config.batchSize = 3
+        config.validationRetries = 0
+        with (
+            patch.dict(os.environ, {"BATCH_PHASE": "", "API_PROVIDER": "openai"}),
+            patch.object(
+                translation.openai,
+                "chat",
+                SimpleNamespace(completions=SimpleNamespace(create=completion)),
+            ),
+        ):
+            output, _ = translation.translateAI(
+                ["何だ(ﾟдﾟ)", "剣", "盾"], [], config, filename="Map002.json"
+            )
+        assert output == ["What?! (ﾟдﾟ)", "Sword", "盾"], output
+        kept = payload(live_root, 4)
+        assert kept["state"] == "validated", kept
+        assert kept["keptLines"] == [
+            {"line": "Line3", "reason": "Source-language text remains in translation"}
+        ], kept
+        assert request_view(live_root, live_job)["rows"][4]["keptLines"] == 1
+        with evidence.connect() as connection:
+            assert {
+                row[0]
+                for row in connection.execute("SELECT source FROM validated_items")
+            } >= {"何だ(ﾟдﾟ)", "剣"} and not connection.execute(
+                "SELECT 1 FROM validated_items WHERE source='盾'"
+            ).fetchone()
+        assert "Lines kept in Japanese: Map002.json" in (
+            live_root / "log/mismatchHistory.txt"
+        ).read_text(encoding="utf-8")
     # Structured refusals survive the real native normalizers, including empty
     # bodies; otherwise they are indistinguishable from generic parse failures.
     from dazedtl.compatibility.provider_responses import install as retain_refusals

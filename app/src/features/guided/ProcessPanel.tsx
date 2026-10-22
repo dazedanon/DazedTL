@@ -24,7 +24,7 @@ import {
   type RequestBatch,
 } from "./requestView";
 import { RunLog, RunTechnical } from "./RunTechnical";
-import { RequestFailure } from "./RequestFailure";
+import { KeptLines, RequestFailure } from "./RequestFailure";
 import { providerBatchActive } from "./batchView";
 import { InspectedFile } from "./InspectedFile";
 import { useOnChange } from "../../state/useOnChange";
@@ -324,6 +324,7 @@ function RequestProcess({
           requestOutcome({
             ...visiblePayload,
             providerFinished: selected.providerFinished,
+            keptLines: visiblePayload.keptLines?.length,
           }),
         )
       : outcomeOf(selected, selected.outcome));
@@ -817,6 +818,9 @@ function RequestProcess({
                 <>
                   {visiblePayload && (
                     <RequestFailure payload={visiblePayload} details />
+                  )}
+                  {!!visiblePayload?.keptLines?.length && (
+                    <KeptLines lines={visiblePayload.keptLines} />
                   )}
                   {visiblePayload?.responseOrigin === "validated" && (
                     <p className="muted">

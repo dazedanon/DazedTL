@@ -9,7 +9,7 @@ import { batchOutcome, type ProviderBatch } from "./batchView.ts";
 
 /** A provider count never identifies a row; only a bound receipt can do that. */
 export function requestOutcome(
-  row: Pick<ProcessRequest, "state" | "providerFinished">,
+  row: Pick<ProcessRequest, "state" | "providerFinished" | "keptLines">,
 ) {
   if (row.state === "failed" || row.state === "rejected")
     return {
@@ -21,7 +21,9 @@ export function requestOutcome(
   if (["validated", "saved", "unused"].includes(row.state))
     return {
       group: "finished" as const,
-      label: requestStateLabel(row.state),
+      label: row.keptLines
+        ? `Passed, ${row.keptLines} ${row.keptLines === 1 ? "line" : "lines"} kept in Japanese`
+        : requestStateLabel(row.state),
     };
   if (row.state === "submitted" && row.providerFinished)
     return { group: "finished", label: "Finished at provider" } as const;

@@ -65,3 +65,24 @@ export function RequestFailure({
     </div>
   );
 }
+
+/** A validated response whose failing lines alone kept their original text. */
+export function KeptLines({
+  lines,
+}: {
+  lines: NonNullable<RunPayload["keptLines"]>;
+}) {
+  return (
+    <div className="request-failure">
+      {lines.map(({ line, reason }) => (
+        <p className="translation-error" key={line}>
+          {line.replace(/^Line/, "Line ")} kept its original text: {reason}.
+        </p>
+      ))}
+      <p className="muted">
+        The other lines were saved. The next Translate sends{" "}
+        {lines.length === 1 ? "this line" : "these lines"} again.
+      </p>
+    </div>
+  );
+}
