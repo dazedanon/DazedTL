@@ -18,3 +18,4 @@
 - **Checkpoints:** a game update's review no longer lists `Forge_MZ.js` and `plugins.js` as the release's changes, and applying it no longer installs Forge into a game that didn't have it.
 - **Translate:** **Other event text** offers **Apply** only for its own translated files, so before its first run it no longer shows a disabled **Apply (2)** with "Saved translations applied." for files **Maps & events** applied.
 - **Plugin files:** after **Start over**, "Ready to apply" shows once, in the Assistant task header, not also on the Translated plugin text row; other assistant tasks no longer repeat their state on a row either.
+- **Translate:** after a game update, one changed file reads "Reload it from the game", and "1 file reloaded from the game." goes away once you translate or apply.
