@@ -3,6 +3,15 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.30.0] - 2026-10-22
+
+### Fixed
+
+- **Checkpoints:** **Copy assets & finish** in the Game updates tool rebuilds a damaged record of a game update's assets from the release folder the update was applied from, as Guided does, and a record it cannot rebuild says to copy the assets yourself or go back to the checkpoint before the update.
+- **VX Ace:** applying translated scripts no longer renames a script whose name holds characters such as `<>:"?`, so the editor shows the names you made and a later game update does not read Scripts.rvdata2 as changed.
+- **Translate:** a Batch rerun that finds nothing new to send for a file no longer reads it Ready to apply, or counts the task done, when the file's earlier translation is not in the game yet; the file keeps the state the earlier run left.
+- **Release:** right after a build, **Done** on the last saved ZIP reports it, instead of "Patch ZIP saved." beside the build button saying it again.
+
 ## [2.29.0] - 2026-10-22
 
 ### Added
@@ -946,6 +955,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.30.0]: https://github.com/dazedanon/DazedTL/compare/v2.29.0...v2.30.0
 [2.29.0]: https://github.com/dazedanon/DazedTL/compare/v2.28.0...v2.29.0
 [2.28.0]: https://github.com/dazedanon/DazedTL/compare/v2.27.2...v2.28.0
 [2.27.2]: https://github.com/dazedanon/DazedTL/compare/v2.27.1...v2.27.2
