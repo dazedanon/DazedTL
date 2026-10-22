@@ -255,6 +255,11 @@
   overflow: hidden;
   scrollbar-gutter: stable;
 }
+/* Headings read alike; the cell classes style the rows' values. */
+.file-browser-inline .file-browser-heading > * {
+  color: inherit;
+  font-size: inherit;
+}
 /* Cost and time columns appear once any listed file has run metrics. */
 .translation-files[data-metrics="false"]
   :is(.file-browser-heading, .file-browser-row) {

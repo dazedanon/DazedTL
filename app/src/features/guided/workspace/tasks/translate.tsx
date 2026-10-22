@@ -259,10 +259,8 @@ export function phaseView(w: GuidedWorkspace): TaskView {
     guidance;
   actionContext = (
     <div className="translation-action-scope">
-      <strong>
-        {selectedNames.length} selected
-        {applyFiles.length ? ` · ${applyFiles.length} saved` : ""}
-      </strong>
+      {/* Apply's label counts the saved files. */}
+      <strong>{selectedNames.length} selected</strong>
       <small title={footerGuidance}>{footerGuidance}</small>
     </div>
   );
