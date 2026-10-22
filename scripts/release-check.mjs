@@ -69,10 +69,7 @@ function ciScenarios() {
 const results = [];
 /** A file or folder name for the check `name`. */
 const slug = (name) => name.replace(/[^\w.-]+/g, "_");
-// A scenario's display is named after its folder, which this check's own
-// folder name keeps apart from other sessions' scenarios.
-const folder = (name) =>
-  path.join(work, `${slug(name)}-${path.basename(work).slice(-6)}`);
+const folder = (name) => path.join(work, slug(name));
 
 /** Runs `args` with Node once, its output in `log`; resolves whether it passed. */
 function attempt(args, log) {

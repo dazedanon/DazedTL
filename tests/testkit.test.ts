@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { displayName } from "../scripts/testkit/display.mjs";
 import { withRetry } from "../scripts/testkit/retry.mjs";
 
 test("a check that fails once and then passes is a flake, and two failures still fail", async () => {
@@ -25,4 +26,10 @@ test("a check that fails once and then passes is a flake, and two failures still
     flaky: false,
   });
   assert.equal(cleared, 1);
+});
+
+test("two runs whose work folders share a last part get different displays", () => {
+  const names = ["/tmp/a/w", "/tmp/b/w"].map(displayName);
+  assert.notEqual(names[0], names[1]);
+  assert.match(names[0], /^dazedtl-w-[0-9a-f]{6}$/);
 });
