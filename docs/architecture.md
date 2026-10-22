@@ -446,7 +446,7 @@ Save a copy writes the game as of a checkpoint into a new folder outside it, and
 A game's original files are kept in its own Git repository under the private ref `refs/dazedtl/originals`, whose commits each hold every file of the game folder but `.git` and `.dazedtl` in native bytes ([original_files](../backend/dazedtl/compatibility/original_files.py), whose docstring holds the kinds of record).
 The `original` branch can't hold them: every baseline is patch-scoped, holding only the files a patch can change, and that branch is published with the translation, while a private ref is never pushed with the branches.
 The game-write gateway records the game as found before the first write to a game whose Git is not set up, so the repository may start with that record alone, and a baseline made there treats it as a fresh one.
-Git setup records the prepared game, and a game update records the release it stages and the prepared release it applies, laid over the current record when it is a patch.
+Git setup records the prepared game, and a game update records the release it stages and the prepared release it applies, laid over the current record when it is a patch; a project set up before these records has its backup of the current version recorded first, so a patch's record holds every file too.
 Nothing is removed from the ref, and a record is never rewritten.
 
 [originals](../backend/dazedtl/translation/originals.py) is where the plugin lookups, release file lists, census, patch sources, Images' Restore originals, Start over and an assistant's `backup_id` get them; going back to a checkpoint reads the Git records through the same choice of record (`chosen`), and an older project's backup only when the game has no record.

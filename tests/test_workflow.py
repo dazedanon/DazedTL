@@ -1150,6 +1150,66 @@ class WorkflowTests(unittest.TestCase):
             "Lili (リリ)",
         )
 
+    def test_a_patch_update_records_an_older_projects_new_originals(self):
+        # A project set up before Git kept its original files, which reads
+        # its backup, recorded nothing for a patch laid over the game, so an
+        # undo deleted a file the patch added outside the translation's
+        # patch and put back the old bytes of one it changed.
+        import hashlib
+
+        from dazedtl.compatibility.checkpoint_history import Entry, _Game
+        from dazedtl.translation import originals
+        from util.len_git import setup_git
+        from util.len_patch_scope import scope_ignore
+        from util.len_translation import LenProject
+
+        (self.game / "movies").mkdir()
+        (self.game / "movies/old.webm").write_bytes(b"old")
+        # The translation's patch holds its text alone.
+        (self.game / ".gitignore").write_text(
+            scope_ignore("", {"source.json"}), encoding="utf-8"
+        )
+        setup_git(LenProject(self.game), version="1.0", current_is_untranslated=True)
+        saved = old_backup.snapshot(self.game)
+        state = {
+            **lifecycle(self.profile, self.identity),
+            "source_backup": saved,
+            "prepared_source": saved,
+        }
+        write_json(lifecycle_path(self.profile, self.identity), state)
+        official = self.root / "patch"
+        (official / "movies").mkdir(parents=True)
+        (official / "movies/old.webm").write_bytes(b"changed")
+        (official / "movies/added.webm").write_bytes(b"added")
+        self.engine.version = lambda *_args: {"complete": True}
+        execute(
+            self.engine,
+            self.profile,
+            {"project_id": self.identity},
+            {
+                "source": str(self.game),
+                "options": DEFAULTS,
+                "action": "version_apply",
+                "arguments": {
+                    "official": str(official),
+                    "version": "1.1",
+                    "patch_overlay": True,
+                },
+            },
+            lambda: False,
+        )
+        game = _Game(
+            self.game,
+            Entry("", "", "", version="1.1"),
+            originals.saved(self.profile, self.identity, self.game),
+        )
+        for name, raw in (
+            ("movies/added.webm", b"added"),
+            ("movies/old.webm", b"changed"),
+        ):
+            blob = hashlib.sha1(b"blob %d\0" % len(raw) + raw).hexdigest()
+            self.assertEqual(game.wanted(name, {}), ("100644", blob))
+
     def test_helper_checkpoints_save_through_git_with_dazedtls_own_files(self):
         # The helper's checkpoint once restored originals from the backup and
         # snapshotted the workspace; Git's original branch is authoritative,

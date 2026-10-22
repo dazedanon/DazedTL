@@ -427,10 +427,18 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             # Readers take the prepared record of the version the `original`
             # branch is at, so this one counts once the update completes. A
             # patch holds only some of the game's files, so it is laid over
-            # the current version's record; without one it records nothing,
-            # rather than a game missing every file the patch leaves out.
+            # the current version's record, or an older project's backup;
+            # without either it records nothing, rather than a game missing
+            # every file the patch leaves out.
             over = (
-                originals.recorded_now(source)
+                originals.under_patch(
+                    workspace,
+                    job["project_id"],
+                    source,
+                    state,
+                    stopped=stopped,
+                    progress=progress,
+                )
                 if arguments.get("patch_overlay")
                 else None
             )

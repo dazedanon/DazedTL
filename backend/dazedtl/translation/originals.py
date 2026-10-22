@@ -178,6 +178,44 @@ def recorded_now(root):
     return row.commit if row else None
 
 
+def under_patch(
+    workspace,
+    project_id,
+    root,
+    state=None,
+    *,
+    stopped=lambda: False,
+    progress=lambda _message: None,
+):
+    """The record a patch for the next version is laid over: `recorded_now`,
+    or, for a game set up before Git kept its original files, the backup of
+    its current version it saved then, recorded in Git first, so the next
+    version's record holds every file and going back or undoing reads the
+    files the patch added or changed outside the translation's patch from
+    it; None without either."""
+    root = Path(root)
+    if over := recorded_now(root):
+        return over
+    backup = saved(workspace, project_id, root, state)
+    if backup is None:
+        return None
+    progress("Recording the current version's original files in Git.")
+    # Beside the game's Git objects, not in a temporary folder that may be
+    # held in memory, since it holds the whole game.
+    parent = original_files._folder(root)
+    parent.mkdir(parents=True, exist_ok=True)
+    with system.staging_folder(parent, "originals-") as folder:
+        backup.extract(list(backup.files), folder, stopped)
+        return original_files.record(
+            root,
+            original_files.PREPARED,
+            _current_version(root) or "",
+            folder=folder,
+            stopped=stopped,
+            progress=progress,
+        )
+
+
 def prepared(workspace, project_id, root, state=None, *, or_found=True):
     """The game as its current version's baseline was made, else, unless
     `or_found` is false, as DazedTL found it; or None."""
