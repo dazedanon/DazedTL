@@ -1718,6 +1718,7 @@ export type Checkpoint = {
   kind: "change" | "setup" | "update";
   release: string;
   current: boolean;
+  taken_out_by: string;
   restorable: boolean;
   blocker: CheckpointBlocker | null;
 };

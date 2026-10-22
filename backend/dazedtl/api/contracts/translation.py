@@ -388,6 +388,8 @@ class Checkpoint(TypedDict):
     kind: Literal["change", "setup", "update"]
     release: str
     current: bool
+    # The go back that took it out of the game, or "".
+    taken_out_by: str
     # In the current game version, so it can be gone back to or undone.
     restorable: bool
     blocker: CheckpointBlocker | None

@@ -646,6 +646,18 @@ assert history()[0] == "Went back to “Apply selected saved outputs”|checkpoi
     history()
 )
 assert history()[1] == "Edits made outside DazedTL|outside_edits|", history()
+# The rows a go back took out carry its mark; the target and older stay clear.
+rows = [
+    row
+    for version in checkpoints.timeline(kept)["versions"]
+    for row in version["checkpoints"]
+]
+back = rows[0]["commit"]
+index = next(i for i, row in enumerate(rows) if row["commit"] == oldest["commit"])
+marked = [row["commit"] for row in rows if row["taken_out_by"]]
+assert marked and {row["taken_out_by"] for row in rows} == {"", back}, rows
+assert rows[index]["taken_out_by"] == "", rows[index]
+assert all(not row["taken_out_by"] for row in rows[index:]), rows
 assert (kept / plugin).read_bytes() == native
 assert plugin in git(kept, "ls-files").split()
 assert not (kept / ".dazedtl/glossary.txt").exists()
