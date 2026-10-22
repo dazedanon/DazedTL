@@ -7,3 +7,4 @@
 - **Set up:** after you press Stop, setup now reads as stopped in a neutral note, not as red error text with "Prepare game files" marked Blocked.
 - **Guided steps:** when a result beside a button, such as Save line widths, runs to two lines, the second line starts under the words instead of under the check mark.
 - **Checkpoints:** **Copy assets & finish** no longer stops with "Pending asset update is invalid" after a game update's record of its assets was damaged, which left every game change refused.
+- **Checkpoints:** a game update's review no longer lists `Forge_MZ.js` and `plugins.js` as the release's changes, and applying it no longer installs Forge into a game that didn't have it.
