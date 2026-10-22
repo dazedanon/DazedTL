@@ -3392,7 +3392,12 @@ def abort_update(translated_game: str | Path) -> RepositoryStatus:
     _configure_exact_tree_repo(repo)
     # The update being cancelled moved the original branch to its release and
     # left its assets to synchronize once applied; cancelling puts both back.
-    plan = _load_pending_asset_plan(repo, status.game_prefix)
+    try:
+        plan = _load_pending_asset_plan(repo, status.game_prefix)
+    except GitWorkflowError:
+        # A damaged record only says what to copy, so cancelling goes by the
+        # original branch's release, which the stopped update moved.
+        plan = {"original_commit": status.original_commit}
     if status.pending_cherry_pick:
         picked = _run_git(repo, "rev-parse", "CHERRY_PICK_HEAD").stdout.strip()
         _run_git(repo, "cherry-pick", "--abort")
