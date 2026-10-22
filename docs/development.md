@@ -118,7 +118,7 @@ Run them outside a sandbox such as Claude Code's bwrap: KWin needs a writable `/
 `--work <dir>` chooses the folder; otherwise it is printed.
 
 `--app` leaves the app running and prints its DevTools and inspector ports and the project helper command; `node scripts/scenario.mjs app --work <dir>` starts it again later.
-`node scripts/scenario.mjs drive --work <dir>` with `text`, `click <accessible name>`, `call <method> <params>`, `eval` or `shot <file>` drives it, and scripts import the same driver from [scripts/testkit/cdp.mjs](../scripts/testkit/cdp.mjs).
+`node scripts/scenario.mjs drive --work <dir>` with `text`, `click <accessible name>` (the whole name), `click-prefix <start of a name>` (for names ending in something that varies, such as a History row's date), `call <method> <params>`, `eval` or `shot <file>` drives it, and scripts import the same driver from [scripts/testkit/cdp.mjs](../scripts/testkit/cdp.mjs).
 `node scripts/scenario.mjs provider --work <dir> '<mode>'` changes how the stand-in answers, such as `{"stall":true}`, `{"refuse":["text"]}` or `{"long":["text"]}`, which makes lines holding the text come back as a long English message; [its header](../scripts/testkit/provider.mjs) lists the modes.
 `node scripts/scenario.mjs clean --work <dir>` stops every process the scenario started and removes its folder.
 `node scripts/scenario.mjs live [--work <dir>] [--upgrade-from <tag>]` runs the [live test](#live-test) in a private KWin of its own.

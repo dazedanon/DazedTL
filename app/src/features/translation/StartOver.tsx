@@ -171,8 +171,8 @@ function StartOverDialog({
             </Button>
             <Button
               variant="danger"
+              // The status beside the buttons reports the run.
               disabled={busy || paidRun}
-              pending={busy}
               onClick={() =>
                 void action.run(async () => {
                   await flushDrafts();

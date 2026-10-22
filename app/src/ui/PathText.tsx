@@ -34,7 +34,20 @@ export function PathText({
     >
       {/* The isolate keeps the path in reading order inside the
           right-to-left box that moves the ellipsis to the start. */}
-      <bdi>{homeRelative(path)}</bdi>
+      <bdi>
+        {wrap
+          ? homeRelative(path)
+              .split(/(?<=[/\\])/)
+              .map((part, index) => (
+                // A wrapped path breaks between its folders, never inside a
+                // name such as a date stamp.
+                <span key={index} className="path-text-part">
+                  {part}
+                  <wbr />
+                </span>
+              ))
+          : homeRelative(path)}
+      </bdi>
     </span>
   );
 }
