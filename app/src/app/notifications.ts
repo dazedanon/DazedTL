@@ -6,6 +6,9 @@ import type { WorkAlert } from "./workAlerts.ts";
 export interface NotificationSettings {
   sound: boolean;
   desktop: boolean;
+  phone: boolean;
+  /** The ntfy topic the user's phone subscribes to, kept while phone is off. */
+  topic: string;
 }
 
 interface NotificationState extends NotificationSettings {
@@ -35,6 +38,13 @@ function read(): NotificationState {
   current = {
     sound: saved?.sound === true,
     desktop: saved?.desktop === true,
+    phone: saved?.phone === true,
+    // A topic ntfy would refuse is replaced the next time phone is turned on.
+    topic:
+      typeof saved?.topic === "string" &&
+      /^[-_A-Za-z0-9]{1,64}$/.test(saved.topic)
+        ? saved.topic
+        : "",
     soundName: custom === undefined ? null : custom?.name || "",
   };
   return current;
@@ -45,10 +55,24 @@ function publish(change: Partial<NotificationState>) {
   for (const listener of listeners) listener();
 }
 
+// Letters and digits that read and type alike on a phone, with no l, 1, o or 0.
+const topicLetters = "abcdefghijkmnpqrstuvwxyz23456789";
+
+/**
+ * A topic nobody else picks by chance: ntfy shows a topic's messages to
+ * whoever subscribes to it, so its name is what keeps them the user's.
+ */
+function newTopic() {
+  const random = crypto.getRandomValues(new Uint8Array(10));
+  return `dazedtl-${Array.from(random, (byte) => topicLetters[byte & 31]).join("")}`;
+}
+
 export function saveNotifications(change: Partial<NotificationSettings>) {
-  const { sound, desktop } = { ...read(), ...change };
-  localStorage.setItem(key, JSON.stringify({ sound, desktop }));
-  publish(change);
+  const next = { ...read(), ...change };
+  if (next.phone && !next.topic) next.topic = newTopic();
+  const { sound, desktop, phone, topic } = next;
+  localStorage.setItem(key, JSON.stringify({ sound, desktop, phone, topic }));
+  publish({ sound, desktop, phone, topic });
 }
 
 function subscribe(listener: () => void) {
@@ -159,21 +183,24 @@ export async function resetSound() {
 }
 
 /**
- * Plays the sound and asks for a desktop notification, as chosen in
- * Settings. Electron shows the notification only while the window is in the
- * background, unless this is the Settings test.
+ * Plays the sound and sends the desktop and phone notifications, as chosen
+ * in Settings. Electron shows the desktop notification only while the window
+ * is in the background, unless this is the Settings test. One that fails
+ * leaves the others; the first failure is reported.
  */
 export async function notify(alert: WorkAlert, test = false) {
   const settings = read();
   if (settings.sound) play().catch(() => undefined);
-  if (!settings.desktop) return;
   const lines = alert.lines
     .slice(0, 3)
     .map((line) => (line.length > 160 ? line.slice(0, 159) + "…" : line));
   if (alert.lines.length > 3) lines.push(`and ${alert.lines.length - 3} more`);
-  await window.dazedtl.notify({
-    title: alert.title,
-    body: lines.join("\n"),
-    test,
-  });
+  const message = { title: alert.title, body: lines.join("\n") };
+  const sent = await Promise.allSettled([
+    settings.desktop && window.dazedtl.notify({ ...message, test }),
+    settings.phone &&
+      window.dazedtl.phone({ ...message, topic: settings.topic }),
+  ]);
+  for (const result of sent)
+    if (result.status === "rejected") throw result.reason;
 }

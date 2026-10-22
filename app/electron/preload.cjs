@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld("dazedtl", {
   chooseEditor: () => invoke("dazedtl:choose-editor"),
   openFolder: (kind, target) => invoke("dazedtl:open-folder", kind, target),
   notify: (message) => invoke("dazedtl:notify", message),
+  phone: (message) => invoke("dazedtl:phone", message),
   sound: {
     read: () => invoke("dazedtl:sound-read"),
     choose: () => invoke("dazedtl:sound-choose"),

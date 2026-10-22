@@ -388,10 +388,13 @@ These models think before they answer, which is billed as output and isn't in th
 
 ## Notifications
 
-**Settings > Notifications** can call you back to DazedTL with a sound, a desktop notification, or both; both start off.
+**Settings > Notifications** can call you back to DazedTL with a sound, a desktop notification, a notification on your phone, or any of them; all start off.
 They come when a translation or other step that took more than a few seconds ends, when work waits for your approval, and when your assistant hands back a task, asks you something or finishes an Assistant-led run.
 The sound plays even while DazedTL is in front, so you hear it from across the room; the desktop notification shows only while DazedTL is in the background, clicking it brings DazedTL back, and coming back clears it.
 **Sound** plays the built-in chime or a file you choose, such as an MP3 or WAV, for up to 10 seconds; DazedTL keeps its own copy, so you can move or delete the original.
+**Send to your phone** goes through [ntfy](https://ntfy.sh), a free notification app for Android and iPhone: install it, tap **+** and subscribe to the **Phone topic** DazedTL shows.
+Phone notifications come even while DazedTL is in front, but only while it is open on your computer, since it is what notices the work ending.
+They pass through ntfy.sh with the game's name and what happened; the topic is their only password, so keep it to yourself.
 **Test notification** tries what you chose.
 
 ## Updates

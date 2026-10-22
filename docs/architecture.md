@@ -373,6 +373,7 @@ Prices are looked up outside the application lock only when preparing, reviewing
 
 [WorkAlerts](../app/src/app/workAlerts.ts) reads every observation the store publishes, outside rendering, so a window in the background still notices; its docstring says which work calls the user back.
 The main process shows the desktop notification only while the window is not focused; on Windows a notification shows under the Start menu shortcut carrying the app's ID, so the main process gives the launcher's shortcut that ID and removes the `Electron.lnk` Electron writes, which would open a bare Electron.
+The main process also [posts each alert to ntfy](../app/electron/phone.cjs) for the user's phone, whatever the focus, since a focused window does not mean the user is there; the renderer may reach no network, and the main process sends only to ntfy.
 
 ## API changes
 

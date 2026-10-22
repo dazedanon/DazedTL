@@ -133,6 +133,7 @@ async function openApp(state) {
       // the OpenAI SDK's own default address follows it.
       DAZEDTL_TEST_OPENAI_ENDPOINT: `${state.provider.url.replace(/\/v1$/, "")}/api.openai.com/v1`,
       OPENAI_BASE_URL: `${state.provider.url.replace(/\/v1$/, "")}/api.openai.com/v1`,
+      DAZEDTL_TEST_NTFY_SERVER: `${state.provider.url.replace(/\/v1$/, "")}/ntfy.sh/`,
       ...state.env,
     },
   });

@@ -16,6 +16,7 @@ import { PathInput } from "../../ui/PathInput";
 /** How DazedTL calls the user back to the window; changes apply at once. */
 export default function Notifications() {
   const settings = useNotifications();
+  const chosen = settings.sound || settings.desktop || settings.phone;
   const action = useAction();
   const change = (value: Parameters<typeof saveNotifications>[0]) => {
     action.clear();
@@ -43,6 +44,13 @@ export default function Notifications() {
             checked={settings.desktop}
             onChange={(desktop) => change({ desktop })}
           />
+          <CheckField
+            id="notifications-phone"
+            label="Send to your phone"
+            help="Through the free ntfy app, even while DazedTL is in front, as long as it stays open."
+            checked={settings.phone}
+            onChange={(phone) => change({ phone })}
+          />
         </CheckGroup>
         {settings.sound && (
           <FieldRow
@@ -52,7 +60,7 @@ export default function Notifications() {
             error={action.key === "sound" ? action.error : ""}
           >
             {(control) => (
-              <div className="notification-sound">
+              <div className="notification-field">
                 <PathInput
                   {...control}
                   readOnly
@@ -81,19 +89,44 @@ export default function Notifications() {
             )}
           </FieldRow>
         )}
+        {settings.phone && (
+          <FieldRow
+            id="notifications-topic"
+            label="Phone topic"
+            help="Install the free ntfy app on your phone, tap +, and subscribe to this topic. Anyone who knows it can read these notifications."
+          >
+            {(control) => (
+              <div className="notification-field">
+                <input {...control} readOnly value={settings.topic} />
+                <ActionControl
+                  label="Copy"
+                  inline
+                  disabled={action.busy}
+                  error={action.key === "topic" ? action.error : ""}
+                  notice={action.key === "topic" ? action.notice : ""}
+                  onClick={() =>
+                    void action.run(
+                      () => window.dazedtl.copyText(settings.topic),
+                      "Copied.",
+                      "topic",
+                    )
+                  }
+                />
+              </div>
+            )}
+          </FieldRow>
+        )}
       </PageBody>
       <ActionBar feedback={<div className="feedback" role="status" />}>
         <ActionControl
           label="Test notification"
-          disabled={action.busy || (!settings.sound && !settings.desktop)}
+          disabled={action.busy || !chosen}
           disabledReason={
-            !settings.sound && !settings.desktop
-              ? "Choose a sound or a desktop notification first."
-              : ""
+            chosen ? "" : "Choose a sound or a notification to send first."
           }
           pending={action.busy && action.key === "test"}
           pendingText="Sending…"
-          error={action.key === "sound" ? "" : action.error}
+          error={["sound", "topic"].includes(action.key) ? "" : action.error}
           notice={action.key === "test" ? action.notice : ""}
           onClick={() =>
             void action.run(
@@ -105,7 +138,7 @@ export default function Notifications() {
                   },
                   true,
                 ),
-              settings.desktop ? "Notification sent." : "",
+              settings.desktop || settings.phone ? "Notification sent." : "",
               "test",
             )
           }

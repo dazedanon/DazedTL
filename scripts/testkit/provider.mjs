@@ -22,7 +22,8 @@
 //   completes batchSeconds after it was created.
 //
 // Every request is recorded in <folder>/requests.jsonl; uploaded files and
-// Batches are kept in <folder>/batches.
+// Batches are kept in <folder>/batches. It also stands in for ntfy.sh at
+// /ntfy.sh/ and keeps each phone notification in <folder>/phone.jsonl.
 //
 //   node scripts/testkit/provider.mjs --folder <dir> [--port <n>]
 //
@@ -328,6 +329,14 @@ export async function startProvider({ folder, port = 0 }) {
         response.end(raw || JSON.stringify(value));
       };
       try {
+        if (request.method === "POST" && route === "/ntfy.sh/") {
+          const { topic, title, message } = JSON.parse(body.toString("utf8"));
+          fs.appendFileSync(
+            path.join(folder, "phone.jsonl"),
+            JSON.stringify({ topic, title, message }) + "\n",
+          );
+          return reply(200, { id: crypto.randomUUID(), event: "message" });
+        }
         if (request.method === "GET" && route === "/models")
           return reply(200, {
             object: "list",

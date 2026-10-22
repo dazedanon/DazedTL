@@ -143,6 +143,7 @@ Run them outside a sandbox such as Claude Code's bwrap: KWin needs a writable `/
 `node scripts/scenario.mjs clean --work <dir>` stops every process the scenario started and removes its folder.
 `node scripts/scenario.mjs live [--work <dir>] [--upgrade-from <tag>]` runs the [live test](#live-test) in a private KWin of its own.
 Scenario connections reach only the stand-in: the custom connection names it, and the OpenAI preset points at it through `DAZEDTL_TEST_OPENAI_ENDPOINT`, which run workers follow too.
+Phone notifications go to its ntfy stand-in through `DAZEDTL_TEST_NTFY_SERVER`, which keeps them in `provider/phone.jsonl`.
 Other requests from the backend and window go to a proxy that is not there; run workers start without proxy settings, so a new provider path needs the run's own address.
 
 To add a scenario, add its steps to [scripts/testkit/scenarios.mjs](../scripts/testkit/scenarios.mjs), reusing the steps there and in [journey.mjs](../scripts/testkit/journey.mjs).

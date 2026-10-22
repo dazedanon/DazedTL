@@ -7,6 +7,7 @@ const {
   clipboard,
   screen,
   Notification,
+  net,
 } = require("electron");
 const os = require("node:os");
 const path = require("node:path");
@@ -17,6 +18,7 @@ const { windowSize } = require("./window-size.cjs");
 const { rendererRecovery } = require("./renderer-recovery.cjs");
 const { Updates } = require("./updates.cjs");
 const { NotificationSound } = require("./sound.cjs");
+const { sendToPhone } = require("./phone.cjs");
 
 app.setName("DazedTL");
 const appId = "dev.dazedtl.app";
@@ -584,6 +586,12 @@ app
       notice.on("failed", () => notices.delete(notice));
       notice.show();
       watchElectronShortcut();
+    });
+    // Unlike the desktop notification, the phone hears about work even while
+    // the window is in front, since the user may have walked away from it.
+    ipcMain.handle("dazedtl:phone", (event, message) => {
+      trusted(event);
+      return sendToPhone(message || {}, (url, init) => net.fetch(url, init));
     });
     const sound = new NotificationSound(
       path.join(app.getPath("userData"), "notification-sound"),

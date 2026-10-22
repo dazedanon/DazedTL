@@ -87,6 +87,12 @@ declare global {
         /** Shown even in front, so Settings can try it. */
         test?: boolean;
       }): Promise<void>;
+      /** A notification on the user's phone, through ntfy. */
+      phone(message: {
+        topic: string;
+        title: string;
+        body: string;
+      }): Promise<void>;
       /** The user's own notification sound, kept in the profile. */
       sound: {
         read(): Promise<NotificationSound | null>;
