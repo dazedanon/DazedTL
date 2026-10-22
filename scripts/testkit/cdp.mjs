@@ -196,7 +196,8 @@ export class Page {
 
   /**
    * The center of the enabled control whose accessible name matches, when it
-   * shows uncovered, after scrolling it into view; otherwise null.
+   * shows uncovered and stays put for two frames, after scrolling it into
+   * view; otherwise null. A menu draws before it moves beside its button.
    * @param {string | RegExp} name
    */
   locate(name) {
@@ -204,7 +205,7 @@ export class Page {
       typeof name === "string"
         ? `^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`
         : name.source;
-    return this.evaluate(`(() => {
+    return this.evaluate(`(async () => {
       const pattern = new RegExp(${JSON.stringify(pattern)});
       const label = (element) =>
         (element.getAttribute("aria-label") || element.textContent).replace(/\\s+/g, " ").trim();
@@ -219,9 +220,21 @@ export class Page {
       );
       if (!found) return null;
       found.scrollIntoView({ block: "center" });
-      const box = found.getBoundingClientRect();
-      const x = box.x + box.width / 2;
-      const y = box.y + box.height / 2;
+      const center = () => {
+        const box = found.getBoundingClientRect();
+        return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      };
+      const { x, y } = center();
+      // A window that draws no frames waits a moment instead.
+      const frame = () =>
+        new Promise((resolve) => {
+          requestAnimationFrame(resolve);
+          setTimeout(resolve, 100);
+        });
+      await frame();
+      await frame();
+      const now = center();
+      if (now.x !== x || now.y !== y) return null;
       const top = document.elementFromPoint(x, y);
       return top && (top === found || found.contains(top)) ? { x, y } : null;
     })()`);
@@ -259,6 +272,34 @@ export class Page {
       `document.querySelector(${JSON.stringify(selector)}).focus()`,
     );
     await this.send("Input.insertText", { text });
+  }
+
+  /**
+   * Waits until the window has taken the size the app gives it, through the
+   * app's main process at inspector port `inspect`. A window manager
+   * maximizes a window a moment after it shows, so a click aimed before
+   * that lands where a control was; Linux without a Wayland compositor, as
+   * under CI's Xvfb, has no window manager to wait for.
+   * @param {{ root: string, inspect: number }} options
+   */
+  async settle({ root, inspect }) {
+    const main = await Page.connect(inspect, { root, node: true });
+    try {
+      await until("the window to take its full size", async () => {
+        const bounds = await main.evaluate(`(() => {
+          const window = process.mainModule.require("electron").BrowserWindow.getAllWindows()[0];
+          const managed = process.platform !== "linux" || !!process.env.WAYLAND_DISPLAY;
+          return window && (!managed || window.isMaximized()) ? window.getContentBounds() : null;
+        })()`);
+        if (!bounds) return false;
+        const [width, height] = await this.evaluate(
+          "[innerWidth, innerHeight]",
+        );
+        return width === bounds.width && height === bounds.height;
+      });
+    } finally {
+      main.close();
+    }
   }
 
   close() {

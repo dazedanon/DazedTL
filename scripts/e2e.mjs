@@ -459,6 +459,7 @@ async function liveJourney() {
   page = await step("The window shows the interface", async () => {
     page = await Page.connect(port, { root: install });
     await page.waitText("App ready");
+    await page.settle({ root: install, inspect });
     await shot("ready");
     return page;
   });
@@ -708,6 +709,7 @@ async function liveJourney() {
     if (repeated) throw new Error(`START repeated setup: ${repeated[0]}`);
     page = await Page.connect(port, { root: install });
     await page.waitText(path.basename(game));
+    await page.settle({ root: install, inspect });
     await shot("restarted");
     page.close();
     page = undefined;
@@ -834,6 +836,7 @@ async function upgradeJourney(tag) {
       throw new Error(`START left ${installed} installed, not ${version}.`);
     page = await Page.connect(port, { root: install });
     await page.waitText(path.basename(game));
+    await page.settle({ root: install, inspect });
     await shot("updated");
   });
 

@@ -139,6 +139,7 @@ async function openApp(state) {
   writeState(state);
   const page = await Page.connect(state.app.debug, { root: state.root });
   await page.waitText("App ready");
+  await page.settle({ root: state.root, inspect: state.app.inspect });
   return page;
 }
 
