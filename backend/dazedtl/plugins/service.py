@@ -3713,10 +3713,18 @@ class PluginService:
             )
             value = self.load(project_id)
             restored = next(
-                row
-                for row in reversed(value["receipts"])
-                if row.get("restores") == receipt["id"]
+                (
+                    row
+                    for row in reversed(value["receipts"])
+                    if row.get("restores") == receipt["id"]
+                ),
+                None,
             )
+            if restored is None:
+                raise ValueError(
+                    "The application was undone, but Plugin files no longer lists "
+                    "all of its files, so its record stays as it was."
+                )
         else:
             result = checkpoint_history.put_back(
                 root,

@@ -483,7 +483,8 @@ def follow(folder, root, undone, commit):
     `undone`, newest first, as made by checkpoint `commit`. A restore is a
     batch too, so taking one out brings back the batch it restored."""
     root = str(Path(root).resolve())
-    for taken in undone:
+    named = {row.get("commit") for row in records(folder)}
+    for taken in [taken for taken in undone if taken in named]:
         while record := next(
             (
                 row

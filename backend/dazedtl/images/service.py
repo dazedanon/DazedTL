@@ -887,11 +887,14 @@ class ImageService:
         going back past a checkpoint changes; so the images are inspected
         again once the game's checkpoints move."""
         mark = repository_signature(root)
-        if (
-            mark is not None
-            and self.checkpoints.get(project_id) != mark
-            and self._reinspect(project_id) is not None
-        ):
+        if mark is None or self.checkpoints.get(project_id) == mark:
+            return
+        try:
+            checked = self._reinspect(project_id)
+        except OSError, ValueError, sqlite3.Error:
+            # An image it can't read now is checked again on the next read.
+            return
+        if checked is not None:
             self.checkpoints[project_id] = mark
 
     def _pickup(self, project_id):
