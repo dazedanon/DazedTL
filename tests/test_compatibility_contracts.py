@@ -1275,7 +1275,7 @@ def parse(codeList, i, headerString, jaString):
             ]
 
         with TemporaryDirectory() as temporary:
-            from tests.test_ace_conversion import archive_v3
+            from tests.rgssad_archives import archive_v3
 
             game = Path(temporary) / "game"
             fixture = Path(__file__).resolve().parent / "fixtures/ace"

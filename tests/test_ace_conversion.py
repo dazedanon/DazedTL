@@ -8,13 +8,13 @@ import importlib
 import json
 import os
 import shutil
-import struct
 import unittest
 import zlib
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from tests.engine import engine_package
+from tests.rgssad_archives import archive_v1, archive_v3
 
 ace = engine_package("util/ace")
 actions = importlib.import_module(ace.__name__ + ".actions")
@@ -24,7 +24,6 @@ ruby_marshal = importlib.import_module(ace.__name__ + ".ruby_marshal")
 rv2json = importlib.import_module(ace.__name__ + ".rv2json")
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures/ace"
-MASK = 0xFFFFFFFF
 
 
 def files(folder):
@@ -43,58 +42,12 @@ def scripts(data):
     ]
 
 
-def stream(key, data):
-    """RGSSAD file encryption, a byte at a time as RPGMakerDecrypter does."""
-    out = bytearray()
-    for index, byte in enumerate(data):
-        if index and index % 4 == 0:
-            key = (key * 7 + 3) & MASK
-        out.append(byte ^ key.to_bytes(4, "little")[index % 4])
-    return bytes(out)
-
-
-def archive_v3(entries, seed):
-    key = (seed * 9 + 3) & MASK
-    key_bytes = key.to_bytes(4, "little")
-    # A zero offset ends the table, as in shipped archives.
-    offset = 12 + sum(16 + len(name.encode()) for name, _ in entries) + 4
-    table, body = bytearray(), bytearray()
-    for index, (name, data) in enumerate(entries):
-        raw, file_key = name.encode(), 0x9E3779B9 + index
-        values = (offset, len(data), file_key, len(raw))
-        table += struct.pack("<4I", *(value ^ key for value in values))
-        table += bytes(byte ^ key_bytes[i % 4] for i, byte in enumerate(raw))
-        body += stream(file_key, data)
-        offset += len(data)
-    table += struct.pack("<I", key)
-    return b"RGSSAD\0\x03" + struct.pack("<I", seed) + table + body
-
-
 def contents(archive):
     data = archive.read_bytes()
     return [
         (name, rgssad.decrypt(data[offset : offset + size], key))
         for name, offset, size, key in rgssad.entries(data)
     ]
-
-
-def archive_v1(entries):
-    key, out = 0xDEADCAFE, bytearray(b"RGSSAD\0\x01")
-
-    def step(value):
-        return (value * 7 + 3) & MASK
-
-    for name, data in entries:
-        raw = name.encode()
-        out += struct.pack("<I", len(raw) ^ key)
-        key = step(key)
-        for byte in raw:
-            out.append(byte ^ (key & 0xFF))
-            key = step(key)
-        out += struct.pack("<I", len(data) ^ key)
-        key = step(key)
-        out += stream(key, data)
-    return bytes(out)
 
 
 class AceConversionTests(unittest.TestCase):

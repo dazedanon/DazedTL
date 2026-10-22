@@ -22,7 +22,8 @@ from dazedtl.translation.operations import execute
 from dazedtl.translation.release import packing_paths
 from util.ace import actions, rgssad
 
-from tests.test_ace_conversion import archive_v3, files
+from tests.rgssad_archives import archive_v3
+from tests.test_ace_conversion import files
 
 FIXTURE = root / "tests/fixtures/ace"
 TRANSLATED = json.loads(
