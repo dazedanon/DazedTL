@@ -305,6 +305,19 @@ function complete(data) {
   const attack = data.Skills[1];
   if (attack && attack.damage.type === 0)
     attack.damage = { ...attack.damage, type: 1, formula: "100" };
+  // State 1 is the engine's knockout. The fixture's wears off on damage, so
+  // the hit that knocked the enemy out revived it at 1 HP and the playtest's
+  // battle ran to its time limit.
+  const knockout = data.States[1];
+  if (knockout)
+    Object.assign(knockout, {
+      autoRemovalTiming: 0,
+      removeAtBattleEnd: true,
+      removeByDamage: false,
+      removeByRestriction: false,
+      removeByWalking: false,
+      restriction: 4,
+    });
   if (!data.Tilesets[1])
     data.Tilesets[1] = {
       id: 1,
@@ -457,6 +470,7 @@ ${[
     "System",
     "Classes",
     "Skills",
+    "States",
     "Tilesets",
     "Enemies",
     "Troops",
