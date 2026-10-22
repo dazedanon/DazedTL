@@ -5,6 +5,7 @@ import {
   saveNotifications,
   useNotifications,
 } from "../../app/notifications";
+import { subscribeLink } from "../../app/phoneTopic";
 import { useAction } from "../../state/useAction";
 import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
@@ -12,6 +13,7 @@ import { Button } from "../../ui/Button";
 import { CheckField, CheckGroup, FieldRow } from "../../ui/FieldRow";
 import { PageBody } from "../../ui/PageLayout";
 import { PathInput } from "../../ui/PathInput";
+import { QrCode } from "../../ui/QrCode";
 
 /** How DazedTL calls the user back to the window; changes apply at once. */
 export default function Notifications() {
@@ -60,7 +62,7 @@ export default function Notifications() {
             error={action.key === "sound" ? action.error : ""}
           >
             {(control) => (
-              <div className="notification-field">
+              <div className="notification-sound">
                 <PathInput
                   {...control}
                   readOnly
@@ -93,25 +95,24 @@ export default function Notifications() {
           <FieldRow
             id="notifications-topic"
             label="Phone topic"
-            help="Install the free ntfy app on your phone, tap +, and subscribe to this topic. Anyone who knows it can read these notifications."
+            help="Get the free ntfy app first; any phone can also type the topic. Anyone who knows it can read these notifications."
           >
             {(control) => (
-              <div className="notification-field">
-                <input {...control} readOnly value={settings.topic} />
-                <ActionControl
-                  label="Copy"
-                  inline
-                  disabled={action.busy}
-                  error={action.key === "topic" ? action.error : ""}
-                  notice={action.key === "topic" ? action.notice : ""}
-                  onClick={() =>
-                    void action.run(
-                      () => window.dazedtl.copyText(settings.topic),
-                      "Copied.",
-                      "topic",
-                    )
-                  }
+              <div className="phone-setup">
+                <QrCode
+                  value={subscribeLink(settings.topic)}
+                  label="Code that subscribes ntfy on Android"
                 />
+                <div className="phone-setup-steps">
+                  <p>
+                    <strong>Android:</strong> scan the code with your camera to
+                    subscribe in ntfy.
+                  </p>
+                  <p>
+                    <strong>iPhone:</strong> in ntfy, tap + and type this topic:
+                  </p>
+                  <input {...control} readOnly value={settings.topic} />
+                </div>
               </div>
             )}
           </FieldRow>
@@ -126,7 +127,7 @@ export default function Notifications() {
           }
           pending={action.busy && action.key === "test"}
           pendingText="Sending…"
-          error={["sound", "topic"].includes(action.key) ? "" : action.error}
+          error={action.key === "sound" ? "" : action.error}
           notice={action.key === "test" ? action.notice : ""}
           onClick={() =>
             void action.run(

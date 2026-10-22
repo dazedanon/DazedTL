@@ -52,6 +52,10 @@
   --color-error-surface: #39262d;
   --color-scrollbar: #3a5150;
   --color-backdrop: #050a0ab3;
+  /* A QR code stays black on white in every theme, the contrast phone
+     cameras read. */
+  --color-qr-light: #ffffff;
+  --color-qr-dark: #000000;
   /* Image canvases: transparency checks and the marks drawn over game
      images, which must read on any image rather than on the app's surfaces. */
   --color-canvas-light: #e2e4e7;

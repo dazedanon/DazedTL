@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import test from "node:test";
+import {
+  newTopic,
+  subscribeLink,
+  topicWords,
+} from "../app/src/app/phoneTopic.ts";
 
 const { sendToPhone } = createRequire(import.meta.url)(
   "../app/electron/phone.cjs",
@@ -41,5 +46,17 @@ test("a phone notification keeps a Japanese title and reports what ntfy refuses"
       throw new TypeError("fetch failed");
     }),
     /internet connection/,
+  );
+});
+
+test("a new phone topic is everyday words ntfy accepts", () => {
+  // A word ntfy refuses, such as one with a capital or an apostrophe, would
+  // make the phone miss every notification without a word.
+  for (const word of topicWords) assert.match(word, /^[a-z]{3,6}$/);
+  assert.equal(new Set(topicWords).size, topicWords.length);
+  assert.match(newTopic(), /^dazed(-[a-z]{3,6}){3}$/);
+  assert.equal(
+    subscribeLink("dazed-maple-otter-river"),
+    "ntfy://ntfy.sh/dazed-maple-otter-river?display=DazedTL",
   );
 });

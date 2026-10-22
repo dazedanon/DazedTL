@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { NotificationSound } from "../api/transport.ts";
+import { newTopic } from "./phoneTopic.ts";
 import type { WorkAlert } from "./workAlerts.ts";
 
 /** How DazedTL tells the user that work finished or needs them. */
@@ -53,18 +54,6 @@ function read(): NotificationState {
 function publish(change: Partial<NotificationState>) {
   current = { ...read(), ...change };
   for (const listener of listeners) listener();
-}
-
-// Letters and digits that read and type alike on a phone, with no l, 1, o or 0.
-const topicLetters = "abcdefghijkmnpqrstuvwxyz23456789";
-
-/**
- * A topic nobody else picks by chance: ntfy shows a topic's messages to
- * whoever subscribes to it, so its name is what keeps them the user's.
- */
-function newTopic() {
-  const random = crypto.getRandomValues(new Uint8Array(10));
-  return `dazedtl-${Array.from(random, (byte) => topicLetters[byte & 31]).join("")}`;
 }
 
 export function saveNotifications(change: Partial<NotificationSettings>) {

@@ -229,17 +229,38 @@
   font-size: var(--font-small);
   color: var(--color-error-text);
 }
-/* The notification sound's name or phone topic, at the short field width,
-   beside the buttons that act on it. */
-.notification-field {
+/* The notification sound's name, at the short field width, beside the
+   buttons that change it. */
+.notification-sound {
   display: flex;
   align-items: center;
   gap: var(--space-2);
 }
-.notification-field input {
+.notification-sound input {
   flex: 0 1 24rem;
   min-width: 0;
 }
-.notification-field button {
+.notification-sound button {
   flex-shrink: 0;
+}
+/* The phone code beside the steps for each phone, the topic in a field of
+   the short width under them. The steps start on the field label's line, in
+   its size, since text rather than a control leads the row. */
+.phone-setup {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+.phone-setup-steps {
+  min-width: 0;
+  padding-top: var(--space-2);
+  font-size: var(--font-control);
+  line-height: 1.35;
+}
+.phone-setup-steps p {
+  margin: 0 0 var(--space-2);
+  line-height: inherit;
+}
+.phone-setup-steps input {
+  width: min(100%, 24rem);
 }
