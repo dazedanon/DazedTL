@@ -401,7 +401,9 @@ stopped = apply_official_update(
 )
 assert stopped.pending_conflicts, stopped
 record = git_workflow._asset_state_path(
-    inspect_repository(game).repo_root, inspect_repository(game).game_prefix, "pending-assets"
+    inspect_repository(game).repo_root,
+    inspect_repository(game).game_prefix,
+    "pending-assets",
 )
 record.write_text('{"format": ', encoding="utf-8")
 status = abort_update(game)
