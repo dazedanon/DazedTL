@@ -137,11 +137,14 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-2025, ubuntu-24.04]
-        # Groups of about the same length, so the jobs end together.
+        # Groups of about the same length, so the jobs end together; a
+        # scenario's options follow its name.
         scenarios:
-          - playtested
+          - playtested released
           - fresh opened set-up translated qa-done paged
           - assistant-led assistant-written batch-waiting upgraded
+          - released-ace released-mv
+          - update-stopped plugins-applied qa-done --game ace
     steps:
       - run: git config --global core.autocrlf false
       - uses: actions/checkout@v7
@@ -165,12 +168,25 @@ jobs:
               xvfb-run --auto-servernum --server-args="-screen 0 1600x1000x24" "$@"
             else "$@"; fi
           }
-          failed=""
-          for scenario in $SCENARIOS; do
-            screen node scripts/scenario.mjs "$scenario" \
-              --work "$RUNNER_TEMP/scenarios/$scenario" || failed="$failed $scenario"
+          # Each run is a scenario's name and the options after it.
+          runs=()
+          previous=""
+          for word in $SCENARIOS; do
+            if [[ $word == --* || $previous == --* ]]; then
+              runs[-1]+=" $word"
+            else runs+=("$word"); fi
+            previous=$word
           done
-          if [ -n "$failed" ]; then echo "Failed:$failed"; exit 1; fi
+          failed=""
+          for index in "${!runs[@]}"; do
+            run=${runs[$index]}
+            # Word splitting gives the scenario its options.
+            # shellcheck disable=SC2086
+            screen node scripts/scenario.mjs $run \
+              --work "$RUNNER_TEMP/scenarios/$index-${run%% *}" ||
+              failed="$failed, $run"
+          done
+          if [ -n "$failed" ]; then echo "Failed: ${failed#, }"; exit 1; fi
       - uses: actions/upload-artifact@v7
         if: always()
         with:
