@@ -451,6 +451,24 @@ try:
         )
         assert named == {"存子": ("Aruko", "Earlier game")}, named
 
+        # A symlinked skill file would be followed into whatever it points at
+        # and shipped with the translation as if it were the game's own.
+        from util.paths import portable_game_files
+
+        linked = temporary / "linked-game"
+        skills = linked / ".dazedtl/skills"
+        skills.mkdir(parents=True)
+        (skills / "real.md").write_text("guidance", encoding="utf-8")
+        outside = temporary / "outside.md"
+        outside.write_text("secret", encoding="utf-8")
+        try:
+            (skills / "link.md").symlink_to(outside)
+        except OSError:
+            pass  # Windows without symlink rights cannot make the link.
+        assert portable_game_files(linked) == [".dazedtl/skills/real.md"], (
+            portable_game_files(linked)
+        )
+
         # A database pass translates only the names still in Japanese. It used
         # to replace the whole glossary section with them, which erased about
         # 1,100 rows of a game after a patch added a few items.

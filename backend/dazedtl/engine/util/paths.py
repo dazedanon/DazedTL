@@ -357,7 +357,8 @@ def is_portable_game_file(relative: str) -> bool:
 
 
 def portable_game_files(game_root: str | Path) -> list[str]:
-    """The game's portable files that exist, as game-relative paths."""
+    """The game's portable files that exist, as game-relative paths; a link is
+    never followed out of the game."""
     root = Path(game_root)
     metadata = root / GAME_METADATA_RELATIVE
     skills = metadata / "skills"
@@ -368,6 +369,7 @@ def portable_game_files(game_root: str | Path) -> list[str]:
         relative
         for path in candidates
         if path.is_file()
+        and not path.is_symlink()
         and is_portable_game_file(relative := path.relative_to(root).as_posix())
     )
 
