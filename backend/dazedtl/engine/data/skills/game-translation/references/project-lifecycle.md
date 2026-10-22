@@ -19,9 +19,10 @@ Git setup, extraction and guidance, then stops before translation or injection.
   Do not remove the updater, undo preparation, search downloads/mounts or demand a
   second copy just because these are present. Record known preparation and snapshot
   the supplied state honestly; do not claim independent vendor-archive verification.
-- Preserve a recoverable backup before translation or injection. If another copy
-  does not already exist, create the backup from the selected starting game yourself.
-  A Git hash or ignored-asset inventory cannot restore uncommitted binaries by itself.
+- Run operation `record_original` before translation or injection: DazedTL keeps the
+  starting game's files in the game's Git repository (`refs/dazedtl/originals`), so make
+  no copy of the game. A Git hash or ignored-asset inventory cannot restore
+  uncommitted binaries by itself.
 - Run `DAZEDTL_ROOT/scripts/len_translation.py git-status --game-root <game>`.
   Inspect existing branches, worktree state and pending operations. Preserve the
   existing translated branch and remotes; do not initialize a nested repository,
@@ -45,7 +46,7 @@ Git setup, extraction and guidance, then stops before translation or injection.
   formats `ace_json`, or an existing export selected with `--data-path`, and skips
   MV/MZ-only plugin actions. Do not format native Marshal bytes as text.
   Keep the prepared untranslated snapshot recoverable for the subsequent baseline
-  and `git-scope` source checks, separately from the pre-preparation backup.
+  and `git-scope` source checks, separately from the recorded originals.
   On resume, inspect completed preparation and repair only missing or requested
   parts; never rebuild an existing Japanese baseline from current English.
 - Review `.gitignore` against the engine's actual files. The new Len Git mode keeps
@@ -96,7 +97,7 @@ Git setup, extraction and guidance, then stops before translation or injection.
 
 The handoff identifies `.dazedtl/len-method/work/` as the default location for authored tools, translated text records, image sources, research and QA notes.
 All `.dazedtl` files are local and ignored on both `main` and `original`, including glossary, settings, `project.json`, `progress.json` and `status.md`.
-Preserve these records and maintain separate workspace backups; the patch repository does not protect ignored files.
+Preserve these records and export them under `work/`; the patch repository does not protect ignored files.
 Export database-backed translations to stable JSONL/JSON/CSV records there for recovery and review.
 Keep existing project-local adaptations and do not delete working files while removing them from Git tracking.
 Do not force-add work records to either game branch.
@@ -141,7 +142,7 @@ Resolve existing staged changes deliberately, review `git diff --cached`, then c
 Never merge `main` into `original` or cherry-pick translation commits there.
 Verify both branch file lists, original bytes and delivered translation bytes after scope changes and official updates.
 Commit messages are public and spoiler-free: say which files, maps or terms changed, and never name a plot reveal, death or ending.
-Record checkpoint commits and artifact paths in local `status.md` and its workspace backup.
+Record checkpoint commits and artifact paths in local `status.md` and export it under `work/`.
 Use the repository's configured identity; the backend's per-command tool identity is available when none exists.
 Do not invent a user identity or change global Git settings.
 
