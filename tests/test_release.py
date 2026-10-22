@@ -1,6 +1,7 @@
 """A stopped or stale release must not overwrite a previous archive or game."""
 
 import json
+import os
 import sqlite3
 import subprocess
 import unittest
@@ -423,6 +424,11 @@ class ReleaseTests(unittest.TestCase):
                 db.commit()
             self.assertFalse(current(release, game))
             index.unlink()
+            self.assertTrue(current(release, game))
+            # A checkpoint restore writes the bytes the archive holds again.
+            data = game / "data.json"
+            data.write_bytes(data.read_bytes())
+            os.utime(data, ns=(1, 1))
             self.assertTrue(current(release, game))
             write_json(game / "data.json", {"line": "edited later"})
             self.assertFalse(current(release, game))

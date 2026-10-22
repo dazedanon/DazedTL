@@ -78,6 +78,7 @@ GitHub's Windows images include the Visual C++ runtime and other tools a fresh W
 
 `node scripts/release-check.mjs` is the release check, which a session runs before cutting a release: what CI runs, on this machine, in about three minutes on Linux.
 It runs the build checks and the behavior tests, then the live test, the upgrade test, the previous-release QA check and every scenario CI's workflow lists side by side, each in a private display of its own, and prints one table of what passed and failed with each one's log.
+A check that fails is run once more, as the CI flake rule does: one that passes then is reported as a flake, named in the summary with its first log, and a second failure fails the check.
 A check that passes leaves only its log; a failed one keeps its folder beside the logs.
 `--jobs <n>` sets how many run at once (half the processors, at most 10, by default) and `--work <empty folder>` where they run; like the scenarios, it runs outside a sandbox and downloads the runtimes the live tests install.
 
@@ -193,6 +194,7 @@ It refuses `dev`, `main` and uncommitted changes, then takes the landing lock, t
 Its holder renews it every five minutes; one whose process has gone, or that nobody renewed for 20 minutes, is taken over.
 Under the lock it merges `dev` into the branch, runs the tests and build checks, waits while your own DazedTL runs from the main checkout, and fast-forwards the main checkout's `dev`, which must be checked out there without uncommitted changes to tracked files, never overwriting a file the checkout ignores.
 It then pushes `dev` to each mirror, trying a refused push again a minute later; a mirror that still refuses is reported and the landing still counts.
+A last line says how long it took, in total and per stage (lock wait, merge, test, build, push), so a slow landing shows where the time went.
 In the merge, both sides' [release notes](#release-notes) join under their headings through [changelog.mjs](../scripts/changelog.mjs), and conflicts only in the [generated API contracts](architecture.md#api-changes) are resolved by writing them again; any other conflict stops it with exit code 2.
 
 [CI](#live-test) runs on `dev` after the push, not on the branch; the landing warns when `dev`'s newest run failed but does not wait for CI.

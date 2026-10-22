@@ -459,6 +459,10 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             # Finishing it, maybe after its conflicts, reads the release.
             state["incoming_release"] = arguments["official"]
             write_json(lifecycle_path(workspace, job["project_id"]), state)
+        elif operation == "continue":
+            # A damaged record of the assets left to copy is made again from
+            # the release folder the update was applied from.
+            arguments = {**arguments, "release": state.get("incoming_release")}
         result = engine.version(source, operation, arguments)
         if operation in {"apply", "continue"}:
             state.pop("delivery", None)

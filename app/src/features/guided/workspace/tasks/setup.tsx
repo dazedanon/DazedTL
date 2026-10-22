@@ -9,6 +9,7 @@ import { FieldRow } from "../../../../ui/FieldRow";
 import { PathInput } from "../../../../ui/PathInput";
 import type { DisplayState } from "../../../../ui/displayStatus";
 import { StatusHeading } from "../../../../ui/StatusMark";
+import { stoppedJob } from "../../runEnd";
 import type { GuidedWorkspace, SetupStep } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
 
@@ -57,6 +58,7 @@ export function setupView(w: GuidedWorkspace): TaskView {
     setupStep,
     setupJobs,
     setupFailure,
+    setupStopped,
     setupAction,
     setupWorking,
     startSetup,
@@ -212,8 +214,9 @@ export function setupView(w: GuidedWorkspace): TaskView {
       </Button>
     </>
   );
-  // The step that stopped explains why beside the button, until a newer
-  // attempt starts; its row keeps only the mark.
+  // The step that failed explains why beside the button, until a newer
+  // attempt starts; its row keeps only the mark. A stop the user asked for is
+  // no failure: it reads there as a note of what it left.
   const setupError = setupRunning ? "" : setupAction.error || setupFailure;
   const run = !done && (
     <ActionControl
@@ -227,6 +230,11 @@ export function setupView(w: GuidedWorkspace): TaskView {
       inline
       pendingText="Setting up…"
       error={setupError}
+      job={
+        setupStopped && !setupRunning
+          ? stoppedJob("Set up", setupStopped)
+          : undefined
+      }
       onClick={startSetup}
     />
   );
