@@ -247,8 +247,10 @@ export function textChanges(value: Record<string, unknown>) {
 const lines = (count: number) =>
   `${count.toLocaleString()} ${count === 1 ? "line" : "lines"}`;
 
+const noBreak = String.fromCharCode(0xa0);
+
 /** What an update or a checkpoint does to a file's text, or to all of it,
- * without zeros. */
+ * without zeros; a line wraps between its parts, never inside one. */
 export function textSummary(
   text: Pick<TextChanges, "to_translate" | "replaced" | "kept" | "edited">,
 ) {
@@ -261,6 +263,7 @@ export function textSummary(
       `${text.kept.toLocaleString()} ${text.kept === 1 ? "translation stays" : "translations stay"}`,
   ]
     .filter(Boolean)
+    .map((part) => String(part).replaceAll(" ", noBreak))
     .join(" · ");
 }
 
