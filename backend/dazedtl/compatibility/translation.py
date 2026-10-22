@@ -1089,7 +1089,7 @@ class TranslationEngine:
         from util.ace.actions import patch_archive
         from util.gameupdate_config import CONFIG
         from util.len_patch_scope import patch_manifest, patch_refusal
-        from util.paths import GAME_TOOL_FOLDERS, is_game_tool_file
+        from util.paths import GAME_TOOL_ARCHIVE_EXCLUDES, is_game_tool_file
         from util.release_package import ReleasePackageError, _release_patch_sha
         from util.version_update.git_workflow import _run_git
 
@@ -1144,7 +1144,7 @@ class TranslationEngine:
                 ".",
                 *(
                     ":(exclude)" + path
-                    for path in [*GAME_TOOL_FOLDERS, *sorted(omitted)]
+                    for path in [*GAME_TOOL_ARCHIVE_EXCLUDES, *sorted(omitted)]
                 ),
             )
             # An encrypted game reads only its archive, so the patch carries
@@ -1220,7 +1220,11 @@ class TranslationEngine:
                 # The line view only informs the review; the update itself
                 # stands on the file comparison.
                 text = None
-            return {**asdict(preview), "text": text}
+            from .guided import describe_ace_update
+
+            result = {**asdict(preview), "text": text}
+            describe_ace_update(source, options["official"], result)
+            return result
         if action == "apply":
             preview = options["preview"]
             return value(

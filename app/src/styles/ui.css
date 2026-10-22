@@ -1233,6 +1233,8 @@ pre {
 /* A row's own result, for actions that are not one control, such as a
    menu's: its line under the buttons, as a control's feedback takes. */
 .action-row-actions > .action-row-feedback {
+  /* A link beside the result reads at its size. */
+  font-size: var(--font-small);
   order: 1;
   flex-basis: 100%;
   min-width: 0;

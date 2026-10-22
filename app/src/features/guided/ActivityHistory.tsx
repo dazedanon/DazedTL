@@ -112,6 +112,56 @@ function Outcome({ value }: { value: HistoryOutcome }) {
   );
 }
 
+/** An Other activity row: what ran, when, its result and any non-finished
+    status. */
+export function OperationEntry({
+  job,
+  undone = false,
+}: {
+  job: Job;
+  undone?: boolean;
+}) {
+  return (
+    <div className="history-entry history-entry--operation">
+      <div className="history-identity">
+        <div>
+          <strong>{job.label || "Saved activity"}</strong>
+        </div>
+        <small>
+          {job.created && (
+            <time
+              dateTime={job.created}
+              title={new Date(job.created).toLocaleString()}
+            >
+              {historyTime(job.created)}
+            </time>
+          )}
+        </small>
+      </div>
+      <div className="history-operation-detail">
+        <small>{activityDetail(job)}</small>
+      </div>
+      {undone ? (
+        <Outcome value={{ kind: "undone", label: "Undone", detail: "" }} />
+      ) : (
+        job.status !== "complete" && (
+          <Outcome
+            value={{
+              kind: activeRun(job)
+                ? "active"
+                : job.status === "failed"
+                  ? "failed"
+                  : "stopped",
+              label: sentence(job.status.replaceAll("_", " ")),
+              detail: "",
+            }}
+          />
+        )
+      )}
+    </div>
+  );
+}
+
 export function ActivityHistory({
   state,
   translation,
@@ -327,42 +377,32 @@ export function ActivityHistory({
                   <ActionRow
                     key={job.id}
                     label={
-                      <div
-                        className={`history-entry${tab === "operations" ? " history-entry--operation" : ""}`}
-                      >
-                        <div className="history-identity">
-                          <div>
-                            <strong>
-                              {tab === "operations"
-                                ? job.label || "Saved activity"
-                                : historyPhase(job)}
-                            </strong>
-                            {tab !== "operations" && (
+                      tab === "operations" ? (
+                        <OperationEntry job={job} undone={undone(job)} />
+                      ) : (
+                        <div className="history-entry">
+                          <div className="history-identity">
+                            <div>
+                              <strong>{historyPhase(job)}</strong>
                               <span className="history-method">
                                 {historyMode(job)}
                               </span>
-                            )}
-                            {current.has(job.id) && (
-                              <span className="history-latest">Latest</span>
-                            )}
+                              {current.has(job.id) && (
+                                <span className="history-latest">Latest</span>
+                              )}
+                            </div>
+                            <small>
+                              {job.created && (
+                                <time
+                                  dateTime={job.created}
+                                  title={new Date(job.created).toLocaleString()}
+                                >
+                                  {historyTime(job.created)}
+                                </time>
+                              )}
+                              {job.model && <span>{job.model}</span>}
+                            </small>
                           </div>
-                          <small>
-                            {job.created && (
-                              <time
-                                dateTime={job.created}
-                                title={new Date(job.created).toLocaleString()}
-                              >
-                                {historyTime(job.created)}
-                              </time>
-                            )}
-                            {job.model && <span>{job.model}</span>}
-                          </small>
-                        </div>
-                        {tab === "operations" ? (
-                          <div className="history-operation-detail">
-                            <small>{activityDetail(job)}</small>
-                          </div>
-                        ) : (
                           <div className="history-scope">
                             <span>
                               {job.files
@@ -376,39 +416,9 @@ export function ActivityHistory({
                                 : ""}
                             </small>
                           </div>
-                        )}
-                        {/* Finished activity needs no status unless it was
-                            undone since; others say theirs. */}
-                        {tab === "operations" ? (
-                          undone(job) ? (
-                            <Outcome
-                              value={{
-                                kind: "undone",
-                                label: "Undone",
-                                detail: "",
-                              }}
-                            />
-                          ) : (
-                            job.status !== "complete" && (
-                              <Outcome
-                                value={{
-                                  kind: activeRun(job)
-                                    ? "active"
-                                    : job.status === "failed"
-                                      ? "failed"
-                                      : "stopped",
-                                  label: sentence(
-                                    job.status.replaceAll("_", " "),
-                                  ),
-                                  detail: "",
-                                }}
-                              />
-                            )
-                          )
-                        ) : (
                           <Outcome value={outcome} />
-                        )}
-                      </div>
+                        </div>
+                      )
                     }
                   >
                     <Button

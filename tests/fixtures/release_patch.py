@@ -394,6 +394,25 @@ assert (
     status.original_version,
     status.translation_commit,
 ) == (False, False, preview.original_commit, "1.02", preview.translation_commit), status
+# A damaged asset record, such as one cut short by a crash, must not keep
+# Cancel from ending the stopped update: it only says what to copy.
+stopped = apply_official_update(
+    game, newer.parent, "1.03", auto_resolve=False, **applying
+)
+assert stopped.pending_conflicts, stopped
+record = git_workflow._asset_state_path(
+    inspect_repository(game).repo_root,
+    inspect_repository(game).game_prefix,
+    "pending-assets",
+)
+record.write_text('{"format": ', encoding="utf-8")
+status = abort_update(game)
+assert (
+    status.pending_cherry_pick,
+    status.asset_sync_pending,
+    status.original_commit,
+    status.original_version,
+) == (False, False, preview.original_commit, "1.02"), status
 # An apply that stopped once the translation had the update, before its
 # assets were copied: finishing copies them.
 real_assets = git_workflow._complete_pending_asset_plan
