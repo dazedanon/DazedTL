@@ -544,6 +544,7 @@ export function useGuidedWorkspace({
     label?: string,
     target = next(),
     variant: "primary" | "quiet" = "primary",
+    unavailable = false,
   ) =>
     target && (
       <Button
@@ -552,7 +553,9 @@ export function useGuidedWorkspace({
           title: `Continue (${shortcutLabel.next})`,
           "aria-keyshortcuts": shortcutKeys.next,
         })}
-        disabled={action.busy || draft.committing || context.committing}
+        disabled={
+          unavailable || action.busy || draft.committing || context.committing
+        }
         onClick={() => stepTask(target.id)}
       >
         {label || continueLabel(target)}
