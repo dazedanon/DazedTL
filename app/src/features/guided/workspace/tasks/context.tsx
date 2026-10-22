@@ -18,6 +18,7 @@ import { ModelMenu } from "../../../settings/ModelMenu";
 import { GuidanceEditor } from "../../GuidanceEditor";
 import { guidanceAvailability } from "../../guidanceReview";
 import { LayoutMeasurements } from "../../LayoutMeasurements";
+import { runEnd, stoppedJob } from "../../runEnd";
 import { widthsSaveNotice } from "../../lineWidths";
 import { textLocation } from "../../textLocation";
 import { checkoutRefusal } from "../../../translation/checkout";
@@ -489,6 +490,8 @@ export function estimateView(w: GuidedWorkspace): TaskView {
         ? "This estimate is up to date."
         : "";
   const control = feedback("full-estimate", "Estimating…");
+  // The newest attempt's end: a failure is an error, a stop a note.
+  const end = runEnd(estimate, "");
   const run = (
     <ActionControl
       label={estimate.result ? "Estimate again" : "Estimate cost"}
@@ -497,9 +500,8 @@ export function estimateView(w: GuidedWorkspace): TaskView {
       disabledReason={blocked}
       {...control}
       pending={control.pending || working}
-      error={
-        control.error || (estimate.status === "failed" ? estimate.message : "")
-      }
+      error={control.error || end.failure}
+      job={end.stopped ? stoppedJob("Estimate", end.stopped) : undefined}
       onClick={() => void estimateCost()}
     />
   );

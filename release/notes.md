@@ -13,4 +13,10 @@
 - **Assistant-led:** the game folder notice looks like the one in Guided steps (an amber note, not a red banner), and a game update stopped partway says "A game update was interrupted. Finish the interrupted update, or cancel it, under Checkpoints to continue." instead of "unfinished Git cherry-pick".
 - **Stop:** pressing Stop in Set up, Line widths, Cost estimate or Release now says what was kept and whether running it again continues or starts over, instead of "Completed writes were retained; review the destination before retrying."
 - **Line widths:** unsaved width edits can be undone with **Discard draft**, as in Guidance.
+- **Cost estimate:** after you stop an estimate, a note beside the button says it was stopped and nothing was saved, instead of the page quietly going back to Not started.
+- **Translate:** after a game update, **Apply** is unavailable while a file it would apply reads **Outdated**, with "Reload changed files from the game first." beside it, instead of putting the old translation over the update's file.
+- **Checkpoints:** a game update's review no longer lists `Forge_MZ.js` and `plugins.js` as the release's changes, and applying it no longer installs Forge into a game that didn't have it.
+- **Translate:** **Other event text** offers **Apply** only for its own translated files, so before its first run it no longer shows a disabled **Apply (2)** with "Saved translations applied." for files **Maps & events** applied.
+- **Plugin files:** after **Start over**, "Ready to apply" shows once, in the Assistant task header, not also on the Translated plugin text row; other assistant tasks no longer repeat their state on a row either.
+- **Checkpoints:** after a game update, **Translate the new text** counts the lines each task still has to translate, instead of repeating the update's count after you translated them.
 - **Line widths:** after a text fit failed or was stopped, **Save line widths** fits the text again even with the widths unchanged, instead of doing nothing until a width changes.

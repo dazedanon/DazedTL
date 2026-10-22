@@ -268,6 +268,7 @@ Other event text reads its files from its own runs, so text another task transla
 The selected phase files bind each new run and each application preview.
 Working copies are seeded from current game bytes and kept across navigation, estimates and restarts; original-branch identities stay reference and recovery bindings and never force working copies back to untranslated text.
 Apply and hand edits leave a file's original as it was, but a game update records a new one, so the files it changed read Outdated, whatever they last applied, until Resync brings in their new text ([guided_inputs.py](../backend/dazedtl/translation/guided_inputs.py)).
+Until then Apply refuses them, since their translated copies still hold the old release's text ([guided_actions.py](../backend/dazedtl/translation/guided_actions.py)).
 Resync is a reviewed replacement of the checked files with their game bytes that archives their working copies, staged outputs and variable cache first, and advances per-file versions before replacing, so earlier runs cannot overwrite resynced files or supply stale cached responses even if resync is interrupted.
 
 #### Assistant tasks
@@ -410,6 +411,7 @@ Start over is the one writer to the game itself that the [write check](../tests/
 Reviewed runtime manifests control patch scope, and all .dazedtl work stays outside both branches.
 DazedTL's own runtime files a game holds join every manifest ([dazedtl_files](../backend/dazedtl/engine/util/len_patch_scope.py)), because an assistant's manifest of data and `plugins.js` alone once gave players a `plugins.js` loading a plugin the patch lacked.
 Official game updates are staged and merged by [version_update](../backend/dazedtl/engine/util/version_update), whose modules explain why each kind of file merges as it does; a local delivery packages only reviewed Git files, and public publication remains a separate action.
+A complete release is staged prepared as the game's current version was ([rpgmaker_prepare_release](../backend/dazedtl/compatibility/translation.py)), with Forge only when that version's prepared files had it, so Set up's own files never read as the release's changes and a Forge installed later stays as the translation's.
 
 VX Ace preparation runs in Python on every platform: [util/ace](../backend/dazedtl/engine/util/ace) ports RV2JSON 1.2.1 and RPGMakerDecrypter's archive reading instead of shipping their Windows executables, and [the Ace fixture](../tests/fixtures/ace/regenerate.py) records RV2JSON's own output, so conversion tests need neither Ruby nor real games.
 RGSS3 reads only the archive while `Game.rgss3a` exists, so Set up keeps an encrypted game's archive in `.dazedtl/ace`, out of releases and Git, and patches carry it rebuilt from the game's current files.

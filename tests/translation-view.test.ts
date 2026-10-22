@@ -1499,6 +1499,15 @@ test("an Other event text pass without requests reads Done only for files none o
     done: 0,
     total: 0,
   });
+  // Its Apply counts only its own work, while the file's saved translation
+  // still counts for the game.
+  assert.deepEqual(savedTranslations(shared, "advanced").outputs, [
+    "Map001.json",
+  ]);
+  assert.deepEqual(savedTranslations(shared).outputs, [
+    "Map001.json",
+    "Troops.json",
+  ]);
   // A refusal note an earlier run saved in its event text leaves the file
   // to translate again, however finished its run reads.
   assert.equal(

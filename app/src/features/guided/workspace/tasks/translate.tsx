@@ -12,6 +12,7 @@ import {
   completeForSelection,
   estimateEmpty,
   phaseRun,
+  reloadBeforeApply,
   savedTranslations,
   translationStopLabel,
   unconfirmedSubmission,
@@ -76,9 +77,9 @@ export function phaseView(w: GuidedWorkspace): TaskView {
     translationFlow.active ||
     !!pendingBatches.length;
   // A file a Live run is still translating has only partial output to apply,
-  // and one no run translated has nothing to apply.
+  // and one no run of this task translated has nothing of its to apply.
   const { outputs: translatedOutputs, applied: appliedOutputs } =
-    savedTranslations(state);
+    savedTranslations(state, phase);
   const applyFiles = selectedNames.filter(
     (name) =>
       translatedOutputs.includes(name) &&
@@ -298,7 +299,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
           !baseline ||
             !!state.collectionError ||
             (w.archiveRead && "Convert Ace data in Set up first.") ||
-            applyFiles.some((name) => changed.includes(name)) ||
+            reloadBeforeApply(applyFiles, changed) ||
             // The files' rows read Applied, so Apply has nothing to do.
             (applyFiles.every((name) => appliedOutputs.includes(name)) &&
               "Saved translations applied."),

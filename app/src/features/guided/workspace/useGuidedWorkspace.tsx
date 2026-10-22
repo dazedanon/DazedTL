@@ -913,13 +913,17 @@ export function useGuidedWorkspace({
       current?.status === "complete" &&
       current.id === started[actionKey(name, options)]?.id;
     // An Apply from this visit confirms beside its button while its files
-    // still read Applied; a later run's output to apply ends it.
+    // still read Applied; a later run's output to apply, or a file changed
+    // in the game, ends it.
     const appliedHere =
       name === "export_selected" &&
       finishedHere &&
       !!files &&
       appliedFiles[current.id] === [phase, ...files].join("\n") &&
-      files.every((file) => state.readiness.applied.includes(file));
+      files.every(
+        (file) =>
+          state.readiness.applied.includes(file) && !changed.includes(file),
+      );
     const qaOperation = ["qa_prepare", "qa_status"].includes(name);
     // Release reports a finished build in its saved archive panel; only a
     // build from this visit also confirms beside its button.

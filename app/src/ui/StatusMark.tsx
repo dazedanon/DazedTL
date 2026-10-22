@@ -35,18 +35,26 @@ export function StatusMark({
  * A list row's title led by its state's mark, with the state's word after
  * it; the row's description lines up with the title. A row whose state the
  * app cannot observe keeps the mark's space blank, so titles still align.
+ * `quiet` keeps the word for screen readers and the mark's tooltip only,
+ * for a row whose panel already shows the same state.
  */
 export function StatusHeading({
   state,
   title,
   pending = false,
+  quiet = false,
 }: {
   state?: DisplayState;
   title: ReactNode;
   pending?: boolean;
+  quiet?: boolean;
 }) {
   return (
-    <span className="status-heading" data-state={state}>
+    <span
+      className="status-heading"
+      data-state={state}
+      title={quiet && state ? displayLabels[state] : undefined}
+    >
       {state ? (
         <StatusIcon status={pending ? "active" : displayMarks[state]} />
       ) : (
@@ -54,7 +62,9 @@ export function StatusHeading({
       )}
       <strong>{title}</strong>
       {state && (
-        <span className="status-heading-state">{displayLabels[state]}</span>
+        <span className={quiet ? "sr-only" : "status-heading-state"}>
+          {displayLabels[state]}
+        </span>
       )}
     </span>
   );

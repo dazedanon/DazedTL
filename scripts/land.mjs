@@ -164,25 +164,22 @@ export async function land(cwd, deps) {
 }
 
 /**
- * The landing itself, while this session holds the lock.
- * @param {Deps} deps
- * @param {{ top: string, main: string, branch: string }} where
- * @param {ReturnType<typeof timer>} time
- * @returns {Promise<{ code: number, report: string[] }>}
+ * Merges dev into the branch at `top`, release notes by kind and generated
+ * API contracts written again. Resolves null once merged, else the exit code
+ * and report: 2 leaves a conflicting merge in progress to resolve.
+ * @param {ReturnType<typeof gitIn>} git
+ * @param {string} top
+ * @param {Deps["run"]} run
+ * @param {Deps["log"]} log
+ * @returns {Promise<{ code: number, report: string[] } | null>}
  */
-async function underLock(deps, { top, main, branch }, time) {
-  const { run, log, wait } = deps;
-  const git = gitIn(top);
-  const atMain = gitIn(main);
+export async function mergeDev(git, top, run, log) {
   const out = (/** @type {string[]} */ ...args) => git(args).stdout.trim();
   const finish = (
     /** @type {number} */ code,
     /** @type {string[]} */ ...report
   ) => ({ code, report });
-  time.lap("lock wait");
-  const before = out("rev-parse", "dev");
-
-  const notes = `"${process.execPath}" "${path.join(top, "scripts", "changelog.mjs")}" merge %O %A %B`;
+  const notes = `"${process.execPath}" "${path.join(import.meta.dirname, "changelog.mjs")}" merge %O %A %B`;
   const merge = git([
     "-c",
     "merge.dazedtl-notes.name=DazedTL release notes",
@@ -207,13 +204,14 @@ async function underLock(deps, { top, main, branch }, time) {
       );
     }
     const resolve = "merge dev and resolve the conflicts, then land again";
-    if (!conflicted.every((file) => generated.includes(file))) {
-      abort();
+    // The merge stays in progress, release notes already merged by kind, so
+    // only these files need resolving; a merge run again by hand would merge
+    // the notes as text.
+    if (!conflicted.every((file) => generated.includes(file)))
       return finish(
         2,
-        `Merging dev conflicts in ${conflicted.join(", ")}: ${resolve}.`,
+        `Merging dev conflicts in ${conflicted.join(", ")}. The merge is left in progress with everything else merged: resolve these files, commit, and land again.`,
       );
-    }
     log(
       `Merging dev conflicts only in generated ${conflicted.join(", ")}; writing them again.`,
     );
@@ -234,6 +232,30 @@ async function underLock(deps, { top, main, branch }, time) {
       return finish(1, tail(commit.stdout + commit.stderr));
     }
   }
+  return null;
+}
+
+/**
+ * The landing itself, while this session holds the lock.
+ * @param {Deps} deps
+ * @param {{ top: string, main: string, branch: string }} where
+ * @param {ReturnType<typeof timer>} time
+ * @returns {Promise<{ code: number, report: string[] }>}
+ */
+async function underLock(deps, { top, main, branch }, time) {
+  const { run, log, wait } = deps;
+  const git = gitIn(top);
+  const atMain = gitIn(main);
+  const out = (/** @type {string[]} */ ...args) => git(args).stdout.trim();
+  const finish = (
+    /** @type {number} */ code,
+    /** @type {string[]} */ ...report
+  ) => ({ code, report });
+  time.lap("lock wait");
+  const before = out("rev-parse", "dev");
+
+  const merged = await mergeDev(git, top, run, log);
+  if (merged) return merged;
   const head = out("rev-parse", "HEAD");
   time.lap("merge");
   if (head === before)
