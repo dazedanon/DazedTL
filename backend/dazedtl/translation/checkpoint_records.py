@@ -33,6 +33,16 @@ class Records:
     publications: Path | None = None
 
 
+def undoes(record):
+    """Whether a record of applied work restores through Git: by undoing
+    the checkpoint its write made, or, when the write made none because it
+    stopped or failed after writing, by putting its files back as the
+    checkpoint it started from had them. One from before records named them
+    restores from the copies it saved; one restored since still reads as
+    undone through Git."""
+    return bool(record.get("commit") or record.get("parent"))
+
+
 def publications(backend, project):
     """The folder of a project's text publications, or None without a
     Guided project."""

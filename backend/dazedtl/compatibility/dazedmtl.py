@@ -470,7 +470,8 @@ class ExistingBackend:
         }
 
     def guided_text_state(self, native, focus="release"):
-        from dazedtl.translation.publication import history, undoes
+        from dazedtl.translation.checkpoint_records import undoes
+        from dazedtl.translation.publication import history
 
         from .playtest import POINTER, playtest_state
         from .text import qa_state, qa_unreadable
@@ -544,9 +545,9 @@ class ExistingBackend:
         """What a batch's restore waits for: the later checkpoint to undo
         first, by the Git rule, for one undone through its checkpoint, else
         the later batch its saved copies would take out too."""
-        from dazedtl.translation.publication import blocker, undoes
+        from dazedtl.translation.publication import blocker
 
-        if not undoes(row) or row["state"] != "complete":
+        if not row.get("commit") or row["state"] != "complete":
             return blocker(rows, row["id"])
         from .checkpoint_history import blockers, refusal
 

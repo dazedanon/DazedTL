@@ -763,6 +763,25 @@ checkpoint_records.go_back(records, record["parent"])
 clean()
 assert batch(plan["id"]) == "restored" and outputs() == {}, outputs()
 assert (kept / items).read_bytes() == before_qa
+# A batch that wrote every file but whose write then failed, here at its
+# checkpoint, as a failed pack or a stop also leave it, made no checkpoint and
+# kept no copies; History once had no way to undo it.
+from dazedtl.compatibility.checkpoint_commits import Checkpoint
+
+with running(for_action("qa_apply")):
+    plan = publication.freeze(texts, kept, {items: b'["Not recorded"]'}, "qa_apply")
+    try:
+        with patch.object(Checkpoint, "record", side_effect=ValueError("No commit.")):
+            publication.publish(texts, kept, plan)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("A write whose checkpoint failed succeeded.")
+[failed] = [row for row in publication.records(texts) if row["id"] == plan["id"]]
+assert failed["state"] == "complete" and "commit" not in failed, failed
+publication.undo(texts, kept, plan["id"], records)
+clean()
+assert batch(plan["id"]) == "restored" and (kept / items).read_bytes() == before_qa
 # A file name that isn't UTF-8, as unzip leaves Shift-JIS names on Linux,
 # goes to Git as its own bytes and comes back as the same file: every write
 # to such a game once failed while recording its original files.

@@ -14,6 +14,7 @@ from dazedtl.foreign_work import ForeignWorkError
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation import originals as game_originals
 from dazedtl.translation import reference_folders
+from dazedtl.translation.checkpoint_records import undoes
 from dazedtl.translation.files import decode_json, digest, project_path, read_json
 from dazedtl.translation.helper_command import helper_command, windows_note
 from dazedtl.translation.operations import lifecycle, lifecycle_path
@@ -373,14 +374,6 @@ def carries(files, receipt):
         files.get(row["path"], {}).get("applied", {}).get("receipt") == receipt["id"]
         for row in receipt["files"]
     )
-
-
-def undoes(receipt):
-    """Whether an application restores through Git: by undoing the
-    checkpoint it made, or, interrupted, by putting its files back as the
-    checkpoint it started from had them. One from before receipts named
-    them restores from the backups it saved."""
-    return bool(receipt.get("commit") or receipt.get("parent"))
 
 
 # The checkpoint an application makes, as the project's activity names it.

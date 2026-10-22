@@ -285,6 +285,7 @@ Only the user can start it, so the project helper has no route to it.
 A [text publication](../backend/dazedtl/translation/publication.py) freezes reviewed destinations before any runtime replacement, and the worker fits, preflights and publishes the whole batch in one game write with rollback attempts; its receipt names the checkpoint it made and the one it started from, and keeps no copy of what it replaced, since Git does.
 History's Undo of a batch is the undo of its checkpoint, by the Checkpoints tab's rule, after which a restore receipt puts only the batch's own Apply receipt entries back.
 A batch that stopped midway made no checkpoint and raises a notice on every Guided task, because part of it may be in the game; its Restore puts its files back as the checkpoint it started from had them, while each still holds what was there before or what the batch wrote.
+A batch whose write failed after all its files, such as at packing or its checkpoint, made none either, so its Undo puts its files back the same way.
 A batch from before receipts named their checkpoint keeps its reviewed restore from the copies it saved, once no later batch still in the game changed the same files.
 
 #### Text QA

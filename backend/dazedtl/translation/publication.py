@@ -4,8 +4,9 @@ A batch freezes what it will write for its review, then publishes it in one
 game write, whose checkpoint its receipt names (`commit`), with the
 checkpoint it started from (`parent`). Undoing a batch is undoing that
 checkpoint, from History or the Checkpoints tab, after which `follow`
-restores it; a batch that stopped midway made none, so its files go back as
-`parent` had them. Either way a restore receipt then puts the batch's own
+restores it; a batch that stopped midway, or whose write failed after its
+files, such as at packing, made none, so its files go back as `parent` had
+them. Either way a restore receipt then puts the batch's own
 applied-output entries back, so History and Text QA read it as restored.
 
 Batches published before their receipts named a checkpoint kept a copy of
@@ -22,6 +23,8 @@ from dazedtl import system
 from dazedtl.compatibility.game_write import write_game
 from dazedtl.storage import write_bytes, write_json
 
+from . import checkpoint_records
+from .checkpoint_records import undoes
 from .files import digest, project_path, read_json
 
 # How long a frozen review can still be published.
@@ -408,16 +411,6 @@ def publish(folder, root, plan, log=lambda _: None):
     }
 
 
-def undoes(record):
-    """Whether a batch restores by undoing its checkpoint, or, stopped
-    midway, by putting its files back as the checkpoint before it had them;
-    a batch from before receipts named them restores from its saved copies."""
-    if record.get("commit"):
-        return True
-    # One restored since still reads as undone, not as one with copies.
-    return record["state"] != "complete" and bool(record.get("parent"))
-
-
 def _undoable(folder, root, identity):
     rows = history(folder)
     record = next((row for row in rows if row["id"] == identity), None)
@@ -438,12 +431,11 @@ def undo_files(folder, root, identity):
 
 def undo(folder, root, identity, records, *, original=None, log=lambda _: None):
     """Takes a batch out of the game through its checkpoint, whose
-    [records](checkpoint_records.py) then restore it, or, stopped midway,
-    puts its files back and records that restore here. `original` is the
-    saved original game of one set up before Git kept its original files."""
+    [records](checkpoint_records.py) then restore it, or, when its write
+    made none, puts its files back and records that restore here.
+    `original` is the saved original game of one set up before Git kept its
+    original files."""
     from dazedtl.compatibility import checkpoint_history
-
-    from . import checkpoint_records
 
     record = _undoable(folder, root, identity)
 
@@ -457,7 +449,7 @@ def undo(folder, root, identity, records, *, original=None, log=lambda _: None):
                     + ". Keep those edits or restore them separately."
                 )
 
-    if record["state"] == "complete":
+    if record.get("commit"):
         checkpoint_records.undo(records, record["commit"], log=log, original=original)
     else:
         result = checkpoint_history.put_back(
