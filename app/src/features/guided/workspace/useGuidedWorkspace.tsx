@@ -1152,6 +1152,12 @@ export function useGuidedWorkspace({
         : "Guidance is already saved.",
       "context:save",
     );
+  // Back to the saved Line widths; edits to the other options stay, as
+  // discarding one guidance document leaves the others.
+  const discardWidths = async () => {
+    edit("widths", state.preferences.values.widths);
+    await draft.session.flush();
+  };
   const widths = (
     <fieldset disabled={disabled} className="guided-widths">
       {/* Four character limits, then the rows one message window shows. */}
@@ -1643,6 +1649,7 @@ export function useGuidedWorkspace({
     savedNames,
     saveDocuments,
     widths,
+    discardWidths,
     textFit,
     fileSummary,
     fileRow,

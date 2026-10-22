@@ -78,6 +78,27 @@ QA = "dazedtl.compatibility.text:run_qa"
 PLAYTEST = "dazedtl.compatibility.playtest"
 
 
+# What a stop the user asked for leaves, said once per kind of run: what was
+# kept and whether running it again continues or starts over. An action
+# without a row of its own claims nothing.
+STOPPED = "It ended early at your request."
+SETUP_STOPPED = (
+    "Steps that finished are kept. Setting up again continues with the step "
+    "that was stopped."
+)
+STEP_STOPPED = "The step did not finish. Setting up again runs it again from its start."
+TOOL_STOPPED = "It did not finish. Running it again starts it over."
+FIT_STOPPED = (
+    "Text already fitted stays as it is. Saving changed line widths fits the "
+    "text again."
+)
+ESTIMATE_STOPPED = "No new estimate was saved. Estimating again starts over."
+RELEASE_STOPPED = (
+    "No new ZIP was saved, and any earlier ZIP is unchanged. Building again "
+    "starts over."
+)
+
+
 @dataclass(frozen=True)
 class ActionSpec:
     name: str
@@ -96,6 +117,7 @@ class ActionSpec:
     isolated: bool = False
     tools: bool = False
     reports_outcome: bool = False
+    stopped: str = STOPPED
 
     @property
     def history_label(self):
@@ -108,7 +130,12 @@ ROWS = (
     # Setup saves the version from the form it shows, right after preparing;
     # execution rechecks the same scope.
     ActionSpec(
-        "git_setup", "Record game version", "lifecycle", stage="Set up", one_click=True
+        "git_setup",
+        "Record game version",
+        "lifecycle",
+        stage="Set up",
+        one_click=True,
+        stopped=STEP_STOPPED,
     ),
     # Every write is its own checkpoint; an assistant's own edits are saved
     # by the helper's checkpoint.
@@ -121,6 +148,7 @@ ROWS = (
         "lifecycle",
         stage="Release",
         reports_outcome=True,
+        stopped=RELEASE_STOPPED,
     ),
     ActionSpec(
         "refresh_sources",
@@ -194,6 +222,7 @@ ROWS = (
         stage="Set up",
         handler=PREPARE,
         one_click=True,
+        stopped=SETUP_STOPPED,
     ),
     ActionSpec(
         "format_data",
@@ -204,6 +233,7 @@ ROWS = (
         handler=PREPARE,
         one_click=True,
         reports_outcome=True,
+        stopped=TOOL_STOPPED,
     ),
     ActionSpec(
         "format_plugins",
@@ -214,6 +244,7 @@ ROWS = (
         handler=PREPARE,
         one_click=True,
         reports_outcome=True,
+        stopped=TOOL_STOPPED,
     ),
     ActionSpec(
         "gameupdate",
@@ -224,6 +255,7 @@ ROWS = (
         handler=PREPARE,
         one_click=True,
         reports_outcome=True,
+        stopped=TOOL_STOPPED,
     ),
     ActionSpec("import", "Import selected files", "native", stage="Set up"),
     # VX Ace
@@ -242,6 +274,7 @@ ROWS = (
         stage="Set up",
         handler=ACE,
         one_click=True,
+        stopped=STEP_STOPPED,
     ),
     # Packing brings Data up to ace_json, as Apply does.
     ActionSpec(
@@ -396,6 +429,7 @@ ROWS = (
         stage="Release",
         handler="dazedtl.compatibility.guided:run_release",
         reports_outcome=True,
+        stopped=RELEASE_STOPPED,
     ),
     # Context
     ActionSpec(
@@ -437,6 +471,7 @@ ROWS = (
         handler="dazedtl.compatibility.text:run_fit",
         writes_text=True,
         restorable=True,
+        stopped=FIT_STOPPED,
     ),
     ActionSpec(
         "full_estimate",
@@ -444,6 +479,7 @@ ROWS = (
         "background",
         stage="Context",
         handler="dazedtl.compatibility.full_estimate:run",
+        stopped=ESTIMATE_STOPPED,
     ),
     ActionSpec(
         "speaker_scan",
@@ -548,6 +584,12 @@ def spec(name):
 
 def label(name):
     return ACTIONS[name].label
+
+
+def stopped_note(name):
+    """What a stop the user asked for leaves of this action's run."""
+    row = ACTIONS.get(name)
+    return row.stopped if row else STOPPED
 
 
 def history_label(name):
