@@ -625,13 +625,18 @@ export type SourceStatus = {
   lines?: Record<string, FileLines>;
 };
 
-/** The newest later batch still in the game that changed some of a
-batch's files, which must be restored first. */
+/** What a batch's restore waits for: for one undone through its
+checkpoint, the later checkpoint to undo first (kind "checkpoint"), else
+the newest later batch still in the game that changed some of its
+files. */
 export type RestoreBlocker = {
+  /** The later batch, or the later checkpoint's commit. */
   id: string;
   kind: string;
-  /** The files both batches changed. */
+  /** The files both changed. */
   files: string[];
+  /** Why its checkpoint can't be undone yet, as the Checkpoints tab says it. */
+  reason?: string;
 };
 
 export type PublicationStatus = {
@@ -640,6 +645,8 @@ export type PublicationStatus = {
   state: string;
   files: string[];
   recovery_errors: string[];
+  /** Restores in one click by undoing its checkpoint, or, interrupted, by putting its files back from the checkpoint before it; else by a reviewed restore of the copies it saved. */
+  undo: boolean;
   blocker?: RestoreBlocker;
 };
 
@@ -1268,6 +1275,7 @@ export type GuidedAction =
   | "refresh_sources"
   | "export_selected"
   | "runtime_restore"
+  | "runtime_undo"
   | "qa_apply"
   | "qa_undo"
   | "prepare_game"
@@ -2230,7 +2238,6 @@ export type ImagePreview = {
   included: number;
   count: number;
   unchanged: number;
-  backups?: string[] | boolean;
   expires?: string | number;
 };
 
@@ -2470,7 +2477,7 @@ export type PluginFileReview = {
   afterHash: string;
   originalHash: string;
   candidateHash: string;
-  backup: string;
+  backup?: string;
   changes: number;
   kind: string;
 };
@@ -2498,6 +2505,8 @@ export type PluginReceipt = {
   conflicts: string[];
   manifest: string;
   restorable: boolean;
+  /** Restores in one click by undoing its checkpoint, or, interrupted, by putting its files back from the checkpoint before it; else by a reviewed restore of the backups it saved. */
+  undo: boolean;
   restoreIssue?: string;
 };
 
@@ -3524,6 +3533,12 @@ export const ACTIONS = {
   },
   runtime_restore: {
     label: "Restore reviewed text batch",
+    family: "text",
+    restorable: false,
+    reports_outcome: false,
+  },
+  runtime_undo: {
+    label: "Undo text batch",
     family: "text",
     restorable: false,
     reports_outcome: false,

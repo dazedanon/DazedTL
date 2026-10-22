@@ -579,7 +579,7 @@ export function useGuidedWorkspace({
             ...state.operations.filter(
               (item) =>
                 item.action === name &&
-                (name !== "runtime_restore" ||
+                (!["runtime_restore", "runtime_undo"].includes(name) ||
                   item.result?.restored === options.publication),
             ),
             ...translation.jobs

@@ -20,8 +20,9 @@ import { PathText } from "../../ui/PathText";
 const RECENT_MINUTES = 15;
 
 /**
- * Starts an Assistant-led project over: the original game files come back,
- * the attempt moves to .dazedtl/archived, and the next starting prompt
+ * Starts an Assistant-led project over: the original game files come back
+ * as a checkpoint, so the attempt stays in the game's history, the
+ * assistant's work moves to .dazedtl/archived, and the next starting prompt
  * begins again from preparation.
  */
 export function StartOver({
@@ -94,16 +95,28 @@ function StartOverDialog({
         <DialogBody>
           <p>
             {job?.result?.original ? "The original game files are back. " : ""}
-            The earlier attempt is in <PathText path={archive} wrap />.
+            {state.git?.configured
+              ? "The earlier attempt stays under Checkpoints"
+              : "The earlier attempt"}
+            {archive ? (
+              <>
+                {state.git?.configured ? ", and its work is in " : " is in "}
+                <PathText path={archive} wrap />.
+              </>
+            ) : (
+              "."
+            )}
           </p>
           <p>Copy the starting prompt to begin again.</p>
         </DialogBody>
       ) : (
         <DialogBody>
           <p>
-            {state.originalsRecorded
-              ? "DazedTL puts back the original game files and moves your assistant's work and the game's Git history to .dazedtl/archived."
-              : "DazedTL moves your assistant's work to .dazedtl/archived. DazedTL has not kept the game's original files yet, so its files stay as they are."}{" "}
+            {!state.originalsRecorded
+              ? "DazedTL moves your assistant's work to .dazedtl/archived. DazedTL has not kept the game's original files yet, so its files stay as they are."
+              : state.git?.configured
+                ? "DazedTL puts back the original game files as a new checkpoint, so this attempt stays under Checkpoints, and moves your assistant's work to .dazedtl/archived."
+                : "DazedTL puts back the original game files and moves your assistant's work to .dazedtl/archived."}{" "}
             The next starting prompt begins again from preparation.
           </p>
           <p className="muted">

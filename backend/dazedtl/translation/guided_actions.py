@@ -499,6 +499,13 @@ class GuidedActions:
             else self.guided.backend.workflows.preview(native["id"], action, options)
         )
         token = result["token"]
+        if action == "runtime_undo":
+            # A game set up before Git kept its original files undoes from
+            # the backup it saved then, which the project's records name.
+            self.guided.backend.workflows.previews[token]["original"] = {
+                "workspace": str(self.guided.translation.workspace),
+                "project_id": project_id,
+            }
         if ACTIONS[action].tools:
             configured = self.guided.saved_form(project_id)["release"]["tools"]
             if (

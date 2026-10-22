@@ -1,4 +1,16 @@
-"""Frozen, reviewed text publication with durable backups and guarded recovery."""
+"""Frozen, reviewed text publication, undone through the game's checkpoints.
+
+A batch freezes what it will write for its review, then publishes it in one
+game write, whose checkpoint its receipt names (`commit`), with the
+checkpoint it started from (`parent`). Undoing a batch is undoing that
+checkpoint; a batch that stopped midway made none, so its files go back as
+`parent` had them. Either way a restore receipt then puts the batch's own
+applied-output entries back, so History and Text QA read it as restored.
+
+Batches published before their receipts named a checkpoint kept a copy of
+each file they replaced (`<index>.before`), which their reviewed restore
+(`restore_candidates`) still reads; no batch writes one now.
+"""
 
 import json
 import time
@@ -173,9 +185,6 @@ def freeze(
         if raw is None and not restore:
             raise ValueError("Only a restore takes a file out of the game.")
         before = target.read_bytes() if target.exists() else None
-        # A full overwrite backs up the bytes it replaces when it publishes.
-        if not overwrite and before is not None:
-            write_bytes(base / f"{index}.before", before)
         source = (sources or {}).get(name)
         if source is None and raw is not None:
             write_bytes(base / f"{index}.after", raw)
@@ -225,7 +234,8 @@ def _current(target):
 def _discard_unused(folder):
     """Removes reviews too old to publish and the copies finished batches
     froze of what they would write; each copy is as large as its files,
-    gigabytes on a large game. Backups stay for restore."""
+    gigabytes on a large game. Older batches' copies of what they replaced
+    stay for their restore."""
     base = project_path(folder, "text-publications", exists=False)
     for path in base.glob("*/receipt.json"):
         if path.is_symlink() or path.parent.is_symlink():
@@ -271,11 +281,13 @@ def load(folder, plan):
     return base, row
 
 
-def _back_up(base, row, target):
-    """Saves the bytes a full overwrite replaces, as the game holds them now."""
-    before = target.read_bytes()
-    row["before"], row["mode"] = digest(before), target.stat().st_mode & 0o777
-    write_bytes(base / f"{row['index']}.before", before)
+def _replaced(row, target):
+    """The bytes a full overwrite replaces, as the game holds them now, which
+    its receipt then names."""
+    before = _current(target)
+    row["before"] = _hash(before)
+    if before is not None:
+        row["mode"] = target.stat().st_mode & 0o777
     return before
 
 
@@ -306,17 +318,9 @@ def publish(folder, root, plan, log=lambda _: None):
                 else project_path(base, f"{row['index']}.after")
             ).read_bytes()
         )
-        before = (
-            None
-            if overwrite or row["before"] is None
-            else project_path(base, f"{row['index']}.before").read_bytes()
-        )
+        before = None if overwrite else _current(target)
         if _hash(after) != row["after"] or (
-            not overwrite
-            and (
-                _hash(before) != row["before"]
-                or _hash(_current(target)) != row["before"]
-            )
+            not overwrite and _hash(before) != row["before"]
         ):
             raise ValueError(
                 "A source, destination or frozen candidate changed. Review again."
@@ -325,14 +329,16 @@ def publish(folder, root, plan, log=lambda _: None):
     with write_game(
         root, folder, log=log, paths=[row["path"] for row in record["files"]]
     ) as game:
-        log("Publishing the reviewed batch; backups are retained.")
+        log("Publishing the reviewed batch.")
         if overwrite:
-            # Explicit full-file Apply backs up the bytes present at the actual
-            # overwrite, including edits made after its preview. Backing up every
+            # Explicit full-file Apply replaces the bytes present at the actual
+            # overwrite, including edits made after its preview. Reading every
             # file before the first write saves the receipt once: saved per file,
             # its writes grew with the square of the batch's files.
             for payload in payloads:
-                payload[2] = _back_up(base, payload[1], payload[0])
+                payload[2] = _replaced(payload[1], payload[0])
+        # The checkpoint an interrupted batch's files go back to.
+        record["parent"] = game.parent
         record["state"] = "publishing"
         write_json(base / "receipt.json", record)
         attempted = []
@@ -341,8 +347,8 @@ def publish(folder, root, plan, log=lambda _: None):
                 if _hash(_current(target)) != row["before"]:
                     if not overwrite:
                         raise ValueError("A runtime file changed during publication.")
-                    # The game file changed since its backup moments ago.
-                    before = _back_up(base, row, target)
+                    # The game file changed since it was read moments ago.
+                    before = _replaced(row, target)
                     write_json(base / "receipt.json", record)
                 attempted.append((target, row, before, after))
                 game.put(row["path"], after, row["mode"])
@@ -388,6 +394,11 @@ def publish(folder, root, plan, log=lambda _: None):
                 + " "
                 + str(failure)
             ) from failure
+    # The checkpoint the gateway made once the write succeeded, which
+    # undoing the batch takes out.
+    if game.checkpoint:
+        record["commit"] = game.checkpoint
+        write_json(base / "receipt.json", record)
     return {
         "files": len(payloads),
         "publication": record["id"],
@@ -396,7 +407,110 @@ def publish(folder, root, plan, log=lambda _: None):
     }
 
 
+def undoes(record):
+    """Whether a batch restores by undoing its checkpoint, or, stopped
+    midway, by putting its files back as the checkpoint before it had them;
+    a batch from before receipts named them restores from its saved copies."""
+    if record["state"] == "complete":
+        return bool(record.get("commit"))
+    return record["state"] in IN_EFFECT and bool(record.get("parent"))
+
+
+def _undoable(folder, root, identity):
+    rows = history(folder)
+    record = next((row for row in rows if row["id"] == identity), None)
+    if (
+        not record
+        or record["root"] != str(Path(root).resolve())
+        or record["state"] not in IN_EFFECT
+        or not undoes(record)
+    ):
+        raise ValueError("Choose an applied or interrupted batch to undo.")
+    return record
+
+
+def undo_files(folder, root, identity):
+    """The files undoing a batch puts back, for its one-click review."""
+    return _undoable(folder, root, identity)["files"]
+
+
+def undo(folder, root, identity, *, original=None, log=lambda _: None):
+    """Takes a batch out of the game through its checkpoint, then records
+    the restore so its applied-output entries go back. `original` is the
+    saved original game of one set up before Git kept its original files."""
+    from dazedtl.compatibility import checkpoint_history
+
+    record = _undoable(folder, root, identity)
+
+    def unchanged():
+        for row in record["files"]:
+            target = project_path(root, row["path"], exists=False)
+            if _hash(_current(target)) not in {row["before"], row["after"]}:
+                raise ValueError(
+                    "Newer edits in the game conflict with this restore: "
+                    + row["path"]
+                    + ". Keep those edits or restore them separately."
+                )
+
+    if record["state"] == "complete":
+        result = checkpoint_history.undo(
+            root, record["commit"], log=log, original=original
+        )
+    else:
+        result = checkpoint_history.put_back(
+            root,
+            record["parent"],
+            [row["path"] for row in record["files"]],
+            "Restored an interrupted text batch",
+            check=unchanged,
+            log=log,
+            original=original,
+        )
+    _restored(folder, root, record, result["commit"])
+    return {
+        "files": len(record["files"]),
+        "publication": None,
+        "restored": record["id"],
+        "destination": str(root),
+    }
+
+
+def _restored(folder, root, record, commit):
+    """Records a batch's restore, made through Git, as a restore receipt
+    holding no copies, and puts its applied-output entries back."""
+    path = Path(folder) / "applied-outputs.json"
+    current = read_json(path) if path.exists() else {"version": 1, "files": {}}
+    following = _reverted(current, record)
+    identity = uuid.uuid4().hex
+    base = project_path(folder, "text-publications/" + identity, exists=False)
+    write_json(
+        base / "receipt.json",
+        {
+            "version": 1,
+            "id": identity,
+            "created": time.time(),
+            "root": str(Path(root).resolve()),
+            "kind": "runtime_restore",
+            "state": "complete",
+            "files": [
+                {**row, "before": row["after"], "after": row["before"]}
+                for row in record["files"]
+            ],
+            "overwrite": False,
+            "prior_outputs": current,
+            "next_outputs": following,
+            "outputs_hash": receipt_hash(folder),
+            "restores": record["id"],
+            "task": record.get("task"),
+            "commit": commit,
+        },
+    )
+    write_json(path, following)
+
+
 def restore_candidates(folder, root, identity):
+    """A batch from before receipts named their checkpoint: the copies it
+    saved of what it replaced, for its reviewed restore."""
     rows = history(folder)
     record = next((row for row in rows if row["id"] == identity), None)
     if (
@@ -405,6 +519,8 @@ def restore_candidates(folder, root, identity):
         or record["state"] not in IN_EFFECT
     ):
         raise ValueError("Choose an applied or interrupted publication to restore.")
+    if undoes(record):
+        raise ValueError("This batch restores by undoing its checkpoint.")
     later = blocker(rows, identity)
     if later:
         raise ValueError(
@@ -427,6 +543,15 @@ def restore_candidates(folder, root, identity):
         raise ValueError(
             "A later Apply replaced " + ", ".join(replaced) + ", so this batch "
             "can't be restored."
+        )
+    saved = project_path(folder, "text-publications/" + identity, exists=False)
+    if any(
+        row["before"] is not None and not (saved / f"{row['index']}.before").is_file()
+        for row in record["files"]
+    ):
+        raise ValueError(
+            "This batch made no checkpoint to undo and kept no copy of the files "
+            "it replaced. Checkpoints can go back to before it."
         )
     candidates = {}
     for row in record["files"]:

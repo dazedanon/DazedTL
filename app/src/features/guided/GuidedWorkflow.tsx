@@ -360,13 +360,21 @@ function Workspace(
                     {row.recovery_errors.length > 0 &&
                       ` Last error: ${row.recovery_errors.at(-1)}`}
                   </span>
-                  {task(
-                    "runtime_restore",
-                    "Review restore",
-                    { publication: row.id },
-                    !baseline,
-                    "link",
-                  )}
+                  {row.undo
+                    ? task(
+                        "runtime_undo",
+                        "Restore",
+                        { publication: row.id },
+                        !baseline,
+                        "link",
+                      )
+                    : task(
+                        "runtime_restore",
+                        "Review restore",
+                        { publication: row.id },
+                        !baseline,
+                        "link",
+                      )}
                 </Notice>
               ))}
             {changed.length > 0 &&

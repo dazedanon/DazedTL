@@ -1753,7 +1753,9 @@ class GuidedTests(unittest.TestCase):
             self.assertEqual(review["label"], "Apply selected saved outputs")
             self.assertEqual(read_json(self.source / "Items.json"), [{"name": "薬"}])
             write_json(self.source / "Items.json", [{"name": "Edit after review"}])
-            # Runtime edits are accepted by explicit overwrite and backed up.
+            edited = (self.source / "Items.json").read_bytes()
+            # Runtime edits are accepted by explicit overwrite, whose receipt
+            # names the bytes it replaced.
             result = self.guided.execute(self.identity, review["token"])
             self.assertEqual(
                 read_json(self.source / "Items.json"), [{"name": "Older wording"}]
@@ -1762,10 +1764,15 @@ class GuidedTests(unittest.TestCase):
                 read_json(self.folder / "translated/Items.json"),
                 [{"name": "Newer wording"}],
             )
-            restore, _ = publication.restore_candidates(
-                self.folder, self.source, result["publication"]
+            [applied] = [
+                row
+                for row in publication.records(self.folder)
+                if row["id"] == result["publication"]
+            ]
+            self.assertEqual(
+                [row["before"] for row in applied["files"]],
+                [publication.digest(edited)],
             )
-            self.assertIn(b"Edit after review", restore["Items.json"])
             self.assertEqual(self.native["selected"], [])
             with self.assertRaises(ValueError):
                 self.guided.execute(self.identity, review["token"])

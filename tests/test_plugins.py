@@ -232,6 +232,34 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(done["stage"], "complete")
         return request, report
 
+    def journaled(self, identity, before, service=None, project=None):
+        """Makes an application one from before receipts named their
+        checkpoint, which kept a backup of each file it replaced; `before`
+        holds those files' bytes."""
+        service = service or self.service
+        project = project or self.identity
+        value = service.load(project)
+        receipt = next(row for row in value["receipts"] if row["id"] == identity)
+        path = service.path(project, "publications/" + identity + "/approval.json")
+        journal = read_json(path)
+        journal.pop("parent", None)
+        receipt.pop("parent", None)
+        for rows in (journal["files"], receipt["files"], receipt["reviewedFiles"]):
+            for row in rows:
+                row["backup"] = (
+                    ".dazedtl/plugin-work/backups/" + identity + "/" + row["path"]
+                )
+                write_bytes(self.game / row["backup"], before[row["path"]])
+        write_json(path, journal)
+        write_json(
+            service.translation.workspace
+            / "plugin-approvals"
+            / project
+            / (identity + ".json"),
+            {"journalHash": digest(journal), "projectId": project, "id": identity},
+        )
+        service.save(project, value)
+
     def status(self, path):
         value = self.service.load(self.identity)
         return self.service.row_status(value, value["files"][path])
@@ -491,7 +519,11 @@ class PluginTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "out-of-scope"):
             self.service.continue_task(self.identity, current["requestId"])
 
-    def test_apply_checks_rolls_back_and_restores_after_review(self):
+    def test_apply_checks_rolls_back_and_undoes_through_its_checkpoint(self):
+        from util.len_git import setup_git
+        from util.len_translation import LenProject
+
+        setup_git(LenProject(self.game), version="1.0", current_is_untranslated=True)
         _, _, task = self.investigation(kept={"目的地"})
         first = read_json(task["request"])
         paths = [row["path"] for row in first["files"]]
@@ -611,40 +643,32 @@ class PluginTests(unittest.TestCase):
         write_bytes(self.game / code, settled + b"\n// edited")
         self.assertEqual(kept_literals(self.game), literals)
         write_bytes(self.game / code, settled)
-        saved = self.service.load(self.identity)
-        original_saved = deepcopy(saved)
-        saved["receipts"][-1]["files"][0]["backup"] = saved["files"][paths[0]][
-            "prepared"
-        ]["candidate"]
-        self.service.save(self.identity, saved)
-        with self.assertRaisesRegex(ValueError, "exact approved publication"):
-            self.service.action(
-                self.identity, "preview_restore", {"receipt": result["receipt"]["id"]}
-            )
-        self.service.save(self.identity, original_saved)
-        restore = self.service.action(
-            self.identity, "preview_restore", {"receipt": result["receipt"]["id"]}
-        )["preview"]
-        check_response("plugins_action", {"preview": restore})
-        # A game file edited after the restore was reviewed is not overwritten.
-        write_bytes(self.game / paths[0], applied + b"\n// edited")
-        with self.assertRaisesRegex(ValueError, "changed after review"):
-            self.service.action(self.identity, "restore", {"token": restore["token"]})
-        write_bytes(self.game / paths[0], applied)
-        restore = self.service.action(
-            self.identity, "preview_restore", {"receipt": result["receipt"]["id"]}
-        )["preview"]
-        self.service.action(self.identity, "restore", {"token": restore["token"]})
-        with self.assertRaisesRegex(ValueError, "already used"):
-            self.service.action(self.identity, "restore", {"token": restore["token"]})
+        # Recovery undoes the application's checkpoint in one click, keeping
+        # no backup of its own.
+        self.assertTrue(result["receipt"]["undo"])
+        self.assertFalse((self.game / ".dazedtl/plugin-work/backups").exists())
+        undone = self.service.action(
+            self.identity, "undo", {"receipt": result["receipt"]["id"]}
+        )
+        check_response("plugins_action", undone)
         self.assertTrue(
             all((self.game / path).read_bytes() == raw for path, raw in before.items())
         )
-        # A restored application no longer offers another restore, and its
-        # checked translations wait to be applied again.
+        log = system.run(
+            ["git", "-C", str(self.game), "log", "-1", "--format=%s"],
+            capture_output=True,
+            text=True,
+        ).stdout
+        self.assertEqual(log.strip(), "Undid “Apply plugin file changes”")
+        # An undone application no longer offers another, and its checked
+        # translations wait to be applied again.
         state = self.service.state(self.identity)
         self.assertFalse(any(receipt["restorable"] for receipt in state["receipts"]))
         self.assertEqual(state["counts"]["ready"], 2)
+        with self.assertRaisesRegex(ValueError, "replaced these files"):
+            self.service.action(
+                self.identity, "undo", {"receipt": result["receipt"]["id"]}
+            )
         self.assertEqual(self.service.action(self.identity, "apply")["completed"], 2)
 
     def test_labels_text_qa_found_too_long_hold_the_task_until_applied(self):
@@ -1119,6 +1143,8 @@ class PluginTests(unittest.TestCase):
             for row in request["files"]
         }
         receipt = self.service.action(self.identity, "apply")["receipt"]["id"]
+        # An application from before receipts named their checkpoint.
+        self.journaled(receipt, original)
 
         def reopened(name):
             profile = self.root / name
@@ -1154,6 +1180,7 @@ class PluginTests(unittest.TestCase):
             service.continue_task(identity, request["requestId"])
         # A verified application stays restorable through its own review.
         restore = service.action(identity, "preview_restore", {"receipt": receipt})
+        check_response("plugins_action", restore)
         service.action(identity, "restore", {"token": restore["preview"]["token"]})
         for path, raw in original.items():
             self.assertEqual((self.game / path).read_bytes(), raw)
@@ -1175,7 +1202,11 @@ class PluginTests(unittest.TestCase):
     def test_interrupted_publication_reconciles_exact_bytes_and_rejects_tampered_journal(
         self,
     ):
-        _request, _report = self.translated()
+        request, _report = self.translated()
+        before = {
+            row["path"]: (self.game / row["path"]).read_bytes()
+            for row in request["files"]
+        }
         put = GameWrite.put
         count = 0
 
@@ -1212,6 +1243,20 @@ class PluginTests(unittest.TestCase):
         receipt = state["receipts"][-1]
         self.assertEqual(receipt["status"], "recovered")
         self.assertEqual(len(receipt["files"]), 1)
+        # A game without Git can't undo it; one interrupted before receipts
+        # named their checkpoint restores from its backups.
+        self.assertFalse(receipt["restorable"])
+        self.journaled(receipt["id"], before, restarted)
+        tampered = restarted.load(self.identity)
+        tampered["receipts"][-1]["files"][0]["backup"] = tampered["files"][
+            receipt["files"][0]["path"]
+        ]["prepared"]["candidate"]
+        restarted.save(self.identity, tampered)
+        with self.assertRaisesRegex(ValueError, "exact approved publication"):
+            restarted.action(
+                self.identity, "preview_restore", {"receipt": receipt["id"]}
+            )
+        self.journaled(receipt["id"], before, restarted)
         restore = restarted.action(
             self.identity, "preview_restore", {"receipt": receipt["id"]}
         )["preview"]

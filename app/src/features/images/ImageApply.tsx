@@ -55,7 +55,7 @@ export function ImageApplyContent({
       )}
       <p>
         {restore
-          ? "Verified backups replace these runtime assets. Editable copies remain available."
+          ? "The original images go back into the game. Editable copies remain available."
           : "Originals are backed up. Source files and edited images are validated again, and nothing is applied unless every included image passes."}
       </p>
       <div

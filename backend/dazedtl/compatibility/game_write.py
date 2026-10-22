@@ -32,10 +32,14 @@ anywhere else.
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from dazedtl.system import unlink, write_bytes
 from dazedtl.translation.files import digest, project_path
 from dazedtl.translation.git_status_cache import RepositoryStatusCache
+
+if TYPE_CHECKING:
+    from .checkpoint_commits import Checkpoint
 
 # The game folders a gateway is writing to in this context.
 writing = ContextVar("game_writes", default=frozenset())
@@ -54,6 +58,10 @@ class GameWrite:
         self.everything = False
         self.packs = packs
         self.watched = {}
+        # The checkpoint the write made, which an undo takes out; None when
+        # it made none.
+        self.checkpoint: str | None = None
+        self._point: Checkpoint | None = None
 
     def put(self, relative, raw, mode=None):
         """Writes one game file whole, with `mode` when given, or takes it
@@ -67,6 +75,18 @@ class GameWrite:
             if mode is not None:
                 target.chmod(mode)
         self.wrote(relative)
+
+    @property
+    def parent(self):
+        """The checkpoint the write started from, once the edits made
+        outside DazedTL were saved, which an interrupted write goes back to;
+        None for a game whose Git is not set up or a write inside another.
+        Read it before writing."""
+        if self._point is None or self._point.phase is not None:
+            return None
+        from .checkpoint_commits import _git
+
+        return _git(self.root, "rev-parse", "HEAD").stdout.strip()
 
     def wrote(self, *relative):
         """Names files a tool run inside the write changed itself."""
@@ -201,6 +221,7 @@ def write_game(
         else None
     )
     game = GameWrite(root, packs=ace)
+    game._point = point
     token = writing.set(writing.get() | {str(root)})
     try:
         yield game
@@ -208,7 +229,7 @@ def write_game(
             game._settle()
             _packed(native, folder, game, log, subject)
         if point is not None:
-            point.record(
+            game.checkpoint = point.record(
                 checkpoint_commits.current(action, summary, stage), game.touched
             )
     finally:

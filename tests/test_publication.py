@@ -1,4 +1,10 @@
-"""Text batches must retain exact approved bytes through failure and restart."""
+"""Text batches must retain exact approved bytes through failure and restart.
+
+These batches go to a game without Git, as unit tests; the game repository
+probe undoes batches through their checkpoints. Batches frozen before
+receipts named their checkpoint kept a copy of each file they replaced
+(`journaled`), which their restore still reads.
+"""
 
 import unittest
 from pathlib import Path
@@ -28,6 +34,21 @@ class PublicationTests(unittest.TestCase):
         for name, raw in self.before.items():
             write_bytes(self.root / name, raw)
 
+    def journaled(self, plan):
+        """A batch frozen before receipts named their checkpoint, which kept
+        a copy of each file it would replace."""
+        base = self.folder / "text-publications" / plan["id"]
+        for row in plan["files"]:
+            if row["before"] is not None:
+                write_bytes(
+                    base / f"{row['index']}.before",
+                    (self.root / row["path"]).read_bytes(),
+                )
+        return plan
+
+    def old(self, *arguments, **options):
+        return self.journaled(p.freeze(self.folder, self.root, *arguments, **options))
+
     def test_empty_canceled_stale_and_repeated_reviews_never_publish(self):
         with self.assertRaises(ValueError):
             p.freeze(self.folder, self.root, {}, "export_selected")
@@ -47,14 +68,15 @@ class PublicationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "already used"):
             p.publish(self.folder, self.root, canceled)
 
-    def test_explicit_overwrite_uses_frozen_output_and_backs_up_latest_game_edits(self):
+    def test_explicit_overwrite_uses_frozen_output_and_names_latest_game_edits(self):
         plan = p.freeze(
             self.folder, self.root, self.after, "export_selected", overwrite=True
         )
         newer = b'{"text":"manual edit after preview"}'
         write_bytes(self.root / "data/A.json", newer)
-        # The batch backs up every file before its first write, so an edit
-        # made in between must be backed up again before it is overwritten.
+        # The batch reads every file before its first write, so its receipt
+        # must name an edit made in between, which Git's checkpoint of the
+        # edits made outside DazedTL keeps.
         during = b'{"text":"manual edit while publishing"}'
 
         def editing(path, raw, mode=0o644):
@@ -67,8 +89,12 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(
             {name: (self.root / name).read_bytes() for name in self.after}, self.after
         )
-        restore, _ = p.restore_candidates(self.folder, self.root, result["publication"])
-        self.assertEqual(restore, {"data/A.json": newer, "data/B.json": during})
+        [record] = p.records(self.folder)
+        self.assertEqual(
+            [row["before"] for row in record["files"]],
+            [p.digest(newer), p.digest(during)],
+        )
+        self.assertEqual(record["id"], result["publication"])
         with self.assertRaises(ValueError):
             p.publish(self.folder, self.root, plan)
 
@@ -79,13 +105,7 @@ class PublicationTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(ValueError, "no file"):
             p.freeze(self.folder, self.root, added, "playtest_fix")
-        plan = p.freeze(
-            self.folder,
-            self.root,
-            added,
-            "playtest_fix",
-            created={"js/plugins/Fixes.js"},
-        )
+        plan = self.old(added, "playtest_fix", created={"js/plugins/Fixes.js"})
         result = p.publish(self.folder, self.root, plan)
         self.assertEqual((self.root / "js/plugins/Fixes.js").read_bytes(), b"// fix")
         # A later Apply of another file, which History can't restore, left
@@ -94,9 +114,7 @@ class PublicationTests(unittest.TestCase):
         p.publish(
             self.folder,
             self.root,
-            p.freeze(
-                self.folder,
-                self.root,
+            self.old(
                 {"data/B.json": self.after["data/B.json"]},
                 "export_selected",
                 outputs={"B.json": "applied"},
@@ -104,9 +122,7 @@ class PublicationTests(unittest.TestCase):
             ),
         )
         corrected = p.publish(
-            self.folder,
-            self.root,
-            p.freeze(self.folder, self.root, {"data/A.json": b"qa"}, "qa_apply"),
+            self.folder, self.root, self.old({"data/A.json": b"qa"}, "qa_apply")
         )["publication"]
         self.assertEqual(
             p.blocker(p.history(self.folder), result["publication"]),
@@ -118,9 +134,7 @@ class PublicationTests(unittest.TestCase):
         p.publish(
             self.folder,
             self.root,
-            p.freeze(
-                self.folder, self.root, restore, "runtime_restore", restore=record
-            ),
+            self.old(restore, "runtime_restore", restore=record),
         )
         restore, record = p.restore_candidates(
             self.folder, self.root, result["publication"]
@@ -132,9 +146,7 @@ class PublicationTests(unittest.TestCase):
         p.publish(
             self.folder,
             self.root,
-            p.freeze(
-                self.folder, self.root, restore, "runtime_restore", restore=record
-            ),
+            self.old(restore, "runtime_restore", restore=record),
         )
         self.assertFalse((self.root / "js/plugins/Fixes.js").exists())
         self.assertEqual(
@@ -170,12 +182,8 @@ class PublicationTests(unittest.TestCase):
     def test_restart_retains_applied_receipt_and_reviewed_restore_rejects_newer_edits(
         self,
     ):
-        plan = p.freeze(
-            self.folder,
-            self.root,
-            self.after,
-            "export_selected",
-            outputs={"A.json": "approved-output"},
+        plan = self.old(
+            self.after, "export_selected", outputs={"A.json": "approved-output"}
         )
         result = p.publish(self.folder, self.root, plan)
         rows = p.records(self.folder)
@@ -187,9 +195,7 @@ class PublicationTests(unittest.TestCase):
         candidates, record = p.restore_candidates(
             self.folder, self.root, result["publication"]
         )
-        restore = p.freeze(
-            self.folder, self.root, candidates, "runtime_restore", restore=record
-        )
+        restore = self.old(candidates, "runtime_restore", restore=record)
         p.publish(self.folder, self.root, restore)
         self.assertEqual(
             {name: (self.root / name).read_bytes() for name in self.before}, self.before
@@ -199,7 +205,7 @@ class PublicationTests(unittest.TestCase):
     def test_failed_rollback_and_interrupted_publication_offer_only_exact_authorized_restore(
         self,
     ):
-        plan = p.freeze(self.folder, self.root, self.after, "fit_text")
+        plan = self.old(self.after, "fit_text")
 
         def failing(path, raw, mode=0o644):
             if path == self.root / "data/A.json" and raw == self.before["data/A.json"]:
@@ -218,9 +224,7 @@ class PublicationTests(unittest.TestCase):
         recovered = p.publish(
             self.folder,
             self.root,
-            p.freeze(
-                self.folder, self.root, candidates, "runtime_restore", restore=record
-            ),
+            self.old(candidates, "runtime_restore", restore=record),
         )
         self.assertEqual(
             next(row for row in p.history(self.folder) if row["id"] == plan["id"])[
@@ -234,9 +238,7 @@ class PublicationTests(unittest.TestCase):
         undone = p.publish(
             self.folder,
             self.root,
-            p.freeze(
-                self.folder, self.root, candidates, "runtime_restore", restore=record
-            ),
+            self.old(candidates, "runtime_restore", restore=record),
         )
         self.assertEqual(
             next(row for row in p.history(self.folder) if row["id"] == plan["id"])[
@@ -250,9 +252,7 @@ class PublicationTests(unittest.TestCase):
         p.publish(
             self.folder,
             self.root,
-            p.freeze(
-                self.folder, self.root, candidates, "runtime_restore", restore=record
-            ),
+            self.old(candidates, "runtime_restore", restore=record),
         )
         self.assertEqual(
             next(row for row in p.history(self.folder) if row["id"] == plan["id"])[
@@ -260,7 +260,7 @@ class PublicationTests(unittest.TestCase):
             ],
             "restored",
         )
-        interrupted = p.freeze(self.folder, self.root, self.after, "export_selected")
+        interrupted = self.old(self.after, "export_selected")
         path = self.folder / "text-publications" / interrupted["id"] / "receipt.json"
         record = read_json(path)
         record["state"] = "publishing"
@@ -272,24 +272,23 @@ class PublicationTests(unittest.TestCase):
         p.publish(
             self.folder,
             self.root,
-            p.freeze(
-                self.folder, self.root, candidates, "runtime_restore", restore=record
-            ),
+            self.old(candidates, "runtime_restore", restore=record),
         )
         self.assertEqual(
             {name: (self.root / name).read_bytes() for name in self.before}, self.before
         )
 
-    def test_finished_and_expired_reviews_keep_only_backups(self):
+    def test_finished_and_expired_reviews_keep_only_their_receipts(self):
         # Each review froze a copy of every file it would write, kept after
-        # publishing or expiring: gigabytes on a large game.
+        # publishing or expiring: gigabytes on a large game. Git keeps what
+        # a batch replaced, so it keeps no copy of that either.
         abandoned = p.freeze(self.folder, self.root, self.after, "export_selected")
         published = p.freeze(self.folder, self.root, self.after, "export_selected")
         p.publish(self.folder, self.root, published)
         base = self.folder / "text-publications"
         self.assertEqual(
             sorted(path.name for path in (base / published["id"]).iterdir()),
-            ["0.before", "1.before", "receipt.json"],
+            ["receipt.json"],
         )
         path = base / abandoned["id"] / "receipt.json"
         record = read_json(path)

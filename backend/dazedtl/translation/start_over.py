@@ -1,18 +1,22 @@
 """Start over: the game back to its original, the assistant's work set aside.
 
 An Assistant-led project changes the game folder in many places: preparation,
-Git baselines, the canary and injected translations, and the assistant's work
-records under .dazedtl/len-method and the playtest's fixes under
-.dazedtl/playtest. Starting over puts the game files back to
-the original recorded before setup ([originals](originals.py)) and moves
-everything else aside under a dated folder, so the next starting prompt begins
-again from preparation. Nothing is deleted: files the original lacks are
-moved, not removed. Save games, the project's options and Image Manager work
-stay, and the glossary and notes stay unless the user lets them go.
+the canary and injected translations, and the assistant's work records under
+.dazedtl/len-method and the playtest's fixes under .dazedtl/playtest.
+Starting over is one checkpoint that puts every file the patch holds back as
+the original game's current version has it, so the attempt stays in the
+game's Git history and the record of its original files stays too; the next
+starting prompt begins again from preparation, which finds Git set up. Files
+outside the patch go back to the original recorded before setup
+([originals](originals.py)), and what Git does not keep moves aside under a
+dated folder: the assistant's work, the playtest's fixes, and files the
+original lacks. Nothing is deleted. Save games, the project's options and
+Image Manager work stay, and the glossary and notes stay unless the user
+lets them go.
 """
 
 import re
-import sys
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -64,78 +68,123 @@ def _move(path, target):
         ) from None
 
 
-def _shown(path):
-    """Git hides its folder on Windows; the archived copy shows in Explorer
-    like the rest of the attempt."""
-    if sys.platform == "win32":
-        import ctypes
-
-        kernel = ctypes.windll.kernel32
-        attributes = kernel.GetFileAttributesW(str(path))
-        hidden = 0x2  # FILE_ATTRIBUTE_HIDDEN
-        if attributes != -1 and attributes & hidden:
-            kernel.SetFileAttributesW(str(path), attributes & ~hidden)
+# The lifecycle records a game keeps through Start over while its Git stays:
+# its original files and version history. The rest belonged to the attempt.
+KEPT = (
+    "source_backup",
+    "prepared_source",
+    "game_backup",
+    "git",
+    "preparation",
+    "version_update",
+)
 
 
 def run(
-    source, state, original, documents, keep_context, *, stopped, progress
+    workspace,
+    project_id,
+    source,
+    state,
+    documents,
+    keep_context,
+    *,
+    configured,
+    stopped,
+    progress,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Starts the project over from `original`, the game as DazedTL found
-    it, or with the game's files as they are without one; returns its new
+    """Starts the project over: back to the original game as a checkpoint
+    when its Git is `configured`, else to the game as DazedTL found it, or
+    with the game's files as they are without either; returns its new
     lifecycle and a summary."""
+    from dazedtl.compatibility import checkpoint_history
+    from dazedtl.compatibility.checkpoint_commits import Change, running
+    from dazedtl.compatibility.game_write import write_game
+
     root = Path(source).resolve(strict=True)
     renewed: dict[str, Any] = {"version": 1}
     # A backup from before original files were kept in Git stays the
-    # project's original; a Git record moves aside with the game's history,
-    # and the next setup records the game, now its original again.
-    if state.get("source_backup"):
-        renewed["source_backup"] = state["source_backup"]
+    # project's original, as does the Git record.
+    for key in KEPT if configured else ("source_backup",):
+        if state.get(key):
+            renewed[key] = state[key]
+    original = (
+        originals.prepared(workspace, project_id, root, state)
+        if configured
+        else originals.found(workspace, project_id, root, state)
+    )
     archive = _archive(root)
-    relative = archive.relative_to(root).as_posix()
-    kept = set()
-    for document in documents.values():
-        path = Path(document["path"])
-        if not path.is_file():
-            continue
-        name = path.resolve().relative_to(root).as_posix()
-        if keep_context:
-            kept.add(name)
-        else:
-            _move(path, archive / "context" / name)
     result: dict[str, Any] = {
-        "archive": relative,
+        "archive": archive.relative_to(root).as_posix(),
         "original": original is not None,
         "restored": 0,
         "set_aside": 0,
     }
-    if original:
-        progress("Putting back the original game files.")
-        result |= originals.reset(
-            original,
-            root,
-            archive / "game-files",
-            keep=lambda name: save_game(name) or name in kept,
-            stopped=stopped,
-            progress=lambda count, path: progress(
-                f"Put back {count:,} file{'' if count == 1 else 's'} · {path}"
-            ),
-        )
-    git = root / ".git"
-    if git.exists() or git.is_symlink():
-        progress("Setting the Git history aside.")
-        _move(git, archive / "git")
-        _shown(archive / "git")
-    work = project_path(root, WORK, exists=False)
-    if work.is_dir():
-        progress("Setting the assistant's work aside.")
-        for child in sorted(work.iterdir()):
-            # The project's options belong to the user, not to one attempt.
-            if child.name != "workflow.json":
-                _move(child, archive / "len-method" / child.name)
-    # The playtest's fixes were written for this attempt's translation; the
-    # next one starts from an empty fixes plugin.
-    fixes = project_path(root, PLAYTEST, exists=False)
-    if fixes.is_dir():
-        _move(fixes, archive / "playtest")
-    renewed["started_over"] = {"at": datetime.now(UTC).isoformat(), "archive": relative}
+    change = Change(
+        "Started over from the original game", "Assistant-led", "start_over"
+    )
+    # A game DazedTL never wrote to has no original to put back, and a write
+    # through the gateway would record it, as it is now, as the original.
+    writing = (
+        write_game(root, log=progress, pack=False)
+        if configured or original is not None
+        else nullcontext()
+    )
+    with running(change), writing as game:
+        kept = set()
+        for document in documents.values():
+            path = Path(document["path"])
+            if not path.is_file():
+                continue
+            name = path.resolve().relative_to(root).as_posix()
+            if keep_context:
+                kept.add(name)
+            else:
+                _move(path, archive / "context" / name)
+
+        def keep(name):
+            return save_game(name) or name in kept
+
+        tracked = set()
+        if configured:
+            progress("Putting back the original game files.")
+            result["restored"] = checkpoint_history.to_original(
+                game,
+                keep,
+                stopped,
+                originals.saved(workspace, project_id, root, state),
+            )
+            tracked = checkpoint_history.tracked(root)
+        if original:
+            # Files outside the patch, which Git doesn't keep.
+            put = originals.reset(
+                original,
+                root,
+                archive / "game-files",
+                keep=lambda name: keep(name) or name in tracked,
+                stopped=stopped,
+                progress=lambda count, path: progress(
+                    f"Put back {count:,} file{'' if count == 1 else 's'} · {path}"
+                ),
+            )
+            result["restored"] += put["restored"]
+            result["set_aside"] = put["set_aside"]
+        work = project_path(root, WORK, exists=False)
+        if work.is_dir():
+            progress("Setting the assistant's work aside.")
+            for child in sorted(work.iterdir()):
+                # The project's options belong to the user, not to one attempt.
+                if child.name != "workflow.json":
+                    _move(child, archive / "len-method" / child.name)
+        # The playtest's fixes were written for this attempt's translation;
+        # the next one starts from an empty fixes plugin.
+        fixes = project_path(root, PLAYTEST, exists=False)
+        if fixes.is_dir():
+            _move(fixes, archive / "playtest")
+    if not any(archive.iterdir()):
+        system.rmdir(archive)
+        result["archive"] = ""
+    renewed["started_over"] = {
+        "at": datetime.now(UTC).isoformat(),
+        "archive": result["archive"],
+    }
     return renewed, result

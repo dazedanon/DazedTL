@@ -392,7 +392,8 @@ class Checkpoint:
 
     def record(self, change, touched=()):
         """Commits the write's change once it succeeded, or adds it to the
-        writes waiting for its phase."""
+        writes waiting for its phase; returns its commit, or None when it
+        changed nothing or waits."""
         with exclusive(self.folder / "checkpoint.lock"):
             if self.phase is not None:
                 return _wait(

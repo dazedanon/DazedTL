@@ -37,8 +37,8 @@ export const actionKey = (
 ) =>
   name === "start"
     ? `start:${displayText(options.mode)}:${displayText(options.phase) || "speakers"}`
-    : name === "runtime_restore"
-      ? `runtime_restore:${displayText(options.publication)}`
+    : name === "runtime_restore" || name === "runtime_undo"
+      ? `${name}:${displayText(options.publication)}`
       : name === "export_selected" && options.run_id
         ? `export_selected:${displayText(options.run_id)}`
         : name;

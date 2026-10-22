@@ -375,7 +375,20 @@ def carries(files, receipt):
     )
 
 
-def receipt_view(receipt, files):
+def undoes(receipt):
+    """Whether an application restores through Git: by undoing the
+    checkpoint it made, or, interrupted, by putting its files back as the
+    checkpoint it started from had them. One from before receipts named
+    them restores from the backups it saved."""
+    return bool(receipt.get("commit") or receipt.get("parent"))
+
+
+def receipt_view(receipt, files, issue=""):
+    restorable = (
+        carries(files, receipt)
+        and not receipt.get("restoreIssue")
+        and (undoes(receipt) or all("backup" in row for row in receipt["files"]))
+    )
     return {
         **pick(
             receipt,
@@ -390,9 +403,11 @@ def receipt_view(receipt, files):
                 "restoreIssue",
             ),
         ),
+        **({"restoreIssue": issue} if issue and restorable else {}),
         "files": [pick(row, REVIEW_KEYS) for row in receipt["files"]],
         # Only the application a file still carries can restore it.
-        "restorable": carries(files, receipt) and not receipt.get("restoreIssue"),
+        "restorable": restorable and not issue,
+        "undo": undoes(receipt),
     }
 
 
@@ -560,7 +575,9 @@ class PluginService:
         _, root = self.record(project_id)
         verified = {}
         for receipt in value["receipts"]:
-            if not carries(value["files"], receipt):
+            if not carries(value["files"], receipt) or not (
+                undoes(receipt) or all("backup" in row for row in receipt["files"])
+            ):
                 continue
             try:
                 publication = read_json(
@@ -575,7 +592,9 @@ class PluginService:
                     or publication["manifest"] != receipt["manifest"]
                     or any(approved.get(row["path"]) != row for row in receipt["files"])
                     or any(
-                        digest(self.source(root, row["backup"])) != row["beforeHash"]
+                        "backup" in row
+                        and digest(self.source(root, row["backup"]))
+                        != row["beforeHash"]
                         for row in receipt["files"]
                     )
                 ):
@@ -624,7 +643,7 @@ class PluginService:
                     )
                 elif carries(value["files"], receipt):
                     receipt["restoreIssue"] = (
-                        "Its saved record no longer matches the files it applied, so it can't be restored here. The Project page's Backups can recover the original game."
+                        "Its saved record no longer matches the files it applied, so it can't be restored here. The Project page's Checkpoints can undo it."
                     )
             rows = value["files"].values()
             results = [row["result"] for row in rows if row.get("result")]
@@ -1774,15 +1793,40 @@ class PluginService:
                     if row.get("issue")
                 ],
                 "originalIssue": self.original_issue(project_id, value),
-                "receipts": [
-                    receipt_view(row, value["files"]) for row in value["receipts"][-12:]
-                ],
+                "receipts": self.receipt_views(project_id, value),
                 # The helper reads the active request's saved instructions here.
                 "activeRequest": active["path"] if active else "",
                 "awaiting": bool(active)
                 and report.get("status") == "awaiting_report"
                 and report.get("requestId") == active["requestId"],
             }
+
+    def receipt_views(self, project_id, value):
+        """The latest applications and restores, each application undone
+        through Git naming the later checkpoint to undo first."""
+        from dazedtl.compatibility.checkpoint_history import blockers, refusal
+
+        shown = value["receipts"][-12:]
+        commits = [
+            row["commit"]
+            for row in shown
+            if row.get("commit") and carries(value["files"], row)
+        ]
+        issues = {}
+        if commits:
+            try:
+                issues = {
+                    commit: refusal(found)
+                    for commit, found in blockers(
+                        self.record(project_id)[1], commits
+                    ).items()
+                }
+            except (OSError, ValueError, RuntimeError) as exc:
+                issues = dict.fromkeys(commits, str(exc))
+        return [
+            receipt_view(row, value["files"], issues.get(row.get("commit"), ""))
+            for row in shown
+        ]
 
     def original_issue(self, project_id, value):
         """Why the last scan had no original evidence, while that still holds."""
@@ -1815,6 +1859,8 @@ class PluginService:
                 return {"preview": preview_view(preview)}
             elif action == "restore":
                 return self.restore(project_id, value, options)
+            elif action == "undo":
+                return self.undo(project_id, value, options)
             elif action == "keep_unreadable":
                 result = self.keep_unreadable(value, options.get("paths"))
             else:
@@ -3340,7 +3386,6 @@ class PluginService:
                         "originalHash": original_hash,
                         "candidate": candidate,
                         "candidateHash": after,
-                        "backup": WORK + "/backups/" + uuid.uuid4().hex + "/" + path,
                         "kind": row["kind"],
                         "changes": len(row.get("result", {}).get("targets", {})),
                     }
@@ -3472,6 +3517,77 @@ class PluginService:
             raise ValueError("A file changed after review. Review the restore again.")
         return self.publish(project_id, value, preview)
 
+    def undo(self, project_id, value, options):
+        """Takes an application out of the game through its checkpoint, in
+        one click, while every file it wrote still holds what it wrote."""
+        from dazedtl.compatibility import checkpoint_history
+
+        self.translation.idle(project_id)
+        self.translation.clean_drafts(project_id)
+        self.translation.writable(project_id)
+        _, root = self.record(project_id)
+        receipt = next(
+            (row for row in value["receipts"] if row["id"] == options.get("receipt")),
+            None,
+        )
+        if not receipt or not undoes(receipt):
+            raise ValueError("Choose an application to undo.")
+        if not carries(value["files"], receipt) or receipt.get("restoreIssue"):
+            raise ValueError(
+                receipt.get("restoreIssue")
+                or "A later application or restore replaced these files."
+            )
+
+        def unchanged():
+            for row in receipt["files"]:
+                if digest(self.source(root, row["path"])) != row["afterHash"]:
+                    raise ValueError(
+                        PurePosixPath(row["path"]).name
+                        + " changed since it was applied, so it can't be undone here."
+                    )
+
+        original = game_originals.saved(self.translation.workspace, project_id, root)
+        if receipt.get("commit"):
+            result = checkpoint_history.undo(
+                root, receipt["commit"], original=original, check=unchanged
+            )
+        else:
+            result = checkpoint_history.put_back(
+                root,
+                receipt["parent"],
+                [row["path"] for row in receipt["files"]],
+                "Restored an interrupted plugin application",
+                check=unchanged,
+                original=original,
+            )
+        token = uuid.uuid4().hex
+        rows = []
+        for row in receipt["files"]:
+            current = digest(self.source(root, row["path"]))
+            rows.append({**row, "beforeHash": row["afterHash"], "afterHash": current})
+        restored = {
+            "id": token,
+            "mode": "restore",
+            "saved": now(),
+            "status": "complete",
+            "files": rows,
+            "reviewedFiles": rows,
+            "manifest": WORK + "/publications/" + token + "/runtime-manifest.json",
+            "failure": "",
+            "conflicts": [],
+            "commit": result["commit"],
+        }
+        write_json(
+            project_path(root, restored["manifest"], exists=False),
+            self.publication_manifest(project_id, rows),
+        )
+        self.finish(project_id, value, restored)
+        return {
+            "receipt": receipt_view(restored, value["files"]),
+            "state": self.state(project_id),
+            "completed": len(rows),
+        }
+
     def publish(self, project_id, value, preview):
         """Backs up and writes a checked batch, rolling back what it wrote if
         any file fails. A VX Ace game's scripts are then packed into the
@@ -3486,6 +3602,10 @@ class PluginService:
             stage="Translate",
         ) as game:
             receipt, completed = self._publish(project_id, value, preview, root, game)
+        if game.checkpoint:
+            # Undoing the application is undoing this checkpoint.
+            receipt["commit"] = game.checkpoint
+            self.save(project_id, value)
         # Read once the gateway packed a VX Ace game's scripts.
         return {
             "receipt": receipt_view(receipt, value["files"]),
@@ -3518,13 +3638,14 @@ class PluginService:
                 or digest(candidate) != row["afterHash"]
             ):
                 raise ValueError("Files changed during whole-batch preflight.")
-            write_bytes(project_path(root, row["backup"], exists=False), raw)
             name = WORK + "/publications/" + token + "/output/" + row["path"]
             write_bytes(project_path(root, name, exists=False), candidate)
             row["frozen"] = name
             frozen.append((row, candidate, raw))
         manifest = self.publication_manifest(project_id, publication["files"])
         write_json(project_path(root, preview["manifest"], exists=False), manifest)
+        # What an interrupted publication's files go back to.
+        publication["parent"] = game.parent
         journal = self.path(project_id, "publications/" + token + "/approval.json")
         write_json(journal, publication)
         authority = (
@@ -3583,6 +3704,7 @@ class PluginService:
             "manifest": preview["manifest"],
             "failure": failure,
             "conflicts": conflicts,
+            "parent": publication["parent"],
         }
         self.finish(project_id, value, receipt)
         if failure:
@@ -3652,9 +3774,10 @@ class PluginService:
             for row in publication["files"]:
                 try:
                     if (
-                        digest(self.source(root, row["backup"])) != row["beforeHash"]
-                        or digest(self.source(root, row["frozen"])) != row["afterHash"]
-                    ):
+                        "backup" in row
+                        and digest(self.source(root, row["backup"]))
+                        != row["beforeHash"]
+                    ) or digest(self.source(root, row["frozen"])) != row["afterHash"]:
                         raise ValueError("Frozen publication/backup bytes changed")
                     current = digest(self.source(root, row["path"]))
                     if current == row["afterHash"]:
@@ -3676,5 +3799,10 @@ class PluginService:
                 "manifest": publication["manifest"],
                 "failure": "Interrupted publication reconciled from exact approved bytes; review recovery.",
                 "conflicts": conflicts,
+                **(
+                    {"parent": publication["parent"]}
+                    if publication.get("parent")
+                    else {}
+                ),
             }
             self.finish(project_id, value, receipt)

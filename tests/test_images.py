@@ -96,10 +96,13 @@ class FixtureImages:
             write_bytes(root / row["runtime"], (root / row["editable"]).read_bytes())
         return {"completed": len(rows), "skipped": 0, "errors": []}
 
-    def restore(self, root, rows):
+    def restore(self, root, rows, originals=None):
         for row in rows:
             write_bytes(
-                root / row["runtime"], (root / row["runtimeBackup"]).read_bytes()
+                root / row["runtime"],
+                (root / row["runtimeBackup"]).read_bytes()
+                if row.get("runtimeBackup")
+                else (originals or {})[row["runtime"]],
             )
         return {"completed": len(rows), "errors": []}
 
@@ -845,6 +848,11 @@ class ImageTests(unittest.TestCase):
         check_response("images_state", self.service.state(self.identity))
         self.assertEqual(
             self.service.list(self.identity)["items"][0]["state"], "applied"
+        )
+        # Restore reads the original from the game's record of its original
+        # files, here a backup from before Git kept them, not a copy of its own.
+        self.assertFalse(
+            (self.game / ".dazedtl/image_manager/guided/runtime-originals").exists()
         )
         restore = self.service.action(self.identity, "preview_restore")["preview"]
         self.service.action(self.identity, "restore", {"token": restore["token"]})

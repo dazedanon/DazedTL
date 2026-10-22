@@ -1041,11 +1041,18 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(job["action"], action)
 
     def test_start_over_restores_the_original_and_sets_the_attempt_aside(self):
-        # Starting over must put every original file back from Git and move
-        # what the attempt added aside instead of deleting it, keeping save
-        # games, the notes the user keeps and the project's options; a paid
-        # API run still waiting at its provider must refuse it.
+        # Starting over must put every original file back as one checkpoint,
+        # keeping the attempt in the game's Git history and the record of its
+        # original files, and move what Git doesn't keep aside instead of
+        # deleting it, keeping save games, the notes the user keeps and the
+        # project's options; a paid API run still waiting at its provider
+        # must refuse it.
+        from dazedtl.compatibility.checkpoint_commits import _git
+        from util.len_git import setup_git
+        from util.len_translation import LenProject
+
         original_files.record(self.game, original_files.FOUND)
+        setup_git(LenProject(self.game), version="1.0", current_is_untranslated=True)
         self.projects.choose_method(self.identity, "len")
         run = self.prepared(self.service.compile(self.identity, self.plan_path))
         job, _plan = self.service.jobs.store.load(run["id"])
@@ -1089,25 +1096,31 @@ class WorkflowTests(unittest.TestCase):
             state = lifecycle(self.profile, self.identity)
             return state, self.game / state["started_over"]["archive"]
 
+        def git(*arguments):
+            return _git(self.game, *arguments).stdout
+
         state, archive = start_over(True)
         self.assertEqual((self.game / "source.json").read_bytes(), original)
         self.assertFalse((self.game / "js").exists())
         self.assertEqual(
-            (archive / "game-files/js/Forge.js").read_text(encoding="utf-8"),
-            "added by setup",
-        )
-        self.assertEqual(
             (self.game / "save/file1.rmmzsave").read_text(encoding="utf-8"), "progress"
         )
-        self.assertTrue((archive / "git/HEAD").is_file())
-        self.assertFalse((self.game / ".git").exists())
+        # The attempt stays in Git: its edits, then the start over.
+        self.assertEqual(
+            git("log", "-2", "--format=%s").splitlines(),
+            [
+                "Assistant-led: Started over from the original game",
+                "Edits made outside DazedTL",
+            ],
+        )
+        self.assertEqual(git("show", "HEAD~1:js/Forge.js"), "added by setup")
+        self.assertEqual(len(original_files.records(self.game)), 1)
         self.assertTrue((archive / "len-method/progress.json").is_file())
         self.assertFalse((self.game / ".dazedtl/playtest").exists())
         self.assertTrue((archive / "playtest/DazedTL_Fixes.js").is_file())
         self.assertTrue(self.project.path.is_file())
         self.assertEqual(glossary.read_text(encoding="utf-8"), "Lili (リリ)")
         self.assertFalse((records / "assistant.json").exists())
-        self.assertNotIn("game_backup", state)
         self.assertFalse((self.game / ".dazedtl/backups").exists())
         # A project set up before original files were kept in Git starts
         # over from its backup. Running it again on the original changes no

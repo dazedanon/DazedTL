@@ -69,7 +69,9 @@ const controlled = (key: string) =>
     "adopt",
     "start_over",
     "keep_unreadable",
-  ].includes(key) || key.startsWith("preview_restore:");
+  ].includes(key) ||
+  key.startsWith("preview_restore:") ||
+  key.startsWith("undo:");
 
 /**
  * Each file left unchanged with why, one sentence per reason:
@@ -527,7 +529,7 @@ export function PluginWorkspace({
         >
           <DialogHeader
             title={`${words.title} recovery`}
-            description={`Restore ${words.file}s from the backups saved when they were applied.`}
+            description={`Undo an application to put its ${words.file}s back as they were before it.`}
             onClose={() => setRecovery(false)}
           />
           <DialogBody className="plugin-review-body">
@@ -567,21 +569,40 @@ export function PluginWorkspace({
                         </>
                       }
                     >
-                      {receipt.restorable && (
+                      {/* An undone application keeps its result beside it. */}
+                      {(receipt.restorable && receipt.undo) ||
+                      action.key === "undo:" + receipt.id ? (
                         <ActionControl
-                          label="Review restore"
-                          disabled={busy}
-                          {...feedback("preview_restore:" + receipt.id)}
-                          onClick={async () => {
-                            const result = await run(
-                              "preview_restore",
+                          label="Undo"
+                          pendingText="Undoing…"
+                          disabled={busy || !receipt.restorable}
+                          {...feedback("undo:" + receipt.id)}
+                          onClick={() =>
+                            void run(
+                              "undo",
                               { receipt: receipt.id },
-                              "",
-                              "preview_restore:" + receipt.id,
-                            );
-                            if (result.ok) setRecovery(false);
-                          }}
+                              "Undone.",
+                              "undo:" + receipt.id,
+                            )
+                          }
                         />
+                      ) : (
+                        receipt.restorable && (
+                          <ActionControl
+                            label="Review restore"
+                            disabled={busy}
+                            {...feedback("preview_restore:" + receipt.id)}
+                            onClick={async () => {
+                              const result = await run(
+                                "preview_restore",
+                                { receipt: receipt.id },
+                                "",
+                                "preview_restore:" + receipt.id,
+                              );
+                              if (result.ok) setRecovery(false);
+                            }}
+                          />
+                        )
                       )}
                     </ActionRow>
                   );

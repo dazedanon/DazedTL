@@ -268,7 +268,6 @@ class ImagePreview(TypedDict):
     included: int
     count: int
     unchanged: int
-    backups: NotRequired[list[str] | bool]
     expires: NotRequired[str | float]
 
 

@@ -167,6 +167,16 @@ ROWS = (
         ready=True,
         writes_text=True,
     ),
+    ActionSpec(
+        "runtime_undo",
+        "Undo text batch",
+        "text",
+        stage="Translate",
+        handler="dazedtl.compatibility.text:run_undo",
+        one_click=True,
+        ready=True,
+        writes_text=True,
+    ),
     # QA applies its finished findings, and undoes one, in one click; History
     # restores each batch.
     ActionSpec(

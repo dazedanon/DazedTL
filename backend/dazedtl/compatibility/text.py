@@ -842,6 +842,25 @@ def prepare_publication(plan):
         Path(plan["folder"]),
     )
     action, options = plan["action"], plan["options"]
+    if action == "runtime_undo":
+        # Undoing goes through the game's checkpoints in one click, so it
+        # freezes nothing; its run checks the batch again.
+        rows = [
+            {
+                "path": row["path"],
+                "destination": str(root / row["path"]),
+                "before": row["after"],
+                "after": row["before"],
+                "size": row["size"],
+                "later_edits": False,
+            }
+            for row in publication.undo_files(folder, root, options["publication"])
+        ]
+        return {
+            "publication": rows,
+            "paths": [row["path"] for row in rows],
+            "files": len(rows),
+        }
     prefix = data.relative_to(root)
     candidates, outputs, restored, sources, written = {}, {}, None, {}, {}
     if action == "export_selected":
@@ -1077,6 +1096,30 @@ def run_fit(plan, log):
         "message": f"Fitted {counted} to the new Line widths.",
         **unfit,
     }
+
+
+def run_undo(plan, log):
+    """Takes a text batch out of the game through its checkpoint."""
+    from desktop.backend.workflow_actions import validate_plan
+
+    from dazedtl.translation import originals
+
+    validate_plan(plan)
+    saved = plan.get("original") or {}
+    original = (
+        originals.saved(
+            saved["workspace"], saved["project_id"], plan["project"]["source"]
+        )
+        if saved
+        else None
+    )
+    return publication.undo(
+        plan["folder"],
+        plan["project"]["source"],
+        plan["options"]["publication"],
+        original=original,
+        log=log,
+    )
 
 
 def run_publication(plan, log):

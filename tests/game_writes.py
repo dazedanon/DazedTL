@@ -44,10 +44,8 @@ TARGETS = {
 }
 # Writers that change a game's files without the gateway, each with why.
 OUTSIDE = {
-    # Start over puts back the original game whole and sets its Git history
-    # aside, so it must run whatever state the checkout is in, and the Data
-    # it restores is the original's, with nothing to pack.
-    "translation/originals.py:reset": "Start over",
+    # Start over of a game DazedTL never wrote to moves notes aside without
+    # the gateway, which would record the game as it is as the original.
     "translation/start_over.py:_move": "Start over",
     # A restored backup or recorded original is a new copy of the game's
     # files, never the game itself.

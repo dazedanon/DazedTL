@@ -314,12 +314,20 @@ class SourceStatus(TypedDict):
 
 
 class RestoreBlocker(TypedDict):
-    """The newest later batch still in the game that changed some of a
-    batch's files, which must be restored first."""
+    """What a batch's restore waits for: for one undone through its
+    checkpoint, the later checkpoint to undo first (kind "checkpoint"), else
+    the newest later batch still in the game that changed some of its
+    files."""
 
-    id: str
+    id: Annotated[str, "The later batch, or the later checkpoint's commit."]
     kind: str
-    files: Annotated[list[str], "The files both batches changed."]
+    files: Annotated[list[str], "The files both changed."]
+    reason: NotRequired[
+        Annotated[
+            str,
+            "Why its checkpoint can't be undone yet, as the Checkpoints tab says it.",
+        ]
+    ]
 
 
 class PublicationStatus(TypedDict):
@@ -328,6 +336,10 @@ class PublicationStatus(TypedDict):
     state: str
     files: list[str]
     recovery_errors: list[str]
+    undo: Annotated[
+        bool,
+        "Restores in one click by undoing its checkpoint, or, interrupted, by putting its files back from the checkpoint before it; else by a reviewed restore of the copies it saved.",
+    ]
     blocker: NotRequired[RestoreBlocker]
 
 

@@ -25,7 +25,8 @@ Optional tasks say so and never hold up the next step.
 **Dismiss** clears a task you gave up on, and copying it again brings it back.
 
 The other tabs are **History** (runs, estimates and other activity) and [**Checkpoints**](#checkpoints) (every change to the game, and game updates).
-In **History**, **Review restore** takes out a batch of QA corrections, playtest fixes or rewrapping; when a later batch changed the same files, the button names it.
+In **History**, **Undo** takes out a batch of QA corrections, playtest fixes or rewrapping by undoing its [checkpoint](#checkpoints); when a later checkpoint changed the same files, it names that one to undo first.
+A batch applied with an earlier DazedTL version has **Review restore** instead, which puts back the copy it saved then.
 
 Lists everywhere use the same words:
 
@@ -83,7 +84,7 @@ Wider widths also join again the lines and pages DazedTL broke to fit narrower o
 Text that does not fit even rewrapped, such as help that needs more rows than its window shows, is listed under **Too long to fit** with its file and place, until you apply text again or change the widths; shorten it in Text QA or the translation.
 With portrait is never wider than Dialogue, so saving a narrower Dialogue lowers it and says so.
 While a game update waits on conflicts, or another Git problem the page names, the widths save and the rewrap waits until it is resolved.
-To undo it, inspect **Fit text to the new Line widths** in the Project page's **History** and choose **Review restore**.
+To undo it, inspect **Fit text to the new Line widths** in the Project page's **History** and choose **Undo**.
 Notes is the width of note text DazedTL wraps, such as an item's detail panel; other note text, such as a monster book's lore, keeps the game's own line breaks.
 
 **Cost estimate** shows what translating the whole game costs with your API key before you translate anything.
@@ -127,7 +128,7 @@ Approved Batch work carries on after DazedTL restarts.
 **Other event text** translates the sources chosen in **Event text sources**, like the other files.
 
 **Plugin files**: copy the task to your assistant, which finds and translates the player-visible text in every plugin.
-**Apply to game** writes the translated plugins into the game in one click and keeps a backup of each, which **Recovery** restores.
+**Apply to game** writes the translated plugins into the game in one click, as one checkpoint, and **Recovery** lists each application with **Undo**.
 Copy the task again to continue, or to have it recheck after you spot untranslated plugin text.
 When **Text QA** finds plugin labels too long for the screen, such as a menu command, the task waits on them: copy it again and your assistant shortens them, or keeps one with its reason, then click **Apply to game**.
 Your assistant checks each shorter label in the game: DazedTL plays it in a hidden window with the shorter text, without changing the game, and the label counts only once it fits there.
@@ -141,6 +142,7 @@ Your assistant checks each shorter label in the game: DazedTL plays it in a hidd
    An image your assistant changed without saving its recipe, or that failed the app's checks, reads **Needs review** with the reason; copy the translation task again so your assistant fixes it, or compare it and mark it reviewed yourself.
 
 **More > Investigate all images again** has your assistant start over; its recommendations replace your list, except images already translated.
+**More > Restore originals…** puts the ticked applied images back as the original game had them, from the game's record of its original files; the edited copies stay.
 
 Clicking an image only previews it; its tick box, Space or Ctrl-click ticks it, and **Compare** shows the original beside the edited copy.
 **More > Edit text…** opens the ticked images in the Image Text Editor, where you draw boxes over the original text and type their translation.
@@ -168,11 +170,11 @@ Check has one task, **Text QA**, and it is optional.
   A correction that changes several lines of one scene, such as narration that switches tense, is listed and undone as one.
   QA reviews only text it hasn't reviewed before or that changed since, including lines whose glossary entries changed, and reads the rest only as context.
   When text was checked before you used DazedTL, such as everything up to an update, tell your assistant which version, and QA skips it from then on.
-  To take out every correction at once, inspect **Apply QA corrections** in the Project page's **History** and choose **Review restore**.
+  To take out every correction at once, inspect **Apply QA corrections** in the Project page's **History** and choose **Undo**.
   Inspecting **Prepare or resume translation QA** there shows what QA did not cover: lines its reviewers declined, Japanese never translated and screen text QA can't change.
 - For MV and MZ games the same task is also the final check with a playtest, so you copy it once.
   While QA reviews, DazedTL plays the game in a hidden window, writing nothing into it, and your assistant fixes what it finds: translated text through QA's review, Japanese a plugin shows through **Plugin files**, and crashes or windows too small for English in a fixes plugin of DazedTL's own.
-  DazedTL puts those fixes into the game only after playing it with them in place breaks nothing new; to take them out, inspect **Apply playtest fixes** in the Project page's **History** and choose **Review restore**.
+  DazedTL puts those fixes into the game only after playing it with them in place breaks nothing new; to take them out, inspect **Apply playtest fixes** in the Project page's **History** and choose **Undo**.
   Its fixes change the game's plugins, so your assistant prepares QA again itself, keeping the review done so far.
   Your assistant adds places the tour can't reach by itself, such as story scenes or a recollection room, and plays the game again after QA's corrections; text problems that play finds go to another round of QA, which your assistant runs too.
   **Assistant tasks** shows Text QA as **Waiting** until a playtest of the game as it now is leaves nothing more for your assistant; then the Project page marks it done.
@@ -184,9 +186,9 @@ Check has one task, **Text QA**, and it is optional.
 Apply and playtest an early scene before translating everything.
 
 Applying replaces the game's files with the translations.
-In a VX Ace game it also packs them into the `Data` files the game reads, as do Plugin files, Text QA, Line widths and restores in **History**.
+In a VX Ace game it also packs them into the `Data` files the game reads, as do Plugin files, Text QA, Line widths and undos in **History**.
 If you edit a file in the game afterwards, applying it again replaces your edits, and the review names those files.
-If applying stops midway, **Review restore** puts the files back.
+If applying stops midway, **Restore** on the notice puts its files back as they were before it.
 
 ### 5. Release
 
@@ -250,7 +252,7 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
    In **Assistant only**, lines your assistant won't translate appear under **Declined lines** while it carries on.
    Estimate them with your API connection and approve, or copy a prompt that has another coding assistant translate only those lines; your assistant picks up the translations once they're saved.
 5. To try again from scratch, stop your assistant and choose **Start over…** on **Progress**.
-   It puts back the original game files and moves the attempt, including the playtest's fixes, to `.dazedtl/archived`; save games, Image Manager work, older backups and your options stay, and so do the glossary and notes unless you clear **Keep glossary and notes**.
+   It puts back the original game files as a new checkpoint, so the attempt stays under **Checkpoints**, and moves your assistant's work and the playtest's fixes to `.dazedtl/archived`; save games, Image Manager work, older backups and your options stay, and so do the glossary and notes unless you clear **Keep glossary and notes**.
 
 Your assistant's session uses its own plan in every mode, so on a limited plan pick a smaller model or lower reasoning effort.
 

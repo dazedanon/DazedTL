@@ -13,7 +13,8 @@ class PluginFileReview(TypedDict):
     afterHash: str
     originalHash: str
     candidateHash: str
-    backup: str
+    # The copy an application saved before receipts named its checkpoint.
+    backup: NotRequired[str]
     changes: int
     kind: str
 
@@ -41,7 +42,12 @@ class PluginReceipt(TypedDict):
     conflicts: list[str]
     manifest: str
     restorable: bool
-    # Why an application taken over from another project cannot be restored.
+    undo: Annotated[
+        bool,
+        "Restores in one click by undoing its checkpoint, or, interrupted, by putting its files back from the checkpoint before it; else by a reviewed restore of the backups it saved.",
+    ]
+    # Why an application taken over from another project cannot be
+    # restored, or the later checkpoint to undo first.
     restoreIssue: NotRequired[str]
 
 

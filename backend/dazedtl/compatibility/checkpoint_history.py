@@ -14,7 +14,10 @@ so it takes the `original` branch's bytes for that version, or, since that
 branch holds only the patch too, the bytes the game's record of its original
 files has for that version ([original_files](original_files.py)). A file none
 of them holds did not exist then and goes, unless the game has no record for
-that version, when its earlier bytes are unknown and it stays as it is.
+that version, when its earlier bytes are unknown and it stays as it is. A
+game set up before its original files were kept in Git reads them, for the
+current version, from the backup it saved then (`original`, from
+[originals](../translation/originals.py)).
 
 Going back and undoing write through the game-write gateway, which first
 records the edits made outside DazedTL as their own checkpoint and then makes
@@ -26,7 +29,10 @@ an earlier version's checkpoint is only saved as a copy.
 A checkpoint undoes on its own once every file it changed is still as it
 left it (`blocker`); otherwise the newest later checkpoint that changed one
 of them names what to undo first. A checkpoint that undid another put the
-file back, so undoing in turn never loops.
+file back, so undoing in turn never loops. History, Plugin files and Text
+QA's restores are undos of their apply's checkpoint, and a write that
+stopped midway, which made none, puts its files back as the checkpoint it
+started from had them (`put_back`).
 """
 
 from __future__ import annotations
@@ -37,9 +43,11 @@ import re
 import shutil
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from typing import Any, Literal
 
 from dazedtl import system
+from dazedtl.translation.git_status_cache import RepositoryStatusCache
 
 from .checkpoint_commits import (
     ACTION_TRAILER,
@@ -69,6 +77,10 @@ _LINK = "120000"
 # The patch's scope only grows, so going back and undoing leave the rule
 # files that set it as they are.
 _RULES = frozenset({".gitignore", ".gitattributes"})
+# A file `_Game.wanted` takes from the saved original game, not Git.
+SAVED = "saved"
+# History's blockers, read again only once the repository's metadata moves.
+_blocker_cache = RepositoryStatusCache(stable=True)
 
 
 def _trailer(message, key):
@@ -227,6 +239,43 @@ def blocker(root, commit):
     return _blocker_view(_blockers(entries[: index + 1])[commit])
 
 
+type Blocker = dict[str, Any] | Literal[False] | None
+
+
+def blockers(root, commits) -> dict[str, Blocker]:
+    """`blocker` for each of `commits` the current game version holds, from
+    one read of the history while the repository is unchanged; a commit an
+    earlier version holds, or none does, maps to False: it can't be undone."""
+    root = Path(root).resolve()
+
+    def read() -> dict[str, Blocker]:
+        entries = _log(root)
+        current = _current_span(entries)
+        found = _blockers(current)
+        return {
+            entry.commit: False
+            if entry.boundary
+            else _blocker_view(found[entry.commit])
+            for entry in current
+        }
+
+    views = _blocker_cache.get(str(root), root, read)
+    return {commit: views.get(commit, False) for commit in commits}
+
+
+def refusal(found):
+    """Why a feature's undo of a checkpoint can't start, from `blockers`,
+    or ""."""
+    if found is False:
+        return "Its checkpoint is from an earlier game version, so it can't be undone."
+    if found:
+        return (
+            f"Undo the later {_quoted(found['title'])} first; it also changed "
+            f"{_names(found['files'])}."
+        )
+    return ""
+
+
 def _index(entries, commit):
     for index, entry in enumerate(entries):
         if entry.commit == commit:
@@ -341,7 +390,7 @@ class _Game:
     """The files of a game as of one of its checkpoints, against the game
     as it is now."""
 
-    def __init__(self, root, target):
+    def __init__(self, root, target, original=None):
         self.root = root
         tip = _git(root, "rev-parse", "--verify", "-q", ORIGINAL, check=False)
         self.original_tip = tip.stdout.strip() if tip.returncode == 0 else ""
@@ -359,8 +408,13 @@ class _Game:
             if self.original_tip
             else ""
         )
-        self.complete = self.recorded is not None or (
-            bool(self.original_tip) and LEN_PATCH_GITIGNORE_BEGIN not in rules
+        # A game set up before its original files were kept in Git has the
+        # backup it saved then, of its current version.
+        self.saved = original if self.recorded is None else None
+        self.complete = (
+            self.recorded is not None
+            or self.saved is not None
+            or (bool(self.original_tip) and LEN_PATCH_GITIGNORE_BEGIN not in rules)
         )
 
     def _recorded(self, version):
@@ -409,14 +463,17 @@ class _Game:
         return _tree_files(self.root, chosen or commit, "")
 
     def wanted(self, path, tree):
-        """The (mode, blob) the file has as of the target, None when it
-        didn't exist then, or "keep" when that can't be known."""
+        """The (mode, blob) the file has as of the target, (SAVED, path) when
+        the saved original game holds it, None when it didn't exist then, or
+        "keep" when that can't be known."""
         if path in tree:
             return tree[path]
         if path in self.original:
             return self.original[path]
         if self.recorded is not None and path in self.recorded:
             return self.recorded[path]
+        if self.saved is not None and path in self.saved.files:
+            return (SAVED, path)
         # The glossary, settings and skills are DazedTL's, never the
         # original game's, so one the target lacked didn't exist then.
         if path.startswith(".dazedtl/"):
@@ -451,13 +508,22 @@ def _blob_contents(root, blobs):
             yield blob, read[blob]
 
 
-def _apply(game, root, plan, stopped):
-    """Writes `plan`, path to (mode, blob) or None to remove, through the
-    gateway's write."""
+def _apply(game, root, plan, stopped, state):
+    """Writes `plan`, path to (mode, blob), (SAVED, path) or None to remove,
+    through the gateway's write."""
     removals = [path for path, value in plan.items() if value is None]
-    writes = {path: value for path, value in plan.items() if value is not None}
+    saved = [path for path, value in plan.items() if value and value[0] == SAVED]
+    writes = {
+        path: value
+        for path, value in plan.items()
+        if value is not None and value[0] != SAVED
+    }
     if any(mode == _LINK for mode, _blob in writes.values()):
         raise ValueError("That checkpoint holds a symbolic link DazedTL can't restore.")
+    if saved:
+        with state.saved.materialized(saved, stopped) as folder:
+            for path in saved:
+                game.put(path, (folder / path).read_bytes())
     by_blob = {}
     for path, (mode, blob) in writes.items():
         by_blob.setdefault(blob, []).append((path, mode))
@@ -466,8 +532,17 @@ def _apply(game, root, plan, stopped):
             raise InterruptedError("Stopped before every file was restored.")
         for path, mode in by_blob[blob]:
             game.put(path, raw, 0o755 if mode == "100755" else None)
+    emptied = set()
     for path in removals:
         game.put(path, None)
+        emptied.update(parent.as_posix() for parent in PurePosixPath(path).parents)
+    # Folders the removed files leave empty go too, deepest first.
+    for folder in sorted(
+        emptied - {"."}, key=lambda name: name.count("/"), reverse=True
+    ):
+        target = Path(root) / folder
+        if target.is_dir() and not any(target.iterdir()):
+            system.rmdir(target, ignore_errors=True)
     return len(plan)
 
 
@@ -485,8 +560,19 @@ def _restorable(entries, commit):
     return index
 
 
-def go_back(root, commit, stopped=lambda: False, log=lambda _line: None):
-    """Puts the game's files back as they were at `commit`, as one checkpoint."""
+def _plan(state, paths, tree):
+    plan = {}
+    for path in set(paths) - _RULES:
+        wanted = state.wanted(path, tree)
+        if wanted != "keep":
+            plan[path] = wanted
+    return plan
+
+
+def go_back(root, commit, stopped=lambda: False, log=lambda _line: None, original=None):
+    """Puts the game's files back as they were at `commit`, as one
+    checkpoint. `original` is the saved original game of a game set up
+    before Git kept its original files."""
     from .game_write import write_game
 
     root = Path(root).resolve()
@@ -497,19 +583,76 @@ def go_back(root, commit, stopped=lambda: False, log=lambda _line: None):
         # The gateway recorded the edits made outside DazedTL first.
         entries = _log(root)
         target = entries[_restorable(entries, commit)]
-        state = _Game(root, target)
-        tree = state.tree(commit)
-        plan = {}
-        for path in _diff(root, commit, "HEAD") - _RULES:
-            wanted = state.wanted(path, tree)
-            if wanted != "keep":
-                plan[path] = wanted
-        written = _apply(game, root, plan, stopped)
+        state = _Game(root, target, original)
+        plan = _plan(state, _diff(root, commit, "HEAD"), state.tree(commit))
+        written = _apply(game, root, plan, stopped, state)
     return {"files": written, "commit": _head(root)}
 
 
-def undo(root, commit, stopped=lambda: False, log=lambda _line: None):
-    """Takes out one checkpoint's change, as one checkpoint of its own."""
+def put_back(
+    root,
+    commit,
+    paths,
+    summary,
+    *,
+    check=lambda: None,
+    stopped=lambda: False,
+    log=lambda _line: None,
+    original=None,
+):
+    """Puts only `paths` back as they were at `commit`, as one checkpoint
+    named `summary`: for a write that stopped midway, which made no
+    checkpoint to undo. `check` refuses inside the write, once the edits
+    made outside DazedTL are saved, when the files are no longer the
+    write's."""
+    from .game_write import write_game
+
+    root = Path(root).resolve()
+    with running(Change(summary, None, UNDO)), write_game(root, log=log) as game:
+        check()
+        entries = _log(root)
+        state = _Game(root, entries[_restorable(entries, commit)], original)
+        plan = _plan(state, paths, state.tree(commit))
+        written = _apply(game, root, plan, stopped, state)
+    return {"files": written, "commit": _head(root)}
+
+
+def tracked(root):
+    """The files the translation branch's newest checkpoint holds."""
+    output = _git(root, "ls-tree", "-r", "-z", "--name-only", "HEAD").stdout
+    return {path for path in output.split("\0") if path}
+
+
+def to_original(game, keep=lambda _path: False, stopped=lambda: False, original=None):
+    """Inside a write to the game, puts every file the patch holds back as
+    the original game's current version has it, but those `keep` names;
+    for Start over, whose own checkpoint it becomes."""
+    root = game.root
+    entries = _log(root)
+    span = _current_span(entries)
+    state = _Game(root, span[-1], original)
+    if not state.original_tip:
+        raise ValueError("The game's Git history has no original branch.")
+    head = state.tree("HEAD")
+    paths = {
+        path
+        for path in set(state.original) | set(head)
+        if state.original.get(path) != head.get(path) and not keep(path)
+    }
+    return _apply(game, root, _plan(state, paths, state.original), stopped, state)
+
+
+def undo(
+    root,
+    commit,
+    stopped=lambda: False,
+    log=lambda _line: None,
+    original=None,
+    *,
+    check=lambda: None,
+):
+    """Takes out one checkpoint's change, as one checkpoint of its own.
+    `check` refuses inside the write, as `put_back`'s does."""
     from .game_write import write_game
 
     root = Path(root).resolve()
@@ -532,15 +675,11 @@ def undo(root, commit, stopped=lambda: False, log=lambda _line: None):
                 f"Undo the later {_quoted(later.title)} first; it also changed "
                 f"{_names(files)}."
             )
-        state = _Game(root, target)
+        check()
+        state = _Game(root, target, original)
         parent = entries[index + 1].commit if index + 1 < len(entries) else None
-        before = state.tree(parent) if parent else {}
-        plan = {}
-        for path in set(target.changes) - _RULES:
-            wanted = state.wanted(path, before)
-            if wanted != "keep":
-                plan[path] = wanted
-        written = _apply(game, root, plan, stopped)
+        plan = _plan(state, target.changes, state.tree(parent) if parent else {})
+        written = _apply(game, root, plan, stopped, state)
     return {"files": written, "commit": _head(root)}
 
 

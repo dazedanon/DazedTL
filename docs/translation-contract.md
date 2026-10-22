@@ -37,7 +37,7 @@ The release playtest for RPG Maker MV/MZ runs with `playtest --run --wait MINUTE
 `--stops FILE` adds places after the standard tour, a JSON list of `{"title", "do"}` objects: `map` with `map`, `x` and `y`, `event` with `event` (and `map`), `common-event` with `id`, `battle` with `troop`, `scene` with `scene`, or `script` with `script`, each optionally with `switches`, `variables` and the `seconds` to play after it.
 The stops given replace the saved ones, which every later run visits, and `[]` clears them.
 `playtest --fix --wait MINUTES` plays the game with the fixes file, a working copy of the game's `js/plugins/DazedTL_Fixes.js`, in its place and with `js/main.js` loading it after the game's plugins.
-Only when that play still plays, stops nowhere new, reaches as many places and no longer shows something the last playtest found does it write both, as one batch and one checkpoint, which Guided's History restores; the play then becomes the latest report, and otherwise its reason is the step's failure.
+Only when that play still plays, stops nowhere new, reaches as many places and no longer shows something the last playtest found does it write both, as one batch and one checkpoint, which Guided's History undoes; the play then becomes the latest report, and otherwise its reason is the step's failure.
 `playtest --checkpoint` is kept for assistants started before then and changes nothing.
 Its findings in translated text reach text QA by themselves; plugin text the playtest saw drawn goes back to Plugin files, whose remaining work `plugins --task` hands out, never a recheck of every decision as the app's Copy gives once nothing is left, and `plugins --apply` applies as Apply to game does; the rest name the step that fixes them.
 

@@ -9,6 +9,8 @@ import {
   type Project,
 } from "../../api/contracts";
 import { useApplication } from "../../app/ApplicationProvider";
+import { flushDrafts } from "../../state/leaveGuards";
+import { useAction } from "../../state/useAction";
 import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../ui/ActionList";
@@ -514,11 +516,15 @@ function ProjectHistory({
   query?: string;
   openGuided: (intent: GuidedIntent) => void;
 }) {
-  const { snapshot } = useApplication();
+  const application = useApplication();
+  const { snapshot } = application;
   const guided = snapshot?.guided,
     translation = snapshot?.translation;
   const [footer, setFooter] = useState<HTMLDivElement | null>(null);
   const [inspection, setInspection] = useState<Job | null>(null);
+  // Undoing a batch through its checkpoint runs here in one click.
+  const undo = useAction({ observer: application });
+  const [undoJob, setUndoJob] = useState("");
   if (!translation || translation.projectId !== project.id) return null;
   if (project.method !== "guided" || guided?.projectId !== project.id)
     return (
@@ -562,9 +568,12 @@ function ProjectHistory({
       ? "This batch is already restored."
       : !blocker
         ? ""
-        : restorable(blocker.kind)
-          ? `Restore the later “${restorable(blocker.kind)}” first; it also changed ${shared}.`
-          : `A later Apply replaced ${shared}, so this batch can’t be restored.`;
+        : blocker.reason
+          ? blocker.reason
+          : restorable(blocker.kind)
+            ? `Restore the later “${restorable(blocker.kind)}” first; it also changed ${shared}.`
+            : `A later Apply replaced ${shared}, so this batch can’t be restored.`;
+  const undone = guided.operations.find((job) => job.id === undoJob);
   return (
     <>
       <PageBody className="history-host-body">
@@ -621,12 +630,40 @@ function ProjectHistory({
                     </small>
                   }
                 >
-                  <ActionControl
-                    label="Review restore"
-                    disabled={!baseline || !!restoreBlocked}
-                    disabledReason={restoreBlocked}
-                    onClick={() => openGuided({ kind: "restore", publication })}
-                  />
+                  {batch?.undo ? (
+                    <ActionControl
+                      label="Undo"
+                      pendingText="Undoing…"
+                      pending={undo.busy}
+                      error={undo.error}
+                      job={undone}
+                      disabled={!baseline || !!restoreBlocked || undo.busy}
+                      disabledReason={restoreBlocked}
+                      onClick={() =>
+                        void undo.run(async () => {
+                          await flushDrafts();
+                          const preview = await api.preview(
+                            project.id,
+                            "runtime_undo",
+                            undefined,
+                            { publication },
+                          );
+                          setUndoJob(
+                            (await api.execute(project.id, preview.token)).id,
+                          );
+                        })
+                      }
+                    />
+                  ) : (
+                    <ActionControl
+                      label="Review restore"
+                      disabled={!baseline || !!restoreBlocked}
+                      disabledReason={restoreBlocked}
+                      onClick={() =>
+                        openGuided({ kind: "restore", publication })
+                      }
+                    />
+                  )}
                 </ActionRow>
               </ActionList>
             ) : (

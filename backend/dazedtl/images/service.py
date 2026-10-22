@@ -262,10 +262,11 @@ class ImageService:
                         )
                         counts["edited"] += bool(row.get("changed"))
                         counts["applied"] += bool(applied)
-                        # Restores need only the original saved in the game folder.
+                        # Restores need only the original Prepare kept, which
+                        # the game folder's Git record or copy holds.
                         counts["restorable"] += bool(
                             applied
-                            and row.get("runtimeBackup")
+                            and row.get("frozen")
                             and applied == row.get("sourceHash")
                         )
             if value["pendingPublications"]:
@@ -751,7 +752,7 @@ class ImageService:
                 "not_prepared",
                 "Make this image editable before starting image work.",
             )
-        elif not row.get("runtimeBackup"):
+        elif not row.get("frozen"):
             # An edited copy placed without Prepare has no preserved original,
             # so Apply could not keep the game's image to restore.
             row["state"], row["blockedReason"] = (
@@ -788,9 +789,10 @@ class ImageService:
                     raise ValueError(
                         "The preserved original image changed. Recover it before reviewing or applying this candidate."
                     )
-                if sha_file(project_path(root, result["runtimeBackup"])) != result.get(
-                    "runtimeBackupHash"
-                ):
+                # Images prepared before restores read Git kept a copy.
+                if result.get("runtimeBackup") and sha_file(
+                    project_path(root, result["runtimeBackup"])
+                ) != result.get("runtimeBackupHash"):
                     raise ValueError(
                         "The preserved original runtime backup changed. Recover it before applying this candidate."
                     )
@@ -965,7 +967,7 @@ class ImageService:
                 "errors": journal.get("errors", []),
                 "message": "Recovered exact reviewed publication bytes."
                 if status == "recovered"
-                else "Publication was interrupted. Published images retain original backups; review recovery before continuing.",
+                else "Publication was interrupted. Restore originals puts back the images it published; review recovery before continuing.",
             }
             journal.update(status=status, recoveredAt=now(), receipt=receipt)
             write_json(project_path(root, relative), journal)
@@ -1477,7 +1479,7 @@ class ImageService:
             unprepared = [
                 row["id"]
                 for row in rows
-                if not row.get("runtimeBackup")
+                if not row.get("frozen")
                 and not row.get("sourceIssue")
                 and not row.get("originalIssue")
             ]
@@ -2227,22 +2229,20 @@ class ImageService:
                     runtime_original = runtime_bytes
                 original_metadata = png_metadata(raw)
                 frozen = WORK + "/originals/" + row["id"]
-                backup = WORK + "/runtime-originals/" + row["runtime"]
                 frozen_path = project_path(root, frozen, exists=False)
-                backup_path = project_path(root, backup, exists=False)
-                if frozen_path.exists() or backup_path.exists():
+                if frozen_path.exists():
                     raise ValueError(
                         "Unrecognized preserved image files exist. Inspect them before preparing new originals."
                     )
                 write_bytes(frozen_path, raw)
-                write_bytes(backup_path, runtime_original)
+                # Restore puts back the game's bytes these hash to, which the
+                # game's record of its original files holds.
                 row.update(
                     frozen=frozen,
                     originalPngHash=digest(raw),
                     originalRuntimeHash=row["sourceHash"],
                     originalMetadata=original_metadata,
                     originalOrigin=origin,
-                    runtimeBackup=backup,
                     runtimeBackupHash=digest(runtime_original),
                 )
             allowed.append(row)
@@ -2366,24 +2366,28 @@ class ImageService:
             else:
                 reason = (
                     ""
-                    if row.get("runtimeBackup")
+                    if row.get("frozen")
                     and (row.get("applied") or {}).get("runtimeHash")
                     == row.get("sourceHash")
-                    else "This image has no current application receipt/original backup to restore."
+                    else "This image has no current application to restore."
                 )
-                if not reason:
-                    try:
-                        if (
-                            sha_file(project_path(root, row["runtimeBackup"]))
-                            != row["runtimeBackupHash"]
-                        ):
-                            reason = "The preserved original runtime bytes changed."
-                    except OSError, ValueError:
-                        reason = "The preserved original runtime backup is missing."
             if reason:
                 blocked.append({"id": identity, "path": row["path"], "reason": reason})
             else:
                 included.append(row)
+        if action == "restore" and included:
+            # Each image's original, read from the game's records at once.
+            issues = {}
+            try:
+                self._original_runtime(project_id, root, included, issues)
+            except (OSError, ValueError) as exc:
+                issues = dict.fromkeys((row["id"] for row in included), str(exc))
+            blocked += [
+                {"id": row["id"], "path": row["path"], "reason": issues[row["id"]]}
+                for row in included
+                if row["id"] in issues
+            ]
+            included = [row for row in included if row["id"] not in issues]
         token = uuid.uuid4().hex
         plan = {
             "projectId": project_id,
@@ -2411,10 +2415,47 @@ class ImageService:
             "included": len(included),
             "count": len(included),
             "unchanged": unchanged,
-            "backups": [row.get("runtimeBackup", "") for row in included],
             "expires": (datetime.now(UTC) + timedelta(minutes=15)).isoformat(),
         }
         return {"state": self.state(project_id), "preview": preview}
+
+    def _original_runtime(self, project_id, root, rows, issues=None):
+        """The game's bytes each image had when Prepare kept its original,
+        for Restore: a copy Prepare saved before restores read Git, else the
+        game's record of its original files, else the image tool's own
+        backup. An image none of them holds is refused, or, given `issues`,
+        named there with why, so a preview reads every image in one pass."""
+        wanted = [row for row in rows if not row.get("runtimeBackup")]
+        found = {}
+        if not wanted:
+            return found
+        original = game_originals.prepared(self.translation.workspace, project_id, root)
+        names = [row["runtime"] for row in wanted]
+        if original is not None:
+            with original.materialized(names) as folder:
+                for name in names:
+                    path = folder / name
+                    if path.is_file():
+                        found[name] = path.read_bytes()
+        for row in wanted:
+            raw = found.get(row["runtime"])
+            if raw is None or digest(raw) != row["runtimeBackupHash"]:
+                backup = project_path(
+                    root, ".dazedtl/image_backups/" + row["runtime"], exists=False
+                )
+                raw = backup.read_bytes() if backup.is_file() else None
+            if raw is None or digest(raw) != row["runtimeBackupHash"]:
+                found.pop(row["runtime"], None)
+                issue = (
+                    "DazedTL has no copy of this image as it was before it was "
+                    "translated. The Project page's Checkpoints can undo its apply."
+                )
+                if issues is None:
+                    raise ValueError(issue)
+                issues[row["id"]] = issue
+                continue
+            found[row["runtime"]] = raw
+        return found
 
     def _execute(self, project_id, action, options):
         # Refused before the review is used, so it still applies once the
@@ -2489,8 +2530,11 @@ class ImageService:
                     "sourceHash": row["sourceHash"],
                     "candidateHash": row["candidateHash"],
                     "expectedRuntimeHash": expected_hash,
-                    "runtimeBackup": row["runtimeBackup"],
-                    "runtimeBackupHash": row["runtimeBackupHash"],
+                    **{
+                        key: row[key]
+                        for key in ("runtimeBackup", "runtimeBackupHash")
+                        if key in row
+                    },
                     "review": "ai" if row.get("aiReviewed") else "user",
                     "reviewVersion": REVIEW_VERSION,
                 }
@@ -2502,6 +2546,11 @@ class ImageService:
             "hash": self._journal_binding(journal),
         }
         self._save(project_id, value)
+        originals = (
+            self._original_runtime(project_id, root, current)
+            if action == "restore"
+            else {}
+        )
         self.mutating.add(project_id)
         try:
             with self.backend.game_write(
@@ -2516,7 +2565,7 @@ class ImageService:
                 result = (
                     self.adapter.apply(root, profile, current, key)
                     if action == "apply"
-                    else self.adapter.restore(root, current)
+                    else self.adapter.restore(root, current, originals)
                 )
             if not result.get("errors"):
                 with index.connection() as db:

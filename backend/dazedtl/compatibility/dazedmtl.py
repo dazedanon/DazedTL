@@ -470,7 +470,7 @@ class ExistingBackend:
         }
 
     def guided_text_state(self, native, focus="release"):
-        from dazedtl.translation.publication import blocker, history
+        from dazedtl.translation.publication import history, undoes
 
         from .playtest import POINTER, playtest_state
         from .text import qa_state, qa_unreadable
@@ -516,6 +516,7 @@ class ExistingBackend:
                     qa = qa_unreadable(plan, exc)
             if played:
                 playtest = playtest_state(folder, guard, focus)
+        shown = recent[:10]
         return {
             "qa": qa,
             "playtest": playtest,
@@ -526,14 +527,46 @@ class ExistingBackend:
                     "state": row["state"],
                     "files": [item["path"] for item in row["files"]],
                     "recovery_errors": row.get("recovery_errors", []),
+                    "undo": undoes(row),
                     **(
                         {"blocker": later}
-                        if (later := blocker(rows, row["id"]))
+                        if (later := self._restore_blocker(native, rows, row))
                         else {}
                     ),
                 }
-                for row in recent[:10]
+                for row in shown
             ],
+        }
+
+    @staticmethod
+    def _restore_blocker(native, rows, row):
+        """What a batch's restore waits for: the later checkpoint to undo
+        first, by the Git rule, for one undone through its checkpoint, else
+        the later batch its saved copies would take out too."""
+        from dazedtl.translation.publication import blocker, undoes
+
+        if not undoes(row) or row["state"] != "complete":
+            return blocker(rows, row["id"])
+        from .checkpoint_history import blockers, refusal
+
+        try:
+            found = blockers(native["source"], [row["commit"]])[row["commit"]]
+        except (OSError, ValueError, RuntimeError) as exc:
+            return {"id": "", "kind": "checkpoint", "files": [], "reason": str(exc)}
+        if found is None:
+            return None
+        if found is False:
+            return {
+                "id": "",
+                "kind": "checkpoint",
+                "files": [],
+                "reason": refusal(found),
+            }
+        return {
+            "id": found["commit"],
+            "kind": "checkpoint",
+            "files": found["files"],
+            "reason": refusal(found),
         }
 
     def guided_phase(self, native_id, phase, files):

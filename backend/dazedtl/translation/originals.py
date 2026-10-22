@@ -194,6 +194,20 @@ def prepared(workspace, project_id, root, state=None, *, or_found=True):
     )
 
 
+def saved(workspace, project_id, root, state=None):
+    """The backup of the game's current version a project set up before Git
+    kept its original files saved then, which going back and undoing read
+    for files outside the patch; None for a game Git keeps the original of,
+    or when the backup can't be read."""
+    root = Path(root)
+    if original_files.recorded(root):
+        return None
+    try:
+        return prepared(workspace, project_id, root, state)
+    except OSError, ValueError:
+        return None
+
+
 MISSING = (
     "DazedTL has no record of this game's original files, and its backup from"
     " before checkpoints can't be read. Put the original game back in its"

@@ -525,11 +525,13 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         from .start_over import run as start_over
 
         state, result = start_over(
+            workspace,
+            job["project_id"],
             source,
             state,
-            originals.found(workspace, job["project_id"], source, state),
             engine.documents(source),
             arguments["keep_context"],
+            configured=bool(engine.git_status(source, options).get("configured")),
             stopped=stopped,
             progress=progress,
         )
@@ -547,7 +549,13 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             if action == "checkpoint_back"
             else checkpoint_history.undo
         )
-        result = restore(source, arguments["commit"], stopped, progress)
+        result = restore(
+            source,
+            arguments["commit"],
+            stopped,
+            progress,
+            originals.saved(workspace, job["project_id"], source, state),
+        )
     elif action == "checkpoint_copy":
         from dazedtl.compatibility import checkpoint_history
 

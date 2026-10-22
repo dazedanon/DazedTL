@@ -651,4 +651,58 @@ except ValueError as reason:
     assert "outside the game" in str(reason), reason
 else:
     raise AssertionError("A copy went inside the game.")
+# History undoes a text batch through its checkpoint: its receipt names the
+# checkpoint and keeps no copy, the undo is a checkpoint of its own, and the
+# batch then reads restored with its applied-output entries back.
+from dazedtl.translation import publication
+
+texts = temporary / "texts"
+texts.mkdir()
+items = "data/Items.json"
+before_qa = (kept / items).read_bytes()
+with running(for_action("qa_apply")):
+    plan = publication.freeze(texts, kept, {items: b'["QA wording"]'}, "qa_apply")
+    applied = publication.publish(texts, kept, plan)["publication"]
+clean()
+[record] = publication.records(texts)
+assert (
+    record["commit"] == tip()
+    and record["parent"] == git(kept, "rev-parse", "HEAD~1").strip()
+), record
+assert sorted(
+    path.name for path in (texts / "text-publications" / applied).iterdir()
+) == ["receipt.json"]
+publication.undo(texts, kept, applied)
+clean()
+assert history()[0] == "Undid “Apply QA corrections”|checkpoint_undo|", history()
+assert (kept / items).read_bytes() == before_qa
+assert [row["state"] for row in publication.history(texts)] == ["complete", "restored"]
+try:
+    publication.undo(texts, kept, applied)
+except ValueError as reason:
+    assert "Choose an applied or interrupted batch" in str(reason), reason
+else:
+    raise AssertionError("A restored batch was undone again.")
+# A batch that stopped midway made no checkpoint: its files go back as the
+# checkpoint it started from had them, once they still hold either side.
+with running(for_action("qa_apply")):
+    plan = publication.freeze(texts, kept, {items: b'["Stopped"]'}, "qa_apply")
+    try:
+        with patch.object(
+            publication, "write_json", side_effect=KeyboardInterrupt("stopped")
+        ):
+            publication.publish(texts, kept, plan)
+    except KeyboardInterrupt:
+        pass
+[stopped] = [row for row in publication.records(texts) if row["id"] == plan["id"]]
+assert stopped["state"] == "reviewed", stopped
+path = texts / "text-publications" / plan["id"] / "receipt.json"
+stopped.update(state="publishing", parent=tip())
+publication.write_json(path, stopped)
+(kept / items).write_bytes(b'["Stopped"]')
+(kept / "data/Map001.json").write_bytes(b'{"by": "a hand edit"}')
+publication.undo(texts, kept, plan["id"])
+assert (kept / items).read_bytes() == before_qa
+assert (kept / "data/Map001.json").read_bytes() == b'{"by": "a hand edit"}'
+assert history()[0] == "Restored an interrupted text batch|checkpoint_undo|", history()
 print("ok")

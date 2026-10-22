@@ -345,8 +345,11 @@ class ImageCompatibility:
             raw = encrypt_image_bytes(raw, key)
         return hashlib.sha256(raw).hexdigest()
 
-    def restore(self, root, rows):
-        """Restore the reviewed exact batch, with rollback and baseline refresh."""
+    def restore(self, root, rows, originals=None):
+        """Restore the reviewed exact batch, with rollback and baseline
+        refresh: `originals` holds each image's original bytes by runtime
+        path, and an image prepared before restores read Git has its own
+        copy."""
         from util.image_manager import record_asset_baselines
 
         before, original_bytes = {}, {}
@@ -356,8 +359,11 @@ class ImageCompatibility:
         old_manifest = auxiliary.read_bytes() if auxiliary.exists() else None
         for row in rows:
             target = project_path(root, row["runtime"])
-            backup = project_path(root, row["runtimeBackup"])
-            raw = backup.read_bytes()
+            raw = (
+                project_path(root, row["runtimeBackup"]).read_bytes()
+                if row.get("runtimeBackup")
+                else (originals or {})[row["runtime"]]
+            )
             if hashlib.sha256(raw).hexdigest() != row["runtimeBackupHash"]:
                 raise ValueError(
                     "An original image backup changed. Nothing was restored."
