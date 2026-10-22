@@ -17,3 +17,4 @@
 - **Line widths:** going back to or undoing a checkpoint from before Save line widths now puts Line widths back to the widths the game uses again, instead of still showing the saved ones, so saving them again fits the text.
 - **Game updates:** **Apply update** no longer flashes "Finish the interrupted update" with both buttons disabled while it runs; the preview and the Last saved patch ZIP card no longer repeat the same status two or three times.
 - **Checkpoints:** after Go back, the checkpoints it took out read "Taken out".
+- **Guidance:** saving after editing only Style & quirks names the checkpoint "Save Style & quirks" instead of also listing an untouched Game context; while a stopped game update holds the game folder, Save guidance and Save line widths are unavailable with "Resolve the game folder notice above first." only when they have something to save, instead of Save line widths failing after the click.
