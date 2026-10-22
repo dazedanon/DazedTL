@@ -116,22 +116,6 @@ ROWS = (
         "checkpoint", "Save a checkpoint", "helper", stage="Assistant-led", ready=True
     ),
     ActionSpec(
-        "guided_review",
-        "Record playtest review",
-        "lifecycle",
-        stage="Release",
-        history="Record guided playtest review",
-        ready=True,
-    ),
-    ActionSpec(
-        "guided_package",
-        "Build local patch ZIP",
-        "lifecycle",
-        stage="Release",
-        history="Package reviewed guided patch",
-        ready=True,
-    ),
-    ActionSpec(
         "release_patch",
         "Build local patch ZIP",
         "lifecycle",

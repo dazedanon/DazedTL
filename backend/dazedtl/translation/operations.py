@@ -13,29 +13,7 @@ from dazedtl.compatibility.checkpoint_commits import for_action, in_phase, runni
 from dazedtl.storage import staging_folder, write_json
 
 from . import backups, originals, progress_report
-from .files import digest, evidence, project_path, read_json, verify_evidence
-
-
-def verify_guided_review(source, state, workspace=None, engine=None):
-    review = state.get("guided_review")
-    if not review:
-        raise ValueError(
-            "Record your review and playtest of the current guided patch before packaging."
-        )
-    verify_evidence(source, review["evidence"])
-    if review.get("source_inputs"):
-        if workspace is None:
-            raise ValueError("Verify this playtest review through its app workspace.")
-        from .guided_inputs import original_bindings
-
-        inputs = read_json(project_path(workspace, review["source_inputs"]))
-        if digest(inputs) != review["source_inputs_sha256"]:
-            raise ValueError(
-                "Working sources changed after playtest review. Review the current pass again."
-            )
-        if engine is not None:
-            engine.verify_bindings(source, original_bindings(inputs))
-    return review
+from .files import digest, project_path, read_json, verify_evidence
 
 
 def lifecycle_path(workspace, project_id):
@@ -336,57 +314,19 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
                 "inputs": inputs,
             }
         state["guided_release"] = result
-    elif action == "guided_review":
+    elif action == "package":
         require_baseline(engine, source, options, state)
-        manifest = runtime_manifest(source, arguments["manifest"])
-        state["guided_review"] = {
-            "manifest": arguments["manifest"],
-            "evidence": evidence(
-                source,
-                list(
-                    dict.fromkeys(
-                        [
-                            arguments["manifest"],
-                            *engine.runtime_paths(manifest),
-                            *manifest.get("inputs", []),
-                        ]
-                    )
-                ),
-            ),
-        }
-        if arguments.get("source_inputs"):
-            from .guided_inputs import original_bindings
+        from .delivery import verify
 
-            inputs = read_json(project_path(workspace, arguments["source_inputs"]))
-            if digest(inputs) != arguments["source_inputs_sha256"]:
-                raise ValueError("Working sources changed. Review this pass again.")
-            engine.verify_bindings(source, original_bindings(inputs))
-            state["guided_review"].update(
-                source_inputs=arguments["source_inputs"],
-                source_inputs_sha256=arguments["source_inputs_sha256"],
+        manifest_path = state.get("runtime_manifest")
+        if not manifest_path:
+            raise ValueError(
+                "Register the patch's runtime manifest with Git setup first."
             )
-        result = {
-            "reviewed_files": len(manifest["files"]),
-            "message": "User review and playtest recorded for these exact files.",
-        }
-    elif action in {"package", "guided_package"}:
-        require_baseline(engine, source, options, state)
-        if action == "guided_package":
-            manifest_path = verify_guided_review(source, state, workspace, engine)[
-                "manifest"
-            ]
-        else:
-            from .delivery import verify
-
-            manifest_path = state.get("runtime_manifest")
-            if not manifest_path:
-                raise ValueError(
-                    "Register the patch's runtime manifest with Git setup first."
-                )
-            if manifest_path not in verify(source, full=True)["files"]:
-                raise ValueError(
-                    "Record QA for the patch's runtime manifest before packaging with Assistant-led."
-                )
+        if manifest_path not in verify(source, full=True)["files"]:
+            raise ValueError(
+                "Record QA for the patch's runtime manifest before packaging with Assistant-led."
+            )
         engine.outside_edits(source)
         save(for_action(action), manifest_path)
         result = engine.package(
