@@ -1727,6 +1727,9 @@ class GuidedTests(unittest.TestCase):
             return {"token": token, "confirmation": True, "options": {}}
 
         self.backend.workflows.preview = preview
+        self.backend.phase_files = lambda _native, phase: (
+            ["Items.json"] if phase == "database" else ["Map001.json"]
+        )
         self.backend.guided_export_preview = lambda *args, **kw: (
             ExistingBackend.guided_export_preview(self.backend, *args, **kw)
         )
