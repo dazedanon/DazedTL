@@ -18,6 +18,7 @@ import { ModelMenu } from "../../../settings/ModelMenu";
 import { GuidanceEditor } from "../../GuidanceEditor";
 import { guidanceAvailability } from "../../guidanceReview";
 import { LayoutMeasurements } from "../../LayoutMeasurements";
+import { runEnd, stoppedJob } from "../../runEnd";
 import { widthsSaveNotice } from "../../lineWidths";
 import { textLocation } from "../../textLocation";
 import { checkoutRefusal } from "../../../translation/checkout";
@@ -257,6 +258,7 @@ export function layoutView(w: GuidedWorkspace): TaskView {
     feedback,
     copyTask,
     widths,
+    discardWidths,
     textFit,
     handoff,
     localOperation,
@@ -437,7 +439,22 @@ export function layoutView(w: GuidedWorkspace): TaskView {
   return {
     content,
     // The fit shows in this footer, not in a row that moves the page.
-    secondary: localOperation && stopControl(localOperation),
+    secondary: (
+      <>
+        {widthsDirty && (
+          <ActionControl
+            label="Discard draft"
+            variant="quiet"
+            disabled={disabled}
+            {...feedback("widths:discard", "Discarding…")}
+            onClick={() =>
+              action.run(discardWidths, "Draft discarded.", "widths:discard")
+            }
+          />
+        )}
+        {localOperation && stopControl(localOperation)}
+      </>
+    ),
     action: saveControl,
     next: advance(undefined, undefined, pending ? "quiet" : "primary"),
     save: disabled || refused ? undefined : saveLayout,
@@ -471,6 +488,8 @@ export function estimateView(w: GuidedWorkspace): TaskView {
         ? "This estimate is up to date."
         : "";
   const control = feedback("full-estimate", "Estimating…");
+  // The newest attempt's end: a failure is an error, a stop a note.
+  const end = runEnd(estimate, "");
   const run = (
     <ActionControl
       label={estimate.result ? "Estimate again" : "Estimate cost"}
@@ -479,9 +498,8 @@ export function estimateView(w: GuidedWorkspace): TaskView {
       disabledReason={blocked}
       {...control}
       pending={control.pending || working}
-      error={
-        control.error || (estimate.status === "failed" ? estimate.message : "")
-      }
+      error={control.error || end.failure}
+      job={end.stopped ? stoppedJob("Estimate", end.stopped) : undefined}
       onClick={() => void estimateCost()}
     />
   );

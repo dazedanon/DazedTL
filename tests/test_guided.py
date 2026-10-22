@@ -1657,6 +1657,25 @@ class GuidedTests(unittest.TestCase):
             self.guided.preview(
                 self.identity, "export_selected", files=["Foreign.json"]
             )
+        # A file the game changed since its working copy, as after an update,
+        # still holds the old release's text: Apply refuses it until a reload,
+        # in its review and again when confirmed.
+        preview = self.guided.preview(
+            self.identity, "export_selected", files=["Items.json"]
+        )
+        with patch.object(
+            GuidedInputs, "status", return_value={"changed": ["Items.json"]}
+        ):
+            for apply in (
+                lambda: self.guided.preview(
+                    self.identity, "export_selected", files=["Items.json"]
+                ),
+                lambda: self.guided.execute(self.identity, preview["token"]),
+            ):
+                with self.assertRaisesRegex(
+                    ValueError, "Items.json changed in the game. Reload it"
+                ):
+                    apply()
         self.native["files"] = [{"name": "Items.json"}, {"name": "System.json"}]
         state = {"jobs": []}
         self.assertEqual(

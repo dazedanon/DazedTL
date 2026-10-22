@@ -16,7 +16,12 @@ import { spawn, spawnSync } from "node:child_process";
 import { root, python } from "./dependencies.mjs";
 import { Page, until, message } from "./testkit/cdp.mjs";
 import { freePort, startApp, stopApp, running } from "./testkit/app.mjs";
-import { startDisplay, stopGroup, virtualDisplay } from "./testkit/display.mjs";
+import {
+  displayName,
+  startDisplay,
+  stopGroup,
+  virtualDisplay,
+} from "./testkit/display.mjs";
 import { gameName, makeGame, variants } from "./testkit/games.mjs";
 import { scenarios } from "./testkit/scenarios.mjs";
 import { checkout, previousRelease } from "./testkit/checkout.mjs";
@@ -90,7 +95,7 @@ async function startScreen(state) {
     return state.display.env;
   try {
     state.display = await startDisplay({
-      name: `dazedtl-${path.basename(state.work)}`,
+      name: displayName(state.work),
       log: path.join(state.work, "logs/display.log"),
     });
   } catch (error) {
@@ -354,7 +359,7 @@ try {
     const display =
       process.platform === "linux"
         ? await startDisplay({
-            name: `dazedtl-live-${crypto.randomBytes(3).toString("hex")}`,
+            name: displayName("live"),
             log: path.join(os.tmpdir(), "dazedtl-live-display.log"),
           })
         : undefined;

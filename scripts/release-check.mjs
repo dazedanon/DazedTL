@@ -13,6 +13,7 @@ import { spawn } from "node:child_process";
 import { root, requireNode } from "./dependencies.mjs";
 import { ensureRenderer } from "./testkit/app.mjs";
 import { checkout, previousRelease } from "./testkit/checkout.mjs";
+import { withRetry } from "./testkit/retry.mjs";
 import { scenarios } from "./testkit/scenarios.mjs";
 
 requireNode();
@@ -68,19 +69,11 @@ function ciScenarios() {
 const results = [];
 /** A file or folder name for the check `name`. */
 const slug = (name) => name.replace(/[^\w.-]+/g, "_");
-// A scenario's display is named after its folder, which this check's own
-// folder name keeps apart from other sessions' scenarios.
-const folder = (name) =>
-  path.join(work, `${slug(name)}-${path.basename(work).slice(-6)}`);
+const folder = (name) => path.join(work, slug(name));
 
-/** Runs `args` with Node, its output in `<work>/<name>.log` and its files in
- * `kept`. */
-function run(name, args, kept = "") {
-  const log = path.join(work, `${slug(name)}.log`);
+/** Runs `args` with Node once, its output in `log`; resolves whether it passed. */
+function attempt(args, log) {
   const output = fs.openSync(log, "w");
-  const result = { name, passed: false, seconds: 0, log, kept };
-  results.push(result);
-  const started = Date.now();
   return new Promise((resolve) => {
     const child = spawn(process.execPath, args, {
       cwd: root,
@@ -88,15 +81,49 @@ function run(name, args, kept = "") {
     });
     const finish = (passed) => {
       fs.closeSync(output);
-      Object.assign(result, { passed, seconds: (Date.now() - started) / 1000 });
-      console.log(
-        `${passed ? "passed" : "FAILED"}  ${name} (${result.seconds.toFixed(0)} s)`,
-      );
-      resolve(result);
+      resolve(passed);
     };
     child.on("error", () => finish(false));
     child.on("close", (code) => finish(code === 0));
   });
+}
+
+/**
+ * Runs `args` with Node, its output in `<work>/<name>.log` and its files in
+ * `kept`. A failed run gets one more, its output in `<name>.retry.log` and
+ * its files cleared first; one that passes then is a flake.
+ */
+async function run(name, args, kept = "") {
+  const first = path.join(work, `${slug(name)}.log`);
+  const result = {
+    name,
+    passed: false,
+    flaky: false,
+    seconds: 0,
+    log: first,
+    first,
+    kept,
+  };
+  results.push(result);
+  const started = Date.now();
+  const outcome = await withRetry(
+    async (number) => {
+      if (number === 2) {
+        console.log(`failed  ${name}; running it once more`);
+        result.log = path.join(work, `${slug(name)}.retry.log`);
+      }
+      return attempt(args, result.log);
+    },
+    () => kept && fs.rmSync(kept, { recursive: true, force: true }),
+  );
+  Object.assign(result, outcome, { seconds: (Date.now() - started) / 1000 });
+  // A check that passed leaves only its log, since the live tests' installs
+  // take gigabytes; its app has exited, so nothing writes there any more.
+  if (outcome.passed && kept) fs.rmSync(kept, { recursive: true, force: true });
+  console.log(
+    `${outcome.flaky ? "flaky " : outcome.passed ? "passed" : "FAILED"}  ${name} (${result.seconds.toFixed(0)} s)`,
+  );
+  return result;
 }
 
 /** Runs the tasks `jobs` at a time, in order. */
@@ -141,20 +168,15 @@ await pool([
     ),
 ]);
 
-// A check that passed leaves only its log, since the live tests' installs
-// take gigabytes; once all have ended, as an app's last writes have too.
-for (const result of results)
-  if (result.passed && result.kept)
-    fs.rmSync(result.kept, { recursive: true, force: true });
-
 const width = Math.max(...results.map((result) => result.name.length));
 console.log(`\n${"Check".padEnd(width)}  Result  Time   Log`);
 for (const result of results)
   console.log(
-    `${result.name.padEnd(width)}  ${result.passed ? "passed" : "FAILED"}  ${`${result.seconds.toFixed(0)} s`.padEnd(5)}  ${result.log}`,
+    `${result.name.padEnd(width)}  ${result.flaky ? "flaky " : result.passed ? "passed" : "FAILED"}  ${`${result.seconds.toFixed(0)} s`.padEnd(5)}  ${result.log}`,
   );
 const failed = results.filter((result) => !result.passed);
+const flaky = results.filter((result) => result.flaky);
 console.log(
-  `\n${failed.length ? `${failed.length} of ${results.length} failed; their folders stay beside the logs` : `All ${results.length} passed`} in ${((Date.now() - started) / 1000).toFixed(0)} s.`,
+  `\n${failed.length ? `${failed.length} of ${results.length} failed; their folders stay beside the logs` : `All ${results.length} passed`}${flaky.length ? ` (flaky, passed on retry: ${flaky.map((result) => `${result.name}, first log ${result.first}`).join("; ")})` : ""} in ${((Date.now() - started) / 1000).toFixed(0)} s.`,
 );
 process.exitCode = failed.length ? 1 : 0;

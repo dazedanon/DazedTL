@@ -1076,8 +1076,11 @@ class PluginTests(unittest.TestCase):
         self.assertNotIn(path, self.service.load(self.identity)["files"])
 
     def test_a_plugin_file_rewritten_within_one_clock_tick_reads_as_changed(self):
-        # Two writes within one tick keep the file's stat signature.
+        # Two writes within one tick keep the file's stat signature. The
+        # test's copy keeps its class template's times, which a slow runner
+        # reads as settled, so the first write is the test's own.
         path = self.game / "www/js/plugins/PluginB.js"
+        path.write_bytes(path.read_bytes())
         before = self.service.fingerprint(self.game, "www/js/plugins/PluginB.js")
         frozen, stat = path.stat(), Path.stat
         path.write_bytes(path.read_bytes().replace("隠".encode(), "見".encode()))

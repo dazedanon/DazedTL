@@ -1070,13 +1070,13 @@ def parse(codeList, i, headerString, jaString):
             }
             with patch("util.len_git.git_status", return_value=status):
                 with (
-                    self.assertRaisesRegex(ValueError, "unfinished Git cherry-pick"),
+                    self.assertRaisesRegex(ValueError, "interrupted update"),
                     write_game(game),
                 ):
                     self.fail("The write ran mid cherry-pick.")
                 install = {"action": "inspector_install", "project": {"source": game}}
                 engine = Mock()
-                with self.assertRaisesRegex(ValueError, "unfinished Git cherry-pick"):
+                with self.assertRaisesRegex(ValueError, "interrupted update"):
                     actions.run(engine, install, print)
                 engine.assert_not_called()
                 status["pending_operations"] = []

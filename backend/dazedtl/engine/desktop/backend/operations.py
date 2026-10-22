@@ -127,7 +127,7 @@ class Operations:
                 raise ValueError("This tool action is no longer running.")
             self.stopping.set()
             self._request_stop()
-            self.jobs[identity]["message"] = "Stopping at the next safe boundary. Completed writes are retained."
+            self.jobs[identity]["message"] = "Stopping at the next safe boundary."
             self.jobs[identity]["stopping"] = True
             self.save(self.jobs[identity])
             return self.jobs[identity]

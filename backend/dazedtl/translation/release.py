@@ -13,9 +13,10 @@ from pathlib import Path, PurePosixPath
 from stat import S_IFREG
 
 from dazedtl import system
-from dazedtl.freshness import Basis, compare
+from dazedtl.actions import stopped_note
+from dazedtl.freshness import Basis, Digests, compare
 
-from .files import evidence, project_path, read_json
+from .files import evidence, project_path, read_evidence, read_json
 
 _PRIVATE_DIRS = {
     ".git",
@@ -265,9 +266,7 @@ def write_archive(source, target, scope, log, *, folder):
     ) as archive:
         for index, relative in enumerate(sorted(scope["files"]), 1):
             if stopped():
-                raise InterruptedError(
-                    "Package creation stopped. The previous ZIP is unchanged."
-                )
+                raise InterruptedError(stopped_note("release"))
             log(f"{index}/{len(scope['files'])} · {relative}")
             name = folder + "/" + relative
             archive.write(project_path(source, relative), name)
@@ -495,7 +494,8 @@ def available(value):
 
 
 def input_stamps(source, paths):
-    """Size and modification time of each runtime file an archive is built from.
+    """Size, modification time and SHA-256 of each runtime file an archive is
+    built from, which ``current`` compares.
 
     Device, inode and change time are left out: metadata updates such as a
     permission change alter them without changing the content.
@@ -503,9 +503,36 @@ def input_stamps(source, paths):
     root = Path(source)
     stamps = {}
     for path in paths:
-        stat = project_path(root, path).stat()
-        stamps[path] = [stat.st_size, stat.st_mtime_ns]
+        info, fingerprint = read_evidence(project_path(root, path))
+        stamps[path] = [info.st_size, info.st_mtime_ns, fingerprint]
     return stamps
+
+
+# Runtime files written again since a build are read to compare them; each
+# is read again only once it changes.
+_rewritten = Digests()
+
+
+def _unchanged(root, path, saved):
+    """Whether a runtime file holds what it held when an archive was built.
+
+    Its size and time say so without reading it. A file written again with
+    the same bytes, as a checkpoint restore that went back to the build's
+    files writes it, keeps the archive current: its digest tells. An archive
+    saved before digests were recorded cannot tell, so the file reads changed.
+    """
+    if not isinstance(saved, list) or len(saved) not in (2, 3):
+        return False
+    target = project_path(root, path)
+    info = target.stat()
+    size, modified, *fingerprint = saved
+    if (info.st_size, info.st_mtime_ns) == (size, modified):
+        return True
+    return (
+        bool(fingerprint)
+        and info.st_size == size
+        and fingerprint == [_rewritten.file(target, info)]
+    )
 
 
 def current(value, source):
@@ -520,9 +547,9 @@ def current(value, source):
     if not isinstance(inputs, dict):
         return None
     try:
-        return input_stamps(source, inputs) == inputs and set(
-            applied_assets(source)
-        ) <= set(inputs)
+        return all(
+            _unchanged(source, path, saved) for path, saved in inputs.items()
+        ) and set(applied_assets(source)) <= set(inputs)
     except OSError, ValueError:
         return False
 
@@ -534,9 +561,7 @@ def publish(staged, output, expected, *, stopped=lambda: False):
         if not archive.infolist() or archive.testzip() is not None:
             raise ValueError("The release ZIP could not be verified.")
     if stopped():
-        raise InterruptedError(
-            "Package creation stopped. The previous release is unchanged."
-        )
+        raise InterruptedError(stopped_note("release"))
     if output_hash(output) != expected:
         raise ValueError(
             "The destination changed while packaging. Choose the output again."
