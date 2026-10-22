@@ -3925,6 +3925,24 @@ class GuidedTests(unittest.TestCase):
         self.guided.comment_text(self.identity)
         self.assertFalse(self.backend.workflows.projects["native"]["phase1_comments"])
 
+    def test_a_translated_map_name_counts_before_any_run_binds_its_file(self):
+        # A game opened with its maps already translated, such as a copy made
+        # after translating, counted no map name line until a run recorded
+        # the file's original, so its maps read a line short or Done.
+        write_json(self.source / "Map001.json", {"displayName": "Village"})
+        self.translation.engine.source_bindings = lambda _source, paths: {
+            path: "unbound-map-name" for path in paths if path.endswith("Map001.json")
+        }
+        self.translation.engine.original_blobs = lambda _source, blobs: (
+            (blob, '{"displayName": "村"}'.encode()) for blob in blobs
+        )
+        self.assertEqual(
+            self.guided.inputs(self.native).line_counts(
+                {"Map001.json": "dialogue"}, frozenset()
+            ),
+            {"Map001.json": {"lines": 1, "translated": 1}},
+        )
+
     def test_estimate_freezes_estimate_mode_without_changing_the_saved_api_choice(self):
         observed = []
 
