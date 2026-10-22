@@ -4,12 +4,16 @@
 # translated project to this commit and builds every test scenario. See
 # "Checks", "Previous-release QA check", "Live test" and "Test scenarios" in
 # docs/development.md.
+#
+# It runs for what lands on dev and main, for release tags, pull requests and
+# once a week. Feature branches are tested before landing by scripts/land.mjs;
+# run CI on one by hand with: gh workflow run CI --ref <branch>
 name: CI
 
 on:
-  # Every branch, so work can be checked on Windows before it reaches dev.
   push:
-    branches: ["**"]
+    branches: [dev, main]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
   schedule:
@@ -20,6 +24,8 @@ on:
 permissions:
   contents: read
 
+# Pushes that land on dev in quick succession share one run: the newest
+# cancels the one before, and its result covers their commits too.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

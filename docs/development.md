@@ -72,7 +72,7 @@ Without `--no-lockscreen` it starts locked while your own session is locked, and
 It adds two X displays; set `DISPLAY` to the lower-numbered one, such as `:2` beside `:3`, since KWin keeps the other for its own startup.
 Its stand-in provider, window driver and journey steps are the [test scenarios'](#test-scenarios) own, in [scripts/testkit](../scripts/testkit).
 
-[CI](../.github/workflows/ci.yml) runs the build checks, the behavior tests, the [previous-release QA check](#previous-release-qa-check), the live test, the upgrade test from the latest earlier stable release and every [test scenario](#test-scenarios) on Windows and Linux for every pushed branch, every pull request and once a week, and attaches their logs to the run.
+[CI](../.github/workflows/ci.yml) runs the build checks, the behavior tests, the [previous-release QA check](#previous-release-qa-check), the live test, the upgrade test from the latest earlier stable release and every [test scenario](#test-scenarios) on Windows and Linux for every push to `dev` and `main`, every release tag and pull request, once a week and when run by hand, and attaches their logs to the run.
 Its jobs share [one setup step](../.github/actions/setup/action.yml) that starts from the install an earlier run cached.
 GitHub's Windows images include the Visual C++ runtime and other tools a fresh Windows lacks, so a change to what setup downloads or unpacks still needs a check on a fresh Windows.
 
