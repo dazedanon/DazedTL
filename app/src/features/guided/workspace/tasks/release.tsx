@@ -38,7 +38,7 @@ export function packageView(w: GuidedWorkspace): TaskView {
     chooseFolder,
     copyTask,
     localOperation,
-    stopOperation,
+    stopControl,
     handoff,
     translation,
     settings,
@@ -223,13 +223,6 @@ export function packageView(w: GuidedWorkspace): TaskView {
     )
   );
   // A running build reports its progress beside its own button.
-  const secondary = localOperation && (
-    <Button
-      disabled={action.busy}
-      onClick={() => stopOperation(localOperation)}
-    >
-      Stop build
-    </Button>
-  );
+  const secondary = localOperation && stopControl(localOperation, "Stop build");
   return { content, secondary, action: build, actionContext };
 }
