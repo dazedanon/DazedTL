@@ -1315,7 +1315,7 @@ Where a pattern spans control codes, exclude structural characters from the capt
 
 Len uses Workflow's RPG Maker preparation before translation: run operation
 `record_original` so DazedTL records the starting game itself, run
-`DAZEDTL_ROOT/scripts/len_translation.py rpgmaker-prep --game-root <game>`,
+operation `rpgmaker_prepare` (the script's `rpgmaker-prep --game-root <game>`),
 then run the same script's `git-setup --game-root <game> --version <release>`.
 The preparation command formats JSON with dazedformat, formats plugins.js, installs
 the bundled GameUpdate files, writes the game's GameUpdate configuration from the
@@ -1330,7 +1330,7 @@ this preparation installs, so manifests need not list those either.
 For Ace, perform the existing Workflow extraction/RV2JSON prerequisite first. The
 formatter targets its JSON export (`ace_json` or `--data-path <export>`), never the
 native Marshal payload, and MV/MZ plugin steps are skipped. Keep the prepared
-untranslated snapshot for Git/source alignment as well as the pre-preparation backup.
+untranslated snapshot for Git/source alignment as well as the recorded originals.
 Use the generated `setup.md` for Workflow's speaker, glossary, wrapping and shared
 investigation procedure. Existing baselines remain authoritative on resume.
 
