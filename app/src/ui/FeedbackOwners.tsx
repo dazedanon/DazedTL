@@ -6,45 +6,20 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
+import type { DisplayState } from "./displayStatus";
+import { FeedbackStore } from "./feedbackStore";
 
-/** Action keys whose result a mounted control already shows beside itself. */
-class OwnerStore {
-  private owners = new Map<string, number>();
-  private listeners = new Set<() => void>();
-
-  register(key: string) {
-    this.owners.set(key, (this.owners.get(key) || 0) + 1);
-    this.notify();
-    return () => {
-      const count = (this.owners.get(key) || 1) - 1;
-      if (count) this.owners.set(key, count);
-      else this.owners.delete(key);
-      this.notify();
-    };
-  }
-
-  has = (key: string) => this.owners.has(key);
-
-  subscribe = (listener: () => void) => {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  };
-
-  private notify() {
-    for (const listener of this.listeners) listener();
-  }
-}
-
-const Owners = createContext<OwnerStore | null>(null);
+const Owners = createContext<FeedbackStore | null>(null);
 
 /**
- * Lets a fallback message skip errors that their control already reports. A
- * scope inside another shares it, so a component can bring its own scope
- * and still report to its host's.
+ * Lets a fallback message skip errors that their control already reports,
+ * and a control skip a success its status heading already says. A scope
+ * inside another shares it, so a component can bring its own scope and
+ * still report to its host's.
  */
 export function FeedbackOwners({ children }: { children: ReactNode }) {
   const parent = useContext(Owners);
-  const [store] = useState(() => parent ?? new OwnerStore());
+  const [store] = useState(() => parent ?? new FeedbackStore());
   return <Owners.Provider value={store}>{children}</Owners.Provider>;
 }
 
@@ -67,3 +42,24 @@ export function useOwnedFeedback(key: string) {
 }
 
 const noSubscription = () => () => {};
+
+/** Records that the calling heading shows key's outcome as state while mounted. */
+export function useOutcomeHeading(
+  key: string | undefined,
+  state: DisplayState | undefined,
+) {
+  const store = useContext(Owners);
+  useLayoutEffect(
+    () => (store && key && state ? store.report(key, state) : undefined),
+    [store, key, state],
+  );
+}
+
+/** Whether a mounted heading inside the nearest scope says key's work is done. */
+export function useOutcomeShown(key: string | undefined) {
+  const store = useContext(Owners);
+  return useSyncExternalStore(
+    store?.subscribe || noSubscription,
+    () => !!store && !!key && store.saysDone(key),
+  );
+}

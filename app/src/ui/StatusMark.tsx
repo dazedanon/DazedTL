@@ -5,6 +5,7 @@ import {
   displayMarks,
 } from "./displayStatus";
 import { StatusIcon } from "./StatusIcon";
+import { useOutcomeHeading } from "./FeedbackOwners";
 
 /**
  * A work item's state as its mark and word, the same on every screen. A
@@ -43,12 +44,20 @@ export function StatusHeading({
   title,
   pending = false,
   quiet = false,
+  outcomeOf,
 }: {
   state?: DisplayState;
   title: ReactNode;
   pending?: boolean;
   quiet?: boolean;
+  /**
+   * The action key whose result this heading shows, such as the build an
+   * archive came from. While it says Done or Applied, that action's control
+   * leaves out a success that would say it again.
+   */
+  outcomeOf?: string;
 }) {
+  useOutcomeHeading(outcomeOf, pending ? "working" : state);
   return (
     <span
       className="status-heading"

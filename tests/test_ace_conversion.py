@@ -110,6 +110,35 @@ class AceConversionTests(unittest.TestCase):
             )
             self.assertEqual(data, packed)
 
+    def test_packing_scripts_keeps_a_name_with_characters_a_file_name_cannot_hold(self):
+        # The file name was made by editing the script's own name in place,
+        # so every pack renamed "Vocab: <用語>?" to "Vocab 用語" in the editor
+        # and a later update saw Scripts.rvdata2 as changed.
+        with TemporaryDirectory() as temporary:
+            game = Path(temporary)
+            shutil.copytree(FIXTURE / "Data", game / "Data")
+            names = [
+                item[1]
+                for item in scripts((game / "Data/Scripts.rvdata2").read_bytes())
+            ]
+            self.assertIn("Vocab: <用語>?".encode(), names)
+            rv2json.create(game, log=lambda _line: None)
+            self.assertEqual(
+                rv2json.script_names(game),
+                [
+                    "1500000000_Vocab 用語.rb",
+                    "12345678_Main.rb",
+                    "23456_.rb",
+                ],
+            )
+            shutil.copytree(
+                FIXTURE / "translated", game / "ace_json", dirs_exist_ok=True
+            )
+            rv2json.update(game, log=lambda _line: None)
+            packed = scripts((game / "Data/Scripts.rvdata2").read_bytes())
+            self.assertEqual([item[1] for item in packed], names)
+            self.assertIn(b"Terms", packed[0][2])
+
     def test_packing_writes_the_game_title_into_game_ini_as_every_player_reads_it(
         self,
     ):

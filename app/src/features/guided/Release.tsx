@@ -32,6 +32,7 @@ export function ReleaseContent({
   inspect,
   assets,
   artifact,
+  build,
   open,
   packing,
   extras,
@@ -49,6 +50,8 @@ export function ReleaseContent({
   inspect: ReactNode;
   assets: () => void;
   artifact?: ReleaseArtifact;
+  /** The build action's key; the archive's heading reports its outcome. */
+  build: string;
   open: ReactNode;
   packing?: ReactNode;
   /** Further rows for the archive list, such as optional player documents. */
@@ -224,6 +227,7 @@ export function ReleaseContent({
                 <>
                   <StatusHeading
                     title={`Last saved ${kind === "game" ? "game" : "patch"} ZIP`}
+                    outcomeOf={build}
                     state={
                       !artifact.available
                         ? "blocked"

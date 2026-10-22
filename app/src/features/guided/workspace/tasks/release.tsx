@@ -7,6 +7,7 @@ import { ActionRow } from "../../../../ui/ActionList";
 import { Button } from "../../../../ui/Button";
 import { ReleaseContent } from "../../Release";
 import { reloadBeforeApply } from "../../translationView";
+import { actionKey } from "../model";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
 import { StatusHeading } from "../../../../ui/StatusMark";
@@ -64,6 +65,7 @@ export function packageView(w: GuidedWorkspace): TaskView {
         destinationField={destinationField}
         disabled={disabled}
         artifact={artifact}
+        build={actionKey(releaseAction)}
         unapplied={state.readiness.unapplied}
         apply={task(
           "export_selected",

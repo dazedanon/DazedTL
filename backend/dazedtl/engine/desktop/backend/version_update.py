@@ -105,7 +105,24 @@ class VersionUpdates:
             if original_plan['values'] != values or original_plan['source'] != record['source']:
                 raise ValueError('The update selection changed. Preview it again.')
             plan['preview'] = job['result']['preview']
+        if action in {'registered', 'continue'}:
+            # A damaged record of the assets left to copy is made again from
+            # the release folder the update was applied from.
+            plan['release'] = self.applied_release(project_id)
         return self.operations.start(plan)
+
+    def applied_release(self, project_id):
+        """The release folder the project's latest update was applied from, or
+        None when no apply of it is on record (updates applied before apply
+        jobs were kept)."""
+        applies = sorted((j for j in self.operations.jobs.values() if j['project_id'] == project_id and j['action'] == 'apply'),
+                         key=lambda j: j['created'], reverse=True)
+        if not applies:
+            return None
+        saved = self.operations.root / applies[0]['id'] / 'plan.json'
+        if saved.is_symlink() or not saved.is_file():
+            return None
+        return json.loads(system.read_text(saved))['values']['official'] or None
 
 
 def status_value(root):
@@ -146,9 +163,9 @@ def run_action(plan, log):
                 previous_official_game=values['baseline'] or None, expected_baseline_asset_manifest=preview['baseline_asset_manifest'],
                 patch_overlay=values['patch_overlay'])
         elif action == 'registered':
-            payload['result'] = git.apply_registered_original(root)
+            payload['result'] = git.apply_registered_original(root, release=plan.get('release'))
         elif action == 'continue':
-            payload['result'] = git.continue_with_official(root)
+            payload['result'] = git.continue_with_official(root, plan.get('release'))
         elif action == 'abort':
             payload['result'] = git.abort_update(root)
         elif action == 'post_update':

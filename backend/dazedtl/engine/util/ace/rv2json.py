@@ -57,6 +57,8 @@ DATA_FILES = (
 )
 MAP_FILE = re.compile(r"Map\d\d\d")
 # Characters RV2JSON removes from script names before using them as files.
+# It removes them from the stored name too, so every pack renamed the script
+# in the editor; the port only leaves them out of the file name.
 SCRIPT_NAME_UNSAFE = re.compile(rb'[<>:"/\\|?*]')
 
 Log = Callable[[str], None]
@@ -1529,8 +1531,12 @@ def script_names(root: Path, *, data: str | None = None) -> list[str]:
 def _script_file(scripts: Path, script: list) -> Path:
     index, name = script[0], script[1]
     if isinstance(name, RString):
-        name.data = SCRIPT_NAME_UNSAFE.sub(b"", name.data)
-    return scripts / f"{_interpolated(index)}_{_interpolated(name)}.rb"
+        file_name = SCRIPT_NAME_UNSAFE.sub(b"", name.data).decode(
+            "utf-8", "surrogateescape"
+        )
+    else:
+        file_name = _interpolated(name)
+    return scripts / f"{_interpolated(index)}_{file_name}.rb"
 
 
 def _interpolated(value: Any) -> str:

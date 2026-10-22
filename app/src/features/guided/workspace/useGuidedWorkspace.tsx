@@ -930,8 +930,8 @@ export function useGuidedWorkspace({
           state.readiness.applied.includes(file) && !changed.includes(file),
       );
     const qaOperation = ["qa_prepare", "qa_status"].includes(name);
-    // Release reports a finished build in its saved archive panel; only a
-    // build from this visit also confirms beside its button.
+    // A build from this visit confirms beside its button, unless the saved
+    // archive's heading already says Done.
     const releaseBuild = ["release", "release_patch"].includes(name);
     const builtHere = releaseBuild && finishedHere;
     // Prepare's stage rows record each preparation tool's outcome.
