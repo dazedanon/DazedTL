@@ -355,13 +355,12 @@ try {
   } else if (command === "drive") await drive(readState(option("--work")));
   else if (command === "live") {
     // The live test in a private display of its own, so its window stays off
-    // the desktop.
+    // the desktop; the display's log is named after it, kept only on failure.
+    const name = displayName("live");
+    const displayLog = path.join(os.tmpdir(), `${name}.log`);
     const display =
       process.platform === "linux"
-        ? await startDisplay({
-            name: displayName("live"),
-            log: path.join(os.tmpdir(), "dazedtl-live-display.log"),
-          })
+        ? await startDisplay({ name, log: displayLog })
         : undefined;
     try {
       const result = spawnSync(
@@ -372,6 +371,7 @@ try {
       process.exitCode = result.status ?? 1;
     } finally {
       if (display) await stopGroup(display.group);
+      if (!process.exitCode) fs.rmSync(displayLog, { force: true });
     }
   } else await build(command);
 } catch (error) {

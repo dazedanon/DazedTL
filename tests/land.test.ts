@@ -9,7 +9,8 @@ import {
   lockRef,
   releaseLock,
 } from "../scripts/land-lock.mjs";
-import { timer } from "../scripts/land.mjs";
+import { mergeDev, timer } from "../scripts/land.mjs";
+import { notesTemplate } from "../scripts/changelog.mjs";
 
 test("a landing waits for a live lock and takes over a dead or unrenewed one", async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-land-"));
@@ -58,5 +59,56 @@ test("a landing's timing line gives the total and each stage reached", () => {
   assert.equal(
     time.summary(),
     "Took 95 s: lock wait 4 s, merge 1 s, test 90 s.",
+  );
+});
+
+test("a conflicting merge of dev stays in progress with the release notes merged by kind", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-land-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const git = gitIn(dir);
+  const write = (file: string, text: string) => {
+    fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+    fs.writeFileSync(path.join(dir, file), text);
+  };
+  const notes = (...fixed: string[]) =>
+    `${notesTemplate}\n### Fixed\n\n${fixed.map((line) => `- ${line}`).join("\n")}\n`;
+  const commit = (message: string) => {
+    git(["add", "-A"]);
+    git(["commit", "-qm", message]);
+  };
+  git(["init", "-q", "-b", "dev"]);
+  git(["config", "user.name", "Test"]);
+  git(["config", "user.email", "test@example.com"]);
+  write(".gitattributes", "release/notes.md merge=dazedtl-notes\n");
+  write("release/notes.md", notes("Base."));
+  write("code.py", "value = 0\n");
+  commit("base");
+  git(["switch", "-qc", "work"]);
+  write("release/notes.md", notes("Base.", "Work."));
+  write("code.py", "value = 1\n");
+  commit("work");
+  git(["switch", "-q", "dev"]);
+  write("release/notes.md", notes("Base.", "Dev."));
+  write("code.py", "value = 2\n");
+  commit("dev");
+  git(["switch", "-q", "work"]);
+
+  const result = await mergeDev(
+    git,
+    dir,
+    async () => assert.fail(),
+    () => {},
+  );
+  assert.equal(result?.code, 2);
+  assert.match(result?.report.join("\n") ?? "", /conflicts in code\.py\./);
+  // Only the real conflict is left to resolve; a merge run again by hand
+  // would conflict on the notes too.
+  assert.equal(
+    git(["diff", "--name-only", "--diff-filter=U"]).stdout,
+    "code.py\n",
+  );
+  assert.equal(
+    fs.readFileSync(path.join(dir, "release/notes.md"), "utf8"),
+    notes("Base.", "Dev.", "Work."),
   );
 });

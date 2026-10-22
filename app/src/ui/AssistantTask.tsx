@@ -73,7 +73,12 @@ export function AssistantTask({
           key={row.id}
           label={
             <>
-              <StatusHeading state={row.state} title={row.title} />
+              <StatusHeading
+                state={row.state}
+                title={row.title}
+                // The panel's header already says this state.
+                quiet={row.state === state}
+              />
               {row.detail && <small>{row.detail}</small>}
             </>
           }

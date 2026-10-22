@@ -77,9 +77,9 @@ export function phaseView(w: GuidedWorkspace): TaskView {
     translationFlow.active ||
     !!pendingBatches.length;
   // A file a Live run is still translating has only partial output to apply,
-  // and one no run translated has nothing to apply.
+  // and one no run of this task translated has nothing of its to apply.
   const { outputs: translatedOutputs, applied: appliedOutputs } =
-    savedTranslations(state);
+    savedTranslations(state, phase);
   const applyFiles = selectedNames.filter(
     (name) =>
       translatedOutputs.includes(name) &&
