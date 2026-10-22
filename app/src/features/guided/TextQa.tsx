@@ -133,7 +133,7 @@ export function TextQaWork({
                 ? (qa.rules_changed
                     ? "An update changed QA's rules while this task was in review. "
                     : qa.plugins_changed
-                      ? "The game's plugins changed after QA. "
+                      ? "The game's plugins changed during QA. "
                       : "The game text changed after QA. ") + rerun
                 : phase === "blocked"
                   ? `${qa.message} ${rerun}`

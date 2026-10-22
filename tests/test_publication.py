@@ -649,6 +649,22 @@ class PublicationTests(unittest.TestCase):
             [row.get("state", "") for row in state["findings"]],
             ["applied", "applied", ""],
         )
+        # A Plugin files apply after QA read the finished task as Outdated
+        # once its corrections were undone, with no way to apply them again;
+        # only a task still in review prepares again for new plugins.
+        plugins = {**plan, "guard": {"plugins": "changed"}}
+        with patch.dict(sys.modules, {"util": package, "util.rpgmaker_qa": engine}):
+            finished = text.qa_state(plugins)
+            engine.status = lambda root: {"stage": "ready-finalize"}
+            reviewing = text.qa_state(plugins)
+            engine.status = lambda root: {"stage": "complete"}
+        self.assertEqual(
+            [
+                (state["current"], "plugins_changed" in state)
+                for state in (finished, reviewing)
+            ],
+            [(True, False), (False, True)],
+        )
 
         # A task the app couldn't read read as Not started with no reason, and
         # preparing again returned the same task; it reads as blocked, and

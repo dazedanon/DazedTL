@@ -256,15 +256,18 @@ def qa_state(plan):
     # A finished task stays current through any update.
     rules_changed = qa.rules_changed(task, checkpoint)
     now = binding(plan)
-    current = saved["binding"] == now and not rules_changed
-    # Only the game's plugins changed, as after a playtest fix or a Plugin
-    # files apply: preparing again captures the screens again and keeps the
-    # review, which the copied task's assistant does after its own fixes.
-    plugins_changed = (
-        not current
-        and not rules_changed
-        and _beside_plugins(saved["binding"]) == _beside_plugins(now)
+    engine_status = qa.status(root)
+    stage = engine_status.get("stage", "")
+    same_text = _beside_plugins(saved["binding"]) == _beside_plugins(now)
+    # The game's plugins, as a playtest fix or a Plugin files apply changes
+    # them, leave the text a finished review corrects as it was.
+    current = not rules_changed and (
+        saved["binding"] == now or (stage == "complete" and same_text)
     )
+    # Only the game's plugins changed during review: preparing again captures
+    # the screens again and keeps the review, which the copied task's
+    # assistant does after its own fixes.
+    plugins_changed = not current and not rules_changed and same_text
     if current:
         # Plugin files decides what it keeps in Japanese without changing the
         # game's files; the never-translated report follows its decisions.
@@ -357,8 +360,6 @@ def qa_state(plan):
         for row in document.get("uncertain_playtests", [])
         if row.get("correction")
     ]
-    engine_status = qa.status(root)
-    stage = engine_status.get("stage", "")
     # Its corrections are in the game once one was applied and nothing QA
     # made since, such as a follow-up round's finding, waits to be.
     applied = (
