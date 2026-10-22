@@ -51,6 +51,7 @@ import { usePendingChanges } from "./usePendingChanges";
 import { assistantWaiting, noHandoff } from "../../assistant/assistantTasks";
 import { useAssistantSources } from "../../assistant/useAssistantTasks";
 import { fitRunning } from "../lineWidths";
+import { runEnd } from "../runEnd";
 import { initialPosition, stagesFor } from "../workflow";
 
 /** The operations setting up a game runs, in order. */
@@ -1250,25 +1251,27 @@ export function useGuidedWorkspace({
   const setupWorking = setupSteps.some((name) =>
     ["ready", "running", "waiting"].includes(setupJobs[name]?.status || ""),
   );
-  // Why the step setup would run next stopped, until a newer attempt starts.
-  const stoppedStage = preparation.stages.find((stage) =>
-    ["failed", "interrupted", "stopped"].includes(stage.status),
-  );
+  // How the step setup would run next ended, until a newer attempt starts.
   // Preparation's stage rows reset when the game files change, retiring an
-  // older failure that no longer applies.
-  const stoppedJob =
+  // older end that no longer applies.
+  const endedStage =
+    setupStep === "prepare_game"
+      ? (preparation.stages.find((stage) =>
+          ["failed", "interrupted"].includes(stage.status),
+        ) ?? preparation.stages.find((stage) => stage.status === "stopped"))
+      : undefined;
+  const stageEnd = runEnd(endedStage, "it did not finish.");
+  const jobEnd = runEnd(
     setupStep === "ace_extract" || setupStep === "git_setup"
       ? setupJobs[setupStep]
-      : undefined;
-  const setupFailure =
-    setupStep === "prepare_game"
-      ? stoppedStage
-        ? `${stoppedStage.label}: ${stoppedStage.message || "it did not finish."}`
-        : ""
-      : stoppedJob &&
-          ["failed", "interrupted", "stopped"].includes(stoppedJob.status)
-        ? stoppedJob.message || "This step did not finish."
-        : "";
+      : undefined,
+    "This step did not finish.",
+  );
+  // A step that failed explains itself; one the user stopped is no failure.
+  const setupFailure = stageEnd.failure
+    ? `${endedStage?.label}: ${stageEnd.failure}`
+    : jobEnd.failure;
+  const setupStopped = stageEnd.stopped || jobEnd.stopped;
   // What a running sequence (setup, pending changes) reads after each
   // observation.
   const observedState = {
@@ -1367,12 +1370,16 @@ export function useGuidedWorkspace({
         for (;;) {
           const { step, failure, finished } = latestObserved.current;
           if (!step) break;
-          if (tried.has(step))
+          if (tried.has(step)) {
+            // A stop the user asked for ends the sequence without an error;
+            // the task reads it beside its button.
+            if (job && finished.get(job.id)?.status === "stopped") return;
             throw new Error(
               failure ||
                 (job && finished.get(job.id)?.message) ||
                 "Setup stopped before this step finished.",
             );
+          }
           tried.add(step);
           const options = step === "git_setup" ? setupOptions() : {};
           const result = await preparePreview(step, options);
@@ -1644,6 +1651,7 @@ export function useGuidedWorkspace({
     setupStep,
     setupJobs,
     setupFailure,
+    setupStopped,
     setupAction,
     setupWorking,
     startSetup,
