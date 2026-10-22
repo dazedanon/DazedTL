@@ -112,6 +112,7 @@ Translate has five tasks.
    Choose another model beside the price to see its cost: the estimate takes the new prices at once when the requests stay the same, and a Batch then prepares its requests again for that model before you can submit.
    With **Batch**, names and labels the glossary lacks are translated first with Live, after their own review; they join the glossary even if you then decline the Batch.
 4. Click **Apply** to write the translations into the game.
+   It writes each file's newest translation, so a file Other event text translated after Maps & events gets both tasks' text, and its review says so.
    Translation wraps each line to your **Line widths**, keeping the Japanese line breaks where the English allows, and Apply wraps again any line still too wide.
 
 **Lines** counts what each file holds right now: lines translated of the lines that hold Japanese, where a message, a choice, a help text or a name each count once.

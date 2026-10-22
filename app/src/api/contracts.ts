@@ -1242,6 +1242,7 @@ export type PublicationChange = {
   after: string | null;
   size: number;
   later_edits: boolean;
+  task?: Phase;
   diff?: string;
   truncated?: boolean;
   before_text?: string;

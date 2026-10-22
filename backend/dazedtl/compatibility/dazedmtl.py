@@ -585,8 +585,8 @@ class ExistingBackend:
         if run_output:
             plan["run_output"] = run_output
             options["run_id"] = run_output["run_id"]
-            # Translate's Apply also names its own run; only output an
-            # earlier Apply already published is applied again.
+            # Run history's Reapply names its run; only output an earlier
+            # Apply already published is applied again.
             if applied_before(
                 self.workflows.folder(native_id),
                 run_output["run_id"],

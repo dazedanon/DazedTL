@@ -1520,6 +1520,7 @@ class GuidedTests(unittest.TestCase):
         write_json(
             self.folder / "translated/System.json", {"gameTitle": "Other output"}
         )
+        self.backend.workflows.previews = {}
         self.backend.workflows.preview = lambda *_: {
             "token": "apply-preview",
             "confirmation": True,
@@ -1747,8 +1748,7 @@ class GuidedTests(unittest.TestCase):
             )
             self.assertEqual(review["paths"], ["Items.json"])
             self.assertEqual(review["options"]["run_id"], identity)
-            # Translate's Apply names its run too; History listed a run's
-            # first Apply as a reapply.
+            # History listed a run's first Apply as a reapply.
             self.assertEqual(review["label"], "Apply selected saved outputs")
             self.assertEqual(read_json(self.source / "Items.json"), [{"name": "薬"}])
             write_json(self.source / "Items.json", [{"name": "Edit after review"}])
@@ -1773,8 +1773,61 @@ class GuidedTests(unittest.TestCase):
                 [publication.digest(edited)],
             )
             self.assertEqual(self.native["selected"], [])
+            # Translate's Apply then publishes the newest copy, the one its
+            # rows read, not the older run, and its review names the task
+            # whose run saved that copy over this one's.
+            newer = {
+                "id": "event-text-run",
+                "mode": "translate",
+                "status": "complete",
+                "files": ["Items.json"],
+                "outputs": {
+                    "Items.json": digest(
+                        (self.folder / "translated/Items.json").read_bytes()
+                    )
+                },
+                "log": [],
+            }
+            self.backend.manual.jobs[newer["id"]] = newer
+            self.guided.runs.remember(self.identity, newer, {"phase": "advanced"})
+            self.native["selected"] = ["Items.json"]
+            latest = self.guided.preview(
+                self.identity, "export_selected", files=["Items.json"]
+            )
+            self.assertEqual(
+                [row.get("task") for row in latest["publication"]], ["advanced"]
+            )
+            self.guided.execute(self.identity, latest["token"])
+            self.assertEqual(
+                read_json(self.source / "Items.json"), [{"name": "Newer wording"}]
+            )
+            self.native["selected"] = []
             with self.assertRaises(ValueError):
                 self.guided.execute(self.identity, review["token"])
+            # That Apply published the newer run's output, so History's
+            # Reapply of the run applies it again.
+            write_json(
+                self.backend.manual.folder(newer["id"]) / "translated/Items.json",
+                [{"name": "Newer wording"}],
+            )
+            self.assertEqual(
+                self.guided.preview(
+                    self.identity, "export_selected", options={"run_id": newer["id"]}
+                )["label"],
+                "Reapply saved run output",
+            )
+            # A later run that saved the copy unchanged added none of its text.
+            unchanged = {**newer, "id": "unchanged-run", "created": "later"}
+            self.backend.manual.jobs[unchanged["id"]] = unchanged
+            self.guided.runs.remember(self.identity, unchanged, {"phase": "dialogue"})
+            self.native["selected"] = ["Items.json"]
+            self.assertEqual(
+                self.guided.preview(
+                    self.identity, "export_selected", files=["Items.json"]
+                )["publication"][0].get("task"),
+                "advanced",
+            )
+            self.native["selected"] = []
             for state in ("running", "failed", "stopped"):
                 job["status"] = state
                 with self.assertRaises(ValueError):

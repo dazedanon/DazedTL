@@ -89,7 +89,7 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
             }}
           />
         )}
-        {publishing && <PublicationContent preview={preview} />}
+        {publishing && <PublicationContent preview={preview} phase={w.phase} />}
         {!["release", "release_patch", "refresh_sources"].includes(
           preview.action,
         ) &&
