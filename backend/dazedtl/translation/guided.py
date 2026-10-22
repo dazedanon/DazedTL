@@ -574,6 +574,38 @@ class Guided:
                     edited.append(name)
         return outputs, applied, edited
 
+    def output_runs(self, native, names):
+        """The run, and its task (phase), that saved each file's newest
+        translated copy, where a run's output is that copy. A run builds on
+        the newest copy, so a later task's copy holds an earlier task's text
+        too; a copy a later run saved unchanged stays the earlier run's."""
+        folder = self.backend.workflows.folder(native["id"])
+        jobs = getattr(getattr(self.backend, "manual", None), "jobs", {})
+        newest = {
+            name: self.observed_digest(folder / "translated" / name) for name in names
+        }
+        found = {}
+        for identity in reversed(self.owned_runs(native)):
+            job = jobs.get(identity)
+            if not job or job.get("mode") == "estimate":
+                continue
+            matched = [
+                name
+                for name, output in job.get("outputs", {}).items()
+                if name in newest and name not in found and output == newest[name]
+            ]
+            if not matched:
+                continue
+            try:
+                phase = (self.run_configuration(identity).get("workflow") or {}).get(
+                    "phase"
+                )
+            except OSError, ValueError, KeyError:
+                continue
+            for name in matched:
+                found[name] = {"run": identity, "task": phase}
+        return found
+
     def readiness(self, project_id, native, value, source_status=None):
         outputs, applied, edited = self.applied_outputs(native)
         state = lifecycle(self.translation.workspace, project_id)

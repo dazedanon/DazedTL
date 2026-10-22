@@ -88,17 +88,6 @@ export function phaseView(w: GuidedWorkspace): TaskView {
         current?.files?.includes(name)
       ),
   );
-  // The working copy holds whichever run saved last, even one from another
-  // task, so a finished run that saved every file applies its own output.
-  const ownRun =
-    current &&
-    !current.temporary &&
-    current.status === "complete" &&
-    ["batch", "translate"].includes(current.mode || "") &&
-    applyFiles.length > 0 &&
-    applyFiles.every((name) => current.availableOutputs?.includes(name))
-      ? current
-      : undefined;
   const noRemainingWork = estimateEmpty(quote);
   // Other event text whose chosen sources leave nothing has no run to start.
   const nothingLeft =
@@ -300,11 +289,14 @@ export function phaseView(w: GuidedWorkspace): TaskView {
           {stopLabel}
         </Button>
       )}
+      {/* Apply publishes each file's newest copy, the copy its row reads,
+          which holds every task's saved text; Run history reapplies one
+          run's own files. */}
       {!!applyFiles.length &&
         task(
           "export_selected",
           `Apply (${applyFiles.length})`,
-          ownRun ? { run_id: ownRun.id } : {},
+          {},
           !baseline ||
             !!state.collectionError ||
             applyFiles.some((name) => changed.includes(name)) ||
