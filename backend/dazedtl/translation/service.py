@@ -169,7 +169,7 @@ class Translation:
     def contacted(self, project_id):
         """Note that the user's assistant reached this project through the
         helper, at most once a minute, so Progress shows its run started
-        before the first report."""
+        before the first report. Only an Assistant-led project counts it."""
         if not isinstance(project_id, str):
             return
         with self.contact_lock:
@@ -177,7 +177,9 @@ class Translation:
             if last is not None and time.monotonic() - last < 60:
                 return
             try:
-                self.projects.get(project_id)
+                # Guided tasks use the helper too; they are not the assistant.
+                if self.projects.get(project_id).get("method") != "len":
+                    return
                 write_json(self.contact_path(project_id), {"seen_at": now()})
             except ValueError, OSError:
                 # An unknown project or a failed note never fails the call.
