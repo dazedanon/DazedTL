@@ -6,7 +6,7 @@
 //   node scripts/scenario.mjs list
 //   node scripts/scenario.mjs app|stop|clean --work <dir>
 //   node scripts/scenario.mjs provider --work <dir> '<mode JSON>'
-//   node scripts/scenario.mjs drive --work <dir> text|click|call|eval|shot ...
+//   node scripts/scenario.mjs drive --work <dir> text|click|click-prefix|call|eval|shot ...
 //   node scripts/scenario.mjs live [e2e.mjs options]
 import fs from "node:fs";
 import os from "node:os";
@@ -164,6 +164,7 @@ async function describe(state, page) {
       "Drive it:",
       `  node scripts/scenario.mjs drive --work ${state.work} text`,
       `  node scripts/scenario.mjs drive --work ${state.work} click "<accessible name>"`,
+      `  node scripts/scenario.mjs drive --work ${state.work} click-prefix "<start of an accessible name>"`,
       `  node scripts/scenario.mjs drive --work ${state.work} call <method> '<params JSON>'`,
       `  node scripts/scenario.mjs drive --work ${state.work} shot <file.png>`,
       "  or import { Page } from scripts/testkit/cdp.mjs and Page.connect(<CDP port>, { root }).",
@@ -297,6 +298,12 @@ async function drive(state) {
   try {
     if (action === "text") console.log(await page.text());
     else if (action === "click") await page.click(rest[0], 10_000);
+    else if (action === "click-prefix")
+      // For names that end in something that varies, such as a History row's date.
+      await page.click(
+        new RegExp(`^${rest[0].replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
+        10_000,
+      );
     else if (action === "call")
       console.log(
         JSON.stringify(

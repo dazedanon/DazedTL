@@ -99,7 +99,7 @@ export function setupView(w: GuidedWorkspace): TaskView {
   const prepare = stepStatus("prepare_game", prepared);
   const prepareDetail =
     prepare === "working"
-      ? `${runningStage?.label || "Preparing"}…`
+      ? runningStage && `${runningStage.label}…`
       : prepare === "not_started"
         ? `Formats game data${state.hasPlugins ? ", plugins.js" : ""} and adds GameUpdate files.`
         : undefined;
@@ -108,11 +108,9 @@ export function setupView(w: GuidedWorkspace): TaskView {
   const versionDetail =
     version === "done"
       ? "Used to compare and merge later game updates."
-      : version === "working"
-        ? "Saving…"
-        : version === "not_started"
-          ? "Records this version so later game updates can be merged."
-          : undefined;
+      : version === "not_started"
+        ? "Records this version so later game updates can be merged."
+        : undefined;
 
   const blocked =
     running && !setupRunning
@@ -201,8 +199,8 @@ export function setupView(w: GuidedWorkspace): TaskView {
           title={
             gitConfigured
               ? translation.git?.original_version
-                ? `Version ${translation.git.original_version} recorded`
-                : "Version recorded"
+                ? `Version ${translation.git.original_version}`
+                : "Version"
               : fields.version.trim()
                 ? `Record version ${fields.version.trim()}`
                 : "Record this version"
@@ -225,22 +223,26 @@ export function setupView(w: GuidedWorkspace): TaskView {
       disabled={disabled || setupRunning || !!blocked}
       disabledReason={blocked}
       pending={setupRunning}
-      // The step rows say which step is running and how far it got.
+      // The step rows say which step is running and how far it got, so the
+      // button alone reports that setup is running.
+      inline
       pendingText="Setting up…"
       error={setupError}
       onClick={startSetup}
     />
   );
-  // Preparation can stop between stages.
-  const secondary = localOperation &&
-    localOperation.action === "prepare_game" && (
-      <Button
-        disabled={action.busy}
-        onClick={() => stopOperation(localOperation)}
-      >
-        Stop
-      </Button>
-    );
-  const next = advance(undefined, undefined, done ? "primary" : "quiet");
+  // Preparation can stop between stages; the button stays for the whole run
+  // so the footer does not shift between steps.
+  const stoppable =
+    localOperation?.action === "prepare_game" ? localOperation : undefined;
+  const secondary = setupRunning && (
+    <Button
+      disabled={action.busy || !stoppable}
+      onClick={() => stoppable && stopOperation(stoppable)}
+    >
+      Stop
+    </Button>
+  );
+  const next = advance(undefined, undefined, done ? "primary" : "quiet", !done);
   return { content, secondary, action: run, next };
 }
