@@ -89,7 +89,6 @@ export async function startDisplay({ name, log, width = 1400, height = 1000 }) {
     throw new Error(
       `A private display cannot start here: ${sandboxed}. Run scenarios outside the sandbox.`,
     );
-  const before = displays();
   const output = fs.openSync(log, "a");
   const child = spawn(
     "dbus-run-session",
@@ -115,8 +114,9 @@ export async function startDisplay({ name, log, width = 1400, height = 1000 }) {
   child.unref();
   const group = child.pid;
   try {
-    // KWin listens on two new X sockets, whose lock files name it, before
-    // Xwayland runs; the lower one is the display. Probing other sessions'
+    // KWin listens on two X sockets, whose lock files name it, before
+    // Xwayland runs; the lower one is the display. A number can be one that
+    // another display left as this one started, and probing other sessions'
     // sockets would start their Xwayland and, with many starting at once,
     // outlast the wait.
     const number = await until(
@@ -125,10 +125,7 @@ export async function startDisplay({ name, log, width = 1400, height = 1000 }) {
         if (exited) return "exited";
         return (
           [...displays()]
-            .filter(
-              (candidate) =>
-                !before.has(candidate) && lockGroup(candidate) === group,
-            )
+            .filter((candidate) => lockGroup(candidate) === group)
             .sort((a, b) => Number(a) - Number(b))[0] ?? null
         );
       },
