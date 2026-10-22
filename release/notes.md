@@ -7,6 +7,9 @@
 - **Assistant-led:** DazedTL saves your assistant's changes to the game as checkpoints itself, one each time it reports a phase and one when a translation run ends, so your assistant no longer saves them, and writing a whole game's text makes one checkpoint instead of one per file.
 - **Translate:** the new glossary terms a finished run adds are saved as that run's checkpoint instead of **Edits made outside DazedTL**.
 - **Guided:** one **Save guidance** click saves as one checkpoint naming the documents it saved, and saving options or Line widths you left at the game's defaults no longer adds a **Save Line widths** checkpoint.
+- **History and Plugin files:** **Undo** takes out a batch of QA corrections, playtest fixes or rewrapping, or a Plugin files application under **Recovery**, in one click by undoing its checkpoint, instead of a reviewed restore from copies DazedTL saved; batches applied earlier keep **Review restore**.
+- **Images:** **Restore originals…** puts the original images back from the game's Git history, so preparing an image no longer saves a copy of it.
+- **Assistant-led:** **Start over** puts the original game back as a new checkpoint, so the earlier attempt stays under **Checkpoints** instead of its Git history moving to `.dazedtl/archived`.
 - **Set up:** DazedTL keeps a copy of the original game files in the game folder's Git history before its first change, which you never publish, and takes no more backups, so **Back up the original** is gone; games set up earlier keep using their backups.
 
 ### Fixed
