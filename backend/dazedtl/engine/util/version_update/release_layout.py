@@ -21,6 +21,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..ace import rgssad
 from .git_workflow import GitWorkflowError, _is_local_only_asset, _is_tool_owned_path
 
 # A release holding at least this share of the game's files replaces the game;
@@ -32,6 +33,11 @@ FILE_LIMIT = 200_000
 LISTED = 20
 _TAGGED_VERSION = re.compile(r"(?i)(?<![a-z])v(?:er(?:sion)?)?[\s._-]*(\d+(?:\.\d+)+)")
 _BARE_VERSION = re.compile(r"(?<![\d.])(\d+(?:\.\d+)+)(?![\d.])")
+# A VX Ace game's encrypted archive, which Set up extracts beside it.
+_ARCHIVE = re.compile(r"(?i)(?:^|/)game\.rgss3a$")
+# Game folders that preparing a release writes from its own files, such as a
+# VX Ace game's JSON export of its Data, which no developer ships.
+_PREPARED = frozenset({"ace_json"})
 
 
 @dataclass(frozen=True)
@@ -80,6 +86,27 @@ def _walk(root: Path) -> list[str]:
                     f"{root} holds more than {FILE_LIMIT:,} files. "
                     "Choose the folder of the game's release."
                 )
+    return found
+
+
+def _archived(release: Path, files: list[str]) -> list[str]:
+    """The files the release's VX Ace archives hold, beside each archive as
+    Set up and staging extract them. A shipped Ace release is little more
+    than its archive, so without them a complete game reads as a patch."""
+    found = []
+    for path in files:
+        if not _ARCHIVE.search(path):
+            continue
+        folder = path.rpartition("/")[0]
+        try:
+            names = [raw for raw, _key in rgssad.table(release / path)[1]]
+            found += [
+                (f"{folder}/" if folder else "")
+                + rgssad.safe_path(raw.decode("utf-8", "replace")).as_posix()
+                for raw in names
+            ]
+        except (OSError, rgssad.ArchiveError):
+            continue  # Staging reports an archive it cannot read.
     return found
 
 
@@ -185,11 +212,17 @@ def inspect_release(game_root: str | Path, release_root: str | Path) -> ReleaseI
     files = _walk(release)
     if not files:
         raise GitWorkflowError("The release folder is empty.")
-    own = _game_files(game)
-    votes = _alignments(files, own)
+    own = [
+        path
+        for path in _game_files(game)
+        if path.split("/")[0].casefold() not in _PREPARED
+    ]
+    # Archived files line up as the game holds them once extracted.
+    held = files + _archived(release, files)
+    votes = _alignments(held, own)
     # A complete game replaces the game's root, so only its own folder varies.
     root = _best(votes, [pair for pair in votes if not pair[1]])
-    complete = _layout("game", files, own, root[0], "")
+    complete = _layout("game", held, own, root[0], "")
     patch = _layout("patch", files, own, *_best(votes, votes))
     detected = (
         "game" if own and complete.covered >= COMPLETE_SHARE * len(own) else "patch"

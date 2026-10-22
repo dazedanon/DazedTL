@@ -21,6 +21,7 @@ from dazedtl.translation.files import evidence
 from dazedtl.translation.operations import execute
 from dazedtl.translation.release import packing_paths
 from util.ace import actions, rgssad
+from util.version_update.release_layout import inspect_release
 
 from tests.rgssad_archives import archive_v3
 from tests.test_ace_conversion import files
@@ -131,9 +132,13 @@ archive = archive_v3(
     [("Data\\" + name, data) for name, data in files(v11 / "Data").items()], seed=11
 )
 (release / "Game.rgss3a").write_bytes(archive)
-# 2.27.0 staged it unprepared, and applying it would have removed every data
-# file and ace_json.
-staged = operation("stage_update", official=str(release), version="1.1", patch=False)
+(release / "Game.ini").write_text("[Game]\r\nTitle=Test\r\n", encoding="utf-8")
+# The archive and Game.ini are a complete game; 2.27.1 took their two files
+# for a patch and would have put the archive beside the translated Data, which
+# the game would then no longer read. 2.27.0 staged it unprepared, and
+# applying it would have removed every data file and ace_json.
+assert inspect_release(game, release).detected == "game", inspect_release(game, release)
+staged = operation("stage_update", official=str(release), version="1.1")
 assert not staged["preparation_required"], staged
 official = Path(staged["official"])
 assert rgssad.archives(official) == [] and (official / "ace_json/System.json").is_file()
