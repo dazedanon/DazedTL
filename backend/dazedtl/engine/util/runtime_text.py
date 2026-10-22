@@ -32,6 +32,27 @@ PROTECTED_PATTERNS = [
 _CONTROL_CODE_RE = re.compile(_GENERAL_CONTROL_PATTERN)
 _ORPHAN_BACKSLASH_RE = re.compile(r'^[\\]+$')
 
+# The placeholder protect_script_codes puts in a protected code's place.
+_PLACEHOLDER = "__PROTECTED_{}__"
+_PROTECTED_RE = re.compile('|'.join(f'({pattern})' for pattern in PROTECTED_PATTERNS))
+# A protected code or the placeholder that holds its place in a request.
+_PROTECTED_OR_PLACEHOLDER_RE = re.compile(
+    _PLACEHOLDER.format(r"\d+") + "|" + _PROTECTED_RE.pattern
+)
+
+# Half-width kana letters, the half-width part of util/source_text LETTERS.
+HALF_WIDTH_LETTERS = "\uff66-\uff9d"
+# Half-width text the model reads better full-width: a word of two or more
+# half-width kana letters with their voicing marks, and the sentence
+# punctuation ｡｢｣､, which the quote conversion reads full-width. A lone
+# half-width kana or mark and the middle dot ･ stay as the game wrote them:
+# they are more often part of a kaomoji, such as the ﾉ, ﾟ and ･ of
+# (ﾉﾟ∀ﾟ)ﾉ or (･ω･), and NFKC turns a lone ﾟ into a combining mark, which a
+# model gives back and the game then shows mangled.
+_HALF_WIDTH_TEXT_RE = re.compile(
+    rf"[\uff61-\uff64]+|(?:[{HALF_WIDTH_LETTERS}][\uff9e\uff9f]*){{2,}}"
+)
+
 
 def _escaped_orphan_backslash(code):
     """Return an even slash run so RPG Maker treats it as literal text."""
@@ -46,6 +67,12 @@ def extract_control_codes(text):
     if not isinstance(text, str) or not text:
         return []
     return _CONTROL_CODE_RE.findall(text)
+
+
+def without_protected_codes(text):
+    """Return text without the codes protect_script_codes protects, or the
+    placeholders a protected request holds in their place."""
+    return _PROTECTED_OR_PLACEHOLDER_RE.sub("", str(text))
 
 
 def without_control_codes(text):
@@ -205,30 +232,27 @@ def protect_script_codes(text):
     })
     text = text.translate(quote_norm_table)
 
-    # Convert half-width katakana (U+FF61–U+FF9F) to full-width katakana so the
-    # AI recognises them as Japanese text and translates them correctly.
-    # NFKC is applied only to matched half-width kana spans to avoid altering
-    # intentional fullwidth Latin/digit characters elsewhere in the string.
-    text = re.sub(r'[\uFF61-\uFF9F]+', lambda m: unicodedata.normalize('NFKC', m.group(0)), text)
+    # Convert half-width katakana words to full-width katakana so the AI
+    # recognises them as Japanese text and translates them correctly.
+    # NFKC is applied only to matched half-width spans (_HALF_WIDTH_TEXT_RE)
+    # to avoid altering intentional fullwidth Latin/digit characters or a
+    # kaomoji elsewhere in the string.
+    text = _HALF_WIDTH_TEXT_RE.sub(lambda m: unicodedata.normalize('NFKC', m.group(0)), text)
 
     replacements = {}
     protected_text = text
     counter = 0
 
-    # Combine all patterns
-    combined_pattern = '|'.join(f'({pattern})' for pattern in PROTECTED_PATTERNS)
-
     def replace_match(match):
         nonlocal counter
         original = match.group(0)
         # Create a unique placeholder that won't be translated
-        placeholder = f"__PROTECTED_{counter}__"
+        placeholder = _PLACEHOLDER.format(counter)
         replacements[placeholder] = original
         counter += 1
         return placeholder
 
-    if combined_pattern:
-        protected_text = re.sub(combined_pattern, replace_match, protected_text)
+    protected_text = _PROTECTED_RE.sub(replace_match, protected_text)
 
     return protected_text, replacements
 

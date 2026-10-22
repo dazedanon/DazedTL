@@ -2851,13 +2851,28 @@ try:
         # censor mask was retried and then left untranslated. A mask the
         # author did not write still fails.
         # A kaomoji the source has, such as (ﾟдﾟ) or ヽ(・∀・)ﾉ, is no
-        # Japanese left either; a kanji is, even one the source has.
+        # Japanese left either; a kanji is, even one the source has. A line
+        # given back unchanged, such as the interjection え？, kept no symbol:
+        # it is untranslated, so it is sent again and not saved for reuse.
         assert translation.validate_translation_content(
-            ["うん〇だ！", "うんこだ！", "な、何だ(ﾟдﾟ)", "やった ヽ(・∀・)ﾉ", "剣だ"],
-            ["Sh〇t!", "Sh〇t!", "W-what?! (ﾟдﾟ)", "Yay ヽ(・∀・)ﾉ", "The 剣"],
+            [
+                "うん〇だ！",
+                "うんこだ！",
+                "な、何だ(ﾟдﾟ)",
+                "やった ヽ(・∀・)ﾉ",
+                "剣だ",
+                "え？",
+            ],
+            ["Sh〇t!", "Sh〇t!", "W-what?! (ﾟдﾟ)", "Yay ヽ(・∀・)ﾉ", "The 剣", "え?"],
             parser.LANGREGEX,
             "English",
-        )[1] == [1, 4]
+        )[1] == [1, 4, 5]
+        # Half-width kana words reach the model full-width, but a kaomoji's
+        # lone kana and marks stay as the game wrote them: NFKC turned a lone
+        # ﾟ into a combining mark, which the model echoed into the game.
+        assert translation.protect_script_codes("ｷﾀ━(ﾉﾟ∀ﾟ)ﾉ ｢ﾜｰｲ｣(･ω･)")[0] == (
+            "キタ━(ﾉﾟ∀ﾟ)ﾉ 「ワーイ」(･ω･)"
+        )
         live_root = temporary / "live"
         live_root.mkdir()
         os.chdir(live_root)

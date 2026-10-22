@@ -14,9 +14,14 @@ its base is text the player reads, so \\rb[魔王,まおう] holds Japanese.
 """
 
 import re
+import unicodedata
 from collections import Counter
 
-from util.runtime_text import without_control_codes
+from util.runtime_text import (
+    HALF_WIDTH_LETTERS,
+    without_control_codes,
+    without_protected_codes,
+)
 
 # Japanese letters: 々〆〇, kana, kanji and half-width kana. The middle dot
 # and long vowel mark (・ー), which English uses as bullets and dashes, are not
@@ -26,7 +31,7 @@ from util.runtime_text import without_control_codes
 KANJI = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
 LETTERS = re.compile(
     r"[\u3005-\u3007\u3041-\u3096\u309d-\u30fa\u31f0-\u31ff"
-    r"\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9d]"
+    rf"\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff{HALF_WIDTH_LETTERS}]"
 )
 _WORD = re.compile(LETTERS.pattern + "+")
 
@@ -58,12 +63,34 @@ def left_in(source: str, translation: str) -> list[str]:
     letters (holds_source's rule). A lone kana or mark that the source holds
     as often, never a kanji, is part of a symbol the translation keeps, such as
     the ﾉ and ゞ of a kaomoji or the 〇 of a censor mask (うん〇 -> sh〇t), so
-    it is not left; asking again can only give it back."""
-    kept = Counter(LETTERS.findall(without_control_codes(furigana_base(source))))
+    it is not left; asking again can only give it back. A translation that
+    gives back the source's letters and digits unchanged, such as え？ for
+    え？, translated nothing and keeps no symbol: all its Japanese is left."""
+    source, translation = _spoken(source), _spoken(translation)
+    runs = _WORD.findall(translation)
+    if _letters_and_digits(source) == _letters_and_digits(translation):
+        return runs
+    kept = Counter(LETTERS.findall(source))
     left = []
-    for run in _WORD.findall(without_control_codes(furigana_base(translation))):
+    for run in runs:
         if len(run) == 1 and kept[run] > 0 and not KANJI.match(run):
             kept[run] -= 1
         else:
             left.append(run)
     return left
+
+
+def _spoken(text: str) -> str:
+    """*text* as the player reads it: furigana as its base, without control
+    codes, other protected codes or their placeholders in a request."""
+    return without_control_codes(without_protected_codes(furigana_base(text)))
+
+
+def _letters_and_digits(text: str) -> list[str]:
+    """The letters and digits of *text* in compatibility form, so a full-width
+    or half-width spelling reads the same."""
+    return [
+        char
+        for char in unicodedata.normalize("NFKC", text)
+        if unicodedata.category(char)[0] in "LN"
+    ]

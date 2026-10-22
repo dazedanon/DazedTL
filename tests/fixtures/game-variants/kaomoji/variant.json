@@ -1,9 +1,10 @@
 {
-  "description": "Dialogue a model answers in part: the stand-in keeps the kaomoji (ﾟдﾟ) of the line with 何だこれは, as models do, and leaves the line with まだ訳せない in Japanese.",
+  "description": "Dialogue a model answers in part: the stand-in keeps the kaomoji (ﾟдﾟ) of the line with 何だこれは, as models do, leaves the line with まだ訳せない in Japanese and gives the speakerless interjection え？ back unchanged.",
   "provider": {
     "reply": {
       "何だこれは": "W-what is this?! (ﾟдﾟ)",
-      "まだ訳せない": "この言葉はまだ訳せない。"
+      "まだ訳せない": "この言葉はまだ訳せない。",
+      "え？": "え？"
     }
   },
   "events": [
@@ -72,6 +73,24 @@
               "indent": 0,
               "parameters": [
                 "この言葉はまだ訳せない。"
+              ]
+            },
+            {
+              "code": 101,
+              "indent": 0,
+              "parameters": [
+                "",
+                0,
+                0,
+                2,
+                ""
+              ]
+            },
+            {
+              "code": 401,
+              "indent": 0,
+              "parameters": [
+                "え？"
               ]
             },
             {
