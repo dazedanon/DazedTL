@@ -790,13 +790,14 @@ export function translatedLines(
   // A received or rejected raw body must not become a saved-text comparison.
   let value =
     "translations" in payload ? payload.translations : payload.response;
-  const response = value;
-  if (Array.isArray(response))
-    return payload.state === "validated" &&
-      response.length === keys.length &&
-      response.every((item) => typeof item === "string")
+  const lines = (response: unknown) =>
+    payload.state === "validated" &&
+    Array.isArray(response) &&
+    response.length === keys.length &&
+    response.every((item) => typeof item === "string")
       ? Object.fromEntries(keys.map((key, index) => [key, response[index]]))
       : null;
+  if (Array.isArray(value)) return lines(value);
   // The engine's Batch cache stores the provider's extracted response text.
   if (
     value &&
@@ -812,6 +813,9 @@ export function translatedLines(
       return null;
     }
   }
+  // A Batch reply wraps its lines in the same list a Live receipt keeps.
+  if (value && typeof value === "object" && "translations" in value)
+    return lines(value.translations);
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
   return Object.keys(record).length === keys.length &&

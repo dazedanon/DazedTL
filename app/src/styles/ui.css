@@ -929,6 +929,7 @@ main:has(> .page-layout--wide) {
 .combobox-list {
   position: fixed;
   inset: auto;
+  width: max-content;
   margin: 0;
   padding: var(--space-1);
   max-height: min(18rem, var(--combobox-available-height));
