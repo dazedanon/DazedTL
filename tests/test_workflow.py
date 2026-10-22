@@ -18,7 +18,7 @@ from dazedtl.settings.store import Settings
 from dazedtl.storage import WorkspaceLock, write_json
 from dazedtl.translation import delivery, progress_report
 from dazedtl.translation.compilation import compile_requests
-from dazedtl.translation.files import digest, evidence, read_json
+from dazedtl.translation.files import evidence, read_json
 from dazedtl.translation.game_update import ABSENT
 from dazedtl.translation.helper_command import helper_command
 from dazedtl.translation.jobs import REPLACED
@@ -28,7 +28,6 @@ from dazedtl.translation.operations import (
     lifecycle_path,
     require_baseline,
     take_census,
-    verify_guided_review,
 )
 from dazedtl.translation.project import DEFAULTS, WORK, ProjectWorkspace, scope
 from dazedtl.translation.requests import plan_input
@@ -1300,65 +1299,12 @@ class WorkflowTests(unittest.TestCase):
             )
 
     def test_runtime_changes_invalidate_delivery_even_if_qa_report_is_unchanged(self):
-        for action in ("guided_review", "guided_package", "release_patch"):
-            with self.subTest(action=action), self.assertRaises(ValueError):
-                self.service.operation(self.identity, action, {})
+        with self.assertRaises(ValueError):
+            self.service.operation(self.identity, "release_patch", {})
         path = WORK + "/work/patch-files.json"
         write_json(self.game / path, ["source.json"])
         delivery.record(self.game, path, ["source.json"])
         delivery.verify(self.game, full=True)
-        self.engine.runtime_paths = lambda manifest: manifest["files"]
-        guided_manifest = ".dazedtl/guided/runtime-manifest.json"
-        write_json(self.game / guided_manifest, {"files": ["source.json"]})
-        execute(
-            self.engine,
-            self.profile,
-            {"project_id": self.identity},
-            {
-                "source": str(self.game),
-                "options": DEFAULTS,
-                "action": "guided_review",
-                "arguments": {"manifest": guided_manifest},
-            },
-            lambda: False,
-        )
-        verify_guided_review(self.game, lifecycle(self.profile, self.identity))
-        # A new source pass invalidates release review even when runtime bytes
-        # have not changed yet; it must not revive an earlier playtest attestation.
-        source_inputs = "engine/workflows/guided/source-inputs.json"
-        inputs = {"version": 1, "inputs": {}}
-        write_json(self.profile / source_inputs, inputs)
-        execute(
-            self.engine,
-            self.profile,
-            {"project_id": self.identity},
-            {
-                "source": str(self.game),
-                "options": DEFAULTS,
-                "action": "guided_review",
-                "arguments": {
-                    "manifest": guided_manifest,
-                    "source_inputs": source_inputs,
-                    "source_inputs_sha256": digest(inputs),
-                },
-            },
-            lambda: False,
-        )
-        verify_guided_review(
-            self.game, lifecycle(self.profile, self.identity), self.profile, self.engine
-        )
-        write_json(
-            self.profile / source_inputs, {**inputs, "last_refresh": "new-source-pass"}
-        )
-        with self.assertRaises(ValueError):
-            verify_guided_review(
-                self.game,
-                lifecycle(self.profile, self.identity),
-                self.profile,
-                self.engine,
-            )
         write_json(self.game / "source.json", {"line": "Changed after review"})
         with self.assertRaises(ValueError):
             delivery.verify(self.game, full=True)
-        with self.assertRaises(ValueError):
-            verify_guided_review(self.game, lifecycle(self.profile, self.identity))

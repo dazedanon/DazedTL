@@ -211,11 +211,6 @@ class GitStatus(TypedDict):
     available_original_refs: list[str]
 
 
-class GuidedReviewRecord(TypedDict):
-    manifest: str
-    evidence: dict[str, str]
-
-
 class StartedOver(TypedDict):
     at: str
     # The game-relative folder holding the attempt set aside.
@@ -241,7 +236,6 @@ class Lifecycle(typing_extensions.TypedDict, extra_items=object):
     were kept in Git still hold."""
 
     version: int
-    guided_review: NotRequired[GuidedReviewRecord]
     delivery: NotRequired[DeliveryRecord]
     incoming_version: NotRequired[str]
     version_update: NotRequired[VersionUpdate]

@@ -399,7 +399,6 @@ class ReleaseTests(unittest.TestCase):
             engine.outside_edits.assert_called_once()
             self.assertEqual(engine.checkpoint.call_args.args[2], ["data.json"])
             state = lifecycle(workspace, "owner")
-            self.assertNotIn("guided_review", state)
             self.assertEqual(state["guided_release"]["path"], str(root / "release.zip"))
             self.assertEqual(read_json(game / "data.json"), {"line": "translated"})
             # The saved ZIP stays current until its runtime files change or

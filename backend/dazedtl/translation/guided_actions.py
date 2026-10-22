@@ -13,7 +13,6 @@ from dazedtl.storage import write_json
 
 from . import preparation
 from .files import digest, evidence, project_path, read_json, verify_evidence
-from .operations import lifecycle, verify_guided_review
 
 if TYPE_CHECKING:
     from .guided import Guided
@@ -368,8 +367,6 @@ class GuidedActions:
         allowed = (
             {"version", "original", "untranslated"}
             if action == "git_setup"
-            else {"reviewed", "playtested"}
-            if action == "guided_review"
             else {"output"}
             if action == "release_patch"
             else set()
@@ -391,7 +388,7 @@ class GuidedActions:
                     paths, self.guided.inputs(native).record()["inputs"], fresh=True
                 )
             }
-        if action in {"git_setup", "guided_review", "release_patch"}:
+        if action in {"git_setup", "release_patch"}:
             paths = self.guided.release_paths(project_id, project["source"], action)
             manifest = self.guided.patch_manifest(project_id, paths, action)
             expected = evidence(project["source"], [*paths, *manifest["inputs"]])
@@ -410,18 +407,6 @@ class GuidedActions:
                 "source_inputs_sha256": digest(self.guided.inputs(native).record()),
                 "git": git_identity(release_status),
             }
-        if action == "guided_review" and (
-            options.get("reviewed") is not True or options.get("playtested") is not True
-        ):
-            raise ValueError(
-                "Review the translated scope and playtest it before recording release readiness."
-            )
-        if action == "guided_review":
-            options["source_inputs_sha256"] = digest(
-                self.guided.inputs(native).record()
-            )
-        if action == "guided_package":
-            self.verify_review(project_id, native)
         return ActionPlan(label, paths, options, expected=expected, manifest=manifest)
 
     def preview_native(self, context):
@@ -764,7 +749,7 @@ class GuidedActions:
             )
         if action == "git_setup":
             self.guided.require_preparation(project_id, native)
-        if action in {"git_setup", "guided_review", "release_patch"}:
+        if action in {"git_setup", "release_patch"}:
             if confirmed["manifest"] != self.guided.patch_manifest(
                 project_id, confirmed["paths"], action
             ):
@@ -823,46 +808,7 @@ class GuidedActions:
                     "sha256": digest(payload),
                 },
             )
-        if action == "guided_review":
-            inputs = self.guided.inputs(native)
-            current = inputs.record()
-            if digest(current) != options["source_inputs_sha256"]:
-                raise ValueError("Working sources changed. Review this pass again.")
-            if not inputs.index.exists():
-                write_json(inputs.index, current)
-            options = {
-                "manifest": MANIFEST,
-                "source_inputs": inputs.index.relative_to(
-                    self.guided.translation.workspace
-                ).as_posix(),
-                "source_inputs_sha256": digest(current),
-            }
-        if action == "guided_package":
-            self.verify_review(project_id, native)
-        operation = (
-            self.guided.translation.guided_operation
-            if action in {"guided_review", "guided_package"}
-            else self.guided.translation.operation
-        )
-        return operation(project_id, action, options)
-
-    def verify_review(self, project_id, native):
-        state = lifecycle(self.guided.translation.workspace, project_id)
-        review = verify_guided_review(
-            native["source"],
-            state,
-            self.guided.translation.workspace,
-            self.guided.translation.engine,
-        )
-        inputs = self.guided.inputs(native)
-        if (
-            not review.get("source_inputs_sha256")
-            and inputs.record().get("last_refresh")
-            or inputs.status(sorted(self.guided.supported_files(native)))["changed"]
-        ):
-            raise ValueError(
-                "Source work changed after review. Playtest and record the current pass again."
-            )
+        return self.guided.translation.operation(project_id, action, options)
 
     def scanned_speakers(self, identity):
         """The speaker scan an estimate recorded for the Batch after it; the
