@@ -67,3 +67,10 @@ export function runs(rows: Checkpoint[]) {
  * as checkpoint names quote theirs. */
 export const quoted = (title: string) =>
   title.includes("“") ? `‘${title}’` : `“${title}”`;
+
+/** A copy's folder name with its parenthesized version and date stamp kept
+ * whole, so a narrow result wraps before the stamp, never inside it. */
+export const copyName = (name: string) =>
+  name.replace(/ \(.*\)$/, (stamp) =>
+    stamp.replaceAll(" ", "\u00a0").replaceAll("-", "\u2011"),
+  );
