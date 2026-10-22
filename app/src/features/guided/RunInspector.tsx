@@ -55,7 +55,8 @@ export function RunInspector({
   const [cancellation, setCancellation] = useState<BatchCancellation | null>(
     null,
   );
-  const jobId = summary?.id;
+  // A Plugin files apply is a record of its own, with no saved run to read.
+  const jobId = summary?.action === "plugin_receipt" ? undefined : summary?.id;
   // The key is null without a job, so the read only runs with one. Observed
   // runs carry no log, so each status change reads the full run once more,
   // and the previous read stays visible until the new one arrives.
