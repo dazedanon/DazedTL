@@ -314,10 +314,16 @@ const eventFile = /^(?:Map\d+|CommonEvents|Troops)\.json$/i;
 /**
  * The Guided tasks an applied update's files belong to, in workflow order:
  * data files by the group Guided lists them in, plugins and images by folder.
+ * A data file's lines to translate are the ones `left` reads in the file
+ * now, once it can, else the comparison's.
  */
 export function guidedUpdateTasks(
   result: Record<string, unknown>,
   groups: Map<string, "database" | "dialogue">,
+  left: (
+    name: string,
+    task: "database" | "dialogue",
+  ) => number | undefined = () => undefined,
 ): UpdateTask[] {
   const changes = [
     ...(Array.isArray(result.file_changes) ? result.file_changes : []),
@@ -349,7 +355,9 @@ export function guidedUpdateTasks(
       lines: 0,
     };
     entry.files.push(task === "images" ? change.path : name);
-    entry.lines += lines.get(change.path) ?? 0;
+    const current =
+      task === "database" || task === "dialogue" ? left(name, task) : undefined;
+    entry.lines += current ?? lines.get(change.path) ?? 0;
     tasks.set(task, entry);
   }
   return (["database", "dialogue", "plugins", "images"] as const).flatMap(
