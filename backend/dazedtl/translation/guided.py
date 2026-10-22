@@ -7,7 +7,14 @@ from pathlib import Path
 from dazedtl.freshness import Digests
 from dazedtl.storage import write_json
 
-from . import comment_text, context_setup, preparation, reference_folders, speaker_setup
+from . import (
+    checkpoint_records,
+    comment_text,
+    context_setup,
+    preparation,
+    reference_folders,
+    speaker_setup,
+)
 from .event_text import EventText
 from .files import project_path, read_json
 from .full_estimate import FullEstimate
@@ -273,6 +280,33 @@ class Guided:
         self.text_fit.request(
             project_id, native, native["widths"], result["project"]["widths"]
         )
+
+    def restored_widths(self, project_id):
+        """A restore that changed the game's Line widths, such as going back
+        past Save Line widths, leaves the widths the game uses now; the
+        project takes them, as saved ones, so Line widths reads what the
+        game's text was fitted to. The restore put that text back too, so
+        nothing is fitted again."""
+        _, native = self.record(project_id)
+        folder = self.backend.workflows.folder(native["id"])
+        widths = checkpoint_records.restored_widths(folder)
+        if widths is None:
+            return
+        from util.game_settings import game_wrap_widths
+
+        try:
+            # Widths saved since the restore are the game's now.
+            if widths != native["widths"] and widths == game_wrap_widths(
+                native["source"]
+            ):
+                self.backend.workflows.update(
+                    native["id"], native["revision"], {"widths": widths}
+                )
+        except OSError, ValueError:
+            # The project can't be saved now, such as during another save;
+            # the next look tries again.
+            return
+        checkpoint_records.took_widths(folder)
 
     def comment_text(self, project_id):
         """Comment text on, once, for a game whose plugins show players
@@ -693,6 +727,7 @@ class Guided:
 
     def state(self, project_id):
         self.start_queued(project_id)
+        self.restored_widths(project_id)
         self.ace_widths(project_id)
         self.comment_text(project_id)
         with self.observations.read():
