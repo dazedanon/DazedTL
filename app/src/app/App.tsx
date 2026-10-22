@@ -21,6 +21,7 @@ import { PageHeader, PageLayout, PageMessages } from "../ui/PageLayout";
 import GuidedWorkflow from "../features/guided/GuidedWorkflow";
 import { guidedProgress, projectAmounts } from "../features/guided/progress";
 import type { GuidedIntent } from "../features/guided/workspace/model";
+import type { HistoryTab } from "../features/guided/historyView";
 import ProjectPage, {
   removeHint,
   type ProjectTab,
@@ -55,6 +56,7 @@ export default function App() {
   if (state?.screen === "settings" && !settingsOpened) setSettingsOpened(true);
   const [projectTab, setProjectTab] = useState<ProjectTab>("status");
   const [historyQuery, setHistoryQuery] = useState<string>();
+  const [historyTab, setHistoryTab] = useState<HistoryTab>("runs");
   const [methodOpen, setMethodOpen] = useState(false);
   // A newly opened game asks for its method once it is observed.
   const [askMethod, setAskMethod] = useState(false);
@@ -66,6 +68,7 @@ export default function App() {
     setOwner(project?.id);
     setProjectTab("status");
     setHistoryQuery(undefined);
+    setHistoryTab("runs");
     setIntent(null);
     setMethodOpen(false);
   }
@@ -164,6 +167,8 @@ export default function App() {
       await flushDrafts();
       setProjectTab(tab);
       setHistoryQuery(query);
+      // A search names one stage's translation runs.
+      if (query) setHistoryTab("runs");
       application.navigate("project");
     });
   // The top bar's count opens the Project page's list of copied tasks.
@@ -460,6 +465,8 @@ export default function App() {
                   })
                 }
                 historyQuery={historyQuery}
+                historyTab={historyTab}
+                onHistoryTab={setHistoryTab}
                 openTask={openTask}
                 openTranslation={openTranslation}
                 chooseMethod={() => setMethodOpen(true)}

@@ -18,6 +18,7 @@ import { RunLog } from "./RunTechnical";
 import { batchOutcome, canRetrySaving, canReapplyRun } from "./batchView";
 import type { RequestBatch } from "./requestView";
 import { observedRun } from "./translationView";
+import { operationSummary } from "./historyView";
 import { useOnChange } from "../../state/useOnChange";
 import { useRead } from "../../state/useRead";
 
@@ -342,13 +343,10 @@ export function RunInspector({
                   )}
                 </section>
                 {details}
-                {job.result && (
+                {operationSummary(job) && (
                   <section>
                     <h3>Saved result</h3>
-                    <ExpandableText
-                      text={JSON.stringify(job.result, null, 2)}
-                      label="Saved result"
-                    />
+                    <p>{operationSummary(job)}</p>
                   </section>
                 )}
                 <RunLog log={job.log} />

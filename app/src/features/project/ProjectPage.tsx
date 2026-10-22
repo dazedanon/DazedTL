@@ -29,6 +29,7 @@ import { engineLabel, selectionNames, sentence } from "../../ui/displayText";
 import { AssistantTaskList } from "../assistant/AssistantTaskList";
 import { useAssistantTasks } from "../assistant/useAssistantTasks";
 import { ActivityHistory } from "../guided/ActivityHistory";
+import type { HistoryTab } from "../guided/historyView";
 import type { GuidedProgress, projectAmounts } from "../guided/progress";
 import { RunInspector } from "../guided/RunInspector";
 import { QaCoverageReport } from "../guided/TextQa";
@@ -63,6 +64,8 @@ export default function ProjectPage({
   tab,
   onTab,
   historyQuery,
+  historyTab,
+  onHistoryTab,
   openTask,
   openTranslation,
   chooseMethod,
@@ -83,6 +86,9 @@ export default function ProjectPage({
   onTab: (tab: ProjectTab) => void;
   /** A search the History tab opens with, such as one stage's runs. */
   historyQuery?: string;
+  /** History's open list, kept while the game stays open. */
+  historyTab: HistoryTab;
+  onHistoryTab: (tab: HistoryTab) => void;
   openTask: (step: string, task: string) => void;
   openTranslation: (view?: "images") => void;
   chooseMethod: () => void;
@@ -177,6 +183,8 @@ export default function ProjectPage({
             key={historyQuery}
             project={project}
             query={historyQuery}
+            tab={historyTab}
+            onTab={onHistoryTab}
             openGuided={openGuided}
           />
         )}
@@ -510,10 +518,14 @@ function restorable(kind: string) {
 function ProjectHistory({
   project,
   query,
+  tab,
+  onTab,
   openGuided,
 }: {
   project: Project;
   query?: string;
+  tab: HistoryTab;
+  onTab: (tab: HistoryTab) => void;
   openGuided: (intent: GuidedIntent) => void;
 }) {
   const application = useApplication();
@@ -583,6 +595,8 @@ function ProjectHistory({
           inspect={setInspection}
           initialQuery={query}
           footerTarget={footer}
+          tab={tab}
+          onTab={onTab}
         />
       </PageBody>
       <ActionBar

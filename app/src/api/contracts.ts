@@ -1041,6 +1041,8 @@ export type TextFitState = {
 
 export type Readiness = {
   publications: PublicationStatus[];
+  /** Every text batch restored since it was applied, by id, so History marks its row undone. */
+  restored: string[];
   qa: QaState;
   playtest: PlaytestState;
   outputs: string[];

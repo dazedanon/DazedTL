@@ -14,12 +14,15 @@ export type HistoryOutcome = {
     | "partial"
     | "missing"
     | "empty"
-    | "finished";
+    | "finished"
+    | "undone";
   label: string;
   detail: string;
 };
 const count = (value: number, noun: string) =>
   `${value.toLocaleString()} ${noun}${value === 1 ? "" : "s"}`;
+/** History's lists: translation runs, estimates and other activity. */
+export type HistoryTab = "runs" | "estimates" | "operations";
 /** How History names each phase, so links can search for one stage's runs. */
 export const historyPhaseLabels: Record<string, string> = {
   database: "Database",
@@ -222,4 +225,28 @@ export function historyWhen(created?: string): string {
   if (!created || Number.isNaN(date.getTime())) return "";
   const day = recentDay(date);
   return `${day ? day.toLowerCase() : "on " + shortDate(date)} at ${historyTime(created)}`;
+}
+
+/** A finished operation's result in a sentence, such as "3 files saved.". */
+export function operationSummary(job: Job): string {
+  const result = job.result;
+  if (!result) return "";
+  // An operation's own sentence, such as a fit's rewrapped lines, says more
+  // than its count of files.
+  if (typeof result.message === "string" && result.message)
+    return result.message;
+  if (typeof result.archive === "string")
+    return `${Number(result.files || 0)} ${result.files === 1 ? "file" : "files"} reloaded from the game. Previous copies and outputs archived.`;
+  if (typeof result.files === "number")
+    return `${result.files} ${result.files === 1 ? "file" : "files"} saved.`;
+  if (typeof result.changes_found === "number")
+    return `${result.changes_found} text-fitting changes found · ${Number(result.overflow_skipped || 0)} protected overflows skipped.`;
+  if (typeof result.reviewed_files === "number")
+    return `${result.reviewed_files} current runtime files reviewed.`;
+  if (typeof result.path === "string") return result.path;
+  if (Array.isArray(result.messages))
+    return result.messages
+      .filter((value) => typeof value === "string")
+      .join(" ");
+  return "";
 }

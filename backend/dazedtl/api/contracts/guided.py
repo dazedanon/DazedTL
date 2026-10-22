@@ -765,6 +765,11 @@ class TextFitState(TypedDict):
 
 class Readiness(TypedDict):
     publications: list[PublicationStatus]
+    restored: Annotated[
+        list[str],
+        "Every text batch restored since it was applied, by id, so History "
+        "marks its row undone.",
+    ]
     qa: QaState
     playtest: PlaytestState
     outputs: list[str]
