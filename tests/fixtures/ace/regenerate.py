@@ -8,7 +8,9 @@ and RV2JSON 1.2.1 then writes the expected JSON (ace_json) and packs the
 translated JSON (translated, over ace_json) into the expected data (packed).
 RV2JSON runs from a copy with the port's changes: packing keeps a Change
 Vehicle BGM command's BGM object and takes MapInfos' translated names,
-and System.json carries equipTypes.
+System.json carries equipTypes, and a script's name keeps the characters a
+file name cannot hold (RV2JSON strips them from the stored name too, so
+every pack renamed the script in the editor; only its file name loses them).
 
     python tests/fixtures/ace/regenerate.py RUBY RV2JSON_CHECKOUT
 
@@ -19,6 +21,7 @@ https://github.com/Sinflower/RV2JSON at the commit the port follows.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import struct
 import subprocess
@@ -899,8 +902,9 @@ def translate(source: Path, target: Path) -> None:
 def patched_rv2json(checkout: Path, target: Path) -> str:
     """A copy of RV2JSON that runs on case-sensitive file systems and has the
     port's changes: Change Vehicle BGM keeps its BGM, System.json carries
-    the equipment type names as equipTypes, and MapInfos takes its JSON
-    entries by the text of its integer keys."""
+    the equipment type names as equipTypes, MapInfos takes its JSON
+    entries by the text of its integer keys, and a script's name is not
+    edited in place when its file name is made."""
     shutil.copytree(checkout, target, ignore=shutil.ignore_patterns(".git"))
     main = target / "RV2JSON.rb"
     code = main.read_text(encoding="utf-8")
@@ -933,7 +937,27 @@ def patched_rv2json(checkout: Path, target: Path) -> str:
     if fixed.count("equipTypes") != 3:
         raise RuntimeError("RV2JSON's System JSON was not where expected.")
     system.write_text(fixed, encoding="utf-8")
+    keep_script_names(target)
     return str(target / "RV2JSON.rb")
+
+
+def keep_script_names(target: Path) -> None:
+    """Makes RV2JSON build a script's file name from a copy of its name:
+    the line that strips the characters a file name cannot hold with gsub!
+    assigns the stripped copy to a local instead of changing the string the
+    script keeps."""
+    unsafe = re.compile(r"^(\s*)(\w+)\.gsub!\((.*<>:.*)$", re.MULTILINE)
+    found = 0
+    for path in sorted(target.rglob("*.rb")):
+        code = path.read_text(encoding="utf-8")
+        fixed, count = unsafe.subn(r"\1\2 = \2.gsub(\3", code)
+        if count:
+            path.write_text(fixed, encoding="utf-8")
+            found += count
+    if found != 1:
+        raise RuntimeError(
+            "RV2JSON's script name clean-up was not one gsub! on a local variable."
+        )
 
 
 def main(ruby: str, rv2json: str) -> None:
