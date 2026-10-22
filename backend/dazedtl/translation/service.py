@@ -135,7 +135,8 @@ IMAGE_UNITS = WORK + "/work/image-units.json"
 # these, so an assistant can never start its own project over.
 USER_OPERATIONS = {
     "start_over": ("Start over from the original game", {"keep_context"}),
-    # The Checkpoints tab's; each goes back, undoes or copies through Git.
+    # The Checkpoints tab's; each goes back, undoes or copies through Git,
+    # and History names the checkpoint instead.
     "checkpoint_back": ("Go back to a checkpoint", {"commit"}),
     "checkpoint_undo": ("Undo a checkpoint", {"commit"}),
     "checkpoint_copy": ("Save a copy of a checkpoint", {"commit", "destination"}),
@@ -743,9 +744,12 @@ Additional project instructions:
             )
             if folder is not None:
                 extra["publications"] = str(folder)
-        return self._operation(
-            project_id, action, arguments, USER_OPERATIONS[action], extra
-        )
+        from dazedtl.compatibility.checkpoint_history import named
+
+        _record, project = self.project(project_id)
+        label = named(project.root, action, arguments["commit"])
+        fields = USER_OPERATIONS[action][1]
+        return self._operation(project_id, action, arguments, (label, fields), extra)
 
     def release(self, project_id, folder):
         """How a new official release's folder lines up with the game, as a
