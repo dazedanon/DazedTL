@@ -30,7 +30,8 @@ def bytecode():
 
 class Background:
     """A process started while its test module is imported, so it runs beside
-    the rest of the suite; tests/__init__.py runs that module's tests last."""
+    the rest of the suite; tests/run.py keeps that module whole, so the process
+    starts once."""
 
     def __init__(self):
         self.temporary = TemporaryDirectory()

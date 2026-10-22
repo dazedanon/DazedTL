@@ -5,10 +5,7 @@ import os
 import sys
 import tempfile
 import time
-import unittest
 from pathlib import Path
-
-from tests.probe import Background
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 # The app activates its bundled engine at startup; code that reads engine
@@ -24,31 +21,16 @@ game_writes.install()
 # The suite does not check what survives a power loss, and Windows takes
 # about 2 ms per fsync: the app's durable saves made seconds of its runtime.
 os.fsync = lambda _descriptor: None
-# A suite stopped at its runtime budget (scripts/test.mjs) first shows the
-# test and line every thread waits on.
-if deadline := os.environ.get("DAZEDTL_TEST_DEADLINE"):
-    faulthandler.dump_traceback_later(max(0.1, int(deadline) / 1000 - time.time() - 1))
 
 
-def load_tests(loader, tests, pattern):
-    # Probes and other background processes start when their modules are
-    # imported. Running their tests last lets the rest of the suite overlap
-    # that work.
-    modules = loader.discover(str(Path(__file__).parent), pattern or "test*.py")
-    return unittest.TestSuite(sorted(modules, key=_waits_in_background))
+def stop_at_deadline(file=sys.stderr):
+    """A process of a suite stopped at its runtime budget (scripts/test.mjs)
+    writes the test and line every thread waits on to `file` a second before,
+    then exits rather than outlive the run."""
+    if deadline := os.environ.get("DAZEDTL_TEST_DEADLINE"):
+        faulthandler.dump_traceback_later(
+            max(0.1, int(deadline) / 1000 - time.time() - 1), exit=True, file=file
+        )
 
 
-def _waits_in_background(suite):
-    return any(
-        isinstance(value, Background)
-        for test in _tests(suite)
-        for value in vars(sys.modules[type(test).__module__]).values()
-    )
-
-
-def _tests(suite):
-    for test in suite:
-        if isinstance(test, unittest.TestSuite):
-            yield from _tests(test)
-        else:
-            yield test
+stop_at_deadline()
