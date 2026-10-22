@@ -307,6 +307,13 @@ export const reloadBeforeApply = (
 ) =>
   files.some((name) => changed.includes(name)) &&
   "Reload changed files from the game first.";
+/** Why applying a run's own saved output is unavailable: the files it
+ * reapplies, its outputs among its files, include one the game changed. */
+export const reloadBeforeRunApply = (job: Job, changed: readonly string[]) =>
+  reloadBeforeApply(
+    Object.keys(job.outputs || {}).filter((name) => job.files?.includes(name)),
+    changed,
+  );
 /** Database files and Maps & events read each file's lines from the file. */
 export const countedPhase = (phase: Phase) =>
   phase === "database" || phase === "dialogue";

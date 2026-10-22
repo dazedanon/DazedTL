@@ -612,6 +612,7 @@ function ProjectHistory({
           job={inspected}
           close={() => setInspection(null)}
           disabled={!baseline}
+          changed={guided.sourceStatus.changed}
           details={
             qaRecord && (
               <QaCoverageReport
