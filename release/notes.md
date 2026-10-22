@@ -23,3 +23,4 @@
 - **Run history:** **Reapply** and **Apply translated output** are unavailable while a file they would write reads **Outdated**, with "Reload changed files from the game first." beside them, instead of failing after the click.
 - **Translate:** while a file reads **Outdated**, the footer says "Reload changed files from the game first." instead of "Translate prepares an estimate for your approval."
 - **Checkpoints:** after a game update, **Translate the new text** counts the lines each task still has to translate, in its summary and on each task, instead of repeating the update's count after you translated them.
+- **Checkpoints:** the "Undone; 2 files changed." result stays beside the checkpoint the undo made, instead of moving to a later checkpoint such as **Install Forge**.
