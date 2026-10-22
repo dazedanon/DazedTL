@@ -53,6 +53,8 @@ from dazedtl.storage import exclusive, hold
 
 ACTION_TRAILER = "DazedTL-Action"
 STAGE_TRAILER = "DazedTL-Stage"
+# The checkpoint a go back put the game back to.
+TARGET_TRAILER = "DazedTL-Target"
 # The action of a checkpoint holding changes made outside DazedTL.
 OUTSIDE_EDITS = "outside_edits"
 # A subject Git's one-line views show whole.
@@ -67,6 +69,7 @@ class Change:
     summary: str
     stage: str | None = None
     action: str | None = None
+    target: str | None = None
 
 
 OUTSIDE = Change("Edits made outside DazedTL", None, OUTSIDE_EDITS)
@@ -131,6 +134,8 @@ def message(change):
     trailers = [f"{ACTION_TRAILER}: {change.action}"] if change.action else []
     if change.stage:
         trailers.append(f"{STAGE_TRAILER}: {change.stage}")
+    if change.target:
+        trailers.append(f"{TARGET_TRAILER}: {change.target}")
     return subject + ("\n\n" + "\n".join(trailers) if trailers else "")
 
 

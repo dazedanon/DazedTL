@@ -15,3 +15,4 @@
 - **Release:** on a VX Ace game, undoing or going back to a checkpoint no longer makes Release say "The game's data is older than ace_json" and hold Review & build patch ZIP until Pack outside edits; Data an assistant or another tool edited still waits for Pack outside edits.
 - **Game updates:** previewing an update of a VX Ace game no longer says its translated data files are "replaced by official binary file" when the update packs them from the merged text, and it lists the release's `Game.rgss3a` as replacing the archive kept for patches.
 - **Game updates:** **Apply update** no longer flashes "Finish the interrupted update" with both buttons disabled while it runs; the preview and the Last saved patch ZIP card no longer repeat the same status two or three times.
+- **Checkpoints:** after Go back, the checkpoints it took out read "Taken out".
