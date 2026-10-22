@@ -14,6 +14,7 @@ from dazedtl.diagnostics import record_crashes, watch_action, worker_failure
 if __name__ == "__main__":
     # Standard error is discarded, so a crash leaves only this record.
     record_crashes("run")
+from dazedtl.actions import stopped_note
 from dazedtl.compatibility.translation import (
     TranslationEngine,
     TranslationProvider,
@@ -86,9 +87,7 @@ def run_locked(workspace, identity, store):
                     nonlocal last_update
                     progressed()
                     if stopped():
-                        raise InterruptedError(
-                            "Stopped at an operation checkpoint; completed writes and backups were retained."
-                        )
+                        raise InterruptedError(stopped_note(plan["action"]))
                     if time.monotonic() - last_update >= 0.5:
                         job["message"] = str(message)[:1000]
                         store.save(job)
