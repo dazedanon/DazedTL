@@ -26,7 +26,6 @@ from dazedtl.translation import (
 from dazedtl.translation.files import digest, evidence, read_json
 from dazedtl.translation.guided import Guided, retained_position
 from dazedtl.translation.guided_inputs import GuidedInputs
-from dazedtl.translation.operations import lifecycle_path
 from dazedtl.translation.release import packing_state
 
 from tests.engine import engine_module
@@ -4316,15 +4315,6 @@ class GuidedTests(unittest.TestCase):
             self.folder / "applied-outputs.json",
             {"version": 1, "files": {"Items.json": digest(raw)}},
         )
-        write_json(
-            lifecycle_path(self.translation.workspace, self.identity),
-            {
-                "version": 1,
-                "guided_review": {"evidence": evidence(self.source, ["Items.json"])},
-            },
-        )
-        first = self.guided.readiness(self.identity, self.native, {"jobs": []})
-        self.assertTrue(first["review_current"])
         # An Apply that fitted the output to the Line widths on the way wrote
         # those bytes, which are no later edit.
         write_json(self.source / "Items.json", [{"name": "Fitted\nEnglish"}])
@@ -4346,7 +4336,6 @@ class GuidedTests(unittest.TestCase):
         changed = self.guided.readiness(self.identity, self.native, {"jobs": []})
         self.assertEqual(changed["applied"], ["Items.json"])
         self.assertEqual(changed["runtime_edited"], ["Items.json"])
-        self.assertFalse(changed["review_current"])
         (self.folder / "translated/Items.json").unlink()
         self.assertEqual(
             self.guided.readiness(self.identity, self.native, {"jobs": []})["outputs"],

@@ -9,7 +9,7 @@ from dazedtl.storage import write_json
 
 from . import comment_text, context_setup, preparation, reference_folders, speaker_setup
 from .event_text import EventText
-from .files import digest, project_path, read_json
+from .files import project_path, read_json
 from .full_estimate import FullEstimate
 from .guided_actions import GuidedActions
 from .guided_context import GuidedContext
@@ -99,7 +99,6 @@ class Guided:
         self.saved_output = self.actions.saved_output
         self.preview = self.actions.preview
         self.execute = self.actions.execute
-        self.verify_review = self.actions.verify_review
         self.inspection = RunInspection(self)
         self.run_view = self.inspection.run_view
         self.discard_preparation = self.inspection.discard_preparation
@@ -544,31 +543,6 @@ class Guided:
     def readiness(self, project_id, native, value, source_status=None):
         outputs, applied, edited = self.applied_outputs(native)
         state = lifecycle(self.translation.workspace, project_id)
-        current = False
-        try:
-            review = state.get("guided_review")
-            sources = self.inputs(native).record()
-            source_status = source_status or self.inputs(native).status(
-                [row["name"] for row in native["files"]], self.observed_digest
-            )
-            scope_matches = (
-                review.get("source_inputs_sha256") == digest(sources)
-                if review and review.get("source_inputs_sha256")
-                else not sources.get("last_refresh")
-            )
-            current = bool(
-                review
-                and scope_matches
-                and not source_status["changed"]
-                and review["evidence"]
-                and all(
-                    self.observed_digest(self.observed_path(native["source"], name))
-                    == sha
-                    for name, sha in review["evidence"].items()
-                )
-            )
-        except OSError, ValueError, KeyError:
-            pass
         latest = self.text_fit.latest(native)
         return {
             **self.backend.guided_text_state(
@@ -580,7 +554,6 @@ class Guided:
                 set(outputs).intersection(native["selected"]) - set(applied)
             ),
             "runtime_edited": edited,
-            "review_current": current,
             "text_fit": {
                 "pending": self.text_fit.pending(project_id),
                 "waiting": self.text_fit.waiting(project_id),

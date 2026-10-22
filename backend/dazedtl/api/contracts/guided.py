@@ -771,7 +771,6 @@ class Readiness(TypedDict):
     applied: list[str]
     unapplied: list[str]
     runtime_edited: list[str]
-    review_current: bool
     text_fit: TextFitState
     delivery_available: bool
 
