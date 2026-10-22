@@ -11,3 +11,4 @@
 - **Inspect run:** an open Choose request list stays under its field when a row appears above the field, instead of staying put and covering it.
 - **Translate:** a task no longer shows its done mark while files still read **Ready to apply**, such as after **Start over** or a new **Other event text** run, and **Other event text** no longer reads files only **Maps & events** translated as **Applied** with no lines.
 - **Assistant-led:** the game folder notice looks like the one in Guided steps (an amber note, not a red banner), and a game update stopped partway says "A game update was interrupted. Finish the interrupted update, or cancel it, under Checkpoints to continue." instead of "unfinished Git cherry-pick".
+- **Line widths:** unsaved width edits can be undone with **Discard draft**, as in Guidance.
