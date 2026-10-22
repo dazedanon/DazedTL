@@ -565,13 +565,12 @@ function releasing({ patch = false } = {}) {
         // The release changes a profile and describes an armor, and every
         // other translation stays. Set up's own files, such as Forge, are
         // none of its changes. VX Ace's archive patch also changes their
-        // Data files and, until its Scripts.rvdata2 is staged as Set up
-        // left it, that one too.
+        // Data files.
         if (
           count("removed") ||
           review.includes("applying it removes them") ||
           /Forge|plugins\.js/.test(review) ||
-          files > (patch ? 5 : 2) ||
+          files > (patch ? 4 : 2) ||
           lines < 1 ||
           lines > 3 ||
           stay < 1
