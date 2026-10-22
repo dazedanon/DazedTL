@@ -86,6 +86,12 @@ gh run download <run id> -n logs
 
 The ref must be pushed to GitHub, and the workflow file must be on `main` before GitHub offers it.
 
+Wait for a commit's CI with `node scripts/ci-wait.mjs <sha> [--branch <b>]`, never with `gh run watch` or a `gh run list` loop.
+Parallel sessions share GitHub's 5,000-call hourly API limit, which those commands exhaust.
+The script checks the run's status every 30 s with conditional requests (a 304 is free), follows a newer run when a later push cancels the run, sleeps until the reset when few calls are left, and on a failure prints the failed jobs and the `gh run view --log-failed` command.
+It exits 0 when CI passed.
+`scripts/release.mjs` waits through the same module.
+
 ## Previous-release QA check
 
 `node scripts/qa-upgrade.mjs` checks that a release keeps the [Text QA work](architecture.md#persistence-and-settings) the previous one saved.

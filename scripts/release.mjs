@@ -12,7 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { setTimeout as delay } from "node:timers/promises";
+import { githubReader, ghToken, waitForCI } from "./ci-wait.mjs";
 import { root } from "./dependencies.mjs";
 import {
   CHANGELOG,
@@ -160,23 +160,6 @@ function checkRemote() {
     );
 }
 
-/** A GitHub API read, or null when GitHub has no such object. */
-async function github(route) {
-  const response = await fetch(`https://api.github.com/${route}`, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      "User-Agent": "DazedTL release",
-    },
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (response.status === 404 || response.status === 422) return null;
-  if (!response.ok)
-    throw new Error(
-      `GitHub answered ${response.status} while checking CI. Try again later.`,
-    );
-  return response.json();
-}
-
 /**
  * Requires the CI workflow to have passed on GitHub for `commit`, pushing
  * dev there first when GitHub does not have it, so main only moves to commits
@@ -190,50 +173,30 @@ export async function requireCI(commit, push) {
   if (!site) throw new Error("release/mirrors.json names no GitHub mirror.");
   const repository = new URL(site.url).pathname.replace(/^\/|\.git$/g, "");
   const short = commit.slice(0, 7);
-  if (!(await github(`repos/${repository}/commits/${commit}`))) {
+  const read = githubReader({ token: ghToken(), log: console.log });
+  if (!(await read(`repos/${repository}/commits/${commit}`))) {
     if (!push)
       throw new Error(`Push dev to GitHub so CI can test ${short} first.`);
     step("git", ["push", remote, "dev"]);
   }
-  const started = Date.now();
-  let shown = "";
-  for (;;) {
-    const found = await github(
-      `repos/${repository}/actions/runs?head_sha=${commit}&per_page=50`,
-    );
-    const run = (found?.workflow_runs || [])
-      .filter((item) => item.path === ".github/workflows/ci.yml")
-      .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0];
-    if (run?.status === "completed") {
-      if (run.conclusion === "success") {
-        console.log(`CI passed for ${short}.`);
-        return;
-      }
-      const jobs = await github(
-        `repos/${repository}/actions/runs/${run.id}/jobs`,
-      );
-      const failed = (jobs?.jobs || [])
-        .filter((job) => job.conclusion !== "success")
-        .map((job) => job.name);
-      throw new Error(
-        [
-          `CI ${run.conclusion === "failure" ? "failed" : `ended as ${run.conclusion}`} for ${short}${failed.length ? `: ${failed.join(", ")}` : ""}.`,
-          run.html_url,
-          "Fix it on dev, or rerun it there if it failed for an unrelated reason, then release again.",
-        ].join("\n"),
-      );
-    }
-    if (!run && Date.now() - started > 5 * 60_000)
-      throw new Error(`CI did not start for ${short} on GitHub.`);
-    if (Date.now() - started > 60 * 60_000)
-      throw new Error(`CI for ${short} did not finish within an hour.`);
-    const status = run
-      ? `${run.status.replace("_", " ")}: ${run.html_url}`
-      : "waiting to start";
-    if (status !== shown) console.log(`CI for ${short} is ${status}`);
-    shown = status;
-    await delay(30_000);
+  const result = await waitForCI({
+    sha: commit,
+    repository,
+    read,
+    log: console.log,
+  });
+  if (result.ok) {
+    console.log(`CI passed for ${short}.`);
+    return;
   }
+  if (!result.run) throw new Error(result.reason);
+  throw new Error(
+    [
+      `CI ${result.run.conclusion === "failure" ? "failed" : `ended as ${result.run.conclusion}`} for ${short}${result.failed.length ? `: ${result.failed.join(", ")}` : ""}.`,
+      result.run.html_url,
+      "Fix it on dev, or rerun it there if it failed for an unrelated reason, then release again.",
+    ].join("\n"),
+  );
 }
 
 /** Hashes the staged blobs, which are exactly what the mirrors archive. */
