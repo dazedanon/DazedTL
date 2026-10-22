@@ -301,12 +301,11 @@ export function settledWithoutRequests(
  * working copy, as a game update does, so its translated copy still holds the
  * old text and the backend refuses it until Reload from game.
  */
+export const reloadFirst = "Reload changed files from the game first.";
 export const reloadBeforeApply = (
   files: readonly string[],
   changed: readonly string[],
-) =>
-  files.some((name) => changed.includes(name)) &&
-  "Reload changed files from the game first.";
+) => files.some((name) => changed.includes(name)) && reloadFirst;
 /** Why applying a run's own saved output is unavailable: the files it
  * reapplies, its outputs among its files, include one the game changed. */
 export const reloadBeforeRunApply = (job: Job, changed: readonly string[]) =>
