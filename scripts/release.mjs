@@ -114,7 +114,7 @@ function signingKey() {
  * one mirror match: git@ssh.gitgud.io:DazedAnon/DazedTL.git and
  * https://gitgud.io/DazedAnon/DazedTL both give gitgud.io/dazedanon/dazedtl.
  */
-function repository(url) {
+export function repository(url) {
   const scp = /^[^@/]+@([^:/]+):(.+)$/.exec(url);
   let host = scp?.[1];
   let pathname = scp?.[2];

@@ -174,6 +174,19 @@ Releases are signed with a key kept outside the checkout.
 Create it once with `node scripts/release.mjs key`, commit the public key it adds to `release/keys`, and back up the private key: installs reject releases signed by any key they do not trust.
 Set `DAZEDTL_RELEASE_KEY` to keep the private key somewhere else.
 
+### Landing
+
+`node scripts/land.mjs` lands a finished branch on `dev` from its worktree, one landing at a time.
+It refuses `dev`, `main` and uncommitted changes, waits while your own DazedTL runs from the main checkout, then takes the lock `.git/dazedtl/land.lock`, taking it over when its holder has gone or held it over 20 minutes.
+Under the lock it merges `dev` into the branch, runs the tests and build checks, fast-forwards the main checkout's `dev` and pushes it to each mirror, trying a refused push again a minute later; a mirror that still refuses is reported and the landing still counts.
+In that merge, both sides' [release notes](#release-notes) join under their headings through [changelog.mjs](../scripts/changelog.mjs), and conflicts only in the [generated API contracts](architecture.md#api-changes) are resolved by writing them again; any other conflict stops it with exit code 2.
+
+[CI](#live-test) runs on `dev` after the push, not on the branch.
+Before landing, the script reads `dev`'s newest run: a first failed attempt gets one rerun of its failed jobs, and a failure after the rerun stops the landing with exit code 4 and makes its session own the red build, recorded in `.git/dazedtl/ci-red.json`.
+That session fixes it forward or reverts the commit that broke it on its branch, then lands with `--fix-ci`, which clears the claim; meanwhile other landings warn and go on.
+A claim lapses after two hours or once its branch is deleted.
+To run CI on a branch before landing, use `gh workflow run CI --ref <branch>` and wait with `ci-wait.mjs`.
+
 ### Release notes
 
 Every stable release needs notes for users, and `release.mjs` stops until [release/notes.md](../release/notes.md) has them.

@@ -1,0 +1,3 @@
+# Pending release notes merge by kind through scripts/changelog.mjs, which
+# scripts/land.mjs names as the driver; elsewhere Git merges them as text.
+release/notes.md merge=dazedtl-notes

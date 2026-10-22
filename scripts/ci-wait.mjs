@@ -9,7 +9,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 
 export const defaultRepository = "dazedanon/DazedTL";
-const workflow = ".github/workflows/ci.yml";
+export const workflow = ".github/workflows/ci.yml";
 const lowCalls = 50;
 
 /** A GitHub API reader that sends If-None-Match and pauses near the limit. */
@@ -60,6 +60,44 @@ export function githubReader({
       return body;
     }
   };
+}
+
+/** Asks GitHub to do something, such as rerun a run's failed jobs. */
+export function githubWriter({ token, fetchImpl = fetch }) {
+  return async function post(route) {
+    const response = await fetchImpl(`https://api.github.com/${route}`, {
+      method: "POST",
+      headers: {
+        Accept: "application/vnd.github+json",
+        "User-Agent": "DazedTL ci-wait",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok)
+      throw new Error(`GitHub answered ${response.status} for ${route}.`);
+  };
+}
+
+/** Whether a finished run failed, rather than passed or was cancelled. */
+export const failedRun = (run) =>
+  ["failure", "timed_out", "startup_failure"].includes(run?.conclusion);
+
+/**
+ * Whether a run failed on its first attempt. It gets one rerun of its failed
+ * jobs, since most first failures are Windows flakes; a second is real.
+ */
+export const firstFailure = (run) =>
+  failedRun(run) && (run.run_attempt ?? 1) === 1;
+
+/** The names of a finished run's jobs that did not pass. */
+export async function failedJobs(read, repository, run) {
+  const jobs = await read(
+    `repos/${repository}/actions/runs/${run.id}/jobs?per_page=100`,
+  );
+  return (jobs?.jobs || [])
+    .filter((job) => !["success", "skipped"].includes(job.conclusion))
+    .map((job) => job.name);
 }
 
 /**
@@ -121,13 +159,11 @@ export async function waitForCI({
         }
       }
       if (run.conclusion === "success") return { ok: true, run, failed: [] };
-      const jobs = await read(
-        `repos/${repository}/actions/runs/${run.id}/jobs?per_page=100`,
-      );
-      const failed = (jobs?.jobs || [])
-        .filter((job) => !["success", "skipped"].includes(job.conclusion))
-        .map((job) => job.name);
-      return { ok: false, run, failed };
+      return {
+        ok: false,
+        run,
+        failed: await failedJobs(read, repository, run),
+      };
     }
     const elapsed = now() - started;
     if (!run && elapsed > startTimeout)

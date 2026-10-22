@@ -2,6 +2,7 @@
 // (https://keepachangelog.com/en/1.1.0/). The next release's notes wait in
 // release/notes.md; scripts/release.mjs files them under their version, so
 // nobody edits CHANGELOG.md by hand.
+import fs from "node:fs";
 
 export const CHANGELOG = "CHANGELOG.md";
 export const NOTES = "release/notes.md";
@@ -82,6 +83,39 @@ export const formatSections = (sections) =>
     .join("\n");
 
 /**
+ * Merges two branches' pending notes by kind: `theirs` keeps its lines, less
+ * those `ours` removed or reworded, and gains the lines `ours` added under
+ * their own headings. Git's line merges would misfile one branch's Fixed line
+ * under the other's new Added heading, repeat headings, or bring back lines a
+ * release filed away. Refuses notes parseNotes refuses.
+ * @param {string} base The notes where the branches parted.
+ * @param {string} ours
+ * @param {string} theirs
+ */
+export function mergeNotes(base, ours, theirs) {
+  const lines = (/** @type {string} */ text) =>
+    parseNotes(text).flatMap(({ kind, items }) =>
+      items.map((text) => `${kind}\n${text}`),
+    );
+  const before = new Set(lines(base));
+  const kept = new Set(lines(ours));
+  const merged = lines(theirs).filter(
+    (line) => kept.has(line) || !before.has(line),
+  );
+  for (const line of kept)
+    if (!before.has(line) && !merged.includes(line)) merged.push(line);
+  const sections = KINDS.map((kind) => ({
+    kind,
+    items: merged
+      .filter((line) => line.startsWith(`${kind}\n`))
+      .map((line) => line.slice(kind.length + 1)),
+  })).filter((section) => section.items.length);
+  return sections.length
+    ? `${notesTemplate}\n${formatSections(sections)}`
+    : notesTemplate;
+}
+
+/**
  * Every release CHANGELOG.md lists, newest first.
  * @param {string} text
  * @returns {Release[]}
@@ -133,4 +167,19 @@ export function addRelease(text, { version, date, sections, link }) {
   ]
     .filter(Boolean)
     .join("\n\n")}\n`;
+}
+
+// Git's merge driver for release/notes.md, which scripts/land.mjs names when
+// it merges dev: node scripts/changelog.mjs merge <base> <ours> <theirs>
+// writes the merged notes over <ours>; notes it cannot read stay a conflict.
+if (import.meta.main && process.argv[2] === "merge") {
+  const [base, ours, theirs] = process.argv
+    .slice(3)
+    .map((file) => fs.readFileSync(file, "utf8"));
+  try {
+    fs.writeFileSync(process.argv[4], mergeNotes(base, ours, theirs));
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  }
 }
