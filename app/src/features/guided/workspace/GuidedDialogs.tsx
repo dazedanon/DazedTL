@@ -19,6 +19,7 @@ export function GuidedDialogs({ w }: { w: GuidedWorkspace }) {
   const {
     project,
     state,
+    changed,
     application,
     action,
     submission,
@@ -80,6 +81,7 @@ export function GuidedDialogs({ w }: { w: GuidedWorkspace }) {
                 }
           }
           disabled={disabled || !baseline}
+          changed={changed}
           applied={(() => {
             const startedJob =
               inspected &&

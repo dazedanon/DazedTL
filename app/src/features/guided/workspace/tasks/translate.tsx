@@ -13,6 +13,7 @@ import {
   estimateEmpty,
   phaseRun,
   reloadBeforeApply,
+  reloadFirst,
   savedTranslations,
   translationStopLabel,
   unconfirmedSubmission,
@@ -233,6 +234,15 @@ export function phaseView(w: GuidedWorkspace): TaskView {
       )}
     </TranslateWorkspace>
   );
+  // Why Apply is unavailable, shown beside it.
+  const applyBlocked =
+    !baseline ||
+    !!state.collectionError ||
+    (w.archiveRead && "Convert Ace data in Set up first.") ||
+    reloadBeforeApply(applyFiles, changed) ||
+    // The files' rows read Applied, so Apply has nothing to do.
+    (applyFiles.every((name) => appliedOutputs.includes(name)) &&
+      "Saved translations applied.");
   const guidance = !selectedNames.length
     ? "Select files to translate."
     : !baseline
@@ -247,13 +257,19 @@ export function phaseView(w: GuidedWorkspace): TaskView {
                 ["failed", "interrupted", "stopped"].includes(current.status)
               ? current.message ||
                 "Preparation did not finish. Click Translate to try again."
-              : pendingBatches.some((run) => !unconfirmedSubmission(run))
-                ? applyFiles.length
-                  ? "Earlier Batches are available in Run history. You can apply saved output."
-                  : "Earlier Batches are available in Run history. Translate starts a new estimate."
-                : noRemainingWork
-                  ? "Checked these files: no new API requests are needed."
-                  : "Translate prepares an estimate for your approval.";
+              : changed.length
+                ? // A changed file keeps Translate unavailable; Apply says so
+                  // beside itself when it would write one.
+                  applyFiles.length && applyBlocked === reloadFirst
+                  ? ""
+                  : reloadFirst
+                : pendingBatches.some((run) => !unconfirmedSubmission(run))
+                  ? applyFiles.length
+                    ? "Earlier Batches are available in Run history. You can apply saved output."
+                    : "Earlier Batches are available in Run history. Translate starts a new estimate."
+                  : noRemainingWork
+                    ? "Checked these files: no new API requests are needed."
+                    : "Translate prepares an estimate for your approval.";
   const footerGuidance =
     (runNotices.includes(action.key) && action.notice) ||
     translationFlow.notice ||
@@ -296,13 +312,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
           "export_selected",
           `Apply (${applyFiles.length})`,
           {},
-          !baseline ||
-            !!state.collectionError ||
-            (w.archiveRead && "Convert Ace data in Set up first.") ||
-            reloadBeforeApply(applyFiles, changed) ||
-            // The files' rows read Applied, so Apply has nothing to do.
-            (applyFiles.every((name) => appliedOutputs.includes(name)) &&
-              "Saved translations applied."),
+          applyBlocked,
           "default",
           applyFiles,
         )}

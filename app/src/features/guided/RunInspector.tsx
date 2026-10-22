@@ -17,7 +17,7 @@ import { InspectedFile } from "./InspectedFile";
 import { RunLog } from "./RunTechnical";
 import { batchOutcome, canRetrySaving, canReapplyRun } from "./batchView";
 import type { RequestBatch } from "./requestView";
-import { observedRun } from "./translationView";
+import { observedRun, reloadBeforeRunApply } from "./translationView";
 import { operationSummary } from "./historyView";
 import { useOnChange } from "../../state/useOnChange";
 import { useRead } from "../../state/useRead";
@@ -33,6 +33,7 @@ export function RunInspector({
   details,
   reapply,
   applied,
+  changed,
   disabled,
 }: {
   projectId: string;
@@ -48,6 +49,8 @@ export function RunInspector({
   details?: ReactNode;
   reapply: (job: Job) => Promise<void>;
   applied?: Job;
+  /** Files the game changed since their working copies, which Apply refuses. */
+  changed: readonly string[];
   disabled: boolean;
 }) {
   const application = useApplication();
@@ -87,20 +90,27 @@ export function RunInspector({
     !!job?.process && job.mode === "translate" && job.status === "complete";
   // Reapplying publishes a complete run's retained output through its own
   // Apply review; Batch runs offer it beside their batches, Live in the header.
+  // Reapplying a file the game changed would put old text over it.
+  const reload = job && reloadBeforeRunApply(job, changed);
   const reapplyControl = (label: string) =>
     job && (
       <ActionControl
         label={label}
         variant="quiet"
-        disabled={disabled || action.busy || !canReapplyRun(job)}
+        disabled={disabled || action.busy || !canReapplyRun(job) || !!reload}
+        disabledReason={reload || ""}
         {...feedback("reapply", "Preparing saved output…")}
         title={
           !canReapplyRun(job)
             ? "Saved output is unavailable for this run."
-            : "Review and apply this run’s saved output to the game."
+            : reload || "Review and apply this run’s saved output to the game."
         }
         job={applied?.status === "complete" ? undefined : applied}
-        notice={applied?.status === "complete" ? "Saved output applied." : ""}
+        notice={
+          applied?.status === "complete" && !reload
+            ? "Saved output applied."
+            : ""
+        }
         onClick={() => action.run(() => reapply(job), "", "reapply")}
       />
     );

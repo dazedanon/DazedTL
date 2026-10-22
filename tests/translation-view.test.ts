@@ -23,6 +23,7 @@ import {
   fileLines,
   fileStatus,
   phaseRun,
+  reloadBeforeRunApply,
   savedTranslations,
   settledWithoutRequests,
   translatedFiles,
@@ -1508,6 +1509,13 @@ test("an Other event text pass without requests reads Done only for files none o
     "Map001.json",
     "Troops.json",
   ]);
+  // Reapplying a run is unavailable while a file it would write changed in
+  // the game, which the backend refuses; other changed files leave it be.
+  assert.equal(
+    reloadBeforeRunApply(rerun, ["Map001.json"]),
+    "Reload changed files from the game first.",
+  );
+  assert.equal(reloadBeforeRunApply(rerun, ["Items.json"]), false);
   // A refusal note an earlier run saved in its event text leaves the file
   // to translate again, however finished its run reads.
   assert.equal(

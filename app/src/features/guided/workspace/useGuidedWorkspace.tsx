@@ -42,7 +42,11 @@ import {
 } from "../eventTextSelection";
 import { guidanceNames } from "../guidanceReview";
 import { historyOutcome } from "../historyView";
-import { activeRun, observedRun } from "../translationView";
+import {
+  activeRun,
+  observedRun,
+  reloadBeforeRunApply,
+} from "../translationView";
 import { useContextDraft } from "../useContextDraft";
 import { useGuidedWorkflow } from "../useGuidedWorkflow";
 import { useTranslationFlow } from "../useTranslationFlow";
@@ -1453,17 +1457,22 @@ export function useGuidedWorkspace({
     original: fields.untranslated ? "" : fields.original,
     untranslated: fields.untranslated,
   });
-  const applyRun = (current: Job) => (
-    <Button
-      variant="primary"
-      disabled={disabled || !current.outputsAvailable || !baseline}
-      onClick={() =>
-        review("export_selected", {}, Object.keys(current.outputs || {}))
-      }
-    >
-      Apply translated output
-    </Button>
-  );
+  const applyRun = (current: Job) => {
+    const files = Object.keys(current.outputs || {});
+    const reload = reloadBeforeRunApply(current, changed);
+    return (
+      <ActionControl
+        label="Apply translated output"
+        variant="primary"
+        {...feedback(actionKey("export_selected"), "Preparing action…")}
+        disabled={
+          disabled || !current.outputsAvailable || !baseline || !!reload
+        }
+        disabledReason={reload || ""}
+        onClick={() => review("export_selected", {}, files)}
+      />
+    );
+  };
   const nextRun = (current: Job) => {
     // Maps & events leads past Other event text when its sources leave
     // nothing to translate.
