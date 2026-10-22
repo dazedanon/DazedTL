@@ -1,6 +1,5 @@
 """Automatic reads/collection cannot resume unsent work or hold the API lock."""
 
-import sys
 import threading
 import unittest
 from copy import deepcopy
@@ -14,6 +13,8 @@ from dazedtl.compatibility import batch_control
 from dazedtl.storage import write_json
 from dazedtl.translation.batch_monitor import BatchMonitor
 from dazedtl.translation.files import read_json
+
+from tests.engine import replaced_modules
 
 
 class BatchMonitorTests(unittest.TestCase):
@@ -204,7 +205,7 @@ class BatchMonitorTests(unittest.TestCase):
                     patch.object(
                         batch_control, "TranslationProvider", return_value=provider
                     ),
-                    patch.dict(sys.modules, {"util.batch_providers": module}),
+                    replaced_modules({"util.batch_providers": module}),
                 ):
                     monitor.tick()
                     monitor.backend.manual.consume_batch.assert_not_called()
@@ -335,8 +336,7 @@ class BatchMonitorTests(unittest.TestCase):
         waiting = {"ready": False, "batches": [{"id": "retry", "items": [{}]}]}
         outcomes = iter([waiting, {"ready": True, "batches": []}])
         with (
-            patch.dict(
-                sys.modules,
+            replaced_modules(
                 {
                     "util": engine,
                     "util.translation_task": tasks,

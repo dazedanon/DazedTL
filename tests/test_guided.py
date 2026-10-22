@@ -3,7 +3,6 @@
 import json
 import os
 import shutil
-import sys
 import unittest
 from copy import deepcopy
 from pathlib import Path
@@ -28,7 +27,7 @@ from dazedtl.translation.guided import Guided, retained_position
 from dazedtl.translation.guided_inputs import GuidedInputs
 from dazedtl.translation.release import packing_state
 
-from tests.engine import engine_module
+from tests.engine import engine_module, replaced_modules
 from tests.game_writes import game_write
 
 custom_patterns = engine_module("util/custom_patterns.py")
@@ -991,7 +990,7 @@ class GuidedTests(unittest.TestCase):
             "translation_branch": "main",
         }
         self.translation.engine.git_status = lambda *_: git
-        with patch.dict("sys.modules", {"util.translation": fake}):
+        with replaced_modules({"util.translation": fake}):
             self.guided.runs.publish_names(self.identity, self.native)
             drafts.clear()
             job["dazedtl_batch_approval"] = {"requests": 1}
@@ -1715,7 +1714,6 @@ class GuidedTests(unittest.TestCase):
     def test_reapply_run_freezes_owned_history_outputs_without_using_current_selection(
         self,
     ):
-        import sys
         from types import ModuleType
 
         from dazedtl.compatibility.dazedmtl import ExistingBackend
@@ -1776,7 +1774,7 @@ class GuidedTests(unittest.TestCase):
         actions.action_guard = lambda *_: {
             "data": self.backend.guided_guard(self.native, self.folder)
         }
-        with patch.dict(sys.modules, {"desktop.backend.workflow_actions": actions}):
+        with replaced_modules({"desktop.backend.workflow_actions": actions}):
             review = self.guided.preview(
                 self.identity, "export_selected", options={"run_id": identity}
             )
@@ -3055,7 +3053,7 @@ class GuidedTests(unittest.TestCase):
         )
         with (
             patch.object(batch_control, "TranslationProvider", return_value=provider),
-            patch.dict(sys.modules, {"util.batch_providers": native}),
+            replaced_modules({"util.batch_providers": native}),
         ):
             review = self.guided.batch_cancel_preview(
                 self.identity, job["id"], batch["id"]
@@ -4220,7 +4218,6 @@ class GuidedTests(unittest.TestCase):
         )
 
     def test_apply_and_new_line_widths_fit_translated_text(self):
-        import sys
         from types import ModuleType
 
         from dazedtl.compatibility.text import (
@@ -4270,7 +4267,7 @@ class GuidedTests(unittest.TestCase):
                 "guard": {},
             }
 
-        with patch.dict(sys.modules, {"desktop.backend.workflow_actions": actions}):
+        with replaced_modules({"desktop.backend.workflow_actions": actions}):
             apply = plan("export_selected", {"files": ["Items.json"]})
             prepare_publication(apply)
             run_publication(apply, lambda _: None)

@@ -16,6 +16,8 @@ from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation import publication as p
 from dazedtl.translation.files import read_json
 
+from tests.engine import replaced_modules
+
 
 class PublicationTests(unittest.TestCase):
     def setUp(self):
@@ -437,7 +439,6 @@ class PublicationTests(unittest.TestCase):
         # Engine findings carry extra engine fields; passing them through broke
         # the workspace snapshot contract. Corrections come from the findings.
         import json
-        import sys
         from types import ModuleType, SimpleNamespace
 
         from dazedtl.api.contracts.guided import QaState
@@ -569,7 +570,7 @@ class PublicationTests(unittest.TestCase):
         )
         package = ModuleType("util")
         package.rpgmaker_qa = engine
-        with patch.dict(sys.modules, {"util": package, "util.rpgmaker_qa": engine}):
+        with replaced_modules({"util": package, "util.rpgmaker_qa": engine}):
             state = text.qa_state(plan)
         _close_contracts()
         TypeAdapter(QaState).validate_json(json.dumps(state), strict=True)
@@ -634,7 +635,7 @@ class PublicationTests(unittest.TestCase):
                     findings=["QA-0001", "QA-0002"] if task_path else None,
                 ),
             )
-            with patch.dict(sys.modules, {"util": package, "util.rpgmaker_qa": engine}):
+            with replaced_modules({"util": package, "util.rpgmaker_qa": engine}):
                 applied.append(text.qa_state(plan)["applied"])
         self.assertEqual(applied, [False, True, True])
         # A follow-up round's finding, made after the apply, waits to be
@@ -642,7 +643,7 @@ class PublicationTests(unittest.TestCase):
         document = read_json(task_dir / "findings.json")
         document["findings"].append({**document["findings"][0], "id": "QA-0003"})
         write_json(task_dir / "findings.json", document)
-        with patch.dict(sys.modules, {"util": package, "util.rpgmaker_qa": engine}):
+        with replaced_modules({"util": package, "util.rpgmaker_qa": engine}):
             state = text.qa_state(plan)
         self.assertFalse(state["applied"])
         self.assertEqual(
@@ -653,7 +654,7 @@ class PublicationTests(unittest.TestCase):
         # once its corrections were undone, with no way to apply them again;
         # only a task still in review prepares again for new plugins.
         plugins = {**plan, "guard": {"plugins": "changed"}}
-        with patch.dict(sys.modules, {"util": package, "util.rpgmaker_qa": engine}):
+        with replaced_modules({"util": package, "util.rpgmaker_qa": engine}):
             finished = text.qa_state(plugins)
             engine.status = lambda root: {"stage": "ready-finalize"}
             reviewing = text.qa_state(plugins)
@@ -673,7 +674,7 @@ class PublicationTests(unittest.TestCase):
             raise PermissionError(13, "Permission denied", str(path))
 
         log = []
-        with patch.dict(sys.modules, {"util": package, "util.rpgmaker_qa": engine}):
+        with replaced_modules({"util": package, "util.rpgmaker_qa": engine}):
             text._set_aside(plan, log.append)
             self.assertEqual((log, task_dir.is_dir()), ([], True))
             engine.read_task = denied

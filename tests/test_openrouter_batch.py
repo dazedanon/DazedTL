@@ -1,13 +1,11 @@
 """Inline transport, retained receipts, and absolute Batch prices without APIs."""
 
 import json
-import sys
 import unittest
 from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import ModuleType, SimpleNamespace
-from unittest.mock import patch
 
 import httpx
 from dazedtl.compatibility import openrouter_batch as batch
@@ -16,7 +14,7 @@ from dazedtl.settings import openrouter
 from dazedtl.translation.files import digest, read_json
 from dazedtl.translation.requests import quote
 
-from tests.engine import EXTENSIONS, engine_module, point
+from tests.engine import EXTENSIONS, engine_module, point, replaced_modules
 
 MODEL = "author/model"
 POLICY = {
@@ -71,8 +69,7 @@ class OpenRouterBatchTests(unittest.TestCase):
         # real runtime installation in its already-budgeted isolated process.
         cls.package = ModuleType("util")
         cls.package.extensions = EXTENSIONS
-        with patch.dict(
-            sys.modules,
+        with replaced_modules(
             {
                 "anthropic": ModuleType("anthropic"),
                 "openai": ModuleType("openai"),
@@ -85,8 +82,7 @@ class OpenRouterBatchTests(unittest.TestCase):
             )
 
     def setUp(self):
-        self.modules = patch.dict(
-            sys.modules,
+        self.modules = replaced_modules(
             {
                 "util": self.package,
                 "util.batch_providers": self.native,
@@ -457,7 +453,7 @@ class OpenRouterBatchTests(unittest.TestCase):
                 lambda *_: ((100 + 30 * 0.1 + 10) * 2 + 20 * 8) * 0.5 / 1_000_000
             ),
         )
-        with patch.dict(sys.modules, {"util.batch_history": history}):
+        with replaced_modules({"util.batch_history": history}):
             for _ in range(2):
                 openrouter_pricing.configure(translation, POLICY)
                 self.assertEqual(

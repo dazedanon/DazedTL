@@ -17,7 +17,7 @@ from dazedtl.settings.store import Settings
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest
 
-from tests.engine import point
+from tests.engine import point, replaced_modules
 
 
 class ProcessTests(unittest.TestCase):
@@ -1395,7 +1395,7 @@ class ProcessTests(unittest.TestCase):
                 ),
             )
             provider = SimpleNamespace(_openai_batch_body=lambda _p, params: params)
-            with patch.dict("sys.modules", {"util.batch_providers": provider}):
+            with replaced_modules({"util.batch_providers": provider}):
                 self.assertEqual(
                     [
                         (value["source"], value["total"])
@@ -1874,8 +1874,7 @@ class ProcessTests(unittest.TestCase):
             native._clear_run_batch_queue(queue_file=queue_file)
             result_file.unlink()
             state_file.unlink()
-            with patch.dict(
-                "sys.modules",
+            with replaced_modules(
                 {
                     "util.batch_providers": SimpleNamespace(
                         _openai_batch_body=lambda _p, params: params
@@ -1944,7 +1943,7 @@ class ProcessTests(unittest.TestCase):
             self.assertEqual(len(request_scope.overlap(new, estimate, [(old, job)])), 1)
             # The reader must not call a possibly paid request unsent.
             provider = SimpleNamespace(_openai_batch_body=lambda _p, params: params)
-            with patch.dict("sys.modules", {"util.batch_providers": provider}):
+            with replaced_modules({"util.batch_providers": provider}):
                 self.assertEqual(
                     process_view.payload(old, 0, job)["state"], "uncertain"
                 )
@@ -2163,7 +2162,7 @@ class ProcessTests(unittest.TestCase):
             provider = SimpleNamespace(
                 _openai_batch_body=lambda _provider, params: params
             )
-            with patch.dict("sys.modules", {"util.batch_providers": provider}):
+            with replaced_modules({"util.batch_providers": provider}):
                 self.assertEqual(process_view.payload(root, 0)["state"], "uncertain")
             pending_batch = process_view.saved(root, "batch_history.json")["batches"][0]
             rejected_batch = {
@@ -2198,7 +2197,7 @@ class ProcessTests(unittest.TestCase):
                 known = process_view.summary(root, {"mode": "batch"})
                 self.assertTrue(known["retryBlocked"])
                 self.assertEqual(known["uncertain"], 0)
-                with patch.dict("sys.modules", {"util.batch_providers": provider}):
+                with replaced_modules({"util.batch_providers": provider}):
                     self.assertEqual(
                         process_view.payload(root, 0)["state"], "submitted"
                     )
@@ -2250,7 +2249,7 @@ class ProcessTests(unittest.TestCase):
             provider = SimpleNamespace(
                 _openai_batch_body=lambda _provider, params: params
             )
-            with patch.dict("sys.modules", {"util.batch_providers": provider}):
+            with replaced_modules({"util.batch_providers": provider}):
                 self.assertEqual(
                     process_view.payload(root, 0)["exact"]["custom_id"], "req-000000"
                 )
@@ -2381,7 +2380,7 @@ class ProcessTests(unittest.TestCase):
                     )
                 ),
             )
-            with patch.dict("sys.modules", {"util": package}):
+            with replaced_modules({"util": package}):
                 result = process_view.provider_details(root, resolve)
             error = result["batches"][0]["errors"][0]
             self.assertEqual(
@@ -2411,7 +2410,7 @@ class ProcessTests(unittest.TestCase):
                 baseline = deepcopy(current)
                 change()
                 with (
-                    patch.dict("sys.modules", {"util": package}),
+                    replaced_modules({"util": package}),
                     self.assertRaises(ValueError),
                 ):
                     process_view.provider_details(root, resolve)

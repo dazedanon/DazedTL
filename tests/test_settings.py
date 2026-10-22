@@ -1,7 +1,6 @@
 """Per-model limits stay with their connection and the approved run."""
 
 import json
-import sys
 import threading
 import time
 import unittest
@@ -18,6 +17,8 @@ from dazedtl.settings import openrouter, preferences, providers
 from dazedtl.settings.execution import configuration, worker_secret
 from dazedtl.settings.store import Settings
 from dazedtl.storage import write_json
+
+from tests.engine import replaced_modules
 
 
 class SettingsTests(unittest.TestCase):
@@ -1273,8 +1274,8 @@ class SettingsTests(unittest.TestCase):
         batches.batch_limits = lambda _: (50_000, 200_000_000)
         engine = TranslationEngine.__new__(TranslationEngine)
         engine.batch_supported = lambda _: "openai"
-        with patch.dict(
-            sys.modules, {item.__name__: item for item in (util, translation, batches)}
+        with replaced_modules(
+            {item.__name__: item for item in (util, translation, batches)}
         ):
             config = {
                 "protocol": "openai",

@@ -5,13 +5,12 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-from unittest.mock import patch
 
 from dazedtl.compatibility import speaker_results
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest
 
-from tests.engine import point
+from tests.engine import point, replaced_modules
 
 
 class SpeakerResultTests(unittest.TestCase):
@@ -224,8 +223,7 @@ class SpeakerResultTests(unittest.TestCase):
             split_vocab_source_aliases=aliases,
             speaker_source_lookup_keys=keys,
         )
-        with patch.dict(
-            "sys.modules",
+        with replaced_modules(
             {
                 "util.translation": fake,
                 "util.vocab": SimpleNamespace(

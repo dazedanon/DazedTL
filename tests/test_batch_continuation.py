@@ -2,21 +2,20 @@
 
 import json
 import sqlite3
-import sys
 import unittest
 from contextlib import closing, nullcontext
 from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import ModuleType, SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from dazedtl.compatibility import batch_continuation as continuation
 from dazedtl.compatibility import batch_refusals
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, read_json
 
-from tests.engine import point
+from tests.engine import point, replaced_modules
 
 
 class BatchContinuationTests(unittest.TestCase):
@@ -176,7 +175,7 @@ class BatchContinuationTests(unittest.TestCase):
                     "params": list(requests.values())[index]["params"],
                 }
 
-            with patch.dict(sys.modules, modules):
+            with replaced_modules(modules):
                 continuation.install_worker(root, plan)
                 self.assertTrue(
                     task.TranslationTask._wait_batch_submit(
@@ -276,7 +275,7 @@ class BatchContinuationTests(unittest.TestCase):
             def send():
                 providers.submit_batch("openai", [request])
 
-            with patch.dict(sys.modules, modules):
+            with replaced_modules(modules):
                 self.assertEqual(states(), ["uncertain", "uncertain"])
                 continuation.install_worker(root, plan)
                 # The engine's own client, then the journaled create's.
@@ -374,8 +373,7 @@ class BatchContinuationTests(unittest.TestCase):
                 root / "log/batch_history.json",
                 {"batches": [{**fields, **row} for row in batches]},
             )
-            with patch.dict(
-                sys.modules,
+            with replaced_modules(
                 {
                     item.__name__: item
                     for item in (util, translation, providers, task, history)

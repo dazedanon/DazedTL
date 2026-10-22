@@ -34,7 +34,7 @@ from dazedtl.storage import write_json
 from dazedtl.translation.compilation import compile_requests
 from dazedtl.translation.files import digest
 
-from tests.engine import ENGINE, engine_module, point
+from tests.engine import ENGINE, engine_module, point, replaced_modules
 from tests.probe import Background, bytecode
 
 # Engine scripts for the tests of the same names below. Each runs in an
@@ -361,7 +361,7 @@ class CompatibilityContracts(unittest.TestCase):
             module.__name__: module
             for module in (desktop, backend, environment, util, translation)
         }
-        with TemporaryDirectory() as temporary, patch.dict(sys.modules, modules):
+        with TemporaryDirectory() as temporary, replaced_modules(modules):
             root = Path(temporary)
             policy = {
                 "version": 1,
@@ -645,9 +645,7 @@ class CompatibilityContracts(unittest.TestCase):
             "model": "fixture-model",
             "messages": [{"role": "user", "content": "Translate this source."}],
         }
-        with patch.dict(
-            sys.modules, {"util": package, "util.batch_providers": providers}
-        ):
+        with replaced_modules({"util": package, "util.batch_providers": providers}):
             for host in ("", "deepinfra"):
                 rows = [
                     {"custom_id": key, "params": host_routing(base, host)}
@@ -1039,8 +1037,7 @@ def parse(codeList, i, headerString, jaString):
             git._run_git = lambda *_args, **_kwargs: SimpleNamespace(
                 returncode=0, stdout="img/title.png\0README.md\0"
             )
-            with patch.dict(
-                sys.modules,
+            with replaced_modules(
                 {module.__name__: module for module in (preparation, scope, git)},
             ):
                 self.assertEqual(
@@ -1147,8 +1144,7 @@ def parse(codeList, i, headerString, jaString):
             )
             workflow = ModuleType("desktop.backend.workflow_actions")
             workflow.validate_plan = lambda _plan: None
-            with patch.dict(
-                sys.modules,
+            with replaced_modules(
                 {"util.ace": converter, "desktop.backend.workflow_actions": workflow},
             ):
                 # The game names its common events file in another case.
@@ -1473,7 +1469,7 @@ class ManualJobs:
                     collected.append(project["manual_job"])
 
             workflow.Workflows = Workflows
-            with patch.dict(sys.modules, {workflow.__name__: workflow}):
+            with replaced_modules({workflow.__name__: workflow}):
                 operations = SimpleNamespace(jobs={})
                 phases = phased_workflows(
                     source / "phases", None, operations, controller
@@ -1616,7 +1612,7 @@ class ManualJobs:
             "folder": "work",
             "guard": {**current, "data": "before edits"},
         }
-        with patch.dict(sys.modules, {actions.__name__: actions}):
+        with replaced_modules({actions.__name__: actions}):
             validate_publication(plan)
             actions.validate_plan.assert_not_called()
             current["translated"] = "different output"
@@ -1693,7 +1689,7 @@ class ManualJobs:
                 }
             ]
         }
-        with patch.dict(sys.modules, modules), TemporaryDirectory() as folder:
+        with replaced_modules(modules), TemporaryDirectory() as folder:
             # A release that only changes the engine's code keeps saved plans.
             engine.source = Path(folder)
             util = engine.source / "util"
@@ -1886,9 +1882,7 @@ class ManualJobs:
         for result in (Update("saved"), Update(None, ("data/Items.json",))):
             with self.subTest(result=result):
                 module.continue_with_official = lambda _source, _release: result
-                with patch.dict(
-                    sys.modules, {"util": package, "util.version_update": module}
-                ):
+                with replaced_modules({"util": package, "util.version_update": module}):
                     value = engine.version(Path("unused"), "continue", {})
                 self.assertEqual(value["complete"], result.complete)
                 self.assertEqual(value["pending_conflicts"], result.pending_conflicts)
