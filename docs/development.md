@@ -59,7 +59,7 @@ Format with `node scripts/format.mjs`; it applies Prettier and Ruff defaults and
 `node scripts/e2e.mjs` installs the checkout the way a user's downloaded ZIP is installed and drives the running app through a translation.
 It copies the files Git would commit, including uncommitted changes, into a doubled `DazedTL-main (1)` folder and runs START with a PATH that has no Node or Python, and on Windows no Git.
 The profile and a copy of the [fixture game](../tests/fixtures/mz-game) sit in folders with spaces and Japanese names; the copy takes the `event-text` and `choice-help` [game variants](#test-scenarios), so Comment text comes on for the menu's choice help.
-Through the window it opens the game, runs Set up, translates and applies the database and the maps with Live translation against a local stand-in provider, stands in for the assistant's Event text sources investigation and translates and applies Other event text, opens Check and runs the Text QA assistant's playtest through the project helper, which checks the files and reports that the fixture game has no engine to play, and builds a patch ZIP.
+Through the window it opens the game, runs Set up, translates and applies the database and the maps with Live translation against a local stand-in provider, stands in for the assistant's Event text sources investigation and translates and applies Other event text, opens Check and runs the Text QA assistant's playtest through the project helper, which checks the files and reports that the fixture game has no engine to play, and builds a patch ZIP, which must hold the translated database and none of DazedTL's own files.
 It then builds a clean game ZIP and checks that its one top folder takes the archive's name, that it holds the translated game and that notes and a spellcheck folder added beside the game stay out.
 Finally it closes the window and expects every app process to exit with no failures in the app's diagnostics, and starts again to check that setup does not repeat.
 Logs, screenshots and the app's diagnostics land in `logs` inside the work folder; `--work <empty folder>` chooses it.
@@ -75,6 +75,11 @@ Its stand-in provider, window driver and journey steps are the [test scenarios']
 [CI](../.github/workflows/ci.yml) runs the build checks, the behavior tests, the [previous-release QA check](#previous-release-qa-check), the live test, the upgrade test from the latest earlier stable release and every [test scenario](#test-scenarios) on Windows and Linux for every pushed branch, every pull request and once a week, and attaches their logs to the run.
 Its jobs share [one setup step](../.github/actions/setup/action.yml) that starts from the install an earlier run cached.
 GitHub's Windows images include the Visual C++ runtime and other tools a fresh Windows lacks, so a change to what setup downloads or unpacks still needs a check on a fresh Windows.
+
+`node scripts/release-check.mjs` is the release check, which a session runs before cutting a release: what CI runs, on this machine, in about three minutes on Linux.
+It runs the build checks and the behavior tests, then the live test, the upgrade test, the previous-release QA check and every scenario CI's workflow lists side by side, each in a private display of its own, and prints one table of what passed and failed with each one's log.
+A check that passes leaves only its log; a failed one keeps its folder beside the logs.
+`--jobs <n>` sets how many run at once (half the processors, at most 10, by default) and `--work <empty folder>` where they run; like the scenarios, it runs outside a sandbox and downloads the runtimes the live tests install.
 
 The [Windows run](../.github/workflows/windows-run.yml) workflow runs one Bash command after setup on a disposable Windows machine and keeps the logs folders under `$WORK`:
 
@@ -159,6 +164,7 @@ Test updater changes with both `patch.ps1` on Windows and `patch.sh` on Linux; t
 
 Work on `dev`; `main` always holds the latest stable release, so a ZIP of `main` from any mirror is a release.
 From a clean `dev`, `node scripts/release.mjs 2.0.1` runs the tests and build checks, fast-forwards `main` to `dev`, sets the version, files the [release notes](#release-notes), signs a manifest of every file, commits and tags `v2.0.1`, pushes `main` and the tag to every mirror and fast-forwards `dev` again.
+Run the [release check](#live-test) on that commit first.
 Before `main` moves, the release requires [CI](#live-test) to have passed on GitHub for that `dev` commit.
 It pushes `dev` first when GitHub lacks the commit and waits for a run still in progress; a failed or cancelled run stops the release.
 A prerelease such as `2.1.0-beta.1` is tagged on `dev` for the Beta channel instead, without waiting for CI, and `--local` stops before pushing.
