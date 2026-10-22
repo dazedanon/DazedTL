@@ -10,9 +10,9 @@ starting prompt begins again from preparation, which finds Git set up. Files
 outside the patch go back to the original recorded before setup
 ([originals](originals.py)), and what Git does not keep moves aside under a
 dated folder: the assistant's work, the playtest's fixes, and files the
-original lacks. Nothing is deleted. Save games, the project's options and
-Image Manager work stay, and the glossary and notes stay unless the user
-lets them go.
+original lacks. Nothing is deleted. Save games, the project's options,
+settings and skills and Image Manager work stay, and the glossary and notes
+stay unless the user lets them go.
 """
 
 import re

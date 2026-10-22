@@ -1075,6 +1075,15 @@ class WorkflowTests(unittest.TestCase):
         )
         glossary = self.game / ".dazedtl/glossary.txt"
         glossary.write_text("Lili (リリ)", encoding="utf-8")
+        # The game's settings, such as Line widths and its GameUpdate record,
+        # and the user's skills are the project's, never the original game's.
+        portable = {
+            self.game / ".dazedtl/settings.json": '{"line_widths": {"x": 1}}',
+            self.game / ".dazedtl/skills/custom.md": "custom skill",
+        }
+        for path, text in portable.items():
+            path.parent.mkdir(exist_ok=True)
+            path.write_text(text, encoding="utf-8")
         self.engine.documents = lambda _source: {"glossary": {"path": str(glossary)}}
         records = self.profile / "translation/projects" / self.identity
         write_json(records / "assistant.json", {"seen_at": "2026-10-08T00:00:00"})
@@ -1119,6 +1128,8 @@ class WorkflowTests(unittest.TestCase):
         self.assertTrue((archive / "playtest/DazedTL_Fixes.js").is_file())
         self.assertTrue(self.project.path.is_file())
         self.assertEqual(glossary.read_text(encoding="utf-8"), "Lili (リリ)")
+        for path, text in portable.items():
+            self.assertEqual(path.read_text(encoding="utf-8"), text)
         self.assertFalse((records / "assistant.json").exists())
         self.assertFalse((self.game / ".dazedtl/backups").exists())
         # A project set up before original files were kept in Git starts

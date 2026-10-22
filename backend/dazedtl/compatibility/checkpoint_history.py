@@ -86,6 +86,14 @@ SAVED = "saved"
 _blocker_cache = RepositoryStatusCache(stable=True)
 
 
+def _project_file(path):
+    """Whether a file of the patch is the project's own, its glossary,
+    settings or skills, never the original game's: going back or undoing
+    takes it back to the checkpoint like any file, while the original game,
+    which Start over puts back, has none of them."""
+    return path.startswith(".dazedtl/")
+
+
 def _trailer(message, key):
     match = re.search(rf"^{re.escape(key)}:\s*(.+?)\s*$", message, re.MULTILINE)
     return match.group(1) if match else None
@@ -487,9 +495,8 @@ class _Game:
             return self.recorded[path]
         if self.saved is not None and path in self.saved.files:
             return (SAVED, path)
-        # The glossary, settings and skills are DazedTL's, never the
-        # original game's, so one the target lacked didn't exist then.
-        if path.startswith(".dazedtl/"):
+        # One the target lacked didn't exist then.
+        if _project_file(path):
             return None
         return None if self.complete else "keep"
 
@@ -653,8 +660,9 @@ def tracked(root):
 
 def to_original(game, keep=lambda _path: False, stopped=lambda: False, original=None):
     """Inside a write to the game, puts every file the patch holds back as
-    the original game's current version has it, but those `keep` names;
-    for Start over, whose own checkpoint it becomes."""
+    the original game's current version has it, but those `keep` names and
+    the project's own files, which stay as they are; for Start over, whose
+    own checkpoint it becomes."""
     root = game.root
     entries = _log(root)
     span = _current_span(entries)
@@ -665,7 +673,9 @@ def to_original(game, keep=lambda _path: False, stopped=lambda: False, original=
     paths = {
         path
         for path in set(state.original) | set(head)
-        if state.original.get(path) != head.get(path) and not keep(path)
+        if state.original.get(path) != head.get(path)
+        and not keep(path)
+        and not _project_file(path)
     }
     plan = {
         path: wanted
