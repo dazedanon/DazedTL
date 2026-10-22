@@ -116,8 +116,6 @@ export const api = {
     prepare: (project_id: string) =>
       request("translation_prepare", { project_id }),
 
-    backups: (project_id: string) =>
-      request("translation_backups", { project_id }),
     updateTask: (project_id: string) =>
       request("translation_update_task", { project_id }),
     checkpoints: (project_id: string) =>
