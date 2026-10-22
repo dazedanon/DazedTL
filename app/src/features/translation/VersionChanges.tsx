@@ -87,7 +87,11 @@ export function VersionChanges({
             >
               {(row) => {
                 const file = texts.get(String(row.path));
-                const summary = file && textSummary(file);
+                // A file's counts add nothing when they are the whole update's.
+                const summary =
+                  file && text && textSummary(file) !== textSummary(text)
+                    ? textSummary(file)
+                    : undefined;
                 return (
                   <div className="version-file">
                     {file?.lines.length ? (

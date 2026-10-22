@@ -12,3 +12,4 @@
 - **Release:** the patch ZIP no longer carries the game repository's `.gitignore`, `.gitattributes` and `README.md` at its root.
 - **Translate:** opening the Images tab no longer shifts the stage strip and task tabs sideways; only the image grid and preview use the full window width.
 - **Game updates:** previewing an update of a VX Ace game no longer says its translated data files are "replaced by official binary file" when the update packs them from the merged text, and it lists the release's `Game.rgss3a` as replacing the archive kept for patches.
+- **Game updates:** **Apply update** no longer flashes "Finish the interrupted update" with both buttons disabled while it runs; the preview and the Last saved patch ZIP card no longer repeat the same status two or three times.

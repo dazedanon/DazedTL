@@ -17,6 +17,7 @@ import { VersionTools } from "./VersionTools";
 import { ReleaseForm, emptyRelease } from "./ReleaseForm";
 import {
   guidedUpdateTasks,
+  interruptedUpdate,
   releaseEffect,
   removedFiles,
   stagedLayout,
@@ -62,16 +63,18 @@ export function VersionsPanel({
   );
   const disabled =
     action.busy || state.active || !!application.snapshot?.application.running;
-  const pending = !!state.git?.pending_operations.length;
-  const assetsPending = !!state.git?.asset_sync_pending;
-  // A stopped update whose assets wait either reached the translation, and
-  // finishing copies them, or never did, and cancelling restores the game.
-  const assetsApplied = assetsPending && !!state.git?.asset_update_applied;
   const active =
     session.latest &&
     ["ready", "running", "waiting"].includes(session.latest.status)
       ? session.latest
       : null;
+  // A stopped update whose assets wait either reached the translation, and
+  // finishing copies them, or never did, and cancelling restores the game.
+  const {
+    conflicts: pending,
+    assets: assetsPending,
+    assetsApplied,
+  } = interruptedUpdate(state.git, active?.action);
   const stage =
     !choosing && session.stage?.status === "complete" ? session.stage : null;
   const preview = !choosing ? session.preview : undefined;
@@ -273,8 +276,11 @@ export function VersionsPanel({
             <>
               <p>
                 The update stopped before it reached the translation. Cancel it
-                to go back to version {state.git?.translation_version}, then
-                apply it again.
+                to go back
+                {state.git?.translation_version
+                  ? ` to version ${state.git.translation_version}`
+                  : ""}
+                , then apply it again.
               </p>
               <ActionSlot target={actionTarget}>
                 {control("version_abort", "Cancel update", {}, false, true)}

@@ -8,6 +8,7 @@ import type {
 import { readKey } from "../app/src/features/project/checkpoints.ts";
 import {
   guidedUpdateTasks,
+  interruptedUpdate,
   versionSession,
   updateCounts,
 } from "../app/src/features/translation/versionState.ts";
@@ -199,4 +200,25 @@ test("the Checkpoints tab reads Git again only once a write moves the branch", (
     key,
   );
   assert.equal(readKey("game", { ...git, configured: false }), null);
+});
+
+test("an Apply under way is not an interrupted update, and a stopped one is", () => {
+  const stopped = {
+    pending_operations: ["cherry-pick"],
+    asset_sync_pending: true,
+    asset_update_applied: true,
+  } as TranslationState["git"];
+  // Apply's own conflicts and waiting assets flashed "Finish the interrupted
+  // update" with both buttons disabled.
+  assert.deepEqual(interruptedUpdate(stopped, "version_apply"), {
+    conflicts: false,
+    assets: false,
+    assetsApplied: false,
+  });
+  assert.deepEqual(interruptedUpdate(stopped), {
+    conflicts: true,
+    assets: true,
+    assetsApplied: true,
+  });
+  assert.equal(interruptedUpdate(stopped, "version_continue").assets, true);
 });
