@@ -435,7 +435,7 @@ try:
     continue_with_official(game)
     raise AssertionError("The update finished without its release.")
 except GitWorkflowError as error:
-    assert "release folder" in str(error), error
+    assert "release folder" in str(error) and "checkpoint" in str(error), error
 rebuilt = git_workflow._rebuilt_pending_asset_plan(
     status,
     git_workflow.UpdateResult(
@@ -447,8 +447,34 @@ rebuilt = git_workflow._rebuilt_pending_asset_plan(
     newer.parent,
 )
 assert rebuilt == saved, (rebuilt, saved)
-result = continue_with_official(game, newer.parent)
-assert result.complete and not inspect_repository(game).asset_sync_pending, result
+# The desktop tool finishes it the same way: Copy assets & finish passes the
+# release folder its latest apply used, and has none for an update applied
+# before apply jobs were kept, which ends in the same plain error.
+sys.path.insert(0, str(root / "backend/dazedtl/engine"))
+import threading
+
+from desktop.backend.operations import Operations
+from desktop.backend.version_update import DEFAULTS, VersionUpdates, run_action
+
+operations = Operations(temporary / "desktop", threading.RLock())
+updates = VersionUpdates(temporary / "desktop", operations)
+assert updates.applied_release("p") is None
+(operations.root / "apply").mkdir(parents=True)
+(operations.root / "apply/plan.json").write_text(
+    json.dumps({"values": {"official": str(newer.parent)}}), encoding="utf-8"
+)
+operations.jobs["apply"] = {"id": "apply", "project_id": "p", "action": "apply", "created": "1"}
+assert updates.applied_release("p") == str(newer.parent)
+operations.start = lambda plan: plan
+for identity in ("p", "q"):
+    updates.projects[identity] = {"id": identity, "source": str(game), "revision": 0,
+                                  "values": {**DEFAULTS, "official": "elsewhere"}}
+refused = run_action(updates.action("q", 0, "continue"), print)
+assert refused["ok"] is False and "checkpoint" in refused["message"], refused
+planned = updates.action("p", 0, "continue")
+assert planned["release"] == str(newer.parent), planned
+finished = run_action(planned, print)
+assert finished["complete"] and not inspect_repository(game).asset_sync_pending, finished
 merged = json.loads(common_events.read_text(encoding="utf-8"))
 translation[3]["list"][-2] = official[3]["list"][-2]
 assert merged == [None, official[1], *translation[2:4], official[4]], merged
