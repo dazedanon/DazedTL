@@ -6,4 +6,6 @@
 - **Line widths:** clearing a width field with select all and Backspace leaves it empty while you type, instead of showing "0" so that typing 44 reads "044".
 - **Set up:** after you press Stop, setup now reads as stopped in a neutral note, not as red error text with "Prepare game files" marked Blocked.
 - **Guided steps:** when a result beside a button, such as Save line widths, runs to two lines, the second line starts under the words instead of under the check mark.
+- **Checkpoints:** **Copy assets & finish** no longer stops with "Pending asset update is invalid" after a game update's record of its assets was damaged, which left every game change refused.
+- **Release:** after going back in Checkpoints to the files a patch ZIP was built from, Last saved patch ZIP no longer reads "Outdated · Game files changed since this build".
 - **Inspect run:** an open Choose request list stays under its field when a row appears above the field, instead of staying put and covering it.

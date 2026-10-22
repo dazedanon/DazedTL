@@ -425,7 +425,29 @@ except GitWorkflowError:
 finally:
     git_workflow._complete_pending_asset_plan = real_assets
 assert stuck(inspect_repository(game)) == (False, True, "1.03", "1.03")
-result = continue_with_official(game)
+# A damaged asset record left every game write refused there, as Cancel ends
+# only an update the translation lacks: finishing rebuilds it from the
+# original branch's release, read from the folder it was applied from.
+status = inspect_repository(game)
+saved = git_workflow._load_pending_asset_plan(status.repo_root, status.game_prefix)
+record.write_text('{"format": ', encoding="utf-8")
+try:
+    continue_with_official(game)
+    raise AssertionError("The update finished without its release.")
+except GitWorkflowError as error:
+    assert "release folder" in str(error), error
+rebuilt = git_workflow._rebuilt_pending_asset_plan(
+    status,
+    git_workflow.UpdateResult(
+        status.repo_root,
+        status.original_commit,
+        status.translation_commit,
+        status.original_version,
+    ),
+    newer.parent,
+)
+assert rebuilt == saved, (rebuilt, saved)
+result = continue_with_official(game, newer.parent)
 assert result.complete and not inspect_repository(game).asset_sync_pending, result
 merged = json.loads(common_events.read_text(encoding="utf-8"))
 translation[3]["list"][-2] = official[3]["list"][-2]

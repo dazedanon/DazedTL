@@ -78,6 +78,7 @@ GitHub's Windows images include the Visual C++ runtime and other tools a fresh W
 
 `node scripts/release-check.mjs` is the release check, which a session runs before cutting a release: what CI runs, on this machine, in about three minutes on Linux.
 It runs the build checks and the behavior tests, then the live test, the upgrade test, the previous-release QA check and every scenario CI's workflow lists side by side, each in a private display of its own, and prints one table of what passed and failed with each one's log.
+A check that fails is run once more, as the CI flake rule does: one that passes then is reported as a flake, named in the summary with its first log, and a second failure fails the check.
 A check that passes leaves only its log; a failed one keeps its folder beside the logs.
 `--jobs <n>` sets how many run at once (half the processors, at most 10, by default) and `--work <empty folder>` where they run; like the scenarios, it runs outside a sandbox and downloads the runtimes the live tests install.
 
