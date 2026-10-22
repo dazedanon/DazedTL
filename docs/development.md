@@ -116,7 +116,8 @@ Run them outside a sandbox such as Claude Code's bwrap: KWin needs a writable `/
 - `fresh`, `opened`, `set-up` and `translated`: the Guided journey up to that point, Live translation applied.
 - `update-stopped`: translated, then version 1.1 brought in under Checkpoints, its apply stopped at Git's conflict in a database file the translation changed, as an interrupted update leaves it, so Checkpoints offers to continue or cancel.
 - `released`, `released-ace` and `released-mv`: the release journey on MZ, an encrypted VX Ace game and a deployed MV game.
-  Translated and applied, a patch ZIP built and its files checked, version 1.1 (encrypted for Ace) applied to the end, the files it changed checked Outdated, their new text translated, applied and released again, then that Apply undone in Checkpoints; each fails at the first step that goes wrong.
+  Translated and applied, a patch ZIP built and its files checked, version 1.1 applied to the end, the files it changed checked Outdated, their new text translated, applied and released again, then that Apply undone in Checkpoints; each fails at the first step that goes wrong.
+  Ace's 1.1 is its new `Game.rgss3a` alone, which must read as a patch, and a complete 1.2 is then previewed, which must read as a complete game that removes nothing.
 - `qa-done`: Text QA reviewed by a scripted assistant through the project helper, one correction applied.
 - `plugins-applied`: `qa-done` on the `plugin-text` game, then its Plugin files translated by a scripted assistant and applied, so Checkpoints holds both applications.
 - `assistant-led`: an Assistant-led project in agent mode, set up and organized, its first request translated.

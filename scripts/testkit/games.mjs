@@ -164,6 +164,11 @@ export async function makeGame(names, game, change) {
       path.join(game, "Game.ini"),
       "[Game]\r\nRTP=RPGVXAce\r\nLibrary=System\\RGSS301.dll\r\nScripts=Data\\Scripts.rvdata2\r\nTitle=オークの逆襲\r\n",
     );
+    // Stand-ins for what runs the game, which a release ships and a patch
+    // leaves out.
+    fs.mkdirSync(path.join(game, "System"));
+    fs.writeFileSync(path.join(game, "Game.exe"), "Game.exe stand-in");
+    fs.writeFileSync(path.join(game, "System/RGSS301.dll"), "RGSS stand-in");
     if (change) {
       // Edited as JSON, then saved back as the editor saves it.
       aceGame("extract", game);
@@ -216,12 +221,19 @@ export const release = {
 
 /**
  * Builds the developer's version 1.1 (`release`) of the game `names` builds,
- * at `folder`, laid out and encrypted as the game is.
+ * at `folder`, laid out and encrypted as the game is. With `patch`, an
+ * encrypted game's release is its new Game.rgss3a alone, as Ace updates
+ * usually are.
  * @param {string[]} names
  * @param {string} folder
+ * @param {{ patch?: boolean }} [options]
  */
-export function makeRelease(names, folder) {
-  return makeGame(names, folder, (data) => {
+export async function makeRelease(names, folder, { patch = false } = {}) {
+  if (patch && !names.includes("encrypted"))
+    throw new Error(
+      "Only an encrypted Ace game's release comes as its archive.",
+    );
+  await makeGame(names, folder, (data) => {
     edit(data, "Actors.json", (actors) => {
       actors[1].profile = release.profile;
     });
@@ -243,4 +255,8 @@ export function makeRelease(names, folder) {
       armors[1].description = release.description;
     });
   });
+  if (patch)
+    for (const name of fs.readdirSync(folder))
+      if (name !== "Game.rgss3a")
+        fs.rmSync(path.join(folder, name), { recursive: true });
 }

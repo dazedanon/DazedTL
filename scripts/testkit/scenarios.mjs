@@ -346,7 +346,39 @@ const assistantWrite = [
 ];
 
 /** Brings in version 1.1 under Checkpoints, up to its preview. */
-const updateGame = [
+/**
+ * Makes the developer's release (`makeRelease`) and brings it in from
+ * Checkpoints as `version`, up to its preview, which must read as a patch
+ * when it is one and as a complete game otherwise.
+ */
+async function bringIn(page, state, version, { patch = false } = {}) {
+  const folder = path.join(
+    state.work,
+    `リリース ${version}`,
+    gameName(state.variants),
+  );
+  await makeRelease(state.variants, folder, { patch });
+  await page.click(/^Start (another )?game update$/);
+  // Typed, as a user may instead of choosing it in the folder dialog.
+  await page.type("#update-official-folder", folder);
+  await page.waitText("Complete game");
+  await page.type("#update-version", version);
+  await page.click("Prepare new release");
+  await page.click("Preview changes", 5 * 60_000);
+  await page.waitText(`Apply update to ${version}`, 5 * 60_000);
+  const text = await page.text();
+  const heading = `Review update to ${version}`;
+  const read = text
+    .slice(text.indexOf(heading) + heading.length)
+    .startsWith("Patch ·");
+  if (read !== patch)
+    throw new Error(
+      `The ${version} release reads as ${read ? "a patch" : "a complete game"}.`,
+    );
+}
+
+/** Brings in version 1.1 under Checkpoints, up to its preview. */
+const updateGame = (options) => [
   [
     "Open Checkpoints, the translation's Apply already its checkpoint",
     async ({ page }) => {
@@ -356,28 +388,13 @@ const updateGame = [
     },
   ],
   [
-    "Bring in version 1.1, which changes a profile the translation changed and describes an armor",
-    async ({ page, state }) => {
-      const folder = path.join(
-        state.work,
-        `リリース ${release.version}`,
-        gameName(state.variants),
-      );
-      await makeRelease(state.variants, folder);
-      await page.click("Start game update");
-      // Typed, as a user may instead of choosing it in the folder dialog.
-      await page.type("#update-official-folder", folder);
-      await page.waitText("Complete game");
-      await page.type("#update-version", release.version);
-      await page.click("Prepare new release");
-      await page.click("Preview changes", 5 * 60_000);
-      await page.waitText(`Apply update to ${release.version}`, 5 * 60_000);
-    },
+    `Bring in version 1.1${options?.patch ? " as its new Game.rgss3a alone" : ""}, which changes a profile the translation changed and describes an armor`,
+    ({ page, state }) => bringIn(page, state, release.version, options),
   ],
 ];
 
 const stoppedUpdate = [
-  ...updateGame,
+  ...updateGame(),
   [
     "Apply it, stopping at the conflict as an apply the app closed during does",
     async ({ page, state }) => {
@@ -491,9 +508,25 @@ async function fileStatus(page, name) {
 const armor = (state) => gameJson(state, "Armors.json")[1];
 
 /** Releases, updates, releases again and undoes, the Apply before the undo
- * kept to compare with. */
-function releasing() {
+ * kept to compare with. With `patch`, version 1.1 is an encrypted game's
+ * new archive alone, and a complete 1.2 is previewed after it. */
+function releasing({ patch = false } = {}) {
   let before;
+  const complete = [
+    "Bring in a complete version 1.2, which reads as a complete game and removes nothing, then discard it",
+    async ({ page, state }) => {
+      await page.click("Project");
+      await page.click("Checkpoints");
+      await bringIn(page, state, "1.2");
+      const text = await page.text();
+      if (/\d\sremoved\b|applying it removes them/.test(text))
+        throw new Error("The complete release would remove the game's files.");
+      await page.click("Discard release");
+      await until("Checkpoints to offer a new update", () =>
+        page.locate(/^Start (another )?game update$/),
+      );
+    },
+  ];
   return [
     [
       "Build a patch ZIP of the translation",
@@ -508,7 +541,7 @@ function releasing() {
         ]);
       },
     ],
-    ...updateGame,
+    ...updateGame({ patch }),
     [
       "Check the preview's counts stay within the release's changes",
       async ({ page }) => {
@@ -636,6 +669,7 @@ function releasing() {
         await page.waitText("Last saved patch ZIP\nOutdated");
       },
     ],
+    ...(patch ? [complete] : []),
   ];
 }
 
@@ -674,9 +708,14 @@ export const scenarios = {
   },
   "released-ace": {
     description:
-      "released on a VX Ace game shipped as an encrypted Game.rgss3a, its 1.1 encrypted too.",
+      "released on a VX Ace game shipped as an encrypted Game.rgss3a, its 1.1 a patch of the new Game.rgss3a alone; a complete 1.2 is then previewed and discarded.",
     game: "ace+encrypted",
-    steps: () => [open, ...setup, ...translateAll, ...releasing()],
+    steps: () => [
+      open,
+      ...setup,
+      ...translateAll,
+      ...releasing({ patch: true }),
+    ],
   },
   "released-mv": {
     description: "released on an RPG Maker MV game deployed in www.",
