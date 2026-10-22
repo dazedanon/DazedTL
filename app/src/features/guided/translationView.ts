@@ -249,14 +249,18 @@ export function translatedFiles(
 /**
  * Saved working outputs holding translation, and those in the game: a file
  * whose own lines are translated, or one a run changed, such as with Other
- * event text.
+ * event text. With an event-code `phase`, only the files that task's own runs
+ * translated, so its Apply counts its own work, not another task's.
  */
 export function savedTranslations(
   state: Pick<GuidedState, "runs" | "sourceStatus" | "readiness">,
+  phase?: Phase,
 ) {
-  const changed = translatedFiles(state.runs, state.sourceStatus.retired);
+  const own = phase && !countedPhase(phase) ? phase : undefined;
+  const changed = translatedFiles(state.runs, state.sourceStatus.retired, own);
   const translated = (name: string) =>
-    changed.has(name) || !!state.sourceStatus.lines?.[name]?.translated;
+    changed.has(name) ||
+    (!own && !!state.sourceStatus.lines?.[name]?.translated);
   return {
     outputs: state.readiness.outputs.filter(translated),
     applied: state.readiness.applied.filter(translated),
