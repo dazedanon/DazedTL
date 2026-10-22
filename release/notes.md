@@ -9,3 +9,4 @@
 - **Checkpoints:** **Copy assets & finish** no longer stops with "Pending asset update is invalid" after a game update's record of its assets was damaged, which left every game change refused.
 - **Release:** after going back in Checkpoints to the files a patch ZIP was built from, Last saved patch ZIP no longer reads "Outdated · Game files changed since this build".
 - **Inspect run:** an open Choose request list stays under its field when a row appears above the field, instead of staying put and covering it.
+- **Assistant-led:** the game folder notice looks like the one in Guided steps (an amber note, not a red banner), and a game update stopped partway says "A game update was interrupted. Finish the interrupted update, or cancel it, under Checkpoints to continue." instead of "unfinished Git cherry-pick".
