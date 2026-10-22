@@ -1220,7 +1220,11 @@ class TranslationEngine:
                 # The line view only informs the review; the update itself
                 # stands on the file comparison.
                 text = None
-            return {**asdict(preview), "text": text}
+            from .guided import describe_ace_update
+
+            result = {**asdict(preview), "text": text}
+            describe_ace_update(source, options["official"], result)
+            return result
         if action == "apply":
             preview = options["preview"]
             return value(
