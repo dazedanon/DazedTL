@@ -3,6 +3,13 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.27.1] - 2026-10-22
+
+### Fixed
+
+- **VX Ace:** once anything was applied, Release builds the patch ZIP again instead of refusing with "Supply unique source and guidance file paths.", and the patch leaves out the `ace_json` folder; a game update keeps your translation instead of putting the new version's Japanese back, and a new version that comes with `Game.rgss3a` is converted as Set up converts the game instead of waiting for an assistant.
+- **Translate:** a kaomoji with half-width marks, such as (ﾟдﾟ), no longer comes back with its eyes stacked on the mouth or as a box, and a short line such as え？ that the model gives back untranslated is no longer saved as translated; it keeps its original text and the next Translate sends it again.
+
 ## [2.27.0] - 2026-10-21
 
 ### Changed
@@ -872,6 +879,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.27.1]: https://github.com/dazedanon/DazedTL/compare/v2.27.0...v2.27.1
 [2.27.0]: https://github.com/dazedanon/DazedTL/compare/v2.26.0...v2.27.0
 [2.26.0]: https://github.com/dazedanon/DazedTL/compare/v2.25.0...v2.26.0
 [2.25.0]: https://github.com/dazedanon/DazedTL/compare/v2.24.0...v2.25.0
