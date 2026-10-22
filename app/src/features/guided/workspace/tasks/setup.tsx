@@ -45,7 +45,6 @@ export function setupView(w: GuidedWorkspace): TaskView {
   const {
     state,
     translation,
-    action,
     disabled,
     setPanel,
     gitConfigured,
@@ -54,7 +53,7 @@ export function setupView(w: GuidedWorkspace): TaskView {
     aceNeedsExport,
     running,
     localOperation,
-    stopOperation,
+    stopControl,
     setupStep,
     setupJobs,
     setupFailure,
@@ -235,14 +234,7 @@ export function setupView(w: GuidedWorkspace): TaskView {
   // so the footer does not shift between steps.
   const stoppable =
     localOperation?.action === "prepare_game" ? localOperation : undefined;
-  const secondary = setupRunning && (
-    <Button
-      disabled={action.busy || !stoppable}
-      onClick={() => stoppable && stopOperation(stoppable)}
-    >
-      Stop
-    </Button>
-  );
+  const secondary = setupRunning && stopControl(stoppable);
   const next = advance(undefined, undefined, done ? "primary" : "quiet", !done);
   return { content, secondary, action: run, next };
 }

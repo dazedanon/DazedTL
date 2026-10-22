@@ -260,7 +260,7 @@ export function layoutView(w: GuidedWorkspace): TaskView {
     textFit,
     handoff,
     localOperation,
-    stopOperation,
+    stopControl,
     translation,
   } = w;
   const measuring = handoff("line_widths");
@@ -437,14 +437,7 @@ export function layoutView(w: GuidedWorkspace): TaskView {
   return {
     content,
     // The fit shows in this footer, not in a row that moves the page.
-    secondary: localOperation && (
-      <Button
-        disabled={action.busy}
-        onClick={() => stopOperation(localOperation)}
-      >
-        Stop
-      </Button>
-    ),
+    secondary: localOperation && stopControl(localOperation),
     action: saveControl,
     next: advance(undefined, undefined, pending ? "quiet" : "primary"),
     save: disabled || refused ? undefined : saveLayout,
@@ -455,7 +448,6 @@ export function estimateView(w: GuidedWorkspace): TaskView {
   const {
     state,
     values,
-    action,
     context,
     settings,
     disabled,
@@ -463,7 +455,7 @@ export function estimateView(w: GuidedWorkspace): TaskView {
     feedback,
     estimateCost,
     localOperation,
-    stopOperation,
+    stopControl,
   } = w;
   const estimate = state.fullEstimate;
   const working = estimate.status === "working";
@@ -509,14 +501,7 @@ export function estimateView(w: GuidedWorkspace): TaskView {
         </span>
       ),
     },
-    secondary: localOperation && (
-      <Button
-        disabled={action.busy}
-        onClick={() => stopOperation(localOperation)}
-      >
-        Stop
-      </Button>
-    ),
+    secondary: localOperation && stopControl(localOperation),
     action: run,
     next: advance(undefined, undefined, current ? "primary" : "quiet"),
   };

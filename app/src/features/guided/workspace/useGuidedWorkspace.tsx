@@ -305,16 +305,26 @@ export function useGuidedWorkspace({
       (taskId === "speakers" && activeOperation.action === "fit_text"))
       ? activeOperation
       : null;
-  const stopOperation = (current: Job) =>
-    action.run(
+  // The operation a Stop click asked to stop: its Stop reads pending until
+  // the operation ends and the control goes, or shows why the stop failed.
+  const [stopping, setStopping] = useState("");
+  const stopOperation = (current: Job) => {
+    setStopping(current.id);
+    return action.run(
       async () => {
-        if (state.operations.some((item) => item.id === current.id))
-          await api.stop(project.id);
-        else await api.translation.stop(project.id, current.id);
+        try {
+          if (state.operations.some((item) => item.id === current.id))
+            await api.stop(project.id);
+          else await api.translation.stop(project.id, current.id);
+        } catch (error) {
+          setStopping("");
+          throw error;
+        }
       },
       "",
       "stop-operation",
     );
+  };
   const qaTask = state.readiness.qa.current
     ? activity.find(
         (item) =>
@@ -569,6 +579,21 @@ export function useGuidedWorkspace({
     error: action.key === key ? action.error : "",
     notice: action.key === key ? action.notice : "",
   });
+  // The Stop beside a task's action for the operation it runs; it reads
+  // Stopping… in place, since the action beside it reports the operation.
+  const stopControl = (current: Job | null | undefined, label = "Stop") => {
+    const control = feedback("stop-operation", "Stopping…");
+    return (
+      <ActionControl
+        label={label}
+        inline
+        disabled={action.busy || !current}
+        {...control}
+        pending={control.pending || (!!current && stopping === current.id)}
+        onClick={() => current && void stopOperation(current)}
+      />
+    );
+  };
   const operationJob = (
     name: string,
     options: Record<string, unknown> = {},
@@ -1546,6 +1571,7 @@ export function useGuidedWorkspace({
     activeOperation,
     localOperation,
     stopOperation,
+    stopControl,
     qaTask,
     qa,
     qaStatus,
