@@ -2379,7 +2379,7 @@ class ImageService:
             # Each image's original, read from the game's records at once.
             issues = {}
             try:
-                self._original_runtime(project_id, root, included, issues)
+                self._original_runtime(project_id, root, included, issues, keep=False)
             except (OSError, ValueError) as exc:
                 issues = dict.fromkeys((row["id"] for row in included), str(exc))
             blocked += [
@@ -2419,14 +2419,28 @@ class ImageService:
         }
         return {"state": self.state(project_id), "preview": preview}
 
-    def _original_runtime(self, project_id, root, rows, issues=None):
+    def _original_runtime(self, project_id, root, rows, issues=None, keep=True):
         """The game's bytes each image had when Prepare kept its original,
         for Restore: a copy Prepare saved before restores read Git, else the
         game's record of its original files, else the image tool's own
         backup. An image none of them holds is refused, or, given `issues`,
-        named there with why, so a preview reads every image in one pass."""
-        wanted = [row for row in rows if not row.get("runtimeBackup")]
+        named there with why, so a preview reads every image in one pass;
+        without `keep` it holds their hashes, not their bytes."""
         found = {}
+        for row in rows:
+            if row.get("runtimeBackup"):
+                try:
+                    raw = project_path(root, row["runtimeBackup"]).read_bytes()
+                except (OSError, ValueError) as exc:
+                    raise ValueError(
+                        "The preserved original runtime backup is missing."
+                    ) from exc
+                if digest(raw) != row["runtimeBackupHash"]:
+                    issue = "The preserved original runtime bytes changed."
+                    if issues is None:
+                        raise ValueError(issue)
+                    issues[row["id"]] = issue
+        wanted = [row for row in rows if not row.get("runtimeBackup")]
         if not wanted:
             return found
         original = game_originals.prepared(self.translation.workspace, project_id, root)
@@ -2436,15 +2450,22 @@ class ImageService:
                 for name in names:
                     path = folder / name
                     if path.is_file():
-                        found[name] = path.read_bytes()
+                        raw = path.read_bytes()
+                        found[name] = raw if keep else digest(raw)
+
+        def hashed(value):
+            return value if not keep or value is None else digest(value)
+
         for row in wanted:
             raw = found.get(row["runtime"])
-            if raw is None or digest(raw) != row["runtimeBackupHash"]:
+            if raw is None or hashed(raw) != row["runtimeBackupHash"]:
                 backup = project_path(
                     root, ".dazedtl/image_backups/" + row["runtime"], exists=False
                 )
                 raw = backup.read_bytes() if backup.is_file() else None
-            if raw is None or digest(raw) != row["runtimeBackupHash"]:
+                if raw is not None and not keep:
+                    raw = digest(raw)
+            if raw is None or hashed(raw) != row["runtimeBackupHash"]:
                 found.pop(row["runtime"], None)
                 issue = (
                     "DazedTL has no copy of this image as it was before it was "
@@ -2505,6 +2526,13 @@ class ImageService:
                 raise ValueError(
                     "A runtime image changed after its application. Nothing was restored."
                 )
+        # Read before the journal is saved, so a missing original leaves no
+        # publication to recover.
+        originals = (
+            self._original_runtime(project_id, root, current)
+            if action == "restore"
+            else {}
+        )
         journal_id = uuid.uuid4().hex
         journal_path = WORK + "/publications/" + journal_id + ".json"
         key = self.adapter.key(root, profile)
@@ -2546,11 +2574,6 @@ class ImageService:
             "hash": self._journal_binding(journal),
         }
         self._save(project_id, value)
-        originals = (
-            self._original_runtime(project_id, root, current)
-            if action == "restore"
-            else {}
-        )
         self.mutating.add(project_id)
         try:
             with self.backend.game_write(
