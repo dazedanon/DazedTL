@@ -541,6 +541,14 @@ class Guided:
         with self.observations.read():
             return self.observations.once(("fitted", native["id"]), read)
 
+    def reads_data(self, native):
+        """Whether the game reads its data files at all: a VX Ace game with an
+        RGSS archive beside Game.exe reads only the archive, so none of its
+        translated files are in the game."""
+        return native["engine"] != "ACE" or not self.backend.guided_ace_blocked(
+            native["source"]
+        )
+
     def applied_outputs(self, native):
         """The translated files, which of them the game holds, and which of
         those were edited by hand since."""
@@ -553,6 +561,8 @@ class Guided:
         ]
         applied = []
         edited = []
+        if not self.reads_data(native):
+            return outputs, applied, edited
         versions = self.applied_versions(native)
         written = self.fitted_outputs(native)
         for name in outputs:

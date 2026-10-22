@@ -1134,7 +1134,7 @@ def parse(codeList, i, headerString, jaString):
                     path.write_bytes(b"\x04\x08" + export)
                 return [game / "Data" / name for name in names]
 
-            def archive_in_root(source):
+            def archive_in_root(source, guided=False):
                 return (
                     "Run Convert Ace data"
                     if (source / "Game.rgss3a").exists()

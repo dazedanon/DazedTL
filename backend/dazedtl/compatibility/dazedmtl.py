@@ -362,7 +362,7 @@ class ExistingBackend:
     def guided_ace_blocked(source):
         from .guided import ace_blocked
 
-        return ace_blocked(source)
+        return ace_blocked(source, guided=True)
 
     @staticmethod
     def guided_ace_packing(native, folder):

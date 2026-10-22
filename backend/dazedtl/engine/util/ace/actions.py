@@ -31,18 +31,24 @@ def original_archive(root: Path) -> Path | None:
     return found[0] if found else None
 
 
-def archive_in_root(root: Path) -> str | None:
+def archive_in_root(root: Path, guided: bool = False) -> str | None:
     """Why the game cannot show its translated data, or None: while an
     archive sits beside Game.exe, the game reads only the archive. A game can
     arrive that way with ace_json already converted, such as from an earlier
-    tool that left removing the archive to the user."""
+    tool that left removing the archive to the user. `guided` names only
+    Guided's way to set it aside; the assistant also reads Assistant-led's."""
     found = rgssad.archives(Path(root))
     if not found:
         return None
+    fix = (
+        "Convert Ace data in Set up sets it aside."
+        if guided
+        else "Run Convert Ace data in Set up, or operation rpgmaker_prepare in "
+        "Assistant-led, which sets the archive aside."
+    )
     return (
         f"The game still reads its original {found[0].name}, so it shows none "
-        "of the translation. Run Convert Ace data in Set up, or operation "
-        "rpgmaker_prepare in Assistant-led, which sets the archive aside."
+        f"of the translation. {fix}"
     )
 
 

@@ -686,12 +686,13 @@ def finish_ace_update(root, release, folder, log):
         log(f"The game's data could not be packed: {error}")
 
 
-def ace_blocked(source):
+def ace_blocked(source, guided=False):
     """Why packing can't reach an Ace game, or None: an RGSS archive left
-    beside Game.exe, which the game reads instead of its data."""
+    beside Game.exe, which the game reads instead of its data; `guided` says
+    it in Guided's words."""
     from util.ace import actions
 
-    return actions.archive_in_root(Path(source))
+    return actions.archive_in_root(Path(source), guided=guided)
 
 
 def ace_packing_state(native, folder):
@@ -700,7 +701,7 @@ def ace_packing_state(native, folder):
     nothing else while it is there."""
     from dazedtl.translation.release import packing_state
 
-    blocked = native["engine"] == "ACE" and ace_blocked(native["source"])
+    blocked = native["engine"] == "ACE" and ace_blocked(native["source"], guided=True)
     if blocked:
         return {"required": True, "current": False, "message": blocked}
     return packing_state(native, folder)

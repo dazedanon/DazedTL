@@ -299,6 +299,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
           {},
           !baseline ||
             !!state.collectionError ||
+            (w.archiveRead && "Convert Ace data in Set up first.") ||
             applyFiles.some((name) => changed.includes(name)) ||
             // The files' rows read Applied, so Apply has nothing to do.
             (applyFiles.every((name) => appliedOutputs.includes(name)) &&

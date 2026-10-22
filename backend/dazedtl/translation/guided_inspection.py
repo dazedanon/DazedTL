@@ -136,6 +136,8 @@ class RunInspection:
                     for name, expected in outputs.items()
                     if expected in applied.get(name, ()) or current[name] == expected
                 ]
+                if not self.guided.reads_data(native):
+                    job["appliedOutputs"] = []
         except OSError, ValueError, KeyError:
             job["outputsAvailable"] = False
             job["availableOutputs"] = []

@@ -1289,6 +1289,18 @@ class GuidedTests(unittest.TestCase):
         self.assertEqual(
             self.guided.run_view(identity)["appliedOutputs"], ["Items.json"]
         )
+        # A VX Ace game reading only the archive beside Game.exe holds none of
+        # it, whatever its data files hold.
+        native = {**self.native, "files": [{"name": "Items.json"}]}
+        write_json(
+            self.folder / "translated/Items.json", [{"name": "Manual game edit"}]
+        )
+        self.assertEqual(self.guided.applied_outputs(native)[1], ["Items.json"])
+        self.native["engine"] = native["engine"] = "ACE"
+        self.backend.guided_ace_blocked = lambda _source: "Reads Game.rgss3a."
+        self.assertEqual(self.guided.run_view(identity)["appliedOutputs"], [])
+        self.assertEqual(self.guided.applied_outputs(native)[1], [])
+        self.native["engine"] = "MVMZ"
         # Another output applied over it does replace it.
         write_json(
             self.folder / "applied-outputs.json",

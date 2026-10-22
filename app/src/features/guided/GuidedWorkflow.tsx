@@ -324,10 +324,11 @@ function Workspace(
               </Notice>
             ))}
             {/* A converted Ace game still reading its archive shows none of
-                the translation; Set up's own row says so there. */}
-            {state.engine === "ACE" &&
-              !!state.encrypted.length &&
+                the translation; Set up's own row says so there, and before
+                setup the steps already send the user to it. */}
+            {w.archiveRead &&
               !!state.files.length &&
+              baseline &&
               position.step !== "setup" && (
                 <Notice tone="warning">
                   <span>

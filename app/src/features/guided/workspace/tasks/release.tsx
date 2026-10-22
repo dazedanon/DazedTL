@@ -70,6 +70,7 @@ export function packageView(w: GuidedWorkspace): TaskView {
           {},
           !baseline ||
             !!state.collectionError ||
+            (w.archiveRead && "Convert Ace data in Set up first.") ||
             state.readiness.unapplied.some((name) => changed.includes(name)),
           "default",
           state.readiness.unapplied,

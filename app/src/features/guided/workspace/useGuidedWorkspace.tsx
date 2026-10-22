@@ -1217,9 +1217,11 @@ export function useGuidedWorkspace({
   const preparation = state.preparation;
   const preparationComplete = preparation.complete;
   // An Ace game reads only its archive while one sits beside Game.exe, even
-  // one that arrived with ace_json converted.
+  // one that arrived with ace_json converted, so it holds none of the
+  // translation and Apply is refused until Set up converts it.
+  const archiveRead = state.engine === "ACE" && !!state.encrypted.length;
   const aceNeedsExport =
-    state.engine === "ACE" && (!state.files.length || !!state.encrypted.length);
+    state.engine === "ACE" && (!state.files.length || archiveRead);
   // Setting up prepares the game files and saves the version in sequence
   // from one click; the first change to the game keeps its original files in
   // Git. Each step keeps its own preview and execution checks. A step that
@@ -1630,6 +1632,7 @@ export function useGuidedWorkspace({
     preparation,
     preparationComplete,
     aceNeedsExport,
+    archiveRead,
     gitConfigured,
     setupStep,
     setupJobs,
