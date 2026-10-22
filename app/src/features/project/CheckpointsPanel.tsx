@@ -367,6 +367,9 @@ function CheckpointRow({
         <>
           <strong>{row.title}</strong>
           {row.current && <span className="checkpoints-current">Current</span>}
+          {row.taken_out_by && (
+            <span className="checkpoints-taken-out">Taken out</span>
+          )}
           <small>
             {when(row.time)} · {changedFiles(row)}
           </small>

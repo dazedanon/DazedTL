@@ -307,6 +307,11 @@
   font-size: var(--font-small);
   font-weight: var(--weight-medium);
 }
+.checkpoints-taken-out {
+  margin-inline-start: var(--space-2);
+  font-size: var(--font-small);
+  color: var(--color-muted);
+}
 .checkpoints-backups {
   margin-top: var(--space-5);
   color: var(--color-muted);

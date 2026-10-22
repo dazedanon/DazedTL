@@ -57,6 +57,7 @@ from .checkpoint_commits import (
     OUTSIDE,
     OUTSIDE_EDITS,
     STAGE_TRAILER,
+    TARGET_TRAILER,
     WAITING,
     Change,
     _folder,
@@ -309,6 +310,28 @@ def edited_outside(root):
     return sorted(_pending(root) - _waiting(root))
 
 
+def _taken_out(entries):
+    """Each checkpoint a go back took out of the game, to that go back's
+    commit: those after its target, unless an undo has put the go back
+    itself out. `entries` are newest first."""
+    result = {}
+    for index, entry in enumerate(entries):
+        target = entry.action == BACK and _trailer(entry.message, TARGET_TRAILER)
+        if not target:
+            continue
+        done = f"Undid {_quoted(entry.title)}"
+        if any(
+            later.action == UNDO and later.title == done for later in entries[:index]
+        ):
+            continue
+        for other in entries[index + 1 :]:
+            if other.commit == target:
+                break
+            if other.listed:
+                result.setdefault(other.commit, entry.commit)
+    return result
+
+
 def timeline(root):
     """The Checkpoints tab's view: the game's versions, newest first, each
     with its listed checkpoints, newest first, and the edits made outside
@@ -318,6 +341,7 @@ def timeline(root):
     current = _current_span(entries)
     blockers = _blockers(current)
     outside = edited_outside(root)
+    out = _taken_out(entries)
     versions = []
     head = next((entry for entry in entries if entry.listed), None)
     for entry in entries:
@@ -348,6 +372,8 @@ def timeline(root):
                 ),
                 "release": _trailer(entry.message, RELEASE_TRAILER) or "",
                 "current": entry is head,
+                # The go back that took it out of the game, if one did.
+                "taken_out_by": out.get(entry.commit, ""),
                 # Go back and undo stay within the current game version, and
                 # a version's first checkpoint only goes back.
                 "restorable": in_current,
@@ -622,7 +648,7 @@ def go_back(
     root = Path(root).resolve()
     entries = _log(root)
     target = entries[_restorable(entries, commit)]
-    change = Change(f"Went back to {_quoted(target.title)}", None, BACK)
+    change = Change(f"Went back to {_quoted(target.title)}", None, BACK, target.commit)
     with running(change), write_game(root, folder, log=log, restores=True) as game:
         # The gateway recorded the edits made outside DazedTL first.
         entries = _log(root)
