@@ -3,7 +3,6 @@ flooding the report or copying what the error said."""
 
 import json
 import os
-import subprocess
 import sys
 import threading
 import unittest
@@ -12,6 +11,8 @@ from tempfile import TemporaryDirectory
 
 from dazedtl.diagnostics import FOLDER, Diagnostics
 from dazedtl.watchdog import Watchdog
+
+from tests.probe import Background, bytecode
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -22,27 +23,30 @@ class HangTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         diagnostics = Diagnostics(temporary.name, ROOT, ROOT / "backend/dazedtl/engine")
         self.addCleanup(diagnostics.close)
-        watchdog = Watchdog(
-            0.02,
-            lambda state, request, seconds, frame: diagnostics.hang(
+        stalled, never = threading.Event(), threading.Event()
+
+        def report(state, request, seconds, frame):
+            diagnostics.hang(
                 "backend." + state,
                 seconds,
                 diagnostics.stack(frame),
                 operation=request[0],
                 request_id=request[1],
-            ),
-            limit=1,
-        )
-        never = threading.Event()
+            )
+            if state == "stalled":
+                stalled.set()
 
-        def blocked():
-            never.wait(0.12)
+        watchdog = Watchdog(0.02, report, limit=1)
+
+        def blocked(event, seconds):
+            event.wait(seconds)
 
         watchdog.busy(("guided_preview", 7))
-        blocked()
+        # Waits until the stall is reported.
+        blocked(stalled, 10)
         watchdog.beat()
         # A second quiet period of the same work is past its report limit.
-        blocked()
+        blocked(never, 0.12)
         watchdog.idle()
 
         records = [
@@ -83,50 +87,61 @@ class HangTests(unittest.TestCase):
         self.assertNotIn("causes", records[1])
 
 
-class WorkerCrashTests(unittest.TestCase):
-    def test_a_crashing_run_worker_records_where_without_what_it_said(self):
-        temporary = TemporaryDirectory()
-        self.addCleanup(temporary.cleanup)
-        folder = Path(temporary.name)
-        # The error messages hold the run's path, as a provider's can hold a
-        # key or the game's text.
-        run = folder / "sk-ant-api03-FAKEKEY 日本語のテキスト"
-        run.mkdir()
-        (run / "plan.json").write_text(
-            json.dumps({"mode": "estimate", "engine": "No such engine"}),
-            encoding="utf-8",
-        )
+def worker(script, plan, *arguments, attempt=None):
+    """Launches a worker as the app launches it, with a run of `plan` and,
+    when given, `attempt`. It runs beside the rest of the suite."""
+    background = Background()
+    # The error messages hold the run's path, as a provider's can hold a
+    # key or the game's text.
+    run = background.folder / "sk-ant-api03-FAKEKEY 日本語のテキスト"
+    run.mkdir()
+    (run / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+    if attempt is not None:
+        (run / "attempt.json").write_text(json.dumps(attempt), encoding="utf-8")
+    return background.start(
+        [
+            sys.executable,
+            "-I",
+            "-X",
+            "utf8",
+            *bytecode(),
+            str(ROOT / "backend/dazedtl/compatibility" / script),
+            str(run),
+            *arguments,
+        ],
+        env={**os.environ, FOLDER: str(background.folder / "diagnostics")},
+    )
 
-        def work():
-            # Launched as the app launches it, its standard error discarded.
-            subprocess.run(
-                [
-                    sys.executable,
-                    "-I",
-                    "-X",
-                    "utf8",
-                    "-B",
-                    str(ROOT / "backend/dazedtl/compatibility/manual_worker.py"),
-                    str(run),
-                ],
-                env={**os.environ, FOLDER: str(folder / "diagnostics")},
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
-                timeout=30,
-            )
 
-        # Without its attempt the worker crashes before it can report anything;
-        # with one, it reports the unknown engine as a generic failure.
-        work()
-        (run / "attempt.json").write_text(
-            json.dumps({"files": [], "resume": False}), encoding="utf-8"
-        )
-        work()
-
-        log = (folder / "diagnostics/backend-failures.jsonl").read_text(
+def worker_log(background):
+    """The worker's diagnostics log, once it has ended."""
+    try:
+        background.wait()
+        return (background.folder / "diagnostics/backend-failures.jsonl").read_text(
             encoding="utf-8"
         )
+    finally:
+        background.close()
+
+
+ESTIMATE = {"mode": "estimate", "engine": "No such engine"}
+# Without its attempt the worker crashes before it can report anything; with
+# one, it reports the unknown engine as a generic failure.
+unprepared = worker("manual_worker.py", ESTIMATE)
+prepared = worker("manual_worker.py", ESTIMATE, attempt={"files": [], "resume": False})
+# Its list of files never arrives, as when the coordinator's pipe breaks.
+per_file = worker(
+    "manual_file_worker.py",
+    {"mode": "translate"},
+    "RPG Maker MV/MZ",
+    "--files-from-stdin",
+    "False",
+)
+
+
+class WorkerCrashTests(unittest.TestCase):
+    def test_a_crashing_run_worker_records_where_without_what_it_said(self):
+        log = worker_log(unprepared) + worker_log(prepared)
         records = [json.loads(line) for line in log.splitlines()]
         self.assertEqual(
             [
@@ -163,42 +178,7 @@ class WorkerCrashTests(unittest.TestCase):
         self.assertNotIn("\\u65e5", log)
 
     def test_a_per_file_worker_that_crashes_at_startup_records_where(self):
-        temporary = TemporaryDirectory()
-        self.addCleanup(temporary.cleanup)
-        folder = Path(temporary.name)
-        run = folder / "run"
-        run.mkdir()
-        (run / "plan.json").write_text(
-            json.dumps({"mode": "translate"}), encoding="utf-8"
-        )
-        # Its list of files never arrives, as when the coordinator's pipe breaks.
-        subprocess.run(
-            [
-                sys.executable,
-                "-I",
-                "-X",
-                "utf8",
-                "-B",
-                str(ROOT / "backend/dazedtl/compatibility/manual_file_worker.py"),
-                str(run),
-                "RPG Maker MV/MZ",
-                "--files-from-stdin",
-                "False",
-            ],
-            env={**os.environ, FOLDER: str(folder / "diagnostics")},
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-            timeout=30,
-        )
-
-        (record,) = [
-            json.loads(line)
-            for line in (folder / "diagnostics/backend-failures.jsonl")
-            .read_text(encoding="utf-8")
-            .splitlines()
-        ]
+        (record,) = [json.loads(line) for line in worker_log(per_file).splitlines()]
         self.assertEqual(
             (record["event"], record["action"], record["causes"][0]["type"]),
             ("worker.error", "manual_translate", "JSONDecodeError"),

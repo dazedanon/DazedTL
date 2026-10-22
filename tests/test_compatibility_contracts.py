@@ -35,6 +35,131 @@ from dazedtl.translation.compilation import compile_requests
 from dazedtl.translation.files import digest
 
 from tests.engine import ENGINE, engine_module, point
+from tests.probe import Background, bytecode
+
+# Engine scripts for the tests of the same names below. Each runs in an
+# interpreter of its own, where only the engine is importable, and starts
+# beside the rest of the suite.
+GITIGNORE = """
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+sys.path.insert(0, sys.argv[1])
+from util.len_patch_scope import scope_ignore
+from util.len_translation import _WORK_IGNORE_BLOCK, _prepare_local_work
+from util.paths import GAME_TOOL_GITIGNORE_BLOCK
+root = Path(sys.argv[2])
+patch = "# BEGIN DazedTL Len patch files\\n/*\\n# END DazedTL Len patch files\\n"
+text = (_WORK_IGNORE_BLOCK + "\\n# DazedTL selected image patches\\n!/img/\\n"
+        "\\n" + patch + "\\n" + GAME_TOOL_GITIGNORE_BLOCK)
+(root / ".gitignore").write_text(text)
+_prepare_local_work(SimpleNamespace(game_root=root, work_root=root / "work"))
+print((root / ".gitignore").read_text() == text)
+(root / ".gitignore").write_text(patch + "\\n" + GAME_TOOL_GITIGNORE_BLOCK)
+_prepare_local_work(SimpleNamespace(game_root=root, work_root=root / "work"))
+result = (root / ".gitignore").read_text()
+print(result.index(_WORK_IGNORE_BLOCK) < result.index(patch) and result.endswith(patch + "\\n" + GAME_TOOL_GITIGNORE_BLOCK))
+for text in (GAME_TOOL_GITIGNORE_BLOCK + "\\n" + patch, patch + "\\n" + GAME_TOOL_GITIGNORE_BLOCK):
+    scoped = scope_ignore(text, {"data/x.json"})
+    print(scope_ignore(scoped, {"data/x.json"}) == scoped)
+print(scope_ignore("A\\n\\n" + patch + "\\nB\\n", set()).startswith("A\\n\\nB\\n"))
+"""
+
+PATCH_FILES = """
+import sys
+from pathlib import Path
+sys.path[:0] = sys.argv[1:3]
+from dazedtl.compatibility.translation import TranslationEngine
+game = Path(sys.argv[3])
+(game / "Game.exe").write_bytes(b"original")
+added = {"Game.exe": {}, "BepInEx/plugins/Patch.dll": {"original_sha256": None}}
+TranslationEngine.audit_scope(None, game, {"files": added})
+try:
+    TranslationEngine.audit_scope(None, game, ["Game.exe", "winhttp.dll"])
+except ValueError as error:
+    print(error)
+"""
+
+IMAGES_PHASE = """
+import hashlib, json, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from util.len_translation import LenProject
+from util.len_progress import read_progress, update_progress
+root = Path(sys.argv[2])
+work = root / ".dazedtl/len-method/work"
+work.mkdir(parents=True)
+(root / "a.png").write_bytes(b"image")
+units = {"text": [{"id": "a", "source": "はい", "translation": "Yes",
+                   "translated_from_sha256": hashlib.sha256("はい".encode()).hexdigest()}],
+         "images": [{"id": "a.png", "source": "a.png", "translation": None}]}
+for kind, rows in units.items():
+    (work / (kind + ".json")).write_text(json.dumps({"complete": True, "units": rows}))
+report = {"phase": "injection", "text": ".dazedtl/len-method/work/text.json",
+          "images": ".dazedtl/len-method/work/images.json",
+          "phases": {"preparation": "complete", "extraction": "complete", "translation": "complete"}}
+project = LenProject(root)
+results = [update_progress(project, report)["phases"]["images"]]
+try:
+    update_progress(project, {**report, "phases": {**report["phases"], "images": "complete"}})
+except ValueError as error:
+    results.append(str(error))
+saved = root / ".dazedtl/len-method/progress.json"
+old = json.loads(saved.read_text())
+del old["phases"]["images"]
+saved.write_text(json.dumps(old))
+results.append(read_progress(project)["phases"]["images"])
+del report["images"]
+results.append(update_progress(LenProject(root, include_images=False), report)["phases"]["images"])
+# A text export may list parts, so saving one request rewrites one part; it
+# counts as the same units in one file.
+text = LenProject(root, include_images=False)
+rows = [{"id": "b", "source": "いいえ"}, *units["text"]]
+def save(name, value):
+    (work / name).write_text(json.dumps(value))
+save("one.json", {"complete": True, "units": rows})
+save("p1.json", {"units": rows[:1]})
+save("p2.json", {"units": rows[1:]})
+paths = [".dazedtl/len-method/work/p1.json", ".dazedtl/len-method/work/p2.json"]
+save("parts.json", {"complete": True, "parts": paths})
+def metric(name):
+    return update_progress(text, {"text": ".dazedtl/len-method/work/" + name})["metrics"]["text"]
+results.append(metric("parts.json") == metric("one.json"))
+# An edited part counts again.
+save("p1.json", {"units": [{**rows[0], "translation": "No",
+                            "translated_from_sha256": hashlib.sha256("いいえ".encode()).hexdigest()}]})
+results.append(metric("parts.json")["translated"])
+# A unit in two parts, and image parts, are refused.
+save("p1.json", {"units": rows[1:]})
+save("image-parts.json", {"complete": True, "parts": paths})
+for refused in ({"text": ".dazedtl/len-method/work/parts.json"},
+                {"images": ".dazedtl/len-method/work/image-parts.json"}):
+    try:
+        update_progress(project if "images" in refused else text, refused)
+    except ValueError as error:
+        results.append(str(error))
+print(json.dumps(results))
+"""
+
+
+def script(source, *paths):
+    background = Background()
+    return background.start(
+        [sys.executable, "-I", *bytecode(), "-c", source, *paths, background.folder],
+        merge=False,
+    )
+
+
+gitignore = script(GITIGNORE, ENGINE)
+patch_files = script(PATCH_FILES, ENGINE, ENGINE.parents[1])
+images_phase = script(IMAGES_PHASE, ENGINE)
+
+
+def finished(background):
+    returncode, output, errors = background.result()
+    if returncode:
+        raise AssertionError(errors)
+    return output
 
 
 class CompatibilityContracts(unittest.TestCase):
@@ -1772,150 +1897,20 @@ class ManualJobs:
         # Rescoping the patch block left its blank lines behind, so every
         # version committed a .gitignore with 3 more, whichever block came first,
         # and rules written after the block gained a blank line above them.
-        script = """
-import sys
-from pathlib import Path
-from types import SimpleNamespace
-sys.path.insert(0, sys.argv[1])
-from util.len_patch_scope import scope_ignore
-from util.len_translation import _WORK_IGNORE_BLOCK, _prepare_local_work
-from util.paths import GAME_TOOL_GITIGNORE_BLOCK
-root = Path(sys.argv[2])
-patch = "# BEGIN DazedTL Len patch files\\n/*\\n# END DazedTL Len patch files\\n"
-text = (_WORK_IGNORE_BLOCK + "\\n# DazedTL selected image patches\\n!/img/\\n"
-        "\\n" + patch + "\\n" + GAME_TOOL_GITIGNORE_BLOCK)
-(root / ".gitignore").write_text(text)
-_prepare_local_work(SimpleNamespace(game_root=root, work_root=root / "work"))
-print((root / ".gitignore").read_text() == text)
-(root / ".gitignore").write_text(patch + "\\n" + GAME_TOOL_GITIGNORE_BLOCK)
-_prepare_local_work(SimpleNamespace(game_root=root, work_root=root / "work"))
-result = (root / ".gitignore").read_text()
-print(result.index(_WORK_IGNORE_BLOCK) < result.index(patch) and result.endswith(patch + "\\n" + GAME_TOOL_GITIGNORE_BLOCK))
-for text in (GAME_TOOL_GITIGNORE_BLOCK + "\\n" + patch, patch + "\\n" + GAME_TOOL_GITIGNORE_BLOCK):
-    scoped = scope_ignore(text, {"data/x.json"})
-    print(scope_ignore(scoped, {"data/x.json"}) == scoped)
-print(scope_ignore("A\\n\\n" + patch + "\\nB\\n", set()).startswith("A\\n\\nB\\n"))
-"""
-        with TemporaryDirectory() as folder:
-            result = subprocess.run(
-                [sys.executable, "-I", "-B", "-c", script, str(ENGINE), folder],
-                capture_output=True,
-                text=True,
-                check=True,
-                encoding="utf-8",
-            )
-        self.assertEqual(result.stdout.split(), ["True"] * 5)
+        stdout = finished(gitignore)
+        self.assertEqual(stdout.split(), ["True"] * 5)
 
     def test_git_setup_accepts_declared_files_the_patch_will_add(self):
         # A Unity mod patch delivers only files the original lacks, such as
         # BepInEx; Git setup refused them because they didn't exist yet.
-        script = """
-import sys
-from pathlib import Path
-sys.path[:0] = sys.argv[1:3]
-from dazedtl.compatibility.translation import TranslationEngine
-game = Path(sys.argv[3])
-(game / "Game.exe").write_bytes(b"original")
-added = {"Game.exe": {}, "BepInEx/plugins/Patch.dll": {"original_sha256": None}}
-TranslationEngine.audit_scope(None, game, {"files": added})
-try:
-    TranslationEngine.audit_scope(None, game, ["Game.exe", "winhttp.dll"])
-except ValueError as error:
-    print(error)
-"""
-        with TemporaryDirectory() as folder:
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    "-I",
-                    "-B",
-                    "-c",
-                    script,
-                    str(ENGINE),
-                    str(ENGINE.parents[1]),
-                    folder,
-                ],
-                capture_output=True,
-                text=True,
-                check=True,
-                encoding="utf-8",
-            )
-        self.assertIn("lacks or ignores: winhttp.dll", result.stdout)
+        self.assertIn("lacks or ignores: winhttp.dll", finished(patch_files))
 
     def test_images_are_a_progress_phase_of_their_own(self):
         # Translation could not complete while images remained, so a run that
         # finished its text showed it in progress beside the next phase. Saved
         # reports from before the Images phase must still read.
-        script = """
-import hashlib, json, sys
-from pathlib import Path
-sys.path.insert(0, sys.argv[1])
-from util.len_translation import LenProject
-from util.len_progress import read_progress, update_progress
-root = Path(sys.argv[2])
-work = root / ".dazedtl/len-method/work"
-work.mkdir(parents=True)
-(root / "a.png").write_bytes(b"image")
-units = {"text": [{"id": "a", "source": "はい", "translation": "Yes",
-                   "translated_from_sha256": hashlib.sha256("はい".encode()).hexdigest()}],
-         "images": [{"id": "a.png", "source": "a.png", "translation": None}]}
-for kind, rows in units.items():
-    (work / (kind + ".json")).write_text(json.dumps({"complete": True, "units": rows}))
-report = {"phase": "injection", "text": ".dazedtl/len-method/work/text.json",
-          "images": ".dazedtl/len-method/work/images.json",
-          "phases": {"preparation": "complete", "extraction": "complete", "translation": "complete"}}
-project = LenProject(root)
-results = [update_progress(project, report)["phases"]["images"]]
-try:
-    update_progress(project, {**report, "phases": {**report["phases"], "images": "complete"}})
-except ValueError as error:
-    results.append(str(error))
-saved = root / ".dazedtl/len-method/progress.json"
-old = json.loads(saved.read_text())
-del old["phases"]["images"]
-saved.write_text(json.dumps(old))
-results.append(read_progress(project)["phases"]["images"])
-del report["images"]
-results.append(update_progress(LenProject(root, include_images=False), report)["phases"]["images"])
-# A text export may list parts, so saving one request rewrites one part; it
-# counts as the same units in one file.
-text = LenProject(root, include_images=False)
-rows = [{"id": "b", "source": "いいえ"}, *units["text"]]
-def save(name, value):
-    (work / name).write_text(json.dumps(value))
-save("one.json", {"complete": True, "units": rows})
-save("p1.json", {"units": rows[:1]})
-save("p2.json", {"units": rows[1:]})
-paths = [".dazedtl/len-method/work/p1.json", ".dazedtl/len-method/work/p2.json"]
-save("parts.json", {"complete": True, "parts": paths})
-def metric(name):
-    return update_progress(text, {"text": ".dazedtl/len-method/work/" + name})["metrics"]["text"]
-results.append(metric("parts.json") == metric("one.json"))
-# An edited part counts again.
-save("p1.json", {"units": [{**rows[0], "translation": "No",
-                            "translated_from_sha256": hashlib.sha256("いいえ".encode()).hexdigest()}]})
-results.append(metric("parts.json")["translated"])
-# A unit in two parts, and image parts, are refused.
-save("p1.json", {"units": rows[1:]})
-save("image-parts.json", {"complete": True, "parts": paths})
-for refused in ({"text": ".dazedtl/len-method/work/parts.json"},
-                {"images": ".dazedtl/len-method/work/image-parts.json"}):
-    try:
-        update_progress(project if "images" in refused else text, refused)
-    except ValueError as error:
-        results.append(str(error))
-print(json.dumps(results))
-"""
-        with TemporaryDirectory() as folder:
-            result = subprocess.run(
-                [sys.executable, "-I", "-B", "-c", script, str(ENGINE), folder],
-                capture_output=True,
-                text=True,
-                check=True,
-                encoding="utf-8",
-            )
         self.assertEqual(
-            json.loads(result.stdout),
+            json.loads(finished(images_phase)),
             [
                 "active",
                 (

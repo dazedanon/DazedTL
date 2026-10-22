@@ -38,6 +38,8 @@ An existing pre-release `DazedTLNext` profile keeps being used.
 Run the full behavior suite with `node scripts/test.mjs` (or `npm test` from `app`).
 It uses the local Python environment and Node's built-in test runner, with one enforced wall-clock budget including startup, fixtures, and teardown.
 The budget is 10 seconds; `DAZEDTL_TEST_BUDGET` sets another in seconds, which [CI](#live-test) does for its slower runners.
+The Python and Node suites run at the same time, and Python keeps its compiled modules in `.runtime/test-bytecode` between runs, so a first run after a change compiles again.
+Tests that start a process of their own, such as the [probes](../tests/probe.py), start it while their module is imported and run last, so the rest of the suite overlaps it.
 The runner reports the five slowest Python tests to make runtime regressions visible.
 If Python is still running a second before the budget ends, it prints every thread's stack, which names the test and line it waits on.
 Tests use temporary workspaces and controlled API responses; no provider, game folder or credentials are needed.

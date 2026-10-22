@@ -41,14 +41,11 @@ class PluginTests(unittest.TestCase):
     def setUpClass(cls):
         # One parser for the class parses each identical fixture file once.
         cls.documents = Documents()
-
-    def setUp(self):
-        temporary = TemporaryDirectory()
-        self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
-        self.game = self.root / "game"
-        self.profile = self.root / "profile"
-        self.prefix = "www/"
+        # Each test copies one game whose original files are already recorded
+        # in its Git, instead of recording them again.
+        cls.template = TemporaryDirectory()
+        cls.addClassCleanup(cls.template.cleanup)
+        cls.original = Path(cls.template.name) / "game"
         encoded = json.dumps(
             [
                 json.dumps({"Text": "目的地", "Key": "go"}, ensure_ascii=False),
@@ -69,21 +66,26 @@ class PluginTests(unittest.TestCase):
             },
             {"name": "PluginB", "status": False, "description": "", "parameters": {}},
         ]
-        self.write(
-            "www/js/plugins.js",
-            "var $plugins = " + json.dumps(entries, ensure_ascii=False) + ";\r\n",
+        write_bytes(
+            cls.original / "www/js/plugins.js",
+            (
+                "var $plugins = " + json.dumps(entries, ensure_ascii=False) + ";\r\n"
+            ).encode(),
         )
-        self.write(
-            "www/js/plugins/PluginA.js",
-            "/* @default 既定\r\n * @desc 編集専用\r\n */\r\nconst caption = '開始';\r\ndrawText(caption);\r\nconst key = '薬草';\r\nlookup(key);\r\nconst label = `残り ${actor.name} 個`;\r\ndrawText(label);\r\nloadJSON('data/PluginN.json');\r\n",
+        write_bytes(
+            cls.original / "www/js/plugins/PluginA.js",
+            "/* @default 既定\r\n * @desc 編集専用\r\n */\r\nconst caption = '開始';\r\ndrawText(caption);\r\nconst key = '薬草';\r\nlookup(key);\r\nconst label = `残り ${actor.name} 個`;\r\ndrawText(label);\r\nloadJSON('data/PluginN.json');\r\n".encode(),
         )
-        self.write("www/js/plugins/PluginB.js", "drawText('隠れた文字');\r\n")
+        write_bytes(
+            cls.original / "www/js/plugins/PluginB.js",
+            "drawText('隠れた文字');\r\n".encode(),
+        )
         write_json(
-            self.game / "www/data/Items.json",
+            cls.original / "www/data/Items.json",
             [None, {"id": 1, "name": "薬草", "note": "<所持金消費:1>"}],
         )
         write_json(
-            self.game / "www/data/Map001.json",
+            cls.original / "www/data/Map001.json",
             {
                 "events": [
                     {
@@ -95,9 +97,18 @@ class PluginTests(unittest.TestCase):
             },
         )
         write_json(
-            self.game / "www/data/PluginN.json", {"caption": "収集", "id": "archive"}
+            cls.original / "www/data/PluginN.json", {"caption": "収集", "id": "archive"}
         )
-        write_bytes(self.game / ".dazedtl/glossary.txt", b"Terms\n")
+        write_bytes(cls.original / ".dazedtl/glossary.txt", b"Terms\n")
+        original_files.record(cls.original, original_files.FOUND)
+
+    def setUp(self):
+        temporary = TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.game = shutil.copytree(self.original, self.root / "game", symlinks=True)
+        self.profile = self.root / "profile"
+        self.prefix = "www/"
         self.projects = Projects(self.profile)
         self.project = self.projects.open({"source": str(self.game), "engine": "MVMZ"})
         self.identity = self.project["id"]
@@ -113,7 +124,6 @@ class PluginTests(unittest.TestCase):
         self.service = PluginService(
             self.projects, self.translation, self.backend, documents=self.documents
         )
-        original_files.record(self.game, original_files.FOUND)
 
     def write(self, path, value):
         write_bytes(self.game / path, value.encode())
