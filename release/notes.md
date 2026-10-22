@@ -14,4 +14,5 @@
 
 ### Fixed
 
+- **Checkpoints:** undoing a change or going back past it now shows QA corrections, Plugin files changes and translated images as undone in **History** and their tasks too, and undoing that undo shows them applied again.
 - **Release:** building the patch ZIP after a game update no longer fails with "The untranslated source baseline changed. Prepare a new request plan for this game version."
