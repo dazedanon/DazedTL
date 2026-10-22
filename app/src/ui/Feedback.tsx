@@ -25,6 +25,7 @@ export function Feedback({
         // Results sit beside their control, so a long failure stays a short
         // excerpt until the user asks for all of it.
         <ExpandableText
+          key={error}
           text={error}
           label="Error details"
           appearance="inline"
