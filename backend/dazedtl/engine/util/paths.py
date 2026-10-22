@@ -149,6 +149,9 @@ GAME_REPOSITORY_METADATA = (".gitignore", ".gitattributes", "README.md")
 # archive`, which builds a patch's ZIP and the forges' downloads GameUpdate
 # applies, leaves them out.
 GAME_TOOL_FOLDERS = (GAME_METADATA_RELATIVE.as_posix(), "ace_json")
+# The repository's description files stay out of archives too, so a patch's
+# ZIP carries only the game.
+GAME_TOOL_ARCHIVE_EXCLUDES = (*GAME_TOOL_FOLDERS, *GAME_REPOSITORY_METADATA)
 GAME_TOOL_GITATTRIBUTES_RULES = tuple(
     f"/{folder} export-ignore" for folder in GAME_TOOL_FOLDERS
 )
@@ -374,7 +377,10 @@ def portable_game_files(game_root: str | Path) -> list[str]:
 
 def is_game_tool_file(relative: str) -> bool:
     """Whether a game-relative path is one of DazedTL's own files that players
-    never download."""
+    never download: the files under its folders and the repository's
+    description files."""
+    if relative in GAME_REPOSITORY_METADATA:
+        return True
     folder, separator, _name = relative.partition("/")
     return bool(separator) and folder in GAME_TOOL_FOLDERS
 
