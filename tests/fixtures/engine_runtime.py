@@ -3034,6 +3034,21 @@ try:
                 ["何だ(ﾟдﾟ)", "剣", "盾"], [], config, filename="Map002.json"
             )
         assert output == ["What?! (ﾟдﾟ)", "Sword", "盾"], output
+        # A retry that fails whole keeps the lines an earlier attempt got right.
+        bodies.extend(['{"translations":["Spear","弓"]}', "malformed provider JSON"])
+        config.batchSize, config.validationRetries = 2, 1
+        with (
+            patch.dict(os.environ, {"BATCH_PHASE": "", "API_PROVIDER": "openai"}),
+            patch.object(
+                translation.openai,
+                "chat",
+                SimpleNamespace(completions=SimpleNamespace(create=completion)),
+            ),
+        ):
+            output, _ = translation.translateAI(
+                ["槍", "弓"], [], config, filename="Map003.json"
+            )
+        assert output == ["Spear", "弓"], output
         kept = payload(live_root, 4)
         assert kept["state"] == "validated", kept
         assert kept["keptLines"] == [

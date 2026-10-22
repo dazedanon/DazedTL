@@ -6222,13 +6222,13 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
         from_batch = False
         numLines = len(clean_tItem) if isinstance(tItem, list) else 1
 
-        # The last attempt's lines that passed, when only some failed:
-        # (lines, {failed index: reason}).
+        # The latest attempt's lines that passed, when only some failed:
+        # (lines, {failed index: reason}). A later retry failing whole does
+        # not lose them.
         partial = None
 
         for attempt in range(max_retries + 1):
             is_valid = True
-            partial = None
 
             # On retries, prepend the correction note to the USER message so the
             # cached static_system block is never modified (avoids cache busting).

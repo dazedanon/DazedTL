@@ -1,8 +1,8 @@
 {
-  "description": "Dialogue a model answers in part: the stand-in keeps the kaomoji of the line with (ﾟдﾟ), as models do, and leaves the line with まだ訳せない in Japanese.",
+  "description": "Dialogue a model answers in part: the stand-in keeps the kaomoji (ﾟдﾟ) of the line with 何だこれは, as models do, and leaves the line with まだ訳せない in Japanese.",
   "provider": {
     "reply": {
-      "(ﾟдﾟ)": "W-what is this?! (ﾟдﾟ)",
+      "何だこれは": "W-what is this?! (ﾟдﾟ)",
       "まだ訳せない": "この言葉はまだ訳せない。"
     }
   },
