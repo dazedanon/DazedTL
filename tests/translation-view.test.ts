@@ -710,7 +710,7 @@ test("Database files and Maps & events rows read the file's lines and state", ()
   );
   assert.match(
     noted.detail,
-    /2 lines never translated\..*1 line holds a refusal note/,
+    /2 lines still in Japanese\..*1 line holds a refusal note/,
   );
   // A file whose only line left holds a refusal note was translated before.
   assert.equal(

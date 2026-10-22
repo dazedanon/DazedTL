@@ -8,7 +8,7 @@ import { useRead } from "../../state/useRead";
 import { textLocation } from "./textLocation";
 
 const reasons: Record<NonNullable<FileTextRow["reason"]>, string> = {
-  untranslated: "Never translated",
+  untranslated: "Still in Japanese",
   help: "Choice help",
   note: "Refusal note",
 };

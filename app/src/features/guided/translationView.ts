@@ -549,9 +549,10 @@ const count = (amount: number, one: string, many = one + "s") =>
 export function linesLeft(counted: FileLines) {
   const notes = counted.notes ?? 0,
     help = counted.help ?? 0,
-    never = counted.lines - counted.translated - notes - help;
+    // Sent or not: a line the model gave back unchanged reads the same.
+    japanese = counted.lines - counted.translated - notes - help;
   return [
-    never > 0 && `${count(never, "line")} never translated.`,
+    japanese > 0 && `${count(japanese, "line")} still in Japanese.`,
     help > 0 &&
       `${count(help, "line")} of choice help ${help === 1 ? "is" : "are"} still in Japanese; Comment text now translates ${help === 1 ? "it" : "them"}.`,
     notes > 0 &&

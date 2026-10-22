@@ -366,7 +366,7 @@ export type FileTextRow = {
   text: string;
   source: string | null;
   truncated: boolean;
-  /** Why a line left is: never translated, choice help still in Japanese, or a refusal note. */
+  /** Why a line left is: still in Japanese, choice help still in Japanese, or a refusal note. */
   reason?: "untranslated" | "help" | "note";
 };
 
