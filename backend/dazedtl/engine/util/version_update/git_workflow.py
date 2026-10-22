@@ -3032,7 +3032,9 @@ def _rebuilt_pending_asset_plan(
     if release is None:
         raise GitWorkflowError(
             f"{damaged}, and DazedTL has no note of the release folder the "
-            "update came from, so it can't copy them."
+            "update came from, so it can't copy them. Copy that release's "
+            "files that are not in Git into the game yourself, or go back to "
+            "the checkpoint before this update and apply it again."
         )
     folder = Path(release).expanduser()
     if not folder.is_dir():
