@@ -494,6 +494,11 @@ test("main-text tasks read each file's own lines, whatever ran or is selected", 
         "Map001.json": { lines: 9, translated: 7, help: 2 },
       },
     },
+    // Actors.json has no translated copy of its own.
+    readiness: {
+      outputs: ["Items.json", "Map001.json"],
+      applied: ["Items.json", "Map001.json"],
+    },
     preferences: { values: { selected: [] } },
   } as unknown as GuidedState;
   for (const selected of [[], ["Items.json"], ["Map001.json"]]) {
@@ -522,18 +527,25 @@ test("main-text tasks read each file's own lines, whatever ran or is selected", 
       false,
       file,
     );
+  const finished = {
+    ...state,
+    sourceStatus: {
+      ...state.sourceStatus,
+      lines: { ...lines, "Map001.json": { lines: 9, translated: 9 } },
+    },
+  };
+  assert.equal(translationTaskComplete(finished, "dialogue"), true);
+  // Every line translated but waiting for Apply, as after Start over, is not
+  // done yet.
   assert.equal(
     translationTaskComplete(
       {
-        ...state,
-        sourceStatus: {
-          ...state.sourceStatus,
-          lines: { ...lines, "Map001.json": { lines: 9, translated: 9 } },
-        },
+        ...finished,
+        readiness: { ...finished.readiness, applied: ["Items.json"] },
       },
       "dialogue",
     ),
-    true,
+    false,
   );
   assert.equal(
     translationTaskComplete({ ...state, files: [] }, "database"),
@@ -556,8 +568,14 @@ test("main-text tasks read each file's own lines, whatever ran or is selected", 
     files: ["Map001.json", "Map002.json"],
     outputs: { "Map001.json": "hash", "Map002.json": "hash" },
     availableOutputs: ["Map001.json", "Map002.json"],
+    appliedOutputs: ["Map001.json", "Map002.json"],
   };
-  const rerun = { ...maps, id: "rerun", logicalPhase: "advanced" as const };
+  const rerun = {
+    ...maps,
+    id: "rerun",
+    logicalPhase: "advanced" as const,
+    appliedOutputs: ["Map001.json"],
+  };
   const eventState = {
     ...state,
     files: [
@@ -576,6 +594,15 @@ test("main-text tasks read each file's own lines, whatever ran or is selected", 
   assert.equal(eventsDone(["Map001.json"]), true);
   assert.equal(eventsDone([]), true);
   assert.equal(eventsDone(["Map003.json"]), false);
+  // A rerun's output waiting for Apply keeps the task open.
+  assert.equal(
+    translationTaskComplete(
+      { ...eventState, runs: [{ ...rerun, appliedOutputs: [] }, events] },
+      "advanced",
+      ["Map001.json", "Map002.json"],
+    ),
+    false,
+  );
   assert.equal(
     translationTaskComplete({ ...eventState, runs: [rerun] }, "advanced", [
       "Map001.json",
@@ -608,7 +635,8 @@ test("main-text completion waits for work in progress and source changes", () =>
       ready: [],
       lines: { "Items.json": { lines: 4, translated: 4 } },
     },
-  } as Pick<GuidedState, "files" | "runs" | "sourceStatus">;
+    readiness: { outputs: ["Items.json"], applied: ["Items.json"] },
+  } as Pick<GuidedState, "files" | "runs" | "sourceStatus" | "readiness">;
   assert.equal(translationTaskComplete(state, "database"), true);
   for (const patch of [
     { status: "running" },
@@ -1382,7 +1410,7 @@ test("file metrics survive unchanged passes and advance only with changed output
   );
 });
 
-test("an Other event text pass without requests reads Done only for files no run translated", () => {
+test("an Other event text pass without requests reads Done only for files none of its runs translated", () => {
   const maps: Job = {
     id: "maps",
     logicalPhase: "advanced",
@@ -1432,10 +1460,45 @@ test("an Other event text pass without requests reads Done only for files no run
       applied: ["Troops.json"],
     },
   } as unknown as GuidedState;
+  // Map001.json's output waits for Apply, so the task is not done until it
+  // is in the game.
   assert.equal(
     translationTaskComplete(state, "advanced", ["Map001.json", "Troops.json"]),
+    false,
+  );
+  const applied = {
+    ...state,
+    runs: [{ ...rerun, appliedOutputs: ["Map001.json", "Troops.json"] }, maps],
+  };
+  assert.equal(
+    translationTaskComplete(applied, "advanced", [
+      "Map001.json",
+      "Troops.json",
+    ]),
     true,
   );
+  // Text Maps & events translated is not this task's: a pass that sent
+  // nothing for the file found nothing to translate in it.
+  const dialogue = {
+    ...maps,
+    id: "dialogue",
+    logicalPhase: "dialogue" as const,
+    files: ["Troops.json"],
+    outputs: { "Troops.json": "en" },
+    changedOutputs: ["Troops.json"],
+    process: { errors: [], files: { "Troops.json": requested(["validated"]) } },
+  };
+  const shared = { ...applied, runs: [...applied.runs, dialogue] };
+  assert.deepEqual(translationFileStatus(shared, "advanced", "Troops.json"), {
+    state: "done",
+    label: "Done",
+    detail: "Nothing to translate in this file.",
+    pending: false,
+  });
+  assert.deepEqual(fileLines(shared, "advanced", "Troops.json"), {
+    done: 0,
+    total: 0,
+  });
   // A refusal note an earlier run saved in its event text leaves the file
   // to translate again, however finished its run reads.
   assert.equal(

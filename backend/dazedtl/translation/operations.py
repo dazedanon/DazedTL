@@ -595,10 +595,15 @@ def checkout_issue(status, *, allow_pending=False):
     """Why the game's Git checkout cannot take translation work, or ""."""
     pending = status.get("pending_operations") or []
     if not allow_pending and pending:
-        return (
-            f"The game folder has an unfinished Git {PENDING_GIT.get(pending[0], 'operation')}. "
-            "Finish or cancel it under Checkpoints, or in Git, to continue."
-        )
+        kind = PENDING_GIT.get(pending[0], "operation")
+        # A game update applies its changes by cherry-pick, and Checkpoints
+        # names what it left as the interrupted update.
+        if kind == "cherry-pick":
+            return (
+                "A game update was interrupted. Finish the interrupted update, "
+                "or cancel it, under Checkpoints to continue."
+            )
+        return f"The game folder has an unfinished Git {kind}. Finish or cancel it in Git to continue."
     if not allow_pending and status.get("asset_sync_pending"):
         return "The last game update has not finished restoring game assets. Finish it under Checkpoints to continue."
     current, branch = status.get("current_branch"), status.get("translation_branch")
