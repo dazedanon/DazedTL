@@ -367,11 +367,10 @@ pre {
 .page-layout :is(.page-body, .action-bar):not(dialog *) {
   padding-inline: var(--frame-inline);
 }
-/* A wide page spans the window: its rows keep only the gutter, so their
-   edges still line up with each other and with the app's messages above. */
-.page-layout--wide,
-main:has(> .page-layout--wide) {
-  --frame-inline: var(--frame-gutter);
+/* A wide page's body spans the window inside the gutter; its other rows keep
+   the shared column, so switching to it never moves them. */
+.page-layout--wide .page-body:not(dialog *) {
+  padding-inline: var(--frame-gutter);
 }
 .frame-row,
 .page-layout--editor > .page-header,
@@ -929,6 +928,7 @@ main:has(> .page-layout--wide) {
 .combobox-list {
   position: fixed;
   inset: auto;
+  width: max-content;
   margin: 0;
   padding: var(--space-1);
   max-height: min(18rem, var(--combobox-available-height));
@@ -1233,6 +1233,8 @@ main:has(> .page-layout--wide) {
 /* A row's own result, for actions that are not one control, such as a
    menu's: its line under the buttons, as a control's feedback takes. */
 .action-row-actions > .action-row-feedback {
+  /* A link beside the result reads at its size. */
+  font-size: var(--font-small);
   order: 1;
   flex-basis: 100%;
   min-width: 0;

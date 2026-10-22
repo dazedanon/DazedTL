@@ -65,17 +65,18 @@ def history(folder):
 
 def applied_before(folder, run, outputs):
     """Whether an earlier Apply published this saved run's output, so applying
-    it now, as History's Reapply does, applies it again; Translate's Apply
-    names its run too. An Apply saved before Applies named their run counts
-    when it published every one of `outputs`, the run's hash per file."""
+    it now, as History's Reapply does, applies it again: one that named the
+    run, or whose newest copies were its output. An Apply saved before
+    Applies named their runs counts when it published every one of
+    `outputs`, the run's hash per file."""
     published = {}
     for row in records(folder):
         # A batch History restored later still published its outputs.
         if row["kind"] != "export_selected" or row["state"] != "complete":
             continue
-        if row.get("run") == run:
+        if row.get("run") == run or run in row.get("runs", ()):
             return True
-        if "run" not in row:
+        if "run" not in row and "runs" not in row:
             for name, sha in row["next_outputs"].get("files", {}).items():
                 published.setdefault(name, set()).add(sha)
     return bool(outputs) and all(
@@ -152,6 +153,7 @@ def freeze(
     created=(),
     written=None,
     run=None,
+    runs=None,
 ):
     """Freeze both sides before the user reviews an exact destination batch.
     `task` names the QA task whose corrections the batch applies or undoes,
@@ -162,7 +164,8 @@ def freeze(
     and puts back one a batch took out. `written` names the hashes of applied
     outputs that were fitted to the Line widths on the way, which the game
     then holds in place of the output's own. `run` names the saved run whose
-    output an Apply publishes."""
+    output an Apply publishes, and `runs` the runs whose output each file's
+    newest copy is, which Translate's Apply publishes."""
     if not candidates:
         raise ValueError("Select at least one file or correction to apply.")
     _discard_unused(folder)
@@ -219,6 +222,7 @@ def freeze(
         "task": task,
         **({"findings": sorted(findings)} if findings else {}),
         **({"run": run} if run else {}),
+        **({"runs": sorted(runs)} if runs else {}),
     }
     index = Path(folder) / "source-inputs.json"
     record["source_inputs"] = digest(index.read_bytes()) if index.exists() else None

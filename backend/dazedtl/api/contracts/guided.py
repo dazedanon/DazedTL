@@ -977,6 +977,8 @@ class PublicationChange(TypedDict):
     after: Annotated[str | None, "None for a file the batch takes out."]
     size: int
     later_edits: bool
+    # Translate's Apply: the task whose run saved the file's newest copy.
+    task: NotRequired[Phase]
     # A restore's review compares the text; other publications list files.
     diff: NotRequired[str]
     truncated: NotRequired[bool]

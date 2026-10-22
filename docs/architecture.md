@@ -232,7 +232,7 @@ Reserve cards for content requiring a distinct container; tables, editors and th
 
 Every stylesheet loads through [index.css](../app/src/styles/index.css) in a cascade layer (tokens, base, shared UI, the app shell layout, then features), so a feature's rules override shared primitives regardless of specificity; keep selectors simple instead of raising specificity to win.
 Layouts must remain readable and usable from small laptop monitors to large 4K monitors or TVs: reflow content from the available window space and display scaling, keep actions reachable on small displays, and use large ones without excessive stretching or gaps.
-Every page centers one content column, `--content-width`; a workspace whose grid and preview use every pixel, the Images task, is a wide [PageLayout](../app/src/ui/PageLayout.tsx) instead.
+Every page centers one content column, `--content-width`; a workspace whose grid and preview use every pixel, the Images task, is a wide [PageLayout](../app/src/ui/PageLayout.tsx) instead, whose body alone spans the window inside the gutter while its other frame rows keep the column.
 Frame rows (page headers, stage strip, task tabs, messages, scrolling bodies and footers) span the window and pad their content to that column, and rows that do not scroll reserve the body's scrollbar gutter, so every edge matches across screens and window sizes.
 Fill editors and file lists keep a minimum height and the body scrolls instead; a dialog whose tabs differ in height stacks them with [StackedTabPanels](../app/src/ui/Tabs.tsx), so switching tabs keeps its size; rows grow with feedback rather than fixing heights or clipping content.
 
@@ -444,6 +444,7 @@ Going back and undoing write through the gateway, so each is a checkpoint, and s
 A file outside the patch at the target takes the `original` branch's bytes, or, since that branch holds only the patch too, the recorded original files' bytes for that version, or, for a game set up before those were recorded, the bytes of the backup it saved then; without either, a file neither holds stays as it is rather than being guessed at or removed.
 An undo waits for the newest later checkpoint that changed one of its files unless the file is again as it left it, so undoing in turn never loops; [blocker](../backend/dazedtl/compatibility/checkpoint_history.py) is that one rule, which History and Plugin files read too.
 Each feature's apply names its checkpoint in its record, so undoing a checkpoint or going back past it takes out what the features applied there, through [checkpoint_records](../backend/dazedtl/translation/checkpoint_records.py), whose docstring holds the rules: History, Text QA and Plugin files then read it undone, whether the Checkpoints tab, History's Undo or Recovery started it, and Images reads it from the image files once the checkpoints move.
+Guided's Line widths take the widths the game's settings hold again once a restore changes them.
 Save a copy writes the game as of a checkpoint into a new folder outside it, and Electron opens only the folders the backend returns.
 
 ## Original game files

@@ -122,8 +122,11 @@ export function ComboBox({
         zoom;
       const upwards =
         below < Math.min(cap, popup.scrollHeight * zoom) && above > below;
-      const width = Math.min(rect.width, window.innerWidth - margin * 2);
-      popup.style.width = `${width / zoom}px`;
+      // The list is at least as wide as its field and grows to read its
+      // longest option on one line, within the window.
+      popup.style.minWidth = `${Math.min(rect.width, window.innerWidth - margin * 2) / zoom}px`;
+      popup.style.maxWidth = `min(32rem, ${(window.innerWidth - margin * 2) / zoom}px)`;
+      const width = popup.getBoundingClientRect().width;
       popup.style.left = `${Math.max(margin, Math.min(rect.left, window.innerWidth - width - margin)) / zoom}px`;
       popup.style.setProperty(
         "--combobox-available-height",

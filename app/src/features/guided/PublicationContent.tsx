@@ -1,10 +1,10 @@
 import { useState } from "react";
-import type { Preview, PublicationChange } from "../../api/contracts";
+import type { Phase, Preview, PublicationChange } from "../../api/contracts";
 import { Notice } from "../../ui/Notice";
 import { PathText } from "../../ui/PathText";
 import { TextDiff } from "../../ui/TextDiff";
 import { VirtualList } from "../../ui/VirtualList";
-import { fileCount, pathKey } from "./workspace/model";
+import { fileCount, pathKey, phaseLabels } from "./workspace/model";
 
 /** The Guided actions that write reviewed text into the game. */
 export const publicationActions = [
@@ -17,12 +17,28 @@ export const publicationActions = [
  * What a text publication will change: the files an Apply overwrites, or
  * the file diffs of QA fixes and restores.
  */
-export function PublicationContent({ preview }: { preview: Preview }) {
+export function PublicationContent({
+  preview,
+  phase,
+}: {
+  preview: Preview;
+  phase?: Phase;
+}) {
+  const fileName = (path: string) => path.split("/").pop();
   // Files changed in the game since their last Apply, such as hand fixes,
   // which a full overwrite replaces.
   const edited = (preview.publication || [])
     .filter((row) => row.later_edits)
-    .map((row) => row.path.split("/").pop());
+    .map((row) => fileName(row.path));
+  // Files whose newest copy another task's run saved, such as Other event
+  // text's output over Maps & events', which this Apply puts in too.
+  const carried = new Map<Phase, string[]>();
+  for (const row of preview.publication || [])
+    if (row.task && row.task !== phase)
+      carried.set(row.task, [
+        ...(carried.get(row.task) || []),
+        fileName(row.path) || row.path,
+      ]);
   return (
     <>
       <p className="path">
@@ -42,6 +58,13 @@ export function PublicationContent({ preview }: { preview: Preview }) {
               requests.
             </p>
           )}
+          {[...carried].map(([task, files]) => (
+            <p key={task}>
+              Also applies {phaseLabels[task]}&apos;s saved translations in{" "}
+              {files.slice(0, 3).join(", ")}
+              {files.length > 3 && ` and ${files.length - 3} more`}.
+            </p>
+          ))}
           {!!edited.length && (
             <Notice tone="warning">
               {edited.slice(0, 3).join(", ")}

@@ -1520,6 +1520,7 @@ class GuidedTests(unittest.TestCase):
         write_json(
             self.folder / "translated/System.json", {"gameTitle": "Other output"}
         )
+        self.backend.workflows.previews = {}
         self.backend.workflows.preview = lambda *_: {
             "token": "apply-preview",
             "confirmation": True,
@@ -1727,6 +1728,9 @@ class GuidedTests(unittest.TestCase):
             return {"token": token, "confirmation": True, "options": {}}
 
         self.backend.workflows.preview = preview
+        self.backend.phase_files = lambda _native, phase: (
+            ["Items.json"] if phase == "database" else ["Map001.json"]
+        )
         self.backend.guided_export_preview = lambda *args, **kw: (
             ExistingBackend.guided_export_preview(self.backend, *args, **kw)
         )
@@ -1747,9 +1751,8 @@ class GuidedTests(unittest.TestCase):
             )
             self.assertEqual(review["paths"], ["Items.json"])
             self.assertEqual(review["options"]["run_id"], identity)
-            # Translate's Apply names its run too; History listed a run's
-            # first Apply as a reapply.
-            self.assertEqual(review["label"], "Apply selected saved outputs")
+            # History listed a run's first Apply as a reapply.
+            self.assertEqual(review["label"], "Apply Database files")
             self.assertEqual(read_json(self.source / "Items.json"), [{"name": "薬"}])
             write_json(self.source / "Items.json", [{"name": "Edit after review"}])
             edited = (self.source / "Items.json").read_bytes()
@@ -1773,8 +1776,61 @@ class GuidedTests(unittest.TestCase):
                 [publication.digest(edited)],
             )
             self.assertEqual(self.native["selected"], [])
+            # Translate's Apply then publishes the newest copy, the one its
+            # rows read, not the older run, and its review names the task
+            # whose run saved that copy over this one's.
+            newer = {
+                "id": "event-text-run",
+                "mode": "translate",
+                "status": "complete",
+                "files": ["Items.json"],
+                "outputs": {
+                    "Items.json": digest(
+                        (self.folder / "translated/Items.json").read_bytes()
+                    )
+                },
+                "log": [],
+            }
+            self.backend.manual.jobs[newer["id"]] = newer
+            self.guided.runs.remember(self.identity, newer, {"phase": "advanced"})
+            self.native["selected"] = ["Items.json"]
+            latest = self.guided.preview(
+                self.identity, "export_selected", files=["Items.json"]
+            )
+            self.assertEqual(
+                [row.get("task") for row in latest["publication"]], ["advanced"]
+            )
+            self.guided.execute(self.identity, latest["token"])
+            self.assertEqual(
+                read_json(self.source / "Items.json"), [{"name": "Newer wording"}]
+            )
+            self.native["selected"] = []
             with self.assertRaises(ValueError):
                 self.guided.execute(self.identity, review["token"])
+            # That Apply published the newer run's output, so History's
+            # Reapply of the run applies it again.
+            write_json(
+                self.backend.manual.folder(newer["id"]) / "translated/Items.json",
+                [{"name": "Newer wording"}],
+            )
+            self.assertEqual(
+                self.guided.preview(
+                    self.identity, "export_selected", options={"run_id": newer["id"]}
+                )["label"],
+                "Reapply Database files",
+            )
+            # A later run that saved the copy unchanged added none of its text.
+            unchanged = {**newer, "id": "unchanged-run", "created": "later"}
+            self.backend.manual.jobs[unchanged["id"]] = unchanged
+            self.guided.runs.remember(self.identity, unchanged, {"phase": "dialogue"})
+            self.native["selected"] = ["Items.json"]
+            self.assertEqual(
+                self.guided.preview(
+                    self.identity, "export_selected", files=["Items.json"]
+                )["publication"][0].get("task"),
+                "advanced",
+            )
+            self.native["selected"] = []
             for state in ("running", "failed", "stopped"):
                 job["status"] = state
                 with self.assertRaises(ValueError):
@@ -1789,7 +1845,7 @@ class GuidedTests(unittest.TestCase):
             )
             self.assertEqual(
                 (again["paths"], again["label"]),
-                (["Items.json"], "Reapply saved run output"),
+                (["Items.json"], "Reapply Database files"),
             )
             job["mode"] = "batch"
             for files in (
@@ -1883,25 +1939,47 @@ class GuidedTests(unittest.TestCase):
                 "text": path.read_text(encoding="utf-8"),
                 "revision": digest(path.read_bytes()),
                 "path": str(path),
-            }
+            },
+            "quirks": {
+                "text": quirks.read_text(encoding="utf-8") if quirks.exists() else "",
+                "revision": "",
+                "path": str(quirks),
+            },
         }
+        quirks = self.source / "quirks.md"
         self.backend.workflows.documents = documents
         self.backend.workflows.state = lambda _: {"draft": pending}
         self.backend.workflows.draft = Mock()
+        summaries = []
+
+        def write(source, native=None, **options):
+            summaries.append(options["summary"])
+            return game_write(source, native, **options)
 
         def save(owner, changes):
             self.assertEqual(owner, "native")
-            self.assertEqual(list(changes), ["glossary"])
             self.assertEqual(changes["glossary"]["revision"], digest(path.read_bytes()))
             path.write_text(changes["glossary"]["text"], encoding="utf-8")
+            if "quirks" in changes:
+                quirks.write_text(changes["quirks"]["text"], encoding="utf-8")
             return documents(owner)
 
+        # Save guidance sends every tab.
         def draft(text):
-            return {"glossary": {"text": text, "revision": "older"}}
+            return {
+                "glossary": {"text": text, "revision": "older"},
+                "quirks": {"text": "", "revision": ""},
+            }
 
+        self.backend.game_write = write
         self.backend.workflows.documents_save = save
         self.guided.save_documents(self.identity, draft("My draft"))
         self.assertEqual(path.read_text(encoding="utf-8"), "My draft")
+        # A core tab the game has no file for is created, empty, so Guidance
+        # is complete, but its checkpoint names only what was edited: it read
+        # "Save Glossary, Style & quirks".
+        self.assertEqual(quirks.read_text(encoding="utf-8"), "")
+        self.assertEqual(summaries, ["Save Glossary"])
         self.assertEqual(set(pending["documents"]), {"game"})
         # A document whose file already holds its text writes nothing, so a
         # Save of untouched tabs makes no checkpoint.

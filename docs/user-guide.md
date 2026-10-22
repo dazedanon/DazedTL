@@ -112,6 +112,7 @@ Translate has five tasks.
    Choose another model beside the price to see its cost: the estimate takes the new prices at once when the requests stay the same, and a Batch then prepares its requests again for that model before you can submit.
    With **Batch**, names and labels the glossary lacks are translated first with Live, after their own review; they join the glossary even if you then decline the Batch.
 4. Click **Apply** to write the translations into the game.
+   It writes each file's newest translation, so a file Other event text translated after Maps & events gets both tasks' text, and its review says so.
    Translation wraps each line to your **Line widths**, keeping the Japanese line breaks where the English allows, and Apply wraps again any line still too wide.
 
 **Lines** counts what each file holds right now: lines translated of the lines that hold Japanese, where a message, a choice, a help text or a name each count once.
@@ -330,6 +331,12 @@ The preview counts the lines to translate and the translations that go back to J
 A patch keeps every game file it doesn't include, but it can't remove files the developer deleted.
 Steps above the checkpoints show where the update stands, and the update starts a new version in the list.
 **Discard release** drops an update you don't want.
+
+An update that stops partway, such as when the app closes during it, shows **Finish the interrupted update** on **Checkpoints** and keeps every other change to the game refused until you decide.
+When files conflict, **Use official files & continue** resolves the rest with the official game's files, so affected translated text may need translating again.
+**Cancel update & restore translation** gives the game back as it was before the update, and you can apply it again.
+When the translation already has the update, **Copy assets & finish** copies the images, sounds and other assets it brings into the game.
+When the update stopped before it reached the translation, **Cancel update** goes back to the version you had.
 
 Once the update is in the game, Guided steps list the tasks it changed, such as **Maps & events**; each opens with the changed files selected.
 Files you translated before read **Outdated** there, so **Reload from game…** brings in their new text, and translating them again only sends the Japanese lines.

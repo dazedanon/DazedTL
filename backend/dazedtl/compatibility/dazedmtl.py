@@ -457,10 +457,26 @@ class ExistingBackend:
     def guided_text_preview(self, native_id, action, options):
         result = self.workflows.preview(native_id, "export_selected", {})
         plan = self.workflows.previews[result["token"]]
+        shown = label(action)
+        if action == "runtime_undo":
+            from dazedtl.actions import history_label
+            from dazedtl.translation.publication import history
+
+            # The undo names the batch it takes out.
+            batch = next(
+                (
+                    row
+                    for row in history(self.workflows.folder(native_id))
+                    if row["id"] == options.get("publication")
+                ),
+                None,
+            )
+            if batch:
+                shown = f"Undo “{history_label(batch['kind'])}”"
         plan.update(
             action=action,
             options=options,
-            label=label(action),
+            label=shown,
         )
         return {
             **result,
@@ -581,18 +597,30 @@ class ExistingBackend:
         from dazedtl.translation.publication import applied_before
 
         options = {"files": list(files)}
-        shown = label("export_selected")
+        # The tasks whose files go in name the Apply, in History and the
+        # checkpoint.
+        native = self.workflows.state(native_id)["project"]
+        tasks = [
+            title
+            for phase, title in (
+                ("database", "Database files"),
+                ("dialogue", "Maps & events"),
+            )
+            if set(files) & set(self.phase_files(native, phase))
+        ]
+        named = " and ".join(tasks)
+        shown = "Apply " + named if named else label("export_selected")
         if run_output:
             plan["run_output"] = run_output
             options["run_id"] = run_output["run_id"]
-            # Translate's Apply also names its own run; only output an
-            # earlier Apply already published is applied again.
+            # Run history's Reapply names its run; only output an earlier
+            # Apply already published is applied again.
             if applied_before(
                 self.workflows.folder(native_id),
                 run_output["run_id"],
                 {name: run_output["outputs"][name] for name in files},
             ):
-                shown = "Reapply saved run output"
+                shown = "Reapply " + named if named else "Reapply saved run output"
         plan.update(options=options, label=shown)
         return {**preview, "label": shown, "options": options, "files": len(files)}
 

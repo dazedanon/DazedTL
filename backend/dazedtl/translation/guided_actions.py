@@ -506,7 +506,18 @@ class GuidedActions:
                 )
             )
         if action == "export_selected":
+            # Translate's Apply publishes each file's newest copy, which may
+            # hold another task's saved output: its receipt names the runs
+            # whose output it publishes, and the review names their tasks.
+            found = {} if run_output else self.guided.output_runs(native, paths)
+            frozen = self.guided.backend.workflows.previews.get(token)
+            if frozen is not None:
+                frozen["output_runs"] = sorted({row["run"] for row in found.values()})
             result.update(self.guided.backend.guided_text_publication(token))
+            for row in result.get("publication", []):
+                task = found.get(Path(row["path"]).name, {}).get("task")
+                if task:
+                    row["task"] = task
         reviewed_paths = (
             paths or result.get("paths") or result["options"].get("files", [])
         )

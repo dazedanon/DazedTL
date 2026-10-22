@@ -109,6 +109,8 @@ names = zipfile.ZipFile(built["path"]).namelist()
 assert "Data/Actors.rvdata2" in names and not [
     name for name in names if name.startswith("ace_json/")
 ], names
+# The repository's description files are not the game either.
+assert not {".gitignore", ".gitattributes", "README.md"} & set(names), names
 
 # Version 1.1 comes encrypted, as every shipped Ace game does: it changes the
 # translated map and an untranslated item.
@@ -140,6 +142,12 @@ outcomes = {change["path"]: change["result"] for change in preview["file_changes
 # release's replaced each translated file.
 assert "Translated file replaced by official file" not in outcomes.values(), outcomes
 assert outcomes["ace_json/Map001.json"] == "Merged with translation edits", outcomes
+# The update packs a data file both changed from the merged ace_json, and
+# keeps the release's archive for patches; the preview says both.
+assert (
+    outcomes["Data/Map001.rvdata2"] == "Packed from the merged text after the update"
+), outcomes
+assert outcomes["Game.rgss3a"] == "Replaces the archive kept for patches", outcomes
 applied = operation(
     "version_apply", official=str(official), version="1.1", preview=preview
 )

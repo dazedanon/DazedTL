@@ -2,7 +2,7 @@
 
 import re
 import shutil
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from dazedtl import system
 from dazedtl.storage import staging_folder, write_json
@@ -602,6 +602,51 @@ def convert_ace(root, log, folder=None):
         log("No packing receipt was saved: " + str(error))
 
 
+def describe_ace_update(root, release, preview):
+    """Says in a previewed VX Ace update what finishing it does with the
+    game's binary files, as `finish_ace_update` does it: a data file packs
+    from the merged ace_json, so Git's verdict on the file itself is not the
+    result, and the release's archive replaces the one kept for patches. Only
+    for a release converted as the game is."""
+    from util.ace import actions
+
+    from dazedtl.translation.release import packing_target
+
+    root, changes = Path(root), list(preview["file_changes"])
+    if not (release and ace_converted(root) and ace_converted(release)):
+        return
+    packed = {
+        packing_target(change["path"])
+        for change in changes
+        if change["path"].startswith("ace_json/") and change["change"] != "Removed"
+    }
+    for change in changes:
+        path = PurePosixPath(change["path"])
+        if (
+            path.parent.name == "Data"
+            and path.suffix == ".rvdata2"
+            and path.stem.casefold() in packed
+        ):
+            change["result"] = "Packed from the merged text after the update"
+            change["whole_file_replaced"] = False
+    archive = actions.original_archive(Path(release))
+    if archive is not None and archive.is_file():
+        changes.append(
+            {
+                "path": archive.name,
+                "change": "Modified",
+                "added_lines": None,
+                "deleted_lines": None,
+                "is_image": False,
+                "translation_changed": False,
+                "already_present": False,
+                "whole_file_replaced": False,
+                "result": "Replaces the archive kept for patches",
+            }
+        )
+    preview["file_changes"] = changes
+
+
 def finish_ace_update(root, release, folder, log):
     """Finishes a VX Ace game's update to `release`, the prepared copy it
     came from. The release's archive, which preparing it set aside as Set up
@@ -661,7 +706,7 @@ def ace_packing_state(native, folder):
     return packing_state(native, folder)
 
 
-def pack_ace(native, folder, log, touched=None):
+def pack_ace(native, folder, log, touched=None, restored=()):
     """Brings an Ace game's native data up to date with its ace_json and
     saves the packing receipt Release checks; every in-app write to ace_json
     runs it in the same step with the exports it `touched`, since the game
@@ -669,7 +714,14 @@ def pack_ace(native, folder, log, touched=None):
     exports changed since. Without one, such as for JSON converted by an
     earlier tool or Data an assistant wrote itself, a write packs only what
     it touched, so whatever else Data holds stays, and only a pack of
-    everything, Pack outside edits, saves a receipt."""
+    everything, Pack outside edits, saves a receipt.
+
+    The native files a checkpoint restore wrote itself, `restored`, keep the
+    receipt when packing their ace_json gives them byte for byte, as it does
+    for a checkpoint DazedTL packed. One that packs otherwise, such as an
+    assistant's or an outside edit of Data, stays as the restore wrote it
+    and no receipt is saved, so Release asks to Pack outside edits and the
+    user decides."""
     from util.ace import actions
 
     from dazedtl.translation.release import (
@@ -683,7 +735,7 @@ def pack_ace(native, folder, log, touched=None):
     if blocked:
         raise ValueError(blocked)
     inputs = packing_inputs(native)
-    receipt, change, only = packing_receipt(native, folder, inputs)
+    receipt, change, only = packing_receipt(native, folder, inputs, restored)
     if receipt is not None:
         outputs = list(receipt["outputs"])
         if not only and not change:
@@ -692,7 +744,31 @@ def pack_ace(native, folder, log, touched=None):
         only, outputs = {packing_target(name) for name in touched}, None
     else:
         only, outputs = None, []
-    written = actions.run(root, "ace_pack", log, only=only)
+    kept = [name for name in restored if (root / name).is_file()]
+    if not kept:
+        written, differ = actions.run(root, "ace_pack", log, only=only), []
+    else:
+        from dazedtl.translation.files import evidence
+
+        # The restored files wait beside the receipt, outside the game, until
+        # packing shows whether it gives them as they are.
+        before = evidence(root, kept)
+        with system.staging_folder(Path(folder), ".restored-") as staged:
+            for index, name in enumerate(kept):
+                shutil.copyfile(root / name, staged / str(index))
+            written = actions.run(root, "ace_pack", log, only=only)
+            after = evidence(root, kept)
+            differ = [name for name in kept if after[name] != before[name]]
+            for index, name in enumerate(kept):
+                if name in differ:
+                    shutil.copyfile(staged / str(index), root / name)
+    if differ:
+        log(
+            "Kept the restored "
+            + ", ".join(differ)
+            + ", which differ from packing ace_json. Pack outside edits, in Release, packs them."
+        )
+        return written
     if outputs is None:
         return written
     if inputs != packing_inputs(native):
