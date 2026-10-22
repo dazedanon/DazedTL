@@ -11,7 +11,7 @@ Taking over keeps findings, choices, working copies, reviews and application
 records, but not copied requests: their authority (plugin request hashes in
 the old profile, image requests bound to the old project) cannot be checked
 here. Starting over moves only the feature's work folder; editable image
-copies and the Qt publisher's image backups lie outside it and stay in place.
+copies and an older publisher's image backups lie outside it and stay in place.
 Each choice binds the hash of the saved state the user was shown (see
 reviewed).
 """

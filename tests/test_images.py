@@ -16,6 +16,8 @@ from unittest.mock import patch
 from dazedtl import system
 from dazedtl.api import views
 from dazedtl.api.contracts.validation import check_response
+from dazedtl.compatibility import original_files
+from dazedtl.compatibility.images import ImageCompatibility
 from dazedtl.foreign_work import ForeignWorkError
 from dazedtl.images import ImageService, recipes, validation
 from dazedtl.images.inventory import png_metadata
@@ -79,6 +81,9 @@ class FixtureImages:
 
     def source_bytes(self, root, row, key):
         return (root / row["runtime"]).read_bytes()
+
+    def original_bytes(self, root, row, key):
+        return ImageCompatibility.original_bytes(self, root, row, key)
 
     def prepare(self, root, profile, rows, key):
         completed, skipped = 0, 0
@@ -896,6 +901,33 @@ class ImageTests(unittest.TestCase):
         restore = reopened.action(self.identity, "preview_restore")["preview"]
         reopened.action(self.identity, "restore", {"token": restore["token"]})
         self.assertEqual((self.game / "img/A.png").read_bytes(), original)
+
+    def test_originals_come_from_the_record_or_an_older_publishers_backup(self):
+        # Nothing copies an image when it changes: Restore reads the game's
+        # record of its original files, and an older publisher's backup is
+        # only read, by Prepare and family matching.
+        write_json(lifecycle_path(self.profile, self.identity), {"version": 1})
+        original_files.record(self.game, original_files.FOUND)
+        original = (self.game / "img/A.png").read_bytes()
+        stored = png((5, 6, 7, 100))
+        write_bytes(self.game / ".dazedtl/image_backups/img/B.png", stored)
+        write_bytes(self.game / "img/B.png", png((9, 9, 9, 100)))
+        self.scan()
+        self.choose(["img/A.png", "img/B.png"])
+        self.service.action(self.identity, "prepare")
+        frozen = self.game / ".dazedtl/image_manager/guided/originals/img"
+        self.assertEqual((frozen / "A.png").read_bytes(), original)
+        self.assertEqual((frozen / "B.png").read_bytes(), stored)
+        candidate = self.reviewed_candidate()
+        preview = self.service.action(self.identity, "preview_apply")["preview"]
+        self.service.action(self.identity, "apply", {"token": preview["token"]})
+        self.assertEqual((self.game / "img/A.png").read_bytes(), candidate)
+        restore = self.service.action(self.identity, "preview_restore")["preview"]
+        self.service.action(self.identity, "restore", {"token": restore["token"]})
+        self.assertEqual((self.game / "img/A.png").read_bytes(), original)
+        self.assertEqual(
+            (self.game / ".dazedtl/image_backups/img/B.png").read_bytes(), stored
+        )
 
     def test_an_image_reads_applied_from_its_file_once_checkpoints_move(self):
         # Undoing an apply's or Restore originals' checkpoint, or going back
