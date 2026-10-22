@@ -35,9 +35,10 @@ _TAGGED_VERSION = re.compile(r"(?i)(?<![a-z])v(?:er(?:sion)?)?[\s._-]*(\d+(?:\.\
 _BARE_VERSION = re.compile(r"(?<![\d.])(\d+(?:\.\d+)+)(?![\d.])")
 # A VX Ace game's encrypted archive, which Set up extracts beside it.
 _ARCHIVE = re.compile(r"(?i)(?:^|/)game\.rgss3a$")
-# Game folders that preparing a release writes from its own files, such as a
-# VX Ace game's JSON export of its Data, which no developer ships.
-_PREPARED = frozenset({"ace_json"})
+# A VX Ace game's data, and its runtime entry: Game.exe and the RGSS library
+# Game.ini names, which a complete release ships and a patch leaves out.
+_ACE_DATA = re.compile(r"(?i)^data/[^/]+\.rvdata2$")
+_ACE_RUNTIME = re.compile(r"(?i)^(game\.exe|system/rgss[^/]*\.dll)$")
 
 
 @dataclass(frozen=True)
@@ -110,6 +111,34 @@ def _archived(release: Path, files: list[str]) -> list[str]:
     return found
 
 
+def _exports(paths: list[str]) -> list[str]:
+    """The ace_json files preparing a release writes from the VX Ace data
+    among `paths`, as Set up converted the game's: each data file's export,
+    and the scripts folder from Scripts.rvdata2."""
+    found = []
+    for path in paths:
+        folder, _, name = path.rpartition("/")
+        parent, _, last = folder.rpartition("/")
+        if last.casefold() != "data" or not name.casefold().endswith(".rvdata2"):
+            continue
+        stem = name[: -len(".rvdata2")]
+        exports = f"{parent}/ace_json" if parent else "ace_json"
+        found.append(
+            f"{exports}/scripts" if stem.casefold() == "scripts" else f"{exports}/{stem}.json"
+        )
+    return found
+
+
+def _runtime_entry(own: list[str]) -> list[str]:
+    """The files a complete release of the game must ship to run it: a VX
+    Ace game's Game.exe and RGSS library, where it has them. An Ace patch is
+    often only a new archive, which holds most of the game's files but never
+    these. MV and MZ releases go by their share of the game alone."""
+    if not any(_ACE_DATA.match(path) for path in own):
+        return []
+    return [path for path in own if _ACE_RUNTIME.match(path)]
+
+
 def _game_files(game: Path) -> list[str]:
     # The game's own files, without DazedTL's tools and the player's saves.
     return [
@@ -177,12 +206,23 @@ def _under(path: str, folder: str) -> str | None:
     return path[len(folder) + 1 :] if path.startswith(folder + "/") else None
 
 
-def _layout(kind, release, game, source, target) -> ReleaseLayout:
+def _layout(kind, release, game, source, target, prepared=()) -> ReleaseLayout:
     inside = [_under(path, source) for path in release]
     tails = [tail for tail in inside if tail is not None]
     game_folded = {path.casefold() for path in game}
     place = (lambda tail: f"{target}/{tail}") if target else (lambda tail: tail)
     supplied = {place(tail).casefold() for tail in tails}
+    # What preparing the release writes, such as ace_json and its scripts.
+    written = {
+        place(tail).casefold()
+        for tail in (_under(path, source) for path in prepared)
+        if tail is not None
+    }
+    covered = sum(
+        1
+        for path in game_folded
+        if path in supplied or path in written or path.rpartition("/")[0] in written
+    )
     return ReleaseLayout(
         kind=kind,
         source=source,
@@ -192,7 +232,7 @@ def _layout(kind, release, game, source, target) -> ReleaseLayout:
         outside=len(release) - len(tails),
         left_out=tuple(path for path, tail in zip(release, inside) if tail is None)[:LISTED],
         game_files=len(game),
-        covered=sum(1 for path in game_folded if path in supplied),
+        covered=covered,
     )
 
 
@@ -212,20 +252,26 @@ def inspect_release(game_root: str | Path, release_root: str | Path) -> ReleaseI
     files = _walk(release)
     if not files:
         raise GitWorkflowError("The release folder is empty.")
-    own = [
-        path
-        for path in _game_files(game)
-        if path.split("/")[0].casefold() not in _PREPARED
-    ]
-    # Archived files line up as the game holds them once extracted.
+    own = _game_files(game)
+    # Archived files line up as the game holds them once extracted, and an
+    # Ace release's data covers the exports converting it writes.
     held = files + _archived(release, files)
     votes = _alignments(held, own)
     # A complete game replaces the game's root, so only its own folder varies.
     root = _best(votes, [pair for pair in votes if not pair[1]])
-    complete = _layout("game", held, own, root[0], "")
+    complete = _layout("game", held, own, root[0], "", _exports(held))
     patch = _layout("patch", files, own, *_best(votes, votes))
+    # A complete release also ships the game's runtime entry; anything less,
+    # however much of the game it holds, is a patch.
+    shipped = {path.casefold() for path in held}
+    runs = all(
+        (f"{root[0]}/{entry}" if root[0] else entry).casefold() in shipped
+        for entry in _runtime_entry(own)
+    )
     detected = (
-        "game" if own and complete.covered >= COMPLETE_SHARE * len(own) else "patch"
+        "game"
+        if own and runs and complete.covered >= COMPLETE_SHARE * len(own)
+        else "patch"
     )
     names = [release.name, *(root[0].split("/") if root[0] else ())]
     version = next((found for found in map(guess_version, reversed(names)) if found), "")

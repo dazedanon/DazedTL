@@ -382,9 +382,10 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         # A patch holds only some of the game's files, so the game says which engine it is.
         kind = engine.detect(source if patch else staged)
         prepared = False
-        if patch and kind == "MVMZ":
-            engine.rpgmaker_prepare_patch(staged, source, log=progress)
-            prepared = True
+        if patch and kind in {"MVMZ", "ACE"}:
+            # An Ace patch needs an assistant unless it brings the archive.
+            prepared = engine.rpgmaker_prepare_patch(staged, source, log=progress)
+            prepared = prepared is not None
         elif not patch and kind in {"MVMZ", "ACE"}:
             engine.rpgmaker_prepare_release(staged, options, log=progress)
             prepared = True

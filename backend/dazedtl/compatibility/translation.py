@@ -765,19 +765,29 @@ class TranslationEngine:
         converted as Set up converts the game, setting its archive aside,
         and the exports formatting changes are packed into its Data, as
         preparing the game packs them."""
-        from util.ace import actions
         from util.project_preparation import rpgmaker_layout
-
-        from dazedtl.translation.release import packing_inputs, packing_target
 
         log = log or (lambda _line: None)
         layout = rpgmaker_layout(staged)
         if not layout or layout["engine"] != "ACE":
             return self._prepare(staged, options, None, log)
+        return self._convert_ace(
+            staged, lambda: self._prepare(staged, options, None, log), log
+        )
+
+    def _convert_ace(self, staged, prepare, log):
+        """Converts a staged VX Ace copy as Set up converts the game: its
+        archive extracted and set aside, Data converted into ace_json, which
+        `prepare` formats, and the formatting changes packed into its Data,
+        as preparing the game packs them."""
+        from util.ace import actions
+
+        from dazedtl.translation.release import packing_inputs, packing_target
+
         actions.run(Path(staged), "ace_extract", log)
-        native = {"source": str(staged), "data": str(layout["data_path"])}
+        native = {"source": str(staged), "data": str(Path(staged) / "ace_json")}
         before = packing_inputs(native)
-        result = self._prepare(staged, options, None, log)
+        result = prepare()
         after = packing_inputs(native)
         if changed := {packing_target(n) for n in after if before.get(n) != after[n]}:
             actions.run(Path(staged), "ace_pack", log, only=changed)
@@ -803,9 +813,29 @@ class TranslationEngine:
         return result
 
     def rpgmaker_prepare_patch(self, patch, source, log=None):
-        from util.project_preparation import prepare_rpgmaker_patch
+        """Gives a staged patch the preparation the game's own files had, or
+        returns None when it needs an assistant's. A VX Ace patch that brings
+        the game's archive is converted as Set up converted the game, so the
+        archive never sits beside the translated Data, which the game would
+        then no longer read; finishing the update keeps it for patches."""
+        from util.ace import rgssad
+        from util.dazedformat import format_json_files
+        from util.project_preparation import prepare_rpgmaker_patch, rpgmaker_layout
 
-        return prepare_rpgmaker_patch(patch, source, log=log)
+        layout = rpgmaker_layout(source)
+        if not layout or layout["engine"] != "ACE":
+            return prepare_rpgmaker_patch(patch, source, log=log)
+        if not rgssad.archives(Path(patch)):
+            return None
+        log = log or (lambda _line: None)
+
+        def prepare():
+            count, errors = format_json_files(Path(patch) / "ace_json", log=log)
+            if errors:
+                raise ValueError("Patch data formatting failed. " + "; ".join(errors))
+            return {"engine": "ACE", "formatted_json": count}
+
+        return self._convert_ace(patch, prepare, log)
 
     def release_inspect(self, source, release):
         from util.version_update import GitWorkflowError

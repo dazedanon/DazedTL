@@ -412,7 +412,9 @@ VX Ace preparation runs in Python on every platform: [util/ace](../backend/dazed
 RGSS3 reads only the archive while `Game.rgss3a` exists, so Set up keeps an encrypted game's archive in `.dazedtl/ace`, out of releases and Git, and patches carry it rebuilt from the game's current files.
 The game reads only Data, so the game-write gateway packs what a write changed in `ace_json` ([pack_ace](../backend/dazedtl/compatibility/guided.py)), and Release requires a current packing receipt.
 `ace_json` is the translation's text, so checkpoints let it into the patch and restore it, but it is DazedTL's own file, which players never download ([is_game_tool_file](../backend/dazedtl/engine/util/paths.py)).
-A game update prepares a complete Ace release as Set up prepares the game ([rpgmaker_prepare_release](../backend/dazedtl/compatibility/translation.py)); once applied, the release's archive replaces the kept one and Data is packed from the merged `ace_json`, since Git can't merge a data file both changed ([finish_ace_update](../backend/dazedtl/compatibility/guided.py)).
+A game update prepares a complete Ace release as Set up prepares the game ([rpgmaker_prepare_release](../backend/dazedtl/compatibility/translation.py)), and converts a patch that brings a new `Game.rgss3a` the same way ([rpgmaker_prepare_patch](../backend/dazedtl/compatibility/translation.py)), so the archive never sits beside the translated Data.
+An Ace release reads as a complete game only when it also ships the game's `Game.exe` and RGSS library ([release_layout](../backend/dazedtl/engine/util/version_update/release_layout.py)): the usual update is the archive alone, which holds most of the game, and replacing the game with it would remove what runs it.
+Once applied, the release's archive replaces the kept one and Data is packed from the merged `ace_json`, since Git can't merge a data file both changed ([finish_ace_update](../backend/dazedtl/compatibility/guided.py)).
 Ace data is translated by the MV/MZ engine with its `VXACE` option set from the project's engine ([phase_workflow](../backend/dazedtl/engine/desktop/backend/workflow.py)), so frozen plans carry it.
 
 ## Windows

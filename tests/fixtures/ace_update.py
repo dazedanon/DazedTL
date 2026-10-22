@@ -74,6 +74,17 @@ def displayed(data, name):
 game = temporary / "game"
 for name in ("Data", "ace_json"):
     shutil.copytree(FIXTURE / name, game / name)
+# What runs the game, which no data patch carries.
+RUNTIME = {
+    "Game.exe": b"exe",
+    "Game.ini": b"[Game]\r\nLibrary=System\\RGSS301.dll\r\nTitle=Test\r\n",
+    "System/RGSS301.dll": b"dll",
+    "Audio/SE/Bell.ogg": b"ogg",
+    "Fonts/Font.ttf": b"ttf",
+}
+for name, data in RUNTIME.items():
+    (game / name).parent.mkdir(parents=True, exist_ok=True)
+    (game / name).write_bytes(data)
 engine.rpgmaker_prepare(game, options)
 engine.audit_scope(game, {"files": {name: {} for name in runtime_files(game)}})
 original_files.record(game, original_files.PREPARED, "1.0")
@@ -132,17 +143,41 @@ archive = archive_v3(
     [("Data\\" + name, data) for name, data in files(v11 / "Data").items()], seed=11
 )
 (release / "Game.rgss3a").write_bytes(archive)
-(release / "Game.ini").write_text("[Game]\r\nTitle=Test\r\n", encoding="utf-8")
-# The archive and Game.ini are a complete game; 2.27.1 took their two files
-# for a patch and would have put the archive beside the translated Data, which
-# the game would then no longer read. 2.27.0 staged it unprepared, and
-# applying it would have removed every data file and ace_json.
-assert inspect_release(game, release).detected == "game", inspect_release(game, release)
+# A release with the game's Game.exe and RGSS library is a complete game; one
+# without them is a patch, however much of the game its archive or Data holds,
+# since replacing the game with it would remove what runs it.
+complete = temporary / "complete"
+shutil.copytree(release, complete)
+for name, data in RUNTIME.items():
+    (complete / name).parent.mkdir(parents=True, exist_ok=True)
+    (complete / name).write_bytes(data)
+assert inspect_release(game, complete).detected == "game", inspect_release(
+    game, complete
+)
+data_patch = temporary / "data-patch"
+shutil.copytree(v11 / "Data", data_patch / "Data")
+assert inspect_release(game, data_patch).detected == "patch"
+# The usual update is the new archive alone. 2.27.1's fix took it for a
+# complete game, which removed Game.exe, the library, Audio and Fonts; before
+# that a patch put the archive beside the translated Data, which the game then
+# read instead, and 2.27.0 staged a complete one unprepared, which removed
+# every data file and ace_json.
+assert inspect_release(game, release).detected == "patch", inspect_release(
+    game, release
+)
 staged = operation("stage_update", official=str(release), version="1.1")
-assert not staged["preparation_required"], staged
+assert staged["patch"] and not staged["preparation_required"], staged
 official = Path(staged["official"])
+# Staging converts the patch as Set up converted the game.
 assert rgssad.archives(official) == [] and (official / "ace_json/System.json").is_file()
-preview = operation("version_preview", official=str(official), version="1.1")
+preview = operation(
+    "version_preview", official=str(official), version="1.1", patch_overlay=True
+)
+assert not [
+    change["path"]
+    for change in preview["file_changes"]
+    if change["change"] == "Removed"
+], preview["file_changes"]
 outcomes = {change["path"]: change["result"] for change in preview["file_changes"]}
 # 2.27.0 compared with an original branch holding no ace_json, so the
 # release's replaced each translated file.
@@ -155,9 +190,18 @@ assert (
 ), outcomes
 assert outcomes["Game.rgss3a"] == "Replaces the archive kept for patches", outcomes
 applied = operation(
-    "version_apply", official=str(official), version="1.1", preview=preview
+    "version_apply",
+    official=str(official),
+    version="1.1",
+    preview=preview,
+    patch_overlay=True,
 )
 assert applied["complete"], applied
+assert rgssad.archives(game) == []
+# Packing writes the title into Game.ini; the rest of the runtime stays.
+for name, data in RUNTIME.items():
+    if name != "Game.ini":
+        assert (game / name).read_bytes() == data, name
 assert read(game / "ace_json/Actors.json") == TRANSLATED
 merged = read(game / "ace_json/Map001.json")
 assert (merged["displayName"], merged["note"]) == ("Village", "新しいメモ"), merged
