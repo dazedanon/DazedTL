@@ -7,8 +7,10 @@ import type {
 } from "../app/src/api/contracts.ts";
 import { readKey } from "../app/src/features/project/checkpoints.ts";
 import {
+  finishedUpdateSummary,
   guidedUpdateTasks,
   interruptedUpdate,
+  textSummary,
   versionSession,
   updateCounts,
 } from "../app/src/features/translation/versionState.ts";
@@ -186,7 +188,21 @@ test("a finished update opens the Guided tasks its files belong to", () => {
   // A file translated after Reload from game kept reading the comparison's
   // lines; it reads its own, here none left, beside a map not read yet.
   const left = (name: string) => (name === "Map001.json" ? 0 : undefined);
-  assert.equal(guidedUpdateTasks(result, groups, left)[1].lines, 2);
+  const current = guidedUpdateTasks(result, groups, left);
+  assert.equal(current[1].lines, 2);
+  // The summary above the rows counts what they have left, not the
+  // comparison's 5, and none once nothing is left.
+  assert.equal(
+    finishedUpdateSummary(result, current),
+    textSummary({ to_translate: 2, replaced: 0, kept: 0 }),
+  );
+  assert.equal(
+    finishedUpdateSummary(
+      result,
+      guidedUpdateTasks(result, groups, () => 0),
+    ),
+    "",
+  );
 });
 
 test("the Checkpoints tab reads Git again only once a write moves the branch", () => {

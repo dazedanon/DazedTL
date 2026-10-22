@@ -287,6 +287,25 @@ export function textSummary(
     .join(" · ");
 }
 
+/**
+ * A finished update's summary: the lines its tasks still have to translate
+ * (`guidedUpdateTasks`), then the translations it sent back to Japanese and
+ * kept. "No new text" when the comparison found none; "" when its lines are
+ * all translated and it sent back and kept none.
+ */
+export function finishedUpdateSummary(
+  result: Record<string, unknown>,
+  tasks: UpdateTask[],
+) {
+  const text = textChanges(result);
+  if (!text) return "";
+  const left = tasks.reduce((sum, task) => sum + task.lines, 0);
+  return (
+    textSummary({ ...text, to_translate: left }) ||
+    (text.to_translate ? "" : "No new text")
+  );
+}
+
 /** What a comparison found, in lines to translate when it read the text. */
 function compareResult(result: Record<string, unknown>) {
   const text = textChanges(result);

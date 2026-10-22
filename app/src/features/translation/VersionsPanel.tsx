@@ -17,13 +17,12 @@ import { VersionChanges } from "./VersionChanges";
 import { VersionTools } from "./VersionTools";
 import { ReleaseForm, emptyRelease } from "./ReleaseForm";
 import {
+  finishedUpdateSummary,
   guidedUpdateTasks,
   interruptedUpdate,
   releaseEffect,
   removedFiles,
   stagedLayout,
-  textChanges,
-  textSummary,
   updateSteps,
   updateSummary,
   versionSession,
@@ -121,6 +120,10 @@ export function VersionsPanel({
           },
         )
       : [];
+  const brought =
+    done && guided && compared
+      ? finishedUpdateSummary(compared, updateTasks)
+      : "";
   // A complete game missing most of the game's files is likely a patch.
   const removed = layout ? removedFiles(layout) : 0;
   const resultVersion =
@@ -334,9 +337,7 @@ export function VersionsPanel({
           {guided ? (
             <>
               <p>
-                {compared && textChanges(compared)
-                  ? `${textSummary(textChanges(compared)!) || "No new text"}. `
-                  : ""}
+                {brought ? `${brought}. ` : ""}
                 Each task opens with the files the update changed selected.
                 Files you translated before read Outdated there, and Reload from
                 game brings in their new text; lines that kept their translation
