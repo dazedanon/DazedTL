@@ -554,6 +554,17 @@ def _quoted(title):
     return f"‘{title}’" if "“" in title else f"“{title}”"
 
 
+def _undo_title(target):
+    """The title of the checkpoint that undoes `target`. Undoing an undo
+    redoes the change it took out, named once instead of quoting each undo
+    inside the next."""
+    if target.action == UNDO:
+        for done, then in (("Undid ", "Redid "), ("Redid ", "Undid ")):
+            if target.title.startswith(done):
+                return then + target.title[len(done) :]
+    return f"Undid {_quoted(target.title)}"
+
+
 def _restorable(entries, commit):
     index = _index(entries, commit)
     if index >= len(_current_span(entries)):
@@ -674,7 +685,7 @@ def undo(
         raise ValueError(
             "A game version's first checkpoint can't be undone; go back to it instead."
         )
-    change = Change(f"Undid {_quoted(target.title)}", None, UNDO)
+    change = Change(_undo_title(target), None, UNDO)
     with running(change), write_game(root, log=log) as game:
         entries = _log(root)
         index = _restorable(entries, commit)

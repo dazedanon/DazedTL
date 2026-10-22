@@ -736,6 +736,8 @@ assert batch(plan["id"]) == "restored" and outputs() == {}, outputs()
 assert (kept / items).read_bytes() == before_qa
 checkpoint_records.undo(records, undone["commit"])
 assert batch(plan["id"]) == "complete" and outputs() == {items: "qa"}, outputs()
+# Undoing an undo names the change it redoes, not each undo inside the next.
+assert history()[0] == "Redid “Apply QA corrections”|checkpoint_undo|", history()
 assert (kept / items).read_bytes() == b'["Undone here"]'
 # Going back to before the batch takes out it and both undos at once.
 checkpoint_records.go_back(records, record["parent"])
