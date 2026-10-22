@@ -128,53 +128,52 @@ test("a new or failed release attempt cannot offer an older comparison for appli
 test("a finished update opens the Guided tasks its files belong to", () => {
   // MV keeps its data under www/, a new map is not listed by Guided yet, and
   // removed or unchanged files need no translating.
-  const tasks = guidedUpdateTasks(
-    {
-      file_changes: [
-        { path: "www/data/Map001.json", change: "Modified" },
-        { path: "www/data/Actors.json", change: "Modified" },
-        { path: "www/data/Map003.json", change: "Removed" },
-        { path: "www/js/plugins.js", change: "Modified" },
+  const result = {
+    file_changes: [
+      { path: "www/data/Map001.json", change: "Modified" },
+      { path: "www/data/Actors.json", change: "Modified" },
+      { path: "www/data/Map003.json", change: "Removed" },
+      { path: "www/js/plugins.js", change: "Modified" },
+      {
+        path: "www/data/System.json",
+        change: "Modified",
+        already_present: true,
+      },
+    ],
+    external_changes: [
+      { path: "www/data/Map002.json", change: "Added" },
+      { path: "www/img/pictures/sign.png", change: "Replaced" },
+      { path: "www/audio/bgm/theme.ogg", change: "Replaced" },
+    ],
+    text: {
+      to_translate: 5,
+      replaced: 0,
+      kept: 0,
+      files: [
         {
-          path: "www/data/System.json",
-          change: "Modified",
-          already_present: true,
+          path: "www/data/Map001.json",
+          to_translate: 3,
+          replaced: 0,
+          kept: 0,
+          lines: [],
+          more: 0,
+        },
+        {
+          path: "www/data/Map002.json",
+          to_translate: 2,
+          replaced: 0,
+          kept: 0,
+          lines: [],
+          more: 0,
         },
       ],
-      external_changes: [
-        { path: "www/data/Map002.json", change: "Added" },
-        { path: "www/img/pictures/sign.png", change: "Replaced" },
-        { path: "www/audio/bgm/theme.ogg", change: "Replaced" },
-      ],
-      text: {
-        to_translate: 5,
-        replaced: 0,
-        kept: 0,
-        files: [
-          {
-            path: "www/data/Map001.json",
-            to_translate: 3,
-            replaced: 0,
-            kept: 0,
-            lines: [],
-            more: 0,
-          },
-          {
-            path: "www/data/Map002.json",
-            to_translate: 2,
-            replaced: 0,
-            kept: 0,
-            lines: [],
-            more: 0,
-          },
-        ],
-      },
     },
-    new Map([
-      ["Map001.json", "dialogue"],
-      ["Actors.json", "database"],
-    ]),
-  );
+  };
+  const groups = new Map([
+    ["Map001.json", "dialogue"],
+    ["Actors.json", "database"],
+  ] as const);
+  const tasks = guidedUpdateTasks(result, groups);
   assert.deepEqual(
     tasks.map(({ task, files, lines }) => ({ task, files, lines })),
     [
@@ -184,6 +183,10 @@ test("a finished update opens the Guided tasks its files belong to", () => {
       { task: "images", files: ["www/img/pictures/sign.png"], lines: 0 },
     ],
   );
+  // A file translated after Reload from game kept reading the comparison's
+  // lines; it reads its own, here none left, beside a map not read yet.
+  const left = (name: string) => (name === "Map001.json" ? 0 : undefined);
+  assert.equal(guidedUpdateTasks(result, groups, left)[1].lines, 2);
 });
 
 test("the Checkpoints tab reads Git again only once a write moves the branch", () => {

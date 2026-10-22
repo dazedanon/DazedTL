@@ -652,6 +652,10 @@ function releasing({ patch = false } = {}) {
       async ({ page, state }) => {
         await page.click("Project");
         await page.click("Checkpoints");
+        // The update's task row reads its files' current lines, none left.
+        const row = /\nDatabase files\n(.*)\n/.exec(await page.text())?.[1];
+        if (row !== "Actors.json, Armors.json")
+          throw new Error(`Translate the new text reads "${row}".`);
         // The newest checkpoint comes first.
         await page.click(/^More actions for Apply Database files,/);
         await page.click(/^Undo this change/);

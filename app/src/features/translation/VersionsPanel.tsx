@@ -12,6 +12,7 @@ import { ActionControl } from "../../ui/ActionControl";
 import { JobStatus } from "../../ui/JobStatus";
 import { StepProgress } from "../../ui/StepProgress";
 import { ActionSlot } from "../../ui/ActionSlot";
+import { fileLines } from "../guided/translationView";
 import { VersionChanges } from "./VersionChanges";
 import { VersionTools } from "./VersionTools";
 import { ReleaseForm, emptyRelease } from "./ReleaseForm";
@@ -97,16 +98,27 @@ export function VersionsPanel({
   const compared = session.current.find(
     (job) => job.action === "version_preview" && job.status === "complete",
   )?.result;
-  const guidedState = application.snapshot?.guided;
+  const guidedState =
+    application.snapshot?.guided?.projectId === project.id
+      ? application.snapshot.guided
+      : undefined;
   const updateTasks =
     done && guided && compared
       ? guidedUpdateTasks(
           compared,
-          new Map(
-            guidedState?.projectId === project.id
-              ? guidedState.files.map((file) => [file.name, file.group])
-              : [],
-          ),
+          new Map(guidedState?.files.map((file) => [file.name, file.group])),
+          (name, phase) => {
+            // A file the update changed holds its new text once reloaded;
+            // until then its lines are the comparison's.
+            if (!guidedState || guidedState.sourceStatus.changed.includes(name))
+              return undefined;
+            const { done, total, running } = fileLines(
+              guidedState,
+              phase,
+              name,
+            );
+            return total === null || running ? undefined : total - done;
+          },
         )
       : [];
   // A complete game missing most of the game's files is likely a patch.
