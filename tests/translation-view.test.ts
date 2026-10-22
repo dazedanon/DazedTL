@@ -862,6 +862,14 @@ test("request comparisons reject misaligned or unvalidated Live responses and mi
     }),
     null,
   );
+  // A Batch request keeps the provider's reply text, a translations list.
+  assert.deepEqual(
+    translatedLines({
+      ...payload,
+      response: { text: '{"translations":["Medicine","Poison"]}' },
+    }),
+    { Line1: "Medicine", Line2: "Poison" },
+  );
   const raw = {
     text: '{"translations":["__PROTECTED_0__Medicine","Poison"]}',
     refusal: null,
