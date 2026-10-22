@@ -247,6 +247,29 @@ async function npm() {
 }
 
 /**
+ * Installs exactly the packages an app folder's lock names, without their
+ * install scripts; Electron's binary comes from `installElectron`.
+ * @param {string} app the app folder
+ * @param {"user" | "dev"} mode users skip the development tools
+ */
+export async function installPackages(app, mode) {
+  const { node, cli } = await npm();
+  run(
+    node,
+    [
+      cli,
+      "ci",
+      "--ignore-scripts",
+      "--no-audit",
+      "--no-fund",
+      "--no-update-notifier",
+      ...(mode === "user" ? ["--omit=dev"] : []),
+    ],
+    { cwd: app },
+  );
+}
+
+/**
  * Installs Electron's binary into its package the way its install.js does,
  * except that the archive is unpacked here: install.js unpacks with a native
  * module that needs the Visual C++ runtime, which a fresh Windows lacks.
@@ -356,20 +379,7 @@ export async function ensureSetup({ mode }) {
     !fs.existsSync(path.join(modules, ".package-lock.json"))
   ) {
     console.log("Installing application packages…");
-    const { node, cli } = await npm();
-    run(
-      node,
-      [
-        cli,
-        "ci",
-        "--ignore-scripts",
-        "--no-audit",
-        "--no-fund",
-        "--no-update-notifier",
-        ...(mode === "user" ? ["--omit=dev"] : []),
-      ],
-      { cwd: app },
-    );
+    await installPackages(app, mode);
     state.npm = npmKey;
   }
   if (!fs.existsSync(path.join(electron, "path.txt"))) {

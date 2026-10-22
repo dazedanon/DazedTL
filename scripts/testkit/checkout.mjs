@@ -1,12 +1,14 @@
 // Another version of DazedTL beside this checkout, for scenarios built by an
 // earlier release or by the commit before a fix: a detached Git worktree in
 // .runtime/checkouts that shares this checkout's installed packages when its
-// locks match, so it starts in seconds.
+// locks match, so it starts in seconds, and installs its own Node packages
+// when they differ.
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { bundledGit, root, runtime } from "../dependencies.mjs";
+import { installElectron, installPackages } from "../setup.mjs";
 
 const gitBin = bundledGit()?.bin;
 /** Runs Git: on Windows the one setup installs, when it has. */
@@ -59,9 +61,9 @@ function locks(folder) {
 /**
  * The folder of a checkout at `ref`, made on first use. Its app runs with
  * this checkout's Python environment, which `env` names.
- * @returns {{ root: string, commit: string, env: Record<string, string> }}
+ * @returns {Promise<{ root: string, commit: string, env: Record<string, string> }>}
  */
-export function checkout(ref) {
+export async function checkout(ref) {
   const commit = git(["rev-parse", "--verify", `${ref}^{commit}`]);
   const folder = path.join(runtime, "checkouts", commit.slice(0, 12));
   if (!fs.existsSync(path.join(folder, "scripts"))) {
@@ -77,18 +79,22 @@ export function checkout(ref) {
     );
   const modules = path.join(folder, "app/node_modules");
   if (!fs.existsSync(path.join(modules, ".package-lock.json"))) {
-    if (ours.node !== theirs.node)
-      throw new Error(
-        `${ref} locks other Node packages; run node scripts/setup.mjs in ${folder} first.`,
-      );
-    // A copy, since setup refuses linked packages; on Btrfs or APFS it
-    // shares the files' blocks.
-    fs.cpSync(path.join(root, "app/node_modules"), modules, {
-      recursive: true,
-      verbatimSymlinks: true,
-      mode: fs.constants.COPYFILE_FICLONE,
-    });
+    if (ours.node === theirs.node)
+      // A copy, since setup refuses linked packages; on Btrfs or APFS it
+      // shares the files' blocks.
+      fs.cpSync(path.join(root, "app/node_modules"), modules, {
+        recursive: true,
+        verbatimSymlinks: true,
+        mode: fs.constants.COPYFILE_FICLONE,
+      });
+    // A version before or after a package change brings its own, as its
+    // setup would.
+    else await installPackages(path.join(folder, "app"), "dev");
   }
+  // Electron's download is cached, so each checkout unpacks it quickly.
+  const electron = path.join(modules, "electron");
+  if (!fs.existsSync(path.join(electron, "path.txt")))
+    await installElectron(electron);
   return {
     root: folder,
     commit,

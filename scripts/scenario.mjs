@@ -213,7 +213,7 @@ async function build(name) {
   const from =
     option("--from") ||
     (scenario.from === "previous" ? previousRelease() : undefined);
-  const version = from ? checkout(from) : { root, env: {} };
+  const version = from ? await checkout(from) : { root, env: {} };
   const state = {
     name,
     work,

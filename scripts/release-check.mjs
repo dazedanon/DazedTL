@@ -146,7 +146,7 @@ await run("test", [script("test.mjs")]);
 // Scenarios share this checkout's interface and the previous release's
 // checkout, so both are ready before they start side by side.
 await ensureRenderer(root);
-checkout(previousRelease());
+await checkout(previousRelease());
 const scenario =
   (args, name = args.join(" ")) =>
   () =>
