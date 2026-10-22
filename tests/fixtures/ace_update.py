@@ -109,6 +109,8 @@ names = zipfile.ZipFile(built["path"]).namelist()
 assert "Data/Actors.rvdata2" in names and not [
     name for name in names if name.startswith("ace_json/")
 ], names
+# The repository's description files are not the game either.
+assert not {".gitignore", ".gitattributes", "README.md"} & set(names), names
 
 # Version 1.1 comes encrypted, as every shipped Ace game does: it changes the
 # translated map and an untranslated item.

@@ -6,8 +6,8 @@ export function PageLayout({
   ...props
 }: ComponentProps<"section"> & {
   variant?: "document" | "editor";
-  /** Spans the window instead of the shared column, for a workspace such as
-   * Images whose grid and preview use every pixel. */
+  /** The body spans the window instead of the shared column, for a workspace
+   * such as Images whose grid and preview use every pixel. */
   wide?: boolean;
 }) {
   return (

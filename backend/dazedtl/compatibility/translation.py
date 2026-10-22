@@ -1089,7 +1089,7 @@ class TranslationEngine:
         from util.ace.actions import patch_archive
         from util.gameupdate_config import CONFIG
         from util.len_patch_scope import patch_manifest, patch_refusal
-        from util.paths import GAME_TOOL_FOLDERS, is_game_tool_file
+        from util.paths import GAME_TOOL_ARCHIVE_EXCLUDES, is_game_tool_file
         from util.release_package import ReleasePackageError, _release_patch_sha
         from util.version_update.git_workflow import _run_git
 
@@ -1144,7 +1144,7 @@ class TranslationEngine:
                 ".",
                 *(
                     ":(exclude)" + path
-                    for path in [*GAME_TOOL_FOLDERS, *sorted(omitted)]
+                    for path in [*GAME_TOOL_ARCHIVE_EXCLUDES, *sorted(omitted)]
                 ),
             )
             # An encrypted game reads only its archive, so the patch carries

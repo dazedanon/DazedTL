@@ -367,11 +367,10 @@ pre {
 .page-layout :is(.page-body, .action-bar):not(dialog *) {
   padding-inline: var(--frame-inline);
 }
-/* A wide page spans the window: its rows keep only the gutter, so their
-   edges still line up with each other and with the app's messages above. */
-.page-layout--wide,
-main:has(> .page-layout--wide) {
-  --frame-inline: var(--frame-gutter);
+/* A wide page's body spans the window inside the gutter; its other rows keep
+   the shared column, so switching to it never moves them. */
+.page-layout--wide .page-body:not(dialog *) {
+  padding-inline: var(--frame-gutter);
 }
 .frame-row,
 .page-layout--editor > .page-header,
