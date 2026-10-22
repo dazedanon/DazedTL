@@ -14,7 +14,9 @@ import {
   historyOutcome,
   historyPhase,
   historyTime,
+  operationSummary,
   type HistoryOutcome,
+  type HistoryTab,
 } from "./historyView";
 import {
   AlertTriangle,
@@ -27,6 +29,7 @@ import {
   Pause,
   XCircle,
   CircleHelp,
+  Undo2,
 } from "lucide-react";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { useMemo, useState } from "react";
@@ -34,29 +37,6 @@ import { Button } from "../../ui/Button";
 import { ActionSlot } from "../../ui/ActionSlot";
 import { HelpPopover } from "../../ui/HelpPopover";
 import { sentence } from "../../ui/displayText";
-
-export function operationSummary(job: Job): string {
-  const result = job.result;
-  if (!result) return "";
-  // An operation's own sentence, such as a fit's rewrapped lines, says more
-  // than its count of files.
-  if (typeof result.message === "string" && result.message)
-    return result.message;
-  if (typeof result.archive === "string")
-    return `${Number(result.files || 0)} ${result.files === 1 ? "file" : "files"} reloaded from the game. Previous copies and outputs archived.`;
-  if (typeof result.files === "number")
-    return `${result.files} ${result.files === 1 ? "file" : "files"} saved.`;
-  if (typeof result.changes_found === "number")
-    return `${result.changes_found} text-fitting changes found · ${Number(result.overflow_skipped || 0)} protected overflows skipped.`;
-  if (typeof result.reviewed_files === "number")
-    return `${result.reviewed_files} current runtime files reviewed.`;
-  if (typeof result.path === "string") return result.path;
-  if (Array.isArray(result.messages))
-    return result.messages
-      .filter((value) => typeof value === "string")
-      .join(" ");
-  return "";
-}
 
 /** What a row adds beyond its title: a result summary or a message that is
     more than the title marked done. */
@@ -113,6 +93,7 @@ const outcomeIcons = {
   missing: AlertTriangle,
   empty: CircleSlash,
   finished: CircleHelp,
+  undone: Undo2,
 };
 function Outcome({ value }: { value: HistoryOutcome }) {
   const Icon = outcomeIcons[value.kind];
@@ -138,6 +119,8 @@ export function ActivityHistory({
   initialQuery = "",
   phase,
   footerTarget,
+  tab: hostTab,
+  onTab,
 }: {
   state: GuidedState;
   translation: TranslationState;
@@ -148,9 +131,14 @@ export function ActivityHistory({
   phase?: Phase;
   /** The host footer that shows the record count. */
   footerTarget?: HTMLElement | null;
+  /** The open list, when the host keeps it across visits. */
+  tab?: HistoryTab;
+  onTab?: (tab: HistoryTab) => void;
 }) {
   const [visible, setVisible] = useState(30);
-  const [tab, setTab] = useState("runs");
+  const [ownTab, setOwnTab] = useState<HistoryTab>("runs");
+  const tab = hostTab ?? ownTab;
+  const setTab = onTab ?? setOwnTab;
   const [query, setQuery] = useState(initialQuery);
   const [filter, setFilter] = useState("all");
   const saved = useMemo(
@@ -172,6 +160,15 @@ export function ActivityHistory({
     () => projectActivity(state.operations, translation.jobs),
     [state.operations, translation.jobs],
   );
+  const restored = useMemo(
+    () => new Set(state.readiness.restored),
+    [state.readiness.restored],
+  );
+  // A text batch restored since, by History, Recovery or Checkpoints.
+  const undone = (job: Job) =>
+    job.status === "complete" &&
+    typeof job.result?.publication === "string" &&
+    restored.has(job.result.publication);
   const rows = useMemo(
     () =>
       (tab === "runs" ? runs : tab === "estimates" ? estimates : operations)
@@ -260,7 +257,7 @@ export function ActivityHistory({
         ]}
         value={tab}
         onChange={(value) => {
-          setTab(value);
+          setTab(value as HistoryTab);
           setFilter("all");
           setVisible(30);
         }}
@@ -380,22 +377,33 @@ export function ActivityHistory({
                             </small>
                           </div>
                         )}
-                        {/* Finished activity needs no status; others say theirs. */}
+                        {/* Finished activity needs no status unless it was
+                            undone since; others say theirs. */}
                         {tab === "operations" ? (
-                          job.status !== "complete" && (
+                          undone(job) ? (
                             <Outcome
                               value={{
-                                kind: activeRun(job)
-                                  ? "active"
-                                  : job.status === "failed"
-                                    ? "failed"
-                                    : "stopped",
-                                label: sentence(
-                                  job.status.replaceAll("_", " "),
-                                ),
+                                kind: "undone",
+                                label: "Undone",
                                 detail: "",
                               }}
                             />
+                          ) : (
+                            job.status !== "complete" && (
+                              <Outcome
+                                value={{
+                                  kind: activeRun(job)
+                                    ? "active"
+                                    : job.status === "failed"
+                                      ? "failed"
+                                      : "stopped",
+                                  label: sentence(
+                                    job.status.replaceAll("_", " "),
+                                  ),
+                                  detail: "",
+                                }}
+                              />
+                            )
                           )
                         ) : (
                           <Outcome value={outcome} />

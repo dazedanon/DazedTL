@@ -64,7 +64,7 @@ import { useRead } from "../../state/useRead";
 import { AssistantTask, type AssistantTaskState } from "../../ui/AssistantTask";
 import { SegmentedControl } from "../../ui/SegmentedControl";
 import { StepProgress } from "../../ui/StepProgress";
-import { imageFlow, imageSteps } from "./imageFlow";
+import { imageFlow, imageSteps, type ImageStep } from "./imageFlow";
 import { useHandoff } from "../assistant/useAssistantTasks";
 
 /** How often a waiting task's report is looked for. */
@@ -84,6 +84,8 @@ export interface ImageManagerProps {
     ready: number;
     primary: boolean;
     blocked: boolean;
+    /** Why nothing in the list can be applied yet; empty once one can. */
+    reason: string;
   }) => ReactNode;
   /** The host page's footer slot, which this manager's ActionBar fills. */
   footer: {
@@ -399,9 +401,11 @@ function Manager({
       (state.editing.status === "awaiting_results" && !editingTask.dismissed) ||
       editingTask.waiting,
   });
-  // A step's result stays with its step: a notice from a step that has
-  // passed is not shown under the grid.
-  const [actedIn, setActedIn] = useState(flow.step);
+  // A step's result stays with the step it leads to, such as Restore
+  // originals' with Apply: a notice from a step that has passed is not shown
+  // under the grid. An empty step takes the step once the result is in.
+  const [actedIn, setActedIn] = useState<ImageStep | "">(flow.step);
+  if (actedIn === "" && !action.busy) setActedIn(flow.step);
   // Inventory and report changes reload the visible page and comparison.
   useOnChange(
     JSON.stringify([
@@ -689,6 +693,7 @@ function Manager({
       notice,
       name,
     );
+    if (result.ok) setActedIn("");
     if (result.ok && copied)
       action.succeed(
         `Copied. Paste it into your coding assistant.${message ? ` ${message}` : ""}`,
@@ -799,7 +804,9 @@ function Manager({
       : flow.step === "choose"
         ? "needs_review"
         : flow.step === "apply"
-          ? "ready"
+          ? flow.ready
+            ? "ready"
+            : "needs_review"
           : flow.step === "done"
             ? counts.applied
               ? "applied"
@@ -1001,6 +1008,13 @@ function Manager({
       </MenuItem>
     </Menu>
   );
+  // An edited copy waiting for review, such as after Restore originals,
+  // is translated but not yet ready.
+  const applyReason = flow.ready
+    ? ""
+    : flow.review
+      ? `Compare the edited ${flow.review === 1 ? "copy" : "copies"}, then mark ${flow.review === 1 ? "it" : "them"} reviewed.`
+      : "No image in your list is translated yet.";
   // One button leads: the current step's, or Continue once Images is done.
   const translating =
     flow.step === "choose" ||
@@ -1065,15 +1079,14 @@ function Manager({
             ready: flow.ready,
             primary: flow.step === "apply",
             blocked: busy || listSaving,
+            reason: applyReason,
           })
         ) : (
           <ActionControl
             label={`Apply to game${flow.ready ? ` (${flow.ready.toLocaleString()})` : ""}`}
             variant={flow.step === "apply" ? "primary" : "default"}
             disabled={busy || listSaving || !flow.ready}
-            disabledReason={
-              flow.ready ? "" : "No image in your list is translated yet."
-            }
+            disabledReason={applyReason}
             {...step("preview_apply", "Preparing review…")}
             onClick={() => void perform("preview_apply", { ready_only: true })}
           />

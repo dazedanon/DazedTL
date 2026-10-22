@@ -9,7 +9,6 @@ from typing import Callable, Iterable
 import hashlib
 import json
 import os
-import shutil
 import tempfile
 import uuid
 
@@ -487,10 +486,6 @@ def _prepare_assets_transaction(
     targets.extend(runtime for _asset, runtime in reconciled)
     try:
         for asset, runtime, relative, output in candidates:
-            backup = root / ".dazedtl" / "image_backups" / relative
-            if not backup.exists():
-                backup.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(transaction_root / "old" / relative, backup)
             if progress:
                 action = "Encrypting" if asset.has_encrypted else "Publishing"
                 progress(f"{action} {asset.asset_id}")

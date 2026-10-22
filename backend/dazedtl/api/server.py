@@ -23,6 +23,7 @@ from dazedtl.images import ImageService
 from dazedtl.images.editor import ImageEditor
 from dazedtl.images.native_translation import ImageNativeTranslation
 from dazedtl.plugins import PluginService
+from dazedtl.plugins.service import receipt_label
 from dazedtl.projects.store import Projects
 from dazedtl.settings.store import Settings
 from dazedtl.storage import WorkspaceLock
@@ -202,6 +203,20 @@ class Application:
         project = state["project"]
         current = legacy = None
         error = ""
+        foreign = {}
+        plugins, plugin_error = None, ""
+        if project and project["available"]:
+            try:
+                plugins = self.plugins.state(project["id"])
+            except ForeignWorkError as exc:
+                foreign["pluginsForeign"] = exc.summary
+            except (
+                ValueError,
+                OSError,
+                RuntimeError,
+                subprocess.SubprocessError,
+            ) as exc:
+                plugin_error = self.unreadable(exc)
         if project and project["available"]:
             try:
                 current = self.translation.state(project["id"])
@@ -294,6 +309,17 @@ class Application:
                                     {**item, "label": "Translation run"}
                                     for item in legacy["runs"]
                                 ),
+                                # Plugin files applies and restores without a
+                                # job of their own.
+                                *(
+                                    {
+                                        "label": receipt_label(row),
+                                        "status": row["status"],
+                                        "message": "",
+                                        "updated": row.get("saved") or "",
+                                    }
+                                    for row in (plugins or {}).get("receipts", [])[-1:]
+                                ),
                             ],
                             key=lambda item: item.get("updated") or "",
                             default=None,
@@ -338,7 +364,7 @@ class Application:
                     detail=error,
                     next_label="Open translation",
                 )
-        images, image_error, foreign = None, "", {}
+        images, image_error = None, ""
         if project and project["available"]:
             try:
                 images = self.images.state(project["id"])
@@ -351,19 +377,6 @@ class Application:
                 subprocess.SubprocessError,
             ) as exc:
                 image_error = self.unreadable(exc)
-        plugins, plugin_error = None, ""
-        if project and project["available"]:
-            try:
-                plugins = self.plugins.state(project["id"])
-            except ForeignWorkError as exc:
-                foreign["pluginsForeign"] = exc.summary
-            except (
-                ValueError,
-                OSError,
-                RuntimeError,
-                subprocess.SubprocessError,
-            ) as exc:
-                plugin_error = self.unreadable(exc)
         assistant_tasks = []
         if project and project["available"]:
             try:

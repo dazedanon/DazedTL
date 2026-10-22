@@ -536,6 +536,7 @@ class ExistingBackend:
                 }
                 for row in shown
             ],
+            "restored": [row["id"] for row in rows if row["state"] == "restored"],
         }
 
     @staticmethod

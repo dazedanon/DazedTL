@@ -360,6 +360,18 @@ def timeline(root):
     }
 
 
+def named(root, action, commit):
+    """How History names an action on one checkpoint, such as
+    Undo “Apply QA corrections”, or Redo it once that undo is undone."""
+    entries = _log(root)
+    target = entries[_index(entries, commit)]
+    if action == UNDO:
+        done, title = _undoing(target)
+        return ("Undo " if done == "Undid" else "Redo ") + title
+    verb = "Go back to" if action == BACK else "Save a copy of"
+    return f"{verb} {_quoted(target.title)}"
+
+
 def changes(root, commit):
     """What one checkpoint changed, as a game update's comparison shows a
     release's: each file and, for game text, its lines before and after."""
@@ -554,6 +566,17 @@ def _quoted(title):
     return f"‘{title}’" if "“" in title else f"“{title}”"
 
 
+def _undoing(target):
+    """Whether undoing `target` undoes or redoes a change, and that change's
+    title in quotes. Undoing an undo redoes the change it took out, named
+    once instead of quoting each undo inside the next."""
+    if target.action == UNDO:
+        for done, then in (("Undid ", "Redid"), ("Redid ", "Undid")):
+            if target.title.startswith(done):
+                return then, target.title[len(done) :]
+    return "Undid", _quoted(target.title)
+
+
 def _restorable(entries, commit):
     index = _index(entries, commit)
     if index >= len(_current_span(entries)):
@@ -674,7 +697,7 @@ def undo(
         raise ValueError(
             "A game version's first checkpoint can't be undone; go back to it instead."
         )
-    change = Change(f"Undid {_quoted(target.title)}", None, UNDO)
+    change = Change(" ".join(_undoing(target)), None, UNDO)
     with running(change), write_game(root, log=log) as game:
         entries = _log(root)
         index = _restorable(entries, commit)

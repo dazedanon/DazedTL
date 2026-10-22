@@ -383,6 +383,15 @@ def undoes(receipt):
     return bool(receipt.get("commit") or receipt.get("parent"))
 
 
+# The checkpoint an application makes, as the project's activity names it.
+APPLY_SUMMARY = "Apply plugin file changes"
+
+
+def receipt_label(receipt):
+    """An application or restore as the project's activity names it."""
+    return APPLY_SUMMARY if receipt.get("mode") == "apply" else "Restore plugin files"
+
+
 def receipt_view(receipt, files, issue=""):
     restorable = (
         carries(files, receipt)
@@ -401,6 +410,8 @@ def receipt_view(receipt, files, issue=""):
                 "conflicts",
                 "manifest",
                 "restoreIssue",
+                "restores",
+                "applies",
             ),
         ),
         **({"restoreIssue": issue} if issue and restorable else {}),
@@ -3754,7 +3765,7 @@ class PluginService:
             project.get("backend_id"),
             paths=[row["path"] for row in preview["files"]],
             subject="The scripts",
-            summary="Apply plugin file changes",
+            summary=APPLY_SUMMARY,
             stage="Translate",
         ) as game:
             receipt, completed = self._publish(project_id, value, preview, root, game)

@@ -16,4 +16,8 @@
 
 - **Translate:** a reply with one line still in Japanese no longer throws away the whole request: only that line keeps its original text, **Inspect** names it, and the next Translate sends it again; a kaomoji such as (ﾟдﾟ) the model keeps from the source no longer counts as Japanese.
 - **Checkpoints:** undoing a change or going back past it now shows QA corrections, Plugin files changes and translated images as undone in **History** and their tasks too, and undoing that undo shows them applied again.
+- **Images:** **Restore originals…** now says when it is done, and an image it put back reads **Needs review** with what to do instead of "No image in your list is translated yet."
 - **Release:** building the patch ZIP after a game update no longer fails with "The untranslated source baseline changed. Prepare a new request plan for this game version."
+- **Text QA:** undoing QA corrections after applying Plugin files no longer leaves Text QA reading **Outdated** with the corrections hidden; it offers them again.
+- **History and Checkpoints:** rows name the checkpoint an undo or go back acted on, undoing an undo reads **Redid** instead of nesting titles, batches undone since read **Undone**, **Other activity** stays open when you come back, and **Status** counts a Plugin files apply as the last activity.
+- **Plugin files:** **Recovery** lists each application once, reading **Undone** once it is taken out, instead of adding a row for every undo and redo from **Checkpoints**.

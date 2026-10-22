@@ -326,3 +326,26 @@ test("copied tasks wait for a newer result, and dismissed ones read Not started"
     ["waiting"],
   );
 });
+
+test("Recovery lists each plugin application once through undos and redos", async () => {
+  const { recoveryRows } =
+    await import("../app/src/features/plugins/pluginTask.ts");
+  const receipt = (id: string, mode: string, names = {}) =>
+    ({ id, mode, saved: id, status: "complete", ...names }) as never;
+  // Undone in Recovery, brought back and undone again from Checkpoints;
+  // each added a row of its own beside an earlier reviewed restore.
+  const rows = recoveryRows([
+    receipt("restore", "restore"),
+    receipt("apply", "apply"),
+    receipt("undo", "restore", { restores: "apply" }),
+    receipt("redo", "apply", { applies: "apply" }),
+    receipt("undo-again", "restore", { restores: "redo" }),
+  ]);
+  assert.deepEqual(
+    rows.map((row) => [row.application.id, row.latest.id]),
+    [
+      ["apply", "undo-again"],
+      ["restore", "restore"],
+    ],
+  );
+});
