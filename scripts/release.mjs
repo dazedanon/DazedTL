@@ -12,7 +12,13 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { githubReader, ghToken, waitForCI } from "./ci-wait.mjs";
+import {
+  firstFailure,
+  githubReader,
+  githubWriter,
+  ghToken,
+  waitForCI,
+} from "./ci-wait.mjs";
 import { root } from "./dependencies.mjs";
 import {
   CHANGELOG,
@@ -164,7 +170,8 @@ function checkRemote() {
  * Requires the CI workflow to have passed on GitHub for `commit`, pushing
  * dev there first when GitHub does not have it, so main only moves to commits
  * whose checks and live tests passed on Windows and Linux. A run still going
- * is waited for; a failed or cancelled one stops the release.
+ * is waited for; a first failed attempt gets one rerun of its failed jobs,
+ * and a second failure or a cancelled run stops the release.
  * @param {string} commit
  * @param {boolean} push
  */
@@ -173,18 +180,25 @@ export async function requireCI(commit, push) {
   if (!site) throw new Error("release/mirrors.json names no GitHub mirror.");
   const repository = new URL(site.url).pathname.replace(/^\/|\.git$/g, "");
   const short = commit.slice(0, 7);
-  const read = githubReader({ token: ghToken(), log: console.log });
+  const token = ghToken();
+  const read = githubReader({ token, log: console.log });
   if (!(await read(`repos/${repository}/commits/${commit}`))) {
     if (!push)
       throw new Error(`Push dev to GitHub so CI can test ${short} first.`);
     step("git", ["push", remote, "dev"]);
   }
-  const result = await waitForCI({
-    sha: commit,
-    repository,
-    read,
-    log: console.log,
-  });
+  const wait = (attempt = 1) =>
+    waitForCI({ sha: commit, repository, read, attempt, log: console.log });
+  let result = await wait();
+  if (firstFailure(result.run)) {
+    console.log(
+      `CI failed for ${short} (${result.failed.join(", ")}); rerunning the failed jobs once.`,
+    );
+    await githubWriter({ token })(
+      `repos/${repository}/actions/runs/${result.run.id}/rerun-failed-jobs`,
+    );
+    result = await wait(2);
+  }
   if (result.ok) {
     console.log(`CI passed for ${short}.`);
     return;

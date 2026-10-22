@@ -102,7 +102,9 @@ export async function failedJobs(read, repository, run) {
 
 /**
  * Waits for the CI run of `sha`, following a newer run on the same branch
- * when a later push supersedes it. Resolves `{ ok, run, failed }`.
+ * when a later push supersedes it. Resolves `{ ok, run, failed }`. After a
+ * rerun, `attempt` names the attempt to wait for, since GitHub can still
+ * answer with the earlier attempt's result for a moment.
  */
 export async function waitForCI({
   sha,
@@ -114,13 +116,16 @@ export async function waitForCI({
   interval = 30_000,
   startTimeout = 5 * 60_000,
   timeout = 90 * 60_000,
+  attempt = 1,
   log = () => {},
 }) {
   const started = now();
+  const done = (item) =>
+    item?.status === "completed" && (item.run_attempt ?? 1) >= attempt;
   let run = null;
   let shown = "";
   for (;;) {
-    if (!run || run.status !== "completed") {
+    if (!done(run)) {
       const found = await read(
         run
           ? `repos/${repository}/actions/runs/${run.id}`
@@ -135,7 +140,7 @@ export async function waitForCI({
               (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
             )[0] || null;
     }
-    if (run?.status === "completed") {
+    if (done(run)) {
       if (run.conclusion === "cancelled") {
         const where = branch || run.head_branch;
         const found = await read(

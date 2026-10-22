@@ -157,7 +157,7 @@ Test updater changes with both `patch.ps1` on Windows and `patch.sh` on Linux; t
 Work on `dev`; `main` always holds the latest stable release, so a ZIP of `main` from any mirror is a release.
 From a clean `dev`, `node scripts/release.mjs 2.0.1` runs the tests and build checks, fast-forwards `main` to `dev`, sets the version, files the [release notes](#release-notes), signs a manifest of every file, commits and tags `v2.0.1`, pushes `main` and the tag to every mirror and fast-forwards `dev` again.
 Before `main` moves, the release requires [CI](#live-test) to have passed on GitHub for that `dev` commit.
-It pushes `dev` first when GitHub lacks the commit and waits for a run still in progress; a failed or cancelled run stops the release.
+It pushes `dev` first when GitHub lacks the commit and waits for a run still in progress; a first failed attempt gets one rerun of its failed jobs, and a second failure or a cancelled run stops the release.
 A prerelease such as `2.1.0-beta.1` is tagged on `dev` for the Beta channel instead, without waiting for CI, and `--local` stops before pushing.
 The [updater](architecture.md#distribution-and-updates) only accepts tags whose signed manifest matches every file.
 
