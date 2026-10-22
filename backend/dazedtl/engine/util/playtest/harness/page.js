@@ -1690,7 +1690,11 @@
     const widest = Math.max(...step.lines.map(measure));
     const room = Math.floor(shown.contentsWidth() - left - right);
     const rows = Math.floor(shown.contentsHeight() / shown.lineHeight());
-    const fits = widest <= room && step.lines.length <= rows;
+    // The characters the game's font lacks, as wide as this window's font
+    // and its fallbacks draw them here.
+    const glyphs = step.glyphs?.length
+      ? Object.fromEntries(step.glyphs.map((glyph) => [glyph, measure(glyph)]))
+      : undefined;
     const capture = snapshot("layout");
     send("layout", {
       stop: state.stop,
@@ -1702,7 +1706,7 @@
       rows,
       widest,
       room,
-      fits,
+      ...(glyphs && { glyphs }),
       ...(capture && { capture }),
     });
     if (step.window === "help") await leave("Scene_Map");

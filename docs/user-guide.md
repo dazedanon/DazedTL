@@ -75,6 +75,7 @@ When the game shows text DazedTL has no pattern for, your assistant writes one f
 Change any choice under **Source choices**; **Other event text** in Translate translates them later.
 
 **Line widths** fills in from your assistant's measurements, which it checks in the running game, and you can change them.
+The check keeps a few characters spare on each line, since symbols such as ❤ that the game's font lacks draw in another font whose width varies by computer.
 Until then a VX Ace game uses its standard windows' widths, which are narrower than MV and MZ's.
 If your assistant cannot measure the game's windows, its task still finishes and the current widths stay; change them yourself if needed and save.
 If the app cannot use your assistant's report, Line widths says why; copy the measurement task again or keep the current widths.

@@ -222,12 +222,17 @@ class Playtest:
 
     def layout(self, project_id, native):
         """The latest layout check: each window's fit and its capture."""
+        from util.playtest.run import LAYOUT_SCHEMA
+
         from dazedtl.compatibility.playtest import latest_layout
 
         operation = self.operation(project_id, "layout-operation")
         try:
             saved = latest_layout(self.guided.backend.workflows.folder(native["id"]))
         except OSError, ValueError, KeyError, TypeError:
+            saved = None
+        # An earlier release's check judged fits without headroom.
+        if saved and saved.get("schema") != LAYOUT_SCHEMA:
             saved = None
         if not operation and not saved:
             return None
@@ -246,9 +251,16 @@ class Playtest:
                                 "fits",
                                 "widest",
                                 "room",
+                                "spare",
                                 "lines",
                                 "rows",
                             )
+                        },
+                        # A probe the window drew no text in has neither.
+                        **{
+                            key: probe[key]
+                            for key in ("spareCharacters", "suggested")
+                            if key in probe
                         },
                         **(
                             {
@@ -263,6 +275,8 @@ class Playtest:
                     for probe in saved["probes"]
                 ],
                 missing=saved["missing"],
+                # A check an earlier release saved has neither.
+                **{key: saved[key] for key in ("headroom", "fallback") if key in saved},
                 **(
                     {"unavailable": saved["unavailable"]}
                     if saved.get("unavailable")

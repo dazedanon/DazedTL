@@ -406,7 +406,13 @@ For an RPG Maker MV/MZ game the app confirms them itself: write the candidate wi
 {{"width": 55, "faceWidth": 50, "listWidth": 70, "messageRows": 4}}, to a JSON file and run
 `{capture} --layout FILE --wait 10`. It shows English exactly that wide in the game's message window
 with and without a face and in its help window, and `layout.probes` gives each one's widest line,
-the room the window gives it, its rows and its capture file; look at the captures. Note windows and
+the room the window gives it, its rows and its capture file; look at the captures. A probe `fits`
+only with `layout.headroom` characters spare after its widest line, as fonts and fallback glyphs
+draw differently on other computers; `spare` and `spareCharacters` give the margin and `suggested`
+the most characters that keep it. Save widths whose probes fit, checking a `suggested` width again.
+`layout.fallback` lists the characters of the game's text its font lacks, with how often each
+appears, how many characters the fitter counts it as (`counted`) and how wide the game drew it
+(`drawn`); keep more spare for one drawn wider than counted, and name them in `reason`. Note windows and
 plugin windows still need your own check; measure `noteWidth` on the window that draws the note tags
 the layout analysis names, not on other note text.
 The app automatically saves verified widths as the project’s character limits; the user does not

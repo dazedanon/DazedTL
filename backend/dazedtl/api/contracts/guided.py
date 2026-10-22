@@ -665,12 +665,42 @@ class PlaytestOperation(TypedDict):
 
 class LayoutProbe(TypedDict):
     title: str
-    fits: bool
+    fits: Annotated[
+        bool, "Every row shows, with the check's headroom spare after the widest line."
+    ]
     widest: Annotated[int, "Pixels the widest line takes."]
     room: Annotated[int, "Pixels the window gives a line."]
+    spare: NotRequired[Annotated[int, "Pixels left after the widest line."]]
+    spareCharacters: NotRequired[
+        Annotated[int, "Whole characters left after the widest line."]
+    ]
+    suggested: NotRequired[
+        Annotated[int, "The most characters that keep the headroom spare."]
+    ]
     lines: int
     rows: Annotated[int, "Rows the window shows."]
     capture: NotRequired[Annotated[str, "The capture's file."]]
+
+
+class FallbackGlyph(TypedDict):
+    character: str
+    code: str
+    count: Annotated[int, "How often the game's text holds it."]
+    counted: Annotated[int, "Characters the fitter counts it as."]
+    pixels: NotRequired[Annotated[int, "Pixels the game's message window draws it."]]
+    drawn: NotRequired[
+        Annotated[float, "Characters the game's message window draws it as."]
+    ]
+
+
+class LayoutFallback(TypedDict):
+    """The game's main font and the characters of its text it lacks."""
+
+    font: NotRequired[str]
+    fallbackFonts: NotRequired[str]
+    unread: NotRequired[Annotated[str, "Why the font's characters were not read."]]
+    glyphs: NotRequired[list[FallbackGlyph]]
+    more: NotRequired[Annotated[int, "Lacking characters past the listed ones."]]
 
 
 class LayoutCheck(TypedDict):
@@ -680,6 +710,8 @@ class LayoutCheck(TypedDict):
     finished_at: NotRequired[str]
     widths: NotRequired[dict[str, int]]
     probes: NotRequired[list[LayoutProbe]]
+    headroom: NotRequired[Annotated[int, "Characters each width keeps spare."]]
+    fallback: NotRequired[LayoutFallback]
     missing: NotRequired[list[dict[str, str]]]
     unavailable: NotRequired[str]
 

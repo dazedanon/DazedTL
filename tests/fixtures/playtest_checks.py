@@ -6,7 +6,9 @@ must leave alone.
 """
 
 import json
+import struct
 import sys
+import zlib
 from pathlib import Path
 
 root, temporary = map(Path, sys.argv[1:])
@@ -19,11 +21,13 @@ from util.playtest.checks import static_checks
 from util.playtest.run import (
     block_index,
     compare,
+    layout_fit,
     layout_probes,
     merge,
     observations,
     read_widths,
 )
+from util.rpgmaker_fonts import fallback_glyphs
 from util.rpgmaker_screens import label_fits
 
 game = temporary / "game"
@@ -676,6 +680,113 @@ for wrong in ({"width": "55"}, {"width": 0}, {"messageRows": 4}):
     except ValueError:
         continue
     raise AssertionError(f"{wrong} was accepted")
+
+# A width fits only with headroom: on RJ01590593 59 characters drew 768 of
+# 780 pixels, under one character spare, and the user kept three.
+probe = {"title": "Message", "characters": 59, "lines": 4, "rows": 4}
+tight = layout_fit({**probe, "widest": 768, "room": 780})
+assert (
+    tight["fits"],
+    tight["spare"],
+    tight["spareCharacters"],
+    tight["suggested"],
+) == (False, 12, 0, 56), tight
+roomy = layout_fit({**probe, "characters": 56, "widest": 729, "room": 780})
+assert roomy["fits"] and roomy["spareCharacters"] == 3, roomy
+assert not layout_fit(
+    {**probe, "characters": 56, "widest": 729, "room": 780, "rows": 3}
+)["fits"]
+
+
+# The characters the game's text draws that its font lacks: a font whose map
+# holds ASCII (format 4) and ♥ (format 12), shipped as WOFF.
+def segments(*ranges):
+    ends = [end for _start, end in ranges] + [0xFFFF]
+    starts = [start for start, _end in ranges] + [0xFFFF]
+    deltas = [(1 - start) & 0xFFFF for start, _end in ranges] + [1]
+    count = len(ends)
+    body = struct.pack(
+        f">{count}HH{count}H{count}H{count}H", *ends, 0, *starts, *deltas, *[0] * count
+    )
+    return struct.pack(">HHHHHHH", 4, 14 + len(body), 0, 2 * count, 0, 0, 0) + body
+
+
+def groups(*ranges):
+    rows = b"".join(struct.pack(">III", start, end, 200) for start, end in ranges)
+    return struct.pack(">HHIII", 12, 0, 16 + len(rows), 0, len(ranges)) + rows
+
+
+bmp, full = segments((0x20, 0x7E)), groups((0x2665, 0x2665))
+cmap = struct.pack(">HHHHIHHI", 0, 2, 3, 1, 20, 3, 10, 20 + len(bmp)) + bmp + full
+packed = zlib.compress(cmap)
+font = (
+    struct.pack(
+        ">4sIIHHIHHIIIII",
+        b"wOFF",
+        0x10000,
+        64 + len(packed),
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    )
+    + struct.pack(">4sIIII", b"cmap", 64, len(packed), len(cmap), 0)
+    + packed
+)
+fonted = temporary / "fonted"
+(fonted / "data").mkdir(parents=True)
+(fonted / "fonts").mkdir()
+(fonted / "fonts" / "main.woff").write_bytes(font)
+write(
+    fonted / "data" / "System.json",
+    {
+        "advanced": {
+            "mainFontFilename": "main.woff",
+            "fallbackFonts": "Verdana, sans-serif",
+        }
+    },
+)
+write(
+    fonted / "data" / "Map001.json",
+    {
+        "events": [
+            None,
+            {
+                "note": "<tag:✓>",
+                "pages": [
+                    {
+                        "list": [
+                            {"code": 101, "parameters": ["", 0, 0, 2]},
+                            {"code": 401, "parameters": ["I love you❤ ♥ See you❤️"]},
+                            {"code": 401, "parameters": ["\\C[2]ありがとう❤\\C[0]"]},
+                            {"code": 0, "parameters": []},
+                        ]
+                    }
+                ],
+            },
+        ]
+    },
+)
+fallback = fallback_glyphs(fonted / "data")
+assert fallback == {
+    "fallbackFonts": "Verdana, sans-serif",
+    "font": "fonts/main.woff",
+    "glyphs": [{"character": "❤", "code": "U+2764", "count": 3, "counted": 2}],
+}, fallback
+probes = layout_probes(layout_data, widths, ["❤"])
+assert [probe.get("glyphs") for probe in probes] == [["❤"], None, None], probes
+(fonted / "fonts" / "main.woff").write_bytes(b"wOF2" + font[4:])
+assert "WOFF2" in fallback_glyphs(fonted / "data")["unread"]
+write(
+    fonted / "data" / "System.json", {"advanced": {"mainFontFilename": "../../x.ttf"}}
+)
+assert "outside" in fallback_glyphs(fonted / "data")["unread"]
 
 # A shortened label fits only when its screen draws the shorter text in full:
 # not squeezed, and not while the game still draws the old text, which means

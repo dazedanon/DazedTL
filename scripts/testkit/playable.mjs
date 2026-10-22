@@ -383,9 +383,10 @@ function complete(data) {
     };
 }
 
-/** No sound and no font download, which the placeholder game lacks. */
+/** No sound, and no wait for a font the placeholder game lacks: it has one
+ * only when a variant bundles it through fonts/gamefont.css. */
 const plugin = `/*:
- * @plugindesc Test game runtime: plays silently, draws with the system font
+ * @plugindesc Test game runtime: plays silently, starts without a font it lacks
  * and selects like MZ.
  */
 (function() {
@@ -395,7 +396,8 @@ const plugin = `/*:
     AudioManager[name] = silent;
   });
   AudioManager.checkErrors = silent;
-  Scene_Boot.prototype.isGameFontLoaded = function() { return true; };
+  if (!document.querySelector('link[href="fonts/gamefont.css"]'))
+    Scene_Boot.prototype.isGameFontLoaded = function() { return true; };
   // MZ selects a list's cursor again as the list activates, which plugins
   // written for MZ rely on, such as MPP_ChoiceEX showing the first choice's
   // help at once.
@@ -438,7 +440,12 @@ export async function makePlayable(game) {
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="user-scalable=no">
-    <title>${title}</title>
+    <title>${title}</title>${
+      // A variant's bundled font, which MV's engine draws text in.
+      fs.existsSync(path.join(game, "fonts/gamefont.css"))
+        ? '\n    <link rel="stylesheet" type="text/css" href="fonts/gamefont.css">'
+        : ""
+    }
   </head>
   <body style="background-color: black">
 ${[
