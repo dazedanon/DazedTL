@@ -235,6 +235,9 @@ export function operationSummary(job: Job): string {
   // than its count of files.
   if (typeof result.message === "string" && result.message)
     return result.message;
+  // Start over reports the files it put back; a reload, the files it read.
+  if (typeof result.restored === "number")
+    return `${result.restored ? `${result.restored} ${result.restored === 1 ? "file" : "files"} put back to the original game.` : "The game already matched the original."}${result.archive ? " The assistant's work is set aside." : ""}`;
   if (typeof result.archive === "string")
     return `${Number(result.files || 0)} ${result.files === 1 ? "file" : "files"} reloaded from the game. Previous copies and outputs archived.`;
   if (typeof result.files === "number")
