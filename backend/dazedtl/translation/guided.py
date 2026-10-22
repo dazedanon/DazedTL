@@ -1011,7 +1011,9 @@ class Guided:
 
     def save_documents(self, project_id, documents):
         """Saves the guidance documents Save guidance sends, skipping those
-        whose file already holds their text."""
+        whose file already holds their text. A core document the game has no
+        file for is created even when empty, which completes Guidance, but
+        the checkpoint is named by the documents whose text changed."""
         _, native = self.record(project_id)
         if not isinstance(documents, dict) or not all(
             isinstance(name, str)
@@ -1035,7 +1037,20 @@ class Guided:
                 and Path(current[name]["path"]).is_file()
             )
         }
-        result = self.save_guidance(native, changes) if changes else current
+        edited = [
+            name
+            for name in changes
+            if changes[name]["text"] != current.get(name, {}).get("text")
+        ]
+        result = (
+            self.save_guidance(
+                native,
+                changes,
+                "Save " + ", ".join(map(guidance_title, edited or changes)),
+            )
+            if changes
+            else current
+        )
         draft = self.backend.workflows.state(native["id"]).get("draft", {})
         for name in documents:
             draft.get("documents", {}).pop(name, None)

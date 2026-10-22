@@ -16,6 +16,7 @@ import { ContextWorkspace } from "../../ContextWorkspace";
 import { CostEstimate } from "../../CostEstimate";
 import { ModelMenu } from "../../../settings/ModelMenu";
 import { GuidanceEditor } from "../../GuidanceEditor";
+import { guidanceAvailability } from "../../guidanceReview";
 import { LayoutMeasurements } from "../../LayoutMeasurements";
 import { widthsSaveNotice } from "../../lineWidths";
 import { textLocation } from "../../textLocation";
@@ -184,7 +185,6 @@ export function guidanceView(w: GuidedWorkspace): TaskView {
     saveDocuments,
     translation,
   } = w;
-  const refused = checkoutRefusal(translation);
   let content: ReactNode;
   content = (
     <>
@@ -219,6 +219,10 @@ export function guidanceView(w: GuidedWorkspace): TaskView {
       )}
     </>
   );
+  // As Save context does, the checkout holds only a save that writes: edits,
+  // or the core documents Save creates for a game without them.
+  const writes = dirty || !guidanceAvailability(discovery.documents).complete;
+  const refused = writes ? checkoutRefusal(translation) : "";
   return {
     content,
     secondary,
@@ -257,6 +261,7 @@ export function layoutView(w: GuidedWorkspace): TaskView {
     handoff,
     localOperation,
     stopOperation,
+    translation,
   } = w;
   const measuring = handoff("line_widths");
   // Measured widths save themselves, so a measurement that came back is done,
@@ -385,6 +390,8 @@ export function layoutView(w: GuidedWorkspace): TaskView {
     );
   };
   const pending = widthsDirty || !!discovery.layoutMessage;
+  // Saving widths writes the game's settings, which the checkout may refuse.
+  const refused = pending ? checkoutRefusal(translation) : "";
   const saved = feedback("save-options", "Saving line widths…");
   // A fit that finished says what it rewrapped, one running shows pending
   // and one that failed shows as its job.
@@ -401,7 +408,8 @@ export function layoutView(w: GuidedWorkspace): TaskView {
       variant={pending ? "primary" : "default"}
       title={`Save line widths (${shortcutLabel.save})`}
       aria-keyshortcuts={shortcutKeys.save}
-      disabled={disabled}
+      disabled={disabled || !!refused}
+      disabledReason={refused}
       {...saved}
       pending={saved.pending || textFit.running}
       pendingText={
@@ -439,7 +447,7 @@ export function layoutView(w: GuidedWorkspace): TaskView {
     ),
     action: saveControl,
     next: advance(undefined, undefined, pending ? "quiet" : "primary"),
-    save: disabled ? undefined : saveLayout,
+    save: disabled || refused ? undefined : saveLayout,
   };
 }
 
