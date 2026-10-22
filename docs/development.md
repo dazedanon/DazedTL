@@ -195,7 +195,8 @@ Its holder renews it every five minutes; one whose process has gone, or that nob
 Under the lock it merges `dev` into the branch, runs the tests and build checks, waits while your own DazedTL runs from the main checkout, and fast-forwards the main checkout's `dev`, which must be checked out there without uncommitted changes to tracked files, never overwriting a file the checkout ignores.
 It then pushes `dev` to each mirror, trying a refused push again a minute later; a mirror that still refuses is reported and the landing still counts.
 A last line says how long it took, in total and per stage (lock wait, merge, test, build, push), so a slow landing shows where the time went.
-In the merge, both sides' [release notes](#release-notes) join under their headings through [changelog.mjs](../scripts/changelog.mjs), and conflicts only in the [generated API contracts](architecture.md#api-changes) are resolved by writing them again; any other conflict stops it with exit code 2.
+In the merge, both sides' [release notes](#release-notes) join under their headings through [changelog.mjs](../scripts/changelog.mjs), and conflicts only in the [generated API contracts](architecture.md#api-changes) are resolved by writing them again.
+Any other conflict stops it with exit code 2 and leaves the merge in progress with everything else merged, so you resolve only the listed files, commit and land again; a merge started again by hand would merge the notes as text.
 
 [CI](#live-test) runs on `dev` after the push, not on the branch; the landing warns when `dev`'s newest run failed but does not wait for CI.
 A run still red is fixed forward or reverted by the session cutting the next release, whose `release.mjs` reruns it once first and holds the landing lock throughout.

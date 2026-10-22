@@ -15,4 +15,5 @@
 - **Line widths:** unsaved width edits can be undone with **Discard draft**, as in Guidance.
 - **Cost estimate:** after you stop an estimate, a note beside the button says it was stopped and nothing was saved, instead of the page quietly going back to Not started.
 - **Translate:** after a game update, **Apply** is unavailable while a file it would apply reads **Outdated**, with "Reload changed files from the game first." beside it, instead of putting the old translation over the update's file.
+- **Checkpoints:** a game update's review no longer lists `Forge_MZ.js` and `plugins.js` as the release's changes, and applying it no longer installs Forge into a game that didn't have it.
 - **Translate:** **Other event text** offers **Apply** only for its own translated files, so before its first run it no longer shows a disabled **Apply (2)** with "Saved translations applied." for files **Maps & events** applied.
