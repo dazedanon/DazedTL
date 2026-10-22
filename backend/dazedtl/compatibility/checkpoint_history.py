@@ -602,18 +602,28 @@ def _plan(state, paths, tree):
     return plan
 
 
-def go_back(root, commit, stopped=lambda: False, log=lambda _line: None, original=None):
+def go_back(
+    root,
+    commit,
+    stopped=lambda: False,
+    log=lambda _line: None,
+    original=None,
+    *,
+    folder=None,
+):
     """Puts the game's files back as they were at `commit`, as one
     checkpoint, and names the checkpoints it took out (`undone`, newest
     first). `original` is the saved original game of a game set up before
-    Git kept its original files."""
+    Git kept its original files, and `folder` the game's Guided workspace,
+    whose packing receipt a VX Ace game's pack keeps current, as every
+    write's does."""
     from .game_write import write_game
 
     root = Path(root).resolve()
     entries = _log(root)
     target = entries[_restorable(entries, commit)]
     change = Change(f"Went back to {_quoted(target.title)}", None, BACK)
-    with running(change), write_game(root, log=log) as game:
+    with running(change), write_game(root, folder, log=log) as game:
         # The gateway recorded the edits made outside DazedTL first.
         entries = _log(root)
         index = _restorable(entries, commit)
@@ -634,16 +644,20 @@ def put_back(
     stopped=lambda: False,
     log=lambda _line: None,
     original=None,
+    folder=None,
 ):
     """Puts only `paths` back as they were at `commit`, as one checkpoint
     named `summary`: for a write that stopped midway, which made no
     checkpoint to undo. `check` refuses inside the write, once the edits
     made outside DazedTL are saved, when the files are no longer the
-    write's."""
+    write's; `folder` is `go_back`'s."""
     from .game_write import write_game
 
     root = Path(root).resolve()
-    with running(Change(summary, None, UNDO)), write_game(root, log=log) as game:
+    with (
+        running(Change(summary, None, UNDO)),
+        write_game(root, folder, log=log) as game,
+    ):
         check()
         entries = _log(root)
         state = _Game(root, entries[_restorable(entries, commit)], original)
@@ -693,10 +707,12 @@ def undo(
     original=None,
     *,
     check=lambda: None,
+    folder=None,
 ):
     """Takes out one checkpoint's change, as one checkpoint of its own.
-    `check` refuses inside the write, as `put_back`'s does. The result names
-    it among those undone, as `go_back`'s does."""
+    `check` refuses inside the write, as `put_back`'s does, and `folder` is
+    `go_back`'s. The result names it among those undone, as `go_back`'s
+    does."""
     from .game_write import write_game
 
     root = Path(root).resolve()
@@ -708,7 +724,7 @@ def undo(
             "A game version's first checkpoint can't be undone; go back to it instead."
         )
     change = Change(" ".join(_undoing(target)), None, UNDO)
-    with running(change), write_game(root, log=log) as game:
+    with running(change), write_game(root, folder, log=log) as game:
         entries = _log(root)
         index = _restorable(entries, commit)
         target = entries[index]

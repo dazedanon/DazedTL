@@ -29,7 +29,8 @@ class Records:
     root: Path
     workspace: Path | None = None
     project_id: str | None = None
-    # The Guided project's folder of text publications, when it has one.
+    # The Guided project's folder of text publications, when it has one,
+    # which also keeps a VX Ace game's packing receipt.
     publications: Path | None = None
 
 
@@ -66,7 +67,9 @@ def follow(records, undone, commit):
 def undo(records, commit, **options):
     """Undoes one checkpoint, as `checkpoint_history.undo` does, and the
     records follow."""
-    result = checkpoint_history.undo(records.root, commit, **options)
+    result = checkpoint_history.undo(
+        records.root, commit, folder=records.publications, **options
+    )
     follow(records, result["undone"], result["commit"])
     return result
 
@@ -74,6 +77,8 @@ def undo(records, commit, **options):
 def go_back(records, commit, **options):
     """Goes back to a checkpoint, as `checkpoint_history.go_back` does, and
     the records of every checkpoint after it follow."""
-    result = checkpoint_history.go_back(records.root, commit, **options)
+    result = checkpoint_history.go_back(
+        records.root, commit, folder=records.publications, **options
+    )
     follow(records, result["undone"], result["commit"])
     return result

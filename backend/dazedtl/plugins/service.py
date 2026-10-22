@@ -3737,6 +3737,7 @@ class PluginService:
                 "Restored an interrupted plugin application",
                 check=unchanged,
                 original=original,
+                folder=checkpoint_records.publications(self.backend, project),
             )
             restored = take_out(
                 workspace, project_id, root, value, receipt, result["commit"]

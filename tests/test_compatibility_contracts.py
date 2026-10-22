@@ -969,8 +969,12 @@ def parse(codeList, i, headerString, jaString):
                 GameWrite(game).put("data/Items.json", b"[{}]")
 
     def test_ace_packing_saves_a_receipt_only_when_every_export_was_packed(self):
+        from dazedtl.compatibility.checkpoint_commits import _git
         from dazedtl.compatibility.game_write import write_game
+        from dazedtl.translation import checkpoint_records
         from dazedtl.translation.release import packing_state
+        from util.len_git import setup_git
+        from util.len_translation import LenProject
 
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -1047,6 +1051,15 @@ def parse(codeList, i, headerString, jaString):
                 self.assertFalse(packing_state(native, folder)["current"])
                 run_ace(plan, lambda _line: None)
                 self.assertEqual(calls, [{"commonevents"}, None])
+                self.assertTrue(packing_state(native, folder)["current"])
+                # Undoing a write, as History and Checkpoints do, packs
+                # through the receipt too, so Release takes the game as it is.
+                setup_git(LenProject(game), version="1.0", current_is_untranslated=True)
+                with write_game(game, folder) as written:
+                    written.put("ace_json/Items.json", b'[null, {"name": "Ether"}]')
+                commit = _git(game, "rev-parse", "HEAD").stdout.strip()
+                records = checkpoint_records.Records(game, publications=folder)
+                checkpoint_records.undo(records, commit)
                 self.assertTrue(packing_state(native, folder)["current"])
                 # An archive the game still reads refuses before the write.
                 (game / "Game.rgss3a").write_bytes(b"RGSSAD")
