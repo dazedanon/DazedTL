@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import test from "node:test";
+import { stopApp } from "../scripts/testkit/app.mjs";
 import { displayName } from "../scripts/testkit/display.mjs";
 import { withRetry } from "../scripts/testkit/retry.mjs";
 
@@ -33,3 +35,21 @@ test("two runs whose work folders share a last part get different displays", () 
   assert.notEqual(names[0], names[1]);
   assert.match(names[0], /^dazedtl-w-[0-9a-f]{6}$/);
 });
+
+test(
+  "stopApp returns only once the app's child processes have exited too",
+  {
+    skip: process.platform === "win32",
+  },
+  async () => {
+    // The leader ends at SIGTERM and leaves a child behind, as Electron's main
+    // process does with Chromium's, none of which carry the scenario's marker.
+    const leader = spawn("sh", ["-c", "sleep 0.1 & trap 'exit 0' TERM; wait"], {
+      detached: true,
+      stdio: "ignore",
+    });
+    const group = leader.pid as number;
+    await stopApp("no-such-tag", group, 5_000);
+    assert.throws(() => process.kill(-group, 0), { code: "ESRCH" });
+  },
+);
