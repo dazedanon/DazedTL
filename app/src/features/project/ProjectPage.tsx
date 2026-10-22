@@ -437,7 +437,8 @@ function ProjectStatus({
         {beside && !active && (
           <p className="project-activity">
             Last activity: {beside.label}
-            {beside.status !== "complete" && ` · ${sentence(beside.status)}`}
+            {beside.status !== "complete" &&
+              ` · ${sentence(beside.status.replaceAll("_", " "))}`}
           </p>
         )}
         {!state.provider_ready && (
