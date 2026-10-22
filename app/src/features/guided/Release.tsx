@@ -241,11 +241,9 @@ export function ReleaseContent({
                       : ""}
                     {!artifact.available
                       ? " · Missing or changed on disk"
-                      : artifact.current === false
-                        ? " · Game files changed since this build"
-                        : artifact.current
-                          ? " · Matches the game"
-                          : ""}
+                      : artifact.current
+                        ? " · Matches the game"
+                        : ""}
                   </small>
                   <small>
                     <PathText path={artifact.path} />
