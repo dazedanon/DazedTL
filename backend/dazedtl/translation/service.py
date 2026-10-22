@@ -120,11 +120,6 @@ OPERATIONS = {
 }
 
 GUIDED_OPERATIONS = {
-    "guided_review": (
-        history_label("guided_review"),
-        {"manifest", "source_inputs", "source_inputs_sha256"},
-    ),
-    "guided_package": (history_label("guided_package"), set()),
     "release_patch": (history_label("release_patch"), {"plan", "sha256"}),
 }
 
@@ -1448,7 +1443,6 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
                 "output",
                 "expected_original_commit",
             },
-            "guided_review": {"manifest"},
             "stage_update": {"official", "version"},
             "version_preview": {"official", "version"},
             "version_apply": {"preview_id"},
@@ -1473,15 +1467,6 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
                 raise ValueError("Operation paths and labels must be bounded text.")
         _record, project = self.project(project_id)
         selected = project.read()["options"]
-        if action == "guided_package":
-            from .operations import verify_guided_review
-
-            verify_guided_review(
-                project.root,
-                lifecycle(self.workspace, project_id),
-                self.workspace,
-                self.engine,
-            )
         if action == "version_preview":
             # A staged release compares as what it was staged as: a patch
             # compared as a complete game would remove every file it leaves out.
@@ -1548,11 +1533,6 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
             **(extra or {}),
         }
         bound = []
-        if action == "guided_review":
-            manifest = runtime_manifest(project.root, arguments["manifest"])
-            bound.extend(
-                [*self.engine.runtime_paths(manifest), *manifest.get("inputs", [])]
-            )
         for key in ("manifest", "translated", "output", "source"):
             if arguments.get(key) and not (
                 key == "source" and arguments.get("backup_id")

@@ -1047,7 +1047,6 @@ export type Readiness = {
   applied: string[];
   unapplied: string[];
   runtime_edited: string[];
-  review_current: boolean;
   text_fit: TextFitState;
   delivery_available: boolean;
 };
@@ -1269,8 +1268,6 @@ export type PackageSummary = {
 export type GuidedAction =
   | "start"
   | "git_setup"
-  | "guided_review"
-  | "guided_package"
   | "release_patch"
   | "refresh_sources"
   | "export_selected"
@@ -1556,11 +1553,6 @@ export type GitStatus = {
   available_original_refs: string[];
 };
 
-export type GuidedReviewRecord = {
-  manifest: string;
-  evidence: Record<string, string>;
-};
-
 export type StartedOver = {
   at: string;
   archive: string;
@@ -1584,7 +1576,6 @@ such as the backup records projects set up before their original files
 were kept in Git still hold. */
 export type Lifecycle = {
   version: number;
-  guided_review?: GuidedReviewRecord;
   delivery?: DeliveryRecord;
   incoming_version?: string;
   version_update?: VersionUpdate;
@@ -3498,18 +3489,6 @@ export const ACTIONS = {
   checkpoint: {
     label: "Save a checkpoint",
     family: "helper",
-    restorable: false,
-    reports_outcome: false,
-  },
-  guided_review: {
-    label: "Record playtest review",
-    family: "lifecycle",
-    restorable: false,
-    reports_outcome: false,
-  },
-  guided_package: {
-    label: "Build local patch ZIP",
-    family: "lifecycle",
     restorable: false,
     reports_outcome: false,
   },
