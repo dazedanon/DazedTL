@@ -21,3 +21,4 @@
 - **Checkpoints:** after a game update, **Translate the new text** counts the lines each task still has to translate, instead of repeating the update's count after you translated them.
 - **Line widths:** after a text fit failed or was stopped, **Save line widths** fits the text again even with the widths unchanged, instead of doing nothing until a width changes.
 - **Translate:** after a game update, one changed file reads "Reload it from the game", and "1 file reloaded from the game." goes away once you translate or apply.
+- **Run history:** **Reapply** and **Apply translated output** are unavailable while a file they would write reads **Outdated**, with "Reload changed files from the game first." beside them, instead of failing after the click.
