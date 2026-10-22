@@ -759,18 +759,29 @@ class TranslationEngine:
             game.watch(data_path or "ace_json")
             return self._prepare(source, options, data_path, log)
 
-    def rpgmaker_prepare_release(self, staged, options, log=None):
+    def rpgmaker_prepare_release(self, staged, options, baseline, log=None):
         """Prepares a new version's copy staged for a game update, which is
-        not the game, as the game's files were. A VX Ace release is
+        not the game, as the game's files were: `baseline` names the files
+        of the game as its current version's baseline was made, or is None
+        when no record says. Forge is DazedTL's, not the release's, so the
+        copy gets it only when that baseline had it; otherwise the update
+        would read Set up's install as the release's change and bring it
+        into the game. A VX Ace release is
         converted as Set up converts the game, setting its archive aside,
         and the exports formatting changes are packed into its Data, as
         preparing the game packs them."""
+        from util.forge import installer as forge
         from util.project_preparation import rpgmaker_layout
 
         log = log or (lambda _line: None)
         layout = rpgmaker_layout(staged)
         if not layout or layout["engine"] != "ACE":
-            return self._prepare(staged, options, None, log)
+            target = forge.status(Path(staged)).get("target")
+            had_forge = bool(target) and (
+                baseline is None
+                or Path(target).relative_to(staged).as_posix() in baseline
+            )
+            return self._prepare(staged, options, None, log, forge=had_forge)
         return self._convert_ace(
             staged, lambda: self._prepare(staged, options, None, log), log
         )
@@ -793,7 +804,7 @@ class TranslationEngine:
             actions.run(Path(staged), "ace_pack", log, only=changed)
         return result
 
-    def _prepare(self, source, options, data_path, log):
+    def _prepare(self, source, options, data_path, log, *, forge=True):
         from desktop.backend.cli_environment import public_values
         from util.len_translation import setup_forge
         from util.project_preparation import prepare_rpgmaker
@@ -809,7 +820,11 @@ class TranslationEngine:
             ).encode("utf-8"),
         )
         result = prepare_rpgmaker(source, data_path=data_path, env_path=path, log=log)
-        result["forge"] = setup_forge(self.project(source, options))
+        result["forge"] = (
+            setup_forge(self.project(source, options))
+            if forge
+            else {"status": "skipped", "message": "The game's baseline has no Forge."}
+        )
         return result
 
     def rpgmaker_prepare_patch(self, patch, source, log=None):

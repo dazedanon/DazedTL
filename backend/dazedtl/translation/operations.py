@@ -388,7 +388,12 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             prepared = engine.rpgmaker_prepare_patch(staged, source, log=progress)
             prepared = prepared is not None
         elif not patch and kind in {"MVMZ", "ACE"}:
-            engine.rpgmaker_prepare_release(staged, options, log=progress)
+            baseline = originals.prepared(
+                workspace, job["project_id"], source, state, or_found=False
+            )
+            engine.rpgmaker_prepare_release(
+                staged, options, baseline.files if baseline else None, log=progress
+            )
             prepared = True
         result = {
             "official": str(staged),
