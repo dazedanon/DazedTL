@@ -1,11 +1,5 @@
 import { Plus } from "lucide-react";
-import {
-  useEffect,
-  useEffectEvent,
-  useRef,
-  useState,
-  type ComponentProps,
-} from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { api } from "../../api/client";
 import { imagesApi } from "../../api/images";
 import { messageOf } from "../../api/errors";
@@ -32,6 +26,7 @@ import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
 import { JobStatus } from "../../ui/JobStatus";
 import { ExpandableText } from "../../ui/ExpandableText";
+import { NumberInput } from "../../ui/NumberInput";
 import { useRead } from "../../state/useRead";
 
 export interface ImageTextEditorProps {
@@ -1681,52 +1676,6 @@ function Editor({
   );
 }
 
-/**
- * A number typed freely and saved once it reads as one. While a minus sign or
- * an emptied field is half typed the field keeps it, rather than the store
- * turning it back into the last number; the saved value is held to the range
- * the renderer accepts, and to whole pixels where it counts them.
- */
-function NumberInput({
-  value,
-  min,
-  max,
-  step = 1,
-  whole = false,
-  onChange,
-  ...input
-}: Omit<
-  ComponentProps<"input">,
-  "type" | "value" | "min" | "max" | "step" | "onChange"
-> & {
-  value: number;
-  min: number;
-  max: number;
-  step?: number;
-  whole?: boolean;
-  onChange: (value: number) => void;
-}) {
-  const [typed, setTyped] = useState<string | null>(null);
-  return (
-    <input
-      {...input}
-      type="number"
-      min={min}
-      max={max}
-      step={step}
-      value={typed ?? String(value)}
-      onChange={(event) => {
-        setTyped(event.target.value);
-        const number = event.target.valueAsNumber;
-        if (Number.isFinite(number))
-          onChange(
-            Math.min(max, Math.max(min, whole ? Math.round(number) : number)),
-          );
-      }}
-      onBlur={() => setTyped(null)}
-    />
-  );
-}
 /** One layer's colour and its opacity, which is the colour's alpha. */
 function ColourFields({
   label,
