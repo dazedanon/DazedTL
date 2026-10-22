@@ -13,3 +13,4 @@
 - **Assistant-led:** the game folder notice looks like the one in Guided steps (an amber note, not a red banner), and a game update stopped partway says "A game update was interrupted. Finish the interrupted update, or cancel it, under Checkpoints to continue." instead of "unfinished Git cherry-pick".
 - **Stop:** pressing Stop in Set up, Line widths, Cost estimate or Release now says what was kept and whether running it again continues or starts over, instead of "Completed writes were retained; review the destination before retrying."
 - **Line widths:** unsaved width edits can be undone with **Discard draft**, as in Guidance.
+- **Line widths:** after a text fit failed or was stopped, **Save line widths** fits the text again even with the widths unchanged, instead of doing nothing until a width changes.
