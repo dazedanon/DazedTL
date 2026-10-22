@@ -1939,25 +1939,47 @@ class GuidedTests(unittest.TestCase):
                 "text": path.read_text(encoding="utf-8"),
                 "revision": digest(path.read_bytes()),
                 "path": str(path),
-            }
+            },
+            "quirks": {
+                "text": quirks.read_text(encoding="utf-8") if quirks.exists() else "",
+                "revision": "",
+                "path": str(quirks),
+            },
         }
+        quirks = self.source / "quirks.md"
         self.backend.workflows.documents = documents
         self.backend.workflows.state = lambda _: {"draft": pending}
         self.backend.workflows.draft = Mock()
+        summaries = []
+
+        def write(source, native=None, **options):
+            summaries.append(options["summary"])
+            return game_write(source, native, **options)
 
         def save(owner, changes):
             self.assertEqual(owner, "native")
-            self.assertEqual(list(changes), ["glossary"])
             self.assertEqual(changes["glossary"]["revision"], digest(path.read_bytes()))
             path.write_text(changes["glossary"]["text"], encoding="utf-8")
+            if "quirks" in changes:
+                quirks.write_text(changes["quirks"]["text"], encoding="utf-8")
             return documents(owner)
 
+        # Save guidance sends every tab.
         def draft(text):
-            return {"glossary": {"text": text, "revision": "older"}}
+            return {
+                "glossary": {"text": text, "revision": "older"},
+                "quirks": {"text": "", "revision": ""},
+            }
 
+        self.backend.game_write = write
         self.backend.workflows.documents_save = save
         self.guided.save_documents(self.identity, draft("My draft"))
         self.assertEqual(path.read_text(encoding="utf-8"), "My draft")
+        # A core tab the game has no file for is created, empty, so Guidance
+        # is complete, but its checkpoint names only what was edited: it read
+        # "Save Glossary, Style & quirks".
+        self.assertEqual(quirks.read_text(encoding="utf-8"), "")
+        self.assertEqual(summaries, ["Save Glossary"])
         self.assertEqual(set(pending["documents"]), {"game"})
         # A document whose file already holds its text writes nothing, so a
         # Save of untouched tabs makes no checkpoint.
