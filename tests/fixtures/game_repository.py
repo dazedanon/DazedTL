@@ -3,6 +3,7 @@ index lock, original files read in one process and the GameUpdate config a
 published patch carries."""
 
 import hashlib
+import os
 import shutil
 import subprocess
 import sys
@@ -744,4 +745,27 @@ checkpoint_records.go_back(records, record["parent"])
 clean()
 assert batch(plan["id"]) == "restored" and outputs() == {}, outputs()
 assert (kept / items).read_bytes() == before_qa
+# A file name that isn't UTF-8, as unzip leaves Shift-JIS names on Linux,
+# goes to Git as its own bytes and comes back as the same file: every write
+# to such a game once failed while recording its original files.
+if os.name != "nt":
+    picture = os.fsdecode(b"img/pictures/\x82\xa0.png")
+    unzipped = game("unzipped")
+    (unzipped / picture).write_bytes(b"Japanese")
+    with write_game(unzipped, paths=[items]) as written:
+        written.put(items, b"[]")
+    [found] = original_files.records(unzipped)
+    _mode, blob, size = original_files.files(unzipped, found.commit)[picture]
+    copied = temporary / "unzipped-copy"
+    original_files.write(unzipped, [(blob, picture, size)], copied, lambda: False)
+    assert (copied / picture).read_bytes() == b"Japanese"
+    # A checkpoint takes the file in and its undo puts its bytes back.
+    write(picture, b"First")
+    write(picture, b"Second")
+    checkpoints.undo(kept, tip())
+    clean()
+    assert (kept / picture).read_bytes() == b"First"
+    assert sorted(os.listdir(kept / "img/pictures")) == sorted(
+        ["sign.png", os.path.basename(picture)]
+    ), os.listdir(kept / "img/pictures")
 print("ok")

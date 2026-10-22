@@ -345,15 +345,21 @@ def _run_git(
     input_text: str | None = None,
     env: Mapping[str, str] | None = None,
     timeout: int = 120,
+    errors: str = "replace",
 ) -> subprocess.CompletedProcess[str]:
+    """Runs Git and decodes its output with `errors`; "surrogateescape" keeps
+    a file name that isn't UTF-8 as Python names it, for a caller that reads
+    paths to write files by."""
     command = ["git", "-C", str(cwd), *args]
     process_env = os.environ.copy()
     if env:
         process_env.update(env)
     # Feed Git stdin as raw UTF-8 bytes. On Windows, text-mode subprocess pipes
     # translate LF to CRLF, which corrupts hash-object --stdin blobs and can
-    # embed trailing CR into update-index --index-info paths.
-    input_bytes = None if input_text is None else input_text.encode("utf-8")
+    # embed trailing CR into update-index --index-info paths. A file name that
+    # isn't UTF-8, as unzip leaves Shift-JIS names on Linux, reaches Python
+    # with surrogateescape and goes to Git as its own bytes.
+    input_bytes = None if input_text is None else input_text.encode("utf-8", "surrogateescape")
     deadline = None
     while True:
         try:
@@ -384,7 +390,7 @@ def _run_git(
     result = subprocess.CompletedProcess(
         raw.args,
         raw.returncode,
-        raw.stdout.decode("utf-8", errors="replace"),
+        raw.stdout.decode("utf-8", errors=errors),
         raw.stderr.decode("utf-8", errors="replace"),
     )
     if check and result.returncode != 0:
@@ -2408,13 +2414,13 @@ def _diff_numstat(
 
 
 def _tree_files(
-    repo: Path, ref: str, game_prefix: str
+    repo: Path, ref: str, game_prefix: str, errors: str = "replace"
 ) -> dict[str, tuple[str, str]]:
     args = ["ls-tree", "-r", "-z", ref]
     if game_prefix:
         args.extend(["--", game_prefix])
     files = {}
-    for record in _run_git(repo, *args).stdout.split("\x00"):
+    for record in _run_git(repo, *args, errors=errors).stdout.split("\x00"):
         if not record:
             continue
         metadata, path = record.split("\t", 1)

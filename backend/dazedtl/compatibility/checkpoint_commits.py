@@ -138,6 +138,12 @@ def _folder(root):
     )
 
 
+def _record(path, value):
+    """Writes one of the checkpoints folder's records, whose paths may hold a
+    file name that isn't UTF-8, escaped so it reads back as it was."""
+    system.write_text(path, json.dumps(value))
+
+
 class _Write:
     """A write in progress, registered with the files it said it would change;
     its lock, held while it runs, tells a live write from one whose process
@@ -147,7 +153,7 @@ class _Write:
         self.folder = folder
         self.name = uuid.uuid4().hex
         self.handle = hold(folder / (self.name + ".lock"))
-        system.write_json(
+        _record(
             folder / (self.name + ".json"),
             {"paths": sorted(paths) if paths else None},
         )
@@ -195,8 +201,12 @@ def _relative(paths):
 
 
 def _git(root, *args, **options):
+    """Runs Git in the game. Paths Git prints keep the bytes of a file name
+    that isn't UTF-8, as Python names the file, so a restore writes the file
+    it read."""
     from util.version_update.git_workflow import _run_git
 
+    options.setdefault("errors", "surrogateescape")
     return _run_git(Path(root), *args, **options)
 
 
@@ -297,7 +307,7 @@ def _settle(root, folder, change=None):
 def _wait(root, folder, change, paths):
     """Adds a write's files to the writes waiting for `change`'s checkpoint."""
     paths = set(_relative(paths)) | _settle(root, folder, change)
-    system.write_json(
+    _record(
         folder / WAITING,
         {
             "change": {

@@ -453,8 +453,6 @@ class _Game:
     def _original(self, version):
         """The original game's files at `version`: the branch's tip while it
         is the newest version, else its newest commit recording it."""
-        from util.version_update.git_workflow import _tree_files
-
         if not self.original_tip:
             return {}
         commit = self.original_tip
@@ -475,7 +473,7 @@ class _Game:
                 # Commits after the version's own, such as a completed
                 # original, belong to it while no newer version followed.
                 chosen = self.original_tip if recorded == newest else identity
-        return _tree_files(self.root, chosen or commit, "")
+        return self.tree(chosen or commit)
 
     def wanted(self, path, tree):
         """The (mode, blob) the file has as of the target, (SAVED, path) when
@@ -498,7 +496,9 @@ class _Game:
     def tree(self, commit):
         from util.version_update.git_workflow import _tree_files
 
-        return _tree_files(self.root, commit, "")
+        # Named as `_git` names paths, so a file name that isn't UTF-8 is
+        # restored as the file it was.
+        return _tree_files(self.root, commit, "", errors="surrogateescape")
 
 
 def _diff(root, older, newer):
