@@ -231,23 +231,28 @@ class GuidedInputs:
     def source_row(
         self, name, relative, native_paths, originals, previous, fingerprint, fresh
     ):
+        bound = {}
+        if relative in originals:
+            bound["original"] = {"original": originals[relative]}
+        native = native_paths.get(name)
+        if native in originals:
+            bound["native_original"] = {
+                "native_original": {"path": native, "blob": originals[native]}
+            }
         if (
             not fresh
             and name in previous
             and (self.saved("files", name) or self.saved("translated", name))
         ):
-            return previous[name]
-        path = self.game_path(relative)
-        if relative in originals:
-            identity = {"original": originals[relative]}
-        elif native_paths.get(name) in originals:
-            identity = {
-                "native_original": {
-                    "path": native_paths[name],
-                    "blob": originals[native_paths[name]],
-                }
-            }
-        else:
+            # A working copy keeps its source while the game's own file
+            # changes by Apply or by hand; only a new original of the kind it
+            # was bound to, which a game update records, changes it.
+            kept = previous[name]
+            kind = next(iter(kept["identity"]), None)
+            return {**kept, "identity": bound[kind]} if kind in bound else kept
+        identity = bound.get("original") or bound.get("native_original")
+        if identity is None:
+            path = self.game_path(relative)
             identity = {"sha256": fingerprint(path)}
             # Ace exports are runtime inputs too. Applying our exact saved
             # output must not look like a different untranslated source.

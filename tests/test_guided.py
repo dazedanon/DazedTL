@@ -4145,6 +4145,14 @@ class GuidedTests(unittest.TestCase):
             read_json(self.folder / "files/Items.json"), [{"name": "English runtime"}]
         )
         self.assertEqual(inputs.status(["Items.json"])["changed"], [])
+        # Applying or editing the game leaves its original as it was; an
+        # update that brings in a new release's file does not.
+        write_json(self.folder / "translated/Items.json", [{"name": "Potion"}])
+        write_json(self.source / "Items.json", [{"name": "Potion"}])
+        self.assertEqual(inputs.status(["Items.json"])["changed"], [])
+        inputs.bindings = lambda *_args: {"Items.json": "updated original"}
+        self.assertEqual(inputs.status(["Items.json"])["changed"], ["Items.json"])
+        inputs.bindings = lambda *_args: {"Items.json": "original"}
         # Native Ace JSON exports do not live in Git; an exact applied output is
         # still the same source identity. Game edits wait for explicit reload.
         self.guided.inputs(self.native).prepare(["Items.json"], refresh=True)
@@ -4170,11 +4178,21 @@ class GuidedTests(unittest.TestCase):
         native_inputs.prepare(["Items.json"], refresh=True)
         write_json(self.source / "Items.json", [{"name": "Fitted runtime English"}])
         self.assertEqual(native_inputs.status(["Items.json"])["changed"], [])
+        # A game update records the new release's data as the original, so
+        # the translated copy reads changed until it is reloaded, though the
+        # original now holds the export too.
+        native_inputs.bindings = lambda *_: {
+            "Data/Items.rvdata2": "new-native-original",
+            "Items.json": "export-original",
+        }
+        self.assertEqual(
+            native_inputs.status(["Items.json"])["changed"], ["Items.json"]
+        )
         native_inputs.bindings = lambda *_: {
             "Data/Items.rvdata2": "new-native-original"
         }
-        self.assertEqual(native_inputs.status(["Items.json"])["changed"], [])
         native_inputs.prepare(["Items.json"], refresh=True)
+        self.assertEqual(native_inputs.status(["Items.json"])["changed"], [])
         self.assertEqual(
             native_inputs.record()["inputs"]["Items.json"]["identity"][
                 "native_original"
