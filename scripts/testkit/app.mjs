@@ -171,9 +171,22 @@ const kill = (pid, signal) => {
   }
 };
 
+/** Whether any process is left in process group `group`. */
+const groupAlive = (group) => {
+  try {
+    process.kill(-group, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 /**
  * Closes the scenario app started as `pid` the way its window's close button
- * does, then ends whatever is left of it.
+ * does, then ends whatever is left of it, and returns only once every process
+ * of the app has exited, so its folder can be removed at once. Electron and
+ * Chromium's own processes carry no `tag` that can be read (they are not
+ * dumpable), so the app's process group, which `startApp` makes, counts too.
  */
 export async function stopApp(tag, pid, timeout = 30_000) {
   if (process.platform === "win32") {
@@ -183,11 +196,14 @@ export async function stopApp(tag, pid, timeout = 30_000) {
       });
     return;
   }
-  if (!running(tag).length) return;
+  const gone = () => !running(tag).length && !(pid && groupAlive(pid));
+  if (gone()) return;
   if (pid) kill(pid, "SIGTERM");
   try {
-    await until("the app to close", () => !running(tag).length, timeout);
+    await until("the app to close", gone, timeout);
   } catch {
     for (const left of running(tag)) kill(left, "SIGKILL");
+    if (pid) kill(-pid, "SIGKILL");
+    await until("the app to end", gone, 10_000);
   }
 }
