@@ -122,7 +122,7 @@ them. Disabled bars remain the last reported counts.
 
 Prompt refreshes and resume never overwrite `progress.json`. Its artifact paths are
 relative to the game.
-Keep `progress.json` and `status.md` in `.dazedtl/len-method/`, authored exports under `work/`, and all of them in the separate workspace backup.
+Keep `progress.json` and `status.md` in `.dazedtl/len-method/`, authored exports under `work/`, and all of them ignored by Git; export what you need to keep under `work/`.
 These are local working records and must stay ignored on both patch branches. Unknown totals,
 out-of-scope work and incomplete playtesting must stay explicit. A 100% text bar
 does not mean the game is ready to deliver.
