@@ -1749,7 +1749,7 @@ class GuidedTests(unittest.TestCase):
             self.assertEqual(review["options"]["run_id"], identity)
             # Translate's Apply names its run too; History listed a run's
             # first Apply as a reapply.
-            self.assertEqual(review["label"], "Apply selected saved outputs")
+            self.assertEqual(review["label"], "Apply Database files")
             self.assertEqual(read_json(self.source / "Items.json"), [{"name": "薬"}])
             write_json(self.source / "Items.json", [{"name": "Edit after review"}])
             edited = (self.source / "Items.json").read_bytes()
@@ -1789,7 +1789,7 @@ class GuidedTests(unittest.TestCase):
             )
             self.assertEqual(
                 (again["paths"], again["label"]),
-                (["Items.json"], "Reapply saved run output"),
+                (["Items.json"], "Reapply Database files"),
             )
             job["mode"] = "batch"
             for files in (
