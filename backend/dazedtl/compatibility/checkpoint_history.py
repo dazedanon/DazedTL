@@ -32,7 +32,10 @@ of them names what to undo first. A checkpoint that undid another put the
 file back, so undoing in turn never loops. History, Plugin files and Text
 QA's restores are undos of their apply's checkpoint, and a write that
 stopped midway, which made none, puts its files back as the checkpoint it
-started from had them (`put_back`).
+started from had them (`put_back`). The features' records of what they
+applied follow an undo or a go back through
+[checkpoint_records](../translation/checkpoint_records.py), which every
+caller goes through.
 """
 
 from __future__ import annotations
@@ -571,8 +574,9 @@ def _plan(state, paths, tree):
 
 def go_back(root, commit, stopped=lambda: False, log=lambda _line: None, original=None):
     """Puts the game's files back as they were at `commit`, as one
-    checkpoint. `original` is the saved original game of a game set up
-    before Git kept its original files."""
+    checkpoint, and names the checkpoints it took out (`undone`, newest
+    first). `original` is the saved original game of a game set up before
+    Git kept its original files."""
     from .game_write import write_game
 
     root = Path(root).resolve()
@@ -582,11 +586,12 @@ def go_back(root, commit, stopped=lambda: False, log=lambda _line: None, origina
     with running(change), write_game(root, log=log) as game:
         # The gateway recorded the edits made outside DazedTL first.
         entries = _log(root)
-        target = entries[_restorable(entries, commit)]
-        state = _Game(root, target, original)
+        index = _restorable(entries, commit)
+        state = _Game(root, entries[index], original)
         plan = _plan(state, _diff(root, commit, "HEAD"), state.tree(commit))
         written = _apply(game, root, plan, stopped, state)
-    return {"files": written, "commit": _head(root)}
+    undone = [entry.commit for entry in entries[:index]]
+    return {"files": written, "commit": _head(root), "undone": undone}
 
 
 def put_back(
@@ -657,7 +662,8 @@ def undo(
     check=lambda: None,
 ):
     """Takes out one checkpoint's change, as one checkpoint of its own.
-    `check` refuses inside the write, as `put_back`'s does."""
+    `check` refuses inside the write, as `put_back`'s does. The result names
+    it among those undone, as `go_back`'s does."""
     from .game_write import write_game
 
     root = Path(root).resolve()
@@ -685,7 +691,7 @@ def undo(
         parent = entries[index + 1].commit if index + 1 < len(entries) else None
         plan = _plan(state, target.changes, state.tree(parent) if parent else {})
         written = _apply(game, root, plan, stopped, state)
-    return {"files": written, "commit": _head(root)}
+    return {"files": written, "commit": _head(root), "undone": [commit]}
 
 
 def _names(files):

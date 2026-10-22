@@ -20,6 +20,7 @@ from dazedtl.storage import write_bytes, write_json
 
 from . import (
     backups,
+    checkpoint_records,
     delivery,
     organize,
     originals,
@@ -730,11 +731,21 @@ Additional project instructions:
         if action not in {"checkpoint_back", "checkpoint_undo", "checkpoint_copy"}:
             raise ValueError("Choose go back, undo or save a copy.")
         arguments = {"commit": _commit_id(commit)}
+        extra = {}
         if action == "checkpoint_copy":
             arguments["destination"] = (
                 destination if isinstance(destination, str) else ""
             )
-        return self._operation(project_id, action, arguments, USER_OPERATIONS[action])
+        else:
+            # The text batches whose records follow an undo or a go back.
+            folder = checkpoint_records.publications(
+                self.settings.adapter, self.projects.get(project_id)
+            )
+            if folder is not None:
+                extra["publications"] = str(folder)
+        return self._operation(
+            project_id, action, arguments, USER_OPERATIONS[action], extra
+        )
 
     def release(self, project_id, folder):
         """How a new official release's folder lines up with the game, as a
@@ -1414,7 +1425,7 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
             USER_OPERATIONS["start_over"],
         )
 
-    def _operation(self, project_id, action, arguments, specification):
+    def _operation(self, project_id, action, arguments, specification, extra=None):
         self.idle(project_id)
         # Finishing or cancelling a stopped game update reads no guidance or
         # options, and drafts can't be saved until it is done.
@@ -1530,6 +1541,7 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
             "action": action,
             "arguments": arguments,
             "label": specification[0],
+            **(extra or {}),
         }
         bound = []
         if action == "guided_review":

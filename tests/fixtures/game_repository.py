@@ -654,10 +654,11 @@ else:
 # History undoes a text batch through its checkpoint: its receipt names the
 # checkpoint and keeps no copy, the undo is a checkpoint of its own, and the
 # batch then reads restored with its applied-output entries back.
-from dazedtl.translation import publication
+from dazedtl.translation import checkpoint_records, publication
 
 texts = temporary / "texts"
 texts.mkdir()
+records = checkpoint_records.Records(kept, publications=texts)
 items = "data/Items.json"
 before_qa = (kept / items).read_bytes()
 with running(for_action("qa_apply")):
@@ -672,7 +673,7 @@ assert (
 assert sorted(
     path.name for path in (texts / "text-publications" / applied).iterdir()
 ) == ["receipt.json"]
-publication.undo(texts, kept, applied)
+publication.undo(texts, kept, applied, records)
 clean()
 assert history()[0] == "Undid “Apply QA corrections”|checkpoint_undo|", history()
 assert (kept / items).read_bytes() == before_qa
@@ -681,7 +682,7 @@ assert [row["state"] for row in publication.history(texts)] == ["complete", "res
 # Undo control, with its result, rather than offering a reviewed restore.
 assert publication.undoes(publication.history(texts)[1])
 try:
-    publication.undo(texts, kept, applied)
+    publication.undo(texts, kept, applied, records)
 except ValueError as reason:
     assert "Choose an applied or interrupted batch" in str(reason), reason
 else:
@@ -704,8 +705,41 @@ stopped.update(state="publishing", parent=tip())
 publication.write_json(path, stopped)
 (kept / items).write_bytes(b'["Stopped"]')
 (kept / "data/Map001.json").write_bytes(b'{"by": "a hand edit"}')
-publication.undo(texts, kept, plan["id"])
+publication.undo(texts, kept, plan["id"], records)
 assert (kept / items).read_bytes() == before_qa
 assert (kept / "data/Map001.json").read_bytes() == b'{"by": "a hand edit"}'
 assert history()[0] == "Restored an interrupted text batch|checkpoint_undo|", history()
+# The Checkpoints tab's undo takes the batch of the checkpoint it undoes out
+# too, as History's does, so History and Text QA read it restored and its
+# applied-output entries go back; undoing that undo brings it back.
+
+
+def outputs():
+    return publication.read_json(texts / "applied-outputs.json")["files"]
+
+
+def batch(identity):
+    return next(
+        row["state"] for row in publication.history(texts) if row["id"] == identity
+    )
+
+
+with running(for_action("qa_apply")):
+    plan = publication.freeze(
+        texts, kept, {items: b'["Undone here"]'}, "qa_apply", outputs={items: "qa"}
+    )
+    publication.publish(texts, kept, plan)
+[record] = [row for row in publication.records(texts) if row["id"] == plan["id"]]
+assert outputs() == {items: "qa"}, outputs()
+undone = checkpoint_records.undo(records, record["commit"])
+assert batch(plan["id"]) == "restored" and outputs() == {}, outputs()
+assert (kept / items).read_bytes() == before_qa
+checkpoint_records.undo(records, undone["commit"])
+assert batch(plan["id"]) == "complete" and outputs() == {items: "qa"}, outputs()
+assert (kept / items).read_bytes() == b'["Undone here"]'
+# Going back to before the batch takes out it and both undos at once.
+checkpoint_records.go_back(records, record["parent"])
+clean()
+assert batch(plan["id"]) == "restored" and outputs() == {}, outputs()
+assert (kept / items).read_bytes() == before_qa
 print("ok")

@@ -20,6 +20,7 @@ from dazedtl.freshness import Basis, Digests, compare
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation import originals as game_originals
 from dazedtl.translation.files import decode_json, digest, project_path, read_json
+from dazedtl.translation.git_status_cache import repository_signature
 from dazedtl.translation.helper_command import windows_note
 
 from . import recipes
@@ -112,6 +113,14 @@ def receipt_view(receipt):
     return view
 
 
+def _set_aside(row):
+    """Restore originals takes an image's application out of the game; it
+    comes back once the game holds that image again (`_inspect`)."""
+    applied = row.pop("applied", None)
+    if applied:
+        row["restored"] = applied
+
+
 class ImageService:
     def __init__(self, projects, translation, settings, backend, *, adapter=None):
         self.projects, self.translation, self.settings, self.backend = (
@@ -128,6 +137,8 @@ class ImageService:
         self.mutating = set()
         self.threads = {}
         self.foreign = {}
+        # The game's checkpoints as the images were last inspected against.
+        self.checkpoints = {}
         # Recipe inputs by path and stat signature, hashed once per change.
         self.digests = Digests()
 
@@ -389,6 +400,7 @@ class ImageService:
         with self.lock:
             project, root = self.record(project_id)
             self._recover_publications(project_id)
+            self._follow_checkpoints(project_id, root)
             value = self._load(project_id)
             index = self._index(project_id)
             profile = self._profile(project_id, value)
@@ -799,6 +811,15 @@ class ImageService:
                 result["originalIssue"] = ""
             except (OSError, ValueError) as exc:
                 result["originalIssue"] = str(exc)
+        restored = result.get("restored")
+        if (
+            restored
+            and not result.get("applied")
+            and result.get("sourceHash") == restored.get("runtimeHash")
+        ):
+            # The game holds the applied image again, as when Restore
+            # originals' checkpoint is undone.
+            result["applied"] = result.pop("restored")
         return self._status(result)
 
     def refresh_assets(self, project_id, asset_ids):
@@ -828,26 +849,50 @@ class ImageService:
         """
         with self.lock:
             self.record(project_id)
-            try:
-                value = self._load(project_id)
-            except ForeignWorkError:
-                return 0  # Nothing is worked on here until the user chooses.
-            if (
-                project_id in self.mutating
-                or self.jobs.get(project_id, {}).get("status") == "running"
-                or not value["inventoryRevision"]
-            ):
+            checked = self._reinspect(project_id)
+            if checked is None:
                 return 0
-            selected = set(value["selection"])
-            identities = [
-                row["id"]
-                for row in self._index(project_id).rows()
-                if row.get("hasEditable") or row.get("applied") or row["id"] in selected
-            ]
-            if identities:
-                self.refresh_assets(project_id, identities)
             self._pickup(project_id)
-            return len(identities)
+            return checked
+
+    def _reinspect(self, project_id):
+        """Reinspects working copies, the selection and the images applied
+        or restored, and counts them; None while nothing is worked on here
+        yet or a running scan or image operation owns its files."""
+        try:
+            value = self._load(project_id)
+        except ForeignWorkError:
+            return None  # Nothing is worked on here until the user chooses.
+        if (
+            project_id in self.mutating
+            or self.jobs.get(project_id, {}).get("status") == "running"
+            or not value["inventoryRevision"]
+        ):
+            return None
+        selected = set(value["selection"])
+        identities = [
+            row["id"]
+            for row in self._index(project_id).rows()
+            if row.get("hasEditable")
+            or row.get("applied")
+            or row.get("restored")
+            or row["id"] in selected
+        ]
+        if identities:
+            self.refresh_assets(project_id, identities)
+        return len(identities)
+
+    def _follow_checkpoints(self, project_id, root):
+        """Whether an image is applied reads from its file, which undoing or
+        going back past a checkpoint changes; so the images are inspected
+        again once the game's checkpoints move."""
+        mark = repository_signature(root)
+        if (
+            mark is not None
+            and self.checkpoints.get(project_id) != mark
+            and self._reinspect(project_id) is not None
+        ):
+            self.checkpoints[project_id] = mark
 
     def _pickup(self, project_id):
         """Imports reports an assistant saved for a copied task, validated as
@@ -929,6 +974,7 @@ class ImageService:
                     if actual == frozen["expectedRuntimeHash"]:
                         changed.append(frozen["id"])
                         if journal["action"] == "apply":
+                            row.pop("restored", None)
                             row["applied"] = {
                                 "candidateHash": frozen["candidateHash"],
                                 "runtimeHash": actual,
@@ -938,7 +984,7 @@ class ImageService:
                                 "recovered": True,
                             }
                         else:
-                            row.pop("applied", None)
+                            _set_aside(row)
                             row.pop("aiReview", None)
                             row.pop("userReview", None)
                             row["originalRuntimeHash"] = actual
@@ -2595,6 +2641,7 @@ class ImageService:
                     for row in current:
                         runtime_hash = sha_file(project_path(root, row["runtime"]))
                         if action == "apply":
+                            row.pop("restored", None)
                             row["applied"] = {
                                 "candidateHash": row["candidateHash"],
                                 "runtimeHash": runtime_hash,
@@ -2603,7 +2650,7 @@ class ImageService:
                                 "review": "ai" if row.get("aiReviewed") else "user",
                             }
                         else:
-                            row.pop("applied", None)
+                            _set_aside(row)
                             row.pop("aiReview", None)
                             row.pop("userReview", None)
                             row["originalRuntimeHash"] = runtime_hash

@@ -26,6 +26,7 @@ from dazedtl.plugins.service import (
 )
 from dazedtl.projects.store import Projects
 from dazedtl.storage import write_bytes, write_json
+from dazedtl.translation import checkpoint_records
 from dazedtl.translation.files import digest, read_json
 from dazedtl.translation.operations import lifecycle_path
 
@@ -669,7 +670,28 @@ class PluginTests(unittest.TestCase):
             self.service.action(
                 self.identity, "undo", {"receipt": result["receipt"]["id"]}
             )
-        self.assertEqual(self.service.action(self.identity, "apply")["completed"], 2)
+        again = self.service.action(self.identity, "apply")["receipt"]
+        self.assertEqual(len(again["files"]), 2)
+        # Undoing the application from the Checkpoints tab takes it out of
+        # the task's records too, and undoing that undo brings it back.
+        commit = next(
+            row["commit"]
+            for row in self.service.load(self.identity)["receipts"]
+            if row["id"] == again["id"]
+        )
+        records = checkpoint_records.Records(self.game, self.profile, self.identity)
+        undone = checkpoint_records.undo(records, commit)
+        state = self.service.state(self.identity)
+        self.assertEqual((state["counts"]["applied"], state["counts"]["ready"]), (0, 2))
+        self.assertFalse(any(receipt["restorable"] for receipt in state["receipts"]))
+        self.assertEqual(state["receipts"][-1]["mode"], "restore")
+        checkpoint_records.undo(records, undone["commit"])
+        state = self.service.state(self.identity)
+        self.assertEqual(state["counts"]["applied"], 2)
+        self.assertEqual(
+            [row["id"] for row in state["receipts"] if row["restorable"]],
+            [again["id"]],
+        )
 
     def test_labels_text_qa_found_too_long_hold_the_task_until_applied(self):
         # QA can't write plugin files, so its squeezed plugin labels must

@@ -13,6 +13,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from dazedtl import system
 from dazedtl.api import views
 from dazedtl.api.contracts.validation import check_response
 from dazedtl.foreign_work import ForeignWorkError
@@ -895,6 +896,35 @@ class ImageTests(unittest.TestCase):
         restore = reopened.action(self.identity, "preview_restore")["preview"]
         reopened.action(self.identity, "restore", {"token": restore["token"]})
         self.assertEqual((self.game / "img/A.png").read_bytes(), original)
+
+    def test_an_image_reads_applied_from_its_file_once_checkpoints_move(self):
+        # Undoing an apply's or Restore originals' checkpoint, or going back
+        # past it, changes the image without the task; Images reads it again
+        # once the game's checkpoints move.
+        original = (self.game / "img/A.png").read_bytes()
+        candidate = self.reviewed_candidate()
+        preview = self.service.action(self.identity, "preview_apply")["preview"]
+        self.service.action(self.identity, "apply", {"token": preview["token"]})
+        restore = self.service.action(self.identity, "preview_restore")["preview"]
+        self.service.action(self.identity, "restore", {"token": restore["token"]})
+        identity = ["-c", "user.name=DazedTL", "-c", "user.email=dazedtl@localhost"]
+        system.run(["git", "-C", str(self.game), "init", "-q"], check=True)
+
+        def checkpoint(raw):
+            write_bytes(self.game / "img/A.png", raw)
+            system.run(
+                ["git", "-C", str(self.game), *identity, "commit", "-q"]
+                + ["--allow-empty", "-m", "checkpoint"],
+                check=True,
+            )
+            self.service.state(self.identity)
+            return self.service.list(self.identity)["items"][0]["state"]
+
+        self.assertEqual(checkpoint(original), "needs_review")
+        # The restore undone brings back the application it took out.
+        self.assertEqual(checkpoint(candidate), "applied")
+        self.assertEqual(checkpoint(original), "needs_review")
+        self.assertEqual(checkpoint(candidate), "applied")
 
     def test_another_projects_work_is_taken_over_on_request_or_set_aside(self):
         # A copied game, a new profile or a reinstall opens this folder as a

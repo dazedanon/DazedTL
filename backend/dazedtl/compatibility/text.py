@@ -1103,20 +1103,27 @@ def run_undo(plan, log):
     from desktop.backend.workflow_actions import validate_plan
 
     from dazedtl.translation import originals
+    from dazedtl.translation.checkpoint_records import Records
 
     validate_plan(plan)
     saved = plan.get("original") or {}
+    root = Path(plan["project"]["source"])
     original = (
-        originals.saved(
-            saved["workspace"], saved["project_id"], plan["project"]["source"]
-        )
+        originals.saved(saved["workspace"], saved["project_id"], root)
         if saved
         else None
     )
+    records = Records(
+        root,
+        Path(saved["workspace"]) if saved else None,
+        saved.get("project_id"),
+        Path(plan["folder"]),
+    )
     return publication.undo(
         plan["folder"],
-        plan["project"]["source"],
+        root,
         plan["options"]["publication"],
+        records,
         original=original,
         log=log,
     )

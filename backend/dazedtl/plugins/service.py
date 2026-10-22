@@ -411,6 +411,158 @@ def receipt_view(receipt, files, issue=""):
     }
 
 
+def publication_manifest(workspace, project_id, root, rows):
+    """The runtime manifest with `rows`' files as an application or restore
+    leaves them."""
+    state = lifecycle(workspace, project_id)
+    prior = state.get("runtime_manifest")
+    document = (
+        read_json(project_path(root, prior)) if prior else {"version": 1, "files": {}}
+    )
+    files = document.get("files")
+    if isinstance(files, list):
+        files = {name: {} for name in files}
+    if not isinstance(files, dict):
+        raise ValueError("The reviewed runtime manifest is malformed.")
+    files = deepcopy(files)
+    for row in rows:
+        files[row["path"]] = {
+            **files.get(row["path"], {}),
+            "sha256": row["afterHash"],
+            "original_sha256": row["originalHash"],
+        }
+    return {**document, "files": files}
+
+
+def finish(workspace, project_id, root, value, receipt):
+    """Records a finished application or restore in `value`: what each file
+    carries and the runtime manifest. An application brought back again
+    carries the original's receipt (`applies`)."""
+    for row in receipt["files"]:
+        item = value["files"][row["path"]]
+        if receipt["mode"] == "apply":
+            item["applied"] = {
+                "receipt": receipt.get("applies", receipt["id"]),
+                "afterHash": row["afterHash"],
+            }
+        else:
+            item.pop("applied", None)
+    if receipt["files"]:
+        # The exact paths feed the existing runtime manifest owner, including plugin-loaded JSON.
+        state = lifecycle(workspace, project_id)
+        state["runtime_manifest"] = receipt["manifest"]
+        if receipt["status"] != "complete":
+            write_json(
+                project_path(root, receipt["manifest"], exists=False),
+                publication_manifest(workspace, project_id, root, receipt["files"]),
+            )
+        write_json(lifecycle_path(workspace, project_id), state)
+    value["receipts"].append(receipt)
+    value["pending"] = [
+        identity for identity in value["pending"] if identity != receipt["id"]
+    ]
+
+
+def _followed(workspace, project_id, root, value, rows, commit, **names):
+    """A receipt for the files of `rows`, an earlier receipt's, that
+    checkpoint `commit` changed back, recorded in `value`: `restores` names
+    the application it took out, or, with `applies`, the restore whose
+    application it brought back."""
+    token = uuid.uuid4().hex
+    rows = [
+        {
+            **row,
+            "beforeHash": row["afterHash"],
+            "afterHash": digest(target.read_bytes())
+            if (target := project_path(root, row["path"], exists=False)).is_file()
+            else "",
+        }
+        for row in rows
+    ]
+    receipt = {
+        "id": token,
+        "mode": "apply" if "applies" in names else "restore",
+        "saved": now(),
+        "status": "complete",
+        "files": rows,
+        "reviewedFiles": rows,
+        "manifest": WORK + "/publications/" + token + "/runtime-manifest.json",
+        "failure": "",
+        "conflicts": [],
+        "commit": commit,
+        **names,
+    }
+    write_json(
+        project_path(root, receipt["manifest"], exists=False),
+        publication_manifest(workspace, project_id, root, rows),
+    )
+    finish(workspace, project_id, root, value, receipt)
+    return receipt
+
+
+def take_out(workspace, project_id, root, value, application, commit):
+    """Records an application taken out of the game by checkpoint `commit`."""
+    return _followed(
+        workspace,
+        project_id,
+        root,
+        value,
+        application["files"],
+        commit,
+        restores=application["id"],
+    )
+
+
+def follow(workspace, project_id, root, undone, commit):
+    """Takes out each application still in the game whose checkpoint is among
+    `undone`, newest first, as made by checkpoint `commit`; a restore among
+    them brings back the application it took out, under that application's
+    receipt, so Recovery and the task read it applied again."""
+    path = project_path(root, WORK + "/state.json", exists=False)
+    if not path.is_file():
+        return
+    value = read_json(path, limit=64_000_000)
+    if not foreign_work.owned(value, project_id):
+        return
+    receipts = {row["id"]: row for row in value["receipts"]}
+    files = value["files"]
+    changed = False
+    for taken in undone:
+        for receipt in reversed(list(value["receipts"])):
+            if receipt.get("commit") != taken:
+                continue
+            application = receipts.get(
+                receipt.get("applies", receipt["id"])
+                if receipt["mode"] == "apply"
+                else receipt.get("restores", "")
+            )
+            # Files the task no longer lists keep no record to follow.
+            if not application or any(
+                row["path"] not in files for row in application["files"]
+            ):
+                continue
+            if receipt["mode"] == "apply":
+                if carries(files, application):
+                    take_out(workspace, project_id, root, value, application, commit)
+                    changed = True
+            elif application["mode"] == "apply" and not any(
+                files[row["path"]].get("applied") for row in application["files"]
+            ):
+                _followed(
+                    workspace,
+                    project_id,
+                    root,
+                    value,
+                    receipt["files"],
+                    commit,
+                    applies=application["id"],
+                    restores=receipt["id"],
+                )
+                changed = True
+    if changed:
+        write_json(path, value)
+
+
 def safe_name(name):
     # MZ loads plugins from subfolders of js/plugins, such as Author/Plugin;
     # each folder and file name must still be a plain name.
@@ -3428,27 +3580,9 @@ class PluginService:
         return project_path(root, path).stat().st_mode & 0o777
 
     def publication_manifest(self, project_id, rows):
-        _, root = self.record(project_id)
-        state = lifecycle(self.translation.workspace, project_id)
-        prior = state.get("runtime_manifest")
-        document = (
-            read_json(project_path(root, prior))
-            if prior
-            else {"version": 1, "files": {}}
+        return publication_manifest(
+            self.translation.workspace, project_id, self.record(project_id)[1], rows
         )
-        files = document.get("files")
-        if isinstance(files, list):
-            files = {name: {} for name in files}
-        if not isinstance(files, dict):
-            raise ValueError("The reviewed runtime manifest is malformed.")
-        files = deepcopy(files)
-        for row in rows:
-            files[row["path"]] = {
-                **files.get(row["path"], {}),
-                "sha256": row["afterHash"],
-                "original_sha256": row["originalHash"],
-            }
-        return {**document, "files": files}
 
     def apply(self, project_id, value):
         """Writes every checked translation into the game in one step. A list
@@ -3521,11 +3655,12 @@ class PluginService:
         """Takes an application out of the game through its checkpoint, in
         one click, while every file it wrote still holds what it wrote."""
         from dazedtl.compatibility import checkpoint_history
+        from dazedtl.translation import checkpoint_records
 
         self.translation.idle(project_id)
         self.translation.clean_drafts(project_id)
         self.translation.writable(project_id)
-        _, root = self.record(project_id)
+        project, root = self.record(project_id)
         receipt = next(
             (row for row in value["receipts"] if row["id"] == options.get("receipt")),
             None,
@@ -3546,10 +3681,26 @@ class PluginService:
                         + " changed since it was applied, so it can't be undone here."
                     )
 
-        original = game_originals.saved(self.translation.workspace, project_id, root)
+        workspace = self.translation.workspace
+        original = game_originals.saved(workspace, project_id, root)
         if receipt.get("commit"):
-            result = checkpoint_history.undo(
-                root, receipt["commit"], original=original, check=unchanged
+            # The application's record follows as every undo's does.
+            checkpoint_records.undo(
+                checkpoint_records.Records(
+                    root,
+                    workspace,
+                    project_id,
+                    checkpoint_records.publications(self.backend, project),
+                ),
+                receipt["commit"],
+                original=original,
+                check=unchanged,
+            )
+            value = self.load(project_id)
+            restored = next(
+                row
+                for row in reversed(value["receipts"])
+                if row.get("restores") == receipt["id"]
             )
         else:
             result = checkpoint_history.put_back(
@@ -3560,32 +3711,14 @@ class PluginService:
                 check=unchanged,
                 original=original,
             )
-        token = uuid.uuid4().hex
-        rows = []
-        for row in receipt["files"]:
-            current = digest(self.source(root, row["path"]))
-            rows.append({**row, "beforeHash": row["afterHash"], "afterHash": current})
-        restored = {
-            "id": token,
-            "mode": "restore",
-            "saved": now(),
-            "status": "complete",
-            "files": rows,
-            "reviewedFiles": rows,
-            "manifest": WORK + "/publications/" + token + "/runtime-manifest.json",
-            "failure": "",
-            "conflicts": [],
-            "commit": result["commit"],
-        }
-        write_json(
-            project_path(root, restored["manifest"], exists=False),
-            self.publication_manifest(project_id, rows),
-        )
-        self.finish(project_id, value, restored)
+            restored = take_out(
+                workspace, project_id, root, value, receipt, result["commit"]
+            )
+            self.save(project_id, value)
         return {
             "receipt": receipt_view(restored, value["files"]),
             "state": self.state(project_id),
-            "completed": len(rows),
+            "completed": len(restored["files"]),
         }
 
     def publish(self, project_id, value, preview):
@@ -3716,30 +3849,13 @@ class PluginService:
         return receipt, completed
 
     def finish(self, project_id, value, receipt):
-        _, root = self.record(project_id)
-        for row in receipt["files"]:
-            item = value["files"][row["path"]]
-            if receipt["mode"] == "apply":
-                item["applied"] = {
-                    "receipt": receipt["id"],
-                    "afterHash": row["afterHash"],
-                }
-            else:
-                item.pop("applied", None)
-        if receipt["files"]:
-            # The exact paths feed the existing runtime manifest owner, including plugin-loaded JSON.
-            state = lifecycle(self.translation.workspace, project_id)
-            state["runtime_manifest"] = receipt["manifest"]
-            if receipt["status"] != "complete":
-                write_json(
-                    project_path(root, receipt["manifest"], exists=False),
-                    self.publication_manifest(project_id, receipt["files"]),
-                )
-            write_json(lifecycle_path(self.translation.workspace, project_id), state)
-        value["receipts"].append(receipt)
-        value["pending"] = [
-            identity for identity in value["pending"] if identity != receipt["id"]
-        ]
+        finish(
+            self.translation.workspace,
+            project_id,
+            self.record(project_id)[1],
+            value,
+            receipt,
+        )
         self.save(project_id, value)
 
     def approved_publication(self, project_id, identity):

@@ -3,7 +3,8 @@
 A batch freezes what it will write for its review, then publishes it in one
 game write, whose checkpoint its receipt names (`commit`), with the
 checkpoint it started from (`parent`). Undoing a batch is undoing that
-checkpoint; a batch that stopped midway made none, so its files go back as
+checkpoint, from History or the Checkpoints tab, after which `follow`
+restores it; a batch that stopped midway made none, so its files go back as
 `parent` had them. Either way a restore receipt then puts the batch's own
 applied-output entries back, so History and Text QA read it as restored.
 
@@ -435,11 +436,14 @@ def undo_files(folder, root, identity):
     return _undoable(folder, root, identity)["files"]
 
 
-def undo(folder, root, identity, *, original=None, log=lambda _: None):
-    """Takes a batch out of the game through its checkpoint, then records
-    the restore so its applied-output entries go back. `original` is the
+def undo(folder, root, identity, records, *, original=None, log=lambda _: None):
+    """Takes a batch out of the game through its checkpoint, whose
+    [records](checkpoint_records.py) then restore it, or, stopped midway,
+    puts its files back and records that restore here. `original` is the
     saved original game of one set up before Git kept its original files."""
     from dazedtl.compatibility import checkpoint_history
+
+    from . import checkpoint_records
 
     record = _undoable(folder, root, identity)
 
@@ -454,9 +458,7 @@ def undo(folder, root, identity, *, original=None, log=lambda _: None):
                 )
 
     if record["state"] == "complete":
-        result = checkpoint_history.undo(
-            root, record["commit"], log=log, original=original
-        )
+        checkpoint_records.undo(records, record["commit"], log=log, original=original)
     else:
         result = checkpoint_history.put_back(
             root,
@@ -467,13 +469,32 @@ def undo(folder, root, identity, *, original=None, log=lambda _: None):
             log=log,
             original=original,
         )
-    _restored(folder, root, record, result["commit"])
+        _restored(folder, root, record, result["commit"])
     return {
         "files": len(record["files"]),
         "publication": None,
         "restored": record["id"],
         "destination": str(root),
     }
+
+
+def follow(folder, root, undone, commit):
+    """Restores each batch still in the game whose checkpoint is among
+    `undone`, newest first, as made by checkpoint `commit`. A restore is a
+    batch too, so taking one out brings back the batch it restored."""
+    root = str(Path(root).resolve())
+    for taken in undone:
+        while record := next(
+            (
+                row
+                for row in history(folder)
+                if row.get("commit") == taken
+                and row["state"] == "complete"
+                and row["root"] == root
+            ),
+            None,
+        ):
+            _restored(folder, root, record, commit)
 
 
 def _restored(folder, root, record, commit):

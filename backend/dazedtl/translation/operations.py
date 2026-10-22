@@ -541,21 +541,28 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         for name in ("engine.json", "assistant.json"):
             system.unlink(records / name, missing_ok=True)
     elif action in {"checkpoint_back", "checkpoint_undo"}:
-        from dazedtl.compatibility import checkpoint_history
+        from . import checkpoint_records
 
         require_baseline(engine, source, options, state)
         restore = (
-            checkpoint_history.go_back
+            checkpoint_records.go_back
             if action == "checkpoint_back"
-            else checkpoint_history.undo
+            else checkpoint_records.undo
         )
         result = restore(
-            source,
+            checkpoint_records.Records(
+                source,
+                Path(workspace),
+                job["project_id"],
+                Path(plan["publications"]) if plan.get("publications") else None,
+            ),
             arguments["commit"],
-            stopped,
-            progress,
-            originals.saved(workspace, job["project_id"], source, state),
+            stopped=stopped,
+            log=progress,
+            original=originals.saved(workspace, job["project_id"], source, state),
         )
+        # Plugin files' records name their runtime manifest there.
+        state = lifecycle(workspace, job["project_id"])
     elif action == "checkpoint_copy":
         from dazedtl.compatibility import checkpoint_history
 

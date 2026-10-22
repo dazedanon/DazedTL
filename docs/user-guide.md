@@ -314,6 +314,7 @@ Its **…** menu has:
 - **Save a copy…** writes the whole game as it was then into a new folder inside the one you choose, and the game stays as it is.
 
 Going back and undoing are checkpoints too, so either can be undone the same way.
+The tasks follow: an Apply, QA's corrections or a Plugin files change undone here reads undone in **History** and in its task too, and comes back when you undo the undo.
 They work within the current game version; for an earlier version, save a copy.
 A file that wasn't part of the translation then gets the original game's version back.
 
