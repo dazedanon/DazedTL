@@ -182,6 +182,52 @@ const qa = [
   },
 ];
 
+const plugins = [
+  "Translate and apply Plugin files as an assistant does",
+  async ({ page, state }) => {
+    const project = (await page.call("workspace_snapshot")).application.project;
+    // What the task's Copy hands the assistant, without the clipboard.
+    const task = await page.call("plugins_action", {
+      project_id: project.id,
+      action: "plugin_task",
+    });
+    if (!task.request)
+      throw new Error(`Plugin files has no task: ${task.message}`);
+    execFileSync(
+      state.env?.DAZEDTL_PYTHON || python,
+      [
+        "-X",
+        "utf8",
+        path.join(import.meta.dirname, "plugin_assistant.py"),
+        task.request,
+        "--game",
+        state.game,
+        "--helper-json",
+        JSON.stringify([
+          state.env?.DAZEDTL_PYTHON || python,
+          "-X",
+          "utf8",
+          path.join(state.root, "scripts/project.py"),
+          "--workspace",
+          path.join(state.profile, "workspace"),
+          "--project",
+          project.id,
+        ]),
+      ],
+      { encoding: "utf8" },
+    );
+    const applied = await page.call("plugins_action", {
+      project_id: project.id,
+      action: "apply",
+    });
+    if (applied.blocked?.length)
+      throw new Error(
+        `Plugin files left files out: ${JSON.stringify(applied.blocked)}`,
+      );
+    await page.idle();
+  },
+];
+
 const batch = [
   [
     "Connect the OpenAI preset, which reaches the stand-in",
@@ -397,6 +443,12 @@ export const scenarios = {
     description:
       "Translated and applied, then Text QA reviewed by a scripted assistant, one correction applied.",
     steps: () => [open, ...setup, ...translateAll, qa],
+  },
+  "plugins-applied": {
+    description:
+      "Text QA's correction applied, then the plugin-text game's Plugin files translated by a scripted assistant and applied.",
+    game: "plugin-text",
+    steps: () => [open, ...setup, ...translateAll, qa, plugins],
   },
   "assistant-led": {
     description:

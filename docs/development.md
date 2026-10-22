@@ -103,6 +103,7 @@ Run them outside a sandbox such as Claude Code's bwrap: KWin needs a writable `/
 - `fresh`, `opened`, `set-up` and `translated`: the Guided journey up to that point, Live translation applied.
 - `update-stopped`: translated, then version 1.1 brought in under Checkpoints, its apply stopped at Git's conflict in a database file the translation changed, as an interrupted update leaves it, so Checkpoints offers to continue or cancel.
 - `qa-done`: Text QA reviewed by a scripted assistant through the project helper, one correction applied.
+- `plugins-applied`: `qa-done` on the `plugin-text` game, then its Plugin files translated by a scripted assistant and applied, so Checkpoints holds both applications.
 - `assistant-led`: an Assistant-led project in agent mode, set up and organized, its first request translated.
 - `assistant-written`: the assistant translates every request and writes them into the game, failing if the write changes the choice labels (402) or help markers (108) the game finds by their Japanese.
 - `batch-waiting`: the database submitted as a Batch that the stand-in holds.
@@ -126,7 +127,7 @@ Other requests from the backend and window go to a proxy that is not there; run 
 
 To add a scenario, add its steps to [scripts/testkit/scenarios.mjs](../scripts/testkit/scenarios.mjs), reusing the steps there and in [journey.mjs](../scripts/testkit/journey.mjs).
 To add a kind of game content, add a folder to [tests/fixtures/game-variants](../tests/fixtures/game-variants) whose `variant.json` describes it; [games.mjs](../scripts/testkit/games.mjs) says what it can change.
-The headless playtest runner, the scripted Text QA reviewer and the scripted Assistant-led assistant sit beside them in [scripts/testkit](../scripts/testkit).
+The headless playtest runner, the scripted Text QA reviewer, the scripted Plugin files assistant and the scripted Assistant-led assistant sit beside them in [scripts/testkit](../scripts/testkit).
 
 ## GameUpdate
 
