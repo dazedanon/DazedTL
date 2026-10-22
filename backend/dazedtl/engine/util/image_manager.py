@@ -399,6 +399,13 @@ def prepare_plain_assets_for_patch(
     )
 
 
+def _remove_stage(transaction_root: Path) -> None:
+    """Remove a finished transaction's folder and the staging folder holding it."""
+    system.remove_tree(transaction_root, missing_ok=True)
+    # Not empty while another transaction is still staging.
+    system.rmdir(transaction_root.parent, ignore_errors=True)
+
+
 def _prepare_assets_transaction(
     engine_id: str,
     game_root: str | Path,
@@ -473,12 +480,10 @@ def _prepare_assets_transaction(
     # Treat a selected batch as one transaction. A conflict or invalid image
     # must not leave the other selected files partially published.
     if result.errors:
-        if transaction_root.exists():
-            system.remove_tree(transaction_root)
+        _remove_stage(transaction_root)
         return result
     if not candidates and not reconciled:
-        if transaction_root.exists():
-            system.remove_tree(transaction_root)
+        _remove_stage(transaction_root)
         return result
 
     published: list[tuple[Path, Path]] = []
@@ -511,8 +516,7 @@ def _prepare_assets_transaction(
         result.errors.extend(f"Rollback failed: {error}" for error in rollback_errors)
         return result
     finally:
-        if transaction_root.exists():
-            system.remove_tree(transaction_root)
+        _remove_stage(transaction_root)
 
     result.completed = len(candidates)
     result.patch_files = targets

@@ -6,6 +6,7 @@ RV2JSON 1.2.1's own JSON and packed output; its regenerate.py rebuilds it.
 
 import importlib
 import json
+import os
 import shutil
 import struct
 import unittest
@@ -97,6 +98,27 @@ def archive_v1(entries):
 
 
 class AceConversionTests(unittest.TestCase):
+    def test_updating_a_relative_game_root_writes_into_that_game(self):
+        # With the root given relative to the working folder, the data folder
+        # was joined to the root a second time and written as a nested copy.
+        with TemporaryDirectory() as temporary:
+            game = Path(temporary)
+            shutil.copytree(FIXTURE / "Data", game / "Data")
+            rv2json.create(game, log=lambda _line: None)
+            shutil.copytree(
+                FIXTURE / "translated", game / "ace_json", dirs_exist_ok=True
+            )
+            before = os.getcwd()
+            os.chdir(game.parent)
+            try:
+                rv2json.update(Path(game.name), log=lambda _line: None)
+            finally:
+                os.chdir(before)
+            self.assertEqual(
+                [path for path in game.rglob("*") if path.name == game.name], []
+            )
+            self.assertTrue((game / "Data/backups").is_dir())
+
     def test_json_and_packed_data_match_rv2json_and_pack_files_named_in_any_case(self):
         with TemporaryDirectory() as temporary:
             game = Path(temporary)

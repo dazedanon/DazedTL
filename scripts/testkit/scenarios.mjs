@@ -236,10 +236,12 @@ const batch = [
   [
     "Submit the database as a Batch the stand-in holds",
     async ({ page, state }) => {
-      fs.writeFileSync(
-        path.join(state.work, "provider/mode.json"),
-        JSON.stringify({ hold: true }),
-      );
+      // Hold on top of the game variant's own mode, such as its replies.
+      const modeFile = path.join(state.work, "provider/mode.json");
+      const mode = fs.existsSync(modeFile)
+        ? JSON.parse(fs.readFileSync(modeFile, "utf8"))
+        : {};
+      fs.writeFileSync(modeFile, JSON.stringify({ ...mode, hold: true }));
       await page.click("3Translate");
       await page.click("Database files");
       await page.click("Batch");
