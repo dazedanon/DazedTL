@@ -232,7 +232,7 @@ Reserve cards for content requiring a distinct container; tables, editors and th
 
 Every stylesheet loads through [index.css](../app/src/styles/index.css) in a cascade layer (tokens, base, shared UI, the app shell layout, then features), so a feature's rules override shared primitives regardless of specificity; keep selectors simple instead of raising specificity to win.
 Layouts must remain readable and usable from small laptop monitors to large 4K monitors or TVs: reflow content from the available window space and display scaling, keep actions reachable on small displays, and use large ones without excessive stretching or gaps.
-Every page centers one content column, `--content-width`; a workspace whose grid and preview use every pixel, the Images task, is a wide [PageLayout](../app/src/ui/PageLayout.tsx) instead.
+Every page centers one content column, `--content-width`; a workspace whose grid and preview use every pixel, the Images task, is a wide [PageLayout](../app/src/ui/PageLayout.tsx) instead, whose body alone spans the window inside the gutter while its other frame rows keep the column.
 Frame rows (page headers, stage strip, task tabs, messages, scrolling bodies and footers) span the window and pad their content to that column, and rows that do not scroll reserve the body's scrollbar gutter, so every edge matches across screens and window sizes.
 Fill editors and file lists keep a minimum height and the body scrolls instead; a dialog whose tabs differ in height stacks them with [StackedTabPanels](../app/src/ui/Tabs.tsx), so switching tabs keeps its size; rows grow with feedback rather than fixing heights or clipping content.
 
