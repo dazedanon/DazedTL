@@ -3,6 +3,12 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.27.2] - 2026-10-22
+
+### Fixed
+
+- **Translate:** a line whose translation keeps a single kana or mark from the Japanese, such as the 〇 of a censored word or a kaomoji's ﾉ, no longer leaves its file at **Needs review** with "1 line never translated. Translate sends it" while the next Batch finds "No new translation requests"; such lines now count as translated, and a line the model gives back unchanged is still sent again.
+
 ## [2.27.1] - 2026-10-22
 
 ### Fixed
@@ -879,6 +885,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.27.2]: https://github.com/dazedanon/DazedTL/compare/v2.27.1...v2.27.2
 [2.27.1]: https://github.com/dazedanon/DazedTL/compare/v2.27.0...v2.27.1
 [2.27.0]: https://github.com/dazedanon/DazedTL/compare/v2.26.0...v2.27.0
 [2.26.0]: https://github.com/dazedanon/DazedTL/compare/v2.25.0...v2.26.0
