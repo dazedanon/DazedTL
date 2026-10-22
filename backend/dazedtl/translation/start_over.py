@@ -91,14 +91,18 @@ def run(
     configured,
     stopped,
     progress,
+    publications=None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Starts the project over: back to the original game as a checkpoint
     when its Git is `configured`, else to the game as DazedTL found it, or
     with the game's files as they are without either; returns its new
-    lifecycle and a summary."""
+    lifecycle and a summary. `publications` is the project's Guided folder
+    of text publications, when it has one."""
     from dazedtl.compatibility import checkpoint_history
     from dazedtl.compatibility.checkpoint_commits import Change, running
     from dazedtl.compatibility.game_write import write_game
+
+    from . import checkpoint_records
 
     root = Path(source).resolve(strict=True)
     renewed: dict[str, Any] = {"version": 1}
@@ -144,15 +148,16 @@ def run(
         def keep(name):
             return save_game(name) or name in kept
 
-        tracked = set()
+        tracked, undone = set(), []
         if configured:
             progress("Putting back the original game files.")
-            result["restored"] = checkpoint_history.to_original(
+            restored = checkpoint_history.to_original(
                 game,
                 keep,
                 stopped,
                 originals.saved(workspace, project_id, root, state),
             )
+            result["restored"], undone = restored["files"], restored["undone"]
             tracked = checkpoint_history.tracked(root)
         if original:
             # Files outside the patch, which Git doesn't keep.
@@ -180,6 +185,20 @@ def run(
         fixes = project_path(root, PLAYTEST, exists=False)
         if fixes.is_dir():
             _move(fixes, archive / "playtest")
+    # Every checkpoint is taken out, so the records of what each feature
+    # applied follow, as an undo's do, and nothing reads as in the game.
+    checkpoint = game.checkpoint if game is not None else None
+    if undone and checkpoint:
+        checkpoint_records.follow(
+            checkpoint_records.Records(
+                root,
+                Path(workspace),
+                project_id,
+                Path(publications) if publications else None,
+            ),
+            undone,
+            checkpoint,
+        )
     if not any(archive.iterdir()):
         system.rmdir(archive)
         result["archive"] = ""

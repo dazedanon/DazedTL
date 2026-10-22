@@ -676,7 +676,8 @@ def to_original(game, keep=lambda _path: False, stopped=lambda: False, original=
     """Inside a write to the game, puts every file the patch holds back as
     the original game's current version has it, but those `keep` names and
     the project's own files, which stay as they are; for Start over, whose
-    own checkpoint it becomes."""
+    own checkpoint it becomes. It names every checkpoint it took out
+    (`undone`, newest first), as `go_back` does."""
     root = game.root
     entries = _log(root)
     span = _current_span(entries)
@@ -696,7 +697,8 @@ def to_original(game, keep=lambda _path: False, stopped=lambda: False, original=
         for path, wanted in _plan(state, paths, state.original).items()
         if wanted != head.get(path)
     }
-    return _apply(game, root, plan, stopped, state)
+    written = _apply(game, root, plan, stopped, state)
+    return {"files": written, "undone": [entry.commit for entry in entries]}
 
 
 def undo(
