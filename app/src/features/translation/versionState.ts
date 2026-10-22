@@ -102,6 +102,25 @@ export function updateSummary(value: Record<string, unknown>) {
     .join(" · ");
 }
 
+/**
+ * What an update left unfinished, from the repository's state. While Apply
+ * runs, its own conflicts and waiting assets are steps of that run, not an
+ * interruption to finish or cancel.
+ */
+export function interruptedUpdate(
+  git: TranslationState["git"],
+  activeAction?: string | null,
+) {
+  const applying = activeAction === "version_apply";
+  const conflicts = !applying && !!git?.pending_operations.length;
+  const assets = !applying && !!git?.asset_sync_pending;
+  return {
+    conflicts,
+    assets,
+    assetsApplied: assets && !!git?.asset_update_applied,
+  };
+}
+
 /** Only the latest preparation attempt can supply the update offered for review. */
 export function versionSession(
   jobs: TranslationJob[],
@@ -193,7 +212,8 @@ export function updateSteps(
   const results = [
     staged &&
       `${layout?.kind === "patch" ? "Patch" : "Complete game"} ${version}`.trim(),
-    compared && compareResult(compared.result!),
+    // The review under way says the comparison's result itself.
+    compared && current > 2 && compareResult(compared.result!),
     session.finished && `Updated to ${version}`,
     "",
   ];

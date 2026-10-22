@@ -56,7 +56,9 @@ export function JobStatus({
         // that stays two lines, like an action's other results.
         <p>
           <ExpandableText
-            key={detail}
+            // Progress messages replace each other while an operation runs;
+            // an expanded one stays open until the operation's state changes.
+            key={`${job.label}:${job.status}`}
             text={detail}
             label={`${job.label} details`}
             appearance="inline"

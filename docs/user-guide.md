@@ -331,6 +331,12 @@ A patch keeps every game file it doesn't include, but it can't remove files the 
 Steps above the checkpoints show where the update stands, and the update starts a new version in the list.
 **Discard release** drops an update you don't want.
 
+An update that stops partway, such as when the app closes during it, shows **Finish the interrupted update** on **Checkpoints** and keeps every other change to the game refused until you decide.
+When files conflict, **Use official files & continue** resolves the rest with the official game's files, so affected translated text may need translating again.
+**Cancel update & restore translation** gives the game back as it was before the update, and you can apply it again.
+When the translation already has the update, **Copy assets & finish** copies the images, sounds and other assets it brings into the game.
+When the update stopped before it reached the translation, **Cancel update** goes back to the version you had.
+
 Once the update is in the game, Guided steps list the tasks it changed, such as **Maps & events**; each opens with the changed files selected.
 Files you translated before read **Outdated** there, so **Reload from game…** brings in their new text, and translating them again only sends the Japanese lines.
 For Assistant-led, **Copy post-update task** gives your assistant the update to translate.
