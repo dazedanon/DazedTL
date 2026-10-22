@@ -14,6 +14,7 @@ from dazedtl.diagnostics import record_crashes, watch_action, worker_failure
 if __name__ == "__main__":
     # Standard error is discarded, so a crash leaves only this record.
     record_crashes("run")
+from dazedtl.actions import stopped_note
 from dazedtl.compatibility.translation import (
     TranslationEngine,
     TranslationProvider,
@@ -25,7 +26,6 @@ from dazedtl.translation import progress_report
 from dazedtl.translation.compilation import verify_compilation
 from dazedtl.translation.files import verify_evidence
 from dazedtl.translation.jobs import RunStore
-from dazedtl.actions import stopped_note
 from dazedtl.translation.operations import execute, lifecycle, require_baseline
 from dazedtl.translation.ownership import alive
 from dazedtl.translation.project import ProjectWorkspace, scope
