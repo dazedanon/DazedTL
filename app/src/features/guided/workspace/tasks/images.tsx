@@ -32,9 +32,7 @@ export function imagesView(w: GuidedWorkspace): TaskView {
             only: "images",
             label: `Apply to game${apply.ready ? ` (${apply.ready.toLocaleString()})` : ""}`,
             variant: apply.primary ? "primary" : "default",
-            blocked:
-              apply.blocked ||
-              (!apply.ready && "No image in your list is translated yet."),
+            blocked: apply.blocked || apply.reason,
             choice: { images: apply.ready },
           })
         }
