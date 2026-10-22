@@ -6,6 +6,7 @@ import { ActionControl } from "../../../../ui/ActionControl";
 import { ActionRow } from "../../../../ui/ActionList";
 import { Button } from "../../../../ui/Button";
 import { ReleaseContent } from "../../Release";
+import { reloadBeforeApply } from "../../translationView";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
 import { StatusHeading } from "../../../../ui/StatusMark";
@@ -71,7 +72,7 @@ export function packageView(w: GuidedWorkspace): TaskView {
           !baseline ||
             !!state.collectionError ||
             (w.archiveRead && "Convert Ace data in Set up first.") ||
-            state.readiness.unapplied.some((name) => changed.includes(name)),
+            reloadBeforeApply(state.readiness.unapplied, changed),
           "default",
           state.readiness.unapplied,
         )}

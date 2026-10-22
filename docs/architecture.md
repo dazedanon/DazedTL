@@ -268,6 +268,7 @@ Other event text reads its files from its own runs, so text another task transla
 The selected phase files bind each new run and each application preview.
 Working copies are seeded from current game bytes and kept across navigation, estimates and restarts; original-branch identities stay reference and recovery bindings and never force working copies back to untranslated text.
 Apply and hand edits leave a file's original as it was, but a game update records a new one, so the files it changed read Outdated, whatever they last applied, until Resync brings in their new text ([guided_inputs.py](../backend/dazedtl/translation/guided_inputs.py)).
+Until then Apply refuses them, since their translated copies still hold the old release's text ([guided_actions.py](../backend/dazedtl/translation/guided_actions.py)).
 Resync is a reviewed replacement of the checked files with their game bytes that archives their working copies, staged outputs and variable cache first, and advances per-file versions before replacing, so earlier runs cannot overwrite resynced files or supply stale cached responses even if resync is interrupted.
 
 #### Assistant tasks

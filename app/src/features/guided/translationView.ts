@@ -292,6 +292,17 @@ export function settledWithoutRequests(
     !!checked && (!run || (!activeWorker(run) && (run.created || "") < checked))
   );
 }
+/**
+ * Why Apply is unavailable for `files`: the game changed one since its
+ * working copy, as a game update does, so its translated copy still holds the
+ * old text and the backend refuses it until Reload from game.
+ */
+export const reloadBeforeApply = (
+  files: readonly string[],
+  changed: readonly string[],
+) =>
+  files.some((name) => changed.includes(name)) &&
+  "Reload changed files from the game first.";
 /** Database files and Maps & events read each file's lines from the file. */
 export const countedPhase = (phase: Phase) =>
   phase === "database" || phase === "dialogue";
