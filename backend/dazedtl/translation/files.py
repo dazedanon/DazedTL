@@ -216,17 +216,21 @@ class ObservedFiles:
 def evidence(root, paths):
     if not isinstance(paths, list) or not paths or len(set(paths)) != len(paths):
         raise ValueError("Supply unique source and guidance file paths.")
-    result = {}
-    for relative in paths:
-        path = project_path(root, relative)
-        before = path.stat()
-        with path.open("rb") as stream:
-            fingerprint = hashlib.file_digest(stream, "sha256").hexdigest()
-        after = path.stat()
-        if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
-            raise ValueError("A source file changed while it was being read.")
-        result[relative] = fingerprint
-    return result
+    return {
+        relative: read_evidence(project_path(root, relative))[1] for relative in paths
+    }
+
+
+def read_evidence(path):
+    """A file's stat and SHA-256 from one read; refuses a file that changed
+    while it was read."""
+    before = path.stat()
+    with system.open_read(path) as stream:
+        fingerprint = hashlib.file_digest(stream, "sha256").hexdigest()
+    after = path.stat()
+    if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+        raise ValueError("A source file changed while it was being read.")
+    return after, fingerprint
 
 
 def verify_evidence(root, expected):
