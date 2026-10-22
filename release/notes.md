@@ -16,3 +16,4 @@
 - **Cost estimate:** after you stop an estimate, a note beside the button says it was stopped and nothing was saved, instead of the page quietly going back to Not started.
 - **Translate:** after a game update, **Apply** is unavailable while a file it would apply reads **Outdated**, with "Reload changed files from the game first." beside it, instead of putting the old translation over the update's file.
 - **Checkpoints:** a game update's review no longer lists `Forge_MZ.js` and `plugins.js` as the release's changes, and applying it no longer installs Forge into a game that didn't have it.
+- **Checkpoints:** after a game update, **Translate the new text** counts the lines each task still has to translate, instead of repeating the update's count after you translated them.
