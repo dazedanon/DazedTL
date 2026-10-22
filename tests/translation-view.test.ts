@@ -1571,6 +1571,68 @@ test("an Other event text pass without requests reads Done only for files none o
   assert.equal(translatedFiles([maps], [maps.id]).size, 0);
 });
 
+test("a Batch that prepared no request for a file leaves its row and the task's done mark as the earlier run left them", () => {
+  const files = ["Map001.json"];
+  const earlier = (applied: boolean): Job =>
+    ({
+      id: "earlier",
+      logicalPhase: "advanced",
+      mode: "batch",
+      status: "complete",
+      message: "",
+      log: [],
+      files,
+      outputs: { "Map001.json": "en" },
+      changedOutputs: ["Map001.json"],
+      availableOutputs: ["Map001.json"],
+      appliedOutputs: applied ? ["Map001.json"] : [],
+      process: {
+        errors: [],
+        files: { "Map001.json": requested(["validated"]) },
+      },
+    }) as Job;
+  // Nothing was queued at all, so the run saved no output of its own.
+  const nothingQueued = {
+    ...earlier(false),
+    id: "nothing-queued",
+    phase: "no_work",
+    outputs: {},
+    changedOutputs: [],
+    availableOutputs: [],
+    appliedOutputs: [],
+    process: { errors: [], files: {}, noRequestFiles: files },
+  } as Job;
+  const state = (runs: Job[], applied: boolean) =>
+    ({
+      files: [{ name: "Map001.json", group: "dialogue" }],
+      runs,
+      sourceStatus: { changed: [], ready: [] },
+      readiness: {
+        outputs: applied || runs.length > 1 ? files : [],
+        applied: applied ? files : [],
+      },
+    }) as unknown as GuidedState;
+  const check = (
+    runs: Job[],
+    applied: boolean,
+    label: string,
+    done: boolean,
+  ) => {
+    const view = state(runs, applied);
+    assert.equal(
+      translationFileStatus(view, "advanced", files[0]).label,
+      label,
+    );
+    assert.equal(translationTaskComplete(view, "advanced", files), done);
+  };
+  // Saved work waiting for Apply stays Ready to apply and keeps the task open.
+  check([nothingQueued, earlier(false)], false, "Ready to apply", false);
+  // Applied work stays Applied.
+  check([nothingQueued, earlier(true)], true, "Applied", true);
+  // No run translated the file, so there is nothing to translate.
+  check([nothingQueued], false, "Done", true);
+});
+
 test("file status follows active and automatically monitored Batch work before retained outputs", () => {
   const checkpoint = {
     id: "batch",
@@ -1619,23 +1681,6 @@ test("file status follows active and automatically monitored Batch work before r
     files: ["Items.json", "Armors.json"],
     process: { ...checkpoint.process!, noRequestFiles: ["Armors.json"] },
   };
-  assert.equal(fileStatus("Armors.json", withSkipped).label, "Ready to apply");
-  assert.equal(
-    fileStatus("Armors.json", {
-      ...withSkipped,
-      temporary: true,
-      status: "waiting",
-    }).label,
-    "Ready to apply",
-  );
-  assert.equal(
-    fileStatus("Armors.json", {
-      ...withSkipped,
-      status: "complete",
-      availableOutputs: ["Armors.json"],
-    }).label,
-    "Ready to apply",
-  );
   assert.notEqual(
     fileStatus("Armors.json", { ...withSkipped, mode: "translate" }).label,
     "Ready to apply",
@@ -1919,7 +1964,9 @@ test("file status follows active and automatically monitored Batch work before r
       "working",
       "not_started",
       "working",
-      "ready",
+      // A file the Batch prepared nothing for says nothing here; the task's
+      // file list reads it through translationFileStatus.
+      "not_started",
       "not_started",
       "blocked",
     ],
