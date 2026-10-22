@@ -688,10 +688,19 @@ class PluginTests(unittest.TestCase):
         checkpoint_records.undo(records, undone["commit"])
         state = self.service.state(self.identity)
         self.assertEqual(state["counts"]["applied"], 2)
+        # Recovery offers the newest receipt, the one that brought it back.
         self.assertEqual(
             [row["id"] for row in state["receipts"] if row["restorable"]],
-            [again["id"]],
+            [state["receipts"][-1]["id"]],
         )
+        # Going back past the application, its undo and that undo's undo
+        # records only the outcome: one restore.
+        receipts = self.service.load(self.identity)["receipts"]
+        parent = next(row["parent"] for row in receipts if row["id"] == again["id"])
+        checkpoint_records.go_back(records, parent)
+        self.assertEqual(self.service.state(self.identity)["counts"]["applied"], 0)
+        added = self.service.load(self.identity)["receipts"][len(receipts) :]
+        self.assertEqual([row["mode"] for row in added], ["restore"])
 
     def test_labels_text_qa_found_too_long_hold_the_task_until_applied(self):
         # QA can't write plugin files, so its squeezed plugin labels must

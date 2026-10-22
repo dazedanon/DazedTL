@@ -436,15 +436,11 @@ def publication_manifest(workspace, project_id, root, rows):
 
 def finish(workspace, project_id, root, value, receipt):
     """Records a finished application or restore in `value`: what each file
-    carries and the runtime manifest. An application brought back again
-    carries the original's receipt (`applies`)."""
+    carries and the runtime manifest."""
     for row in receipt["files"]:
         item = value["files"][row["path"]]
         if receipt["mode"] == "apply":
-            item["applied"] = {
-                "receipt": receipt.get("applies", receipt["id"]),
-                "afterHash": row["afterHash"],
-            }
+            item["applied"] = {"receipt": receipt["id"], "afterHash": row["afterHash"]}
         else:
             item.pop("applied", None)
     if receipt["files"]:
@@ -464,15 +460,13 @@ def finish(workspace, project_id, root, value, receipt):
 
 
 def _followed(workspace, project_id, root, value, rows, commit, **names):
-    """A receipt for the files of `rows`, an earlier receipt's, that
-    checkpoint `commit` changed back, recorded in `value`: `restores` names
-    the application it took out, or, with `applies`, the restore whose
-    application it brought back."""
+    """A receipt for the files of `rows` that checkpoint `commit` changed,
+    each row naming its hash before, recorded in `value`: `restores` names
+    the application it took out, or `applies` the one it brought back."""
     token = uuid.uuid4().hex
     rows = [
         {
             **row,
-            "beforeHash": row["afterHash"],
             "afterHash": digest(target.read_bytes())
             if (target := project_path(root, row["path"], exists=False)).is_file()
             else "",
@@ -507,17 +501,25 @@ def take_out(workspace, project_id, root, value, application, commit):
         project_id,
         root,
         value,
-        application["files"],
+        [{**row, "beforeHash": row["afterHash"]} for row in application["files"]],
         commit,
         restores=application["id"],
     )
 
 
+def _origin(receipt):
+    """The application a receipt carries: its own, or the one it brought
+    back."""
+    return receipt.get("applies", receipt["id"])
+
+
 def follow(workspace, project_id, root, undone, commit):
     """Takes out each application still in the game whose checkpoint is among
-    `undone`, newest first, as made by checkpoint `commit`; a restore among
-    them brings back the application it took out, under that application's
-    receipt, so Recovery and the task read it applied again."""
+    `undone`, newest first, and brings back each one a restore among them
+    took out, as made by checkpoint `commit`. Only the outcome is recorded,
+    one receipt for each application it changed, however many of its
+    checkpoints were undone; one brought back carries a receipt of its own,
+    which Recovery undoes."""
     path = project_path(root, WORK + "/state.json", exists=False)
     if not path.is_file():
         return
@@ -526,40 +528,53 @@ def follow(workspace, project_id, root, undone, commit):
         return
     receipts = {row["id"]: row for row in value["receipts"]}
     files = value["files"]
-    changed = False
+    held = {
+        name: (item.get("applied") or {}).get("receipt") for name, item in files.items()
+    }
+
+    def carriers():
+        """Each application in the game and the receipt carrying it."""
+        found = {}
+        for identity in held.values():
+            if identity in receipts:
+                found[_origin(receipts[identity])] = identity
+        return found
+
+    before = carriers()
     for taken in undone:
-        for receipt in reversed(list(value["receipts"])):
+        for receipt in reversed(value["receipts"]):
             if receipt.get("commit") != taken:
                 continue
-            application = receipts.get(
-                receipt.get("applies", receipt["id"])
-                if receipt["mode"] == "apply"
-                else receipt.get("restores", "")
-            )
-            # Files the task no longer lists keep no record to follow.
-            if not application or any(
-                row["path"] not in files for row in application["files"]
-            ):
-                continue
             if receipt["mode"] == "apply":
-                if carries(files, application):
-                    take_out(workspace, project_id, root, value, application, commit)
-                    changed = True
-            elif application["mode"] == "apply" and not any(
-                files[row["path"]].get("applied") for row in application["files"]
+                origin = _origin(receipt)
+                for name, identity in held.items():
+                    if identity in receipts and _origin(receipts[identity]) == origin:
+                        held[name] = None
+                continue
+            restored = receipts.get(receipt.get("restores", ""))
+            # Files the task no longer lists keep no record to follow.
+            if (
+                restored
+                and restored["mode"] == "apply"
+                and all(row["path"] in files for row in restored["files"])
+                and not any(held[row["path"]] for row in restored["files"])
             ):
-                _followed(
-                    workspace,
-                    project_id,
-                    root,
-                    value,
-                    receipt["files"],
-                    commit,
-                    applies=application["id"],
-                    restores=receipt["id"],
-                )
-                changed = True
-    if changed:
+                for row in restored["files"]:
+                    held[row["path"]] = restored["id"]
+    after = carriers()
+    for origin in before.keys() - after.keys():
+        take_out(workspace, project_id, root, value, receipts[before[origin]], commit)
+    for origin in after.keys() - before.keys():
+        _followed(
+            workspace,
+            project_id,
+            root,
+            value,
+            receipts[after[origin]]["files"],
+            commit,
+            applies=origin,
+        )
+    if before.keys() != after.keys():
         write_json(path, value)
 
 
