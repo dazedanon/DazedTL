@@ -1,7 +1,8 @@
 // A private virtual display on Linux, so a test app's windows stay off the
 // developer's desktop: a virtual KWin with Xwayland in its own session bus.
 // Several sessions may start one at a time, so the display is the one whose
-// Xwayland belongs to this KWin's process group, never just a new socket.
+// X lock and Xwayland belong to this KWin's process group, never just a new
+// socket.
 import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
@@ -18,6 +19,12 @@ const displays = () =>
       : [],
   );
 
+/** The process group of process `pid`; throws once it has exited. */
+const groupOf = (pid) =>
+  Number(
+    fs.readFileSync(`/proc/${pid}/stat`, "utf8").split(") ")[1].split(" ")[2],
+  );
+
 /** Process groups of every X server run by `program`, by display number. */
 function servers(program) {
   const found = new Map();
@@ -26,19 +33,24 @@ function servers(program) {
     try {
       const args = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0");
       if (path.basename(args[0] || "") !== program) continue;
-      const group = Number(
-        fs
-          .readFileSync(`/proc/${pid}/stat`, "utf8")
-          .split(") ")[1]
-          .split(" ")[2],
-      );
       const display = args.find((arg) => /^:\d+$/.test(arg));
-      if (display) found.set(display.slice(1), group);
+      if (display) found.set(display.slice(1), groupOf(pid));
     } catch {
       // Exited, or another user's process.
     }
   }
   return found;
+}
+
+/** The process group of the server that locked display `number`, if any. */
+function lockGroup(number) {
+  try {
+    return groupOf(
+      Number(fs.readFileSync(`/tmp/.X${number}-lock`, "utf8").trim()),
+    );
+  } catch {
+    return null; // Not locked yet, or its server exited.
+  }
 }
 
 /**
@@ -103,24 +115,34 @@ export async function startDisplay({ name, log, width = 1400, height = 1000 }) {
   child.unref();
   const group = child.pid;
   try {
-    // KWin listens on new X sockets before Xwayland runs; Xwayland starts on
-    // the first client, so each candidate is tried until it is this KWin's.
+    // KWin listens on two new X sockets, whose lock files name it, before
+    // Xwayland runs; the lower one is the display. Probing other sessions'
+    // sockets would start their Xwayland and, with many starting at once,
+    // outlast the wait.
     const number = await until(
       `the private display ${name}`,
       () => {
         if (exited) return "exited";
-        for (const candidate of displays()) {
-          if (before.has(candidate)) continue;
-          spawnSync("xdpyinfo", ["-display", `:${candidate}`], {
-            stdio: "ignore",
-            timeout: 5000,
-          });
-          if (servers("Xwayland").get(candidate) === group) return candidate;
-        }
-        return null;
+        return (
+          [...displays()]
+            .filter(
+              (candidate) =>
+                !before.has(candidate) && lockGroup(candidate) === group,
+            )
+            .sort((a, b) => Number(a) - Number(b))[0] ?? null
+        );
       },
       30_000,
     );
+    // Xwayland starts on the first client, and must be this KWin's.
+    if (number !== "exited")
+      await until(`Xwayland on the private display ${name}`, () => {
+        spawnSync("xdpyinfo", ["-display", `:${number}`], {
+          stdio: "ignore",
+          timeout: 5000,
+        });
+        return servers("Xwayland").get(number) === group;
+      });
     if (number === "exited")
       throw new Error(
         `KWin for the private display ${name} exited: ${fs.readFileSync(log, "utf8").trim().split("\n").slice(-3).join(" ")}`,
