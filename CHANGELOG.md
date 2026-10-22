@@ -3,6 +3,16 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.31.0] - 2026-10-22
+
+### Added
+
+- **Settings:** Notifications can now send to your phone through the free ntfy app (Android and iPhone), so you hear when a Batch comes back, QA finishes or work waits for you while you are away from the computer.
+
+### Changed
+
+- **Line widths:** measured widths now keep a few characters spare on each line, and the measurement lists symbols such as ❤ that the game's font lacks, which other computers draw at another width; translation counts ❤ and similar symbols as full width.
+
 ## [2.30.0] - 2026-10-22
 
 ### Fixed
@@ -955,6 +965,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.31.0]: https://github.com/dazedanon/DazedTL/compare/v2.30.0...v2.31.0
 [2.30.0]: https://github.com/dazedanon/DazedTL/compare/v2.29.0...v2.30.0
 [2.29.0]: https://github.com/dazedanon/DazedTL/compare/v2.28.0...v2.29.0
 [2.28.0]: https://github.com/dazedanon/DazedTL/compare/v2.27.2...v2.28.0
