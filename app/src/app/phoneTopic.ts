@@ -1,5 +1,4 @@
-// The ntfy topic a phone subscribes to for DazedTL's notifications, and the
-// link that subscribes the Android app to it.
+// The ntfy topic a phone subscribes to for DazedTL's notifications.
 
 /**
  * Everyday words of up to six letters, spelled the same in US and UK English
@@ -86,7 +85,3 @@ function randomWord() {
 export function newTopic() {
   return ["dazed", randomWord(), randomWord(), randomWord()].join("-");
 }
-
-/** Opens the ntfy Android app on the topic and subscribes it, as "DazedTL". */
-export const subscribeLink = (topic: string) =>
-  `ntfy://ntfy.sh/${topic}?display=DazedTL`;

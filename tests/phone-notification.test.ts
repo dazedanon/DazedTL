@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import test from "node:test";
-import {
-  newTopic,
-  subscribeLink,
-  topicWords,
-} from "../app/src/app/phoneTopic.ts";
+import { newTopic, topicWords } from "../app/src/app/phoneTopic.ts";
 
 const { sendToPhone } = createRequire(import.meta.url)(
   "../app/electron/phone.cjs",
@@ -55,8 +51,4 @@ test("a new phone topic is everyday words ntfy accepts", () => {
   for (const word of topicWords) assert.match(word, /^[a-z]{3,6}$/);
   assert.equal(new Set(topicWords).size, topicWords.length);
   assert.match(newTopic(), /^dazed(-[a-z]{3,6}){3}$/);
-  assert.equal(
-    subscribeLink("dazed-maple-otter-river"),
-    "ntfy://ntfy.sh/dazed-maple-otter-river?display=DazedTL",
-  );
 });

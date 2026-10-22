@@ -5,7 +5,6 @@ import {
   saveNotifications,
   useNotifications,
 } from "../../app/notifications";
-import { subscribeLink } from "../../app/phoneTopic";
 import { useAction } from "../../state/useAction";
 import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
@@ -13,7 +12,6 @@ import { Button } from "../../ui/Button";
 import { CheckField, CheckGroup, FieldRow } from "../../ui/FieldRow";
 import { PageBody } from "../../ui/PageLayout";
 import { PathInput } from "../../ui/PathInput";
-import { QrCode } from "../../ui/QrCode";
 
 /** How DazedTL calls the user back to the window; changes apply at once. */
 export default function Notifications() {
@@ -95,25 +93,10 @@ export default function Notifications() {
           <FieldRow
             id="notifications-topic"
             label="Phone topic"
-            help="Get the free ntfy app first; any phone can also type the topic. Anyone who knows it can read these notifications."
+            help="In the free ntfy app for Android or iPhone, tap + and type this topic. Anyone who knows it can read these notifications."
           >
             {(control) => (
-              <div className="phone-setup">
-                <QrCode
-                  value={subscribeLink(settings.topic)}
-                  label="Code that subscribes ntfy on Android"
-                />
-                <div className="phone-setup-steps">
-                  <p>
-                    <strong>Android:</strong> scan the code with your camera to
-                    subscribe in ntfy.
-                  </p>
-                  <p>
-                    <strong>iPhone:</strong> in ntfy, tap + and type this topic:
-                  </p>
-                  <input {...control} readOnly value={settings.topic} />
-                </div>
-              </div>
+              <input {...control} readOnly value={settings.topic} />
             )}
           </FieldRow>
         )}

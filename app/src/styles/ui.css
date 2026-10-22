@@ -1887,14 +1887,3 @@ pre {
   color: inherit;
   box-decoration-break: clone;
 }
-/* A QR code in its fixed colors; its width stays whole pixels per module. */
-.qr-code {
-  flex-shrink: 0;
-  border-radius: var(--control-radius);
-}
-.qr-code rect {
-  fill: var(--color-qr-light);
-}
-.qr-code path {
-  fill: var(--color-qr-dark);
-}

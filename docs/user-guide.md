@@ -394,7 +394,7 @@ They come when a translation or other step that took more than a few seconds end
 The sound plays even while DazedTL is in front, so you hear it from across the room; the desktop notification shows only while DazedTL is in the background, clicking it brings DazedTL back, and coming back clears it.
 **Sound** plays the built-in chime or a file you choose, such as an MP3 or WAV, for up to 10 seconds; DazedTL keeps its own copy, so you can move or delete the original.
 **Send to your phone** goes through [ntfy](https://ntfy.sh), a free notification app for Android and iPhone.
-Install it, then connect it to the **Phone topic** DazedTL shows: on Android, scan the code beside it with your camera; on iPhone, or if scanning doesn't work, tap **+** in ntfy and type the topic, a few everyday words such as `dazed-maple-otter-river`.
+Install it, tap **+** and type the **Phone topic** DazedTL shows, a few everyday words such as `dazed-maple-otter-river`.
 Phone notifications come even while DazedTL is in front, but only while it is open on your computer, since it is what notices the work ending.
 They pass through ntfy.sh with the game's name and what happened; the topic is their only password, so keep it to yourself.
 **Test notification** tries what you chose.
