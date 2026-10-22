@@ -240,7 +240,8 @@ export function CheckpointsPanel({
       ))}
       {timeline?.backups && (
         <p className="checkpoints-backups">
-          Backups from before checkpoints stay in .dazedtl/backups.{" "}
+          Backups from before checkpoints are kept; the user guide explains how
+          to restore one.{" "}
           <ActionControl
             inline
             variant="link"

@@ -93,8 +93,8 @@ export function PublicationContent({ preview }: { preview: Preview }) {
         <>
           {preview.action !== "runtime_restore" && (
             <p>
-              Each file is checked again first, and a backup is saved for
-              recovery.
+              Each file is checked again first, and the change is saved as a
+              checkpoint you can undo.
             </p>
           )}
           {preview.publication.map((row) => (

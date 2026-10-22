@@ -1313,8 +1313,9 @@ Where a pattern spans control codes, exclude structural characters from the capt
 
 ## Shared project preparation
 
-Len uses Workflow's RPG Maker preparation before translation: back up the starting
-game, run `DAZEDTL_ROOT/scripts/len_translation.py rpgmaker-prep --game-root <game>`,
+Len uses Workflow's RPG Maker preparation before translation: run operation
+`record_original` so DazedTL records the starting game itself, run
+`DAZEDTL_ROOT/scripts/len_translation.py rpgmaker-prep --game-root <game>`,
 then run the same script's `git-setup --game-root <game> --version <release>`.
 The preparation command formats JSON with dazedformat, formats plugins.js, installs
 the bundled GameUpdate files, writes the game's GameUpdate configuration from the
