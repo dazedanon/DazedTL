@@ -1793,6 +1793,27 @@ pre {
   direction: rtl;
   text-align: left;
 }
+/* A shortened one shows its measured ending on top, with the ellipsis on the
+   left edge; the whole text under it keeps the width, copying and assistive
+   text ([startEllipsis](../ui/startEllipsis.ts)). */
+.file-name[data-shown],
+.path-text[data-shown] {
+  position: relative;
+  text-overflow: clip;
+}
+.file-name[data-shown] > bdi,
+.path-text[data-shown] > bdi {
+  color: transparent;
+}
+.file-name[data-shown]::before,
+.path-text[data-shown]::before {
+  content: attr(data-shown) / "";
+  position: absolute;
+  inset: 0;
+  padding: inherit;
+  overflow: hidden;
+  direction: ltr;
+}
 .path-text--wrap {
   display: inline;
   white-space: normal;
