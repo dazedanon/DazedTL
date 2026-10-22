@@ -1122,10 +1122,16 @@ def parse(codeList, i, headerString, jaString):
                     for name in packed
                     if only is None or Path(name).stem.casefold() in only
                 ]
+                exports = {
+                    path.stem.casefold(): path.read_bytes()
+                    for path in (game / "ace_json").glob("*.json")
+                }
                 for name in names:
                     path = game / "Data" / name
                     path.parent.mkdir(exist_ok=True)
-                    path.write_bytes(b"\x04\x08generated " + name.encode())
+                    # Data holds what its export does, as the converter's.
+                    export = exports.get(Path(name).stem.casefold(), b"")
+                    path.write_bytes(b"\x04\x08" + export)
                 return [game / "Data" / name for name in names]
 
             def archive_in_root(source):
@@ -1186,6 +1192,18 @@ def parse(codeList, i, headerString, jaString):
                 records = checkpoint_records.Records(game, publications=folder)
                 checkpoint_records.undo(records, commit)
                 self.assertTrue(packing_state(native, folder)["current"])
+                # Data an assistant edited itself, which packing ace_json would
+                # not give, stays as an undo puts it back, and Release asks to
+                # Pack outside edits rather than overwriting it.
+                items = game / "Data/Items.rvdata2"
+                with write_game(game, folder) as written:
+                    written.put("Data/Items.rvdata2", b"assistant's edit")
+                with write_game(game, folder) as written:
+                    written.put("ace_json/Items.json", b'[null, {"name": "Elixir"}]')
+                commit = _git(game, "rev-parse", "HEAD").stdout.strip()
+                checkpoint_records.undo(records, commit)
+                self.assertEqual(items.read_bytes(), b"assistant's edit")
+                self.assertFalse(packing_state(native, folder)["current"])
                 # An archive the game still reads refuses before the write.
                 (game / "Game.rgss3a").write_bytes(b"RGSSAD")
                 with (

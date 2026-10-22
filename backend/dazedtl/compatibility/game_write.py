@@ -12,7 +12,9 @@ skills), runs inside `write_game`, which holds the rules such writes share:
   `ace_json` files a write touched are packed into Data once it succeeds,
   saving the packing receipt Release checks when the game has a Guided
   workspace. The game reads nothing else while an RGSS archive sits beside
-  Game.exe, so a write that packs refuses before writing anything then.
+  Game.exe, so a write that packs refuses before writing anything then. Data
+  a checkpoint restore writes itself is DazedTL's own write only while
+  packing its ace_json gives the same bytes ([guided](guided.py) `pack_ace`).
 - Before the outermost write to a game whose Git is not set up, the game as
   it is then is recorded in its Git repository as the original game's files
   ([original_files](original_files.py)), unless a record is there already,
@@ -31,7 +33,7 @@ anywhere else.
 
 from contextlib import contextmanager
 from contextvars import ContextVar
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 from dazedtl.system import unlink, write_bytes
@@ -52,11 +54,12 @@ _statuses = RepositoryStatusCache(stable=True)
 class GameWrite:
     """The game files one write changes."""
 
-    def __init__(self, root, packs=False):
+    def __init__(self, root, packs=False, restores=False):
         self.root = Path(root).resolve()
         self.touched = []
         self.everything = False
         self.packs = packs
+        self.restores = restores
         self.watched = {}
         # The checkpoint the write made, which an undo takes out; None when
         # it made none.
@@ -161,17 +164,27 @@ def _pack(native, folder, game, log):
             return actions.run(Path(native["source"]), "ace_pack", log)
         return pack_ace(native, folder, log)
     touched = [name for name in game.touched if name.startswith("ace_json/")]
+    # The native files a restore of a checkpoint wrote itself.
+    restored = [
+        name
+        for name in dict.fromkeys(game.touched)
+        if game.restores
+        and (
+            name.casefold() == "game.ini"
+            or PurePosixPath(name).parts[0].casefold() == "data"
+        )
+    ]
     # A write that watched its exports lets the packing receipt find what
     # changed even when it changed nothing itself, such as a format run
     # again after one stopped before its pack.
-    if not touched and (folder is None or not game.watched):
+    if not touched and (folder is None or not (game.watched or restored)):
         return []
     if folder is None:
         # Without a Guided workspace, which keeps the packing receipt, a
         # write packs only what it touched.
         only = {packing_target(name) for name in touched}
         return actions.run(Path(native["source"]), "ace_pack", log, only=only)
-    return pack_ace(native, folder, log, touched)
+    return pack_ace(native, folder, log, touched, restored)
 
 
 @contextmanager
@@ -186,6 +199,7 @@ def write_game(
     summary=None,
     stage=None,
     action=None,
+    restores=False,
 ):
     """Checks, then yields the `GameWrite` for one write to the game at
     `root`, and packs it once the block succeeds; the outermost write to a
@@ -197,8 +211,9 @@ def write_game(
     this one; `pack=False` leaves Data as it is, for writes outside
     `ace_json`, such as guidance and .gitignore, and tools that convert
     between Data and `ace_json`; `subject` names what was written when
-    packing fails. The checkpoint is named by `action`'s registry row, the
-    action running the write, or else `summary` in `stage`.
+    packing fails; `restores` marks a restore of a checkpoint's files. The
+    checkpoint is named by `action`'s registry row, the action running the
+    write, or else `summary` in `stage`.
     """
     from . import checkpoint_commits
     from .guided import ace_blocked
@@ -224,7 +239,7 @@ def write_game(
         if outermost and status is not None
         else None
     )
-    game = GameWrite(root, packs=ace)
+    game = GameWrite(root, packs=ace, restores=restores)
     game._point = point
     token = writing.set(writing.get() | {str(root)})
     try:
