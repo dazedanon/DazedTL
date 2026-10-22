@@ -81,10 +81,13 @@ WAITING = "waiting.phase"
 
 def for_action(name, label=None, stage=None):
     """The change an action makes, named by its row in the action registry,
-    or by `label` and `stage` for an operation the registry doesn't hold."""
+    or by `label` and `stage` for an operation the registry doesn't hold.
+    An Apply's own `label` names its tasks."""
     from dazedtl.actions import ACTIONS
 
     row = ACTIONS.get(name)
+    if row and row.family == "apply" and label:
+        return Change(label, row.stage, name)
     if row:
         return Change(row.label, row.stage, name)
     return Change(label or name, stage, name)

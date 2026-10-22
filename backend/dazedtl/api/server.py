@@ -272,6 +272,22 @@ class Application:
                     legacy = views.guided(
                         self.guided.state(project["id"]), project["id"]
                     )
+                    # Plugin files applies and restores have no job of their
+                    # own; History lists them with the operations.
+                    legacy["operations"] += [
+                        {
+                            "id": row["id"],
+                            "label": receipt_label(row),
+                            "action": "plugin_receipt",
+                            "status": row["status"],
+                            "message": "",
+                            "result": {"files": len(row["files"])},
+                            "created": row.get("saved") or "",
+                            "updated": row.get("saved") or "",
+                            "log": [],
+                        }
+                        for row in (plugins or {}).get("receipts", [])
+                    ]
                     run = legacy["run"]
                     active_tool = next(
                         (
@@ -308,17 +324,6 @@ class Application:
                                 *(
                                     {**item, "label": "Translation run"}
                                     for item in legacy["runs"]
-                                ),
-                                # Plugin files applies and restores without a
-                                # job of their own.
-                                *(
-                                    {
-                                        "label": receipt_label(row),
-                                        "status": row["status"],
-                                        "message": "",
-                                        "updated": row.get("saved") or "",
-                                    }
-                                    for row in (plugins or {}).get("receipts", [])[-1:]
                                 ),
                             ],
                             key=lambda item: item.get("updated") or "",
