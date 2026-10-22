@@ -1,0 +1,26 @@
+{
+  "description": "A bundled font the layout check reads, fonts/test-mono.ttf: a half-width box for each ASCII character and a full-width one for ♥, nothing else, so the chief's new lines with ❤ and ♪ draw from the fallback fonts System.json names. MV's engine (playable) draws with it through fonts/gamefont.css.",
+  "system": {
+    "advanced": {
+      "mainFontFilename": "test-mono.ttf",
+      "fallbackFonts": "Verdana, sans-serif"
+    }
+  },
+  "chief": [
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": ["", 0, 0, 2, "村長"]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": ["ようこそ❤ ゆっくりしていってね♪"]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": ["♥と❤、どちらが好き？"]
+    }
+  ]
+}

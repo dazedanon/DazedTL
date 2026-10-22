@@ -957,16 +957,47 @@ export type PlaytestOperation = {
 
 export type LayoutProbe = {
   title: string;
+  /** Every row shows, with the check's headroom spare after the widest line. */
   fits: boolean;
   /** Pixels the widest line takes. */
   widest: number;
   /** Pixels the window gives a line. */
   room: number;
+  /** Pixels left after the widest line. */
+  spare?: number;
+  /** Whole characters left after the widest line. */
+  spareCharacters?: number;
+  /** The most characters that keep the headroom spare. */
+  suggested?: number;
   lines: number;
   /** Rows the window shows. */
   rows: number;
   /** The capture's file. */
   capture?: string;
+};
+
+export type FallbackGlyph = {
+  character: string;
+  code: string;
+  /** How often the game's text holds it. */
+  count: number;
+  /** Characters the fitter counts it as. */
+  counted: number;
+  /** Pixels the game's message window draws it. */
+  pixels?: number;
+  /** Characters the game's message window draws it as. */
+  drawn?: number;
+};
+
+/** The game's main font and the characters of its text it lacks. */
+export type LayoutFallback = {
+  font?: string;
+  fallbackFonts?: string;
+  /** Why the font's characters were not read. */
+  unread?: string;
+  glyphs?: FallbackGlyph[];
+  /** Lacking characters past the listed ones. */
+  more?: number;
 };
 
 /** English shown at given widths in the game's own windows. */
@@ -975,6 +1006,9 @@ export type LayoutCheck = {
   finished_at?: string;
   widths?: Record<string, number>;
   probes?: LayoutProbe[];
+  /** Characters each width keeps spare. */
+  headroom?: number;
+  fallback?: LayoutFallback;
   missing?: Record<string, string>[];
   unavailable?: string;
 };

@@ -10,17 +10,18 @@ it, and the tour's saves stay in a session that ends with it.
 from __future__ import annotations
 
 import json
+import math
 import time
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from util import rpgmaker_blocks, rpgmaker_window
+from util import rpgmaker_blocks, rpgmaker_fonts, rpgmaker_window
 from util.playtest.checks import GROUP_TEXT_LIMIT, HELP_ROWS, static_checks
 from util.rpgmaker_markers import comment_markers, data_plugins
 from util.rpgmaker_qa_preflight import pointer
 
 SCHEMA = "rpgmaker-playtest-report-v1"
-LAYOUT_SCHEMA = "rpgmaker-layout-check-v1"
+LAYOUT_SCHEMA = "rpgmaker-layout-check-v2"
 HARNESS = Path(__file__).with_name("harness") / "main.cjs"
 # The tour every run takes, in order.
 TOUR = (
@@ -601,9 +602,18 @@ def layout_lines(characters: int, count: int) -> list[str]:
     return lines
 
 
-def layout_probes(data: Path, widths: dict[str, int]) -> list[dict[str, Any]]:
+# The characters a width keeps spare on a window's widest line: a width that
+# fits to the last pixel leaves no room for a glyph the game's font lacks,
+# which the fallback font draws at a width that varies by operating system.
+LAYOUT_HEADROOM = 3
+
+
+def layout_probes(
+    data: Path, widths: dict[str, int], glyphs: Iterable[str] = ()
+) -> list[dict[str, Any]]:
     """The layout check's stops: a full message window, one under the game's
-    first actor face, and a help window, each at its width."""
+    first actor face, and a help window, each at its width. The first also
+    measures *glyphs*, the characters the game's font lacks."""
     rows = int(widths.get("messageRows") or 4)
     face = None
     try:
@@ -631,7 +641,29 @@ def layout_probes(data: Path, widths: dict[str, int]) -> list[dict[str, Any]]:
             "lines": layout_lines(characters, count),
             **({"face": shown} if shown else {}),
         })
+    if probes and glyphs:
+        probes[0]["glyphs"] = list(glyphs)
     return probes
+
+
+def layout_fit(measured: dict[str, Any]) -> dict[str, Any]:
+    """A layout probe as the game measured it, with the room it keeps spare.
+    Its lines fit when the window shows every row and keeps LAYOUT_HEADROOM
+    characters spare after the widest line, counted at that line's average
+    character width; *suggested* is the most characters that keep it."""
+    widest, room = measured["widest"], measured["room"]
+    row = {**measured, "spare": room - widest}
+    if widest <= 0:
+        return {**row, "fits": False}
+    # Each line is exactly `characters` long (see layout_lines).
+    most = math.floor(room * measured["characters"] / widest)
+    return {
+        **row,
+        "spareCharacters": most - measured["characters"],
+        "suggested": most - LAYOUT_HEADROOM,
+        "fits": measured["lines"] <= measured["rows"]
+        and most - measured["characters"] >= LAYOUT_HEADROOM,
+    }
 
 
 def layout(
@@ -647,24 +679,47 @@ def layout(
 
     It plays only the title, New Game and the opening, and keeps its own
     reports apart from the playtest's. It confirms a setup task's measured
-    widths on screen where that task had improvised a browser session."""
+    widths on screen where that task had improvised a browser session, and
+    lists the characters of the game's text its font lacks, as wide as its
+    message window draws them."""
     data = Path(data_root).expanduser().resolve()
     target = Path(out).expanduser().resolve()
     target.mkdir(parents=True, exist_ok=True)
-    probes = layout_probes(data, widths)
+    log("Reading the game's font")
+    try:
+        fallback = rpgmaker_fonts.fallback_glyphs(data)
+    except (OSError, ValueError, TypeError, KeyError, IndexError, AttributeError) as error:
+        # The widths are the check's job; a game the scan cannot read still gets them.
+        fallback = {"unread": f"The game's text could not be read for its font: {error}"}
+    probes = layout_probes(
+        data, widths, [glyph["character"] for glyph in fallback.get("glyphs", [])]
+    )
     runtime = tour(data, target, probes, LAYOUT_MINUTES, log, stopped, standard=False)
     reached = {stop["id"]: stop for stop in runtime.get("stops", [])}
+    measured = [layout_fit(row) for row in runtime.get("layout", [])]
+    drawn = next((row for row in measured if row.get("glyphs") and row["widest"] > 0), None)
+    for glyph in fallback.get("glyphs", []):
+        pixels = drawn["glyphs"].get(glyph["character"]) if drawn else None
+        if pixels is not None:
+            # In the probe line's characters, the unit Line widths count.
+            glyph["pixels"] = pixels
+            glyph["drawn"] = round(pixels * drawn["characters"] / drawn["widest"], 1)
     result = {
         "schema": LAYOUT_SCHEMA,
         "widths": widths,
-        "probes": runtime.get("layout", []),
+        "headroom": LAYOUT_HEADROOM,
+        "probes": [
+            {key: value for key, value in row.items() if key != "glyphs"}
+            for row in measured
+        ],
+        "fallback": fallback,
         "missing": [
             {
                 "title": probe["title"],
                 "note": (reached.get(probe["id"]) or {}).get("note", "not reached"),
             }
             for probe in probes
-            if probe["title"] not in {row.get("title") for row in runtime.get("layout", [])}
+            if probe["title"] not in {row.get("title") for row in measured}
         ],
         "overflow": runtime.get("overflow", []),
         "captures": runtime.get("captures", []),

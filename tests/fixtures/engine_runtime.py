@@ -662,6 +662,11 @@ try:
         assert visible_width("Fufu…♥ See you～") == 18
         # Accented letters stay half width, as both fonts draw them.
         assert visible_width("Café") == 4
+        # ❤ (East Asian width N) is a glyph those fonts lack, which a
+        # fallback font draws at least full width; its emoji selector draws
+        # nothing of its own.
+        assert visible_width("Love you❤ ❤️") == 13
+        assert visible_width("©") == 1
         # Only translated text is fitted: Japanese and a text picture, which
         # has no window, stay exact. New widths fit only their own area.
         line = "The old road bends toward a quiet village."

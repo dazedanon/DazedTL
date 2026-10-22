@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from itertools import groupby
@@ -100,32 +101,47 @@ _MARKER = re.compile(r"^_ABL")
 MARKED_WIDTH = 100
 
 
-# Fitting measures each word of a game's text, whose words repeat.
-@lru_cache(maxsize=1 << 16)
-def visible_width(text: str) -> int:
-    """The characters *text* takes on one line of a window: name windows,
+def drawn_text(text: str) -> str:
+    """The characters *text* draws on one line of a window: name windows,
     alignment and other codes draw nothing there, while names, icons and
-    variables take their room. A full-width character takes two, and so
-    does a symbol East Asian fonts draw full width, such as ♥ or …: RPG
-    Maker games draw text in Japanese fonts, which captures of Fuuma
-    Chronicle confirmed."""
+    variables stand in as the room they take."""
     text = _MARKER.sub("", _ALIGNMENT.sub("", _NAME_WINDOW.sub("", text)))
     for pattern, size in _EXPANDING.items():
         text = pattern.sub("x" * size, text)
-    drawn = dazedwrap.visible_text(text)
-    return len(drawn) + sum(1 for character in drawn if _full_width(character))
+    return dazedwrap.visible_text(text)
 
 
-def _full_width(character: str) -> bool:
-    """Whether Japanese fonts draw *character* full width: a full-width
-    character, or one of ambiguous width other than a letter. MV/MZ's and
-    VX Ace's fonts draw ♥, … and ① full width, while accented, Greek and
-    Cyrillic letters, such as é, stay half width (MV/MZ's M+ and VX Ace's
-    VL Gothic draw them so)."""
+# Fitting measures each word of a game's text, whose words repeat.
+@lru_cache(maxsize=1 << 16)
+def visible_width(text: str) -> int:
+    """The characters *text* takes on one line of a window (see
+    :func:`drawn_text`), each as wide as :func:`_cells` counts it."""
+    return sum(_cells(character) for character in drawn_text(text))
+
+
+@lru_cache(maxsize=1 << 12)
+def _cells(character: str) -> int:
+    """The half-width cells *character* takes. RPG Maker games draw text in
+    Japanese fonts, which draw full-width characters, and ones of ambiguous
+    width other than letters, full width: MV/MZ's and VX Ace's fonts draw
+    ♥, … and ① so, which captures of Fuuma Chronicle confirmed, while
+    accented, Greek and Cyrillic letters, such as é, stay half width (MV/MZ's
+    M+ and VX Ace's VL Gothic draw them so). Other symbols, such as ❤ and ✓,
+    are glyphs those fonts lack, which the game draws from a fallback font
+    at least full width; Latin-1's, such as ©, the fonts draw half width.
+    Combining marks and format characters, such as the emoji selector after
+    ❤️, take no room of their own."""
+    category = unicodedata.category(character)
+    if category in ("Mn", "Me", "Cf"):
+        return 0
     width = unicodedata.east_asian_width(character)
-    return width in "FW" or (
-        width == "A" and not unicodedata.category(character).startswith("L")
-    )
+    if (
+        width in "FW"
+        or (width == "A" and not category.startswith("L"))
+        or (width == "N" and category == "So" and ord(character) > 0xFF)
+    ):
+        return 2
+    return 1
 
 
 def _rendered_lines(text: str) -> list[str]:
@@ -1099,6 +1115,19 @@ def fit_document(
     report.changes.reverse()
     report.misfits.reverse()
     return report
+
+
+def drawn_characters(document, file_name: str) -> Counter[str]:
+    """How often each character the windows draw appears in the display
+    values of *document* DazedTL fits, Japanese or translated (see
+    :func:`drawn_text`); note tags, which plugins read, are left out."""
+    counts: Counter[str] = Counter()
+    for slot in _slots(document, file_name, Layout.from_widths(None)):
+        value = slot.read()
+        if slot.box.kind != "note" and isinstance(value, str):
+            for line in _rendered_lines(value):
+                counts.update(drawn_text(line))
+    return counts
 
 
 def _pointer_part(value) -> str:
