@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import type { GuidedState, TranslationState } from "../../api/contracts";
 import { useApplication } from "../../app/ApplicationProvider";
 import { ErrorBoundary } from "../../app/ErrorBoundary";
@@ -24,7 +24,10 @@ import { GuidedPanel } from "./workspace/GuidedPanel";
 import { type GuidedProps, fileCount, phaseLabels } from "./workspace/model";
 import { renderTask } from "./workspace/tasks";
 import { TaskHeader } from "./workspace/TaskHeader";
-import { useGuidedWorkspace } from "./workspace/useGuidedWorkspace";
+import {
+  type GuidedWorkspace,
+  useGuidedWorkspace,
+} from "./workspace/useGuidedWorkspace";
 
 export default function GuidedWorkflow(props: GuidedProps) {
   const { snapshot } = useApplication();
@@ -339,44 +342,7 @@ function Workspace(
                   </span>
                 </Notice>
               )}
-            {/* An apply that stopped midway may leave part of it in the
-                game until it is restored. */}
-            {state.readiness.publications
-              .filter((row) =>
-                ["publishing", "recovery_needed"].includes(row.state),
-              )
-              .map((row) => (
-                <Notice key={row.id} tone="warning">
-                  <span>
-                    {row.kind === "runtime_restore"
-                      ? "A restore of "
-                      : "An apply to "}
-                    {selectionNames(row.files)}
-                    {row.state === "publishing"
-                      ? " was interrupted and may be partly in the game."
-                      : " failed, and undoing it could not finish."}{" "}
-                    Restore puts back what was there before, unless the files
-                    changed since.
-                    {row.recovery_errors.length > 0 &&
-                      ` Last error: ${row.recovery_errors.at(-1)}`}
-                  </span>
-                  {row.undo
-                    ? task(
-                        "runtime_undo",
-                        "Restore",
-                        { publication: row.id },
-                        !baseline,
-                        "link",
-                      )
-                    : task(
-                        "runtime_restore",
-                        "Review restore",
-                        { publication: row.id },
-                        !baseline,
-                        "link",
-                      )}
-                </Notice>
-              ))}
+            <InterruptedApplies w={w} />
             {changed.length > 0 &&
               ["translate", "check", "release"].includes(position.step) &&
               !hostedFooter && (
@@ -436,5 +402,81 @@ function Workspace(
       <ActionReview w={w} />
       <PendingReview pending={w.pending} />
     </PageLayout>
+  );
+}
+
+/**
+ * An apply that stopped midway may leave part of it in the game until it is
+ * restored. The notice goes with the restore, so this visit's finished
+ * restores stay as a confirmation until they are dismissed.
+ */
+function InterruptedApplies({ w }: { w: GuidedWorkspace }) {
+  const { state, baseline, task, operationJob } = w;
+  const open = state.readiness.publications.filter((row) =>
+    ["publishing", "recovery_needed"].includes(row.state),
+  );
+  const [seen, setSeen] = useState<
+    Record<string, { files: string[]; undo: boolean }>
+  >({});
+  const [dismissed, setDismissed] = useState<string[]>([]);
+  if (open.some((row) => !seen[row.id]))
+    setSeen({
+      ...seen,
+      ...Object.fromEntries(
+        open.map((row) => [row.id, { files: row.files, undo: !!row.undo }]),
+      ),
+    });
+  const restored = Object.entries(seen).filter(
+    ([id, row]) =>
+      !dismissed.includes(id) &&
+      !open.some((item) => item.id === id) &&
+      operationJob(row.undo ? "runtime_undo" : "runtime_restore", {
+        publication: id,
+      })?.status === "complete",
+  );
+  return (
+    <>
+      {open.map((row) => (
+        <Notice key={row.id} tone="warning">
+          <span>
+            {row.kind === "runtime_restore" ? "A restore of " : "An apply to "}
+            {selectionNames(row.files)}
+            {row.state === "publishing"
+              ? " was interrupted and may be partly in the game."
+              : " failed, and undoing it could not finish."}{" "}
+            Restore puts back what was there before, unless the files changed
+            since.
+            {row.recovery_errors.length > 0 &&
+              ` Last error: ${row.recovery_errors.at(-1)}`}
+          </span>
+          {row.undo
+            ? task(
+                "runtime_undo",
+                "Restore",
+                { publication: row.id },
+                !baseline,
+                "link",
+              )
+            : task(
+                "runtime_restore",
+                "Review restore",
+                { publication: row.id },
+                !baseline,
+                "link",
+              )}
+        </Notice>
+      ))}
+      {restored.map(([id, row]) => (
+        <p className="guided-success" role="status" key={id}>
+          Restored {selectionNames(row.files)}.{" "}
+          <Button
+            variant="link"
+            onClick={() => setDismissed((previous) => [...previous, id])}
+          >
+            Dismiss
+          </Button>
+        </p>
+      ))}
+    </>
   );
 }
