@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from dazedtl import system
+from dazedtl.actions import stopped_note
 from dazedtl.compatibility import original_files
 from dazedtl.compatibility.checkpoint_commits import for_action, in_phase, running
 from dazedtl.storage import staging_folder, write_json
@@ -281,7 +282,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         package_git = git_identity(engine.git_status(source, options))
         verify_evidence(source, payload["evidence"])
         if stopped():
-            raise InterruptedError("Release stopped. Its checkpoint was kept.")
+            raise InterruptedError(stopped_note(action))
         output.parent.mkdir(parents=True, exist_ok=True)
         with staging_folder(output.parent, ".dazedtl-patch-") as temporary:
             manifest = runtime_manifest(source, payload["manifest"])

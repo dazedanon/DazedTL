@@ -13,6 +13,7 @@ from pathlib import Path, PurePosixPath
 from stat import S_IFREG
 
 from dazedtl import system
+from dazedtl.actions import stopped_note
 from dazedtl.freshness import Basis, compare
 
 from .files import evidence, project_path, read_json
@@ -265,9 +266,7 @@ def write_archive(source, target, scope, log, *, folder):
     ) as archive:
         for index, relative in enumerate(sorted(scope["files"]), 1):
             if stopped():
-                raise InterruptedError(
-                    "Package creation stopped. The previous ZIP is unchanged."
-                )
+                raise InterruptedError(stopped_note("release"))
             log(f"{index}/{len(scope['files'])} · {relative}")
             name = folder + "/" + relative
             archive.write(project_path(source, relative), name)
@@ -534,9 +533,7 @@ def publish(staged, output, expected, *, stopped=lambda: False):
         if not archive.infolist() or archive.testzip() is not None:
             raise ValueError("The release ZIP could not be verified.")
     if stopped():
-        raise InterruptedError(
-            "Package creation stopped. The previous release is unchanged."
-        )
+        raise InterruptedError(stopped_note("release"))
     if output_hash(output) != expected:
         raise ValueError(
             "The destination changed while packaging. Choose the output again."

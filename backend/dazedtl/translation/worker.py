@@ -25,6 +25,7 @@ from dazedtl.translation import progress_report
 from dazedtl.translation.compilation import verify_compilation
 from dazedtl.translation.files import verify_evidence
 from dazedtl.translation.jobs import RunStore
+from dazedtl.actions import stopped_note
 from dazedtl.translation.operations import execute, lifecycle, require_baseline
 from dazedtl.translation.ownership import alive
 from dazedtl.translation.project import ProjectWorkspace, scope
@@ -86,9 +87,7 @@ def run_locked(workspace, identity, store):
                     nonlocal last_update
                     progressed()
                     if stopped():
-                        raise InterruptedError(
-                            "Stopped at an operation checkpoint; completed writes and backups were retained."
-                        )
+                        raise InterruptedError(stopped_note(plan["action"]))
                     if time.monotonic() - last_update >= 0.5:
                         job["message"] = str(message)[:1000]
                         store.save(job)
