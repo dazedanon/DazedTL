@@ -155,7 +155,7 @@ Test updater changes with both `patch.ps1` on Windows and `patch.sh` on Linux; t
 ## Branches and releases
 
 Work on `dev`; `main` always holds the latest stable release, so a ZIP of `main` from any mirror is a release.
-From a clean `dev`, `node scripts/release.mjs 2.0.1` runs the tests and build checks, fast-forwards `main` to `dev`, sets the version, files the [release notes](#release-notes), signs a manifest of every file, commits and tags `v2.0.1`, pushes `main` and the tag to every mirror and fast-forwards `dev` again.
+From a clean `dev`, `node scripts/release.mjs 2.0.1` takes the [landing lock](#landing), runs the tests and build checks, fast-forwards `main` to the `dev` commit CI passed for, sets the version, files the [release notes](#release-notes), signs a manifest of every file, commits and tags `v2.0.1`, pushes `main` and the tag to every mirror and fast-forwards `dev` again.
 Before `main` moves, the release requires [CI](#live-test) to have passed on GitHub for that `dev` commit.
 It pushes `dev` first when GitHub lacks the commit and waits for a run still in progress; a first failed attempt gets one rerun of its failed jobs, and a second failure or a cancelled run stops the release.
 A prerelease such as `2.1.0-beta.1` is tagged on `dev` for the Beta channel instead, without waiting for CI, and `--local` stops before pushing.
@@ -176,15 +176,15 @@ Set `DAZEDTL_RELEASE_KEY` to keep the private key somewhere else.
 
 ### Landing
 
-`node scripts/land.mjs` lands a finished branch on `dev` from its worktree, one landing at a time.
-It refuses `dev`, `main` and uncommitted changes, waits while your own DazedTL runs from the main checkout, then takes the lock `.git/dazedtl/land.lock`, taking it over when its holder has gone or held it over 20 minutes.
-Under the lock it merges `dev` into the branch, runs the tests and build checks, fast-forwards the main checkout's `dev` and pushes it to each mirror, trying a refused push again a minute later; a mirror that still refuses is reported and the landing still counts.
-In that merge, both sides' [release notes](#release-notes) join under their headings through [changelog.mjs](../scripts/changelog.mjs), and conflicts only in the [generated API contracts](architecture.md#api-changes) are resolved by writing them again; any other conflict stops it with exit code 2.
+`node scripts/land.mjs` lands a finished branch on `dev` from its worktree, on Linux or macOS.
+It refuses `dev`, `main` and uncommitted changes, then takes the landing lock, the ref `refs/dazedtl/land-lock` in the shared repository, through Git's compare-and-swap ref updates ([land-lock.mjs](../scripts/land-lock.mjs)).
+Its holder renews it every five minutes; one whose process has gone, or that nobody renewed for 20 minutes, is taken over.
+Under the lock it merges `dev` into the branch, runs the tests and build checks, waits while your own DazedTL runs from the main checkout, and fast-forwards the main checkout's `dev`, which must be checked out there without uncommitted changes to tracked files, never overwriting a file the checkout ignores.
+It then pushes `dev` to each mirror, trying a refused push again a minute later; a mirror that still refuses is reported and the landing still counts.
+In the merge, both sides' [release notes](#release-notes) join under their headings through [changelog.mjs](../scripts/changelog.mjs), and conflicts only in the [generated API contracts](architecture.md#api-changes) are resolved by writing them again; any other conflict stops it with exit code 2.
 
-[CI](#live-test) runs on `dev` after the push, not on the branch.
-Before landing, the script reads `dev`'s newest run: a first failed attempt gets one rerun of its failed jobs, and a failure after the rerun stops the landing with exit code 4 and makes its session own the red build, recorded in `.git/dazedtl/ci-red.json`.
-That session fixes it forward or reverts the commit that broke it on its branch, then lands with `--fix-ci`, which clears the claim; meanwhile other landings warn and go on.
-A claim lapses after two hours or once its branch is deleted.
+[CI](#live-test) runs on `dev` after the push, not on the branch; the landing warns when `dev`'s newest run failed but does not wait for CI.
+A run still red is fixed forward or reverted by the session cutting the next release, whose `release.mjs` reruns it once first and holds the landing lock throughout.
 To run CI on a branch before landing, use `gh workflow run CI --ref <branch>` and wait with `ci-wait.mjs`.
 
 ### Release notes

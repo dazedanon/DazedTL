@@ -3,7 +3,8 @@
 // release fast-forwards main to dev and commits there, once CI has passed for
 // that commit on GitHub, and files release/notes.md under its version in
 // CHANGELOG.md; a prerelease such as 2.1.0-beta.1 is tagged on dev for the
-// beta channel and leaves the notes pending.
+// beta channel and leaves the notes pending. It holds the landing lock
+// (scripts/land-lock.mjs) throughout, so no landing moves dev meanwhile.
 //
 //   node scripts/release.mjs key               create the signing key, once
 //   node scripts/release.mjs 2.0.0 [--local]   release; --local skips pushing
@@ -20,6 +21,7 @@ import {
   waitForCI,
 } from "./ci-wait.mjs";
 import { root } from "./dependencies.mjs";
+import { gitIn, withLock } from "./land-lock.mjs";
 import {
   CHANGELOG,
   NOTES,
@@ -312,7 +314,9 @@ async function release(version, push) {
   step(process.execPath, ["scripts/test.mjs"]);
   step(process.execPath, ["scripts/build.mjs"]);
 
-  if (stable) await requireCI(git("rev-parse", "HEAD"), push);
+  // main moves to exactly the commit whose CI passed.
+  const checked = git("rev-parse", "HEAD");
+  if (stable) await requireCI(checked, push);
   const branch = stable ? "main" : "dev";
   const tag = `v${version}`;
   const touched = [
@@ -333,7 +337,7 @@ async function release(version, push) {
     git("switch", ...(exists ? ["main"] : ["-c", "main"]));
   }
   try {
-    if (stable) git("merge", "--ff-only", "dev");
+    if (stable) git("merge", "--ff-only", checked);
     setVersion(version);
     git("add", "app/package.json", "app/package-lock.json");
     if (stable) {
@@ -445,7 +449,14 @@ if (import.meta.main)
   try {
     const [command] = process.argv.slice(2);
     if (command === "key") createKey();
-    else await release(command ?? "", !process.argv.includes("--local"));
+    // Landings wait until the release has moved dev and main.
+    else
+      await withLock(
+        gitIn(root),
+        { branch: "release", worktree: root },
+        () => release(command ?? "", !process.argv.includes("--local")),
+        { log: console.log },
+      );
   } catch (error) {
     console.error(error instanceof Error ? error.message : error);
     process.exitCode = 1;
