@@ -1885,7 +1885,7 @@ class ManualJobs:
         engine = TranslationEngine.__new__(TranslationEngine)
         for result in (Update("saved"), Update(None, ("data/Items.json",))):
             with self.subTest(result=result):
-                module.continue_with_official = lambda _source: result
+                module.continue_with_official = lambda _source, _release: result
                 with patch.dict(
                     sys.modules, {"util": package, "util.version_update": module}
                 ):

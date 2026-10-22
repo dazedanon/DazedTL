@@ -3021,13 +3021,72 @@ def preview_official_update(
     )
 
 
+def _rebuilt_pending_asset_plan(
+    status: RepositoryStatus, result: UpdateResult, release: str | Path | None
+) -> dict[str, object]:
+    """The asset plan the update saved, made again from the release the
+    original branch is at and `release`, the folder it was applied from,
+    for a record that can no longer be read."""
+    assert status.repo_root
+    damaged = "This game update's record of the assets it still has to copy is damaged"
+    if release is None:
+        raise GitWorkflowError(
+            f"{damaged}, and DazedTL has no note of the release folder the "
+            "update came from, so it can't copy them."
+        )
+    folder = Path(release).expanduser()
+    if not folder.is_dir():
+        raise GitWorkflowError(
+            f"{damaged}, and copying them needs the release folder the update "
+            f"came from, {folder}, which is gone. Put that folder back, then "
+            "finish the update again."
+        )
+    source = _validate_source(folder, status.selected_root)
+    released = next(
+        (
+            record
+            for record in version_history(status.selected_root)
+            if record.kind == "update"
+        ),
+        None,
+    )
+    if (
+        released is None
+        or released.commit != result.original_commit
+        or released.version != result.version
+    ):
+        raise GitWorkflowError(
+            "The pending asset update does not match the registered original version"
+        )
+    repo, prefix = status.repo_root, status.game_prefix
+    patch_overlay = released.release == "patch"
+    proposed = dict(_load_asset_manifest(repo, prefix) or {}) if patch_overlay else {}
+    proposed.update(_asset_manifest_for_source(repo, source, prefix))
+    return {
+        "source": str(source),
+        "version": result.version,
+        "original_commit": result.original_commit,
+        "manifest_digest": _manifest_digest(proposed),
+        # The assets an update keeps the translation's copy of are files Git
+        # tracks, never among those copied outside it.
+        "preserved_translation_assets": (),
+        "patch_overlay": patch_overlay,
+    }
+
+
 def _complete_pending_asset_plan(
-    game: Path, result: UpdateResult
+    game: Path, result: UpdateResult, release: str | Path | None = None
 ) -> UpdateResult:
     status = inspect_repository(game)
     if not status.repo_root:
         raise GitWorkflowError("The translated game is not in a Git repository")
-    plan = _load_pending_asset_plan(status.repo_root, status.game_prefix)
+    try:
+        plan = _load_pending_asset_plan(status.repo_root, status.game_prefix)
+    except GitWorkflowError as error:
+        if isinstance(error.__cause__, OSError):
+            # Unreadable for now is not damaged.
+            raise
+        plan = _rebuilt_pending_asset_plan(status, result, release)
     if plan is None:
         return result
     if (
@@ -3322,8 +3381,14 @@ def apply_official_update(
 
 
 def apply_registered_original(
-    translated_game: str | Path, *, auto_resolve: bool = True
+    translated_game: str | Path,
+    *,
+    auto_resolve: bool = True,
+    release: str | Path | None = None,
 ) -> UpdateResult:
+    """Brings the original branch's release into the translation and copies
+    its assets. `release`, the folder the update was applied from, rebuilds
+    a pending asset record that can no longer be read."""
     game = Path(translated_game).expanduser().resolve()
     status = inspect_repository(game)
     if not status.repo_root or not status.original_commit or not status.original_version:
@@ -3347,22 +3412,29 @@ def apply_registered_original(
             status.original_version,
             content_changed=False,
         )
-        return _complete_pending_asset_plan(game, result)
+        return _complete_pending_asset_plan(game, result, release)
     result = _cherry_pick(
         game,
         status.original_commit,
         status.original_version,
         auto_resolve=auto_resolve,
     )
-    return _complete_pending_asset_plan(game, result) if result.complete else result
+    return (
+        _complete_pending_asset_plan(game, result, release)
+        if result.complete
+        else result
+    )
 
 
-def continue_with_official(translated_game: str | Path) -> UpdateResult:
+def continue_with_official(
+    translated_game: str | Path, release: str | Path | None = None
+) -> UpdateResult:
+    """Finishes a stopped update; `release` as for `apply_registered_original`."""
     game = Path(translated_game).expanduser().resolve()
     status = inspect_repository(game)
     if status.repo_root and not status.pending_cherry_pick and status.asset_update_applied:
         # The update stopped once the translation had it; its assets remain.
-        return apply_registered_original(game)
+        return apply_registered_original(game, release=release)
     if not status.repo_root or not status.pending_cherry_pick:
         raise GitWorkflowError("There is no pending cherry-pick to continue")
     _configure_exact_tree_repo(status.repo_root)
@@ -3375,7 +3447,7 @@ def continue_with_official(translated_game: str | Path) -> UpdateResult:
     result = UpdateResult(
         status.repo_root, original_commit, translated_commit, version, won
     )
-    return _complete_pending_asset_plan(game, result)
+    return _complete_pending_asset_plan(game, result, release)
 
 
 def abort_update(translated_game: str | Path) -> RepositoryStatus:

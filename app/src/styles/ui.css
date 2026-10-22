@@ -668,8 +668,28 @@ pre {
 .feedback.error {
   color: var(--color-error-text);
 }
+/* The mark leads the first line and hangs outside the text, so wrapped lines
+   start under the words, not under the mark. */
+.feedback
+  > .expandable-text--inline
+  > .expandable-text-content:has(> .feedback-mark) {
+  --mark-inset: calc(var(--icon-size-small) + var(--space-2));
+  padding-inline-start: var(--mark-inset);
+  text-indent: calc(-1 * var(--mark-inset));
+}
+/* An expanded result is inline text, which takes no indent; the clamped
+   excerpt is already a block. */
+.feedback
+  > .expandable-text--inline
+  > .expandable-text-content:has(> .feedback-mark):not(
+    .expandable-text-content--clamped
+  ) {
+  display: block;
+}
 .feedback .feedback-mark {
   display: inline-block;
+  inline-size: var(--icon-size-small);
+  block-size: auto;
   margin-inline-end: var(--space-2);
   vertical-align: middle;
 }

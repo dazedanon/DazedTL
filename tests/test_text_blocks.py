@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from dazedtl.translation import file_lines
 from util import rpgmaker_blocks as blocks
 from util.rpgmaker_markers import comment_markers, data_plugins, game_plugins
 from util.rpgmaker_rewrap import Layout, fit_document, wrap_help
@@ -29,6 +30,24 @@ def choosing(help_rows, face="Actor1"):
 
 
 class TextBlockTests(unittest.TestCase):
+    def test_a_line_left_in_japanese_shows_its_japanese_as_its_source(self):
+        # The engine keeps no `_original` for text a model gave back as it
+        # was, so the live text is its own source, with a speaker's name.
+        speaker = command(101, ["", 0, 0, 2, "Traveler"], _original="旅人")
+        listed = [
+            speaker,
+            command(401, ["まだ訳せない。"]),
+            command(101, ["", 0, 0, 2, ""]),
+            command(401, ["え？"]),
+            command(0, []),
+        ]
+        rows = file_lines.left(
+            "CommonEvents.json", [None, {"list": listed}], "dialogue", frozenset()
+        )
+        self.assertEqual(
+            [row["source"] for row in rows], ["旅人\nまだ訳せない。", "え？"]
+        )
+
     def test_help_translated_before_rows_were_recorded_leaves_the_games_rows(self):
         # 2.24.0 inserted a row for a long line and wrote no record of it;
         # "(1/3)" and the blank row are the game's own.

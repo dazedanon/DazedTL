@@ -72,6 +72,16 @@ class Line(NamedTuple):
             return ((self.texts[0], self.sources[0] if self.sources else None),)
         return tuple((text, None) for text in self.texts)
 
+    def shown_source(self) -> str:
+        """The Japanese a person compares the line with: each sent text's
+        source, else the text itself, which is its own source while the engine
+        keeps none (util/source_text)."""
+        shown = (
+            source if source and source.strip() else text
+            for text, source in self.sent()
+        )
+        return "\n".join(value for value in shown if value.strip())
+
 
 def _resolve(document: Any, path: tuple) -> Any:
     for part in path:
@@ -444,7 +454,7 @@ def left(
             {
                 "location": _pointer(line.paths[0]),
                 "text": "\n".join(text for text in line.texts if text),
-                "source": "\n".join(line.sources),
+                "source": line.shown_source(),
                 "reason": "note"
                 if found == "note"
                 else "help"
