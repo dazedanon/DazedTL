@@ -3,6 +3,12 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.32.0] - 2026-10-22
+
+### Changed
+
+- **Settings:** Send to your phone shows a code Android phones scan with the camera to connect ntfy, and new phone topics are a few everyday words that are easy to type on an iPhone.
+
 ## [2.31.0] - 2026-10-22
 
 ### Added
@@ -965,6 +971,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.32.0]: https://github.com/dazedanon/DazedTL/compare/v2.31.0...v2.32.0
 [2.31.0]: https://github.com/dazedanon/DazedTL/compare/v2.30.0...v2.31.0
 [2.30.0]: https://github.com/dazedanon/DazedTL/compare/v2.29.0...v2.30.0
 [2.29.0]: https://github.com/dazedanon/DazedTL/compare/v2.28.0...v2.29.0
