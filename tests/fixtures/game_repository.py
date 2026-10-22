@@ -774,7 +774,10 @@ with write_game(kept, pack=False, summary="Save Line widths", stage="Context"):
     save_game_wrap_widths(kept, {**used, "width": 44})
 updates = []
 guided = SimpleNamespace(
-    record=lambda _id: (None, {"id": "native", "revision": 3, "widths": {}}),
+    record=lambda _id: (
+        None,
+        {"id": "native", "revision": 3, "widths": {}, "source": str(kept)},
+    ),
     backend=SimpleNamespace(
         workflows=SimpleNamespace(
             folder=lambda _id: texts, update=lambda *call: updates.append(call)
@@ -786,6 +789,15 @@ checkpoint_records.go_back(records, before_widths)
 for _ in range(2):
     Guided.restored_widths(guided, "project")
 assert updates == [("native", 3, {"widths": used})], updates
+# Widths saved after the restore stay the project's.
+with write_game(kept, pack=False, summary="Save Line widths", stage="Context"):
+    save_game_wrap_widths(kept, {**used, "width": 44})
+checkpoint_records.go_back(records, before_widths)
+save_game_wrap_widths(kept, {**used, "width": 50})
+Guided.restored_widths(guided, "project")
+assert len(updates) == 1, updates
+assert not checkpoint_records.restored_widths(texts)
+git(kept, "checkout", "--", ".")
 # A batch that wrote every file but whose write then failed, here at its
 # checkpoint, as a failed pack or a stop also leave it, made no checkpoint and
 # kept no copies; History once had no way to undo it.

@@ -292,8 +292,13 @@ class Guided:
         widths = checkpoint_records.restored_widths(folder)
         if widths is None:
             return
+        from util.game_settings import game_wrap_widths
+
         try:
-            if widths != native["widths"]:
+            # Widths saved since the restore are the game's now.
+            if widths != native["widths"] and widths == game_wrap_widths(
+                native["source"]
+            ):
                 self.backend.workflows.update(
                     native["id"], native["revision"], {"widths": widths}
                 )
