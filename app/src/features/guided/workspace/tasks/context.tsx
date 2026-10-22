@@ -251,13 +251,13 @@ export function layoutView(w: GuidedWorkspace): TaskView {
     action,
     discovery,
     widthsDirty,
-    save,
     disabled,
     advance,
     feedback,
     copyTask,
     widths,
     discardWidths,
+    saveOptions,
     textFit,
     handoff,
     localOperation,
@@ -376,7 +376,8 @@ export function layoutView(w: GuidedWorkspace): TaskView {
     textFit.saving();
     void action.run(
       async () => {
-        await save();
+        // A fit that failed or was stopped starts again from the same widths.
+        await saveOptions(textFit.stopped);
         const current = await api.guided.context(project.id, true);
         if (current.layoutMessage) throw new Error(current.layoutMessage);
         await api.guided.reviewContext(
@@ -392,7 +393,8 @@ export function layoutView(w: GuidedWorkspace): TaskView {
   };
   const pending = widthsDirty || !!discovery.layoutMessage;
   // Saving widths writes the game's settings, which the checkout may refuse.
-  const refused = pending ? checkoutRefusal(translation) : "";
+  const refused =
+    pending || textFit.stopped ? checkoutRefusal(translation) : "";
   const saved = feedback("save-options", "Saving line widths…");
   // A fit that finished says what it rewrapped, one running shows pending
   // and one that failed shows as its job.
