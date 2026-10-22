@@ -1501,6 +1501,14 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
             ):
                 raise ValueError("Review a completed official-update preview first.")
             arguments = {**preview["arguments"], "preview": previous["result"]}
+        if action in {"version_apply", "version_continue"}:
+            # A VX Ace game's data is packed once its update completes, which
+            # saves the packing receipt there.
+            folder = checkpoint_records.publications(
+                self.settings.adapter, self.projects.get(project_id)
+            )
+            if folder is not None:
+                extra = {**(extra or {}), "publications": str(folder)}
         if action == "package":
             self.sync_images(project_id)
             progress = self.engine.progress(project.root, selected, verify=True)

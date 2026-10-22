@@ -143,14 +143,18 @@ _BLANK_LINES_BEFORE_LEN_BLOCK = re.compile(
 )
 # The files describing a game's repository, which every commit of it holds.
 GAME_REPOSITORY_METADATA = (".gitignore", ".gitattributes", "README.md")
-# The portable files are in a game's Git history and remotes but never in
-# what players download: `git archive`, which builds a patch's ZIP and the
-# forges' downloads GameUpdate applies, leaves them out.
-GAME_TOOL_GITATTRIBUTES_RULE = "/.dazedtl export-ignore"
-GAME_TOOL_GITATTRIBUTES_BLOCK = (
-    "# DazedTL's glossary, settings and skills stay out of players' downloads.\n"
-    + GAME_TOOL_GITATTRIBUTES_RULE
-    + "\n"
+# DazedTL's own files a game's Git history and remotes keep but players never
+# download: the portable files, and a VX Ace game's ace_json, the text
+# DazedTL edits and packs into Data, which the game never reads. `git
+# archive`, which builds a patch's ZIP and the forges' downloads GameUpdate
+# applies, leaves them out.
+GAME_TOOL_FOLDERS = (GAME_METADATA_RELATIVE.as_posix(), "ace_json")
+GAME_TOOL_GITATTRIBUTES_RULES = tuple(
+    f"/{folder} export-ignore" for folder in GAME_TOOL_FOLDERS
+)
+GAME_TOOL_GITATTRIBUTES_COMMENT = (
+    "# DazedTL's glossary, settings and skills, and VX Ace's ace_json, stay out"
+    " of players' downloads.\n"
 )
 
 _ROOT_DATA_FILES = (
@@ -368,14 +372,25 @@ def portable_game_files(game_root: str | Path) -> list[str]:
     )
 
 
+def is_game_tool_file(relative: str) -> bool:
+    """Whether a game-relative path is one of DazedTL's own files that players
+    never download."""
+    folder, separator, _name = relative.partition("/")
+    return bool(separator) and folder in GAME_TOOL_FOLDERS
+
+
 def game_tool_gitattributes_text(existing: str) -> str:
-    """Return a game's .gitattributes with the rule keeping the portable files
-    out of archives, adding it once."""
-    if GAME_TOOL_GITATTRIBUTES_RULE in {line.strip() for line in existing.splitlines()}:
+    """Return a game's .gitattributes with the rules keeping DazedTL's own
+    files out of archives, adding each once."""
+    present = {line.strip() for line in existing.splitlines()}
+    missing = [rule for rule in GAME_TOOL_GITATTRIBUTES_RULES if rule not in present]
+    if not missing:
         return existing
     if existing and not existing.endswith("\n"):
         existing += "\n"
-    return existing + GAME_TOOL_GITATTRIBUTES_BLOCK
+    if len(missing) == len(GAME_TOOL_GITATTRIBUTES_RULES):
+        existing += GAME_TOOL_GITATTRIBUTES_COMMENT
+    return existing + "".join(rule + "\n" for rule in missing)
 
 
 def game_metadata_dir(game_root: str | Path, *, create: bool = False) -> Path:

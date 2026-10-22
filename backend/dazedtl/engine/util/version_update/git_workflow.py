@@ -28,6 +28,7 @@ import jsbeautifier
 
 from util import system
 from util.paths import (
+    GAME_REPOSITORY_METADATA,
     ensure_game_tool_gitignore,
     game_tool_gitattributes_text,
     is_portable_game_file,
@@ -2520,6 +2521,80 @@ def _preserve_unbased_translation_assets(
         return replace(build, tree=tree), tuple(sorted(preserved))
     finally:
         system.unlink(index_name, ignore_errors=True)
+
+
+def original_lacks(game_root: str | Path) -> tuple[str, ...]:
+    """The game files the translation branch holds that the original branch
+    lacks, as game-relative paths: files a checkpoint let into the patch
+    after its baseline, such as a VX Ace game's ace_json, and files the
+    translation added. Repository metadata and DazedTL's portable files are
+    each branch's own."""
+    status = inspect_repository(Path(game_root).expanduser().resolve())
+    if not status.repo_root or not status.original_commit or not status.translation_commit:
+        return ()
+    original = _tree_files(status.repo_root, status.original_commit, status.game_prefix)
+    translated = _tree_files(status.repo_root, status.translation_commit, status.game_prefix)
+    lacking = (_display_path(path, status.game_prefix) for path in set(translated) - set(original))
+    return tuple(
+        sorted(
+            path
+            for path in lacking
+            if path not in GAME_REPOSITORY_METADATA and not is_portable_game_file(path)
+        )
+    )
+
+
+def hold_in_original(game_root: str | Path, files: Mapping[str, tuple[str, str]]) -> str | None:
+    """Adds `files`, the original game's (mode, blob) of files the original
+    branch lacks, to that branch as one commit of its version. An update
+    compares the release and the translation with this branch, so a file it
+    lacks reads as one the translation added, and the release's copy of it
+    then replaces the translation's. Returns the commit, or None when the
+    branch already holds them."""
+    game = Path(game_root).expanduser().resolve()
+    status = inspect_repository(game)
+    if not status.repo_root or not status.original_commit:
+        raise GitWorkflowError("Register the original branch before adding to it")
+    repo, prefix = status.repo_root, status.game_prefix
+    held = _tree_files(repo, status.original_commit, prefix)
+    lines = [
+        f"{mode} {blob}\t{_prefixed(prefix, path)}"
+        for path, (mode, blob) in sorted(files.items())
+        if _prefixed(prefix, path) not in held
+    ]
+    if not lines:
+        return None
+    _reject_original_checked_out_elsewhere(repo)
+    index_name, index_env = _temporary_index()
+    try:
+        _run_git(repo, "read-tree", status.original_commit, env=index_env)
+        _run_git(
+            repo,
+            "update-index",
+            "--index-info",
+            input_text="\n".join(lines) + "\n",
+            env=index_env,
+        )
+        tree = _run_git(repo, "write-tree", env=index_env).stdout.strip()
+    finally:
+        system.unlink(index_name, ignore_errors=True)
+    commit = _commit_tree(
+        repo,
+        tree,
+        _message(
+            "original: hold the original files the translation's patch holds",
+            status.original_version or "",
+        ),
+        (status.original_commit,),
+    )
+    _run_git(
+        repo,
+        "update-ref",
+        f"refs/heads/{ORIGINAL_BRANCH}",
+        commit,
+        status.original_commit,
+    )
+    return commit
 
 
 def _replacement_outcome(

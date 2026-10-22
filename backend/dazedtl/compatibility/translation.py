@@ -761,8 +761,27 @@ class TranslationEngine:
 
     def rpgmaker_prepare_release(self, staged, options, log=None):
         """Prepares a new version's copy staged for a game update, which is
-        not the game, as the game's files were."""
-        return self._prepare(staged, options, None, log)
+        not the game, as the game's files were. A VX Ace release is
+        converted as Set up converts the game, setting its archive aside,
+        and the exports formatting changes are packed into its Data, as
+        preparing the game packs them."""
+        from util.ace import actions
+        from util.project_preparation import rpgmaker_layout
+
+        from dazedtl.translation.release import packing_inputs, packing_target
+
+        log = log or (lambda _line: None)
+        layout = rpgmaker_layout(staged)
+        if not layout or layout["engine"] != "ACE":
+            return self._prepare(staged, options, None, log)
+        actions.run(Path(staged), "ace_extract", log)
+        native = {"source": str(staged), "data": str(layout["data_path"])}
+        before = packing_inputs(native)
+        result = self._prepare(staged, options, None, log)
+        after = packing_inputs(native)
+        if changed := {packing_target(n) for n in after if before.get(n) != after[n]}:
+            actions.run(Path(staged), "ace_pack", log, only=changed)
+        return result
 
     def _prepare(self, source, options, data_path, log):
         from desktop.backend.cli_environment import public_values
@@ -1070,7 +1089,7 @@ class TranslationEngine:
         from util.ace.actions import patch_archive
         from util.gameupdate_config import CONFIG
         from util.len_patch_scope import patch_manifest, patch_refusal
-        from util.paths import is_portable_game_file
+        from util.paths import GAME_TOOL_FOLDERS, is_game_tool_file
         from util.release_package import ReleasePackageError, _release_patch_sha
         from util.version_update.git_workflow import _run_git
 
@@ -1089,9 +1108,10 @@ class TranslationEngine:
         tracked = set(
             _run_git(source, "ls-files", "-z").stdout.rstrip("\0").split("\0")
         )
-        # The game's glossary, settings and skills are committed, but the
-        # .gitattributes rule committed with them keeps them out of the ZIP.
-        portable = set(filter(is_portable_game_file, tracked))
+        # DazedTL's own files, such as the game's glossary and a VX Ace
+        # game's ace_json, are committed but never reach players, whatever
+        # an older .gitattributes says.
+        own = set(filter(is_game_tool_file, tracked))
         missing = sorted(set(patch_manifest(manifest)) - tracked)
         if missing:
             raise ValueError(
@@ -1099,7 +1119,7 @@ class TranslationEngine:
                 + ", ".join(missing[:8])
                 + "."
             )
-        if refusal := patch_refusal(source, tracked - portable, original_names):
+        if refusal := patch_refusal(source, tracked - own, original_names):
             raise ValueError(refusal)
         destination.mkdir(parents=True, exist_ok=True)
         output = destination / (status["translation_commit"] + ".zip")
@@ -1122,7 +1142,10 @@ class TranslationEngine:
                 "HEAD",
                 "--",
                 ".",
-                *(":(exclude)" + path for path in sorted(omitted)),
+                *(
+                    ":(exclude)" + path
+                    for path in [*GAME_TOOL_FOLDERS, *sorted(omitted)]
+                ),
             )
             # An encrypted game reads only its archive, so the patch carries
             # the archive rebuilt with the translated files.
@@ -1148,7 +1171,7 @@ class TranslationEngine:
             system.unlink(temporary, ignore_errors=True)
             system.unlink(rebuilt, ignore_errors=True)
         packaged = sorted(
-            (tracked - omitted - portable) | ({game_archive} if game_archive else set())
+            (tracked - omitted - own) | ({game_archive} if game_archive else set())
         )
         write_json(
             output.with_suffix(".json"),

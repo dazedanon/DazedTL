@@ -385,9 +385,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         if patch and kind == "MVMZ":
             engine.rpgmaker_prepare_patch(staged, source, log=progress)
             prepared = True
-        elif not patch and (
-            kind == "MVMZ" or kind == "ACE" and (staged / "ace_json").is_dir()
-        ):
+        elif not patch and kind in {"MVMZ", "ACE"}:
             engine.rpgmaker_prepare_release(staged, options, log=progress)
             prepared = True
         result = {
@@ -423,6 +421,10 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             state,
             allow_pending=operation in {"continue", "abort"},
         )
+        if operation in {"preview", "apply"}:
+            originals.hold_in_original(
+                workspace, job["project_id"], source, state, stopped
+            )
         if operation == "apply":
             # Readers take the prepared record of the version the `original`
             # branch is at, so this one counts once the update completes. A
@@ -453,11 +455,15 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
                     progress=progress,
                 )
             state["incoming_version"] = arguments["version"]
+            # Finishing it, maybe after its conflicts, reads the release.
+            state["incoming_release"] = arguments["official"]
             write_json(lifecycle_path(workspace, job["project_id"]), state)
         result = engine.version(source, operation, arguments)
         if operation in {"apply", "continue"}:
             state.pop("delivery", None)
             if result.get("complete"):
+                from dazedtl.compatibility.guided import finish_ace_update
+
                 # An update applied before its record was kept in Git saved
                 # a backup of its release instead.
                 if "incoming_source" in state:
@@ -466,9 +472,17 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
                     "version": state.pop("incoming_version", ""),
                     "complete": True,
                 }
+                write_json(lifecycle_path(workspace, job["project_id"]), state)
+                finish_ace_update(
+                    source,
+                    state.pop("incoming_release", None),
+                    Path(plan["publications"]) if plan.get("publications") else None,
+                    progress,
+                )
         elif operation == "abort":
             state.pop("incoming_source", None)
             state.pop("incoming_version", None)
+            state.pop("incoming_release", None)
     elif action == "start_over":
         from .start_over import run as start_over
 

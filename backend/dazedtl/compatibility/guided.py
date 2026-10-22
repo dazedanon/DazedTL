@@ -1,6 +1,7 @@
 """Engine-owned guided capabilities, kept behind the migration boundary."""
 
 import re
+import shutil
 from pathlib import Path
 
 from dazedtl import system
@@ -443,7 +444,7 @@ def runtime_files(source):
         patch_manifest,
         updater_config,
     )
-    from util.paths import GAME_REPOSITORY_METADATA
+    from util.paths import GAME_REPOSITORY_METADATA, is_game_tool_file
     from util.project_preparation import rpgmaker_layout
     from util.version_update.git_workflow import _run_git
 
@@ -473,11 +474,16 @@ def runtime_files(source):
     # with the main.js line loading them.
     paths.extend(root / name for name in dazedtl_files(root))
     # Keep an existing reviewed patch's images, fonts and other runtime assets
-    # when the user changes workflow. Repository metadata is handled by Git.
+    # when the user changes workflow. Repository metadata is handled by Git,
+    # and DazedTL's own files, such as ace_json, never reach players.
     tracked = _run_git(root, "ls-files", "-z", check=False)
     if tracked.returncode == 0:
         for relative in tracked.stdout.split("\0"):
-            if relative and relative not in GAME_REPOSITORY_METADATA:
+            if (
+                relative
+                and relative not in GAME_REPOSITORY_METADATA
+                and not is_game_tool_file(relative)
+            ):
                 path = root / relative
                 if path.is_file():
                     paths.append(path)
@@ -594,6 +600,45 @@ def convert_ace(root, log, folder=None):
         # A data file the game lacks has JSON but nothing to pack into;
         # without a receipt, writes pack only what they touch.
         log("No packing receipt was saved: " + str(error))
+
+
+def finish_ace_update(root, release, folder, log):
+    """Finishes a VX Ace game's update to `release`, the prepared copy it
+    came from. The release's archive, which preparing it set aside as Set up
+    sets the game's aside, replaces the game's, so patches carry the new
+    version's archive rebuilt. Data is then packed from the merged ace_json:
+    Git can't merge a data file the translation and the release both
+    changed, so the update takes the release's, and the packing receipt in
+    the Guided workspace `folder` is saved again. A release that was not
+    converted, such as a patch an assistant has yet to prepare, brought in
+    Data newer than the game's ace_json, so nothing is packed."""
+    from util.ace import actions, rgssad
+
+    from .game_write import write_game
+
+    root = Path(root)
+    if not (release and ace_converted(root) and ace_converted(release)):
+        return
+    archive = actions.original_archive(Path(release))
+    if archive is not None and archive.is_file():
+        kept = root / actions.ORIGINALS
+        kept.mkdir(parents=True, exist_ok=True)
+        with system.staging_folder(kept, ".incoming-") as temporary:
+            copy = Path(temporary) / archive.name
+            shutil.copyfile(archive, copy)
+            for old in rgssad.archives(kept):
+                if old.name != archive.name:
+                    system.unlink(old)
+            system.replace(copy, kept / archive.name)
+        log(f"Kept {archive.name} of the new version for patches")
+    try:
+        with write_game(root, folder, log=log, action="ace_pack") as game:
+            game.repack()
+    except InterruptedError:
+        raise
+    except (OSError, ValueError, KeyError) as error:
+        # The update stands; Release's Pack outside edits packs it later.
+        log(f"The game's data could not be packed: {error}")
 
 
 def ace_blocked(source):

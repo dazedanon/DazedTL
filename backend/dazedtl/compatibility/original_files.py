@@ -442,9 +442,9 @@ def write(root, entries: Iterable[tuple[str, str, int]], target, stopped):
             system.unlink(temporary, missing_ok=True, ignore_errors=True)
 
 
-def identities(root, folder, names, stopped=lambda: False):
-    """The blob each file of `folder` named in `names` would be, without
-    keeping it."""
+def identities(root, folder, names, stopped=lambda: False, *, keep=False):
+    """The blob each file of `folder` named in `names` would be, kept in the
+    game's Git only with `keep`."""
     names = list(names)
     result = {}
     for start in range(0, len(names), _CHUNK):
@@ -455,6 +455,7 @@ def identities(root, folder, names, stopped=lambda: False):
         hashed = _git(
             root,
             "hash-object",
+            *(["-w"] if keep else []),
             "--no-filters",
             "--stdin-paths",
             input_text=listed,

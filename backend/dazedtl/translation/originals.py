@@ -48,6 +48,22 @@ class Original:
         """The content identities of files of the game at `root`."""
         raise NotImplementedError
 
+    def blobs(self, root, names, stopped=lambda: False):
+        """The (mode, blob) of each of `names`, kept in the game's Git at
+        `root`."""
+        names = [name for name in names if name in self.files]
+        with self.materialized(names, stopped) as folder:
+            kept = original_files.identities(root, folder, names, stopped, keep=True)
+            return {
+                name: (
+                    "100755"
+                    if (Path(folder) / name).stat().st_mode & stat.S_IXUSR
+                    else "100644",
+                    blob,
+                )
+                for name, blob in kept.items()
+            }
+
     @contextmanager
     def materialized(self, files=None, stopped=lambda: False):
         """The saved files, or those of `files` it holds, as normal files in
@@ -71,6 +87,10 @@ class _Recorded(Original):
 
     def peek(self, name, size):
         return original_files.peek(self.root, self.entries[name][1], size)
+
+    def blobs(self, root, names, stopped=lambda: False):
+        # The record's blobs are the game's own Git objects already.
+        return {name: self.entries[name][:2] for name in names if name in self.entries}
 
     def extract(self, names, target, stopped=lambda: False):
         original_files.write(
@@ -230,6 +250,29 @@ def prepared(workspace, project_id, root, state=None, *, or_found=True):
         or _saved(workspace, project_id, root, state.get("prepared_source"))
         or (found(workspace, project_id, root, state) if or_found else None)
     )
+
+
+def hold_in_original(workspace, project_id, root, state=None, stopped=lambda: False):
+    """Gives the `original` branch the original of each file the translation
+    branch holds that it lacks, such as the ace_json a VX Ace game's
+    checkpoints let into the patch, from the game as its current version's
+    baseline was made, so a game update merges the translation of those
+    files instead of replacing it with the release's
+    (`git_workflow.hold_in_original`). Returns the commit, or None."""
+    from util.version_update.git_workflow import hold_in_original as hold
+    from util.version_update.git_workflow import original_lacks
+
+    root = Path(root)
+    lacking = original_lacks(root)
+    original = (
+        prepared(workspace, project_id, root, state, or_found=False)
+        if lacking
+        else None
+    )
+    if original is None:
+        return None
+    files = original.blobs(root, lacking, stopped)
+    return hold(root, files) if files else None
 
 
 def saved(workspace, project_id, root, state=None):

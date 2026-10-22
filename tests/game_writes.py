@@ -56,6 +56,9 @@ OUTSIDE = {
     "compatibility/original_files.py:write": "originals",
     # Save a copy writes a checkpoint's game into a new folder outside it.
     "compatibility/checkpoint_history.py:save_copy": "Checkpoints",
+    # A game update keeps its own commits, and copies the release's files
+    # outside the patch beside them.
+    "compatibility/translation.py:TranslationEngine.version": "game updates",
 }
 # Whether each folder seen is shaped like a game.
 _games = {}
@@ -154,6 +157,10 @@ def _hook(event, args):
     active = writing.get()
     root = _game(path)
     if root is None or any(str(parent) in active for parent in path.parents):
+        return
+    # A release staged for a game update is a copy of the new version in the
+    # workspace's translation/projects/<project>/incoming, never the game.
+    if root.parent.name == "incoming" and root.parents[2].name == "projects":
         return
     relative = path.relative_to(root).as_posix()
     if relative == ".git" or relative.startswith(".git/"):

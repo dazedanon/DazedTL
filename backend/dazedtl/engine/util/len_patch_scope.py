@@ -268,8 +268,10 @@ def grow_scope(repo: Path, tracked: Collection[str], added: Iterable[str]) -> tu
     """Lets `added`, files a patch-scoped translation branch lacks, into its
     patch: the .gitignore patch block allows them besides what Git tracks,
     and the inventory of the original's files Git leaves out drops them.
-    Returns the files let in and the rule files changed; a branch without a
-    patch block, which every file can join, lets in none."""
+    Returns the files let in and the rule files changed, .gitattributes too
+    when it lacks a rule keeping DazedTL's own files, such as ace_json, out
+    of players' downloads; a branch without a patch block, which every file
+    can join, lets in none."""
     ignore = repo / ".gitignore"
     text = ignore.read_text(encoding="utf-8", errors="surrogateescape") if ignore.is_file() else ""
     if _BEGIN not in text:
@@ -285,8 +287,15 @@ def grow_scope(repo: Path, tracked: Collection[str], added: Iterable[str]) -> tu
         return [], []
     scope = {p for p in tracked if not is_portable_game_file(p)} | set(accepted) | repository_files(repo)
     updated = scope_ignore(text, scope)
+    rules = []
     if updated != text:
         _write_atomic(ignore, updated)
+        rules.append(".gitignore")
+    attributes = repo / ".gitattributes"
+    existing = attributes.read_text(encoding="utf-8", errors="surrogateescape") if attributes.is_file() else ""
+    if (kept := game_tool_gitattributes_text(existing)) != existing:
+        _write_atomic(attributes, kept)
+        rules.append(".gitattributes")
     inventory = _asset_state_path(repo, "", "official-assets")
     if inventory.is_file():
         document = json.loads(inventory.read_text(encoding="utf-8"))
@@ -294,7 +303,7 @@ def grow_scope(repo: Path, tracked: Collection[str], added: Iterable[str]) -> tu
         if isinstance(files, dict) and files.keys() & set(accepted):
             document["files"] = {p: row for p, row in files.items() if p not in accepted}
             _write_json_atomic(inventory, document)
-    return accepted, [".gitignore"] if updated != text else []
+    return accepted, rules
 
 
 def _blob_metadata(repo: Path, objects: set[str]) -> dict[str, tuple[str, int]]:

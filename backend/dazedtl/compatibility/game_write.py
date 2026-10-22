@@ -155,6 +155,10 @@ def _pack(native, folder, game, log):
     from .guided import pack_ace
 
     if game.everything:
+        # Without a Guided workspace, which keeps the packing receipt, it
+        # packs every export as it is.
+        if folder is None:
+            return actions.run(Path(native["source"]), "ace_pack", log)
         return pack_ace(native, folder, log)
     touched = [name for name in game.touched if name.startswith("ace_json/")]
     # A write that watched its exports lets the packing receipt find what
