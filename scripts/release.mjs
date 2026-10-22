@@ -187,9 +187,9 @@ export async function requireCI(commit, push) {
       throw new Error(`Push dev to GitHub so CI can test ${short} first.`);
     step("git", ["push", remote, "dev"]);
   }
-  const wait = (attempt = 1) =>
-    waitForCI({ sha: commit, repository, read, attempt, log: console.log });
-  let result = await wait();
+  const wait = (/** @type {{ id: number, attempt: number } | null} */ rerun) =>
+    waitForCI({ sha: commit, repository, read, rerun, log: console.log });
+  let result = await wait(null);
   if (firstFailure(result.run)) {
     console.log(
       `CI failed for ${short} (${result.failed.join(", ")}); rerunning the failed jobs once.`,
@@ -197,7 +197,10 @@ export async function requireCI(commit, push) {
     await githubWriter({ token })(
       `repos/${repository}/actions/runs/${result.run.id}/rerun-failed-jobs`,
     );
-    result = await wait(2);
+    result = await wait({
+      id: result.run.id,
+      attempt: (result.run.run_attempt ?? 1) + 1,
+    });
   }
   if (result.ok) {
     console.log(`CI passed for ${short}.`);
@@ -208,7 +211,8 @@ export async function requireCI(commit, push) {
     [
       `CI ${result.run.conclusion === "failure" ? "failed" : `ended as ${result.run.conclusion}`} for ${short}${result.failed.length ? `: ${result.failed.join(", ")}` : ""}.`,
       result.run.html_url,
-      "Fix it on dev, or rerun it there if it failed for an unrelated reason, then release again.",
+      `Read the log with: gh run view ${result.run.id} --repo ${repository} --log-failed`,
+      "This release owns the red build: fix it forward on dev or revert the commit that broke it, then release again.",
     ].join("\n"),
   );
 }

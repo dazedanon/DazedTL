@@ -103,8 +103,9 @@ export async function failedJobs(read, repository, run) {
 /**
  * Waits for the CI run of `sha`, following a newer run on the same branch
  * when a later push supersedes it. Resolves `{ ok, run, failed }`. After a
- * rerun, `attempt` names the attempt to wait for, since GitHub can still
- * answer with the earlier attempt's result for a moment.
+ * rerun, `rerun` names the run and the attempt to wait for: that run is read
+ * by its id, never looked up again, and its earlier attempt's result, which
+ * GitHub can still give for a moment, is not taken as the answer.
  */
 export async function waitForCI({
   sha,
@@ -116,13 +117,16 @@ export async function waitForCI({
   interval = 30_000,
   startTimeout = 5 * 60_000,
   timeout = 90 * 60_000,
-  attempt = 1,
+  rerun = null,
   log = () => {},
 }) {
   const started = now();
+  /** @type {(item: any) => boolean} */
   const done = (item) =>
-    item?.status === "completed" && (item.run_attempt ?? 1) >= attempt;
-  let run = null;
+    item?.status === "completed" &&
+    (item.id !== rerun?.id || (item.run_attempt ?? 1) >= rerun.attempt);
+  /** @type {any} */
+  let run = rerun ? { id: rerun.id, status: "queued" } : null;
   let shown = "";
   for (;;) {
     if (!done(run)) {
@@ -186,7 +190,7 @@ export async function waitForCI({
         reason: `CI did not finish within ${timeout / 60000} minutes.`,
       };
     const status = run
-      ? `${run.status.replace("_", " ")}: ${run.html_url}`
+      ? `${run.status.replace("_", " ")}${run.html_url ? `: ${run.html_url}` : ""}`
       : "waiting to start";
     if (status !== shown) log(`CI for ${sha.slice(0, 7)} is ${status}`);
     shown = status;
