@@ -1634,8 +1634,12 @@ def update(
     source = root / json_dir
     if not source.is_dir():
         raise ConversionError("The " + json_dir + " folder was not found.")
-    target = Path(out) if out else folder
-    target = target if target.is_absolute() else root / target
+    if not out:
+        target = folder
+    elif Path(out).is_absolute():
+        target = Path(out)
+    else:
+        target = root / out
     in_place = target.resolve() == folder.resolve()
     target.mkdir(parents=True, exist_ok=True)
     updater = _Updater()
