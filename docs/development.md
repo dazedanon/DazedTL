@@ -72,7 +72,7 @@ Without `--no-lockscreen` it starts locked while your own session is locked, and
 It adds two X displays; set `DISPLAY` to the lower-numbered one, such as `:2` beside `:3`, since KWin keeps the other for its own startup.
 Its stand-in provider, window driver and journey steps are the [test scenarios'](#test-scenarios) own, in [scripts/testkit](../scripts/testkit).
 
-[CI](../.github/workflows/ci.yml) runs the build checks, the behavior tests, the [previous-release QA check](#previous-release-qa-check), the live test, the upgrade test from the latest earlier stable release and every [test scenario](#test-scenarios) on Windows and Linux for every pushed branch, every pull request and once a week, and attaches their logs to the run.
+[CI](../.github/workflows/ci.yml) runs the build checks, the behavior tests, the [previous-release QA check](#previous-release-qa-check), the live test, the upgrade test from the latest earlier stable release and every [test scenario](#test-scenarios) on Windows and Linux for every push to `dev` and `main`, every release tag and pull request, once a week and when run by hand, and attaches their logs to the run.
 Its jobs share [one setup step](../.github/actions/setup/action.yml) that starts from the install an earlier run cached.
 GitHub's Windows images include the Visual C++ runtime and other tools a fresh Windows lacks, so a change to what setup downloads or unpacks still needs a check on a fresh Windows.
 
@@ -164,10 +164,12 @@ Test updater changes with both `patch.ps1` on Windows and `patch.sh` on Linux; t
 ## Branches and releases
 
 Work on `dev`; `main` always holds the latest stable release, so a ZIP of `main` from any mirror is a release.
-From a clean `dev`, `node scripts/release.mjs 2.0.1` runs the tests and build checks, fast-forwards `main` to `dev`, sets the version, files the [release notes](#release-notes), signs a manifest of every file, commits and tags `v2.0.1`, pushes `main` and the tag to every mirror and fast-forwards `dev` again.
+From a clean `dev`, `node scripts/release.mjs 2.0.1` takes the [landing lock](#landing), runs the tests and build checks, fast-forwards `main` to the `dev` commit CI passed for, sets the version, files the [release notes](#release-notes), signs a manifest of every file, commits and tags `v2.0.1`, pushes `main` and the tag to every mirror and fast-forwards `dev` again.
 Run the [release check](#live-test) on that commit first.
+Release once user-visible work has landed: the session that finished it cuts the release without asking, with no review pass or manual real-game check, since CI on the release commit runs the release scenarios for MZ, MV and VX Ace on Windows and Linux.
+A patch release follows only for a regression players hit.
 Before `main` moves, the release requires [CI](#live-test) to have passed on GitHub for that `dev` commit.
-It pushes `dev` first when GitHub lacks the commit and waits for a run still in progress; a failed or cancelled run stops the release.
+It pushes `dev` first when GitHub lacks the commit and waits for a run still in progress; a first failed attempt gets one rerun of its failed jobs, and a second failure or a cancelled run stops the release.
 A prerelease such as `2.1.0-beta.1` is tagged on `dev` for the Beta channel instead, without waiting for CI, and `--local` stops before pushing.
 The [updater](architecture.md#distribution-and-updates) only accepts tags whose signed manifest matches every file.
 
@@ -183,6 +185,19 @@ git remote set-url --add --push all git@git-ssh.dazedtl.dev:dazed/DazedTL.git
 Releases are signed with a key kept outside the checkout.
 Create it once with `node scripts/release.mjs key`, commit the public key it adds to `release/keys`, and back up the private key: installs reject releases signed by any key they do not trust.
 Set `DAZEDTL_RELEASE_KEY` to keep the private key somewhere else.
+
+### Landing
+
+`node scripts/land.mjs` lands a finished branch on `dev` from its worktree, on Linux or macOS.
+It refuses `dev`, `main` and uncommitted changes, then takes the landing lock, the ref `refs/dazedtl/land-lock` in the shared repository, through Git's compare-and-swap ref updates ([land-lock.mjs](../scripts/land-lock.mjs)).
+Its holder renews it every five minutes; one whose process has gone, or that nobody renewed for 20 minutes, is taken over.
+Under the lock it merges `dev` into the branch, runs the tests and build checks, waits while your own DazedTL runs from the main checkout, and fast-forwards the main checkout's `dev`, which must be checked out there without uncommitted changes to tracked files, never overwriting a file the checkout ignores.
+It then pushes `dev` to each mirror, trying a refused push again a minute later; a mirror that still refuses is reported and the landing still counts.
+In the merge, both sides' [release notes](#release-notes) join under their headings through [changelog.mjs](../scripts/changelog.mjs), and conflicts only in the [generated API contracts](architecture.md#api-changes) are resolved by writing them again; any other conflict stops it with exit code 2.
+
+[CI](#live-test) runs on `dev` after the push, not on the branch; the landing warns when `dev`'s newest run failed but does not wait for CI.
+A run still red is fixed forward or reverted by the session cutting the next release, whose `release.mjs` reruns it once first and holds the landing lock throughout.
+To run CI on a branch before landing, use `gh workflow run CI --ref <branch>` and wait with `ci-wait.mjs`.
 
 ### Release notes
 

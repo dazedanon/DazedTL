@@ -5,6 +5,8 @@ import path from "node:path";
 import test from "node:test";
 import {
   addRelease,
+  mergeNotes,
+  notesTemplate,
   parseChangelog,
   parseNotes,
 } from "../scripts/changelog.mjs";
@@ -93,4 +95,22 @@ test("release notes list every release and count the new ones", (t) => {
   );
   fs.rmSync(path.join(dir, "CHANGELOG.md"));
   assert.deepEqual(notes("2.1.0", "2.0.0"), [[], 0]);
+});
+
+test("parallel branches' notes merge by kind, and a release's filed notes stay filed", () => {
+  const base = "<!-- c -->\n\n### Fixed\n\n- Old.\n";
+  const merged = mergeNotes(
+    base,
+    `${base}- Ours.\n\n### Added\n\n- Our feature.\n`,
+    `${base}- Theirs.\n\n### Added\n\n- Their feature.\n`,
+  );
+  assert.deepEqual(parseNotes(merged), [
+    { kind: "Added", items: ["Their feature.", "Our feature."] },
+    { kind: "Fixed", items: ["Old.", "Theirs.", "Ours."] },
+  ]);
+  // dev released and emptied the notes; the branch adds one line.
+  assert.deepEqual(
+    parseNotes(mergeNotes(base, `${base}- New.\n`, notesTemplate)),
+    [{ kind: "Fixed", items: ["New."] }],
+  );
 });

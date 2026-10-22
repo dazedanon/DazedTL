@@ -44,9 +44,11 @@
   [Checks](docs/development.md#checks) lists what each covers, focused test commands, and the formatter.
 - Run the [live test](docs/development.md#live-test) for changes to setup, launching, updates, file or process handling, or other platform-specific behavior; CI runs it on Windows and Linux.
 - Test every new feature end to end on Linux, as a user would, before reporting it done.
-- Windows CI on the branch must pass before landing: push the branch to GitHub and wait for every job, as the `dazedtl-land` skill does.
+- Land with `node scripts/land.mjs` ([landing](docs/development.md#landing)): it merges `dev`, runs the checks above and fast-forwards `dev` one landing at a time, without waiting for CI.
+  CI, Windows included, runs on `dev` after landing; a run still red is fixed forward or reverted by the session cutting the release, which reruns it once first.
+  To run it on a branch first, push the branch to GitHub and run `gh workflow run CI --ref <branch>`.
   To reproduce a Windows problem, use the [Windows run](docs/development.md#live-test) workflow first.
-  Keep the Windows VM for what CI cannot show: a fresh Windows without the Visual C++ runtime or Git, Defender behavior, real games that need Windows to run, and one real-game run per release.
+  Keep the Windows VM for what CI cannot show: a fresh Windows without the Visual C++ runtime or Git, Defender behavior, and real games that need Windows to run.
 - Reproduce bugs and test features end to end from a [test scenario](docs/development.md#test-scenarios).
   When none fits, add a scenario, game variant or stand-in mode there instead of building a private kit of games, profiles, providers or drivers.
 - UI changes require visual review of affected layouts against the [responsive layout guidance](docs/architecture.md#workflow-and-shared-presentation). Check resizing and reflow where relevant. Exercise long labels/paths and idle, pending, success, and error states; check alignment, text-to-action gaps, clipping, overflow, and redundant status text. Report unverified states.

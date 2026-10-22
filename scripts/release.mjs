@@ -3,7 +3,8 @@
 // release fast-forwards main to dev and commits there, once CI has passed for
 // that commit on GitHub, and files release/notes.md under its version in
 // CHANGELOG.md; a prerelease such as 2.1.0-beta.1 is tagged on dev for the
-// beta channel and leaves the notes pending.
+// beta channel and leaves the notes pending. It holds the landing lock
+// (scripts/land-lock.mjs) throughout, so no landing moves dev meanwhile.
 //
 //   node scripts/release.mjs key               create the signing key, once
 //   node scripts/release.mjs 2.0.0 [--local]   release; --local skips pushing
@@ -12,8 +13,15 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { githubReader, ghToken, waitForCI } from "./ci-wait.mjs";
+import {
+  firstFailure,
+  githubReader,
+  githubWriter,
+  ghToken,
+  waitForCI,
+} from "./ci-wait.mjs";
 import { root } from "./dependencies.mjs";
+import { gitIn, withLock } from "./land-lock.mjs";
 import {
   CHANGELOG,
   NOTES,
@@ -114,7 +122,7 @@ function signingKey() {
  * one mirror match: git@ssh.gitgud.io:DazedAnon/DazedTL.git and
  * https://gitgud.io/DazedAnon/DazedTL both give gitgud.io/dazedanon/dazedtl.
  */
-function repository(url) {
+export function repository(url) {
   const scp = /^[^@/]+@([^:/]+):(.+)$/.exec(url);
   let host = scp?.[1];
   let pathname = scp?.[2];
@@ -164,7 +172,8 @@ function checkRemote() {
  * Requires the CI workflow to have passed on GitHub for `commit`, pushing
  * dev there first when GitHub does not have it, so main only moves to commits
  * whose checks and live tests passed on Windows and Linux. A run still going
- * is waited for; a failed or cancelled one stops the release.
+ * is waited for; a first failed attempt gets one rerun of its failed jobs,
+ * and a second failure or a cancelled run stops the release.
  * @param {string} commit
  * @param {boolean} push
  */
@@ -173,18 +182,28 @@ export async function requireCI(commit, push) {
   if (!site) throw new Error("release/mirrors.json names no GitHub mirror.");
   const repository = new URL(site.url).pathname.replace(/^\/|\.git$/g, "");
   const short = commit.slice(0, 7);
-  const read = githubReader({ token: ghToken(), log: console.log });
+  const token = ghToken();
+  const read = githubReader({ token, log: console.log });
   if (!(await read(`repos/${repository}/commits/${commit}`))) {
     if (!push)
       throw new Error(`Push dev to GitHub so CI can test ${short} first.`);
     step("git", ["push", remote, "dev"]);
   }
-  const result = await waitForCI({
-    sha: commit,
-    repository,
-    read,
-    log: console.log,
-  });
+  const wait = (/** @type {{ id: number, attempt: number } | null} */ rerun) =>
+    waitForCI({ sha: commit, repository, read, rerun, log: console.log });
+  let result = await wait(null);
+  if (firstFailure(result.run)) {
+    console.log(
+      `CI failed for ${short} (${result.failed.join(", ")}); rerunning the failed jobs once.`,
+    );
+    await githubWriter({ token })(
+      `repos/${repository}/actions/runs/${result.run.id}/rerun-failed-jobs`,
+    );
+    result = await wait({
+      id: result.run.id,
+      attempt: (result.run.run_attempt ?? 1) + 1,
+    });
+  }
   if (result.ok) {
     console.log(`CI passed for ${short}.`);
     return;
@@ -194,7 +213,8 @@ export async function requireCI(commit, push) {
     [
       `CI ${result.run.conclusion === "failure" ? "failed" : `ended as ${result.run.conclusion}`} for ${short}${result.failed.length ? `: ${result.failed.join(", ")}` : ""}.`,
       result.run.html_url,
-      "Fix it on dev, or rerun it there if it failed for an unrelated reason, then release again.",
+      `Read the log with: gh run view ${result.run.id} --repo ${repository} --log-failed`,
+      "This release owns the red build: fix it forward on dev or revert the commit that broke it, then release again.",
     ].join("\n"),
   );
 }
@@ -294,7 +314,9 @@ async function release(version, push) {
   step(process.execPath, ["scripts/test.mjs"]);
   step(process.execPath, ["scripts/build.mjs"]);
 
-  if (stable) await requireCI(git("rev-parse", "HEAD"), push);
+  // main moves to exactly the commit whose CI passed.
+  const checked = git("rev-parse", "HEAD");
+  if (stable) await requireCI(checked, push);
   const branch = stable ? "main" : "dev";
   const tag = `v${version}`;
   const touched = [
@@ -315,7 +337,7 @@ async function release(version, push) {
     git("switch", ...(exists ? ["main"] : ["-c", "main"]));
   }
   try {
-    if (stable) git("merge", "--ff-only", "dev");
+    if (stable) git("merge", "--ff-only", checked);
     setVersion(version);
     git("add", "app/package.json", "app/package-lock.json");
     if (stable) {
@@ -427,7 +449,14 @@ if (import.meta.main)
   try {
     const [command] = process.argv.slice(2);
     if (command === "key") createKey();
-    else await release(command ?? "", !process.argv.includes("--local"));
+    // Landings wait until the release has moved dev and main.
+    else
+      await withLock(
+        gitIn(root),
+        { branch: "release", worktree: root },
+        () => release(command ?? "", !process.argv.includes("--local")),
+        { log: console.log },
+      );
   } catch (error) {
     console.error(error instanceof Error ? error.message : error);
     process.exitCode = 1;

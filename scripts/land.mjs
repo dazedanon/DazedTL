@@ -1,0 +1,352 @@
+// Lands a finished branch on dev from its worktree, one landing at a time:
+// merges dev in, runs the tests and build, fast-forwards the main checkout's
+// dev and pushes it to every mirror. CI then runs on dev, and the session that
+// cuts the next release answers for a run still red. Runs on Linux and macOS.
+// See "Landing" in docs/development.md.
+//
+//   node scripts/land.mjs
+//
+// Exits 0 when landed, 1 when refused or a check failed and 2 on a merge
+// conflict.
+import path from "node:path";
+import { spawn, spawnSync } from "node:child_process";
+import { setTimeout as sleep } from "node:timers/promises";
+import {
+  failedJobs,
+  failedRun,
+  ghToken,
+  githubReader,
+  workflow,
+} from "./ci-wait.mjs";
+import { generated } from "./contracts.mjs";
+import { gitIn, withLock } from "./land-lock.mjs";
+import { repository } from "./release.mjs";
+import { mirrors } from "./update.mjs";
+
+const appPoll = 30_000;
+const pushRetry = 60_000;
+const pushTimeout = 5 * 60_000;
+
+/** Whether the user's own DazedTL runs from the main checkout. */
+export function appRunning(
+  /** @type {string} */ main,
+  /** @type {string} */ processes,
+) {
+  const electron = path.join(main, "app", "node_modules", "electron");
+  return processes.split("\n").some((line) => line.includes(electron));
+}
+
+/**
+ * Where each mirror is pushed: the "all" remote's push URL for it, which
+ * holds the SSH address, or else the URL release/mirrors.json names.
+ * @param {{ name: string, url: string }[]} list
+ * @param {string[]} pushUrls
+ */
+export function pushTargets(list, pushUrls) {
+  return list.map((mirror) => ({
+    name: mirror.name,
+    url:
+      pushUrls.find((url) => repository(url) === repository(mirror.url)) ??
+      mirror.url,
+  }));
+}
+
+const tail = (/** @type {string} */ text, lines = 40) =>
+  text.trimEnd().split("\n").slice(-lines).join("\n");
+const lines = (/** @type {string} */ text) =>
+  text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+const reason = (/** @type {unknown} */ error) =>
+  error instanceof Error ? error.message : String(error);
+
+/**
+ * @typedef {{
+ *   run: (cwd: string, command: string, args: string[], timeout?: number) => Promise<{ status: number, output: string }>,
+ *   processes: () => string,
+ *   read: ((route: string) => Promise<any>) | null,
+ *   wait: (ms: number) => Promise<unknown>,
+ *   log: (line: string) => void,
+ *   onStop: () => void,
+ * }} Deps
+ */
+
+/** Warns, without stopping the landing, when dev's newest CI run failed. */
+async function warnRedDev(/** @type {Deps} */ { read, log }, main) {
+  const site = mirrors(main).find((mirror) => mirror.type === "github");
+  if (!site || !read) return;
+  const repo = new URL(site.url).pathname.replace(/^\/|\.git$/g, "");
+  try {
+    const found = await read(
+      `repos/${repo}/actions/workflows/${path.basename(workflow)}/runs?branch=dev&status=completed&per_page=10`,
+    );
+    const run = (found?.workflow_runs || []).find(
+      (/** @type {any} */ item) =>
+        !["cancelled", "skipped"].includes(item.conclusion),
+    );
+    if (!failedRun(run)) return;
+    const jobs = await failedJobs(read, repo, run);
+    log(
+      `CI on dev failed for ${run.head_sha.slice(0, 7)}${jobs.length ? ` (${jobs.join(", ")})` : ""}: ${run.html_url}`,
+    );
+  } catch (error) {
+    log(`Could not read dev's CI: ${reason(error)}`);
+  }
+}
+
+/**
+ * Lands the branch checked out at `cwd`. Resolves the exit code.
+ * @param {string} cwd
+ * @param {Deps} deps
+ */
+export async function land(cwd, deps) {
+  const { log } = deps;
+  if (process.platform === "win32") {
+    log("Land from Linux or macOS; land.mjs does not run on Windows.");
+    return 1;
+  }
+  const here = gitIn(cwd);
+  const top = here(["rev-parse", "--show-toplevel"]).stdout.trim();
+  const git = gitIn(top);
+  const out = (/** @type {string[]} */ ...args) => git(args).stdout.trim();
+  const branch = out("symbolic-ref", "--quiet", "--short", "HEAD");
+  if (!branch || branch === "dev" || branch === "main") {
+    log(
+      `Land from a feature branch's worktree, not ${branch || "a detached HEAD"}.`,
+    );
+    return 1;
+  }
+  const dirty = out("status", "--porcelain");
+  if (dirty) {
+    log(`Commit or remove these changes first:\n${dirty}`);
+    return 1;
+  }
+  const main = path.dirname(
+    path.resolve(top, out("rev-parse", "--git-common-dir")),
+  );
+  await warnRedDev(deps, main);
+  const { code, report } = await withLock(
+    git,
+    { branch, worktree: top },
+    () => underLock(deps, { top, main, branch }),
+    { log, onStop: deps.onStop },
+  );
+  for (const line of report) log(line);
+  return code;
+}
+
+/**
+ * The landing itself, while this session holds the lock.
+ * @param {Deps} deps
+ * @param {{ top: string, main: string, branch: string }} where
+ * @returns {Promise<{ code: number, report: string[] }>}
+ */
+async function underLock(deps, { top, main, branch }) {
+  const { run, log, wait } = deps;
+  const git = gitIn(top);
+  const atMain = gitIn(main);
+  const out = (/** @type {string[]} */ ...args) => git(args).stdout.trim();
+  const finish = (
+    /** @type {number} */ code,
+    /** @type {string[]} */ ...report
+  ) => ({ code, report });
+  const before = out("rev-parse", "dev");
+
+  const notes = `"${process.execPath}" "${path.join(top, "scripts", "changelog.mjs")}" merge %O %A %B`;
+  const merge = git([
+    "-c",
+    "merge.dazedtl-notes.name=DazedTL release notes",
+    "-c",
+    `merge.dazedtl-notes.driver=${notes}`,
+    "merge",
+    "--no-edit",
+    "dev",
+  ]);
+  if (merge.status !== 0) {
+    const conflicted = lines(out("diff", "--name-only", "--diff-filter=U"));
+    const abort = () => {
+      if (git(["rev-parse", "-q", "--verify", "MERGE_HEAD"]).status === 0)
+        git(["merge", "--abort"]);
+    };
+    if (!conflicted.length) {
+      abort();
+      return finish(
+        1,
+        tail(merge.stdout + merge.stderr),
+        "Merging dev failed.",
+      );
+    }
+    const resolve = "merge dev and resolve the conflicts, then land again";
+    if (!conflicted.every((file) => generated.includes(file))) {
+      abort();
+      return finish(
+        2,
+        `Merging dev conflicts in ${conflicted.join(", ")}: ${resolve}.`,
+      );
+    }
+    log(
+      `Merging dev conflicts only in generated ${conflicted.join(", ")}; writing them again.`,
+    );
+    git(["checkout", "--theirs", "--", ...conflicted]);
+    const written = await run(top, process.execPath, ["scripts/contracts.mjs"]);
+    if (written.status !== 0) {
+      abort();
+      return finish(
+        2,
+        tail(written.output),
+        `node scripts/contracts.mjs failed after merging dev: ${resolve}.`,
+      );
+    }
+    git(["add", "--", ...generated]);
+    const commit = git(["commit", "--no-edit"]);
+    if (commit.status !== 0) {
+      abort();
+      return finish(1, tail(commit.stdout + commit.stderr));
+    }
+  }
+  const head = out("rev-parse", "HEAD");
+  if (head === before)
+    return finish(0, `dev already has every commit of ${branch}.`);
+
+  for (const script of ["scripts/test.mjs", "scripts/build.mjs"]) {
+    log(`Running node ${script}…`);
+    const result = await run(top, process.execPath, [script]);
+    if (result.status !== 0)
+      return finish(
+        1,
+        tail(result.output),
+        `node ${script} failed; fix it on ${branch} and land again.`,
+      );
+    const runtime = result.output.match(/^Full test suite: .*$/m);
+    if (runtime) log(runtime[0]);
+  }
+
+  // The fast-forward rewrites the files the user's DazedTL runs from.
+  let said = false;
+  while (appRunning(main, deps.processes())) {
+    if (!said)
+      log(
+        `Your DazedTL is open from ${main}; this lands when it closes (checking every ${appPoll / 1000} s).`,
+      );
+    said = true;
+    await wait(appPoll);
+  }
+
+  const checkedOut = atMain([
+    "symbolic-ref",
+    "--quiet",
+    "--short",
+    "HEAD",
+  ]).stdout.trim();
+  if (checkedOut !== "dev")
+    return finish(
+      1,
+      `${main} has ${checkedOut || "a detached HEAD"} checked out instead of dev; nothing landed.`,
+    );
+  const changes = atMain([
+    "status",
+    "--porcelain",
+    "--untracked-files=no",
+  ]).stdout.trimEnd();
+  if (changes)
+    return finish(
+      1,
+      `${main} has uncommitted changes; nothing landed:\n${changes}`,
+    );
+  // Never replace a file the main checkout ignores, such as local settings.
+  const forward = atMain(["merge", "--ff-only", "--no-overwrite-ignore", head]);
+  if (forward.status !== 0)
+    return finish(
+      1,
+      tail(forward.stdout + forward.stderr),
+      atMain(["merge-base", "--is-ancestor", "dev", head]).status === 0
+        ? `dev could not move to ${head.slice(0, 7)}; nothing landed.`
+        : "dev moved without the landing lock; land again.",
+    );
+
+  const pushUrls = lines(
+    atMain(["remote", "get-url", "--push", "--all", "all"]).stdout,
+  );
+  /** @type {string[]} */
+  const unpushed = [];
+  for (const target of pushTargets(mirrors(main), pushUrls)) {
+    const push = () =>
+      run(main, "git", ["push", target.url, "dev"], pushTimeout);
+    let pushed = await push();
+    if (pushed.status !== 0) {
+      log(
+        `Pushing dev to ${target.name} failed; trying again in ${pushRetry / 1000} s.`,
+      );
+      await wait(pushRetry);
+      pushed = await push();
+    }
+    if (pushed.status !== 0)
+      unpushed.push(
+        `${target.name} (${target.url}):\n${tail(pushed.output, 5)}`,
+      );
+  }
+
+  const subjects = lines(
+    out("log", "--no-merges", "--format=%s", `${before}..${head}`),
+  );
+  return {
+    code: 0,
+    report: [
+      `Landed ${before.slice(0, 7)}..${head.slice(0, 7)} on dev`,
+      ...subjects.map((subject) => `  ${subject}`),
+      ...(unpushed.length
+        ? [
+            `dev did not reach ${unpushed.length === 1 ? "this mirror" : "these mirrors"}; push it there later:`,
+            ...unpushed,
+          ]
+        : []),
+    ],
+  };
+}
+
+/** @returns {Deps} */
+function realDeps() {
+  /** @type {import("node:child_process").ChildProcess | null} */
+  let child = null;
+  const token = ghToken();
+  return {
+    run: (cwd, command, args, timeout) =>
+      new Promise((resolve) => {
+        /** @type {Buffer[]} */
+        const output = [];
+        const started = spawn(command, args, {
+          cwd,
+          // A push that asks for a password fails instead of waiting.
+          env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+          stdio: ["ignore", "pipe", "pipe"],
+          timeout,
+        });
+        child = started;
+        started.stdout.on("data", (chunk) => output.push(chunk));
+        started.stderr.on("data", (chunk) => output.push(chunk));
+        started.on("error", (error) => output.push(Buffer.from(error.message)));
+        started.on("close", (status) => {
+          child = null;
+          resolve({
+            status: status ?? 1,
+            output: Buffer.concat(output).toString("utf8"),
+          });
+        });
+      }),
+    processes: () =>
+      spawnSync("ps", ["-eo", "args"], { encoding: "utf8" }).stdout ?? "",
+    read: token ? githubReader({ token, log: console.log }) : null,
+    wait: sleep,
+    log: (line) => console.log(line),
+    onStop: () => child?.kill("SIGTERM"),
+  };
+}
+
+if (import.meta.main) {
+  if (process.argv.length > 2) {
+    console.error("Usage: node scripts/land.mjs");
+    process.exit(1);
+  }
+  process.exitCode = await land(process.cwd(), realDeps());
+}

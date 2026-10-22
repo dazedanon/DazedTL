@@ -9,7 +9,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 
 export const defaultRepository = "dazedanon/DazedTL";
-const workflow = ".github/workflows/ci.yml";
+export const workflow = ".github/workflows/ci.yml";
 const lowCalls = 50;
 
 /** A GitHub API reader that sends If-None-Match and pauses near the limit. */
@@ -62,9 +62,50 @@ export function githubReader({
   };
 }
 
+/** Asks GitHub to do something, such as rerun a run's failed jobs. */
+export function githubWriter({ token, fetchImpl = fetch }) {
+  return async function post(route) {
+    const response = await fetchImpl(`https://api.github.com/${route}`, {
+      method: "POST",
+      headers: {
+        Accept: "application/vnd.github+json",
+        "User-Agent": "DazedTL ci-wait",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok)
+      throw new Error(`GitHub answered ${response.status} for ${route}.`);
+  };
+}
+
+/** Whether a finished run failed, rather than passed or was cancelled. */
+export const failedRun = (run) =>
+  ["failure", "timed_out", "startup_failure"].includes(run?.conclusion);
+
+/**
+ * Whether a run failed on its first attempt. It gets one rerun of its failed
+ * jobs, since most first failures are Windows flakes; a second is real.
+ */
+export const firstFailure = (run) =>
+  failedRun(run) && (run.run_attempt ?? 1) === 1;
+
+/** The names of a finished run's jobs that did not pass. */
+export async function failedJobs(read, repository, run) {
+  const jobs = await read(
+    `repos/${repository}/actions/runs/${run.id}/jobs?per_page=100`,
+  );
+  return (jobs?.jobs || [])
+    .filter((job) => !["success", "skipped"].includes(job.conclusion))
+    .map((job) => job.name);
+}
+
 /**
  * Waits for the CI run of `sha`, following a newer run on the same branch
- * when a later push supersedes it. Resolves `{ ok, run, failed }`.
+ * when a later push supersedes it. Resolves `{ ok, run, failed }`. After a
+ * rerun, `rerun` names the run and the attempt to wait for: that run is read
+ * by its id, never looked up again, and its earlier attempt's result, which
+ * GitHub can still give for a moment, is not taken as the answer.
  */
 export async function waitForCI({
   sha,
@@ -76,13 +117,19 @@ export async function waitForCI({
   interval = 30_000,
   startTimeout = 5 * 60_000,
   timeout = 90 * 60_000,
+  rerun = null,
   log = () => {},
 }) {
   const started = now();
-  let run = null;
+  /** @type {(item: any) => boolean} */
+  const done = (item) =>
+    item?.status === "completed" &&
+    (item.id !== rerun?.id || (item.run_attempt ?? 1) >= rerun.attempt);
+  /** @type {any} */
+  let run = rerun ? { id: rerun.id, status: "queued" } : null;
   let shown = "";
   for (;;) {
-    if (!run || run.status !== "completed") {
+    if (!done(run)) {
       const found = await read(
         run
           ? `repos/${repository}/actions/runs/${run.id}`
@@ -97,7 +144,7 @@ export async function waitForCI({
               (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
             )[0] || null;
     }
-    if (run?.status === "completed") {
+    if (done(run)) {
       if (run.conclusion === "cancelled") {
         const where = branch || run.head_branch;
         const found = await read(
@@ -121,13 +168,11 @@ export async function waitForCI({
         }
       }
       if (run.conclusion === "success") return { ok: true, run, failed: [] };
-      const jobs = await read(
-        `repos/${repository}/actions/runs/${run.id}/jobs?per_page=100`,
-      );
-      const failed = (jobs?.jobs || [])
-        .filter((job) => !["success", "skipped"].includes(job.conclusion))
-        .map((job) => job.name);
-      return { ok: false, run, failed };
+      return {
+        ok: false,
+        run,
+        failed: await failedJobs(read, repository, run),
+      };
     }
     const elapsed = now() - started;
     if (!run && elapsed > startTimeout)
@@ -145,7 +190,7 @@ export async function waitForCI({
         reason: `CI did not finish within ${timeout / 60000} minutes.`,
       };
     const status = run
-      ? `${run.status.replace("_", " ")}: ${run.html_url}`
+      ? `${run.status.replace("_", " ")}${run.html_url ? `: ${run.html_url}` : ""}`
       : "waiting to start";
     if (status !== shown) log(`CI for ${sha.slice(0, 7)} is ${status}`);
     shown = status;

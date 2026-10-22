@@ -55,3 +55,21 @@ test("a run cancelled by a later push hands over to the newer run", async () => 
   assert.equal(result.ok, true);
   assert.equal(result.run.id, 2);
 });
+
+test("after a rerun, that run is followed by id until its new attempt ends", async () => {
+  const answers = [
+    { ...run(1, "completed", "failure", 1000), run_attempt: 1 },
+    { ...run(1, "completed", "success", 1000), run_attempt: 2 },
+  ];
+  const read = async (route: string) => {
+    assert.match(route, /actions\/runs\/1$/);
+    return answers.shift();
+  };
+  const result = await waitForCI({
+    sha: "a".repeat(40),
+    read,
+    rerun: { id: 1, attempt: 2 },
+    wait: async () => {},
+  });
+  assert.equal(result.ok, true);
+});
