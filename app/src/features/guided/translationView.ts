@@ -496,22 +496,42 @@ export function translationTaskComplete(
       (run.phase?.startsWith("poll") || run.process?.resultsCollected)
     )
       return false;
-    return (
-      finished(translationFileStatus(state, phase, name, run)) ||
-      (run.mode === "batch" &&
-        !run.outputs?.[name] &&
-        !!run.process?.noRequestFiles?.includes(name))
-    );
+    return finished(translationFileStatus(state, phase, name, run));
   });
 }
-/** A file's state in a translation task's file list. */
+/**
+ * A Batch that prepared no request for a file and saved no output of its own
+ * (every request reused, or nothing to send at all) changed nothing in it.
+ */
+function leftAlone(name: string, run: Job) {
+  return (
+    run.mode === "batch" &&
+    !run.outputs?.[name] &&
+    !!run.process?.noRequestFiles?.includes(name)
+  );
+}
+/**
+ * A file's state in a translation task's file list. A run that left the file
+ * alone leaves it as the run before it did, applied or not; with no earlier
+ * run the file has nothing to translate. This is the one rule for the row and
+ * for translationTaskComplete.
+ */
 export function translationFileStatus(
   state: Pick<GuidedState, "runs" | "sourceStatus" | "readiness">,
   phase: Phase,
   name: string,
-  run = fileRun(state.runs, phase, name, state.sourceStatus.retired),
+  given = fileRun(state.runs, phase, name, state.sourceStatus.retired),
 ) {
-  if (countedPhase(phase)) return countedFileStatus(state, phase, name, run);
+  if (countedPhase(phase)) return countedFileStatus(state, phase, name, given);
+  const run =
+    given && leftAlone(name, given)
+      ? (fileRun(
+          state.runs.filter((other) => !leftAlone(name, other)),
+          phase,
+          name,
+          state.sourceStatus.retired,
+        ) ?? given)
+      : given;
   return fileStatus(
     name,
     run,
@@ -777,9 +797,6 @@ function runFileStatus(
   const saved =
     run.availableOutputs?.includes(name) ??
     (run.outputsAvailable && !!run.outputs?.[name]);
-  const noRequests =
-    run.mode === "batch" && run.process?.noRequestFiles?.includes(name);
-  if (noRequests && !saved && !run.outputs?.[name]) return complete;
   const activity = runActivity(name, run);
   if (activity || run.temporary) return activity || idle;
   const states = run.process?.files?.[name]?.states || [];
