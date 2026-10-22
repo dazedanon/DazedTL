@@ -176,3 +176,5 @@ class PublishTests(unittest.TestCase):
             self.assertEqual((result.errors, result.completed), ([], 1))
             self.assertEqual(runtime.read_bytes(), editable.read_bytes())
             self.assertFalse((root / ".dazedtl/image_backups").exists())
+            # The transaction's staging folder leaves nothing behind either.
+            self.assertFalse((root / ".dazedtl/image_patch_stage").exists())

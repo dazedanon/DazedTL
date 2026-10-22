@@ -192,6 +192,11 @@ try:
             "translation_state",
         ):
             helper.call(app.workspace, method, {"project_id": project_id})
+        # Guided tasks use the helper too (Text QA, Plugin files); only an
+        # Assistant-led project counts it as its assistant.
+        assert call("translation_state", state)["assistantSeenAt"] is None
+        app.projects.choose_method(project_id, "len")
+        helper.call(app.workspace, "translation_state", {"project_id": project_id})
         # Only the user starts a project over; the helper must refuse it.
         try:
             helper.call(

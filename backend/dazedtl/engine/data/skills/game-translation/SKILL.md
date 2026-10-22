@@ -23,7 +23,7 @@ persisted API jobs before deciding where to begin. Resume valid work automatical
 repair missing or stale work without restarting completed phases. If the delivery is
 already current and verified, report its paths and evidence instead of retranslating it.
 
-Handle tools, backups, extraction, speaker mapping, references, glossary, game guidance,
+Handle tools, original records, extraction, speaker mapping, references, glossary, game guidance,
 translation batches, scoped images, fitting, injection, targeted QA, checkpoints outside DazedTL,
 packaging and progress reports yourself. Completing setup.md's guidance-only phase is
 the transition into translation, not a stopping point. Do not ask for another prompt,
@@ -49,7 +49,7 @@ Read `references/project-lifecycle.md` for the required source preservation, loc
 baseline, checkpoints, resumable artifacts and delivery phases. These are part of the
 same starting prompt, before and after the engine-specific translation work.
 `main` contains only the reviewed runtime patch and minimal repository metadata.
-`original` retains matching untranslated runtime files for backup and version updates;
+`original` retains matching untranslated runtime files for restores and version updates;
 translation-only additions have no fabricated original.
 All `.dazedtl` working records, source copies and QA artifacts remain ignored on both.
 In DazedTL, the app commits your changes to the game as checkpoints itself; outside it, use the live `git-scope` helper the lifecycle describes before patch checkpoints.
@@ -59,7 +59,7 @@ each saved batch or milestone, and at least every 10 minutes during active work.
 The agent maintains this throughout the run without another user prompt.
 For a fresh task, use the selected untranslated game as the initial source baseline.
 Normal preparation such as `TranslationUpdateCheck` does not make it an existing
-translation. Create any needed backup from that folder; do not demand a separately
+translation. Run `record_original` on that folder; do not demand a separately
 downloaded pristine copy unless concrete evidence shows the selected source is unsuitable.
 
 For RPG Maker, use the same preparation steps as Workflow before translation:
@@ -138,7 +138,7 @@ integration. Keep longer synopsis, route and research notes in the workspace; as
 translation instructions from the shared files without repeating their contents.
 
 Keep authored tools, reviewed translation records and QA notes under the handoff's `.dazedtl/len-method/work/`.
-Keep all workspace files ignored on both game branches and preserve separate workspace backups.
+Keep all workspace files ignored on both game branches and keep authored records as exports under `work/`; checkpoints do not cover ignored files.
 Verify that Git tracks only the runtime patch and corresponding originals, with native bytes intact.
 
 Read and reuse Len's tools, copying those that need adaptation into the workspace.
@@ -209,7 +209,7 @@ Reread the message before committing and remove anything a player who hasn't fin
    Record which scenes ran, which fixtures were synthetic and what remains untested.
    A full playthrough or a second tester is optional unless the user requests it; do not spend days grinding routes to finish a text QA task.
 9. Re-inject before packaging, verify the payload allowlist and hashes, and test installation in a clean matching game copy.
-   Follow the lifecycle's runtime-only Git scope and separate workspace backups.
+   Follow the lifecycle's runtime-only Git scope and keep exports of ignored records.
    Draft a forum post only when requested, using `references/forum-post.md`; publishing requires its own authorization.
 
 Update `progress.json` from saved records after batches/milestones and at least every 10 minutes while working.
@@ -251,7 +251,7 @@ If you can't tell, run Detect It Easy (`tools/.NET/die/diec.exe`, a download lis
 - `references/direct-workflow.md`: direct translation batching, bulk context compilation, compact lossless requests, caching and milestone validation.
 - `references/api-batch.md`: agent-managed API preparation, in-conversation cost review and supported provider execution.
 - `references/progress-reporting.md`: report schema, provisional/audited denominators, active time, bounded phase estimates and resume invalidation.
-- `references/project-lifecycle.md`: source baselines, runtime patch Git scope, checkpointing, backup and delivery.
+- `references/project-lifecycle.md`: source baselines, runtime patch Git scope, checkpointing, original records and delivery.
 - `references/review-decisions.md`: the only ways text stays untranslated, disputed decisions, age evidence in translation, restored translations and visible omission counts.
 - `references/field-guide.md`: detailed reference-pipeline choices and lessons; search only the relevant engine or failure class.
 - `references/tools-catalog.md`: reusable tool paths; `tools/THIRD-PARTY.md` identifies dependencies absent from the bundle.
