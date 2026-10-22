@@ -51,6 +51,30 @@ export function pushTargets(list, pushUrls) {
   }));
 }
 
+/**
+ * Times the stages of one landing, to print where the minutes went.
+ * @param {() => number} [now]
+ */
+export function timer(now = Date.now) {
+  const started = now();
+  let last = started;
+  /** @type {[string, number][]} */
+  const laps = [];
+  const seconds = (/** @type {number} */ ms) => `${Math.round(ms / 1000)} s`;
+  return {
+    /** Ends the stage that began at the previous lap. */
+    lap(/** @type {string} */ name) {
+      const at = now();
+      laps.push([name, at - last]);
+      last = at;
+    },
+    /** One line: the total from start, then each stage reached. */
+    summary() {
+      return `Took ${seconds(now() - started)}: ${laps.map(([name, ms]) => `${name} ${seconds(ms)}`).join(", ")}.`;
+    },
+  };
+}
+
 const tail = (/** @type {string} */ text, lines = 40) =>
   text.trimEnd().split("\n").slice(-lines).join("\n");
 const lines = (/** @type {string} */ text) =>
@@ -69,6 +93,7 @@ const reason = (/** @type {unknown} */ error) =>
  *   wait: (ms: number) => Promise<unknown>,
  *   log: (line: string) => void,
  *   onStop: () => void,
+ *   now?: () => number,
  * }} Deps
  */
 
@@ -126,13 +151,15 @@ export async function land(cwd, deps) {
     path.resolve(top, out("rev-parse", "--git-common-dir")),
   );
   await warnRedDev(deps, main);
+  const time = timer(deps.now);
   const { code, report } = await withLock(
     git,
     { branch, worktree: top },
-    () => underLock(deps, { top, main, branch }),
+    () => underLock(deps, { top, main, branch }, time),
     { log, onStop: deps.onStop },
   );
   for (const line of report) log(line);
+  log(time.summary());
   return code;
 }
 
@@ -140,9 +167,10 @@ export async function land(cwd, deps) {
  * The landing itself, while this session holds the lock.
  * @param {Deps} deps
  * @param {{ top: string, main: string, branch: string }} where
+ * @param {ReturnType<typeof timer>} time
  * @returns {Promise<{ code: number, report: string[] }>}
  */
-async function underLock(deps, { top, main, branch }) {
+async function underLock(deps, { top, main, branch }, time) {
   const { run, log, wait } = deps;
   const git = gitIn(top);
   const atMain = gitIn(main);
@@ -151,6 +179,7 @@ async function underLock(deps, { top, main, branch }) {
     /** @type {number} */ code,
     /** @type {string[]} */ ...report
   ) => ({ code, report });
+  time.lap("lock wait");
   const before = out("rev-parse", "dev");
 
   const notes = `"${process.execPath}" "${path.join(top, "scripts", "changelog.mjs")}" merge %O %A %B`;
@@ -206,6 +235,7 @@ async function underLock(deps, { top, main, branch }) {
     }
   }
   const head = out("rev-parse", "HEAD");
+  time.lap("merge");
   if (head === before)
     return finish(0, `dev already has every commit of ${branch}.`);
 
@@ -218,6 +248,7 @@ async function underLock(deps, { top, main, branch }) {
         tail(result.output),
         `node ${script} failed; fix it on ${branch} and land again.`,
       );
+    time.lap(path.basename(script, ".mjs"));
     const runtime = result.output.match(/^Full test suite: .*$/m);
     if (runtime) log(runtime[0]);
   }
@@ -232,6 +263,7 @@ async function underLock(deps, { top, main, branch }) {
     said = true;
     await wait(appPoll);
   }
+  if (said) time.lap("app wait");
 
   const checkedOut = atMain([
     "symbolic-ref",
@@ -286,6 +318,7 @@ async function underLock(deps, { top, main, branch }) {
         `${target.name} (${target.url}):\n${tail(pushed.output, 5)}`,
       );
   }
+  time.lap("push");
 
   const subjects = lines(
     out("log", "--no-merges", "--format=%s", `${before}..${head}`),
