@@ -20,3 +20,4 @@
 - **Guided steps:** clicking Stop beside Save line widths, Estimate cost, Set up or Build now reads "Stopping…" until the work stops, and says why if it could not stop.
 - **Translate:** **Apply** on Maps & events now puts in the files' newest translations, including Other event text's saved output for the same files, instead of copying the earlier run's files again while saying "Saved translations applied." and leaving the files at **Ready to apply**; its review names the files that carry another task's translations, and only Run history's Reapply says "Reapplying makes no API requests."
 - **Assistant-led:** after **Start over** put the original game back, Guided steps no longer read Database files, Maps & events and Plugin files as **Applied**; their saved translations read **Ready to apply** until applied again.
+- **Text QA:** on a VX Ace game, Pack outside edits no longer flashes in the Text QA header right after Apply corrections.
