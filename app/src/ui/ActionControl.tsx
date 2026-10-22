@@ -9,7 +9,7 @@ import { Button } from "./Button";
 import { Feedback } from "./Feedback";
 import { JobStatus } from "./JobStatus";
 import type { Job } from "../api/contracts";
-import { useFeedbackOwner } from "./FeedbackOwners";
+import { useFeedbackOwner, useOutcomeShown } from "./FeedbackOwners";
 
 // Successes finished before this interface loaded belong to History, not
 // beside the control; failures stay until a newer attempt replaces them.
@@ -51,7 +51,16 @@ export function ActionControl({
   disabledReason?: string;
   job?: Pick<Job, "label" | "status" | "message" | "updated">;
 }) {
-  const job = reported && !earlierSuccess(reported) ? reported : undefined;
+  // Each status shows once: a success that a status heading for this action
+  // already says Done is left out here. Pending work and failures always
+  // stay beside the control.
+  const shown = useOutcomeShown(feedbackKey);
+  const job =
+    reported &&
+    !earlierSuccess(reported) &&
+    !(shown && reported.status === "complete")
+      ? reported
+      : undefined;
   const active = job && ["ready", "running", "waiting"].includes(job.status);
   useFeedbackOwner(feedbackKey);
   const feedbackId = useId();
@@ -91,7 +100,7 @@ export function ActionControl({
           message: job.message,
         }}
       />
-    ) : notice ? (
+    ) : notice && !shown ? (
       <Feedback notice={notice} />
     ) : button.disabled && disabledReason ? (
       <span className="action-control-reason">{disabledReason}</span>
