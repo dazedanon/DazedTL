@@ -17,6 +17,7 @@ from dazedtl.settings.preferences import (
     REUSE_STRETCHES,
     SAME_LINE_SPEAKERS,
     SOURCE_TEXT,
+    SOURCE_TEXT_LEVELS,
     SPEAKER_CONTEXT,
     batch_input_tokens,
     output_tokens,
@@ -66,8 +67,11 @@ def configure_states(plan, root, policy):
         cast(Any, module).CHOICE_COLLECTION = bool(
             policy and policy.get("choiceCollection") == CHOICE_COLLECTION
         )
-        cast(Any, module).SOURCE_TEXT = bool(
-            policy and policy.get("sourceText") == SOURCE_TEXT
+        source_text = (policy or {}).get("sourceText")
+        cast(Any, module).SOURCE_TEXT = (
+            SOURCE_TEXT_LEVELS.get(source_text, 0)
+            if isinstance(source_text, str)
+            else 0
         )
         users = (policy or {}).get("battleMessageUsers")
         cast(Any, module).BATTLE_MESSAGE_USERS = (
@@ -161,7 +165,7 @@ def install(*, coordinator=False):
             or policy.get("pagePacking") not in (None, PAGE_PACKING)
             or policy.get("reuseStretches") not in (None, REUSE_STRETCHES)
             or policy.get("mapNameIdentities") not in (None, MAP_NAME_IDENTITIES)
-            or policy.get("sourceText") not in (None, SOURCE_TEXT)
+            or policy.get("sourceText") not in (None, *SOURCE_TEXT_LEVELS)
             or policy.get("battleMessageUsers")
             not in (None, *BATTLE_MESSAGE_USERS_LEVELS)
             or policy.get("openrouterStructuredOutputs")
@@ -225,6 +229,7 @@ def install(*, coordinator=False):
                 share_stretches=policy.get("reuseStretches") == REUSE_STRETCHES,
                 map_name_identities=policy.get("mapNameIdentities")
                 == MAP_NAME_IDENTITIES,
+                source_aware=policy.get("sourceText") == SOURCE_TEXT,
             )
             evidence.install(translation, sys.modules.get("modules.rpgmakermvmz"))
             record = evidence.record

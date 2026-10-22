@@ -115,9 +115,22 @@ def kept(source, response):
     """Whether a line of a kept response kept its original text because it
     failed validation (translation keep_original_lines): it is no
     translation to reuse, so the next run sends it again."""
-    from util.source_text import left_in
+    from util.source_text import japanese_left
 
-    return response == source and bool(left_in(source, response))
+    return response == source and bool(japanese_left(response, source))
+
+
+def accepted(translation, source, response, config):
+    """Whether a saved translation of *source* still passes the response
+    check, which reads Japanese left by the one source-text rule
+    (util/source_text): a line it reads as left is sent again, never
+    answered from what an earlier run saved."""
+    pattern = getattr(config, "langRegex", None)
+    if pattern is None or not isinstance(response, str):
+        return True
+    return not translation.validate_translation_content(
+        [source], [response], pattern, getattr(config, "language", None)
+    )[1]
 
 
 def source_text(value, config):
@@ -139,6 +152,7 @@ class Evidence:
         *,
         share_stretches=False,
         map_name_identities=False,
+        source_aware=False,
     ):
         self.path = Path(root) / "log/dazedtl-process.sqlite3"
         self.mode = mode
@@ -150,6 +164,10 @@ class Evidence:
         # names, in its own files; older runs identify it in the calling file,
         # so their Batch reuses, and so requests, rebuild identically.
         self.map_name_identities = map_name_identities
+        # Runs frozen with the source-text v2 policy reuse no saved line the
+        # response check reads as left; older runs reuse every saved line, so
+        # their Batch requests rebuild identically.
+        self.source_aware = source_aware
         self.local = threading.local()
         # The translator's own thread state, once installed.
         self.translation_local = None
@@ -684,12 +702,18 @@ class Evidence:
                 self.local.filename,
                 self.local.cursor,
             ) = keys, keys, filename, 0
+            config = bound.arguments.get("config")
             reused = [
                 next(
                     (
                         row
                         for row in (self.reused.get(key) for key, _ in lookup)
-                        if row is not None and row.get("source") == value
+                        if row is not None
+                        and row.get("source") == value
+                        and (
+                            not self.source_aware
+                            or accepted(translation, value, row["response"], config)
+                        )
                     ),
                     None,
                 )

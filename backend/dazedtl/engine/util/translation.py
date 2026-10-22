@@ -42,7 +42,7 @@ from util.batch_providers import KIMI_API_URL, is_kimi_api
 from util import extensions
 from util.sfx_reference import build_sfx_reference_text
 from util.vocab import decorative_glossary_alias, split_glossary_row
-from util.source_text import left_in
+from util.source_text import japanese_left
 from util import system
 
 class _LazyModule:
@@ -588,7 +588,7 @@ def validate_translation_content(
             # translation keep the source's punctuation, kaomoji and censor
             # masks. Japanese inside protected runtime-code parameters is
             # absent here and is restored only after validation.
-            left = left_in(orig_str, trans_str)
+            left = japanese_left(trans_str, orig_str)
             if normalized_target == "chinese" and any(
                 re.search(r"[ぁ-ゖァ-ヺ\uFF66-\uFF9D]", run) for run in left
             ):

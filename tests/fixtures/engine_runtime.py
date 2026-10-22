@@ -3253,11 +3253,22 @@ try:
             return (prefix[1] if prefix else "") + f"Tested {len(text)} {kept}".strip()
 
         sent = []
+        # Lines holding a key come back as its reply, as the test scenarios'
+        # stand-in answers them (scripts/testkit/provider.mjs).
+        replies: dict[str, str] = {}
+
+        def replied(value):
+            text = str(value)
+            reply = next((reply for key, reply in replies.items() if key in text), None)
+            if reply is None:
+                return stand_in(value)
+            prefix = re.match(r"^(\[[^\n]*?\]:\s*)", text)
+            return (prefix[1] if prefix else "") + reply
 
         def answer_all(text, *_args, **_kwargs):
             values = list(text) if isinstance(text, list) else [text]
             sent.extend(values)
-            answers = [stand_in(value) for value in values]
+            answers = [replied(value) for value in values]
             return [answers if isinstance(text, list) else answers[0], [0, 0]]
 
         def engine_pass(file, document, vxace):
@@ -3448,6 +3459,50 @@ try:
                     )
                     again = engine_pass(file, translated, vxace)
                     assert not again, (report, again)
+            # The kaomoji game variant, answered as its stand-in answers it but
+            # for a word the model leaves as it was: a translation keeping a
+            # lone kana or mark its source holds, the ﾟ of a kaomoji, the 〇
+            # of a censor mask or the は of that word, reads translated and is
+            # not sent again; a line given back unchanged reads left and is.
+            kaomoji = json.loads(
+                (fixtures / "game-variants/kaomoji/variant.json").read_text("utf-8")
+            )
+            replies.update(
+                kaomoji["provider"]["reply"],
+                まだ訳せない="This word は can't be translated yet.",
+            )
+            talk = {
+                "displayName": "",
+                "events": [None, *({**event, "id": 1} for event in kaomoji["events"])],
+            }
+            before = file_lines.count("Map004.json", talk, "dialogue", markers)
+            engine_pass("Map004.json", talk, False)
+            after = file_lines.count("Map004.json", talk, "dialogue", markers)
+            assert after == {
+                "lines": before["lines"],
+                "translated": before["lines"] - 1,
+            }, (
+                before,
+                after,
+                file_lines.left("Map004.json", talk, "dialogue", markers),
+            )
+            assert engine_pass("Map004.json", talk, False) == ["え？"]
+            # Runs frozen with the first source-text policy keep sending a
+            # line that keeps a lone kana, so their requests rebuild.
+            configure_states(
+                {"engine": "MVMZ"},
+                temporary,
+                {**policy, "sourceText": "source-letters-v1"},
+            )
+            assert engine_pass("Map004.json", talk, False) == [
+                "[Tested 2]: この言葉はまだ訳せない。",
+                "[Tested 2]: うわっ、うん〇を踏んだ！",
+                "え？",
+            ]
+            configure_states(
+                {"engine": "MVMZ"}, temporary, {**policy, "sourceText": SOURCE_TEXT}
+            )
+            replies.clear()
             # The help counts only while Comment text translates it.
             help_map = json.loads((lines_game / "data/Map002.json").read_text("utf-8"))
             assert file_lines.count("Map002.json", help_map, "dialogue", markers) == {

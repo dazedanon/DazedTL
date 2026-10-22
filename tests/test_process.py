@@ -1016,6 +1016,42 @@ class ProcessTests(unittest.TestCase):
                 ["Potion", "Poison"],
             )
             self.assertEqual(sent, [["毒"]])
+            # A run frozen with the source-text v2 policy reuses no saved line
+            # the response check reads as left, such as one an older build
+            # saved with Japanese in it, which the engine sends again: the
+            # reuse would answer it on every run while it reads untranslated.
+            from util.source_text import japanese_left
+
+            stale_root = Path(temporary) / "stale"
+            write_json(stale_root / "files/Items.json", data)
+            stale = translator()
+            stale.translateAI = point(
+                lambda text, history, config, filename: (
+                    sent.append(text) or [["Potion"], [3, 4]]
+                )
+            )
+            stale.validate_translation_content = lambda sources, responses, *_: (
+                True,
+                [
+                    index
+                    for index, pair in enumerate(zip(sources, responses))
+                    if japanese_left(pair[1], pair[0])
+                ],
+                [],
+            )
+            leftover = {key: {"source": "薬", "response": "薬 Potion"}}
+            Evidence(
+                stale_root,
+                "translate",
+                {**plan, "dazedtl_continuation": leftover},
+                source_aware=True,
+            ).install(stale)
+            config = SimpleNamespace(langRegex="[぀-ヿ一-鿿]")
+            self.assertEqual(
+                stale.translateAI(["薬"], [], config, "Items.json")[0], ["Potion"]
+            )
+            self.assertEqual(sent, [["毒"], ["薬"]])
+            sent.pop()
             # An estimate needs no request for reused text, but the file still
             # has text to write and must not look finished. Translated names
             # the grouped map-name pass sends unfiltered need nothing.

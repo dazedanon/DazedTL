@@ -1,6 +1,7 @@
 """Whether text still holds Japanese to translate: the one rule the RPG Maker
-MV/MZ engine sends text by and Guided's line counts read a line as left by
-(translation/file_lines.py), and that event-text tools such as custom
+MV/MZ engine sends text by, the response check accepts a translation by,
+Guided's run reuse answers a line by and Guided's line counts read a line as
+left by (translation/file_lines.py), and that event-text tools such as custom
 patterns and fitting, Text QA and the playtest share.
 
 Japanese to translate is a Japanese letter (kana, kanji or half-width kana)
@@ -11,6 +12,12 @@ holding only those reads finished. A control code's argument, such as
 \\SA[びっくり] or \\fn[和風], names a plugin's asset or setting, never text,
 so a translation that keeps one reads finished too. Furigana is the exception:
 its base is text the player reads, so \\rb[魔王,まおう] holds Japanese.
+
+A value is read against the Japanese source it was translated from where one
+is known (`japanese_left`): a lone kana or mark the source holds is part of a
+symbol the translation keeps, such as a kaomoji's ﾉ or a censor mask's 〇,
+and a value given back unchanged is all left. Without a source, every
+Japanese letter is left (`holds_source`).
 """
 
 import re
@@ -50,34 +57,39 @@ def furigana_base(text: str) -> str:
     return CURLY_RUBY.sub(r"\1", text) if "{" in text else text
 
 
-def holds_source(text) -> bool:
-    """Whether *text* still holds Japanese letters outside control codes,
-    reading furigana as its base."""
-    return isinstance(text, str) and bool(
-        LETTERS.search(without_control_codes(furigana_base(text)))
-    )
-
-
-def left_in(source: str, translation: str) -> list[str]:
-    """The Japanese a *translation* of *source* still holds, as runs of
-    letters (holds_source's rule). A lone kana or mark that the source holds
-    as often, never a kanji, is part of a symbol the translation keeps, such as
-    the ﾉ and ゞ of a kaomoji or the 〇 of a censor mask (うん〇 -> sh〇t), so
-    it is not left; asking again can only give it back. A translation that
-    gives back the source's letters and digits unchanged, such as え？ for
-    え？, translated nothing and keeps no symbol: all its Japanese is left."""
-    source, translation = _spoken(source), _spoken(translation)
-    runs = _WORD.findall(translation)
-    if _letters_and_digits(source) == _letters_and_digits(translation):
+def japanese_left(text, source=None) -> list[str]:
+    """The Japanese *text* still holds, as runs of letters outside control
+    codes, reading furigana as its base. Given the Japanese *source* it was
+    translated from, a lone kana or mark that the source holds as often, never
+    a kanji, is part of a symbol the translation keeps, such as the ﾉ and ゞ of
+    a kaomoji or the 〇 of a censor mask (うん〇 -> sh〇t), so it is not left;
+    asking again can only give it back. A value that gives back the source's
+    letters and digits unchanged, such as え？ for え？, translated nothing and
+    keeps no symbol: all its Japanese is left, as it is without a source."""
+    if not isinstance(text, str):
+        return []
+    spoken = _spoken(text)
+    runs = _WORD.findall(spoken)
+    if not runs or not isinstance(source, str) or source == text:
+        return runs
+    source = _spoken(source)
+    if _letters_and_digits(source) == _letters_and_digits(spoken):
         return runs
     kept = Counter(LETTERS.findall(source))
-    left = []
+    found = []
     for run in runs:
         if len(run) == 1 and kept[run] > 0 and not KANJI.match(run):
             kept[run] -= 1
         else:
-            left.append(run)
-    return left
+            found.append(run)
+    return found
+
+
+def holds_source(text) -> bool:
+    """Whether *text* still holds Japanese, read without a source
+    (`japanese_left`): the source itself, or a value whose source is
+    unknown."""
+    return bool(japanese_left(text))
 
 
 def _spoken(text: str) -> str:

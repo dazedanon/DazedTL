@@ -111,13 +111,14 @@ A refusal cannot enter game dialogue; a Guided phase puts the source back for li
 An old interrupted Live run without request evidence flags only its shared files and phase in the overlap advisory, since its send outcomes cannot be rebuilt locally.
 Readers for older runs ([live_validation](../backend/dazedtl/compatibility/live_validation.py), [choice_history](../backend/dazedtl/compatibility/choice_history.py)) settle a historical request only when the frozen plan, output hashes, submission mapping and exact source identity all match; otherwise it stays unresolved, and missing bodies are never invented.
 Grouping a retry with its original is presentation only: receipt indices, submission guards and billed usage stay intact.
-The engine's response check reads Japanese left in a reply by the same rule as file status ([source_text](../backend/dazedtl/engine/util/source_text.py) `left_in`), so punctuation, kaomoji and censor masks the source holds pass.
+The engine's response check reads Japanese left in a reply by the same rule as file status ([source_text](../backend/dazedtl/engine/util/source_text.py) `japanese_left`), so punctuation, kaomoji and censor masks the source holds pass.
 A reply whose only faults are some lines' content is validated and saved but for those lines, which keep their original text; the receipt names them for Inspect, they are not saved for reuse, and the next Translate sends them again.
 A reply with the wrong lines, placeholders or control codes is still rejected whole.
 
 ### Result reuse
 
 Workers record source identities independent of model, prompt and chunk size with their validated values, and continuation reuses them per text identity, never as a file-complete skip, while the source bindings and file versions match; the newest compatible run wins.
+A saved value answers a line only while it passes the response check, so a line the source-text rule reads as left is sent again; runs frozen before the `sourceText` v2 policy reuse every saved value, so their requests rebuild identically.
 The Live names pass before a Batch belongs to no file, so it never counts toward a file's lines or continuation reuse.
 
 ### Run history and inspection
@@ -131,7 +132,8 @@ Per-file cost and time, and Other event text's lines, come from native result re
 ### File status and Lines
 
 Database files and Maps & events read each file's status and Lines from the file itself through [file_lines](../backend/dazedtl/translation/file_lines.py), independently of selection and of the runs that wrote it.
-What an event file holds is defined once in [rpgmaker_scope](../backend/dazedtl/engine/util/rpgmaker_scope.py), which the engine translates from, and a line is left while it holds Japanese by the engine's own rule ([source_text](../backend/dazedtl/engine/util/source_text.py)) or a refusal note, whatever its `_original` says.
+What an event file holds is defined once in [rpgmaker_scope](../backend/dazedtl/engine/util/rpgmaker_scope.py), which the engine translates from, and a line is left while it holds Japanese by the engine's own rule ([source_text](../backend/dazedtl/engine/util/source_text.py)) or a refusal note.
+The rule reads each value against the Japanese in its `_original`, so a lone kana or mark the source holds, such as a kaomoji's ﾉ or a censor mask's 〇, reads translated and a value given back unchanged reads left; a value without one reads every Japanese letter as left.
 The engine probe ([engine_runtime](../tests/fixtures/engine_runtime.py)) checks that the engine sends exactly the lines this counts as left, and nothing on a second pass, so the count and the engine cannot drift apart.
 
 ### Apply and release

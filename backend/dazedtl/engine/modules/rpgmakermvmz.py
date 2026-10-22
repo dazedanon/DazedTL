@@ -47,7 +47,7 @@ from util.paths import (
 from util.rpgmaker_markers import comment_markers, game_plugins
 from util.rpgmaker_files import mvmz_file_kind
 from util.id_ranges import id_in_ranges
-from util.source_text import furigana_base, holds_source
+from util.source_text import furigana_base, holds_source, japanese_left
 from util import system
 
 # Globals
@@ -973,14 +973,19 @@ def _apply_event_parameter_originals(snapshots: list[tuple[dict, list]]) -> None
 
 # Text still to translate is what util/source_text reads as Japanese, the
 # rule Guided's line counts share, and labels and map names are sent only
-# while they hold it. A run frozen without the sourceText request policy
-# keeps reading Japanese by LANGREGEX and sending labels and map names on
-# every pass, so its requests keep their identities.
-SOURCE_TEXT = True
+# while they hold it. Level 2 reads a value against the Japanese it was
+# translated from, where the game keeps it, so a lone kana or mark the source
+# holds, such as a kaomoji's ﾉ, reads translated; level 1 reads every Japanese
+# letter as left. A run frozen with an older sourceText request policy keeps
+# its level, and one frozen without it keeps reading Japanese by LANGREGEX and
+# sending labels and map names on every pass, so its requests keep their
+# identities.
+SOURCE_TEXT = 2
 
 
-def _has_japanese_text(text) -> bool:
-    """True when text still holds Japanese to translate (util/source_text).
+def _has_japanese_text(text, source=None) -> bool:
+    """True when text still holds Japanese to translate (util/source_text),
+    read against *source*, the Japanese it was translated from, when known.
 
     Older runs read it by LANGREGEX after quote normalization: decorative
     wrappers such as 〝phytoncide〟 become ASCII quotes when convertQuotes is
@@ -988,7 +993,11 @@ def _has_japanese_text(text) -> bool:
     source text.
     """
     if SOURCE_TEXT:
-        return text is not None and holds_source(str(text))
+        if text is None:
+            return False
+        if SOURCE_TEXT < 2 or source is None:
+            return holds_source(str(text))
+        return bool(japanese_left(str(text), str(source)))
     if text is None:
         return False
     sample = str(text)
@@ -1000,11 +1009,12 @@ def _has_japanese_text(text) -> bool:
     return bool(re.search(LANGREGEX, sample.replace("\u3000", " ")))
 
 
-def _text_needs_translation(current) -> bool:
-    """Return whether a live value should be translated under the skip setting."""
+def _text_needs_translation(current, source=None) -> bool:
+    """Return whether a live value should be translated under the skip
+    setting, read against its *source* when known."""
     if current is None or not str(current).strip():
         return False
-    return not IGNORETLTEXT or _has_japanese_text(current)
+    return not IGNORETLTEXT or _has_japanese_text(current, source)
 
 
 _TARO_PLACEHOLDER_RE = re.compile(r"\bTaro(?:['’]s)?\b", re.IGNORECASE)
@@ -1075,6 +1085,18 @@ def _group_source(codeList, start: int, end: int) -> str:
         if src.strip():
             parts.append(src)
     return "\n".join(parts)
+
+
+def _code408_source(codeList, group) -> str:
+    """The Japanese a 408 group's comment holds: the first line keeps the
+    Japanese of them all once translated."""
+    if _scalar_original(codeList[group[0]]) is not None:
+        return _param_source(codeList[group[0]], 0)
+    return "\n".join(
+        source
+        for source in (_param_source(codeList[index], 0) for index in group)
+        if source.strip()
+    )
 
 
 def _message_entry(text: str, speaker: str) -> str | None:
@@ -1198,7 +1220,10 @@ def _code408_progress_units(codeList) -> int:
         if group is None or not _param_source(command, 0).strip():
             index += 1
             continue
-        if _text_needs_translation(_group_current(codeList, group[0], group[-1])):
+        if _text_needs_translation(
+            _group_current(codeList, group[0], group[-1]),
+            _code408_source(codeList, group),
+        ):
             count += 1
         index = group[-1] + 1
     return count
@@ -1251,7 +1276,7 @@ def _code108_progress_units(codeList) -> int:
         if not command or command.get("code") != 108:
             continue
         current = _param_current(command, 0)
-        if IGNORETLTEXT and not _has_japanese_text(current):
+        if IGNORETLTEXT and not _has_japanese_text(current, _param_source(command, 0)):
             continue
         if _code108_custom(current) or _code108_match(current) is not None:
             count += 1
@@ -1332,7 +1357,7 @@ def _choice_job(cmd):
         if not jaString.strip():
             continue
 
-        if not _text_needs_translation(currentChoice):
+        if not _text_needs_translation(currentChoice, rawSource):
             continue
 
         # Preserve plugin condition clauses outside the model.
@@ -1676,10 +1701,10 @@ def _entry_field_source(entry, field: str) -> str:
 
 
 def _entry_field_needs_translation(entry, field: str) -> bool:
-    """Decide skip status from the current value, not preserved source text."""
+    """Decide skip status from the current value, read against its source."""
     if not isinstance(entry, dict):
         return False
-    return _text_needs_translation(entry.get(field))
+    return _text_needs_translation(entry.get(field), _entry_field_source(entry, field))
 
 
 def _apply_entry_field_original(entry, field: str, raw: str) -> None:
@@ -3854,12 +3879,14 @@ def _searchCodes(page, pbar, jobList, filename):
                     # Speaker parse must inspect source/_original even when live
                     # parameters are already English, or the unresolved count
                     # drifts as translation progress lands in files/.
-                    preview_text = (
-                        _group_source(codeList, i, previewEnd)
+                    preview_source = _group_source(codeList, i, previewEnd)
+                    if not (
+                        _text_needs_translation(preview_source)
                         if SPEAKER_PARSE_MODE
-                        else _group_current(codeList, i, previewEnd)
-                    )
-                    if not _text_needs_translation(preview_text):
+                        else _text_needs_translation(
+                            _group_current(codeList, i, previewEnd), preview_source
+                        )
+                    ):
                         i = previewEnd + 1
                         continue
                     jaString = codeList[i]["parameters"][0]
@@ -4110,8 +4137,11 @@ def _searchCodes(page, pbar, jobList, filename):
                 if len(currentGroup) > 0:
                     rawSource = _group_raw_source(codeList, groupStart, sourceGroup)
                     currentSource = "\n".join(currentSourceGroup)
-                    # Skip status is based on the live text, not preserved Japanese source.
-                    if not rawSource.strip() or not _text_needs_translation(currentSource):
+                    # Skip status is based on the live text, read against its
+                    # preserved Japanese source.
+                    if not rawSource.strip() or not _text_needs_translation(
+                        currentSource, rawSource
+                    ):
                         speaker = ""
                         i += 1
                         continue
@@ -4398,7 +4428,9 @@ def _searchCodes(page, pbar, jobList, filename):
                 # Set String
                 innerSource = _122_inner_source(codeList[i])
                 if innerSource is not None and innerSource.strip():
-                    if not _text_needs_translation(_122_inner_current(codeList[i])):
+                    if not _text_needs_translation(
+                        _122_inner_current(codeList[i]), innerSource
+                    ):
                         i += 1
                         continue
 
@@ -4891,8 +4923,11 @@ def _searchCodes(page, pbar, jobList, filename):
                     # Retain the current display name even when skip-translated
                     # prevents getSpeaker from running below.
                     speaker = currentName
-                name_to_check = sourceName if SPEAKER_PARSE_MODE else currentName
-                if sourceName and _text_needs_translation(name_to_check):
+                if sourceName and (
+                    _text_needs_translation(sourceName)
+                    if SPEAKER_PARSE_MODE
+                    else _text_needs_translation(currentName, sourceName)
+                ):
                     response = getSpeaker(sourceName)
                     totalTokens[0] += response[1][0]
                     totalTokens[1] += response[1][1]
@@ -5377,26 +5412,17 @@ def _searchCodes(page, pbar, jobList, filename):
                     continue
 
                 groupStart408 = i
-                rawSource = _param_source(codeList[i], 0)
-                if not rawSource.strip():
+                if not _param_source(codeList[i], 0).strip():
                     i += 1
                     continue
 
                 # A comment's translation is written back one line per 408,
                 # wrapped like its Japanese, as plugins read them; JOIN408
-                # translates its lines as one text. The first line keeps the
-                # Japanese of them all.
-                if _scalar_original(codeList[groupStart408]) is None:
-                    rawSource = "\n".join(
-                        source
-                        for source in (
-                            _param_source(codeList[index], 0) for index in group408
-                        )
-                        if source.strip()
-                    )
+                # translates its lines as one text.
+                rawSource = _code408_source(codeList, group408)
                 i = group408[-1]
                 if not _text_needs_translation(
-                    _group_current(codeList, group408[0], group408[-1])
+                    _group_current(codeList, group408[0], group408[-1]), rawSource
                 ):
                     i += 1
                     continue
@@ -5421,7 +5447,9 @@ def _searchCodes(page, pbar, jobList, filename):
                 jaString = _param_current(codeList[i], 0)
 
                 # Skip if IGNORETLTEXT is enabled and no Japanese text
-                if IGNORETLTEXT and not _has_japanese_text(jaString):
+                if IGNORETLTEXT and not _has_japanese_text(
+                    jaString, _param_source(codeList[i], 0)
+                ):
                     i += 1
                     continue
 
@@ -5494,7 +5522,8 @@ def _searchCodes(page, pbar, jobList, filename):
 
                 # Skip if IGNORETLTEXT is enabled and no Japanese text
                 if (
-                    IGNORETLTEXT and not _has_japanese_text(jaString)
+                    IGNORETLTEXT
+                    and not _has_japanese_text(jaString, _param_source(codeList[i], 0))
                 ) or jaString in KEEP_356:
                     i += 1
                     continue
@@ -5811,7 +5840,9 @@ def _searchCodes(page, pbar, jobList, filename):
                     continue
 
                 # Skip if IGNORETLTEXT is enabled and no Japanese text
-                if not _text_needs_translation(_param_current(codeList[i], 1)):
+                if not _text_needs_translation(
+                    _param_current(codeList[i], 1), _param_source(codeList[i], 1)
+                ):
                     i += 1
                     continue
 
@@ -5842,7 +5873,9 @@ def _searchCodes(page, pbar, jobList, filename):
                     continue
 
                 # Skip if IGNORETLTEXT is enabled and no Japanese text
-                if IGNORETLTEXT and not _has_japanese_text(jaString):
+                if IGNORETLTEXT and not _has_japanese_text(
+                    jaString, _param_source(codeList[i], 1)
+                ):
                     i += 1
                     continue
 
@@ -5880,7 +5913,9 @@ def _searchCodes(page, pbar, jobList, filename):
                     continue
 
                 # Skip if IGNORETLTEXT is enabled and no Japanese text
-                if IGNORETLTEXT and not _has_japanese_text(jaString):
+                if IGNORETLTEXT and not _has_japanese_text(
+                    jaString, _param_source(codeList[i], 1)
+                ):
                     i += 1
                     continue
 
@@ -6335,7 +6370,7 @@ def searchSystem(data, pbar):
 
     # Title - batch as a single-item list
     title_src = _system_scalar_source(data, "gameTitle")
-    if _text_needs_translation(data.get("gameTitle")):
+    if _text_needs_translation(data.get("gameTitle"), title_src):
         response = translateAI(
             [title_src],
             ctx("database.game_title"),
@@ -6358,7 +6393,7 @@ def searchSystem(data, pbar):
             for i in range(len(termList)):
                 if termList[i] is not None:
                     src = _system_terms_source(data, term, i)
-                    if not _text_needs_translation(termList[i]):
+                    if not _text_needs_translation(termList[i], src):
                         continue
                     term_values.append(src)
                     term_indices.append(i)
@@ -6383,7 +6418,7 @@ def searchSystem(data, pbar):
     armor_sources = []
     for i in range(len(data["armorTypes"])):
         src = _system_list_source(data, "armorTypes", i)
-        if not _text_needs_translation(data["armorTypes"][i]):
+        if not _text_needs_translation(data["armorTypes"][i], src):
             continue
         armor_values.append(src)
         armor_indices.append(i)
@@ -6409,7 +6444,7 @@ def searchSystem(data, pbar):
     skill_sources = []
     for i in range(len(data["skillTypes"])):
         src = _system_list_source(data, "skillTypes", i)
-        if not _text_needs_translation(data["skillTypes"][i]):
+        if not _text_needs_translation(data["skillTypes"][i], src):
             continue
         skill_values.append(src)
         skill_indices.append(i)
@@ -6435,7 +6470,7 @@ def searchSystem(data, pbar):
     equip_sources = []
     for i in range(len(data.get("equipTypes", []) or [])):
         src = _system_list_source(data, "equipTypes", i)
-        if not _text_needs_translation(data["equipTypes"][i]):
+        if not _text_needs_translation(data["equipTypes"][i], src):
             continue
         equip_values.append(src)
         equip_indices.append(i)
@@ -6461,7 +6496,7 @@ def searchSystem(data, pbar):
     element_sources = []
     for i in range(len(data["elements"])):
         src = _system_list_source(data, "elements", i)
-        if not _text_needs_translation(data["elements"][i]):
+        if not _text_needs_translation(data["elements"][i], src):
             continue
         element_values.append(src)
         element_indices.append(i)
@@ -6488,7 +6523,7 @@ def searchSystem(data, pbar):
     weapon_sources = []
     for i in range(len(data["weaponTypes"])):
         src = _system_list_source(data, "weaponTypes", i)
-        if not _text_needs_translation(data["weaponTypes"][i]):
+        if not _text_needs_translation(data["weaponTypes"][i], src):
             continue
         weapon_values.append(src)
         weapon_indices.append(i)
@@ -6517,7 +6552,7 @@ def searchSystem(data, pbar):
         for idx, val in enumerate(data["variables"]):
             src = _system_list_source(data, "variables", idx)
             if isinstance(val, str) and src.strip():
-                if not _text_needs_translation(val):
+                if not _text_needs_translation(val, src):
                     continue
                 var_indices.append(idx)
                 var_values.append(src)
@@ -6546,7 +6581,7 @@ def searchSystem(data, pbar):
         for idx, val in enumerate(data["switches"]):
             src = _system_list_source(data, "switches", idx)
             if isinstance(val, str) and src.strip():
-                if not _text_needs_translation(val):
+                if not _text_needs_translation(val, src):
                     continue
                 switch_indices.append(idx)
                 switch_values.append(src)
@@ -6576,7 +6611,7 @@ def searchSystem(data, pbar):
         for key, value in messages.items():
             src = _system_terms_message_source(data, key)
             if isinstance(value, str) and src.strip():
-                if not _text_needs_translation(value):
+                if not _text_needs_translation(value, src):
                     continue
                 msg_keys.append(key)
                 msg_values.append(src)

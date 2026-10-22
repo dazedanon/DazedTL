@@ -15,13 +15,14 @@ or no task does, is left out.
 
 A line is in scope when its source holds Japanese (util/source_text): the
 source the engine keeps in `_original`, else the text itself. The engine
-sends a value while it holds Japanese, whatever `_original` says, so a line is
-translated when no part of it holds Japanese (of a name box, the name the
+sends a value while it holds Japanese read against that source, so a line is
+translated when no part of it holds Japanese left (of a name box, the name the
 engine translates), unless it holds a refusal note an earlier run saved in
 place of a translation (`saved_refusals`). A translated map display name or
 note label keeps no `_original`, so whether it had Japanese takes the
-original game file. The engine probe (tests/fixtures/engine_runtime.py)
-checks that the engine sends only the lines left.
+original game file, and any Japanese it holds is left. The engine probe
+(tests/fixtures/engine_runtime.py) checks that the engine sends only the
+lines left.
 """
 
 import re
@@ -53,12 +54,23 @@ def speaker_name(value: Any) -> str:
 
 class Line(NamedTuple):
     """One line a person reads: its kind, the paths of its values, their
-    text, and the Japanese source the engine keeps for them."""
+    text, and the Japanese source the engine keeps for them. A line of more
+    than one value names the text the engine sends as one in *units*, each
+    with its source, or None for text the engine keeps none for."""
 
     kind: str
     paths: tuple[tuple, ...]
     texts: tuple[str, ...]
     sources: tuple[str, ...]
+    units: tuple[tuple[str, str | None], ...] = ()
+
+    def sent(self) -> tuple[tuple[str, str | None], ...]:
+        """The text the engine sends as one, each with its source."""
+        if self.units:
+            return self.units
+        if len(self.texts) == 1:
+            return ((self.texts[0], self.sources[0] if self.sources else None),)
+        return tuple((text, None) for text in self.texts)
 
 
 def _resolve(document: Any, path: tuple) -> Any:
@@ -159,6 +171,7 @@ def lines(
             paths: list[tuple] = []
             texts: list[str] = []
             sources: list[str] = []
+            units: list[tuple[str, str | None]] = []
             head = commands[block.head] if block.head is not None else None
             parameters = (
                 head.get("parameters")
@@ -173,7 +186,9 @@ def lines(
                 # The name box: only its name is translated.
                 paths.append((*listed, block.head, "parameters", 4))
                 texts.append(speaker_name(parameters[4]))
-                sources.extend(map(speaker_name, _command_original(head)))
+                named = tuple(map(speaker_name, _command_original(head)))
+                sources.extend(named)
+                units.append((texts[-1], named[0] if named else None))
             for row in block.rows:
                 paths.append((*listed, row, "parameters", 0))
                 texts.append(blocks.text(commands[row]))
@@ -181,8 +196,12 @@ def lines(
                 source = blocks.source(commands, part)
                 if source is not None:
                     sources.append(source)
+                rows = (blocks.text(commands[row]) for row in part.rows)
+                units.append(("\n".join(row for row in rows if row.strip()), source))
             if paths:
-                listing.append(Line(kind, tuple(paths), tuple(texts), tuple(sources)))
+                listing.append(
+                    Line(kind, tuple(paths), tuple(texts), tuple(sources), tuple(units))
+                )
         # In file order: by the command each line starts at.
         listing.sort(key=lambda line: line.paths[0][len(listed)])
         found.extend(listing)
@@ -310,12 +329,12 @@ def state(line: Line, notes: frozenset[str]) -> str | None:
     """Whether a line is "translated", "untranslated" or holds a refusal
     "note"; None when it is out of scope, and "unknown" for a translated map
     name or note label, whose source only the original game file has."""
-    from util.source_text import holds_source
+    from util.source_text import holds_source, japanese_left
 
     # Notes are rare: only then do the lines' paths become pointers.
     if notes and any(_pointer(path) in notes for path in line.paths):
         return "note"
-    if any(holds_source(text) for text in line.texts):
+    if any(japanese_left(text, source) for text, source in line.sent()):
         return "untranslated"
     if any(holds_source(source) for source in line.sources):
         return "translated"
