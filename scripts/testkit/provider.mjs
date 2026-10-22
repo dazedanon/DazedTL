@@ -5,7 +5,7 @@
 //
 //   { "refuse": ["text"], "decline": ["text"], "fail": ["text"],
 //     "failFirst": false, "stall": false, "answer": null, "hold": false,
-//     "batchSeconds": 0, "long": ["text"] }
+//     "batchSeconds": 0, "long": ["text"], "reply": { "text": "reply" } }
 //
 // - refuse: lines holding the text come back as a refusal note until the
 //   app sends its clarification; decline: they always do.
@@ -14,6 +14,8 @@
 //   validation retries it.
 // - long: lines holding the text come back as a long English message, the
 //   same sentences for every line, so a game can page one at narrow widths.
+// - reply: lines holding a key come back as its reply on every attempt, such
+//   as a kaomoji a model keeps or a line it leaves in Japanese.
 // - stall: chat requests get no answer until stall is turned off; with
 //   answer: N, the first N requests are still answered.
 // - hold: a Batch stays in progress until hold is turned off; otherwise it
@@ -191,6 +193,10 @@ export async function startProvider({ folder, port = 0 }) {
     attempts.set(key, attempt);
     const translations = Object.values(lines).map((line) => {
       const source = String(line);
+      const reply = Object.entries(settings.reply || {}).find(([item]) =>
+        source.includes(item),
+      );
+      if (reply) return reply[1];
       if ((settings.decline || []).some((item) => source.includes(item)))
         return "Translation declined.";
       if (
