@@ -35,6 +35,7 @@ from util.qa.storage import (
     _read_json,
     _task_lock,
     read_task,
+    task_json,
 )
 from util.qa.validation import (
     _line_names,
@@ -369,7 +370,7 @@ def changed_names(
     game's data folder, spares reading a file still as the inventory read it."""
     root = Path(task_dir).expanduser().resolve()
     lines = _task_lines(root)
-    data = Path(_read_json(root / "task.json")["data_root"])
+    data = Path(task_json(root)["data_root"])
     documents: dict[str, Any] = {}
 
     def changed(identity: str) -> bool:

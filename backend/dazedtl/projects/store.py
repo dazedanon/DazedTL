@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from dazedtl.storage import WorkspaceError, read_versioned_json, write_json
+from dazedtl.translation.files import read_json
 
 # "translation" records a game whose method has not been chosen yet.
 METHODS = {"guided", "len", "translation"}
@@ -85,6 +86,40 @@ def validate(value):
         raise invalid
 
 
+def registered_at(projects, source):
+    """The project registered at source: a visible one before one a move
+    replaced and hid, then the one opened last."""
+    found = [p for p in projects if p["source"] == str(source)]
+    found.sort(key=lambda p: (not p.get("hidden"), p.get("last_opened", "")))
+    return found[-1] if found else None
+
+
+_saved = {}
+
+
+def saved(workspace):
+    """The projects workspace's registry lists, read without upgrading or
+    locking it, for a process or store beside the app's registry, such as a
+    run's worker; read again only once the file changes."""
+    path = Path(workspace) / "projects.json"
+    try:
+        info = path.stat()
+        # Each save replaces the file, which a new inode tells at once.
+        key = (info.st_ino, info.st_mtime_ns, info.st_size)
+    except OSError:
+        return []
+    kept = _saved.get(path)
+    if kept and kept[0] == key:
+        return kept[1]
+    try:
+        value = read_json(path, limit=None)
+        validate(value)
+    except OSError, ValueError, UnicodeError:
+        return []
+    _saved[path] = (key, value["projects"])
+    return value["projects"]
+
+
 class Projects:
     def __init__(self, workspace):
         self.path = Path(workspace) / "projects.json"
@@ -122,12 +157,19 @@ class Projects:
     def current(self):
         return self.get(self.data["current_id"]) if self.data["current_id"] else None
 
-    def open(self, detected, method="translation"):
+    def at(self, source, data=None):
+        """The project registered at source (registered_at)."""
+        return registered_at((data or self.data)["projects"], source)
+
+    def open(self, detected, method="translation", identity=None):
+        """Opens the game detected, as the project identity when given, else
+        as the project registered at its folder or a new one; projects/location
+        decides which project a folder is."""
         if method not in METHODS:
             raise ValueError("Choose a supported translation project.")
         source = str(Path(detected["source"]).resolve())
         data = deepcopy(self.data)
-        project = next((p for p in data["projects"] if p["source"] == source), None)
+        project = self._get(data, identity) if identity else self.at(source, data)
         if not project:
             project = {
                 "id": uuid.uuid4().hex,
@@ -141,6 +183,20 @@ class Projects:
             data["projects"].append(project)
         # Reopening a game does not infer a different method from the screen.
         project["engine"] = detected["engine"]
+        return self._select(data, project)
+
+    def move(self, project_id, detected, replaced=None):
+        """Records that the project's game is now at the folder detected, and
+        opens it there. A project replaced, one made for that folder before
+        the move with no work of its own, is hidden, never deleted: its
+        records keep their owner. The project keeps its name; a game moved
+        into a folder inside its old one would otherwise take that folder's."""
+        data = deepcopy(self.data)
+        project = self._get(data, project_id)
+        project["source"] = str(Path(detected["source"]).resolve())
+        project["engine"] = detected["engine"]
+        if replaced:
+            self._get(data, replaced)["hidden"] = True
         return self._select(data, project)
 
     def select(self, project_id):

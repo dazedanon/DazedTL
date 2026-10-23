@@ -148,7 +148,7 @@ def _saved(workspace, project_id, root, record):
             else Path(workspace) / "backups" / project_id
         )
         location = backups.lookup(root, store, record["id"])
-        value = backups.verify(location, source=root, full=False)
+        value = backups.verify(location, full=False)
     except OSError, ValueError, KeyError, TypeError:
         return None
     return _Saved(location, value) if value["kind"] == "source" else None
@@ -321,7 +321,7 @@ def by_id(workspace, project_id, root, identity, state=None):
         location = backups.lookup(
             root, Path(workspace) / "backups" / project_id, identity
         )
-        value = backups.verify(location, source=root, full=False)
+        value = backups.verify(location, full=False)
     except (OSError, ValueError, KeyError, TypeError) as error:
         raise ValueError("No saved original has that ID.") from error
     return _Saved(location, value)

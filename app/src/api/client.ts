@@ -214,6 +214,8 @@ export const api = {
     request("assistant_task_dismiss", { project_id, kind }),
   open: (source: string) => request("open_project", { source }),
   select: (project_id: string) => request("select_project", { project_id }),
+  locate: (project_id: string, source: string) =>
+    request("locate_project", { project_id, source }),
   remove: (project_id: string) => request("remove_project", { project_id }),
   navigate: (screen: Screen) => request("navigate", { screen }),
   method: (project_id: string, method: TranslationMethod) =>

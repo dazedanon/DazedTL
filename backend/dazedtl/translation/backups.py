@@ -110,7 +110,7 @@ def _identity(value):
     )
 
 
-def manifest(directory, source=None):
+def manifest(directory):
     directory = Path(directory)
     value = read_json(_child(directory, "manifest.json"))
     if (
@@ -138,10 +138,9 @@ def manifest(directory, source=None):
         _relative(name)
         if not isinstance(fingerprint, str) or not _HASH.fullmatch(fingerprint):
             raise ValueError("Invalid backup content hash.")
-    if value["version"] == 1:
-        if source is not None and value.get("source") != str(Path(source).resolve()):
-            raise ValueError("The backup belongs to another project.")
-    else:
+    # A version-one backup sits in its project's own profile folder, which a
+    # moved game keeps, so the folder it names doesn't decide its owner.
+    if value["version"] != 1:
         if directory.parent.name != "snapshots":
             raise ValueError("Choose a snapshot in its original backup store.")
         _store(directory.parent.parent)
@@ -208,8 +207,8 @@ def _available_objects(directory, value, stopped):
             raise ValueError("Backup content has changed size.")
 
 
-def verify(directory, *, source=None, full=True, stopped=lambda: False):
-    value = manifest(directory, source)
+def verify(directory, *, full=True, stopped=lambda: False):
+    value = manifest(directory)
     if not full and value["version"] == 2:
         _available_objects(directory, value, stopped)
         return value

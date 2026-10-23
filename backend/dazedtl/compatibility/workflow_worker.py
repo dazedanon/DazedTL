@@ -12,9 +12,10 @@ from dazedtl import system
 from dazedtl.diagnostics import record_crashes, watch_action, worker_failure
 
 try:
-    action = json.loads(system.read_bytes(sys.argv[1]))["action"]
+    plan = json.loads(system.read_bytes(sys.argv[1]))
+    action = plan["action"]
 except OSError, ValueError, KeyError, TypeError, IndexError:
-    action = "unknown"  # The engine's worker reports the unreadable plan.
+    plan, action = {}, "unknown"  # The engine's worker reports the unreadable plan.
 action = str(action)
 record_crashes(action)
 from dazedtl.system import private_stdin
@@ -28,7 +29,9 @@ source = activate()
 from desktop.backend import worker_failures, workflow_actions
 
 from dazedtl import actions
+from dazedtl.compatibility.text import install_locations
 from dazedtl.compatibility.translation import explained
+from dazedtl.projects import location
 
 
 class Progress:
@@ -57,6 +60,10 @@ def reported(native, error):
 
 
 workflow_actions.run_action.layer("dazedtl-actions", actions.run)
+install_locations()
+if isinstance(plan, dict) and isinstance(plan.get("folder"), str):
+    # The plan's Guided workspace is <workspace>/engine/workflows/<id>.
+    location.use(Path(plan["folder"]).parents[2])
 worker_failures.reported.layer("dazedtl-diagnostics", reported)
 # The worker keeps standard output as its event stream before redirecting it.
 sys.stdout = Progress(sys.stdout, watch_action(action))

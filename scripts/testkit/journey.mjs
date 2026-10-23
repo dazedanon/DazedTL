@@ -18,15 +18,24 @@ export async function openGame(
   page,
   { root, inspect, game, method = "Guided steps" },
 ) {
-  const main = await Page.connect(inspect, { root, node: true });
-  await main.evaluate(
-    `process.mainModule.require("electron").dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [${JSON.stringify(game)}] })`,
-  );
-  main.close();
+  await chooseFolder({ root, inspect }, game);
   await page.click("Open a game");
   if (method !== "Guided steps") await page.click(new RegExp(`^${method}`));
   await page.click(`Start with ${method}`);
   if (method === "Guided steps") await page.waitText("Set up this game");
+}
+
+/**
+ * Makes the next native folder dialog answer `folder`, as a user's choice
+ * there would.
+ * @param {{ root: string, inspect: number }} app
+ */
+export async function chooseFolder({ root, inspect }, folder) {
+  const main = await Page.connect(inspect, { root, node: true });
+  await main.evaluate(
+    `process.mainModule.require("electron").dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [${JSON.stringify(folder)}] })`,
+  );
+  main.close();
 }
 
 /** Sets up the open game as untranslated, with its version. */

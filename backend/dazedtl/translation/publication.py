@@ -210,7 +210,6 @@ def freeze(
         "version": 1,
         "id": identity,
         "created": time.time(),
-        "root": str(Path(root).resolve()),
         "kind": kind,
         "state": "reviewed",
         "files": rows,
@@ -306,10 +305,7 @@ def publish(folder, root, plan, log=lambda _: None):
         "source_inputs"
     ]:
         raise ValueError("Original source bindings changed. Review again.")
-    if (
-        record["root"] != str(Path(root).resolve())
-        or receipt_hash(folder) != record["outputs_hash"]
-    ):
+    if receipt_hash(folder) != record["outputs_hash"]:
         raise ValueError(
             "Publication ownership or applied output state changed. Review again."
         )
@@ -418,12 +414,7 @@ def publish(folder, root, plan, log=lambda _: None):
 def _undoable(folder, root, identity):
     rows = history(folder)
     record = next((row for row in rows if row["id"] == identity), None)
-    if (
-        not record
-        or record["root"] != str(Path(root).resolve())
-        or record["state"] not in IN_EFFECT
-        or not undoes(record)
-    ):
+    if not record or record["state"] not in IN_EFFECT or not undoes(record):
         raise ValueError("Choose an applied or interrupted batch to undo.")
     return record
 
@@ -486,9 +477,7 @@ def follow(folder, root, undone, commit):
             (
                 row
                 for row in history(folder)
-                if row.get("commit") == taken
-                and row["state"] == "complete"
-                and row["root"] == root
+                if row.get("commit") == taken and row["state"] == "complete"
             ),
             None,
         ):
@@ -509,7 +498,6 @@ def _restored(folder, root, record, commit):
             "version": 1,
             "id": identity,
             "created": time.time(),
-            "root": str(Path(root).resolve()),
             "kind": "runtime_restore",
             "state": "complete",
             "files": [
@@ -533,11 +521,7 @@ def restore_candidates(folder, root, identity):
     saved of what it replaced, for its reviewed restore."""
     rows = history(folder)
     record = next((row for row in rows if row["id"] == identity), None)
-    if (
-        not record
-        or record["root"] != str(Path(root).resolve())
-        or record["state"] not in IN_EFFECT
-    ):
+    if not record or record["state"] not in IN_EFFECT:
         raise ValueError("Choose an applied or interrupted publication to restore.")
     if undoes(record):
         raise ValueError("This batch restores by undoing its checkpoint.")

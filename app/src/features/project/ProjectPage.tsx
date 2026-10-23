@@ -169,7 +169,6 @@ export default function ProjectPage({
             state={state}
             project={project}
             busy={busy}
-            open={open}
             progress={progress}
             amounts={amounts}
             openTask={openTask}
@@ -204,7 +203,6 @@ function ProjectStatus({
   state,
   project,
   busy,
-  open,
   progress,
   amounts,
   openTask,
@@ -215,7 +213,6 @@ function ProjectStatus({
   state: AppState;
   project: Project;
   busy: boolean;
-  open: () => void;
   progress: GuidedProgress | null;
   amounts: Amounts | null;
   openTask: (step: string, task: string) => void;
@@ -247,9 +244,7 @@ function ProjectStatus({
     />
   );
   const primary = !project.available ? (
-    <Button variant="primary" disabled={busy || state.running} onClick={open}>
-      {project.next_label}
-    </Button>
+    <FindGameFolder project={project} disabled={busy || state.running} />
   ) : !project.method ? (
     <Button variant="primary" disabled={busy} onClick={chooseMethod}>
       Choose translation method
@@ -456,6 +451,40 @@ function ProjectStatus({
       </PageBody>
       <ActionBar feedback={null}>{primary}</ActionBar>
     </>
+  );
+}
+
+/**
+ * Find game folder: the user picks where the game is now, and the project
+ * continues there once the backend finds the same game in it.
+ */
+function FindGameFolder({
+  project,
+  disabled,
+}: {
+  project: Project;
+  disabled: boolean;
+}) {
+  const application = useApplication();
+  const action = useAction({ observer: application });
+  return (
+    <ActionControl
+      label="Find game folder"
+      variant="primary"
+      icon={<FolderOpen size={16} aria-hidden="true" />}
+      disabled={disabled || action.busy}
+      pending={action.busy}
+      pendingText="Checking the folder…"
+      error={action.error}
+      onClick={() =>
+        action.run(async () => {
+          const source = await window.dazedtl.chooseFolder();
+          if (!source) return;
+          await flushDrafts();
+          await api.locate(project.id, source);
+        })
+      }
+    />
   );
 }
 

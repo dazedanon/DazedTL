@@ -204,7 +204,7 @@ def guard_context(project, observed):
     )
 
 
-def phased_workflows(workspace, lock, operations, manual):
+def phased_workflows(workspace, lock, operations, manual, locate):
     from desktop.backend.workflow import Workflows
 
     from .game_write import write_game
@@ -433,7 +433,7 @@ def phased_workflows(workspace, lock, operations, manual):
             if changed:
                 self.save(project)
 
-    return ScopedWorkflows(workspace, lock, operations, manual)
+    return ScopedWorkflows(workspace, lock, operations, manual, locate)
 
 
 def runtime_files(source):
@@ -795,7 +795,6 @@ def _save_receipt(native, folder, outputs, inputs=None):
         Path(folder) / "ace-packing.json",
         {
             "version": PACKING_VERSION,
-            "source": str(root),
             "inputs": inputs,
             "outputs": evidence(root, outputs),
         },

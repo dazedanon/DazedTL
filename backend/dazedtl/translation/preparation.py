@@ -67,7 +67,6 @@ def state(native, folder, *, active=False, observed=None):
     valid = (
         has_data(native)
         and saved.get("project_id") == native["id"]
-        and saved.get("source") == native["source"]
         and (
             active
             or not compare(
@@ -117,7 +116,6 @@ def run(plan, log, execute, guard):
             {
                 **value,
                 "project_id": native["id"],
-                "source": native["source"],
                 "fingerprint": fingerprint(native),
             },
         )

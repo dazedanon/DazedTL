@@ -32,6 +32,7 @@ from util.qa.storage import (
     _read_json,
     _slug,
     _task_lock,
+    located,
     read_task,
 )
 from util.qa.validation import _validate_screen_result
@@ -51,6 +52,7 @@ def rebuild_deep_from_screen(
         != _sha256(_canonical_bytes(source_task))
     ):
         raise ValueError(f"Unsupported or corrupt source QA task: {source}")
+    source_task = located(source, source_task)
     source_rows = source_checkpoint["screen"]["bundles"]
     # Declined items finish a screen too: reviewed on another helper, or set
     # aside as not reviewed.

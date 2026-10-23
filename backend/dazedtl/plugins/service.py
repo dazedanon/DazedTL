@@ -665,6 +665,11 @@ class PluginService:
     def path(self, project_id, name):
         return project_path(self.record(project_id)[1], WORK + "/" + name, exists=False)
 
+    def report_path(self, project_id, request_id):
+        """Where a request's report is saved, in the game where it is now; a
+        request names the folder the game was in when it was copied."""
+        return self.path(project_id, "reports/" + request_id + ".json")
+
     def load(self, project_id):
         path = self.path(project_id, "state.json")
         if not path.exists():
@@ -1966,7 +1971,11 @@ class PluginService:
                 "originalIssue": self.original_issue(project_id, value),
                 "receipts": self.receipt_views(project_id, value),
                 # The helper reads the active request's saved instructions here.
-                "activeRequest": active["path"] if active else "",
+                "activeRequest": str(
+                    self.path(project_id, "requests/" + active["requestId"] + ".json")
+                )
+                if active
+                else "",
                 "awaiting": bool(active)
                 and report.get("status") == "awaiting_report"
                 and report.get("requestId") == active["requestId"],
@@ -2098,7 +2107,7 @@ class PluginService:
             "handoff": {
                 "kind": "plugins",
                 "requestId": result["requestId"],
-                "expects": [value["requests"][result["stage"]]["report"]],
+                "expects": [self.report_path(project_id, result["requestId"])],
             },
         }
 
@@ -2514,7 +2523,11 @@ class PluginService:
                     # A lost reply must not restart the next stage or replace edited copies.
                     return {
                         "text": request["instructions"],
-                        "request": request["path"],
+                        "request": str(
+                            self.path(
+                                project_id, "requests/" + request["requestId"] + ".json"
+                            )
+                        ),
                         "requestId": request["requestId"],
                         "stage": request["kind"],
                         "state": self.state(project_id),
@@ -2694,7 +2707,10 @@ class PluginService:
                 "requestId": request["requestId"],
                 "requestHash": digest(request),
             }
-            or read_json(request["path"]) != request
+            or read_json(
+                self.path(project_id, "requests/" + request["requestId"] + ".json")
+            )
+            != request
         ):
             raise ValueError("The scoped request changed. Copy and review a new task.")
 
@@ -2761,13 +2777,14 @@ class PluginService:
             raise ValueError("Copy the scoped task before refreshing its saved report.")
         _, root = self.record(project_id)
         self.verify_request(project_id, request)
-        if not Path(request["report"]).is_file():
+        path = self.report_path(project_id, request["requestId"])
+        if not path.is_file():
             raise ValueError(
                 "No saved "
                 + kind
                 + " report yet. Have your agent finish the copied task, then check again."
             )
-        report = read_json(request["report"], limit=32_000_000)
+        report = read_json(path, limit=32_000_000)
         if not isinstance(report, dict) or any(
             report.get(key) != request[key]
             for key in ("version", "kind", "projectId", "requestId", "binding")

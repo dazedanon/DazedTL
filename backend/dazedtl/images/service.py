@@ -1587,23 +1587,29 @@ class ImageService:
                     ),
                 )
 
-            if digest(previous) == previous_entry["hash"] and not compare(
-                basis(
-                    previous,
-                    previous.get("assets", []),
-                    (previous.get("reviewVersion"), previous.get("recipeVersion")),
-                ),
-                basis(
-                    {
-                        "inventoryRevision": value["inventoryRevision"],
-                        "kind": kind,
-                        "scope": scope,
-                        "guidance": guidance,
-                        "revisionComments": comments,
-                    },
-                    rows,
-                    (REVIEW_VERSION, RECIPE_VERSION if kind == "editing" else None),
-                ),
+            # A request names the game's folder for the assistant's tools, so
+            # one copied before the game moved is copied again.
+            if (
+                digest(previous) == previous_entry["hash"]
+                and previous.get("source") == str(root)
+                and not compare(
+                    basis(
+                        previous,
+                        previous.get("assets", []),
+                        (previous.get("reviewVersion"), previous.get("recipeVersion")),
+                    ),
+                    basis(
+                        {
+                            "inventoryRevision": value["inventoryRevision"],
+                            "kind": kind,
+                            "scope": scope,
+                            "guidance": guidance,
+                            "revisionComments": comments,
+                        },
+                        rows,
+                        (REVIEW_VERSION, RECIPE_VERSION if kind == "editing" else None),
+                    ),
+                )
             ):
                 value[kind]["copiedAt"] = now()
                 value[kind].pop("rejected", None)

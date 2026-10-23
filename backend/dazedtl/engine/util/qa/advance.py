@@ -44,7 +44,13 @@ from util.qa.selection import (
     _nearby_commands,
     _scene_position,
 )
-from util.qa.storage import _atomic_write_json, _load_task, _read_json, _task_lock
+from util.qa.storage import (
+    _atomic_write_json,
+    _load_task,
+    _read_json,
+    _task_lock,
+    task_json,
+)
 
 # Ready deep items that open a deep bundle while screening continues.
 EARLY_DEEP_BATCH = DEFAULT_DEEP_ITEM_LIMIT
@@ -77,7 +83,7 @@ def _deep_items(
     """Deep items for the `only` candidates of the basis; a cluster reviewed
     before carries that `prior_review` to reconcile with newer evidence."""
     context = _read_json(root / "context.json")
-    task = _read_json(root / "task.json")
+    task = task_json(root)
     records, clusters = _record_maps(manifest)
     game = _lint_game(root, manifest)
     lint_accepted = _lint_decisions(checkpoint, declined, manifest, task["layout"], game)

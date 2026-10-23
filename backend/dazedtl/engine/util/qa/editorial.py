@@ -42,6 +42,7 @@ from util.qa.storage import (
     _load_task,
     _read_json,
     _task_lock,
+    task_json,
 )
 from util.qa.validation import _consistency_conflicts, _simulate_apply
 
@@ -79,7 +80,7 @@ def _editorial_items(
 ) -> list[dict[str, Any]]:
     """One editorial item per finding to confirm, with its nearby game text,
     or a scene correction's whole scene."""
-    task = _read_json(root / "task.json")
+    task = task_json(root)
     manifest = _read_json(root / "inventory.json")
     records, _clusters = _record_maps(manifest)
     scenes = (

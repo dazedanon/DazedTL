@@ -1,8 +1,8 @@
 """Work a game folder keeps for another project, and the user's way on.
 
 Plugin files and Images save their progress inside the game folder, bound to
-the project that saved it. Projects are keyed by the game's path, so a moved or
-copied game, a new profile or a reinstall opens the same folder as a new
+the project that saved it. A moved game keeps its project (projects/location),
+but a copied game, a new profile or a reinstall opens the same work under a new
 project. Its saved work is then neither used nor discarded until the user
 chooses: the feature takes it over after rechecking what it can, or starts over
 with the saved files moved aside under a dated name.

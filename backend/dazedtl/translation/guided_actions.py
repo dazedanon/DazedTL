@@ -803,7 +803,6 @@ class GuidedActions:
             payload = {
                 "version": 1,
                 "project_id": project_id,
-                "source": project["source"],
                 "manifest": MANIFEST,
                 "evidence": evidence(
                     project["source"],

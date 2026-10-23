@@ -17,10 +17,21 @@ KEEP = 3
 
 
 def binding(guard):
-    """What a report describes: the game's data, plugin list and plugins."""
-    return {
-        key: guard.get(key) for key in ("layout", "data", "plugins", "plugin_files")
-    }
+    """What a report describes: the game's data, plugin list and plugins,
+    as moving the game leaves them."""
+    from desktop.backend.workflow_actions import portable
+
+    return portable(
+        {key: guard.get(key) for key in ("layout", "data", "plugins", "plugin_files")}
+    )
+
+
+def describes(saved, guard):
+    """Whether a saved report describes the game as guard finds it; one
+    from before then names the game's folder."""
+    from desktop.backend.workflow_actions import portable
+
+    return portable(saved["binding"]) == binding(guard)
 
 
 def run_playtest(plan, log):
@@ -111,7 +122,7 @@ def run_fixes(plan, log):
     root = Path(plan["project"]["source"])
     data = Path(plan["project"]["data"])
     found = latest(folder)
-    if not found or found[0]["binding"] != binding(plan["guard"]):
+    if not found or not describes(found[0], plan["guard"]):
         raise ValueError(
             "Run the playtest first: fixes are checked against a playtest of the "
             "game as it is now."
@@ -420,7 +431,7 @@ def pending(folder, guard):
     """The latest playtest's findings in translated text, while the game is
     as it played it."""
     found = latest(folder)
-    if not found or found[0]["binding"] != binding(guard):
+    if not found or not describes(found[0], guard):
         return []
     return list(found[1].get("observations") or [])
 
@@ -618,7 +629,7 @@ def playtest_state(folder, guard, focus="release"):
         )
     return {
         "report": saved["report"],
-        "current": saved["binding"] == binding(guard),
+        "current": describes(saved, guard),
         "finished_at": saved["finished_at"],
         "seconds": report.get("seconds", 0),
         "played": bool(report.get("played")),

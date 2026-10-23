@@ -17,6 +17,7 @@ from pathlib import Path
 
 from dazedtl import system
 from dazedtl.diagnostics import FOLDER
+from dazedtl.projects import location
 from dazedtl.storage import WorkspaceError, WorkspaceLock, write_bytes, write_json
 
 from . import plan_file
@@ -28,6 +29,12 @@ REPLACED = "Replaced by a newer estimate; no requests were sent."
 
 def now():
     return datetime.now(UTC).isoformat()
+
+
+def stored(plan):
+    """The plan as a run saves it: without its game's folder, which the
+    project list keeps, so a moved game keeps its runs (RunStore.load)."""
+    return {key: value for key, value in plan.items() if key != "source"}
 
 
 def declined_units(job):
@@ -134,29 +141,38 @@ class RunStore:
         return plan
 
     def load(self, identity, project_id=None, *, reuse=False):
-        """The run's record and frozen plan. With reuse, the plan this store
-        read last comes back again while the record still names it: a worker
-        polling a Batch rereads the record every few seconds, and a large
-        game's plan costs far more to read. Whoever reuses a plan must not
-        change it."""
+        """The run's record and frozen plan, with `source` naming where its
+        project's game is now. With reuse, the plan this store read last
+        comes back again while the record still names it: a worker polling a
+        Batch rereads the record every few seconds, and a large game's plan
+        costs far more to read. Whoever reuses a plan must not change it."""
         job = self.record(identity, project_id)
         kept = self.kept.get(identity)
         if reuse and kept and kept[0] == job["plan_sha256"]:
-            return job, kept[1]
-        plan = self.plan(self.folder(identity), job)
-        if reuse:
-            self.kept = {identity: (job["plan_sha256"], plan)}
-        return job, plan
+            plan = kept[1]
+        else:
+            plan = self.plan(self.folder(identity), job)
+            if reuse:
+                self.kept = {identity: (job["plan_sha256"], plan)}
+        # Plans saved before then name the game where it was then; the
+        # bytes stay as approved.
+        return job, {**plan, "source": self.source(job["project_id"])}
+
+    def source(self, project_id):
+        """The run's project's game folder, from the project list."""
+        return location.registered(self.workspace, project_id)
 
     def save(self, job):
         job["updated"] = now()
+        # Records before then named the game's folder.
+        job.pop("source", None)
         write_json(self.folder(job["id"]) / "job.json", job)
 
     def create(self, project_id, plan, quote=None):
         identity = uuid.uuid4().hex
         folder = self.root / identity
         folder.mkdir(parents=True)
-        saved = plan_file.encode(plan)
+        saved = plan_file.encode(stored(plan))
         write_bytes(folder / "plan.json", saved)
         states = {}
         if plan["kind"] == "translation":
@@ -170,7 +186,6 @@ class RunStore:
             "version": 1,
             "id": identity,
             "project_id": project_id,
-            "source": plan["source"],
             "kind": plan["kind"],
             "label": plan.get("label", "Translation"),
             "created": now(),
@@ -227,7 +242,7 @@ class RunStore:
         receipt, checkpoint or result names the plan it replaces."""
         if job["status"] != "ready" or self.authorized(job):
             raise ValueError("Only a run waiting for approval can be priced again.")
-        saved = plan_file.encode(plan)
+        saved = plan_file.encode(stored(plan))
         write_bytes(self.folder(job["id"]) / "plan.json", saved)
         job.update(
             plan_sha256=digest(saved),
@@ -323,13 +338,20 @@ class RunStore:
         """The run with any declined request another run has since translated
         read as accepted. It checks only that the saved result exists, so
         state polls stay cheap; the result itself is validated when read."""
-        done = [
+        declined = [
             identity
             for identity, row in job["states"].items()
             if row["state"] == "declined"
-            and (
-                Path(job["source"])
-                / Results(job["source"]).relative(
+        ]
+        if not declined:
+            return job
+        source = self.source(job["project_id"])
+        done = [
+            identity
+            for identity in declined
+            if (
+                Path(source)
+                / Results(source).relative(
                     {"fingerprint": job["fingerprints"][identity]}
                 )
             ).is_file()

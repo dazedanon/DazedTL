@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from dazedtl import system
+from dazedtl.projects import location
 from dazedtl.storage import write_json
 from dazedtl.translation import publication
 from dazedtl.translation.files import (
@@ -17,6 +18,20 @@ from dazedtl.translation.files import (
     project_path,
     read_json,
 )
+
+
+def _task_game(native, task_dir, task):
+    """A QA task reviews its project's game where it is now: the task sits
+    in its Guided workspace, which the project list links to the game."""
+    return location.workflow_game(task_dir) or native(task_dir, task)
+
+
+def install_locations():
+    """QA tasks follow a moved game, in the app and its workers."""
+    from util.qa import storage
+
+    storage.game_folder.layer("dazedtl-locations", _task_game)
+
 
 # Where each QA stage stands for the page's activity line.
 ACTIVITY_STAGES = ("screen", "deep", "sweep", "editorial")
@@ -39,6 +54,9 @@ def _finding_kind(row):
 
 
 def binding(plan):
+    """What a prepared task reviews, as moving the game leaves it."""
+    from desktop.backend.workflow_actions import portable
+
     guard = {
         key: value
         for key, value in plan["guard"].items()
@@ -46,11 +64,18 @@ def binding(plan):
     }
     index = Path(plan["folder"]) / "source-inputs.json"
     return {
-        "source": plan["project"]["source"],
         "project": plan["project_id"],
-        "guard": guard,
+        "guard": portable(guard),
         "source_inputs": digest(index.read_bytes()) if index.exists() else None,
     }
+
+
+def _saved_binding(saved):
+    """A saved task's binding; one from before then names its game's folder."""
+    from desktop.backend.workflow_actions import portable
+
+    value = {key: item for key, item in saved["binding"].items() if key != "source"}
+    return {**value, "guard": portable(value["guard"])}
 
 
 def qa_handoff(task, helper="project.py qa"):
@@ -258,11 +283,12 @@ def qa_state(plan):
     now = binding(plan)
     engine_status = qa.status(root)
     stage = engine_status.get("stage", "")
-    same_text = _beside_plugins(saved["binding"]) == _beside_plugins(now)
+    before = _saved_binding(saved)
+    same_text = _beside_plugins(before) == _beside_plugins(now)
     # The game's plugins, as a playtest fix or a Plugin files apply changes
     # them, leave the text a finished review corrects as it was.
     current = not rules_changed and (
-        saved["binding"] == now or (stage == "complete" and same_text)
+        before == now or (stage == "complete" and same_text)
     )
     # Only the game's plugins changed during review: preparing again captures
     # the screens again and keeps the review, which the copied task's

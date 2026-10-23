@@ -2728,6 +2728,11 @@ export type ProjectRequest = {
   project_id: string;
 };
 
+export type LocateProjectRequest = {
+  project_id: string;
+  source: string;
+};
+
 export type AssistantTaskRequest = {
   project_id: string;
   kind: AssistantTaskKind;
@@ -3240,6 +3245,7 @@ export type RpcContract = {
   };
   open_project: { request: OpenProjectRequest; response: AppState };
   select_project: { request: ProjectRequest; response: AppState };
+  locate_project: { request: LocateProjectRequest; response: AppState };
   remove_project: { request: ProjectRequest; response: AppState };
   navigate: { request: NavigateRequest; response: AppState };
   project_method: { request: ProjectMethodRequest; response: AppState };

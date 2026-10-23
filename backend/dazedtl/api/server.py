@@ -24,11 +24,14 @@ from dazedtl.images.editor import ImageEditor
 from dazedtl.images.native_translation import ImageNativeTranslation
 from dazedtl.plugins import PluginService
 from dazedtl.plugins.service import receipt_label
+from dazedtl.projects import location
+from dazedtl.projects.location import Locations
 from dazedtl.projects.store import Projects
 from dazedtl.settings.store import Settings
 from dazedtl.storage import WorkspaceLock
 from dazedtl.system import private_stdin
 from dazedtl.translation.assistant_tasks import AssistantTasks
+from dazedtl.translation.files import read_json
 from dazedtl.translation.guided import Guided
 from dazedtl.translation.playtest import Playtest
 from dazedtl.translation.service import Translation, assistant_request
@@ -61,6 +64,7 @@ class Application:
         self.workspace = Path(workspace).resolve()
         self.workspace.mkdir(parents=True, exist_ok=True)
         self.workspace_lock = WorkspaceLock(self.workspace)
+        location.use(self.workspace)
         self.projects = Projects(self.workspace)
         self.projects.data["screen"] = "project"
         self.backend = ExistingBackend(self.workspace / "engine", allow_providers)
@@ -90,7 +94,9 @@ class Application:
             captured=self.playtest.labels,
             seen=self.playtest.seen_plugin_text,
         )
-        self.assistant_tasks = AssistantTasks(self.workspace)
+        self.assistant_tasks = AssistantTasks(
+            self.workspace, lambda project_id: self.projects.get(project_id)["source"]
+        )
         self.image_editor = ImageEditor(self.images)
         self.image_native = ImageNativeTranslation(self.images, self.image_editor)
         self.translation.image_units = self.images.progress_units
@@ -102,12 +108,56 @@ class Application:
             ),
             "export": self.guided.export,
         }
+        self.locations = Locations(
+            self.projects,
+            detect=self.translation.engine.detect,
+            has_work=self.has_work,
+            busy=lambda: self.backend.running() or self.translation.jobs.running(),
+            relocate=self.relocate,
+        )
+        current = self.projects.current
+        if current and self.locations.holds(current):
+            # The game open when the app last closed is opened again.
+            self.locations.keep(current)
         self.guided.batch_monitor.start()
+
+    def has_work(self, project):
+        """Whether a project holds work of its own, which a move never
+        replaces with another project: runs, Batches, estimates, applied text
+        or Text QA."""
+        if any(
+            run["kind"] != "operation"
+            for run in self.translation.jobs.store.list(project["id"])
+        ):
+            return True
+        runs = self.guided.path(project["id"], "runs")
+        if runs.exists() and read_json(runs).get("runs"):
+            return True
+        native = self.backend.workflows.projects.get(project.get("backend_id"))
+        if not native:
+            return False
+        folder = self.backend.workflows.folder(native["id"])
+        return bool(
+            native.get("manual_job")
+            or any((folder / "text-publications").glob("*"))
+            or any(folder.glob("text-qa-*.json"))
+        )
+
+    def relocate(self, project, before):
+        """Publishes a project's move from the folder before to the records
+        that keep its game in memory, and to older records that name it."""
+        if project.get("backend_id"):
+            with self.backend.lock:
+                self.backend.workflows.relocate(
+                    project["backend_id"], project["source"]
+                )
+        self.assistant_tasks.relocate(project["id"], before)
 
     def state(self):
         value = self.projects.state()
         project = value["project"]
-        if project and project.get("backend_id") and Path(project["source"]).is_dir():
+        available = bool(project) and self.locations.holds(project)
+        if project and project.get("backend_id") and available:
             # Queued work starts before this reads what runs.
             try:
                 self.guided.start_queued(project["id"])
@@ -121,7 +171,7 @@ class Application:
         if project:
             project = dict(project)
             project.update(
-                available=Path(project["source"]).is_dir(),
+                available=available,
                 status="Project open",
                 detail="Choose the next task for this project.",
                 next_label="Continue setup",
@@ -129,8 +179,8 @@ class Application:
             if not project["available"]:
                 project.update(
                     status="Game folder unavailable",
-                    detail="Reconnect the drive or open the game in its new location.",
-                    next_label="Open another game",
+                    detail="Reconnect the drive, or find the game where it is now.",
+                    next_label="Find game folder",
                 )
             elif project.get("backend_id"):
                 try:
@@ -498,6 +548,12 @@ class Application:
         return self.assistant_tasks.dismiss(project_id, kind)
 
     def open_project(self, source):
+        root = self.game_folder(source)
+        self.locations.open(root)
+        self.sync_game_update()
+        return self.state()
+
+    def game_folder(self, source):
         root = Path(source).expanduser().resolve(strict=True)
         if not root.is_dir() or root == root.parent:
             raise ValueError("Choose a game folder.")
@@ -510,13 +566,22 @@ class Application:
                 raise ValueError(
                     "Choose a game folder separate from application and workspace storage."
                 )
-        detected = {"source": str(root), "engine": self.translation.engine.detect(root)}
-        self.projects.open(detected)
+        return root
+
+    def select_project(self, project_id):
+        project = self.projects.get(project_id)
+        if self.locations.holds(project):
+            # Its game may name another project, which moved here.
+            self.locations.open(project["source"], project)
+        else:
+            self.projects.select(project_id)
         self.sync_game_update()
         return self.state()
 
-    def select_project(self, project_id):
-        self.projects.select(project_id)
+    def locate_project(self, project_id, source):
+        """Find game folder: the project continues with its game at source."""
+        root = self.game_folder(source)
+        self.locations.find(project_id, root)
         self.sync_game_update()
         return self.state()
 
@@ -566,7 +631,7 @@ class Application:
     def sync_game_update(self):
         """The open game's GameUpdate config follows Settings and its remotes."""
         project = self.projects.current
-        if project and Path(project["source"]).is_dir():
+        if project and self.locations.holds(project):
             self.translation.game_update.sync(project["id"])
 
     def settings_draft(self, revision, connection_id, values, model_options):
@@ -696,6 +761,7 @@ def routes(app):
             for name in (
                 "open_project",
                 "select_project",
+                "locate_project",
                 "remove_project",
                 "navigate",
                 "project_method",

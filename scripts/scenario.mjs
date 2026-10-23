@@ -258,6 +258,8 @@ async function build(name) {
       await run({ page, state });
       console.log(`${((Date.now() - at) / 1000).toFixed(1)} s`);
     }
+    // A step may have moved the game.
+    writeState(state);
     if (scenario.upgrade) {
       // This version opens what the earlier one left, as after an update.
       page.close();

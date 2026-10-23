@@ -12,8 +12,9 @@ from unittest.mock import patch
 
 from dazedtl.api.contracts.translation import TranslationBatch
 from dazedtl.api.contracts.validation import _close_contracts
+from dazedtl.projects.store import SCHEMA_VERSION
 from dazedtl.storage import WorkspaceLock, write_json
-from dazedtl.translation import organize
+from dazedtl.translation import jobs, organize
 from dazedtl.translation.files import digest, project_path
 from dazedtl.translation.jobs import Jobs, RunStore, scratch
 from dazedtl.translation.project import ProjectWorkspace, scope
@@ -92,6 +93,28 @@ class BatchProvider:
         )
 
 
+def register(profile, project_id, game):
+    """The project list, which says where the game of project_id's runs is."""
+    write_json(
+        Path(profile) / "projects.json",
+        {
+            "version": SCHEMA_VERSION,
+            "current_id": "",
+            "screen": "project",
+            "projects": [
+                {
+                    "id": project_id,
+                    "name": "game",
+                    "source": str(game),
+                    "engine": "MVMZ",
+                    "method": "len",
+                    "phase": "database",
+                }
+            ],
+        },
+    )
+
+
 class TranslationTests(unittest.TestCase):
     def setUp(self):
         temporary = TemporaryDirectory()
@@ -99,6 +122,8 @@ class TranslationTests(unittest.TestCase):
         self.root = Path(temporary.name)
         self.game = self.root / "game"
         self.game.mkdir()
+        # Runs find their game through their project's record.
+        register(self.root / "profile", "project", self.game)
         self.store = RunStore(self.root / "profile")
 
     def run_record(self, mode="live", requests=None):
@@ -221,6 +246,8 @@ class TranslationTests(unittest.TestCase):
         accepted = None
         for state in ("accepted", "failed"):
             (self.game / state).mkdir()
+            # Each attempt is a game of its own.
+            register(self.root / "profile", state, self.game / state)
             plan = {
                 "version": 1,
                 "kind": "translation",
@@ -230,7 +257,7 @@ class TranslationTests(unittest.TestCase):
                 "configuration": configuration,
                 "batch_limits": [50, 100000],
             }
-            job = self.store.create("project", plan, {"cost": 1})
+            job = self.store.create(state, plan, {"cost": 1})
             self.store.authorize(job)
             Runner(self.store, job["id"], Keyed(), lambda: None).step()
             current, _plan = self.store.load(job["id"])
@@ -1072,8 +1099,19 @@ class TranslationTests(unittest.TestCase):
         # The provider receives exactly the payload bytes that were approved.
         self.assertEqual(
             json.dumps(self.store.load(job["id"])[1], ensure_ascii=False),
-            json.dumps(plan, ensure_ascii=False),
+            json.dumps(
+                {**jobs.stored(plan), "source": plan["source"]}, ensure_ascii=False
+            ),
         )
+        # The plan names no game folder: a moved game's approved run reads
+        # its game where the project list says it is now, still approved.
+        self.assertNotIn(str(self.game).encode(), saved)
+        self.store.authorize(job)
+        moved = self.root / "moved"
+        register(self.root / "profile", "project", moved)
+        job, loaded = self.store.load(job["id"])
+        self.assertEqual(loaded["source"], str(moved))
+        self.assertTrue(self.store.authorized(job))
 
     def test_stale_sources_stop_before_any_provider_call(self):
         job, _plan = self.run_record()

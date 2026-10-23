@@ -40,8 +40,9 @@ Lists everywhere use the same words:
 | **Outdated** | Something it was based on changed; redo it. |
 | **Blocked** | It can't continue; the detail beside it says why. |
 
-A project belongs to its folder, so a moved or copied game opens as a new project.
-Plugin files and Images then offer **Use saved progress** to keep the earlier work, or **Start over**.
+A moved or renamed game keeps its project: open it in its new folder and its work is all there.
+While DazedTL can't find a project's game, the Project page offers **Find game folder** to show it where the game is now.
+A copied game opens as a new project; Plugin files and Images then offer **Use saved progress** to keep the earlier work, or **Start over**.
 
 ## Guided steps
 

@@ -175,7 +175,8 @@ def adoptable_requests(directory, plan):
     try:
         estimate = json.loads((directory / spec["plan"]).read_text(encoding="utf-8"))
         seeds = {spec["plan"], spec["queue"]}
-        ignore = {*spec.get("ignore", ()), "adopt_requests"}
+        # Plans saved before then named the game's folder.
+        ignore = {*spec.get("ignore", ()), "adopt_requests", "context_source"}
     except (OSError, ValueError, KeyError, TypeError):
         return None
 
@@ -201,7 +202,7 @@ def snapshot_context(directory, plan, workspace):
     game = directory / "game"
     metadata = game / ".dazedtl"
     metadata.mkdir(parents=True)
-    if plan["context_source"]:
+    if plan.get("context_source"):
         source = Path(plan["context_source"])
         if not source.is_dir() or (source / "skills").is_symlink():
             raise ValueError("Choose a regular game context folder.")
@@ -420,6 +421,9 @@ class ManualJobs:
             directory.mkdir(parents=True)
             try:
                 self._snapshot_context(directory, plan)
+                # The snapshot holds the game's context; a saved plan never
+                # names the game's folder, which can move.
+                plan.pop("context_source", None)
                 if workflow is not None:
                     seed_variables(directory, plan, self.workspace / "workflows" / workflow["id"])
                 atomic_json(directory / "plan.json", plan)

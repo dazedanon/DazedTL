@@ -379,8 +379,7 @@ def packing_receipt(native, folder, inputs, restored=()):
         restored = [name for name in saved["outputs"] if name.casefold() in named]
         kept = [name for name in saved["outputs"] if name not in restored]
         if not (
-            saved.get("source") == native["source"]
-            and isinstance(saved["inputs"], dict)
+            isinstance(saved["inputs"], dict)
             and all(
                 saved["outputs"][name] == value
                 for name, value in (

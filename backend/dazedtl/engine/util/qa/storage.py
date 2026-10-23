@@ -10,10 +10,11 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from util import system
+from util import extensions, system
 from util.freshness import Basis, compare
 from util.qa.schema import (
     CHECKPOINT_SCHEMA,
+    PREPARED_AT,
     QA_RULES_VERSION,
     TASK_SCHEMA,
     _canonical_bytes,
@@ -141,11 +142,39 @@ def _observation_key(observation: dict[str, Any]) -> tuple[str, str]:
     return observation["identity"], observation["note"]
 
 
+@extensions.point
+def game_folder(task_dir: Path, task: dict[str, Any]) -> str:
+    """Where the game a task reviews is now: where it was prepared, unless
+    a host whose games can move layers where it keeps them."""
+    return task["game_root"]
+
+
+def located(task_dir: Path, task: dict[str, Any]) -> dict[str, Any]:
+    """The task with its game and data folders where they are now; its
+    digest still names the task as prepared (schema.task_sha256)."""
+    if not isinstance(task.get("game_root"), str) or not isinstance(task.get("data_root"), str):
+        return task
+    game = str(game_folder(task_dir, task))
+    if game == task["game_root"]:
+        return task
+    prepared, data = Path(task["game_root"]), Path(task["data_root"])
+    if data.is_relative_to(prepared):
+        data = Path(game) / data.relative_to(prepared)
+    return {**task, "game_root": game, "data_root": str(data),
+            PREPARED_AT: {"game_root": task["game_root"], "data_root": task["data_root"]}}
+
+
+def task_json(task_dir: str | Path) -> dict[str, Any]:
+    """A task folder's task, its game where it is now."""
+    root = Path(task_dir).expanduser().resolve()
+    return located(root, _read_json(root / "task.json"))
+
+
 def read_task(task_dir: str | Path) -> tuple[Path, dict, dict]:
     """The task and its checkpoint for reading, or for applying a finished
     task's findings, whichever rules prepared it."""
     root = Path(task_dir).expanduser().resolve()
-    task = _read_json(root / "task.json")
+    task = task_json(root)
     checkpoint = _read_json(root / "checkpoint.json")
     if task.get("schema") != TASK_SCHEMA or checkpoint.get("schema") != CHECKPOINT_SCHEMA:
         raise ValueError(f"Unsupported or corrupt QA task: {root}")

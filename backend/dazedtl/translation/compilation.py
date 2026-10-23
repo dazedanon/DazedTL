@@ -22,6 +22,21 @@ def compile_requests(engine, source, options, raw, language):
 
 
 CHANGED = "Shared guidance, source metadata or references changed. Compile and review a new plan."
+# Digests of a request's context that also cover where its game was, so a
+# moved game's requests compare without them; what they cover that the model
+# reads is in the context itself, as the request's fingerprint has it.
+LOCATED = {"context_sha256", "request_sha256"}
+
+
+def portable(row):
+    """A compiled request without the digests that name its game's folder."""
+    context = row.get("context")
+    if not isinstance(context, dict):
+        return row
+    return {
+        **row,
+        "context": {key: item for key, item in context.items() if key not in LOCATED},
+    }
 
 
 def verify_compilation(engine, plan, index=None):
@@ -44,7 +59,7 @@ def verify_compilation(engine, plan, index=None):
         engine, plan["source"], plan["options"], raw, plan["configuration"]["language"]
     )
     if len(current) != len(saved) or any(
-        row != {key: request.get(key) for key in row}
+        portable(row) != portable({key: request.get(key) for key in row})
         for row, request in zip(current, saved)
     ):
         raise ValueError(CHANGED)

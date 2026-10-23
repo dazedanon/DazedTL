@@ -11,6 +11,7 @@ import uuid
 from dazedtl.actions import ACTIONS, ENGINE, named
 from util import extensions
 from util.ace import rgssad
+from util.paths import in_game
 from util.game_settings import without_game_update
 from util.project_preparation import _game_path, rpgmaker_layout
 from .project import digest, file_digest
@@ -124,6 +125,24 @@ def guard_context(root, layout, file_hash=file_hash, tree_hashes=tree_hashes):
             "legacy_skills": tree_hashes(root, root / "skills"),
             "references": file_hash(root, root / ".dazedtl/reference-games.json"),
             "skills": tree_hashes(root, root / ".dazedtl/skills")}
+
+
+def portable(guard):
+    """A guard, or what binds part of one, as a moved game leaves it: its
+    layout names the game's files relative to the game folder, and not the
+    folder, so saved work bound to it stays current after a move. Idempotent,
+    so a binding saved either way compares through it."""
+    layout = guard.get("layout")
+    if not isinstance(layout, dict) or "source" not in layout:
+        return guard
+    root = layout["source"]
+    portable_layout = {key: value for key, value in layout.items() if key != "source"}
+    for key in ("data", "plugins"):
+        if isinstance(portable_layout.get(key), str):
+            portable_layout[key] = in_game(portable_layout[key], root)
+    if isinstance(portable_layout.get("encrypted"), list):
+        portable_layout["encrypted"] = [in_game(path, root) for path in portable_layout["encrypted"]]
+    return {**guard, "layout": portable_layout}
 
 
 def validate_plan(plan):

@@ -8,7 +8,8 @@ after its first results also names the file it saves last, so it does not
 read finished early, and one whose assistant validates its results after
 saving them names the validator's report, so it reads finished only once a
 passing report follows them. The features keep their own requests, reports
-and validation.
+and validation. A path in the game folder is kept relative to it, so a
+moved game's tasks still find their results.
 """
 
 from __future__ import annotations
@@ -41,9 +42,41 @@ def _time(seconds=None):
     return moment.isoformat(timespec="milliseconds")
 
 
+# What a record names its files by.
+PATHS = ("expects", "finish", "validation")
+
+
+def _in_game(path, root):
+    from util.paths import in_game
+
+    return in_game(path, root)
+
+
+def _from_game(path, root):
+    from util.paths import from_game
+
+    return from_game(path, root)
+
+
+def _rebased(record, change):
+    """record with change applied to each file it names."""
+    return {
+        key: (
+            [change(path) for path in value]
+            if key == "expects"
+            else change(value)
+            if key in PATHS
+            else value
+        )
+        for key, value in record.items()
+    }
+
+
 class AssistantTasks:
-    def __init__(self, workspace):
+    def __init__(self, workspace, game=lambda _project_id: None):
+        """game names a project's game folder, where relative paths are."""
         self.root = Path(workspace) / "assistant-tasks"
+        self.game = game
         self.lock = threading.Lock()
         # Validation reports by path, read again only when they change.
         self.reports = {}
@@ -77,7 +110,8 @@ class AssistantTasks:
             raise ValueError("Unknown assistant task.")
         with self.lock:
             tasks = self._load(project_id)
-            tasks[kind] = {
+            game = self.game(project_id)
+            record = {
                 "requestId": str(handoff.get("requestId") or ""),
                 "copiedAt": _time(),
                 "expects": [str(path) for path in handoff.get("expects", [])],
@@ -88,7 +122,22 @@ class AssistantTasks:
                     else {}
                 ),
             }
+            tasks[kind] = (
+                _rebased(record, lambda path: _in_game(path, game)) if game else record
+            )
             self._save(project_id, tasks)
+
+    def relocate(self, project_id, before):
+        """A record from before then names files in a moved game by their
+        old paths, which become relative to the game folder."""
+        with self.lock:
+            tasks = self._load(project_id)
+            moved = {
+                kind: _rebased(record, lambda path: _in_game(path, before))
+                for kind, record in tasks.items()
+            }
+            if moved != tasks:
+                self._save(project_id, moved)
 
     def dismiss(self, project_id, kind):
         """Marks a task abandoned; its saved results stay with its feature."""
@@ -111,7 +160,13 @@ class AssistantTasks:
         validation report is read again only when its time or size changes.
         """
         rows = []
-        for kind, record in self._load(project_id).items():
+        game = self.game(project_id)
+        for kind, stored in self._load(project_id).items():
+            record = (
+                _rebased(stored, lambda path: _from_game(path, game))
+                if game
+                else stored
+            )
             saved = [
                 time
                 for path in record.get("expects", [])

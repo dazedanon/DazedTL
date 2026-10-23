@@ -9,6 +9,7 @@ import { until } from "./cdp.mjs";
 import { contentFolder, gameName, makeRelease, release } from "./games.mjs";
 import { translated } from "./provider.mjs";
 import {
+  chooseFolder,
   connect,
   openGame,
   setUp,
@@ -228,6 +229,118 @@ const plugins = [
       );
     await page.idle();
   },
+];
+
+/**
+ * What the app shows of the open project, with its game's folder named
+ * `<game>` and keys in order, so a move compares equal. A finished
+ * operation's result names the folder it worked in then, `was`.
+ */
+async function projectView(page, game, was = game) {
+  const snapshot = await page.call("workspace_snapshot");
+  const sorted = (value, result = false) =>
+    Array.isArray(value)
+      ? value.map((item) => sorted(item, result))
+      : value && typeof value === "object"
+        ? Object.fromEntries(
+            Object.keys(value)
+              .sort()
+              .map((key) => [
+                key,
+                sorted(value[key], result || key === "result"),
+              ]),
+          )
+        : result && typeof value === "string"
+          ? value.replaceAll(was, game)
+          : value;
+  const { project } = snapshot.application;
+  const text = JSON.stringify(
+    sorted({
+      project: { ...project, last_opened: undefined },
+      guided: snapshot.guided,
+      translation: snapshot.translation,
+      plugins: snapshot.plugins,
+      images: snapshot.images,
+      foreign: [snapshot.pluginsForeign, snapshot.imagesForeign],
+    }),
+  );
+  return text.replaceAll(JSON.stringify(game).slice(1, -1), "<game>");
+}
+
+/** Fails unless the project reads as before, keeping both views in the logs. */
+function unchanged(state, before, after, what) {
+  if (after === before) return;
+  for (const [name, value] of Object.entries({ before, after }))
+    fs.writeFileSync(path.join(state.work, `logs/${name}.json`), value);
+  throw new Error(
+    `${what} changed its project, History, tasks or saved progress; logs/before.json and logs/after.json differ.`,
+  );
+}
+
+/** Moves the game folder, as a user does outside the app. */
+function moveGame(state, target) {
+  const moving = state.game + ".moving";
+  fs.renameSync(state.game, moving);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.renameSync(moving, target);
+}
+
+const moved = [
+  [
+    "Move the game into a Game folder inside its own and open it there",
+    async ({ page, state }) => {
+      await page.click("Project");
+      const before = await projectView(page, state.game);
+      const game = path.join(state.game, "Game");
+      moveGame(state, game);
+      await page.waitText("Game folder unavailable");
+      await page.waitText("Find game folder");
+      await chooseFolder(
+        { root: state.root, inspect: state.app.inspect },
+        game,
+      );
+      // The project menu's button reads the project's name.
+      const { project } = (await page.call("workspace_snapshot")).application;
+      await page.click(project.name);
+      await page.click("Open a game…");
+      await until("the moved game to open", async () =>
+        (await page.text()).includes(game),
+      );
+      await page.idle();
+      unchanged(
+        state,
+        before,
+        await projectView(page, game, state.game),
+        "Opening the moved game",
+      );
+      state.game = game;
+    },
+  ],
+  [
+    "Rename that folder and find it from the Project page",
+    async ({ page, state }) => {
+      const before = await projectView(page, state.game);
+      const game = path.join(path.dirname(state.game), "Renamed");
+      moveGame(state, game);
+      await page.waitText("Game folder unavailable");
+      await chooseFolder(
+        { root: state.root, inspect: state.app.inspect },
+        game,
+      );
+      await page.click("Find game folder");
+      await until("the found game to open", async () =>
+        (await page.text()).includes(game),
+      );
+      await page.idle();
+      unchanged(
+        state,
+        before,
+        await projectView(page, game, state.game),
+        "Finding the game",
+      );
+      state.game = game;
+    },
+  ],
 ];
 
 const batch = [
@@ -752,6 +865,12 @@ export const scenarios = {
       "Text QA's correction applied, then the plugin-text game's Plugin files translated by a scripted assistant and applied.",
     game: "plugin-text",
     steps: () => [open, ...setup, ...translateAll, qa, plugins],
+  },
+  moved: {
+    description:
+      "plugins-applied, then the game moved into a Game folder inside its own and opened there, then renamed and found from the Project page; each must keep the project unchanged.",
+    game: "plugin-text",
+    steps: () => [open, ...setup, ...translateAll, qa, plugins, ...moved],
   },
   "assistant-led": {
     description:

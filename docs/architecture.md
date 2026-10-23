@@ -176,7 +176,7 @@ Restore originals is by selection and means the original image, so it reads each
 Nothing copies an image when it changes, since Prepare freezes an image before DazedTL changes it; an older game's `.dazedtl/image_backups`, where image publishers kept the images they replaced, is only read, by Prepare and family matching.
 The [background solver](../backend/dazedtl/images/background.py) rebuilds a backdrop from its [family](../backend/dazedtl/images/families.py) of same-size images instead of inpainting it, and the [image text editor](../backend/dazedtl/images/editor.py) uses only installed offline resources and deterministic fills, never a hosted fallback or model download.
 
-Plugin and image progress in the game folder belongs to the project that saved it, and projects are keyed by source path, so a moved or copied game, a new profile or a reinstall opens that work under a new project; [foreign_work](../backend/dazedtl/foreign_work.py) reports it, and nothing is used or moved until the user chooses.
+Plugin and image progress in the game folder belongs to the project that saved it; a moved game keeps its project, but a copied game, a new profile or a reinstall opens that work under a new project, where [foreign_work](../backend/dazedtl/foreign_work.py) reports it, and nothing is used or moved until the user chooses.
 
 ## UI and state decisions
 
@@ -359,6 +359,9 @@ Whether saved work is still current has one rule, explained in [freshness](../ba
 A Text QA task is keyed the same way, on what it reviews and `QA_RULES_VERSION` in [qa/schema](../backend/dazedtl/engine/util/qa/schema.py), bumped only for a change that makes saved reviews wrong or unreadable; the [previous-release QA check](development.md#previous-release-qa-check) fails when a change breaks the previous release's tasks without that bump.
 Portable workflow options live in the game's .dazedtl/len-method/workflow.json and its original files in its Git repository; guidance stays in the game's own files, which Git tracks with the translation and archives leave out ([paths](../backend/dazedtl/engine/util/paths.py) holds both rules); the app profile holds connections, recoverable drafts, run plans and receipts, and older full-copy backups.
 Project opening and selection publish their in-memory ownership only after backend persistence succeeds, and removing a game from the recent list hides its record instead of deleting it, so its runs keep their owner.
+The project registry is the only profile record of where a project's game is, and [location](../backend/dazedtl/projects/location.py) owns it: the game folder names its project in a marker in its own repository, which Git never commits, so opening a moved game continues its project, a copy opens as a new one, and a project made for the new folder that holds no work of its own is hidden.
+Every other profile record names its project and finds the game through the registry, so a move changes one record: the Guided workspace keeps its game's files relative to the game folder, and run plans, Batch plans and receipts no longer name it.
+Records whose digests bind the folder they were made in, such as approved run plans, Text QA tasks and saved bindings, keep their bytes, and their readers take the game's location from the project instead, so a move asks for no new approval and resends nothing; an estimate made before a move reads changed after it.
 Engine-owned settings and run formats remain the adapter's responsibility.
 
 Diagnostics record only fixed metadata and relative code locations, never exception messages, payloads or raw stderr, and keep only failures the interface reports generically, so explained refusals cannot push them out of the bounded report.

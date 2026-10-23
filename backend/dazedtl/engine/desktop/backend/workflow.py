@@ -8,6 +8,7 @@ import shutil
 import uuid
 
 from util import system
+from util.paths import from_game, in_game
 from util.engine_options import validate_engine_options, engine_options
 from util.game_settings import GameSettingsError, default_wrap_widths, load_game_wrap_widths, normalize_wrap_widths, save_game_wrap_widths, valid_line_widths, wrap_widths_saved
 from util.rpgmaker_profiles import DB_FILES, EVENT_FILES_EXACT, PHASE0_CONFIG, PHASE1_CONFIG, PHASE1B_CONFIG, PHASE2_CONFIG
@@ -18,15 +19,63 @@ from .workflow_actions import LABELS, READ_ONLY, action_guard, describe_game, re
 from .guidance import documents, documents_save, valid_document_name
 
 
+# A saved record names its game's files relative to the game folder and not
+# the folder itself, which only its owner's project record says (`locate`), so
+# a moved game keeps its record. Records before it named every path in full.
+RECORD_VERSION = 2
+LOCATION_FIELDS = ("data", "plugins", "binary_data")
+
+
+def _paths(project, change):
+    """project with change applied to each path it names in its game."""
+    value = dict(project)
+    for key in LOCATION_FIELDS:
+        if isinstance(value.get(key), str):
+            value[key] = change(value[key])
+    if isinstance(value.get("encrypted"), list):
+        value["encrypted"] = [change(path) for path in value["encrypted"]]
+    if isinstance(value.get("files"), list):
+        value["files"] = [{**row, "path": change(row["path"])} if isinstance(row, dict) and isinstance(row.get("path"), str) else row
+                          for row in value["files"]]
+    return value
+
+
+def stored(project):
+    """The record saved for project, its paths relative to its game folder."""
+    record = _paths({key: value for key, value in project.items() if key != "source"},
+                    lambda path: in_game(path, project["source"]))
+    return {"version": RECORD_VERSION, **record}
+
+
+def located(record, source):
+    """The project a saved record describes, with its game at source."""
+    project = _paths({key: value for key, value in record.items() if key != "version"},
+                     lambda path: from_game(path, source))
+    return {**project, "source": str(Path(source))}
+
+
 class Workflows:
-    def __init__(self, workspace, lock, operations, manual):
+    def __init__(self, workspace, lock, operations, manual, locate=lambda _identity: None):
+        """locate names the game folder of a saved record's owner, or None
+        when no project owns it, whose record then stays unread."""
         self.workspace = Path(workspace)
         self.root = self.workspace / "workflows"
         self.lock, self.operations, self.manual = lock, operations, manual
         self.projects, self.previews = {}, {}
         self.current = ""
         for path in self.root.glob("*/project.json"):
-            project = json.loads(path.read_text(encoding="utf-8"))
+            record = json.loads(path.read_text(encoding="utf-8"))
+            source = locate(record["id"])
+            if record.get("version") == RECORD_VERSION:
+                if source is None:
+                    continue
+                project = located(record, source)
+            elif source is None:
+                project = record
+            else:
+                # Upgrade a record that names its game's paths in full.
+                project = located(stored(record), source)
+                atomic_json(path, stored(project))
             # Projects saved before message rows existed gain the default.
             project["widths"] = normalize_wrap_widths(project.get("widths"))
             self.projects[project["id"]] = project
@@ -40,7 +89,14 @@ class Workflows:
         return self.root / identity
 
     def save(self, project):
-        atomic_json(self.folder(project["id"]) / "project.json", project)
+        atomic_json(self.folder(project["id"]) / "project.json", stored(project))
+
+    def relocate(self, identity, source):
+        """The project's game is now at source; its saved record names no
+        folder, so only the record in memory changes."""
+        project = self.projects.get(identity)
+        if project:
+            self.projects[identity] = located(stored(project), source)
 
     def open(self, source):
         game = describe_game(source)

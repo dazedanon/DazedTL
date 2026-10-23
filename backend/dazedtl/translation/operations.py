@@ -255,7 +255,6 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             digest(payload) != arguments["sha256"]
             or payload["version"] != 1
             or payload["project_id"] != job["project_id"]
-            or Path(payload["source"]) != source
         ):
             raise ValueError("The release plan changed or belongs to another game.")
         if git_identity(initial_git) != payload["git"]:

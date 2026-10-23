@@ -349,6 +349,20 @@ def ensure_game_tool_gitignore(game_root: str | Path) -> bool:
     return True
 
 
+def in_game(path: str, game_root: str | Path) -> str:
+    """A saved path as a record that outlives a move of the game keeps it:
+    relative to the game folder when it is in it, else as it is."""
+    root, value = Path(game_root), Path(path)
+    if path and value.is_absolute() and value.is_relative_to(root):
+        return value.relative_to(root).as_posix()
+    return path
+
+
+def from_game(path: str, game_root: str | Path) -> str:
+    """A path in_game kept, in the game folder where it is now."""
+    return str(Path(game_root) / path) if path and not Path(path).is_absolute() else path
+
+
 def is_portable_game_file(relative: str) -> bool:
     """Whether a game-relative path is a glossary, settings or skill file the
     managed .gitignore block leaves to Git."""

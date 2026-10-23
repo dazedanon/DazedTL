@@ -144,6 +144,24 @@ try:
     ):
         call(method, {"project_id": project_id})
     call("workspace_snapshot", {})
+    # A game moved into a folder inside its old one, as the user tidied a
+    # download, opens as the same project with its work and stages; until
+    # then the project offers Find game folder.
+    before = call("workspace_snapshot", {})
+    game.rename(temporary / "moving")
+    game.mkdir()
+    moved = (temporary / "moving").rename(game / "Game")
+    gone = call("workspace_snapshot", {})["application"]["project"]
+    assert not gone["available"] and gone["next_label"] == "Find game folder", gone
+    assert call("open_project", {"source": str(moved)})["project"]["id"] == project_id
+    after = call("workspace_snapshot", {})
+    assert after["guided"] == json.loads(
+        json.dumps(before["guided"]).replace(
+            json.dumps(str(game))[1:-1], json.dumps(str(moved))[1:-1]
+        )
+    ), "The moved project's Guided workspace changed."
+    assert [p["id"] for p in after["application"]["recent"]] == [project_id]
+    call("locate_project", {"project_id": project_id, "source": str(moved)})
     # Runs saved by earlier versions keep estimate fields the contract dropped.
     from dazedtl.api import views
     from dazedtl.api.contracts.validation import check_response

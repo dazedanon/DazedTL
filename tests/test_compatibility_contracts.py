@@ -1455,7 +1455,7 @@ class ManualJobs:
             collected = []
 
             class Workflows:
-                def __init__(self, workspace, lock, operations, manual):
+                def __init__(self, workspace, lock, operations, manual, _locate):
                     self.root, self.manual, self.operations = (
                         workspace,
                         SimpleNamespace(jobs={}),
@@ -1472,7 +1472,7 @@ class ManualJobs:
             with replaced_modules({workflow.__name__: workflow}):
                 operations = SimpleNamespace(jobs={})
                 phases = phased_workflows(
-                    source / "phases", None, operations, controller
+                    source / "phases", None, operations, controller, {}.get
                 )
                 write_json(
                     phases.folder("owner") / "source-inputs.json",

@@ -20,6 +20,7 @@ from dazedtl.compatibility.translation import (
     TranslationProvider,
     explained,
 )
+from dazedtl.projects import location
 from dazedtl.settings.execution import worker_secret
 from dazedtl.storage import WorkspaceError, WorkspaceLock
 from dazedtl.translation import progress_report
@@ -229,4 +230,5 @@ if __name__ == "__main__":
     parser.add_argument("--owner-pid", required=True, type=int)
     parser.add_argument("--owner-token", required=True)
     args = parser.parse_args()
+    location.use(args.workspace.resolve())
     run(args.workspace.resolve(), args.run, args.owner_pid, args.owner_token)

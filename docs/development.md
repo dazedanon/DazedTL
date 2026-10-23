@@ -123,6 +123,7 @@ Run them outside a sandbox such as Claude Code's bwrap: KWin needs a writable `/
   Ace's 1.1 is its new `Game.rgss3a` alone, which must read as a patch, and a complete 1.2 is then previewed, which must read as a complete game that removes nothing.
 - `qa-done`: Text QA reviewed by a scripted assistant through the project helper, one correction applied.
 - `plugins-applied`: `qa-done` on the `plugin-text` game, then its Plugin files translated by a scripted assistant and applied, so Checkpoints holds both applications.
+- `moved`: `plugins-applied`, then the game moved into a `Game` folder inside its own and opened there, then renamed and found with **Find game folder**; each must leave the project, its History, tasks and saved progress as they were.
 - `assistant-led`: an Assistant-led project in agent mode, set up and organized, its first request translated.
 - `assistant-written`: the assistant translates every request and writes them into the game, failing if the write changes the choice labels (402) or help markers (108) the game finds by their Japanese.
 - `batch-waiting`: the database submitted as a Batch that the stand-in holds.

@@ -98,8 +98,16 @@ def _sha256(value: bytes | str) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
+# Where a task's game was when it was prepared, kept in a task read after
+# the game moved (storage.located), so the task's digest stays the same.
+PREPARED_AT = "prepared_at"
+
+
 def task_sha256(task: dict[str, Any]) -> str:
-    """The digest a task's checkpoint and findings name their task by."""
+    """The digest a task's checkpoint and findings name their task by, as
+    it was prepared."""
+    if PREPARED_AT in task:
+        task = {**{key: value for key, value in task.items() if key != PREPARED_AT}, **task[PREPARED_AT]}
     return _sha256(_canonical_bytes(task))
 
 

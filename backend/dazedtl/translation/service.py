@@ -902,10 +902,7 @@ Additional project instructions:
         With compiled, it also compiles its requests again to compare them,
         which takes seconds on a big plan, or only the one at index."""
         _record, project = self.project(project_id)
-        if (
-            str(project.root) != plan["source"]
-            or scope(project.read()["options"]) != plan["scope_sha256"]
-        ):
+        if scope(project.read()["options"]) != plan["scope_sha256"]:
             raise ValueError(
                 "The project scope changed. Compile and review a new plan."
             )

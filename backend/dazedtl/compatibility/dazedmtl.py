@@ -8,6 +8,7 @@ from pathlib import Path
 
 from dazedtl import system
 from dazedtl.actions import label
+from dazedtl.projects import location
 from dazedtl.storage import WorkspaceError, write_bytes, write_json
 
 
@@ -17,6 +18,9 @@ class ExistingBackend:
 
         self.source = activate()
         self.workspace = Path(workspace).resolve()
+        from .text import install_locations
+
+        install_locations()
         from desktop.backend.settings import SettingsStore
 
         from .guided import phased_workflows
@@ -33,8 +37,10 @@ class ExistingBackend:
             self.workspace / "model-cache", allow_providers
         )
         self.operations = workflow_operations(self.source, self.workspace, self.lock)
+        # The app's project list sits beside the engine's workspace.
+        owners = location.owners(self.workspace.parent)
         self.workflows = phased_workflows(
-            self.workspace, self.lock, self.operations, self.manual
+            self.workspace, self.lock, self.operations, self.manual, owners.get
         )
         self.allow_providers = allow_providers
 

@@ -223,9 +223,13 @@ def write_game(
     status = _checkout(root)
     # A folder that isn't there yet holds no original files to keep.
     if outermost and status is None and root.is_dir():
+        from dazedtl.projects import location
+
         from . import original_files
 
         original_files.ensure_found(root, log)
+        # The repository may be new; it names its project from now on.
+        location.adopt(root)
     # A VX Ace game's text DazedTL writes is always its ace_json.
     native = {"source": str(root), "data": str(root / "ace_json"), "engine": "ACE"}
     ace = pack and (root / "ace_json").is_dir()

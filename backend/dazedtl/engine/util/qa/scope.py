@@ -36,7 +36,7 @@ from util.qa.selection import (
     _scene_item,
     _scene_position,
 )
-from util.qa.storage import _read_json
+from util.qa.storage import _read_json, task_json
 
 
 def _deep_basis(
@@ -282,7 +282,7 @@ def _declined_scope(
     `identities` are the lines no correction may target: those clusters' and
     every line of a scene no screen reviewer read.
     """
-    task = _read_json(root / "task.json")
+    task = task_json(root)
     screen_index = _load_screen_index(root, task)
     records, clusters = _record_maps(manifest)
     statuses = {"set-aside", "pending", "assigned"} if waiting else {"set-aside"}
