@@ -62,6 +62,17 @@ _INDEX_WRITERS = frozenset(
     {"add", "checkout", "checkout-index", "cherry-pick", "commit", "read-tree", "reset", "rm", "update-index"}
 )
 INDEX_LOCK_WAIT = 10.0
+# Git operations a checkout can be left in the middle of, by the file or
+# folder Git keeps in its directory while one is under way.
+PENDING_OPERATIONS = (
+    "MERGE_HEAD",
+    "CHERRY_PICK_HEAD",
+    "REVERT_HEAD",
+    "rebase-merge",
+    "rebase-apply",
+    "sequencer",
+    "BISECT_LOG",
+)
 _VERSION_LINE = re.compile(r"^DazedTL-Version:\s*(.+?)\s*$", re.MULTILINE)
 _VERSION_HINT = re.compile(
     r"(?i)(?:\bversion\b|\bver\.?|\bv|update(?:d)?(?:\s+original)?\s+game\s+files\s+to)"
@@ -187,6 +198,8 @@ class RepositoryStatus:
     # finishing copies its assets; otherwise cancelling restores the version
     # before it.
     asset_update_applied: bool = False
+    # The PENDING_OPERATIONS under way, pending_cherry_pick's among them.
+    pending_operations: tuple[str, ...] = ()
 
     @property
     def ready(self) -> bool:
@@ -456,16 +469,26 @@ def _preserve_game_files(repo: Path) -> bool:
     return adopted.returncode == 0 and _PRESERVE_GAME_FILES_TRAILER in adopted.stdout.splitlines()
 
 
-def _ref_commit(repo: Path, ref: str) -> str | None:
+def _ref_commits(repo: Path, *refs: str) -> dict[str, str]:
+    """The commit of each branch in `refs` that has one, from one Git call."""
     result = _run_git(
         repo,
-        "rev-parse",
-        "--verify",
-        "--quiet",
-        f"refs/heads/{ref}^{{commit}}",
+        "cat-file",
+        "--batch-check=%(objectname)",
+        input_text="".join(f"refs/heads/{ref}^{{commit}}\n" for ref in refs),
         check=False,
     )
-    return result.stdout.strip() if result.returncode == 0 else None
+    if result.returncode != 0:
+        return {}
+    lines = result.stdout.splitlines()
+    if len(lines) != len(refs):
+        raise GitWorkflowError("Git did not resolve every branch")
+    # A name that resolves to no commit comes back as "<name> missing".
+    return {ref: line for ref, line in zip(refs, lines) if " " not in line}
+
+
+def _ref_commit(repo: Path, ref: str) -> str | None:
+    return _ref_commits(repo, ref).get(ref)
 
 
 def _validate_branch_name(repo: Path, branch: str) -> str:
@@ -478,15 +501,28 @@ def _validate_branch_name(repo: Path, branch: str) -> str:
     return value
 
 
-def _configured_translation_branch(repo: Path) -> str | None:
+def _registered_translation_branch(repo: Path) -> str | None:
     configured = _run_git(
         repo, "config", "--local", "--get", _TRANSLATION_BRANCH_CONFIG, check=False
     )
     if configured.returncode == 0 and configured.stdout.strip():
         return _validate_branch_name(repo, configured.stdout.strip())
-    if _ref_commit(repo, _LEGACY_TRANSLATION_BRANCH):
-        return _LEGACY_TRANSLATION_BRANCH
     return None
+
+
+def _translation_branch(registered: str | None, commits: Mapping[str, str]) -> str | None:
+    """The registered translated branch, or else the legacy one while
+    `commits` (from _ref_commits) holds it."""
+    if registered or _LEGACY_TRANSLATION_BRANCH not in commits:
+        return registered
+    return _LEGACY_TRANSLATION_BRANCH
+
+
+def _configured_translation_branch(repo: Path) -> str | None:
+    registered = _registered_translation_branch(repo)
+    if registered:
+        return registered
+    return _translation_branch(None, _ref_commits(repo, _LEGACY_TRANSLATION_BRANCH))
 
 
 def _set_translation_branch(repo: Path, branch: str) -> str:
@@ -495,11 +531,18 @@ def _set_translation_branch(repo: Path, branch: str) -> str:
     return value
 
 
-def _version_from_history(repo: Path, ref: str, commit: str | None) -> str | None:
+def _recent_messages(repo: Path, ref: str) -> list[str]:
+    """The messages of the last 100 commits on `ref`, newest first."""
+    return _run_git(repo, "log", "-n", "100", "--format=%B%x00", ref).stdout.split("\x00")
+
+
+def _version_from_history(
+    repo: Path, ref: str, commit: str | None, messages: list[str] | None = None
+) -> str | None:
+    """`messages` are _recent_messages of `ref` when the caller has them."""
     if not commit:
         return None
-    messages = _run_git(repo, "log", "-n", "100", "--format=%B%x00", ref).stdout
-    for message in messages.split("\x00"):
+    for message in _recent_messages(repo, ref) if messages is None else messages:
         match = _VERSION_LINE.search(message)
         if match:
             return match.group(1).strip()
@@ -570,14 +613,10 @@ def version_history(game_root: str | Path) -> tuple[VersionRecord, ...]:
     return tuple(records)
 
 
-def _applied_update_version(
-    repo: Path, ref: str, commit: str | None
-) -> str | None:
-    """Return the newest DazedTL patch version on a translated branch."""
-    if not commit:
-        return None
-    messages = _run_git(repo, "log", "-n", "100", "--format=%B%x00", ref).stdout
-    for message in messages.split("\x00"):
+def _applied_update_version(messages: list[str]) -> str | None:
+    """Return the newest DazedTL patch version among a translated branch's
+    _recent_messages."""
+    for message in messages:
         lines = message.strip().splitlines()
         if not lines or not lines[0].casefold().startswith("patch:"):
             continue
@@ -587,17 +626,28 @@ def _applied_update_version(
     return None
 
 
-def _repository_for(selected: Path) -> tuple[Path, str] | None:
-    result = _run_git(selected, "rev-parse", "--show-toplevel", check=False)
+def _repository_for(
+    selected: Path, *names: str
+) -> tuple[Path, str, dict[str, Path]] | None:
+    """The repository holding `selected`, the folder's path in it, and the
+    repository-internal paths `names`, as _git_paths resolves them, from the
+    same Git call."""
+    arguments = [argument for name in names for argument in ("--git-path", name)]
+    result = _run_git(
+        selected, "rev-parse", "--show-toplevel", "--path-format=absolute", *arguments, check=False
+    )
     if result.returncode != 0:
         return None
-    repo = Path(result.stdout.strip()).resolve()
+    top, *lines = result.stdout.splitlines()
+    if len(lines) != len(names):
+        raise GitWorkflowError("Git did not resolve every repository path")
+    repo = Path(top.strip()).resolve()
     try:
         relative = selected.resolve().relative_to(repo)
     except ValueError as exc:
         raise GitWorkflowError("Selected game folder is outside its Git repository") from exc
     prefix = "" if relative == Path(".") else relative.as_posix()
-    return repo, prefix
+    return repo, prefix, dict(zip(names, map(Path, lines)))
 
 
 def _git_paths(repo: Path, *names: str) -> dict[str, Path]:
@@ -622,27 +672,36 @@ def worktree_clean(repo: Path) -> bool:
 
 
 def inspect_repository(game_root: str | Path) -> RepositoryStatus:
+    # Each Git launch is costly on Windows, and the app reads this status
+    # around every game write: it shares calls wherever one can answer more.
     selected = Path(game_root).expanduser().resolve()
     if not selected.is_dir():
         return RepositoryStatus(
             selected, None, "", None, False, None, None, False, None, None, False, False
         )
-    found = _repository_for(selected)
+    found = _repository_for(selected, *PENDING_OPERATIONS)
     if found is None:
         return RepositoryStatus(
             selected, None, "", None, False, None, None, False, None, None, True, False
         )
-    repo, prefix = found
+    repo, prefix, operations = found
+    pending = tuple(name for name, path in operations.items() if path.exists())
     branch_result = _run_git(repo, "symbolic-ref", "--short", "-q", "HEAD", check=False)
     current_branch = branch_result.stdout.strip() or None
-    original_commit = _ref_commit(repo, ORIGINAL_BRANCH)
-    translation_branch = _configured_translation_branch(repo)
-    translation_commit = (
-        _ref_commit(repo, translation_branch) if translation_branch else None
+    registered = _registered_translation_branch(repo)
+    commits = _ref_commits(
+        repo, ORIGINAL_BRANCH, registered or _LEGACY_TRANSLATION_BRANCH
     )
+    original_commit = commits.get(ORIGINAL_BRANCH)
+    translation_branch = _translation_branch(registered, commits)
+    translation_commit = commits.get(translation_branch) if translation_branch else None
     original_version = _version_from_history(repo, ORIGINAL_BRANCH, original_commit)
+    translation_ref = translation_branch or TRANSLATION_BRANCH
+    translation_messages = (
+        _recent_messages(repo, translation_ref) if translation_commit else []
+    )
     translation_version = _version_from_history(
-        repo, translation_branch or TRANSLATION_BRANCH, translation_commit
+        repo, translation_ref, translation_commit, translation_messages
     )
     asset_sync_pending = _asset_state_path(repo, prefix, "pending-assets").exists()
     return RepositoryStatus(
@@ -657,18 +716,17 @@ def inspect_repository(game_root: str | Path) -> RepositoryStatus:
         translation_commit=translation_commit,
         translation_version=translation_version,
         worktree_clean=worktree_clean(repo),
-        pending_cherry_pick=_cherry_pick_path(repo).exists(),
+        pending_cherry_pick="CHERRY_PICK_HEAD" in pending,
         asset_sync_pending=asset_sync_pending,
         asset_manifest_available=_asset_state_path(
             repo, prefix, "official-assets"
         ).exists(),
         asset_baseline_repair_needed=_asset_manifest_needs_repair(repo, prefix),
         translation_branch=translation_branch,
-        applied_update_version=_applied_update_version(
-            repo, translation_branch or TRANSLATION_BRANCH, translation_commit
-        ),
+        applied_update_version=_applied_update_version(translation_messages),
         asset_update_applied=asset_sync_pending
         and translation_version == original_version,
+        pending_operations=pending,
     )
 
 

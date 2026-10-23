@@ -8,12 +8,7 @@ from util.version_update import (
     GitWorkflowError, bootstrap_repository, inspect_repository,
     record_version_metadata, register_translation_branch,
 )
-from util.version_update.git_workflow import _git_paths, _preserve_game_files, _run_git, unfinished_bootstrap
-
-
-def _pending_operations(repo: Path) -> list[str]:
-    paths = _git_paths(repo, "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply", "sequencer", "BISECT_LOG")
-    return [name for name, path in paths.items() if path.exists()]
+from util.version_update.git_workflow import _preserve_game_files, _run_git, unfinished_bootstrap
 
 
 def git_status(project: LenProject) -> dict:
@@ -21,7 +16,7 @@ def git_status(project: LenProject) -> dict:
     _validate_project(project)
     status = inspect_repository(project.game_root)
     result = {key: str(value) if isinstance(value, Path) else value for key, value in asdict(status).items()}
-    result["pending_operations"] = _pending_operations(status.repo_root) if status.repo_root else []
+    result["pending_operations"] = list(status.pending_operations)
     result["preserve_game_files"] = _preserve_game_files(status.repo_root) if status.repo_root else True
     result["configured"] = bool(status.original_exists and status.translation_exists)
     result["available_original_refs"] = []
