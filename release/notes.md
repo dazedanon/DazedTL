@@ -2,4 +2,5 @@
 
 ### Fixed
 
+- **Forge:** quick save (Ctrl+S) in RPG Maker MZ games no longer says "Quick Save failed" after saving. Forge is updated to 1.4.0 with a redesigned Actors tab; click Install Forge again for a game that already has it.
 - **Translate:** messages and choices made only of punctuation, such as `・・・・・。`, `.......。`, `？` or `「……」`, now show English punctuation (`.....`, `.......`, `?`, `"……"`) instead of keeping the Japanese marks and the trailing `。`.
