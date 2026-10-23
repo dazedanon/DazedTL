@@ -1,12 +1,16 @@
 """A game's version history recovers from its own interruptions, adopts no
-one's work, and carries a translation onto a patched or new release."""
+one's work, carries a translation onto a patched or new release, and keeps
+each write as a checkpoint to undo."""
 
 import unittest
 
 from tests.probe import Probe
 
-# Real Git launches dominate these journeys, so they run alongside the other tests.
+# Real Git launches dominate these journeys, so they run alongside the other
+# tests and each other: on Windows each launch costs about 50 ms, so one long
+# journey would hold up the whole suite there.
 probe = Probe("game_repository.py")
+checkpoints = Probe("game_checkpoints.py")
 patch = Probe("release_patch.py")
 ace = Probe("ace_update.py")
 
@@ -16,6 +20,10 @@ class GameRepositoryTests(unittest.TestCase):
         # Finish setup refused forever after a forced stop or a lost index-lock
         # race left a half-made baseline; a poll's git status caused that race.
         returncode, output = probe.result()
+        self.assertEqual(returncode, 0, output)
+
+    def test_each_write_is_a_checkpoint_that_undoes_and_goes_back(self):
+        returncode, output = checkpoints.result()
         self.assertEqual(returncode, 0, output)
 
     def test_a_patch_keeps_the_files_it_leaves_out_and_unchanged_translations(self):
