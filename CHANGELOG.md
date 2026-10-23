@@ -3,6 +3,14 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.33.1] - 2026-10-23
+
+### Fixed
+
+- **Project:** a game moved or renamed, also into a folder inside its old one, now opens with its project and all its work instead of as a new project at Set up; while DazedTL can't find a project's game, the Project page offers **Find game folder**.
+- **Forge:** quick save (Ctrl+S) in RPG Maker MZ games no longer says "Quick Save failed" after saving. Forge is updated to 1.4.0 with a redesigned Actors tab; click Install Forge again for a game that already has it.
+- **Translate:** messages and choices made only of punctuation, such as `・・・・・。`, `.......。`, `？` or `「……」`, now show English punctuation (`.....`, `.......`, `?`, `"……"`) instead of keeping the Japanese marks and the trailing `。`.
+
 ## [2.33.0] - 2026-10-22
 
 ### Changed
@@ -983,6 +991,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.33.1]: https://github.com/dazedanon/DazedTL/compare/v2.33.0...v2.33.1
 [2.33.0]: https://github.com/dazedanon/DazedTL/compare/v2.32.1...v2.33.0
 [2.32.1]: https://github.com/dazedanon/DazedTL/compare/v2.32.0...v2.32.1
 [2.32.0]: https://github.com/dazedanon/DazedTL/compare/v2.31.0...v2.32.0
