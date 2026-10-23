@@ -24,6 +24,7 @@ from util.translation import (
     begin_file_cost_tracking,
     calculateCost,
     convert_corner_brackets,
+    english_punctuation,
     getPricingConfig,
     get_var_translation,
     last_translation_had_mismatch,
@@ -33,6 +34,7 @@ from util.translation import (
     set_var_translations_batch,
     speaker_source_lookup_keys,
     split_vocab_source_aliases,
+    target_uses_cjk,
     translateAI as sharedtranslateAI,
 )
 from util.vocab import split_glossary_row, unverified_nameplate_row
@@ -1015,6 +1017,28 @@ def _text_needs_translation(current, source=None) -> bool:
     if current is None or not str(current).strip():
         return False
     return not IGNORETLTEXT or _has_japanese_text(current, source)
+
+
+def _english_punctuation(text, source: str):
+    """Text whose *source*, as the game wrote it, holds no Japanese letters,
+    such as ・・・・・。 or ？, with its Japanese punctuation in English
+    (util/translation), as its translation would show it; such text is never
+    sent. Any other text stays as it is."""
+    if (
+        not isinstance(text, str)
+        or _has_japanese_text(source)
+        or target_uses_cjk(LANGUAGE)
+    ):
+        return text
+    return english_punctuation(text, TRANSLATION_CONFIG.convertQuotes)
+
+
+def _write_english_punctuation(codeList, start: int, end: int, source: str) -> None:
+    """Write the message or scroll rows from *start* to *end*, whose
+    *source* needs no translation, with English punctuation in place."""
+    for row in codeList[start : end + 1]:
+        if row.get("code") in (401, 405) and row.get("parameters"):
+            row["parameters"][0] = _english_punctuation(row["parameters"][0], source)
 
 
 _TARO_PLACEHOLDER_RE = re.compile(r"\bTaro(?:['’]s)?\b", re.IGNORECASE)
@@ -3887,6 +3911,10 @@ def _searchCodes(page, pbar, jobList, filename):
                             _group_current(codeList, i, previewEnd), preview_source
                         )
                     ):
+                        if not setData:
+                            _write_english_punctuation(
+                                codeList, i, previewEnd, preview_source
+                            )
                         i = previewEnd + 1
                         continue
                     jaString = codeList[i]["parameters"][0]
@@ -4142,6 +4170,8 @@ def _searchCodes(page, pbar, jobList, filename):
                     if not rawSource.strip() or not _text_needs_translation(
                         currentSource, rawSource
                     ):
+                        if not setData:
+                            _write_english_punctuation(codeList, groupStart, i, rawSource)
                         speaker = ""
                         i += 1
                         continue
@@ -5788,6 +5818,12 @@ def _searchCodes(page, pbar, jobList, filename):
                     totalTokens[0] += response[1][0]
                     totalTokens[1] += response[1][1]
                     _apply_choices(codeList[i], choiceJob, response[0], filename)
+                if not setData:
+                    choices = codeList[i]["parameters"][0]
+                    for index, choice in enumerate(choices):
+                        choices[index] = _english_punctuation(
+                            choice, _choice_source(codeList[i], index)
+                        )
 
             ### Event Code: 111 Script
             if "code" in codeList[i] and codeList[i]["code"] == 111 and CODE111 is True:

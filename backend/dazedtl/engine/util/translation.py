@@ -448,7 +448,7 @@ from util.runtime_text import (
     _CONTROL_CODE_RE, _ORPHAN_BACKSLASH_RE, _FORMAT_SCOPE_RE,
     _escaped_orphan_backslash, _mask_mapped_control_codes, _format_scope_signature,
     extract_control_codes, validate_control_codes, protect_script_codes,
-    restore_script_codes, _reprotect_cached_codes,
+    restore_script_codes, _reprotect_cached_codes, split_protected_codes,
 )
 
 
@@ -494,6 +494,13 @@ def validate_placeholders(original_text, translated_text, replacements):
     is_valid = len(missing) == 0 and len(extra) == 0
     return is_valid, missing, extra
 
+
+def target_uses_cjk(language) -> bool:
+    """Whether a target language is Chinese or Japanese, which are written
+    with full-width punctuation."""
+    return str(language or "").strip().casefold() in {"chinese", "japanese"}
+
+
 def validate_translation_content(
     original_items, translated_items, langRegex, target_language=None
 ):
@@ -512,11 +519,8 @@ def validate_translation_content(
     invalid_indices = []
     reasons = []
     normalized_target = str(target_language or "").strip().casefold()
-    target_uses_cjk = normalized_target in {
-        "chinese",
-        "japanese",
-    }
-    
+    cjk_target = target_uses_cjk(target_language)
+
     for i, (orig, trans) in enumerate(zip(original_items, translated_items)):
         orig_str = str(orig).strip()
         trans_str = str(trans).strip()
@@ -597,7 +601,7 @@ def validate_translation_content(
                     f"Line{i+1}: Japanese kana remains in Chinese translation"
                 )
                 continue
-            if not target_uses_cjk and left:
+            if not cjk_target and left:
                 invalid_indices.append(i)
                 reasons.append(f"Line{i+1}: Source-language text remains in translation")
                 continue
@@ -3556,6 +3560,41 @@ def convert_corner_brackets(text, enabled=True):
         .replace("〞", '"')
         .replace("〟", '"')
     )
+
+
+# Japanese punctuation a game writes around text with no Japanese letters,
+# such as ・・・・・。 or ？, and the English a translation writes for it. A
+# middle dot alone stays: English uses it as a bullet.
+_ENGLISH_MARKS = str.maketrans({"！": "!", "？": "?", "（": "(", "）": ")"})
+_MIDDLE_DOTS = re.compile(r"・(?: ?・)+")
+_JAPANESE_COMMA = re.compile(r"、(?=[^\s\"')」』])")
+# Marks that already end a sentence, so a full stop after one adds nothing.
+_SENTENCE_ENDS = frozenset(".…‥!?♪♡♥～〜~")
+
+
+def english_punctuation(text, quotes=True):
+    """Text that holds no Japanese letters with the Japanese punctuation
+    around it in English: dotted ellipses (・・・) as periods, ！？（） and 、
+    as ASCII, 。 as a period unless the sentence already ends, and corner
+    brackets as quotes when *quotes* is on (convert_corner_brackets). Codes
+    keep their arguments exactly."""
+    parts = split_protected_codes(text)
+    last = ""
+    for index in range(0, len(parts), 2):
+        run = _MIDDLE_DOTS.sub(lambda dots: dots[0].replace("・", "."), parts[index])
+        run = convert_corner_brackets(run.translate(_ENGLISH_MARKS), quotes)
+        run = _JAPANESE_COMMA.sub(", ", run).replace("、", ",")
+        written = []
+        for char in run:
+            if char == "。":
+                if last in _SENTENCE_ENDS:
+                    continue
+                char = "."
+            written.append(char)
+            if not char.isspace():
+                last = char
+        parts[index] = "".join(written)
+    return "".join(parts)
 
 
 _LITELLM_PRICING_URL = (

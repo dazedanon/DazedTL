@@ -3410,8 +3410,11 @@ try:
                 "→中継地点",
                 "村人",
                 "古びた井戸",
+                "旅人",
                 "えっ、本当に？",
                 "【Saving beforehand is recommended】",
+                "・・・・・。",
+                ".......。 \\C[2]？\\C[0]",
             ]
             # A label ends at its own >, and its translation replaces only
             # it, leaving the note tags after it alone.
@@ -3482,6 +3485,27 @@ try:
                     )
                     again = engine_pass(file, translated, vxace)
                     assert not again, (report, again)
+            # Messages and choices the game wrote without Japanese letters,
+            # alone or below a speaker's name, show its Japanese punctuation
+            # in English, and a code keeps its argument as the game wrote it.
+            quiet = json.loads((lines_game / "data/Map003.json").read_text("utf-8"))
+            engine_pass("Map003.json", quiet, False)
+            assert [
+                command["parameters"][0]
+                for command in quiet["events"][5]["pages"][0]["list"]
+                if command["code"] in {401, 102} and "_original" not in command
+            ] == [
+                ".....",
+                ".......",
+                r"\C[2]?\C[0]",
+                '"……"',
+                "...?",
+                ["?????", "Leave"],
+            ]
+            assert (
+                parser.english_punctuation(r"\SE[ドン！]・・・。\C[0]OK。", True)
+                == r"\SE[ドン！]...\C[0]OK."
+            )
             # The kaomoji game variant, answered as its stand-in answers it but
             # for a word the model leaves as it was: a translation keeping a
             # lone kana or mark its source holds, the ﾟ of a kaomoji, the 〇

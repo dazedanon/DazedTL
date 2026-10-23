@@ -75,6 +75,17 @@ def without_protected_codes(text):
     return _PROTECTED_OR_PLACEHOLDER_RE.sub("", str(text))
 
 
+def split_protected_codes(text):
+    """Return text split around the codes protect_script_codes protects: the
+    text between them at even indexes, each code at the odd index after it."""
+    text = str(text)
+    parts, start = [], 0
+    for match in _PROTECTED_RE.finditer(text):
+        parts += [text[start:match.start()], match.group()]
+        start = match.end()
+    return parts + [text[start:]]
+
+
 def without_control_codes(text):
     """Return text without its runtime control tokens and their arguments,
     such as a font name in ``\\fn[和風]``, which translation leaves alone."""

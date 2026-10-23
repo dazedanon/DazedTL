@@ -134,6 +134,8 @@ Per-file cost and time, and Other event text's lines, come from native result re
 Database files and Maps & events read each file's status and Lines from the file itself through [file_lines](../backend/dazedtl/translation/file_lines.py), independently of selection and of the runs that wrote it.
 What an event file holds is defined once in [rpgmaker_scope](../backend/dazedtl/engine/util/rpgmaker_scope.py), which the engine translates from, and a line is left while it holds Japanese by the engine's own rule ([source_text](../backend/dazedtl/engine/util/source_text.py)) or a refusal note.
 The rule reads each value against the Japanese in its `_original`, so a lone kana or mark the source holds, such as a kaomoji's ﾉ or a censor mask's 〇, reads translated and a value given back unchanged reads left; a value without one reads every Japanese letter as left.
+A message, scroll or choice the game wrote without Japanese letters, such as `・・・・・。`, `？` or `「……」`, is never sent, and the engine writes its punctuation in English in its place ([translation](../backend/dazedtl/engine/util/translation.py) `english_punctuation`).
+Name boxes keep theirs, since a speaker's name goes into the requests for its lines.
 The engine probe ([engine_runtime](../tests/fixtures/engine_runtime.py)) checks that the engine sends exactly the lines this counts as left, and nothing on a second pass, so the count and the engine cannot drift apart.
 
 ### Apply and release
