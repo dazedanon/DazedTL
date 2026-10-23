@@ -277,6 +277,13 @@ function unchanged(state, before, after, what) {
   );
 }
 
+/** Whether the open project's game is `game` and its folder is there; the
+ * page shortens a long path, such as under the home folder. */
+async function opened(page, game) {
+  const { project } = (await page.call("workspace_snapshot")).application;
+  return project?.source === game && project.available;
+}
+
 /** Moves the game folder, as a user does outside the app. */
 function moveGame(state, target) {
   const moving = state.game + ".moving";
@@ -303,9 +310,7 @@ const moved = [
       const { project } = (await page.call("workspace_snapshot")).application;
       await page.click(project.name);
       await page.click("Open a game…");
-      await until("the moved game to open", async () =>
-        (await page.text()).includes(game),
-      );
+      await until("the moved game to open", async () => opened(page, game));
       await page.idle();
       unchanged(
         state,
@@ -328,9 +333,7 @@ const moved = [
         game,
       );
       await page.click("Find game folder");
-      await until("the found game to open", async () =>
-        (await page.text()).includes(game),
-      );
+      await until("the found game to open", async () => opened(page, game));
       await page.idle();
       unchanged(
         state,
