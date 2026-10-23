@@ -43,9 +43,6 @@ _KEYS_TAB_KEYDOWN_GUARD_RE = re.compile(
     rf"!(?P<shortcuts>{_ID})\._isFocusedOnInput\(\)&&!(?P=shortcuts)\._hasSelection\(\)"
     rf"&&!\((?P<ui>{_ID})\.visible&&(?P=ui)\.activeTab===(?P<tabs>{_ID})\.Shortcuts\)"
 )
-_CURRENT_KEY_RE = re.compile(
-    rf"(?P<shortcuts>{_ID})\.currentKey\.(?P<method>add|remove)\((?P<event>{_ID})\.keyCode\)"
-)
 
 
 def forge_key_str(hotkey: str) -> str:
@@ -307,30 +304,6 @@ def _bootstrap_js(hotkey: str) -> str:
       "utf8"
     );
   }} catch (e) {{}}
-  // Forge's shortcut matcher uses legacy keyCode. Some NW.js/Wine builds deliver
-  // keydown with keyCode=0 while still setting key/code - map those back.
-  window.__dazedKeyCode = function (e) {{
-    var kc = e.keyCode || e.which || 0;
-    if (kc) return kc;
-    var key = String(e.key || "").toLowerCase();
-    var code = String(e.code || "");
-    if (key === "control") return 17;
-    if (key === "alt") return 18;
-    if (key === "shift") return 16;
-    if (key === "meta") return 91;
-    var fm = /^f(\\d{{1,2}})$/.exec(key) || /^f(\\d{{1,2}})$/i.exec(code);
-    if (fm) return 111 + parseInt(fm[1], 10);
-    var km = /^key([a-z])$/i.exec(code);
-    if (km) return km[1].toUpperCase().charCodeAt(0);
-    if (key.length === 1) {{
-      var c = key.charCodeAt(0);
-      if (c >= 97 && c <= 122) return c - 32;
-      if (c >= 48 && c <= 57) return c;
-    }}
-    var dm = /^digit([0-9])$/i.exec(code);
-    if (dm) return 48 + parseInt(dm[1], 10);
-    return 0;
-  }};
 }})();
 {_BOOTSTRAP_END}"""
 
@@ -433,53 +406,14 @@ def _keep_toggle_ui_active_on_keys_tab(text: str) -> str:
     return text
 
 
-def _patch_keycode_reads(text: str) -> str:
-    """Route Forge shortcut key reads through the keyCode polyfill."""
-    methods = [match.group("method") for match in _CURRENT_KEY_RE.finditer(text)]
-    if sorted(methods) != ["add", "remove"]:
-        raise ValueError(
-            "Could not patch Forge keyCode reads: expected one add and one "
-            f"remove, found {methods}"
-        )
-    text = _CURRENT_KEY_RE.sub(
-        r"\g<shortcuts>.currentKey.\g<method>(window.__dazedKeyCode(\g<event>))",
-        text,
-    )
-
-    from_event = re.compile(
-        rf"static fromEvent\((?P<event>{_ID})\)\{{return "
-        r"(?P<body>[^{}]+)\}(?=static _fromCombiningAloneEvent)"
-    )
-
-    def patch_from_event(match: re.Match) -> str:
-        event = match.group("event")
-        body, count = re.subn(
-            rf"\b{re.escape(event)}\.keyCode\b",
-            f"window.__dazedKeyCode({event})",
-            match.group("body"),
-        )
-        if count != 2:
-            raise ValueError(
-                "Could not patch Forge fromEvent keyCode reads: "
-                f"expected 2, found {count}"
-            )
-        return f"static fromEvent({event}){{return {body}}}"
-
-    text, count = from_event.subn(patch_from_event, text, count=1)
-    if count != 1:
-        raise ValueError("Could not patch Forge fromEvent shortcut parser")
-    return text
-
-
 def apply_modern_forge_patches(text: str, hotkey: str) -> str:
-    """Inject the Dazed hotkey and settings bootstrap and harden shortcuts."""
+    """Inject the Dazed hotkey and settings bootstrap and keep the toggle active."""
     text = _strip_existing_bootstrap(text)
     text = _patch_toggle_ui_default(text, hotkey)
     text = _disable_launcher_default(text)
     text = _relocate_config_file(text)
     text = _patch_storage_adapter(text)
     text = _keep_toggle_ui_active_on_keys_tab(text)
-    text = _patch_keycode_reads(text)
     bootstrap = _bootstrap_js(hotkey)
     match = re.search(r"\*/\s*\n", text)
     if not match:
