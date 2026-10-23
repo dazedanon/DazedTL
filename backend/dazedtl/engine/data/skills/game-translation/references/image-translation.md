@@ -253,6 +253,9 @@ the actual adapter and its availability instead of assuming either is installed.
 an import: pip-installing while the app is open leaves site-packages stale and a
 freshly installed engine reads as missing.
 
+Try a local engine on a few images with known text before running it over a folder.
+Tesseract `jpn` on one game's 989 CGs, credits and tilesets missed all 17 images with legible Japanese, plain message-window dialogue and white credit lines included, while its strongest hits were runs of ー in battle backgrounds.
+
 Historical accuracy on nine hand-transcribed regions (a small local comparison,
 not a current provider ranking or an accuracy guarantee):
 
@@ -1267,6 +1270,18 @@ to look at. A wrong merge silently applies one widget's erase recipe to another.
 cell composited on a mid-grey checker with its filename and pixel size printed
 under it, plus a JSON manifest keyed by cell number. One image read classifies
 fifteen files. This is how 3,411 images collapsed to "56 actually carry text".
+
+**Review a family by what changes.**
+An event CG set repeats one painting across dozens of frames with a new face, hand or splash, so viewing every frame whole pays for the same pixels again and again.
+View one member of each family in full, then hang every other member from the examined member it differs from least (Prim's algorithm on the count of differing pixels, measured on a quarter-size copy) and view only the crop of the pixels that differ, 20-30 crops to a sheet.
+Compare premultiplied RGBA with a small threshold, such as a channel difference above 8, so colour hidden under alpha 0 never counts as a change.
+The crop is that member's review: every pixel outside it equals a member already examined, so the member also carries any lettering its parent has outside the crop; walk each lettered member's descendants before writing them up.
+A member whose pixels all equal its parent's but whose bytes differ still gets its own whole-image look, because only byte-identical files reuse a finding outright.
+A wrong family costs only a bigger crop, never a hidden glyph, because the crop comes from the pixels themselves.
+Where a crop shrinks a large image below about a third, also view that frame whole at about a third: 30 px lettering in a 2220-wide CG is a few pixels at 0.15.
+On one game's last 445 images, 61 families of mostly 816x624 and 2220x1248 CG frames, this took 55 full views and 390 crops with a median change of 0.4% of the image, 30 sheet reads in all.
+Its first 544 images, split across parallel agents that each wrote their own tools and viewed every frame again near full size, had cost 200,000-280,000 tokens per batch of 83-180 images.
+Review the sheets in one pass yourself; split them across agents only for a far larger request, and hand each agent prepared sheets instead of letting it build its own.
 
 **Probe sheets before writing anything.** Draw the *proposed* erase box on each
 image and put those on a sheet. Every wrong box shows up at once, and you fix the
