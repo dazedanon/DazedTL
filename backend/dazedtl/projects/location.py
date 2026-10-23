@@ -22,14 +22,13 @@ from pathlib import Path
 
 from dazedtl import system
 from dazedtl.projects import store
+from dazedtl.projects.store import UNRECOGNIZED
 from dazedtl.translation.files import read_json
 
 MARKER = "dazedtl/project.json"
 # Saved progress that names the project that saved it, read for a game from
 # before the marker: Plugin files' and Images' state.
 CLAIMS = (".dazedtl/plugin-work/state.json", ".dazedtl/image_manager/guided/state.json")
-# What the engine detection names a folder it recognizes no game in.
-UNRECOGNIZED = "Investigation pending"
 BUSY = "Finish or stop the running work before opening this game in its new location."
 
 
@@ -56,18 +55,21 @@ def marked(root, known):
     return _project_id(path, 64_000, known) if path and path.is_file() else None
 
 
-def claimed(root, known):
+def claimed(root, known, worked=lambda identity: True):
     """The project of `known` the game folder belongs to by its marker, or
-    for a game from before it, by the progress it saved, which must agree."""
+    for a game from before it, by the progress it saved, which must agree.
+    A marker naming a project without saved work (`worked`) yields to
+    progress naming another, as when the moved game was opened as a new
+    project before its own was found."""
     identity = marked(root, known)
-    if identity:
+    if identity and worked(identity):
         return identity
     claims = {
         _project_id(path, None, known)
         for path in (Path(root) / name for name in CLAIMS)
         if path.is_file()
     } - {None}
-    return claims.pop() if len(claims) == 1 else None
+    return claims.pop() if len(claims) == 1 else identity
 
 
 def mark(root, project_id):
@@ -97,14 +99,20 @@ def holds(project, detect, known):
     folder there names this project, or, naming none of `known`, has a game's
     files at its root. A game found only inside it, as after a move into a
     subfolder, is not there. A project whose engine was never recognized
-    counts any folder there that names no other project."""
+    counts any folder there that names no other project. Guided steps link
+    (`backend_id`) only a recognized RPG Maker game, so a linked project's
+    unrecognized engine is one earlier versions saved over it when its old
+    folder was opened after the move."""
     root = Path(project["source"])
     if not root.is_dir():
         return False
     identity = marked(root, known)
     if identity:
         return identity == project["id"]
-    return project["engine"] == UNRECOGNIZED or detect(root) != UNRECOGNIZED
+    never_recognized = project["engine"] == UNRECOGNIZED and not project.get(
+        "backend_id"
+    )
+    return never_recognized or detect(root) != UNRECOGNIZED
 
 
 # The workspace whose registry this process's game writes consult (`adopt`):
@@ -179,6 +187,13 @@ class Locations:
     def holds(self, project):
         return holds(project, self.detect, self.known)
 
+    def claimed(self, root):
+        return claimed(
+            root,
+            self.known,
+            lambda identity: self.has_work(self.projects.get(identity)),
+        )
+
     def keep(self, project):
         """Names the open project in its game, unless it names another."""
         keep(project["source"], project["id"], self.known)
@@ -189,7 +204,7 @@ class Locations:
         work running now before it moves another project there."""
         root = Path(root)
         detected = {"source": str(root), "engine": self.detect(root)}
-        identity = claimed(root, self.known)
+        identity = self.claimed(root)
         owner = next(
             (p for p in self.projects.data["projects"] if p["id"] == identity), None
         )
@@ -220,7 +235,7 @@ class Locations:
         project = self.projects.get(project_id)
         root = Path(root)
         detected = {"source": str(root), "engine": self.detect(root)}
-        identity = claimed(root, self.known)
+        identity = self.claimed(root)
         if identity and identity != project_id:
             raise ValueError("That folder holds another project's game.")
         if not identity and project["engine"] not in {UNRECOGNIZED, detected["engine"]}:

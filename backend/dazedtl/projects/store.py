@@ -12,6 +12,9 @@ from dazedtl.translation.files import read_json
 METHODS = {"guided", "len", "translation"}
 SCREENS = {"project", "translation", "guided", "manual", "settings"}
 SCHEMA_VERSION = 5
+# What the engine detection names a folder it recognizes no game in
+# (TranslationEngine.detect).
+UNRECOGNIZED = "Investigation pending"
 
 
 def upgrade_v1(value):
@@ -84,6 +87,15 @@ def validate(value):
     current = value.get("current_id")
     if not isinstance(current, str) or (current and current not in identities):
         raise invalid
+
+
+def engine(project, detected):
+    """The engine a project's record keeps once its folder is detected: a
+    folder recognized as no game, such as one its game moved out of, keeps
+    the engine it had."""
+    if detected["engine"] == UNRECOGNIZED:
+        return project["engine"]
+    return detected["engine"]
 
 
 def registered_at(projects, source):
@@ -182,7 +194,7 @@ class Projects:
             }
             data["projects"].append(project)
         # Reopening a game does not infer a different method from the screen.
-        project["engine"] = detected["engine"]
+        project["engine"] = engine(project, detected)
         return self._select(data, project)
 
     def move(self, project_id, detected, replaced=None):
@@ -194,7 +206,7 @@ class Projects:
         data = deepcopy(self.data)
         project = self._get(data, project_id)
         project["source"] = str(Path(detected["source"]).resolve())
-        project["engine"] = detected["engine"]
+        project["engine"] = engine(project, detected)
         if replaced:
             self._get(data, replaced)["hidden"] = True
         return self._select(data, project)

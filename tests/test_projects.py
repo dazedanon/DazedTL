@@ -254,6 +254,52 @@ class LocationTests(unittest.TestCase):
             [p["id"] for p in self.projects.state()["recent"]], [project["id"]]
         )
 
+    def test_a_moved_game_whose_old_folder_was_opened_again_is_found(self):
+        # The user's 2.33.1 layout: a Guided project's game moved into a Game
+        # folder inside its old one, the old folder opened again first, and
+        # Game opened as an empty project that its marker then named.
+        for name, find in (("RJ01", True), ("RJ02", False)):
+            with self.subTest(find=find):
+                old = self.game(name, repository=False)
+                project = self.locations.open(old)
+                self.progress(old, ".dazedtl/plugin-work", project["id"])
+                (old / ".git").mkdir()
+                self.move(name, "moving")
+                old.mkdir()
+                new = self.move("moving", f"{name}/Game")
+                (old / ".dazedtl/image_manager").mkdir(parents=True)
+                self.assertEqual(self.locations.open(old)["engine"], "MVMZ")
+                # Earlier versions saved the old folder's label over its engine.
+                data = deepcopy(self.projects.data)
+                record = self.projects._get(data, project["id"])
+                record.update(
+                    engine=UNRECOGNIZED, backend_id="b" * 32, phase="dialogue"
+                )
+                self.projects._commit(data)
+                self.assertFalse(self.locations.holds(self.projects.get(project["id"])))
+                empty = self.projects.open({"source": str(new), "engine": "MVMZ"})
+                location.mark(new, empty["id"])
+                moved = (
+                    self.locations.find(project["id"], new)
+                    if find
+                    else self.locations.open(new)
+                )
+                self.assertEqual(
+                    (moved["id"], moved["source"], moved["engine"]),
+                    (project["id"], str(new), "MVMZ"),
+                )
+                self.assertTrue(self.projects.get(empty["id"])["hidden"])
+                self.assertEqual(
+                    location.marked(new, self.locations.known), project["id"]
+                )
+        # A project that never linked a game still counts a folder there that
+        # names no project, such as an Assistant-led game of another engine.
+        other = self.root / "other"
+        other.mkdir()
+        unknown = self.locations.open(other)
+        self.assertEqual(unknown["engine"], UNRECOGNIZED)
+        self.assertTrue(self.locations.holds(unknown))
+
     def test_a_project_with_work_at_the_new_folder_keeps_it(self):
         old = self.game("old", repository=False)
         project = self.locations.open(old)

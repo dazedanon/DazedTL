@@ -124,6 +124,7 @@ Run them outside a sandbox such as Claude Code's bwrap: KWin needs a writable `/
 - `qa-done`: Text QA reviewed by a scripted assistant through the project helper, one correction applied.
 - `plugins-applied`: `qa-done` on the `plugin-text` game, then its Plugin files translated by a scripted assistant and applied, so Checkpoints holds both applications.
 - `moved`: `plugins-applied`, then the game moved into a `Game` folder inside its own and opened there, then renamed and found with **Find game folder**; each must leave the project, its History, tasks and saved progress as they were.
+- `moved-relabeled`: `moved`, with the project's engine saved as `Investigation pending` before each step, as versions before 2.33.2 saved it once the old folder was opened again, and the `Game` folder first opened as an empty project; the old project must offer **Find game folder**.
 - `assistant-led`: an Assistant-led project in agent mode, set up and organized, its first request translated.
 - `assistant-written`: the assistant translates every request and writes them into the game, failing if the write changes the choice labels (402) or help markers (108) the game finds by their Japanese.
 - `batch-waiting`: the database submitted as a Batch that the stand-in holds.

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from dazedtl import system
+from dazedtl.projects.store import UNRECOGNIZED
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest
 from dazedtl.translation.git_status_cache import RepositoryStatusCache, file_signature
@@ -148,7 +149,7 @@ class TranslationEngine:
             return "TyranoScript"
         if any(root.glob("*_Data")):
             return "Unity"
-        return "Investigation pending"
+        return UNRECOGNIZED
 
     def documents(self, source):
         from desktop.backend.guidance import documents

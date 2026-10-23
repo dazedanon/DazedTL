@@ -346,6 +346,102 @@ const moved = [
   ],
 ];
 
+/**
+ * Restarts the app with what versions before 2.33.2 saved once the open
+ * project's old folder, its game moved out, was opened again: that folder's
+ * unrecognized engine over the project's own. `also` changes more of the
+ * closed profile, given the registry, which this then saves.
+ */
+async function relabel(state, restart, also = () => {}) {
+  const file = path.join(state.profile, "workspace/projects.json");
+  return restart(() => {
+    const registry = JSON.parse(fs.readFileSync(file, "utf8"));
+    const project = registry.projects.find(
+      (item) => item.id === registry.current_id,
+    );
+    project.engine = "Investigation pending";
+    also(registry);
+    fs.writeFileSync(file, JSON.stringify(registry, null, 2));
+  });
+}
+
+const relabeled = [
+  [
+    "Move the game into a Game folder inside its own, relabeled, and open it there",
+    async ({ page, state, restart }) => {
+      // A restart forgets the History job selected, so the project reads as
+      // it does after one.
+      page = await restart(() => {});
+      await page.click("Project");
+      const before = await projectView(page, state.game);
+      const game = path.join(state.game, "Game");
+      moveGame(state, game);
+      // That version then opened the Game folder as a new project, which
+      // its marker named.
+      const empty = "e".repeat(32);
+      page = await relabel(state, restart, (registry) => {
+        registry.projects.push({
+          id: empty,
+          name: "Game",
+          source: game,
+          engine: "MVMZ",
+          method: "translation",
+          backend_id: "",
+          phase: "database",
+        });
+        fs.mkdirSync(path.join(game, ".git/dazedtl"), { recursive: true });
+        fs.writeFileSync(
+          path.join(game, ".git/dazedtl/project.json"),
+          JSON.stringify({ version: 1, projectId: empty }) + "\n",
+        );
+      });
+      await page.waitText("Game folder unavailable");
+      await page.waitText("Find game folder");
+      await chooseFolder(
+        { root: state.root, inspect: state.app.inspect },
+        game,
+      );
+      const { project } = (await page.call("workspace_snapshot")).application;
+      await page.click(project.name);
+      await page.click("Open a game…");
+      await until("the moved game to open", async () => opened(page, game));
+      await page.idle();
+      unchanged(
+        state,
+        before,
+        await projectView(page, game, state.game),
+        "Opening the moved game",
+      );
+      state.game = game;
+    },
+  ],
+  [
+    "Rename that folder, leave an empty one, relabeled, and find it",
+    async ({ page, state, restart }) => {
+      const before = await projectView(page, state.game);
+      const game = path.join(path.dirname(state.game), "Renamed");
+      moveGame(state, game);
+      fs.mkdirSync(state.game);
+      page = await relabel(state, restart);
+      await page.waitText("Game folder unavailable");
+      await chooseFolder(
+        { root: state.root, inspect: state.app.inspect },
+        game,
+      );
+      await page.click("Find game folder");
+      await until("the found game to open", async () => opened(page, game));
+      await page.idle();
+      unchanged(
+        state,
+        before,
+        await projectView(page, game, state.game),
+        "Finding the game",
+      );
+      state.game = game;
+    },
+  ],
+];
+
 const batch = [
   [
     "Connect the OpenAI preset, which reaches the stand-in",
@@ -874,6 +970,12 @@ export const scenarios = {
       "plugins-applied, then the game moved into a Game folder inside its own and opened there, then renamed and found from the Project page; each must keep the project unchanged.",
     game: "plugin-text",
     steps: () => [open, ...setup, ...translateAll, qa, plugins, ...moved],
+  },
+  "moved-relabeled": {
+    description:
+      "moved, its project's engine saved as Investigation pending each time, as versions before 2.33.2 saved it once the old folder was opened again, and the Game folder first opened as an empty project.",
+    game: "plugin-text",
+    steps: () => [open, ...setup, ...translateAll, qa, plugins, ...relabeled],
   },
   "assistant-led": {
     description:

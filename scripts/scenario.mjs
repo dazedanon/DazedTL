@@ -252,10 +252,21 @@ async function build(name) {
   try {
     const steps = scenario.steps();
     if (steps.length || flag("--app")) page = await openApp(state);
+    // A step restarts the app to change what it saved while it is closed,
+    // such as a record an earlier version wrote, and goes on with the page
+    // this returns.
+    const restart = async (edit) => {
+      page.close();
+      page = undefined;
+      await stopApp(state.tag, state.app?.pid);
+      await edit();
+      page = await openApp(state);
+      return page;
+    };
     for (const [label, run] of steps) {
       const at = Date.now();
       process.stdout.write(`- ${label} … `);
-      await run({ page, state });
+      await run({ page, state, restart });
       console.log(`${((Date.now() - at) / 1000).toFixed(1)} s`);
     }
     // A step may have moved the game.
