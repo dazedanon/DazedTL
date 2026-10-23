@@ -3,6 +3,12 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.33.0] - 2026-10-22
+
+### Changed
+
+- **Images:** investigating images now looks at each set of look-alike CG frames by what changes between them, so it uses far less of your assistant's plan.
+
 ## [2.32.1] - 2026-10-22
 
 ### Fixed
@@ -977,6 +983,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.33.0]: https://github.com/dazedanon/DazedTL/compare/v2.32.1...v2.33.0
 [2.32.1]: https://github.com/dazedanon/DazedTL/compare/v2.32.0...v2.32.1
 [2.32.0]: https://github.com/dazedanon/DazedTL/compare/v2.31.0...v2.32.0
 [2.31.0]: https://github.com/dazedanon/DazedTL/compare/v2.30.0...v2.31.0
