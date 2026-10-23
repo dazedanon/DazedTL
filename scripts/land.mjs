@@ -2,8 +2,9 @@
 // formats it, merges dev in, runs the tests and build, fast-forwards the main
 // checkout's dev and pushes it to every mirror. CI then runs on dev, and the
 // session that cuts the next release answers for a run still red. Runs on
-// Linux and macOS.
-// See "Landing" in docs/development.md.
+// Linux and macOS. A wait on the user's DazedTL or a slow landing lock is
+// told to the user on the desktop too, since agents run this in the
+// background. See "Landing" in docs/development.md.
 //
 //   node scripts/land.mjs
 //
@@ -27,6 +28,7 @@ import { mirrors } from "./update.mjs";
 const appPoll = 30_000;
 const pushRetry = 60_000;
 const pushTimeout = 5 * 60_000;
+const icon = path.join(import.meta.dirname, "..", "resources", "icon.png");
 
 /** Whether the user's own DazedTL runs from the main checkout. */
 export function appRunning(
@@ -35,6 +37,62 @@ export function appRunning(
 ) {
   const electron = path.join(main, "app", "node_modules", "electron");
   return processes.split("\n").some((line) => line.includes(electron));
+}
+
+/**
+ * Waits while the user's DazedTL runs from the main checkout, telling them
+ * once when the wait starts and once when it ends. Resolves whether it waited.
+ * @param {string} main
+ * @param {Pick<Deps, "processes" | "wait">} deps
+ * @param {(line: string) => void} tell
+ */
+export async function waitForApp(main, { processes, wait }, tell) {
+  if (!appRunning(main, processes())) return false;
+  tell(
+    `Your DazedTL is open from ${main}; this lands when it closes (checking every ${appPoll / 1000} s).`,
+  );
+  do await wait(appPoll);
+  while (appRunning(main, processes()));
+  tell("Your DazedTL closed; landing now.");
+  return true;
+}
+
+/**
+ * Shows a desktop notification with notify-send on Linux or osascript on
+ * macOS, and nothing where the command is missing; never fails the landing.
+ */
+function notifyDesktop(
+  /** @type {string} */ title,
+  /** @type {string} */ body,
+) {
+  const [command, ...args] =
+    process.platform === "darwin"
+      ? [
+          "osascript",
+          "-e",
+          "on run argv",
+          "-e",
+          "display notification (item 2 of argv) with title (item 1 of argv)",
+          "-e",
+          "end run",
+          title,
+          body,
+        ]
+      : // The body is markup to notification servers.
+        [
+          "notify-send",
+          "--app-name=DazedTL",
+          `--icon=${icon}`,
+          title,
+          body.replace(
+            /[&<>]/g,
+            (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[char] ?? "",
+          ),
+        ];
+  spawn(command, args, { stdio: "ignore", timeout: 10_000 }).on(
+    "error",
+    () => {},
+  );
 }
 
 /**
@@ -93,6 +151,7 @@ const reason = (/** @type {unknown} */ error) =>
  *   read: ((route: string) => Promise<any>) | null,
  *   wait: (ms: number) => Promise<unknown>,
  *   log: (line: string) => void,
+ *   notify: (title: string, body: string) => void,
  *   onStop: () => void,
  *   now?: () => number,
  * }} Deps
@@ -159,11 +218,17 @@ export async function land(cwd, deps) {
     return unformatted.code;
   }
   time.lap("format");
+  // A wait on something outside the landing reaches the user on the desktop,
+  // and its line is marked for an agent watching the output.
+  const tell = (/** @type {string} */ line) => {
+    log(`Notice: ${line}`);
+    deps.notify(`Landing ${branch}`, line);
+  };
   const { code, report } = await withLock(
     git,
     { branch, worktree: top },
-    () => underLock(deps, { top, main, branch }, time),
-    { log, onStop: deps.onStop },
+    () => underLock(deps, { top, main, branch }, time, tell),
+    { log, notify: tell, onStop: deps.onStop },
   );
   for (const line of report) log(line);
   log(time.summary());
@@ -282,9 +347,10 @@ export async function mergeDev(git, top, run, log) {
  * @param {Deps} deps
  * @param {{ top: string, main: string, branch: string }} where
  * @param {ReturnType<typeof timer>} time
+ * @param {(line: string) => void} tell
  * @returns {Promise<{ code: number, report: string[] }>}
  */
-async function underLock(deps, { top, main, branch }, time) {
+async function underLock(deps, { top, main, branch }, time, tell) {
   const { run, log, wait } = deps;
   const git = gitIn(top);
   const atMain = gitIn(main);
@@ -318,16 +384,7 @@ async function underLock(deps, { top, main, branch }, time) {
   }
 
   // The fast-forward rewrites the files the user's DazedTL runs from.
-  let said = false;
-  while (appRunning(main, deps.processes())) {
-    if (!said)
-      log(
-        `Your DazedTL is open from ${main}; this lands when it closes (checking every ${appPoll / 1000} s).`,
-      );
-    said = true;
-    await wait(appPoll);
-  }
-  if (said) time.lap("app wait");
+  if (await waitForApp(main, deps, tell)) time.lap("app wait");
 
   const checkedOut = atMain([
     "symbolic-ref",
@@ -436,6 +493,7 @@ function realDeps() {
     read: token ? githubReader({ token, log: console.log }) : null,
     wait: sleep,
     log: (line) => console.log(line),
+    notify: notifyDesktop,
     onStop: () => child?.kill("SIGTERM"),
   };
 }

@@ -12,6 +12,9 @@ export const lockRef = "refs/dazedtl/land-lock";
 const lockAge = 20 * 60_000;
 const renewEvery = 5 * 60_000;
 const lockPoll = 3000;
+// Longer than a landing takes, so only a wait on something slower, such as a
+// holder waiting for the user, is worth telling them about.
+const lockNotice = 5 * 60_000;
 
 /**
  * @typedef {(args: string[], input?: string) => { status: number, stdout: string, stderr: string }} Git
@@ -92,10 +95,11 @@ function stamp(
 
 /**
  * Takes the lock for `who`, waiting while a live holder has it and taking
- * over a stale one.
+ * over a stale one. A wait past 5 minutes goes to `notify` once, and so does
+ * its end, so the user hears of it while the waiter runs in the background.
  * @param {Git} git
  * @param {{ branch: string, worktree: string, pid?: number }} who
- * @param {{ now?: () => number, alive?: (pid: number) => boolean, namespace?: string | null, wait?: (ms: number) => Promise<unknown>, log?: (line: string) => void }} [options]
+ * @param {{ now?: () => number, alive?: (pid: number) => boolean, namespace?: string | null, wait?: (ms: number) => Promise<unknown>, log?: (line: string) => void, notify?: (line: string) => void }} [options]
  * @returns {Promise<Lock>}
  */
 export async function acquireLock(
@@ -107,21 +111,28 @@ export async function acquireLock(
     namespace = pidNamespace(),
     wait = sleep,
     log = () => {},
+    notify = log,
   } = {},
 ) {
   const self = { pid: process.pid, pidNamespace: namespace, ...who };
+  const since = now();
+  const minutes = () => `${Math.round((now() - since) / 60_000)} min`;
   let shown = "";
+  let noticed = false;
   for (;;) {
     const held = current(git);
     if (!held) {
       const lock = stamp(git, self, now);
-      if (git(["update-ref", lockRef, lock.blob, ""]).status === 0) return lock;
+      if (git(["update-ref", lockRef, lock.blob, ""]).status === 0) {
+        if (noticed) notify(`Got the landing lock after ${minutes()}.`);
+        return lock;
+      }
       continue;
     }
     if (staleHolder(held.holder, { now, alive, namespace })) {
       const lock = stamp(git, self, now);
       if (git(["update-ref", lockRef, lock.blob, held.blob]).status === 0) {
-        log(
+        (noticed ? notify : log)(
           `Took over the landing lock from ${held.holder ? `${held.holder.branch} (pid ${held.holder.pid})` : "an unreadable holder"}, which had gone or not renewed it for ${lockAge / 60_000} min.`,
         );
         return lock;
@@ -131,6 +142,12 @@ export async function acquireLock(
     const name = `${held.holder?.branch} (pid ${held.holder?.pid})`;
     if (name !== shown) log(`Waiting for the landing lock, held by ${name}.`);
     shown = name;
+    if (!noticed && now() - since >= lockNotice) {
+      notify(
+        `Still waiting for the landing lock after ${minutes()}, held by ${name}.`,
+      );
+      noticed = true;
+    }
     await wait(lockPoll);
   }
 }
@@ -162,16 +179,16 @@ export function releaseLock(/** @type {Git} */ git, /** @type {Lock} */ lock) {
  * @param {Git} git
  * @param {{ branch: string, worktree: string }} who
  * @param {() => Promise<T>} task
- * @param {{ log?: (line: string) => void, onStop?: () => void }} [options]
+ * @param {{ log?: (line: string) => void, notify?: (line: string) => void, onStop?: () => void }} [options]
  * @returns {Promise<T>}
  */
 export async function withLock(
   git,
   who,
   task,
-  { log = () => {}, onStop } = {},
+  { log = () => {}, notify = log, onStop } = {},
 ) {
-  const lock = await acquireLock(git, who, { log });
+  const lock = await acquireLock(git, who, { log, notify });
   let lost = false;
   const renew = setInterval(() => {
     if (!lost && !renewLock(git, lock)) {

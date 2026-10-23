@@ -9,10 +9,10 @@ import {
   lockRef,
   releaseLock,
 } from "../scripts/land-lock.mjs";
-import { formatBranch, mergeDev, timer } from "../scripts/land.mjs";
+import { formatBranch, mergeDev, timer, waitForApp } from "../scripts/land.mjs";
 import { notesTemplate } from "../scripts/changelog.mjs";
 
-test("a landing waits for a live lock and takes over a dead or unrenewed one", async (t) => {
+test("a landing waits for a live lock, takes over a dead or unrenewed one and tells the user of a long wait once", async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-land-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const git = gitIn(dir);
@@ -29,22 +29,55 @@ test("a landing waits for a live lock and takes over a dead or unrenewed one", a
   const ten = await acquireLock(git, who(10), {
     ...context,
     wait: async () => assert.fail("waited for a dead holder"),
+    notify: () => assert.fail("told the user of no wait"),
   });
   // Pid 10 lives; after 21 minutes without renewing, it loses the lock anyway.
   let waits = 0;
+  const notices: string[] = [];
   const eleven = await acquireLock(git, who(11), {
     ...context,
     wait: async () => {
       waits++;
       clock += 7 * 60_000;
     },
+    notify: (line: string) => notices.push(line),
   });
   assert.equal(waits, 3);
+  // Once past 5 minutes and once at the end, not on every poll.
+  assert.equal(notices.length, 2);
+  assert.match(notices[1], /^Took over/);
   assert.equal(eleven.holder.started, new Date(21 * 60_000).toISOString());
   // The holder it replaced cannot release the new one.
   assert.equal(releaseLock(git, ten), false);
   assert.equal(releaseLock(git, eleven), true);
   assert.equal(git(["rev-parse", "-q", "--verify", lockRef]).stdout, "");
+});
+
+test("a landing tells the user once when it starts waiting for their DazedTL and once when it closes", async () => {
+  const electron = path.join("/main", "app", "node_modules", "electron");
+  let polls = 3;
+  let waits = 0;
+  const told: string[] = [];
+  const waited = await waitForApp(
+    "/main",
+    {
+      processes: () => (polls-- > 0 ? `${electron}/dist/electron .` : ""),
+      wait: async () => waits++,
+    },
+    (line) => told.push(line),
+  );
+  assert.equal(waited, true);
+  assert.equal(waits, 3);
+  assert.equal(told.length, 2);
+  // A closed DazedTL holds nothing up and tells nothing.
+  assert.equal(
+    await waitForApp(
+      "/main",
+      { processes: () => "", wait: async () => assert.fail() },
+      () => assert.fail(),
+    ),
+    false,
+  );
 });
 
 test("a landing's timing line gives the total and each stage reached", () => {

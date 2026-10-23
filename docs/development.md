@@ -197,6 +197,8 @@ It refuses `dev`, `main` and uncommitted changes, formats the branch with `forma
 Its holder renews it every five minutes; one whose process has gone, or that nobody renewed for 20 minutes, is taken over.
 Under the lock it merges `dev` into the branch, runs the tests and build checks, waits while your own DazedTL runs from the main checkout, and fast-forwards the main checkout's `dev`, which must be checked out there without uncommitted changes to tracked files, never overwriting a file the checkout ignores.
 It then pushes `dev` to each mirror, trying a refused push again a minute later; a mirror that still refuses is reported and the landing still counts.
+A wait on something outside the landing reaches you even while an agent runs it in the background: it tells you once when your DazedTL holds it up and once when that closes, and once when another landing or a release has held the lock for five minutes and once when it gets the lock.
+Each of these lines starts with `Notice:` and also shows as a desktop notification where `notify-send` (Linux) or `osascript` (macOS) exists.
 A last line says how long it took, in total and per stage (format, lock wait, merge, test, build, push), so a slow landing shows where the time went.
 In the merge, both sides' [release notes](#release-notes) join under their headings through [changelog.mjs](../scripts/changelog.mjs), and conflicts only in the [generated API contracts](architecture.md#api-changes) are resolved by writing them again.
 Any other conflict stops it with exit code 2 and leaves the merge in progress with everything else merged, so you resolve only the listed files, commit and land again; a merge started again by hand would merge the notes as text.
