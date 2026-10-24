@@ -12,9 +12,12 @@ their own commits and record outside edits before they start.
 
 A checkpoint commits every pending change Git sees in the patch, which is
 the files the translation branch tracks or its .gitignore allows, and lets
-the files its write names that the patch lacks into it (`grow_scope`). A
-file outside the patch is the original game's, which the `original` branch
-holds.
+the files its write names that the patch lacks into it (`grow_scope`). The
+checkpoint of a DazedTL write lets in DazedTL's own runtime files the game
+holds too (`dazedtl_files`), whichever write added them, since the
+plugins.js loading Forge or the update check stops players' game at start
+without them. A file outside the patch is the original game's, which the
+`original` branch holds.
 
 An assistant writes a game's text one file at a time, so the writes made
 inside `in_phase` wait for one checkpoint of their phase instead of each
@@ -369,13 +372,19 @@ def _wait(root, folder, change, paths):
 def _save(root, change, named, claimed):
     """Commits the pending changes `claimed`, another write's, leaves out,
     or only the `named` ones while `claimed` is None, with the named files
-    the patch lacks let into it."""
-    from util.len_patch_scope import grow_scope
+    and DazedTL's own runtime files the patch lacks let into it."""
+    from util.len_patch_scope import dazedtl_files, grow_scope
 
     named = set(_relative(named))
     pending = _pending(root)
+    # DazedTL's own files are never edits made outside it.
+    own = (
+        set()
+        if change is OUTSIDE
+        else dazedtl_files(Path(root)).keys() - (claimed or set())
+    )
     joined = set()
-    if outside := named - pending:
+    if outside := (named | own) - pending:
         tracked = set(_git(root, "ls-files", "-z").stdout.split("\0")) - {""}
         added, rules = grow_scope(
             Path(root),

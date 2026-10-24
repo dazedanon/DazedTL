@@ -540,4 +540,18 @@ if os.name != "nt":
     assert sorted(os.listdir(kept / "img/pictures")) == sorted(
         ["sign.png", os.path.basename(picture)]
     ), os.listdir(kept / "img/pictures")
+# Install Forge, as Playtest tools runs it, names no files, yet its plugin
+# joins the patch with the plugins.js loading it: the checkpoint once took
+# only plugins.js, so the published patch stopped players' game at start.
+from util.forge import installer as forge
+
+forged = game("forge")
+engine.audit_scope(forged, {"files": {"data/Map001.json": {}, "js/plugins.js": {}}})
+save(forged)
+with running(for_action("forge_install")), write_game(forged, pack=False):
+    assert forge.install(forged, cfg={"forgeHotkey": "F10"})[0]
+assert not git(forged, "status", "--porcelain"), git(forged, "status")
+assert {"js/plugins.js", "js/plugins/Forge_MZ.js"} <= set(
+    git(forged, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").split()
+)
 print("ok")
