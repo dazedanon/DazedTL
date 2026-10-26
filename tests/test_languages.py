@@ -25,6 +25,7 @@ from util.languages import ENGLISH, reading, source_pattern
 from util.paths import PROMPT_PATH, glossary_base_text
 from util.playtest.checks import reading as playtest_reading
 from util.prompt_pair import render, render_for_run
+from util.qa.mechanical import evidence
 from util.qa.selection import _number_defect
 from util.rpgmaker_qa_preflight import _untranslated as preflight_untranslated
 from util.source_text import holds_source, source_left
@@ -283,6 +284,11 @@ class LanguageTests(unittest.TestCase):
             # source may be text never translated.
             self.assertEqual(source_left("魔王", "魔王"), [])
             self.assertTrue(holds_source("魔王"))
+            # Text QA reads a line against its source too, so it no longer
+            # finds Japanese left in every line.
+            residue = "source-language-residue"
+            self.assertNotIn(residue, evidence("魔王が来た", "魔王来了", 401)["flags"])
+            self.assertIn(residue, evidence("魔王が来た", "魔王が来了", 401)["flags"])
             # The playtest reads only kana on screen.
             screen = re.compile(playtest_reading()["pattern"])
             self.assertFalse(screen.search("魔王城"))

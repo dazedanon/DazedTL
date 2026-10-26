@@ -177,69 +177,6 @@ def _prepared_key(task_parent: Path, candidates: tuple[str, ...]) -> str:
     )
 
 
-def _fingerprinted_tasks(
-    task_parent: Path,
-    manifest: dict[str, Any],
-    contexts: set[str],
-    screen_configuration: dict[str, Any],
-    baselines: list[str],
-) -> dict[str, str]:
-    """Tasks of these inputs that 2.24.0 and earlier made, by scope:
-    "everything" or "scoped", the one prepared last of each.
-
-    Those versions put a hash of QA's code files in a task's key, with the
-    hash of its whole inventory. Each task's key made again from what its
-    task.json recorded says which scope it has, here under *baselines*, and
-    its inventory must hold the same text. *contexts* are the digests its
-    context may have (context_digests).
-    """
-    try:
-        current = str(_read_json(task_parent / CURRENT_FILE).get("task") or "")
-    except (OSError, ValueError, AttributeError):
-        current = ""
-    found: dict[str, list[tuple[bool, str, str]]] = {}
-    text = None
-    for path in task_parent.iterdir():
-        if not _TASK_FOLDER_RE.fullmatch(path.name):
-            continue
-        try:
-            task = _read_json(path / "task.json")
-            fingerprint = task.get("engine_fingerprint")
-            if (
-                task.get("schema") != TASK_SCHEMA
-                or not isinstance(fingerprint, str)
-                or "rules_version" in task
-                or task.get("focus") != manifest["focus"]
-                or task.get("context_sha256") not in contexts
-                or task.get("screen_configuration") != screen_configuration
-                or (task.get("counts") or {}).get("records")
-                != manifest["counts"]["records"]
-            ):
-                continue
-            everything, scoped = _task_keys(
-                _task_basis(
-                    fingerprint,
-                    task["focus"],
-                    task["manifest_sha256"],
-                    task["context_sha256"],
-                    task["screen_configuration"],
-                ),
-                baselines,
-            )
-            scope = {everything: "everything", scoped: "scoped"}.get(path.name)
-            if scope is None:
-                continue
-            text = text or _inventory_text(manifest)
-            if _inventory_text(_read_json(path / "inventory.json")) != text:
-                continue
-        except (OSError, ValueError, KeyError, TypeError):
-            continue
-        found.setdefault(scope, []).append(
-            (path.name == current, str(task.get("created_at") or ""), path.name)
-        )
-    return {scope: max(tasks)[2] for scope, tasks in found.items()}
-
-
 def _last_scope(path: Path) -> str | None:
     """The review of every line the user chose last, "" once they named
     another scope, or None before either."""
@@ -414,17 +351,6 @@ def prepare_task(
         full_review, task_key = (
             _prepared_key(task_parent, candidates) for candidates in zip(*keys)
         )
-        if QA_RULES_VERSION == 1 and not all(
-            (task_parent / key / "task.json").is_file()
-            for key in (full_review, task_key)
-        ):
-            fingerprinted = _fingerprinted_tasks(
-                task_parent, manifest, contexts, screen_configuration, baselines
-            )
-            if not (task_parent / full_review / "task.json").is_file():
-                full_review = fingerprinted.get("everything", full_review)
-            if not (task_parent / task_key / "task.json").is_file():
-                task_key = fingerprinted.get("scoped", task_key)
         if not earlier:
             task_key = full_review
         # The scope the user named last goes on while the text is the same: a
