@@ -1,4 +1,5 @@
 import { PathText } from "../../ui/PathText";
+import { useLanguages } from "../../app/LanguagesProvider";
 import { FileName } from "../../ui/FileName";
 import {
   useEffect,
@@ -244,6 +245,7 @@ function Tile({
   onKeyDown: (event: KeyboardEvent) => void;
   onCompare: () => void;
 }) {
+  const { target } = useLanguages();
   const pixels = useThumbnail(queue, asset, size);
   const display = imageDisplay(asset, selected);
   // Of the images not started, recommended ones and editable copies are the
@@ -291,7 +293,7 @@ function Tile({
         className="image-tile-preview"
         // Encryption is supported throughout; it is noted, not marked, since a
         // game encrypts all of its images or none.
-        title={`${asset.path}\n${imageStatus(asset, selected)}${asset.encrypted ? " · Encrypted" : ""}`}
+        title={`${asset.path}\n${imageStatus(asset, selected, target)}${asset.encrypted ? " · Encrypted" : ""}`}
       >
         {pixels ? (
           <img
@@ -307,7 +309,7 @@ function Tile({
           className="image-tile-status"
           role="img"
           data-next={next || undefined}
-          aria-label={imageStatus(asset, selected)}
+          aria-label={imageStatus(asset, selected, target)}
         >
           <StatusIcon status={displayMarks[display]} size={14} />
         </span>

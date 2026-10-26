@@ -8,6 +8,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { PlaytestProblem, PlaytestState } from "../../api/contracts";
 import { api } from "../../api/client";
+import { languageTag } from "../../app/languages";
+import { useLanguages } from "../../app/LanguagesProvider";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { Button } from "../../ui/Button";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
@@ -83,8 +85,11 @@ export function PlaytestWork({
   const [coverage, setCoverage] = useState(false);
   const [report, setReport] = useState(false);
   // While a playtest runs, the last report's problems are about to change.
+  const { source } = useLanguages();
   const groups =
-    playtest.unreadable || running ? [] : playtestGroups(playtest.problems);
+    playtest.unreadable || running
+      ? []
+      : playtestGroups(playtest.problems, source);
   const reached = playtestCoverage(playtest);
   const problems = (
     <PlaytestProblems
@@ -198,6 +203,7 @@ function PlaytestProblems({
   onCapture: (problem: PlaytestProblem) => void;
   onStrings: (problem: PlaytestProblem) => void;
 }) {
+  const { source } = useLanguages();
   const [expanded, setExpanded] = useState<string[]>([]);
   if (!groups.length) return null;
   return (
@@ -217,7 +223,7 @@ function PlaytestProblems({
                 label={
                   <>
                     <strong className="playtest-title">
-                      {playtestTitle(problem)}
+                      {playtestTitle(problem, source)}
                       {problem.new && since && (
                         <span className="playtest-new">New</span>
                       )}
@@ -269,6 +275,7 @@ function PlaytestCapture({
   problem: PlaytestProblem;
   onClose: () => void;
 }) {
+  const { source } = useLanguages();
   const [url, setUrl] = useState("");
   const [error, setError] = useState("");
   // The capture loads once when the sheet opens.
@@ -283,7 +290,7 @@ function PlaytestCapture({
   return (
     <Modal label="Playtest capture" onDismiss={onClose} size="lg">
       <DialogHeader
-        title={playtestTitle(problem)}
+        title={playtestTitle(problem, source)}
         description={playtestWhere(problem)}
         onClose={onClose}
       />
@@ -309,11 +316,17 @@ function PlaytestStrings({
   problem: PlaytestProblem;
   onClose: () => void;
 }) {
+  const languages = useLanguages();
+  const source = languages.source;
+  // A placeholder glyph is left in translated text.
+  const lang = languageTag(
+    problem.check === "placeholder-glyph" ? languages.target : source,
+  );
   const texts = problem.texts || [];
   return (
     <Modal label="Strings" onDismiss={onClose} size="lg">
       <DialogHeader
-        title={playtestTitle(problem)}
+        title={playtestTitle(problem, source)}
         description={problem.evidence || problem.note}
         onClose={onClose}
       />
@@ -321,7 +334,7 @@ function PlaytestStrings({
         <ul className="playtest-strings">
           {texts.map((text, index) => (
             <li key={index}>
-              <span lang="ja">{text.text}</span>
+              <span lang={lang}>{text.text}</span>
               <small>
                 {[
                   text.line ? `Line ${text.line}` : text.pointer,

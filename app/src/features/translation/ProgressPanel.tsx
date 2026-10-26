@@ -9,6 +9,7 @@ import type {
 } from "../../api/contracts";
 import { flushDrafts } from "../../state/leaveGuards";
 import { useMinute } from "../../state/useMinute";
+import { useLanguages } from "../../app/LanguagesProvider";
 import type { useAction } from "../../state/useAction";
 import { ActionControl } from "../../ui/ActionControl";
 import { AssistantTask } from "../../ui/AssistantTask";
@@ -72,6 +73,7 @@ export function ProgressPanel({
   openQa: () => void;
 }) {
   const now = useMinute();
+  const languages = useLanguages();
   const [report, setReport] = useState(false);
   const progress = state.progress;
   const reported = !!progress?.updated_at;
@@ -192,7 +194,7 @@ export function ProgressPanel({
             {!!text?.reviewed && (
               <span>
                 <strong>{text.reviewed.toLocaleString()}</strong> checked
-                against the Japanese
+                against the {languages.source}
               </span>
             )}
             {options.include_images && !!images?.translated && (
@@ -279,17 +281,18 @@ const reasons: Record<string, string> = {
  * the game itself, and what rules set aside as never shown to players.
  */
 function CoverageNote({ coverage }: { coverage: Coverage }) {
+  const { source } = useLanguages();
   const pieces = (count: number) =>
     `${count.toLocaleString()} ${count === 1 ? "piece" : "pieces"}`;
   return (
     <span>
       {coverage.uncovered ? (
         <>
-          <strong>{pieces(coverage.uncovered)}</strong> of the game&apos;s
-          Japanese text not extracted
+          <strong>{pieces(coverage.uncovered)}</strong> of the game&apos;s{" "}
+          {source} text not extracted
         </>
       ) : (
-        "All of the game's Japanese text is extracted"
+        `All of the game's ${source} text is extracted`
       )}
       {coverage.source === "assistant_dump" && (
         <span className="muted">

@@ -16,7 +16,7 @@ from pathlib import Path
 
 from PIL import ImageFont
 
-from util import dazedwrap
+from util import dazedwrap, languages
 from util.paths import PROJECT_ROOT
 
 BUNDLED_FONT_DIR = PROJECT_ROOT / "fonts"
@@ -481,21 +481,27 @@ def text_budget(
     cap_height: int,
     orientation: str = "horizontal",
     font_path: str | None = None,
+    target: str | None = None,
 ) -> int:
     """Roughly how many characters of target text a region can hold.
 
     An estimate, not a promise - ``fit_text`` is the authority at render time.
     Its job is to give whoever writes the translation a number to aim at before
     the text exists, which is the difference between one render and four.
+    A Chinese or Japanese *target* is set a full em to a character; any other
+    is measured on Latin letters.
     """
     path = font_path or default_font()
     size = max(7, cap_height or 12)
     span = height if orientation == "vertical" else width
-    sample = "abcdefghijklmnopqrstuvwxyz "
-    sample_width, _ = measure(sample, path, size)
-    if sample_width <= 0:
-        return 20
-    per_char = sample_width / len(sample)
+    if languages.target_uses_cjk(target):
+        per_char = size
+    else:
+        sample = "abcdefghijklmnopqrstuvwxyz "
+        sample_width, _ = measure(sample, path, size)
+        if sample_width <= 0:
+            return 20
+        per_char = sample_width / len(sample)
     lines = 1
     if orientation == "horizontal":
         lines = max(1, height // max(1, int(size * 1.15)))

@@ -197,13 +197,14 @@ test("a finished update opens the Guided tasks its files belong to", () => {
   // The summary above the rows counts what they have left, not the
   // comparison's 5, and none once nothing is left.
   assert.equal(
-    finishedUpdateSummary(result, current),
-    textSummary({ to_translate: 2, replaced: 0, kept: 0 }),
+    finishedUpdateSummary(result, current, "Japanese"),
+    textSummary({ to_translate: 2, replaced: 0, kept: 0 }, "Japanese"),
   );
   assert.equal(
     finishedUpdateSummary(
       result,
       guidedUpdateTasks(result, groups, () => 0),
+      "Japanese",
     ),
     "",
   );

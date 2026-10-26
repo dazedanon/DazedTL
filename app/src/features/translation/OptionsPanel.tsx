@@ -7,6 +7,7 @@ import { Button } from "../../ui/Button";
 import { CheckField, CheckGroup, FieldRow } from "../../ui/FieldRow";
 import { Notice } from "../../ui/Notice";
 import { OptionCards, type OptionCard } from "../../ui/OptionCards";
+import { GameLanguagesRow } from "../project/GameLanguages";
 import { ModelMenu } from "../settings/ModelMenu";
 import type { SettingsSection } from "../settings/Settings";
 
@@ -74,6 +75,7 @@ export function OptionsPanel({
         reasoning effort; if it stops at a limit, the same prompt picks up the
         saved work.
       </p>
+      <GameLanguagesRow projectId={project.id} disabled={disabled} />
       <div
         className="field-row"
         role="group"

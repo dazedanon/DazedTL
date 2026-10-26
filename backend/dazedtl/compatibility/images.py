@@ -8,6 +8,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from dazedtl import system
+from dazedtl.languages import read_source
 from dazedtl.storage import write_bytes
 from dazedtl.translation.files import project_path, read_json
 
@@ -320,6 +321,7 @@ class ImageCompatibility:
             "{{IMAGE_VALIDATE_CLI}}": str(source / "scripts/image_validate.py"),
             "{{IMAGE_RECIPE_CLI}}": str(source / "scripts/image_recipe.py"),
             "{{IMAGE_FAMILY_CLI}}": str(source / "scripts/image_family.py"),
+            "{{SOURCE_LANGUAGE}}": read_source(root),
         }
         for name, replacement in replacements.items():
             value = value.replace(name, replacement)

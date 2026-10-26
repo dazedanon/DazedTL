@@ -45,6 +45,7 @@ The [changelog](CHANGELOG.md) lists what changed in every version.
 
 ## Good to know
 
+- DazedTL translates between languages written in different scripts, such as Japanese to English or English to Japanese; pairs in the same script, such as English to Spanish, aren't supported yet.
 - WOLF RPG games don't have guided steps yet; translate them Assistant-led.
 - On Ubuntu 24.04 and newer, the first start shows a one-time command to run in a terminal before DazedTL can open.
 - macOS has a **START.command** launcher, but it hasn't been tested yet.

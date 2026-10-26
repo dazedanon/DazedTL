@@ -139,7 +139,12 @@ function game(
   const sent: { type: string; value: Record<string, unknown> }[] = [];
   const context: Record<string, unknown> = {
     dazedtlHarness: {
-      plan: () => ({ stops: [], blocks }),
+      // A Japanese game's source text (util/playtest/checks.reading).
+      plan: () => ({
+        stops: [],
+        blocks,
+        source: { pattern: "[ぁ-ゔァ-ヴ一-龠々〆〤]", placeholders: true },
+      }),
       send: (type: string, value: Record<string, unknown>) =>
         sent.push({ type, value: structuredClone(value) }),
     },

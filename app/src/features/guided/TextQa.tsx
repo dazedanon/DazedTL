@@ -20,6 +20,8 @@ import { AssistantTask, type AssistantTaskState } from "../../ui/AssistantTask";
 import { Button } from "../../ui/Button";
 import { ExpandableText } from "../../ui/ExpandableText";
 import { LineChange } from "../../ui/LineChange";
+import { languageTag } from "../../app/languages";
+import { useLanguages } from "../../app/LanguagesProvider";
 import { Notice } from "../../ui/Notice";
 import { StatusMark } from "../../ui/StatusMark";
 import { StepProgress } from "../../ui/StepProgress";
@@ -216,22 +218,28 @@ function Change({
   afterLabel?: string;
   applied?: boolean;
 }) {
-  const japanese = { label: "Japanese", text: source, lang: "ja" };
+  const languages = useLanguages();
+  const original = {
+    label: languages.source,
+    text: source,
+    lang: languageTag(languages.source),
+  };
+  const lang = languageTag(languages.target);
   return (
     <LineChange
       rows={
         applied && after !== undefined
           ? [
-              japanese,
-              { label: "Now", text: after, change: "added" },
-              { label: "Was", text: before, change: "removed" },
+              original,
+              { label: "Now", text: after, change: "added", lang },
+              { label: "Was", text: before, change: "removed", lang },
             ]
           : [
-              japanese,
-              { label: "Now", text: before },
+              original,
+              { label: "Now", text: before, lang },
               ...(after === undefined
                 ? []
-                : [{ label: afterLabel, text: after }]),
+                : [{ label: afterLabel, text: after, lang }]),
             ]
       }
     />
@@ -453,6 +461,7 @@ export function QaAuditLog({
   reapply: (id: string) => void;
   feedback: Feedback;
 }) {
+  const languages = useLanguages();
   const [expanded, setExpanded] = useState<string[]>([]);
   return (
     <div className="text-qa-log">
@@ -474,7 +483,7 @@ export function QaAuditLog({
                     <QaReason text={row.reason} />
                     <small>
                       {[
-                        qaOrigin(row),
+                        qaOrigin(row, languages.source),
                         row.files.join(", "),
                         row.places > 1 && `${row.places} places`,
                       ]
@@ -521,6 +530,7 @@ const sourcePreview = 3;
  * whether players can reach it and why, then its first texts.
  */
 function UntranslatedSource({ source }: { source: QaUntranslatedSource }) {
+  const lang = languageTag(useLanguages().source);
   const [expanded, setExpanded] = useState(false);
   const { title, kind } = qaSource(source);
   const listed = source.texts.length;
@@ -540,7 +550,7 @@ function UntranslatedSource({ source }: { source: QaUntranslatedSource }) {
       <ul className="text-qa-texts">
         {(expanded ? source.texts : source.texts.slice(0, sourcePreview)).map(
           (row) => (
-            <li key={row.pointer} lang="ja">
+            <li key={row.pointer} lang={lang}>
               {row.text}
             </li>
           ),
@@ -641,6 +651,7 @@ export function QaCoverageReport({
   /** Guided's Plugin files labels; Assistant-led has no such task. */
   labels?: PluginLabel[];
 }) {
+  const languages = useLanguages();
   const [report, setReport] = useState<QaReport | null>(null);
   const [error, setError] = useState("");
   // The report is read once when the inspector opens, however often the
@@ -742,9 +753,9 @@ export function QaCoverageReport({
         <section aria-label="Never translated">
           <h3>Never translated · {untranslated.toLocaleString()}</h3>
           <p className="muted">
-            QA reviews translations, so it did not read this Japanese. The
-            playtest lists what players can see with the task that translates
-            it.
+            QA reviews translations, so it did not read this {languages.source}.
+            The playtest lists what players can see with the task that
+            translates it.
           </p>
           <ul className="text-qa-untranslated">
             {report.not_translated.map((source) => (

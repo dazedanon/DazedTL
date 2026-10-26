@@ -16,11 +16,14 @@ from util import rpgmaker_rewrap as rewrap
 from util.game_encoding import UnwritableText, writable
 from util.game_settings import (
     GameSettingsError,
+    binding_bytes,
     game_source_language,
+    save_game_wrap_widths,
     save_language_pair,
 )
 from util.languages import ENGLISH, reading, source_pattern
 from util.paths import PROMPT_PATH, glossary_base_text
+from util.playtest.checks import reading as playtest_reading
 from util.prompt_pair import render, render_for_run
 from util.qa.selection import _number_defect
 from util.source_text import holds_source, source_left
@@ -52,6 +55,11 @@ class LanguageTests(unittest.TestCase):
             pattern = source_pattern("mvmz")
             self.assertIsNone(re.search(pattern, "\\N[1]\\V[3]__PROTECTED_0__"))
             self.assertIsNotNone(re.search(pattern, "\\V[3] gold"))
+            # On screen, an abbreviation a translation keeps in capitals is
+            # no English left.
+            screen = re.compile(playtest_reading()["pattern"])
+            self.assertTrue(screen.search("テスト Potion"))
+            self.assertFalse(screen.search("HP 100/100 テスト"))
 
     def test_cache_keys_name_only_a_source_other_than_japanese(self):
         payload = json.dumps({"Line1": "はい"}, ensure_ascii=False)
@@ -78,6 +86,18 @@ class LanguageTests(unittest.TestCase):
             settings.write_text(json.dumps(saved), encoding="utf-8")
             with self.assertRaises(GameSettingsError):
                 game_source_language(game)
+
+    def test_recording_a_japanese_pair_leaves_the_settings_work_binds(self):
+        with TemporaryDirectory() as temporary:
+            game = Path(temporary)
+            settings = game / ".dazedtl/settings.json"
+            save_game_wrap_widths(game, {"width": 50})
+            before = settings.read_bytes()
+            save_language_pair(game, "Japanese", "Spanish")
+            self.assertNotEqual(settings.read_bytes(), before)
+            self.assertEqual(binding_bytes(settings.read_bytes()), before)
+            save_language_pair(game, "English", "Japanese")
+            self.assertNotEqual(binding_bytes(settings.read_bytes()), before)
 
     def test_the_base_rules_render_for_each_pair(self):
         raw = PROMPT_PATH.read_bytes()

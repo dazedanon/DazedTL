@@ -1,6 +1,7 @@
 import { useEffect, useEffectEvent, useState, type ReactNode } from "react";
 import { TriangleAlert } from "lucide-react";
 import { useApplication } from "../../app/ApplicationProvider";
+import { useLanguages } from "../../app/LanguagesProvider";
 import { pluginsApi } from "../../api/plugins";
 import type {
   PluginActionResult,
@@ -106,7 +107,12 @@ const partlyApplied = (
 ) => `${fileCount(completed, words.file)} applied. ${unchangedDetail(blocked)}`;
 
 /** Where the assistant's task stands and each result it returns. */
-function pluginTask(state: PluginState, handoff: Handoff, keep: ReactNode) {
+function pluginTask(
+  state: PluginState,
+  handoff: Handoff,
+  keep: ReactNode,
+  source: string,
+) {
   const { counts } = state;
   const words = nouns(state.scripts);
   const { waiting } = handoff;
@@ -151,8 +157,8 @@ function pluginTask(state: PluginState, handoff: Handoff, keep: ReactNode) {
                 ? counts.textFiles
                   ? `${words.title} text is checked; nothing needed changing.`
                   : counts.files
-                    ? `No ${readable}${words.one} shows its Japanese text to players.`
-                    : `No ${readable}${words.one} holds Japanese text.`
+                    ? `No ${readable}${words.one} shows its ${source} text to players.`
+                    : `No ${readable}${words.one} holds ${source} text.`
                 : unfinished.trim() ||
                   `Your assistant finds the text ${words.one}s show to players and translates it with the game's glossary, translated text and reference games. The app checks every change before you apply it.`;
   const findings: DisplayState = !investigating
@@ -273,6 +279,7 @@ export function PluginWorkspace({
   disabled?: boolean;
 }) {
   const application = useApplication();
+  const languages = useLanguages();
   const action = useAction({ observer: application });
   const [copiedRequest, setCopiedRequest] = useState("");
   const [preview, setPreview] = useState<PluginPreview | null>(null);
@@ -452,7 +459,7 @@ export function PluginWorkspace({
       }
     />
   );
-  const task = pluginTask(state, handoff, keep);
+  const task = pluginTask(state, handoff, keep, languages.source);
   const { words } = task;
   const copied = feedback("plugin_task");
   // Nothing is left for the assistant; an unreadable file needs a fix

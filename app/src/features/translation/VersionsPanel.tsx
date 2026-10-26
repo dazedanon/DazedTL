@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../../api/client";
 import type { Project, TranslationState } from "../../api/contracts";
+import { useLanguages } from "../../app/LanguagesProvider";
 import { useApplication } from "../../app/ApplicationProvider";
 import { useAction } from "../../state/useAction";
 import { flushDrafts } from "../../state/leaveGuards";
@@ -49,6 +50,7 @@ export function VersionsPanel({
   actionTarget?: HTMLElement | null;
 }) {
   const application = useApplication();
+  const languages = useLanguages();
   const action = useAction({ observer: application });
   const [choosing, setChoosing] = useState(false);
   const [release, setRelease] = useState(emptyRelease);
@@ -122,7 +124,7 @@ export function VersionsPanel({
       : [];
   const brought =
     done && guided && compared
-      ? finishedUpdateSummary(compared, updateTasks)
+      ? finishedUpdateSummary(compared, updateTasks, languages.source)
       : "";
   // A complete game missing most of the game's files is likely a patch.
   const removed = layout ? removedFiles(layout) : 0;

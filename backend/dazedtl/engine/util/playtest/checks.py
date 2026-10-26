@@ -1,10 +1,11 @@
 """The release playtest's static checks for an RPG Maker MV/MZ game.
 
 They read the game's files the way it ships them and run none of its code:
-whether it starts, Japanese players can read, battle messages and event pages
-that lost a name or code their original shows, descriptions longer than the
-help window, and Japanese strings in plugin code with the evidence for whether
-they can show. Each problem names the task that fixes it; nothing here
+whether it starts, source text players can read, battle messages and event
+pages that lost a name or code their original shows, descriptions longer than
+the help window, and source text in plugin code with the evidence for whether
+it can show. Source text is in the game's source language (util/languages),
+which the playtest reads in (run.py). Each problem names the task that fixes it; nothing here
 changes the game.
 """
 
@@ -18,6 +19,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
 
+from util import languages
 from util.rpgmaker_blocks import command_lists
 from util.rpgmaker_markers import comment_markers
 from util.rpgmaker_plugin_registry import PluginRegistryError, loaded_entries
@@ -31,7 +33,8 @@ from util.rpgmaker_qa_preflight import (
 )
 from util.rpgmaker_qa_reach import Reach
 from util.runtime_text import without_control_codes
-from util.source_text import holds_source
+from util.source_text import holds_source, source_left
+from util.translation_update_check.installer import PLUGIN_NAME as UPDATE_CHECK
 from util import system
 
 SCHEMA = "rpgmaker-playtest-static-v1"
@@ -57,6 +60,22 @@ CODE_SCRIPT = Path(__file__).with_name("code.cjs")
 LITERAL_REACH = ("drawn", "may-show", "disabled", "uncalled")
 # Characters of a plugin string code.cjs reports, as its TEXT_LIMIT.
 LITERAL_LIMIT = 160
+
+
+def reading() -> dict[str, Any]:
+    """What the tour and the plugin code check read as source text left, for
+    the active source: its words, as a JavaScript pattern, whether only
+    phrases count in plugin code, and whether placeholder glyphs such as the ◯ of "Day ◯/30" count, which Japanese text
+    uses for a hidden word and a translation from it into another script
+    shows as a missing character."""
+    japanese = languages.active_source() == languages.JAPANESE
+    return {
+        "pattern": languages.source_pattern("playtest"),
+        "placeholders": japanese,
+        # A Latin source's identifiers fill plugin code, so a string there
+        # counts only when it reads as words: two, or one ending a sentence.
+        "phrases": not japanese,
+    }
 
 
 def _excerpt(text: Any) -> str:
@@ -149,9 +168,15 @@ class _Checks:
         return f"{js}/{name}" if js != "." else name
 
     def japanese(self, entries: list[dict[str, Any]]) -> None:
-        """Japanese left in translated text players read, and placeholder
-        glyphs; text never translated comes from preflight."""
+        """Source text left in translated text players read, and placeholder
+        glyphs; text never translated comes from preflight. The problem kind
+        keeps its saved name, japanese, for every source."""
         markers = comment_markers(entries)
+        source = languages.active_source()
+        placeholders = reading()["placeholders"]
+        # A Latin source's words the screen check reads as left, so the
+        # abbreviations a translation keeps, such as HP, are not.
+        words = re.compile(languages.source_pattern("playtest"))
         for name, document in self.documents.items():
             if name not in STANDARD_FILES and not _MAP_RE.fullmatch(name):
                 continue
@@ -162,10 +187,14 @@ class _Checks:
                 # A code's argument, such as the font of \fn[和風], is not
                 # drawn (util/source_text); a name window's <名前> is.
                 shown = without_control_codes(value)
-                if holds_source(value):
-                    note = "Japanese is left in this translated text."
+                if (
+                    holds_source(value)
+                    if source == languages.JAPANESE
+                    else any(words.search(run) for run in source_left(value))
+                ):
+                    note = f"{source} is left in this translated text."
                     check = "visible-text"
-                elif _PLACEHOLDER_RE.search(shown):
+                elif placeholders and _PLACEHOLDER_RE.search(shown):
                     note = (
                         "A Japanese placeholder glyph is left in this English text; "
                         "English readers take it for a missing character."
@@ -342,8 +371,9 @@ class _Checks:
         reach: Reach,
         kept: Iterable[dict[str, Any]] = (),
     ) -> None:
-        """Plugins that do not compile, and Japanese strings in their code
-        but for those *kept* names."""
+        """Plugins that do not compile, and source text in their code but for
+        those *kept* names. DazedTL's own update check is no game text."""
+        plugins = [entry for entry in plugins if entry["name"] != UPDATE_CHECK]
         if not plugins:
             return
         node = shutil.which("node")
@@ -360,6 +390,7 @@ class _Checks:
             "acorn": str(acorn),
             "core": [str(path) for path in core],
             "tokens": sorted(reach.script_names()),
+            "source": reading(),
             "plugins": [
                 {
                     "name": entry["name"],
@@ -408,7 +439,7 @@ class _Checks:
                 )
             elif "unreadable" in result:
                 self.gaps.append(
-                    f"{file} compiles, but its Japanese strings were not read: "
+                    f"{file} compiles, but its {languages.active_source()} strings were not read: "
                     f"{result['unreadable']}."
                 )
             else:
@@ -421,7 +452,7 @@ class _Checks:
                     self._literals(name, file, literals, reach)
 
     def _literals(self, name, file, literals, reach: Reach) -> None:
-        """One problem a plugin for its Japanese strings and one for its
+        """One problem a plugin for its source text strings and one for its
         placeholder glyphs, each listing its strings with their reach."""
         state, evidence = reach.plugin(name)
         groups: dict[bool, list[dict[str, Any]]] = {}
@@ -435,7 +466,7 @@ class _Checks:
             self.add(
                 "japanese", "placeholder-glyph" if glyph else "plugin-text", file,
                 "A Japanese placeholder glyph is left in this plugin's English text."
-                if glyph else "Japanese is left in this plugin's code.",
+                if glyph else f"{languages.active_source()} is left in this plugin's code.",
                 "plugin-files", plugin=name, count=len(texts),
                 reach=next(value for value in LITERAL_REACH if reaches[value]),
                 reaches=dict(reaches), texts=texts,

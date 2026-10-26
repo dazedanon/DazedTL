@@ -381,7 +381,9 @@ Hangs throw nothing, so a [watchdog](../backend/dazedtl/watchdog.py) records the
 The report names the checkout revision and whether tracked files changed, since code locations resolve only against that revision.
 
 Connections and preferences share one atomic record in workspace `settings/settings.json`.
-It also holds the source language games are set up in, which the app does not offer yet; Set up records a pair with another source in the game's `.dazedtl/settings.json`, and every run on the game freezes that pair ([language_pair](../backend/dazedtl/settings/language_pair.py)).
+It also holds the source language new games start in, beside the target; Set up records the pair in the game's `.dazedtl/settings.json`, where Set up can change it until the game has work, and every run on the game freezes that pair ([language_pair](../backend/dazedtl/settings/language_pair.py)).
+A game not set up yet reads Settings' pair; one set up before pairs were recorded reads Japanese into Settings' target, and the app records that pair when it opens the game and before Settings' defaults change ([projects/languages](../backend/dazedtl/projects/languages.py)); a Japanese source's record is left out of the settings saved work binds, so recording it outdates nothing.
+The renderer names the open project's languages through [LanguagesProvider](../app/src/app/LanguagesProvider.tsx), and saved names such as the playtest kind `japanese` and the image class `already_english` keep their names for every pair.
 A pair whose languages share a script is refused, since letters can't tell its text left from translated.
 A Japanese source names no source in frozen settings, the translation cache and Batch keys or the census, so work saved before the source became a setting stays current.
 Saved secrets never enter renderer responses or recovery drafts, and model drafts are bound to connection IDs.

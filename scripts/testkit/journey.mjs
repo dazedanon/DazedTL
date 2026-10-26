@@ -74,7 +74,8 @@ export async function connect(page, url, provider = "custom") {
   settings = await page.call("settings_save", {
     revision: settings.revision,
     connection_id: connection,
-    values: { language: "English", model },
+    // The values this version keeps, so --from builds an older one too.
+    values: { ...settings.values, language: "English", model },
     model_options: {
       [model]: {
         entriesPerRequest: null,

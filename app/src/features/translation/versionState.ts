@@ -270,15 +270,17 @@ const lines = (count: number) =>
 const noBreak = String.fromCharCode(0xa0);
 
 /** What an update or a checkpoint does to a file's text, or to all of it,
- * without zeros; a line wraps between its parts, never inside one. */
+ * without zeros; a line wraps between its parts, never inside one. A
+ * translation it drops goes back to the game's *source* language. */
 export function textSummary(
   text: Pick<TextChanges, "to_translate" | "replaced" | "kept" | "edited">,
+  source: string,
 ) {
   return [
     text.edited && `${lines(text.edited)} changed`,
     text.to_translate && `${lines(text.to_translate)} to translate`,
     text.replaced &&
-      `${text.replaced.toLocaleString()} ${text.replaced === 1 ? "translation goes" : "translations go"} back to Japanese`,
+      `${text.replaced.toLocaleString()} ${text.replaced === 1 ? "translation goes" : "translations go"} back to ${source}`,
     text.kept &&
       `${text.kept.toLocaleString()} ${text.kept === 1 ? "translation stays" : "translations stay"}`,
   ]
@@ -289,19 +291,20 @@ export function textSummary(
 
 /**
  * A finished update's summary: the lines its tasks still have to translate
- * (`guidedUpdateTasks`), then the translations it sent back to Japanese and
- * kept. "No new text" when the comparison found none; "" when its lines are
+ * (`guidedUpdateTasks`), then the translations it sent back to the
+ * *source* language and kept. "No new text" when the comparison found none; "" when its lines are
  * all translated and it sent back and kept none.
  */
 export function finishedUpdateSummary(
   result: Record<string, unknown>,
   tasks: UpdateTask[],
+  source: string,
 ) {
   const text = textChanges(result);
   if (!text) return "";
   const left = tasks.reduce((sum, task) => sum + task.lines, 0);
   return (
-    textSummary({ ...text, to_translate: left }) ||
+    textSummary({ ...text, to_translate: left }, source) ||
     (text.to_translate ? "" : "No new text")
   );
 }

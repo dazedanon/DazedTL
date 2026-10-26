@@ -78,7 +78,7 @@ settings = app.connection_select(settings["revision"], connection)
 app.settings_save(
     settings["revision"],
     connection,
-    {"language": "English", "model": model},
+    {"language": "English", "model": model, "sourceLanguage": "Japanese"},
     {
         model: {
             "entriesPerRequest": 30,

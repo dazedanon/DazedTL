@@ -99,6 +99,7 @@ def build(job: Job) -> dict:
                         height=block.box.h,
                         cap_height=_cap_height(block),
                         orientation=orientation,
+                        target=job.language,
                     ),
                     "lines": block.line_count,
                     "box": block.box.as_xywh(),

@@ -7,7 +7,7 @@
 // runs in a session of its own, so saves and options stay there.
 "use strict";
 (() => {
-  const JAPANESE = /[ぁ-ゔァ-ヴ一-龠々〆〤]/;
+  // Glyphs Japanese text uses for a hidden word, as in "Day ◯/30".
   const PLACEHOLDER = /[◯〇]|○○/;
   // Errors from a plugin that needs NW.js, which this browser lacks.
   const NEEDS_NWJS =
@@ -449,13 +449,26 @@
     };
   }
 
-  /** Japanese or a placeholder glyph the game draws, once per screen. */
+  // The source language's text, and whether its placeholder glyphs read as
+  // missing characters, from the plan (util/playtest/run.reading).
+  let reading = null;
+  function sourceReading() {
+    reading ||= {
+      source: new RegExp(bridge.plan().source.pattern),
+      placeholders: bridge.plan().source.placeholders,
+    };
+    return reading;
+  }
+
+  /** Source text or a placeholder glyph the game draws, once per screen. */
   function drawn(text, bitmap) {
     if (typeof text !== "string" && typeof text !== "number") return;
     text = String(text);
-    if (text.replace(/\s/g, "").length < 2 && !PLACEHOLDER.test(text)) return;
-    const japanese = JAPANESE.test(text);
-    if (!japanese && !PLACEHOLDER.test(text)) return;
+    const language = sourceReading();
+    const placeholder = language.placeholders && PLACEHOLDER.test(text);
+    if (text.replace(/\s/g, "").length < 2 && !placeholder) return;
+    const left = language.source.test(text);
+    if (!left && !placeholder) return;
     const stack = new Error().stack;
     const help =
       state.help && bitmap === state.help.window.contents ? state.help : null;
@@ -498,7 +511,7 @@
       bitmap,
       event: where({
         text: clip(text),
-        glyph: !japanese,
+        glyph: !left,
         source: source(stack),
         ...(message && message.source && { data: message.source }),
         ...(help && help.source && { data: help.source }),

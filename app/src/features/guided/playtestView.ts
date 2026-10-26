@@ -82,12 +82,16 @@ export const playtestDisplay: Record<PlaytestPhase, DisplayState> = {
   blocked: "blocked",
 };
 
-const kinds: {
+// The kind "japanese" is source text left in any source language; it keeps
+// the name reports were saved with.
+const kinds = (
+  source: string,
+): {
   kind: PlaytestProblem["kind"];
   title: string;
-}[] = [
+}[] => [
   { kind: "crash", title: "Crashes" },
-  { kind: "japanese", title: "Japanese left in the game" },
+  { kind: "japanese", title: `${source} left in the game` },
   { kind: "fit", title: "Text that doesn't fit" },
   { kind: "codes", title: "Lost names and codes" },
 ];
@@ -107,9 +111,10 @@ const likely = (problem: PlaytestProblem) =>
   problem.seen ? -1 : problem.reach ? reachOrder.indexOf(problem.reach) : 0;
 
 /** Problems by kind, the worst first; within a kind, those the tour saw on
- * screen, then those players are likeliest to see. */
-export function playtestGroups(problems: PlaytestProblem[]) {
-  return kinds
+ * screen, then those players are likeliest to see. *source* is the game's
+ * source language. */
+export function playtestGroups(problems: PlaytestProblem[], source: string) {
+  return kinds(source)
     .map(({ kind, title }) => ({
       kind,
       title,
@@ -167,8 +172,9 @@ export const playtestWaiting = (playtest: PlaytestState) =>
 
 const fileName = (path: string) => path.split("/").pop() || path;
 
-/** A problem's one-line name: its text, or what the check found. */
-export function playtestTitle(problem: PlaytestProblem) {
+/** A problem's one-line name: its text, or what the check found, in a game
+ * whose text is in *source*. */
+export function playtestTitle(problem: PlaytestProblem, source: string) {
   const file = fileName(problem.file);
   switch (problem.check) {
     case "json":
@@ -186,7 +192,7 @@ export function playtestTitle(problem: PlaytestProblem) {
     case "untranslated":
       return `${problem.plugin || file} · ${(problem.count || 0).toLocaleString()} never translated`;
     case "plugin-text":
-      return `${file} · ${(problem.count || 0).toLocaleString()} Japanese ${problem.count === 1 ? "string" : "strings"}`;
+      return `${file} · ${(problem.count || 0).toLocaleString()} ${source} ${problem.count === 1 ? "string" : "strings"}`;
     case "placeholder-glyph":
       return problem.count
         ? `${file} · ${problem.count.toLocaleString()} ${problem.count === 1 ? "placeholder glyph" : "placeholder glyphs"}`

@@ -17,6 +17,8 @@ from dazedtl import foreign_work, system
 from dazedtl.compatibility.images import ImageCompatibility
 from dazedtl.foreign_work import ForeignWorkError
 from dazedtl.freshness import Basis, Digests, compare
+from dazedtl.languages import ENGLISH, JAPANESE
+from dazedtl.settings import language_pair
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation import originals as game_originals
 from dazedtl.translation.files import decode_json, digest, project_path, read_json
@@ -1723,7 +1725,7 @@ class ImageService:
         root = self.record(project_id)[1]
         # Assistant-led's own assistant read the note in its starting prompt.
         contract = ("" if own else windows_note()) + self._contract(
-            request, request_path, own
+            request, request_path, own, language_pair.pair(self.settings, root)
         )
         if request["kind"] == "editing":
             skill = self.adapter.skill(root, self._profile(project_id))
@@ -1753,10 +1755,12 @@ class ImageService:
             )
         return contract
 
-    def _contract(self, request, path, own=False):
+    def _contract(self, request, path, own=False, pair=None):
         """The task an assistant follows. A copied task hands one step to
         the user's assistant; own is the Assistant-led assistant, which runs
-        every step itself and continues to the next."""
+        every step itself and continues to the next. *pair* is the game's
+        language pair (settings/language_pair)."""
+        pair = pair or {"source": JAPANESE, "target": ENGLISH}
         kind = request["kind"]
         example = {
             "version": 1,
@@ -1789,7 +1793,7 @@ class ImageService:
                     else "the app ticks your recommendations for the user to review before a separate translation task. "
                 )
                 + "Sound effects lettered into scene art, such as moans, slurps, impacts and hearts in event CGs, are flavor and stay untranslated: "
-                "classify an image whose only Japanese is such lettering as sound_effects, also when its marks may be sound effects or decoration, "
+                f"classify an image whose only {pair['source']} is such lettering as sound_effects, also when its marks may be sound effects or decoration, "
                 "and recommend an image that also has other text for that text. "
                 "Use metadata, byte-identical duplicate groups, numbered contact sheets and enlarged crops/originals where needed. "
                 "An asset's family lists same-size images that share its backdrop; review a family by what changes (methodology: Review a family by what changes): "
@@ -1804,7 +1808,12 @@ class ImageService:
                 "do not install/download tools, invoke hosted OCR or paid services without separate authorization. "
                 "A detector miss does not certify no text. Record uncertain/not_examined for unreadable, locked, failed or insufficiently examined assets. "
                 "Allowed classifications: recommended, uncertain, no_text, already_english, sound_effects, not_examined, excluded. "
-                "Positive examination methods are exactly visual, ocr, local_ocr, visual+ocr or visual+local_ocr. "
+                + (
+                    ""
+                    if pair["target"] == ENGLISH
+                    else f"already_english marks an image whose text is already in {pair['target']}. "
+                )
+                + "Positive examination methods are exactly visual, ocr, local_ocr, visual+ocr or visual+local_ocr. "
                 "no_text, already_english and sound_effects require actual visual/OCR examination and evidence; detector-only findings cannot certify them. "
                 "Related variants are suggestions, not reviewed equivalents. Only byte-identical source images may reuse a finding outright, identified explicitly; "
                 "a family member's identical pixels count only through its own diff crop. "
@@ -2010,7 +2019,7 @@ class ImageService:
                     classification = "not_examined"
                     errors.append(
                         identity
-                        + ": a detector miss cannot certify text-free, English-only or sound-effect-only content."
+                        + ": a detector miss cannot certify text-free, already-translated or sound-effect-only content."
                     )
                 examined = bool(result["examined"] and real_examination)
                 variants = result.get("variants", [])

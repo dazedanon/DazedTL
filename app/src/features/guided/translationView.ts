@@ -7,6 +7,7 @@ import {
   type RunPayload,
 } from "../../api/contracts.ts";
 import { type DisplayState, displayLabels } from "../../ui/displayStatus.ts";
+import { DEFAULT_LANGUAGES } from "../../app/languages.ts";
 
 export const activeRun = (run?: Job | null) =>
   !!run && ["ready", "running", "waiting"].includes(run.status);
@@ -522,8 +523,10 @@ export function translationFileStatus(
   phase: Phase,
   name: string,
   given = fileRun(state.runs, phase, name, state.sourceStatus.retired),
+  source = DEFAULT_LANGUAGES.source,
 ) {
-  if (countedPhase(phase)) return countedFileStatus(state, phase, name, given);
+  if (countedPhase(phase))
+    return countedFileStatus(state, phase, name, given, source);
   const run =
     given && leftAlone(name, given)
       ? (fileRun(
@@ -597,16 +600,17 @@ const fileState = (state: DisplayState, detail = "") => ({
 });
 const count = (amount: number, one: string, many = one + "s") =>
   `${amount.toLocaleString()} ${amount === 1 ? one : many}`;
-/** Why a file's lines are left, for its status tooltip. */
-export function linesLeft(counted: FileLines) {
+/** Why a file's lines are left, for its status tooltip, in the game's
+ * *source* language. */
+export function linesLeft(counted: FileLines, source: string) {
   const notes = counted.notes ?? 0,
     help = counted.help ?? 0,
     // Sent or not: a line the model gave back unchanged reads the same.
-    japanese = counted.lines - counted.translated - notes - help;
+    left = counted.lines - counted.translated - notes - help;
   return [
-    japanese > 0 && `${count(japanese, "line")} still in Japanese.`,
+    left > 0 && `${count(left, "line")} still in ${source}.`,
     help > 0 &&
-      `${count(help, "line")} of choice help ${help === 1 ? "is" : "are"} still in Japanese; Comment text now translates ${help === 1 ? "it" : "them"}.`,
+      `${count(help, "line")} of choice help ${help === 1 ? "is" : "are"} still in ${source}; Comment text now translates ${help === 1 ? "it" : "them"}.`,
     notes > 0 &&
       `${count(notes, "line holds", "lines hold")} a refusal note an earlier run saved instead of a translation.`,
     counted.lines - counted.translated === 1
@@ -621,13 +625,15 @@ export function linesLeft(counted: FileLines) {
  * still in progress for the file, else what the file's newest copy holds.
  * Lines left read Not started until any is translated or holds a refusal
  * note; a file with none left is in the game when its translated copy is,
- * or when it has no translated copy of its own.
+ * or when it has no translated copy of its own. Its detail names the game's
+ * *source* language.
  */
 export function countedFileStatus(
   state: Pick<GuidedState, "runs" | "sourceStatus" | "readiness">,
   phase: Phase,
   name: string,
   run = fileRun(state.runs, phase, name, state.sourceStatus.retired),
+  source = DEFAULT_LANGUAGES.source,
 ) {
   const active = runActivity(name, run);
   if (active) return active;
@@ -640,7 +646,7 @@ export function countedFileStatus(
     const detail =
       run && uncertainSubmission(name, run)
         ? "Its submission could not be confirmed. Check Run history before sending it again."
-        : linesLeft(counted);
+        : linesLeft(counted, source);
     return counted.translated || counted.notes
       ? fileState("needs_review", detail)
       : fileState("not_started", counted.help ? detail : "");

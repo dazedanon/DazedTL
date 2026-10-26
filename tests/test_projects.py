@@ -6,9 +6,11 @@ import unittest
 from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from dazedtl.projects import location
+from dazedtl.projects.languages import ProjectLanguages
 from dazedtl.projects.location import UNRECOGNIZED, Locations
 from dazedtl.projects.store import SCHEMA_VERSION, Projects
 
@@ -330,3 +332,42 @@ class LocationTests(unittest.TestCase):
         found = self.locations.find(project["id"], new)
         self.assertEqual((found["id"], found["source"]), (project["id"], str(new)))
         self.assertEqual(self.projects.current["id"], project["id"])
+
+    def test_a_games_languages_change_until_it_has_work_then_stay(self):
+        """Set up's choice of a game's languages, and the pair a game with
+        work keeps when Settings' default pair changes."""
+        settings = SimpleNamespace(
+            source_language=lambda: "Japanese", language=lambda: "English"
+        )
+        languages = ProjectLanguages(
+            self.projects,
+            settings,
+            holds=self.locations.holds,
+            has_work=lambda project: project["id"] in self.worked,
+        )
+        old = self.locations.open(self.game("old", repository=False))
+        new = self.locations.open(self.game("new", repository=False))
+        japanese = {"source": "Japanese", "target": "English", "characters": False}
+        self.assertEqual(languages.view(new), japanese)
+        languages.change(new["id"], "english", "Japanese")
+        self.assertEqual(
+            languages.view(new),
+            {"source": "English", "target": "Japanese", "characters": True},
+        )
+        with self.assertRaisesRegex(ValueError, "same script"):
+            languages.change(new["id"], "English", "French")
+        self.worked.update((old["id"], new["id"]))
+        with self.assertRaisesRegex(ValueError, "can't change"):
+            languages.change(new["id"], "Japanese", "English")
+        # A game set up before pairs were recorded keeps the pair its work
+        # reads once Settings' defaults change.
+        languages.keep_every()
+        settings.source_language = lambda: "English"
+        settings.language = lambda: "Japanese"
+        self.assertEqual(languages.view(old), japanese)
+        # A game not set up yet starts with the pair Settings name.
+        fresh = self.locations.open(self.game("fresh", repository=False))
+        self.assertEqual(
+            languages.view(fresh),
+            {"source": "English", "target": "Japanese", "characters": True},
+        )

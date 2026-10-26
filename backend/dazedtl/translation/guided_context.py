@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from dazedtl.actions import label
 from dazedtl.freshness import Basis, compare
+from dazedtl.settings import language_pair
 from dazedtl.storage import write_json
 
 from . import context_setup, header_review, reference_folders, speaker_setup
@@ -145,6 +146,7 @@ class GuidedContext:
                 helper_command(
                     self.guided.translation.workspace, project_id, "playtest"
                 ),
+                language_pair.pair(self.guided.settings, root)["target"],
             )
             documents = self.guided.backend.workflows.documents(native["id"])
             handoff = {
@@ -198,6 +200,7 @@ class GuidedContext:
                     helper_command(
                         self.guided.translation.workspace, project_id, "playtest"
                     ),
+                    language_pair.pair(self.guided.settings, root)["target"],
                 )
             )
             handoff = {

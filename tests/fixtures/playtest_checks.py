@@ -17,6 +17,7 @@ sys.path.insert(0, str(root / "backend"))
 
 from util import rpgmaker_qa as qa
 from util.dazedwrap import text_cells
+from util.languages import ENGLISH, reading
 from util.playtest import fixes
 from util.playtest.checks import static_checks
 from util.playtest.run import (
@@ -838,4 +839,74 @@ assert fits[2]["note"] == (
     "not Place:."
 ), fits
 assert fits[3]["capture"] == str(Path("/check") / "menu.png"), fits
+
+# An English game translated into Japanese: its translation, which keeps an
+# abbreviation such as HP, is no English left, nor are the identifiers its
+# plugin code is full of or DazedTL's own update check; a word or phrase is.
+english = temporary / "english-game"
+(english / "data").mkdir(parents=True)
+(english / "js" / "plugins").mkdir(parents=True)
+write(english / "js" / "rmmz_core.js", (game / "js" / "rmmz_core.js").read_text())
+write(english / "data" / "System.json", {"terms": {"messages": {}}})
+write(
+    english / "data" / "Items.json",
+    [
+        None,
+        entry(
+            1,
+            name="ポーション",
+            description="HPを50回復する。",
+            _original={"name": "Potion", "description": "Restores 50 HP."},
+        ),
+        entry(
+            2,
+            name="エーテル",
+            description="Restores some MP.",
+            _original={"name": "Ether", "description": "Restores some MP."},
+        ),
+    ],
+)
+words = "Words"
+write(
+    english / "js" / "plugins.js",
+    "var $plugins =\n"
+    + json.dumps(
+        [
+            {"name": words, "status": True, "parameters": {}},
+            {"name": "TranslationUpdateCheck", "status": True, "parameters": {}},
+        ]
+    )
+    + ";\n",
+)
+write(
+    english / "js" / "plugins" / f"{words}.js",
+    "Window_Base.prototype.refresh = function() {\n"
+    '    AudioManager.playBgm("Town");\n'
+    '    this.drawText("Welcome home!", 0, 0);\n'
+    "};\n",
+)
+write(
+    english / "js" / "plugins" / "TranslationUpdateCheck.js",
+    'Window_Base.prototype.refresh = function() { this.drawText("Update available", 0, 0); };\n',
+)
+with reading(ENGLISH):
+    english_report = static_checks(english, english / "data")
+left = {
+    (row["check"], row.get("pointer") or row.get("plugin") or "")
+    for row in english_report["problems"]
+    if row["kind"] == "japanese"
+}
+assert left == {("visible-text", "/2/description"), ("plugin-text", words)}, left
+literals = next(
+    row["texts"] for row in english_report["problems"] if row["check"] == "plugin-text"
+)
+assert [text["text"] for text in literals] == ["Welcome home!"], literals
+assert (
+    next(
+        row["note"]
+        for row in english_report["problems"]
+        if row["check"] == "visible-text"
+    )
+    == "English is left in this translated text."
+)
 print("ok")

@@ -5,6 +5,7 @@ from typing import Literal, NotRequired, TypedDict
 from dazedtl.api.contracts.guided import GuidedState
 from dazedtl.api.contracts.images import ImageForeignWork, ImageManagerState
 from dazedtl.api.contracts.plugins import PluginForeignWork, PluginState
+from dazedtl.api.contracts.settings import SourceLanguage
 from dazedtl.api.contracts.translation import TranslationState
 
 type Screen = Literal["project", "translation", "guided", "manual", "settings"]
@@ -15,6 +16,16 @@ class ProjectOperation(TypedDict):
     label: str
     status: str
     message: str
+
+
+class GameLanguages(TypedDict):
+    """The languages a project's game translates between."""
+
+    source: SourceLanguage
+    target: str
+    # The target is written in Chinese or Japanese characters, which stock
+    # Line widths, measured on Latin letters, fit too wide.
+    characters: bool
 
 
 class Project(TypedDict):
@@ -31,6 +42,8 @@ class Project(TypedDict):
     detail: NotRequired[str]
     operation: NotRequired[ProjectOperation]
     next_label: NotRequired[str]
+    # The open project's, while its game can be read.
+    languages: NotRequired[GameLanguages]
 
 
 class AppState(TypedDict):

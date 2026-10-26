@@ -2,6 +2,8 @@ import { useRef, useState, type ReactNode } from "react";
 import { api } from "../../api/client";
 import type { TranslationState } from "../../api/contracts";
 import { useApplication } from "../../app/ApplicationProvider";
+import { useLanguages } from "../../app/LanguagesProvider";
+import { guidanceFormats } from "../guided/guidanceFormats";
 import { useAction } from "../../state/useAction";
 import { useDocumentDraft } from "../../state/useDocumentDraft";
 import {
@@ -28,6 +30,7 @@ export function ContextPanel({
   copy: (variant: "primary" | "default") => ReactNode;
 }) {
   const application = useApplication();
+  const languages = useLanguages();
   const action = useAction({ observer: application });
   const draft = useDocumentDraft(
     "translation-context:" + state.projectId,
@@ -78,6 +81,7 @@ export function ContextPanel({
           focused
           fill
           showActions={false}
+          placeholders={guidanceFormats(languages.source)}
           save={(next) => void action.run(() => draft.save([next]))}
           discard={(next) => void action.run(() => draft.discard(next))}
         />

@@ -12,6 +12,7 @@ from unittest.mock import Mock, patch
 
 from dazedtl.compatibility import original_files
 from dazedtl.compatibility.game_write import write_game
+from dazedtl.languages import load_language_pair
 from dazedtl.projects.store import Projects
 from dazedtl.storage import write_json
 from dazedtl.translation import (
@@ -343,6 +344,7 @@ class GuidedTests(unittest.TestCase):
             describe=lambda: {"revision": self.settings_revision},
             guided_configuration=guided_configuration,
             language=lambda: self.configuration["language"],
+            source_language=lambda: "Japanese",
             connection_summary=lambda: {"name": "Fixture connection"},
         )
         self.backend.manual = SimpleNamespace(
@@ -3223,6 +3225,11 @@ class GuidedTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.guided.execute(self.identity, preview["token"])
         self.assertEqual(self.backend.workflows.execute.call_count, len(immediate))
+        # Set up records the languages Settings name in the game.
+        self.assertEqual(
+            load_language_pair(self.source),
+            {"source": "Japanese", "target": self.configuration["language"]},
+        )
         self.backend.guided_configure_tools.assert_called_with(
             "playtest_apply-token", self.guided.release_defaults(self.identity)["tools"]
         )

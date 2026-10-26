@@ -161,9 +161,11 @@ class EditorTests(unittest.TestCase):
             "rates": {"input": 1, "output": 2},
         }
         self.settings = SimpleNamespace(
-            guided_configuration=lambda mode, cached_only=False: deepcopy(
+            guided_configuration=lambda mode, cached_only=False, pair=None: deepcopy(
                 self.configuration
             ),
+            language=lambda: self.configuration["language"],
+            source_language=lambda: "Japanese",
             prepare_engine=Mock(),
             translation_defaults=lambda: {"batch_supported": True},
         )

@@ -26,6 +26,7 @@ import os
 import numpy as np
 from PIL import Image
 
+from util import languages
 from util.imagetools.geometry import Box
 from util.imagetools.ocr import (
     Block,
@@ -47,9 +48,16 @@ NAME = "lens"
 MAX_DIMENSION = 1500
 
 
+# Lens's language codes for the source languages (util/languages).
+_LANGUAGE_CODES = {languages.JAPANESE: "ja", languages.ENGLISH: "en"}
+
+
 def _language() -> str | None:
-    value = os.getenv("IMGTL_OCR_LANG", "ja").strip()
-    return value or None
+    """The language Lens reads: IMGTL_OCR_LANG, or the game's source."""
+    value = os.getenv("IMGTL_OCR_LANG")
+    if value is None:
+        value = _LANGUAGE_CODES.get(languages.active_source(), "ja")
+    return value.strip() or None
 
 
 def _flatten(array: np.ndarray) -> Image.Image:

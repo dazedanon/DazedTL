@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
+import { useLanguages } from "../../app/LanguagesProvider";
 import { Image as ImageIcon } from "lucide-react";
 import type { ImageAsset } from "../../api/contracts";
 import { imagesApi } from "../../api/images";
@@ -68,6 +69,7 @@ function Viewer({
   thumbnailSize: number;
   onCompare: () => void;
 }) {
+  const { target } = useLanguages();
   // The tile's thumbnail, usually already loaded, stands in until the full
   // image arrives.
   const thumbnail = useThumbnail(queue, asset, thumbnailSize);
@@ -136,7 +138,10 @@ function Viewer({
             {width} × {height}
           </span>
         )}
-        <span className="image-viewer-state" title={imageStatus(asset, listed)}>
+        <span
+          className="image-viewer-state"
+          title={imageStatus(asset, listed, target)}
+        >
           <StatusMark state={imageDisplay(asset, listed)} />
         </span>
         <Button variant="quiet" onClick={onCompare}>

@@ -59,6 +59,14 @@ Changes you make to the game outside DazedTL are saved as a checkpoint of their 
 If a step fails, the reason appears beside the button and **Finish setup** carries on.
 **Preparation tools** reruns a single step.
 
+#### Languages
+
+**Languages** shows what the game translates from and into, such as Japanese to English.
+A new game starts with the languages in **Settings > Translation defaults**; **Change…** picks the game's own, such as English to Japanese.
+They can change only until the game's first run, since every saved run translates them; to translate the game into another language later, open a fresh copy of it as a new project.
+The source is Japanese or English, and the target any language written in another script, since DazedTL tells text still to translate by its letters.
+For a Chinese or Japanese target, measure **Line widths** before you apply translations: the stock widths are measured on English text and fit about 15% too wide.
+
 ### 2. Context
 
 **Names & glossary**: copy the task to your assistant.
@@ -230,7 +238,7 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
    - **Assistant only** needs no API key, but your assistant translates every line itself, which uses far more of its plan.
 
    The API modes need a connection in Settings, and nothing is sent until you approve your assistant's estimate on **Progress**.
-2. Set which images to include and any instructions for your assistant.
+2. Check the game's **Languages**, which **Change…** sets until the first run as in [Guided](#languages), and set which images to include and any instructions for your assistant.
    **Thorough investigation** looks for names, running jokes and speech habits in three independent passes instead of one, and that step then uses about three times as much of your assistant's plan.
 3. **Copy starting prompt** and paste it into your assistant.
    It needs access to the game folder and the DazedTL folder.
@@ -363,7 +371,7 @@ Don't edit or delete files inside the backup store by hand; backups share files 
 
 In **Settings**, choose a provider, paste its API key and save.
 Saving checks the connection by listing the provider's models, without generating any text; **Check again** repeats it, and **Model** picks one.
-**Translation defaults** holds the target language and the advanced options.
+**Translation defaults** holds the languages new games start with and the advanced options.
 Removing a connection stops its unfinished runs from resuming, so DazedTL tells you how many first.
 
 **Advanced model options** apply to new estimates:

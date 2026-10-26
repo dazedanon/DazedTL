@@ -262,7 +262,7 @@ Preserve:
 - Runtime value slots.
 - Intentional capitalization conventions.
 
-Do not rely on OCR alone. Verify OCR output visually, especially for stylized Japanese fonts.
+Do not rely on OCR alone. Verify OCR output visually, especially for stylized {{SOURCE_LANGUAGE}} fonts.
 
 Review translations as one coherent screen after the literal meaning is established.
 Prefer natural UI wording that preserves the source tone and function over awkward word-for-word phrasing, and keep related labels, counters, descriptions, and glossary terms internally consistent.

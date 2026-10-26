@@ -37,6 +37,11 @@ from tests.test_image_families import png as rgba_png
 # suite's budget (scripts/test.mjs).
 SCAN_SECONDS = float(os.environ.get("DAZEDTL_TEST_BUDGET") or 10) * 0.8
 RENDERER = ".dazedtl/image_translation_resources/scripts/render.py"
+# Settings as Images reads them: a game without a recorded pair translates
+# Japanese into their target.
+SETTINGS = SimpleNamespace(
+    language=lambda: "English", source_language=lambda: "Japanese"
+)
 
 
 def png(color=(0, 0, 0, 0), size=(8, 8)):
@@ -145,7 +150,11 @@ class ImageTests(unittest.TestCase):
             source=self.root / "engine", context=nullcontext, game_write=game_write
         )
         self.service = ImageService(
-            self.projects, self.translation, None, self.backend, adapter=self.adapter
+            self.projects,
+            self.translation,
+            SETTINGS,
+            self.backend,
+            adapter=self.adapter,
         )
         self.scan()
         # A project set up before original files were kept in Git reads its
@@ -272,7 +281,11 @@ class ImageTests(unittest.TestCase):
         )
         self.assertEqual(self.service.list(self.identity)["views"]["list"], 1)
         reopened = ImageService(
-            self.projects, self.translation, None, self.backend, adapter=self.adapter
+            self.projects,
+            self.translation,
+            SETTINGS,
+            self.backend,
+            adapter=self.adapter,
         )
         state = reopened.state(self.identity)
         self.assertEqual(state["selection"], ["img/A.png"])
@@ -391,7 +404,7 @@ class ImageTests(unittest.TestCase):
             ImageService(
                 self.projects,
                 self.translation,
-                None,
+                SETTINGS,
                 self.backend,
                 adapter=self.adapter,
             ).state(self.identity)["selection"],
@@ -883,7 +896,11 @@ class ImageTests(unittest.TestCase):
         ):
             self.service.action(self.identity, "apply", {"token": preview["token"]})
         reopened = ImageService(
-            self.projects, self.translation, None, self.backend, adapter=self.adapter
+            self.projects,
+            self.translation,
+            SETTINGS,
+            self.backend,
+            adapter=self.adapter,
         )
         saved = read_json(self.game / ".dazedtl/image_manager/guided/state.json")
         binding = next(iter(saved["pendingPublications"].values()))
@@ -980,7 +997,7 @@ class ImageTests(unittest.TestCase):
                 writable=lambda _: None,
             )
             service = ImageService(
-                projects, translation, None, self.backend, adapter=self.adapter
+                projects, translation, SETTINGS, self.backend, adapter=self.adapter
             )
             with self.assertRaises(ForeignWorkError) as raised:
                 service.state(project["id"])

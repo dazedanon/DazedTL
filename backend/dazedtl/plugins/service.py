@@ -11,7 +11,7 @@ from pathlib import Path, PurePosixPath
 
 from dazedtl import foreign_work, freshness
 from dazedtl.foreign_work import ForeignWorkError
-from dazedtl.languages import game_source, pair_note
+from dazedtl.languages import active_source, game_source, pair_note
 from dazedtl.settings import language_pair
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation import originals as game_originals
@@ -1021,7 +1021,7 @@ class PluginService:
         ]
         if not names or prefix + "js/plugins.js" not in original.files:
             raise ValueError(
-                "The preserved original lacks the Japanese database or plugin configuration. Recover the matching original source before editing."
+                "The preserved original lacks the game's database or plugin configuration. Recover the matching original source before editing."
             )
         keys, hashes = set(), {name: original.files[name] for name in names}
         with original.materialized([*names, prefix + "js/plugins.js"]) as folder:
@@ -1080,7 +1080,7 @@ class PluginService:
             and name.casefold() != "data/scripts.rvdata2"
         ]
         missing = ValueError(
-            "The preserved original lacks the Japanese database. Recover the matching original source before editing."
+            "The preserved original lacks the game's database. Recover the matching original source before editing."
         )
         if not names:
             raise missing
@@ -2106,7 +2106,7 @@ class PluginService:
                 return {
                     "message": "No "
                     + ("script" if value["layout"] == ACE_SCRIPTS else "plugin")
-                    + " holds Japanese text to translate."
+                    + f" holds {active_source()} text to translate."
                 }
             result = self.request(
                 project_id, value, "investigation", scope, recheck=True
@@ -2636,7 +2636,7 @@ class PluginService:
             or current["binding"] != value["originals"]["binding"]
         ):
             raise ValueError(
-                "Original Japanese lookup evidence changed or is missing. Investigate again."
+                "Original lookup evidence changed or is missing. Investigate again."
             )
         return current
 

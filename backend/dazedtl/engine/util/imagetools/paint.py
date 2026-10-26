@@ -6,7 +6,7 @@ a glyph whose antialiased tail reaches outside every box, an inpaint that guesse
 a plausible-but-wrong shape - each is a ten-second fix by hand and an afternoon's
 work to detect. So the fix is by hand.
 
-**Strokes go under the English, never over it.** The layer is composited between
+**Strokes go under the translation, never over it.** The layer is composited between
 the erase pass and the draw pass, which makes it a *background repair* layer:
 paint can fix anything the erase left behind, and can never end up sitting on top
 of the translation when the type is later moved, resized or re-fitted. That

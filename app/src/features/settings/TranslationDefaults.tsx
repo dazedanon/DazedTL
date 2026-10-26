@@ -12,14 +12,14 @@ import {
   useSaveForm,
 } from "../../state/useShortcut";
 import { PageBody } from "../../ui/PageLayout";
-import { FieldRow } from "../../ui/FieldRow";
+import { LanguageFields } from "../project/GameLanguages";
 import { ActionBar } from "../../ui/ActionBar";
 import { Feedback } from "../../ui/Feedback";
 import { Button } from "../../ui/Button";
 
 /**
- * What new translations start with: the target language and per-model request
- * options. The model itself is chosen on the connection panel.
+ * What new translations start with: the languages new games translate
+ * between and per-model request options. The model itself is chosen on the connection panel.
  */
 export default function TranslationDefaults({
   config,
@@ -60,16 +60,14 @@ export default function TranslationDefaults({
     >
       <PageBody>
         <fieldset disabled={busy}>
-          <FieldRow id="target-language" label="Target language">
-            {(control) => (
-              <input
-                {...control}
-                required
-                value={String(config.values.language)}
-                onChange={(event) => edit("language", event.target.value)}
-              />
-            )}
-          </FieldRow>
+          <LanguageFields
+            id="default-languages"
+            source={config.values.sourceLanguage}
+            target={String(config.values.language)}
+            sourceHelp="New games start with these languages; each game's own are in its Set up."
+            onSource={(value) => edit("sourceLanguage", value)}
+            onTarget={(value) => edit("language", value)}
+          />
           <details
             className="settings-advanced"
             onToggle={(event) => setAdvanced(event.currentTarget.open)}

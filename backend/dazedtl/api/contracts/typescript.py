@@ -14,7 +14,7 @@ import typing_extensions
 
 from dazedtl.actions import ROWS
 from dazedtl.api.contracts.methods import METHODS
-from dazedtl.languages import request_headings
+from dazedtl.languages import SOURCE_LANGUAGES, request_headings
 
 MODULES = (
     "common",
@@ -160,11 +160,28 @@ def headings():
     )
 
 
+def source_languages():
+    """The languages a game's text can be written in, as one constant."""
+    return (
+        "/** The source languages, from backend/dazedtl/engine/util/languages.py. */\n"
+        f"export const SOURCE_LANGUAGES = {json.dumps(list(SOURCE_LANGUAGES))} as const;"
+    )
+
+
 def render():
     renderer = Renderer()
     parts = [renderer.declaration(value) for value in declarations()]
     source = (
-        "\n\n".join([*parts, renderer.methods(), renderer.actions(), headings()]) + "\n"
+        "\n\n".join(
+            [
+                *parts,
+                renderer.methods(),
+                renderer.actions(),
+                headings(),
+                source_languages(),
+            ]
+        )
+        + "\n"
     )
     methods = {
         name: {"refresh": method.refresh, "duringClose": method.during_close}

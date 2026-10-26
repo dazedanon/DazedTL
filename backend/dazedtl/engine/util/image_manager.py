@@ -14,6 +14,7 @@ import uuid
 
 from util.paths import ensure_game_tool_gitignore
 from util import system
+from util.game_settings import game_source_language
 
 PROFILE_AUTO = "auto"
 PROFILE_RPGMAKER_MVMZ = "rpgmaker_mvmz"
@@ -747,6 +748,7 @@ def build_translation_handoff(game_root: str | Path, engine_id: str, image_root:
         "{{IMAGE_VALIDATE_CLI}}": str((PROJECT_ROOT / "scripts" / "image_validate.py").resolve()),
         "{{IMAGE_RECIPE_CLI}}": str((PROJECT_ROOT / "scripts" / "image_recipe.py").resolve()),
         "{{IMAGE_FAMILY_CLI}}": str((PROJECT_ROOT / "scripts" / "image_family.py").resolve()),
+        "{{SOURCE_LANGUAGE}}": game_source_language(root),
     }
     prompt = load_clipboard_skill("image_translation.md")
     missing = [token for token in replacements if token not in prompt]

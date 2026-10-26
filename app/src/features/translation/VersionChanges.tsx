@@ -5,6 +5,9 @@ import { Button } from "../../ui/Button";
 import { Modal } from "../../ui/Modal";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { LineChange, type LineChangeRow } from "../../ui/LineChange";
+import type { GameLanguages } from "../../api/contracts";
+import { languageTag } from "../../app/languages";
+import { useLanguages } from "../../app/LanguagesProvider";
 import {
   textChanges,
   textSummary,
@@ -33,6 +36,7 @@ export function VersionChanges({
   /** A file's result when the comparison names none. */
   unread?: string;
 }) {
+  const languages = useLanguages();
   const [query, setQuery] = useState("");
   const [opened, setOpened] = useState<FileText | null>(null);
   const changes = [
@@ -55,7 +59,9 @@ export function VersionChanges({
     <div className="version-changes">
       {text
         ? !!(text.to_translate || text.replaced || text.edited) && (
-            <p className="version-text-summary">{textSummary(text)}</p>
+            <p className="version-text-summary">
+              {textSummary(text, languages.source)}
+            </p>
           )
         : !!overlap.length && (
             <p>
@@ -89,8 +95,11 @@ export function VersionChanges({
                 const file = texts.get(String(row.path));
                 // A file's counts add nothing when they are the whole update's.
                 const summary =
-                  file && text && textSummary(file) !== textSummary(text)
-                    ? textSummary(file)
+                  file &&
+                  text &&
+                  textSummary(file, languages.source) !==
+                    textSummary(text, languages.source)
+                    ? textSummary(file, languages.source)
                     : undefined;
                 return (
                   <div className="version-file">
@@ -139,13 +148,15 @@ const kindLabel = (line: TextLine) =>
         : kinds.edited;
 
 /** A line's versions: the old release's, the new one's and its translation. */
-function lineRows(line: TextLine): LineChangeRow[] {
-  const japanese = (
+function lineRows(line: TextLine, languages: GameLanguages): LineChangeRow[] {
+  const lang = languageTag(languages.source);
+  const original = (
     label: string,
     text: string | null,
     change?: "added" | "removed",
-  ) => (text === null ? [] : [{ label, text, change, lang: "ja" }]);
-  // The update drops every translation it lists; the line goes back to Japanese.
+  ) => (text === null ? [] : [{ label, text, change, lang }]);
+  // The update drops every translation it lists; the line goes back to its
+  // source language.
   const translation =
     line.translation === null
       ? []
@@ -154,6 +165,7 @@ function lineRows(line: TextLine): LineChangeRow[] {
             label: "Translation",
             text: line.translation,
             change: "removed" as const,
+            lang: languageTag(languages.target),
           },
         ];
   switch (line.kind) {
@@ -173,18 +185,18 @@ function lineRows(line: TextLine): LineChangeRow[] {
           : [{ label: "After", text: line.after, change: "added" as const }]),
       ];
     case "added":
-      return japanese("Japanese", line.after, "added");
+      return original(languages.source, line.after, "added");
     case "removed":
-      return [...japanese("Was", line.before, "removed"), ...translation];
+      return [...original("Was", line.before, "removed"), ...translation];
     case "replaced":
       return [
-        ...japanese("Japanese", line.after ?? line.before),
+        ...original(languages.source, line.after ?? line.before),
         ...translation,
       ];
     case "changed":
       return [
-        ...japanese("Was", line.before, "removed"),
-        ...japanese("Now", line.after, "added"),
+        ...original("Was", line.before, "removed"),
+        ...original("Now", line.after, "added"),
         ...translation,
       ];
   }
@@ -192,11 +204,12 @@ function lineRows(line: TextLine): LineChangeRow[] {
 
 /** One file's changed lines, as the update leaves them in the game. */
 function FileLines({ file, close }: { file: FileText; close: () => void }) {
+  const languages = useLanguages();
   return (
     <Modal label={file.path} size="lg" onDismiss={close}>
       <DialogHeader
         title={file.path}
-        description={textSummary(file)}
+        description={textSummary(file, languages.source)}
         onClose={close}
       />
       <DialogBody>
@@ -204,7 +217,7 @@ function FileLines({ file, close }: { file: FileText; close: () => void }) {
           {file.lines.map((line, index) => (
             <li key={index}>
               <strong>{kindLabel(line)}</strong>
-              <LineChange rows={lineRows(line)} />
+              <LineChange rows={lineRows(line, languages)} />
             </li>
           ))}
         </ol>

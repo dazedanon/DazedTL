@@ -436,7 +436,7 @@ ROWS = (
     ),
     ActionSpec(
         "reference_pair",
-        "Add Japanese / English reference pair",
+        "Add original / translation reference pair",
         "native",
         stage="Context",
     ),

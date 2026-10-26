@@ -12,13 +12,14 @@ from __future__ import annotations
 import json
 import math
 import time
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from util import rpgmaker_blocks, rpgmaker_fonts, rpgmaker_window
+from util import languages, rpgmaker_blocks, rpgmaker_fonts, rpgmaker_window
 from util.dazedwrap import breaks_characters, cells
 from util.game_settings import game_source_language, game_target_language
-from util.playtest.checks import GROUP_TEXT_LIMIT, HELP_ROWS, static_checks
+from util.playtest.checks import GROUP_TEXT_LIMIT, HELP_ROWS, reading, static_checks
 from util.rpgmaker_markers import comment_markers, data_plugins
 from util.rpgmaker_qa_preflight import pointer
 
@@ -145,6 +146,7 @@ def tour(
         "opening": OPENING_SECONDS,
         "battle": BATTLE_SECONDS,
         "battlebacks": battlebacks(web),
+        "source": reading(),
     }
     titles = {stop["id"]: stop["title"] for stop in plan["stops"]}
 
@@ -429,7 +431,7 @@ def merge(static: dict[str, Any], runtime: dict[str, Any], data_prefix: str) -> 
                 if untranslated
                 else "A Japanese placeholder glyph showed on screen."
                 if event.get("glyph")
-                else "Japanese showed on screen."
+                else f"{languages.active_source()} showed on screen."
             ),
             "fix": (
                 "translate" if untranslated
@@ -457,7 +459,7 @@ def merge(static: dict[str, Any], runtime: dict[str, Any], data_prefix: str) -> 
             "note": (
                 f"This text runs past the {'right' if event['edge'] == 'right' else 'bottom'} "
                 f"edge of {event['window']} on {event['scene']}"
-                + ("." if engine else ", a window sized for the Japanese.")
+                + ("." if engine else f", a window sized for the {languages.active_source()}.")
             ),
             "fix": "text-qa" if identity and engine else "game",
             "text": event["text"],
@@ -810,10 +812,12 @@ def run(
     target.mkdir(parents=True, exist_ok=True)
     extra = read_stops(stops)
     started = time.time()
-    log("Checking the game's files")
-    static = static_checks(game, data, kept, literals)
-    runtime = tour(data, target, extra, minutes, log, stopped, overlay=overlay)
-    merged = merge(static, runtime, data.relative_to(game).as_posix())
+    source = _source(game)
+    with languages.reading(source) if source else nullcontext():
+        log("Checking the game's files")
+        static = static_checks(game, data, kept, literals)
+        runtime = tour(data, target, extra, minutes, log, stopped, overlay=overlay)
+        merged = merge(static, runtime, data.relative_to(game).as_posix())
     report = {
         "schema": SCHEMA,
         "engine": static["engine"],

@@ -4,12 +4,15 @@ import type {
   RunPayload,
   RunProcess,
 } from "../../api/contracts.ts";
+import { DEFAULT_LANGUAGES } from "../../app/languages.ts";
 import { requestStateLabel } from "./translationView.ts";
 import { batchOutcome, type ProviderBatch } from "./batchView.ts";
 
-/** A provider count never identifies a row; only a bound receipt can do that. */
+/** A provider count never identifies a row; only a bound receipt can do
+ * that. Lines kept unchanged are in the game's *source* language. */
 export function requestOutcome(
   row: Pick<ProcessRequest, "state" | "providerFinished" | "keptLines">,
+  source = DEFAULT_LANGUAGES.source,
 ) {
   if (row.state === "failed" || row.state === "rejected")
     return {
@@ -22,7 +25,7 @@ export function requestOutcome(
     return {
       group: "finished" as const,
       label: row.keptLines
-        ? `Passed, ${row.keptLines} ${row.keptLines === 1 ? "line" : "lines"} kept in Japanese`
+        ? `Passed, ${row.keptLines} ${row.keptLines === 1 ? "line" : "lines"} kept in ${source}`
         : requestStateLabel(row.state),
     };
   if (row.state === "submitted" && row.providerFinished)
@@ -44,8 +47,11 @@ export function requestOutcome(
 export type RequestRow = ProcessRequest & {
   outcome: ReturnType<typeof requestOutcome>;
 };
-export const requestRows = (rows: ProcessRequest[]): RequestRow[] =>
-  rows.map((row) => ({ ...row, outcome: requestOutcome(row) }));
+export const requestRows = (
+  rows: ProcessRequest[],
+  source = DEFAULT_LANGUAGES.source,
+): RequestRow[] =>
+  rows.map((row) => ({ ...row, outcome: requestOutcome(row, source) }));
 export type RequestBatch = NonNullable<RunProcess["groups"]>[number] & {
   provider?: ProviderBatch;
   clarifications: ProviderBatch[];

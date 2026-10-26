@@ -29,6 +29,7 @@ import { providerBatchActive } from "./batchView";
 import { InspectedFile } from "./InspectedFile";
 import { useOnChange } from "../../state/useOnChange";
 import { useRead } from "../../state/useRead";
+import { useLanguages } from "../../app/LanguagesProvider";
 
 const formatted = (value: unknown) =>
   typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -150,6 +151,7 @@ function RequestProcess({
   batchActions,
   projectId,
 }: Props) {
+  const languages = useLanguages();
   const process = job.process!;
   const [view, setView] = useState<InspectorView>(() =>
     initialRequest
@@ -228,7 +230,9 @@ function RequestProcess({
     ? [selectedBatch.provider, ...selectedBatch.clarifications]
     : [];
   const requests =
-    page && page.group === selectedBatch?.id ? requestRows(page.rows) : [];
+    page && page.group === selectedBatch?.id
+      ? requestRows(page.rows, languages.source)
+      : [];
   // Paging stays in place while another page of the same group loads.
   const pages =
     page ||
@@ -321,11 +325,14 @@ function RequestProcess({
             state: visiblePayload.state,
             providerFinished: selected.providerFinished,
           },
-          requestOutcome({
-            ...visiblePayload,
-            providerFinished: selected.providerFinished,
-            keptLines: visiblePayload.keptLines?.length,
-          }),
+          requestOutcome(
+            {
+              ...visiblePayload,
+              providerFinished: selected.providerFinished,
+              keptLines: visiblePayload.keptLines?.length,
+            },
+            languages.source,
+          ),
         )
       : outcomeOf(selected, selected.outcome));
   const atProvider =

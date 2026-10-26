@@ -5,6 +5,7 @@ import re
 import uuid
 from pathlib import Path
 
+from dazedtl.languages import ENGLISH
 from dazedtl.storage import write_json
 
 from .files import digest, project_path, read_json
@@ -341,7 +342,7 @@ def review(path, documents, native, name, revision, choice):
     return {"saved": True}
 
 
-def instructions(value, command, capture):
+def instructions(value, command, capture, target=ENGLISH):
     return (
         f"""
 ## Save guidance and optional layout recommendations
@@ -364,7 +365,7 @@ Read `{command}` to confirm the saved files are available.
 
 Do not execute translation, paid name translation or API submission as part of this setup task.
 """
-        + layout_instructions(value, command, capture)
+        + layout_instructions(value, command, capture, target)
         + f"""
 Save `{REPORT}` last, after every other step of this task, including the speaker slip reviews
 and guidance files: the app shows this task as finished once that report is saved.
@@ -372,7 +373,9 @@ and guidance files: the app shows this task as finished once that report is save
     )
 
 
-def layout_instructions(value, command, capture):
+def layout_instructions(value, command, capture, target=ENGLISH):
+    """The Line widths measurement for a game translated into *target*,
+    whose prose the layout probes show."""
     example = {
         "version": 1,
         "request_id": value["request_id"],
@@ -404,7 +407,7 @@ on screen as the measurement steps describe, and say in `reason` what the captur
 could not be seen; otherwise save the report with `layout` null and report the unresolved geometry.
 For an RPG Maker MV/MZ game the app confirms them itself: write the candidate widths, such as
 {{"width": 55, "faceWidth": 50, "listWidth": 70, "messageRows": 4}}, to a JSON file and run
-`{capture} --layout FILE --wait 10`. It shows English exactly that wide in the game's message window
+`{capture} --layout FILE --wait 10`. It shows {target} exactly that wide in the game's message window
 with and without a face and in its help window, and `layout.probes` gives each one's widest line,
 the room the window gives it, its rows and its capture file; look at the captures. A probe `fits`
 only with `layout.headroom` characters spare after its widest line, as fonts and fallback glyphs

@@ -12,7 +12,7 @@ from dazedtl.actions import ACTIONS, ENGINE, named
 from util import extensions
 from util.ace import rgssad
 from util.paths import in_game
-from util.game_settings import without_game_update
+from util.game_settings import binding_bytes
 from util.project_preparation import _game_path, rpgmaker_layout
 from .project import digest, file_digest
 from . import wolf
@@ -46,10 +46,10 @@ def file_hash(root, path):
 
 
 def settings_hash(root):
-    """The game's settings as translation work binds them; GameUpdate's record
-    is left out, so writing it never makes saved work read Outdated."""
+    """The game's settings as translation work binds them
+    (util/game_settings.binding_bytes)."""
     path = regular(root, root / ".dazedtl/settings.json")
-    raw = without_game_update(path.read_bytes()) if path.is_file() else None
+    raw = binding_bytes(path.read_bytes()) if path.is_file() else None
     return digest(raw) if raw is not None else None
 
 

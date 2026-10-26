@@ -34,6 +34,7 @@ def project(value):
             "detail",
             "operation",
             "next_label",
+            "languages",
         ),
     )
 

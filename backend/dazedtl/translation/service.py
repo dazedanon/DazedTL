@@ -103,7 +103,7 @@ OPERATIONS = {
         "Rebase source metadata to the current original",
         {"source", "translated", "output", "backup_id", "expected_original_commit"},
     ),
-    "census": ("Find the game's Japanese text", {"decoded"}),
+    "census": ("Find the game's text to translate", {"decoded"}),
     "checkpoint": (history_label("checkpoint"), {"manifest", "message"}),
     "package": ("Package local translation patch", set()),
     "stage_update": (

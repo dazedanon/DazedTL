@@ -72,6 +72,7 @@ from dazedtl.api.contracts.settings import (
     OpenRouterHost,
     PreferenceValues,
     Settings,
+    SourceLanguage,
 )
 from dazedtl.api.contracts.translation import (
     BackupCatalog,
@@ -438,6 +439,12 @@ class ProjectMethodRequest(TypedDict):
     method: TranslationMethod
 
 
+class ProjectLanguagesRequest(TypedDict):
+    project_id: str
+    source: SourceLanguage
+    target: str
+
+
 class SettingsModelDefaultsRequest(TypedDict):
     connection_id: str
     model: str
@@ -668,6 +675,7 @@ METHODS: dict[str, Method] = {
     "remove_project": Method(ProjectRequest, AppState),
     "navigate": Method(NavigateRequest, AppState),
     "project_method": Method(ProjectMethodRequest, AppState),
+    "project_languages": Method(ProjectLanguagesRequest, AppState),
     # Settings
     "settings_get": Method(NoParams, Settings, refresh=False),
     "settings_save": Method(PreferencesRequest, Settings),

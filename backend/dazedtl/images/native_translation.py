@@ -7,7 +7,7 @@ from pathlib import Path
 from dazedtl.api.views import job as public_job
 from dazedtl.compatibility import image_translation as native
 from dazedtl.freshness import Basis, compare
-from dazedtl.languages import JAPANESE
+from dazedtl.settings import language_pair
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, project_path, read_json
 
@@ -94,15 +94,13 @@ class ImageNativeTranslation:
                     or block.get("skip")
                 ):
                     raise ValueError("Text changed after export. Export it again.")
-        configuration = self.settings.guided_configuration("translate")
+        pair = language_pair.pair(self.settings, root)
+        configuration = self.settings.guided_configuration("translate", pair=pair)
         if payload.get("language") != configuration["language"]:
             raise ValueError(
                 "The target language changed. Export current image text before estimating."
             )
-        # Images keep a Japanese source and Settings' target for now.
-        context = self.backend.guided_run_context(
-            {"source": JAPANESE, "target": configuration["language"]}
-        )
+        context = self.backend.guided_run_context(pair)
         candidates = [
             root / ".dazedtl/glossary.txt",
             root / "glossary.txt",
@@ -268,7 +266,9 @@ class ImageNativeTranslation:
             raise ValueError(
                 "The matching image translation estimate is no longer current."
             )
-        self.settings.prepare_engine(mode=preview["mode"])
+        self.settings.prepare_engine(
+            mode=preview["mode"], pair=language_pair.pair(self.settings, root)
+        )
         estimate = (self.state(project_id)["quote"] or {}).get("estimate")
         with self.backend.context():
             inventory = native.stage(self.backend, project_id, raw)

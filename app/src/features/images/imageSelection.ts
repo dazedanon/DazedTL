@@ -201,18 +201,28 @@ export function virtualRows(
 // Sound effects lettered into scene art are flavor, often hundreds per game:
 // an image with nothing else is found "Sound effects only" and stays out of
 // the list like a text-free one.
-export const imageClassificationLabels: Record<string, string> = {
-  recommended: "Recommended",
-  uncertain: "Uncertain",
-  no_text: "No text found",
-  already_english: "Already English",
-  sound_effects: "Sound effects only",
-  not_examined: "Not examined",
-  excluded: "Excluded",
-};
+// already_english keeps the name saved findings have; it is text already in
+// the game's target language.
+export const imageClassificationLabel = (
+  classification: string,
+  target: string,
+): string =>
+  ({
+    recommended: "Recommended",
+    uncertain: "Uncertain",
+    no_text: "No text found",
+    already_english: `Already in ${target}`,
+    sound_effects: "Sound effects only",
+    not_examined: "Not examined",
+    excluded: "Excluded",
+  })[classification] || "";
 /** What the shared word for an image's state leaves out: what blocks it, who
- * reviewed it, or what discovery found. */
-export function imageReason(asset: ImageAsset, listed = false) {
+ * reviewed it, or what discovery found, in a game translated into *target*. */
+export function imageReason(
+  asset: ImageAsset,
+  listed: boolean,
+  target: string,
+) {
   const display = imageDisplay(asset, listed);
   // The backend notes what each image's next step needs; it explains a
   // blocked or unreviewed image, and before then the copied translation task
@@ -230,13 +240,17 @@ export function imageReason(asset: ImageAsset, listed = false) {
         ? "User reviewed"
         : asset.editable && asset.state === "editable"
           ? "Editable copy made"
-          : imageClassificationLabels[asset.classification] || "");
+          : imageClassificationLabel(asset.classification, target));
   return reason === displayLabels[display] ? "" : reason;
 }
 /** An image's state in the shared words, then its reason. */
-export function imageStatus(asset: ImageAsset, listed = false) {
+export function imageStatus(
+  asset: ImageAsset,
+  listed: boolean,
+  target: string,
+) {
   const state = displayLabels[imageDisplay(asset, listed)];
-  const reason = imageReason(asset, listed);
+  const reason = imageReason(asset, listed, target);
   return reason ? `${state} · ${reason}` : state;
 }
 

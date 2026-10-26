@@ -11,7 +11,7 @@ from .workflow_actions import regular
 
 FIELDS = {'mode', 'include_images', 'include_glossary_base', 'install_forge', 'instructions'}
 ACTIONS = {'prepare': 'Prepare Len handoff', 'reference_add': 'Add reference translation',
-           'reference_pair': 'Add Japanese / English reference pair', 'reference_remove': 'Remove reference registration',
+           'reference_pair': 'Add original / translation reference pair', 'reference_remove': 'Remove reference registration',
            'reference_build': 'Build reference matches'}
 
 

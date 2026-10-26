@@ -2,10 +2,15 @@
 
 from typing import Literal, NotRequired, TypedDict
 
+# engine/util/languages.SOURCE_LANGUAGES
+type SourceLanguage = Literal["Japanese", "English"]
+
 
 class PreferenceValues(TypedDict):
     language: str
     model: str
+    # The language new games start in; `language` is the target.
+    sourceLanguage: SourceLanguage
 
 
 class ModelOptions(TypedDict):

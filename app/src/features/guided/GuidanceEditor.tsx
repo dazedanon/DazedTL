@@ -1,5 +1,7 @@
 import type { ContextSetup, Documents } from "../../api/contracts";
+import { useLanguages } from "../../app/LanguagesProvider";
 import { coreGuidance, guidanceTitle } from "./guidanceReview";
+import { guidanceFormats } from "./guidanceFormats";
 import { DocumentEditor } from "../../ui/DocumentEditor";
 import { HelpPopover } from "../../ui/HelpPopover";
 import type { useContextDraft } from "./useContextDraft";
@@ -21,6 +23,7 @@ export function GuidanceEditor({
   select: (name: string) => void;
   disabled: boolean;
 }) {
+  const { source } = useLanguages();
   const custom = names.filter((name) => name.startsWith("custom:"));
   return (
     <>
@@ -35,6 +38,7 @@ export function GuidanceEditor({
           ...(selectedName.startsWith("custom:") ? [selectedName] : []),
         ]}
         titles={{ quirks: "Style & quirks" }}
+        placeholders={guidanceFormats(source)}
         tabLabel={(name) => (
           <>
             {name.startsWith("custom:") ? "Custom" : guidanceTitle(name)}

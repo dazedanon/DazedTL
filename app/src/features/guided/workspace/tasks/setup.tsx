@@ -9,6 +9,7 @@ import { FieldRow } from "../../../../ui/FieldRow";
 import { PathInput } from "../../../../ui/PathInput";
 import type { DisplayState } from "../../../../ui/displayStatus";
 import { StatusHeading } from "../../../../ui/StatusMark";
+import { GameLanguagesRow } from "../../../project/GameLanguages";
 import { stoppedJob } from "../../runEnd";
 import type { GuidedWorkspace, SetupStep } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
@@ -44,6 +45,8 @@ function StepRow({
 
 export function setupView(w: GuidedWorkspace): TaskView {
   const {
+    project,
+    move,
     state,
     translation,
     disabled,
@@ -127,6 +130,11 @@ export function setupView(w: GuidedWorkspace): TaskView {
               : "";
   const content = (
     <>
+      <GameLanguagesRow
+        projectId={project.id}
+        disabled={disabled || setupRunning || running}
+        measure={() => void move("context", "speakers")}
+      />
       {!gitConfigured && (
         <fieldset disabled={disabled || setupRunning}>
           <FieldRow id="guided-version" label="Game version">

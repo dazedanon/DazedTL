@@ -326,18 +326,28 @@ def save_language_pair(game_root: str | Path, source: str, target: str) -> Path:
     return _update_settings(Path(game_root).expanduser().resolve(), update)
 
 
-def without_game_update(raw: bytes) -> bytes | None:
-    """The settings file's bytes without the GameUpdate record, which DazedTL
-    rewrites on its own and no translation work reads: the bytes the file held
-    before the record was added, or None when nothing else is left."""
+def binding_bytes(raw: bytes) -> bytes | None:
+    """The settings file's bytes as saved translation work binds them: without
+    the GameUpdate record, which DazedTL rewrites on its own and no
+    translation work reads, and without a pair whose source is Japanese, which
+    names what a game without one reads (Japanese into the target its runs
+    freeze), so recording it never makes saved work read Outdated. These are
+    the bytes the file held before those records were added, or None when
+    nothing else is left. A pair with another source binds the work."""
     try:
         data = json.loads(raw.decode("utf-8"))
     except (UnicodeError, json.JSONDecodeError):
         return raw
-    if not isinstance(data, dict) or "gameUpdate" not in data:
+    if not isinstance(data, dict):
         return raw
-    data.pop("gameUpdate")
-    # Writing the record stamps a version on a file that did not exist yet.
+    pair = data.get("languages")
+    japanese = isinstance(pair, dict) and pair.get("source") == languages.JAPANESE
+    if "gameUpdate" not in data and not japanese:
+        return raw
+    data.pop("gameUpdate", None)
+    if japanese:
+        data.pop("languages")
+    # Writing a record stamps a version on a file that did not exist yet.
     if set(data) <= {"version"}:
         return None
     return _serialize(data).encode("utf-8")

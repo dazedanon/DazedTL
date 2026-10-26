@@ -1,9 +1,9 @@
 // Reads a game's plugin code without running any of it: whether each enabled
-// plugin compiles as a browser script, and every Japanese string in it with
-// the evidence for whether players can see it.
+// plugin compiles as a browser script, and every string in it holding the
+// game's source language with the evidence for whether players can see it.
 //
 // stdin: {acorn, plugins: [{name, file, parameters, commands}], core: [file],
-//         tokens: [name]}
+//         tokens: [name], source: {pattern, placeholders, phrases}}
 // stdout: [{name, issue?, unreadable?, literals: [...]}]
 "use strict";
 const fs = require("node:fs");
@@ -12,9 +12,16 @@ const vm = require("node:vm");
 const input = JSON.parse(fs.readFileSync(0, "utf8"));
 const acorn = require(input.acorn);
 
-const JAPANESE = /[ぁ-ゔァ-ヴ一-龠々〆〤]/;
-// Glyphs Japanese text uses for a hidden word, as in "Day ◯/30".
-const PLACEHOLDER = /[◯〇]|○○/;
+// Source text (util/playtest/run.reading), and the glyphs Japanese text uses
+// for a hidden word, as in "Day ◯/30", which read as a missing character in
+// another script.
+const SOURCE = new RegExp(input.source.pattern);
+// Words a Latin source's string must read as, since its identifiers hold
+// letters too: two of them, or one ending a sentence.
+const PHRASE = input.source.phrases
+  ? /\p{L}\s+\p{L}|\p{L}[.!?…]+\s*$/u
+  : /(?:)/;
+const PLACEHOLDER = input.source.placeholders ? /[◯〇]|○○/ : /(?!)/;
 // Sentence punctuation no asset name holds.
 const SENTENCE = /[。、！？!?…「」『』（）"“”]|\.\s/;
 const TEXT_LIMIT = 160;
@@ -512,7 +519,7 @@ const plugins = input.plugins.map((plugin) => {
   return { ...plugin, source, tree };
 });
 
-/** Each Japanese literal of one plugin, with its reach. */
+/** Each literal of one plugin holding source text, with its reach. */
 function literals(plugin) {
   const constants = new Constants(plugin.tree, plugin);
   const commands = new Set(plugin.commands || []);
@@ -597,7 +604,7 @@ function literals(plugin) {
     if (
       string !== null &&
       !characters &&
-      (JAPANESE.test(shown) || PLACEHOLDER.test(shown)) &&
+      ((SOURCE.test(shown) && PHRASE.test(shown)) || PLACEHOLDER.test(shown)) &&
       !named(node, parent, ancestors.at(-2)) &&
       !assetPath(string) &&
       !folders.has(string.trim())
@@ -606,7 +613,7 @@ function literals(plugin) {
         line: node.loc.start.line,
         column: node.loc.start.column + 1,
         text: text(string),
-        ...(!JAPANESE.test(shown) && { glyph: true }),
+        ...(!SOURCE.test(shown) && { glyph: true }),
         ...(reason ||
           (drawn(node, parent)
             ? { reach: "drawn", evidence: "It is drawn on screen directly." }

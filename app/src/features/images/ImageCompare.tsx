@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLanguages } from "../../app/LanguagesProvider";
 import type { ImageAsset } from "../../api/contracts";
 import { imagesApi } from "../../api/images";
 import { messageOf } from "../../api/errors";
@@ -11,7 +12,7 @@ import { Notice } from "../../ui/Notice";
 import { ExpandableText } from "../../ui/ExpandableText";
 import { imageDisplay } from "../../ui/displayStatus";
 import { StatusMark } from "../../ui/StatusMark";
-import { imageClassificationLabels, imageReason } from "./imageSelection";
+import { imageClassificationLabel, imageReason } from "./imageSelection";
 import { useRead } from "../../state/useRead";
 
 export function ImageCompare({
@@ -37,6 +38,7 @@ export function ImageCompare({
     options?: Record<string, unknown>,
   ) => Promise<void>;
 }) {
+  const { target } = useLanguages();
   const images = useRead(
     [projectId, asset.id, asset.sourceHash, asset.candidateHash].join(":"),
     (signal) =>
@@ -85,9 +87,11 @@ export function ImageCompare({
             the actions that answer it; any other reason sits beside the state. */}
         <span className="image-review-status">
           <StatusMark state={imageDisplay(asset, listed)} />
-          {!blocking && !asset.heldReason && imageReason(asset, listed) && (
-            <span>{imageReason(asset, listed)}</span>
-          )}
+          {!blocking &&
+            !asset.heldReason &&
+            imageReason(asset, listed, target) && (
+              <span>{imageReason(asset, listed, target)}</span>
+            )}
         </span>
         <label>
           Zoom
@@ -197,7 +201,7 @@ export function ImageCompare({
                 <dt>Discovery</dt>
                 <dd>
                   <ExpandableText
-                    text={`${imageClassificationLabels[asset.classification] || asset.classification} · ${asset.reason}`}
+                    text={`${imageClassificationLabel(asset.classification, target) || asset.classification} · ${asset.reason}`}
                     label="Discovery finding"
                     appearance="inline"
                   />

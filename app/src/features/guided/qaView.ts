@@ -275,14 +275,15 @@ export function qaGroups(findings: QaFinding[]) {
     }));
 }
 
-/** Where a finding came from, in the reader's words. */
-export function qaOrigin(row: QaFinding) {
+/** Where a finding came from, in the reader's words, for a game whose text
+ * is in *source*. */
+export function qaOrigin(row: QaFinding, source: string) {
   return {
     review: "",
     lint: "Mechanical fix",
     glossary: "Glossary term",
     sweep: "Same problem as an accepted correction",
-    source: "Fix for a slip in the Japanese source",
+    source: `Fix for a slip in the ${source} source`,
     scene: "One correction across a scene",
   }[row.kind];
 }

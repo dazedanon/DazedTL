@@ -92,7 +92,7 @@ class SettingsTests(unittest.TestCase):
             view = settings.save(
                 view["revision"],
                 identity,
-                {"language": "English", "model": model},
+                {"language": "English", "model": model, "sourceLanguage": "Japanese"},
                 options,
             )
             automatic = configuration(settings, "live")
@@ -578,7 +578,10 @@ class SettingsTests(unittest.TestCase):
             view = settings.save_connection(0, "openrouter", secret="fixture-key")
             identity = view["activeConnectionId"]
             view = settings.save(
-                view["revision"], identity, {"language": "English", "model": model}, {}
+                view["revision"],
+                identity,
+                {"language": "English", "model": model, "sourceLanguage": "Japanese"},
+                {},
             )
             self.assertFalse(settings.translation_defaults()["batch_supported"])
             with patch.object(providers, "check", return_value=checked):
@@ -636,7 +639,11 @@ class SettingsTests(unittest.TestCase):
                 view = settings.save(
                     view["revision"],
                     identity,
-                    {"language": "English", "model": other},
+                    {
+                        "language": "English",
+                        "model": other,
+                        "sourceLanguage": "Japanese",
+                    },
                     {},
                 )
                 app.resolve_batch_support(persist=True)
@@ -662,7 +669,10 @@ class SettingsTests(unittest.TestCase):
                     settings.model_defaults(identity, other)["batchInputRate"], 1.1
                 )
             view = settings.save(
-                view["revision"], identity, {"language": "English", "model": model}, {}
+                view["revision"],
+                identity,
+                {"language": "English", "model": model, "sourceLanguage": "Japanese"},
+                {},
             )
             view = settings.save_connection(
                 view["revision"],
@@ -708,7 +718,10 @@ class SettingsTests(unittest.TestCase):
             # A stalled endpoint read leaves settings observable and cannot
             # publish after a different model, host, key or catalog is selected.
             view = settings.save(
-                view["revision"], identity, {"language": "English", "model": other}, {}
+                view["revision"],
+                identity,
+                {"language": "English", "model": other, "sourceLanguage": "Japanese"},
+                {},
             )
             lookup = settings.batch_lookup()
             for change in (
@@ -750,7 +763,11 @@ class SettingsTests(unittest.TestCase):
                             view = settings.save(
                                 view["revision"],
                                 identity,
-                                {"language": "English", "model": model},
+                                {
+                                    "language": "English",
+                                    "model": model,
+                                    "sourceLanguage": "Japanese",
+                                },
                                 {},
                             )
                             self.assertTrue(
@@ -935,7 +952,10 @@ class SettingsTests(unittest.TestCase):
             )
             identity = view["activeConnectionId"]
             view = settings.save(
-                view["revision"], identity, {"language": "English", "model": model}, {}
+                view["revision"],
+                identity,
+                {"language": "English", "model": model, "sourceLanguage": "Japanese"},
+                {},
             )
             with patch.object(
                 providers,
@@ -1392,7 +1412,9 @@ class SettingsTests(unittest.TestCase):
         # new into its settings, while a pair a run can't tell apart is
         # refused before it is saved.
         metadata = {"values": {"language": "English", "model": "fixture-model"}}
-        adapter = SimpleNamespace(settings_metadata=lambda: metadata)
+        adapter = SimpleNamespace(
+            settings_metadata=lambda: metadata, allow_providers=False
+        )
         state = {
             "version": 2,
             "revision": 0,
@@ -1424,6 +1446,24 @@ class SettingsTests(unittest.TestCase):
             self.assertEqual(
                 (frozen["language"], frozen["sourceLanguage"]), ("Japanese", "English")
             )
+            japanese = {
+                "language": "Japanese",
+                "model": "m",
+                "sourceLanguage": "Japanese",
+            }
             with self.assertRaisesRegex(ValueError, "same script"):
-                settings.save(0, "", {"language": "Japanese", "model": "m"}, {})
+                settings.save(0, "", japanese, {})
             self.assertEqual(settings.language(), "English")
+            # New games start in the source Settings name, kept beside the
+            # target through a draft and a save.
+            english_source = {**japanese, "sourceLanguage": "english"}
+            settings.draft(0, "", english_source, {})
+            draft = settings.describe()["draft"]["values"]
+            self.assertEqual(draft["sourceLanguage"], "English")
+            view = settings.save(0, "", english_source, {})
+            self.assertEqual(
+                (view["values"]["sourceLanguage"], view["values"]["language"]),
+                ("English", "Japanese"),
+            )
+            self.assertNotIn("draft", view)
+            self.assertEqual(settings.source_language(), "English")

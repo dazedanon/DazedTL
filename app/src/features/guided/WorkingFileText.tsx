@@ -5,13 +5,16 @@ import { Message } from "../../ui/Feedback";
 import { HelpPopover } from "../../ui/HelpPopover";
 import { useOnChange } from "../../state/useOnChange";
 import { useRead } from "../../state/useRead";
+import { useLanguages } from "../../app/LanguagesProvider";
 import { textLocation } from "./textLocation";
 
-const reasons: Record<NonNullable<FileTextRow["reason"]>, string> = {
-  untranslated: "Still in Japanese",
+const reasons = (
+  source: string,
+): Record<NonNullable<FileTextRow["reason"]>, string> => ({
+  untranslated: `Still in ${source}`,
   help: "Choice help",
   note: "Refusal note",
-};
+});
 
 export function WorkingFileText({
   source,
@@ -34,6 +37,7 @@ export function WorkingFileText({
   /** What each row is, for the page count. */
   noun?: string;
 }) {
+  const languages = useLanguages();
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
   const [offsets, setOffsets] = useState([0]);
@@ -146,7 +150,7 @@ export function WorkingFileText({
                     <td>
                       <small>
                         {row.reason
-                          ? `${textLocation(row.location)} · ${reasons[row.reason]}`
+                          ? `${textLocation(row.location)} · ${reasons(languages.source)[row.reason]}`
                           : row.location}
                       </small>
                       {row.text}

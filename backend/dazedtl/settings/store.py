@@ -24,8 +24,7 @@ class Settings:
         self.empty = {
             "version": 3,
             "revision": 0,
-            # The language games set up from now on are written in
-            # (settings/language_pair); the app offers no choice yet.
+            # The language new games start in (settings/language_pair).
             "sourceLanguage": DEFAULT_SOURCE,
             "values": {
                 key: self.metadata["values"][key] for key in ("language", "model")
@@ -149,6 +148,8 @@ class Settings:
                 raise invalid
             try:
                 preferences.text(draft.get("language"), "target language")
+                if "sourceLanguage" in draft:
+                    language_pair.source_language(draft["sourceLanguage"])
                 for identity, profile in draft["connections"].items():
                     if (
                         identity
@@ -376,6 +377,7 @@ class Settings:
     def describe(self):
         state = self._read()
         values = {key: self._values(state)[key] for key in ("language", "model")}
+        values["sourceLanguage"] = state["sourceLanguage"]
         update = self.game_update(state)
         selected = self._connection(state)
         model_options = deepcopy(
@@ -446,11 +448,19 @@ class Settings:
         # Drafts belong to one connection. Another connection's draft, or one an
         # earlier version left for a connection that no longer exists, is not a
         # pending edit here; only a changed shared language would be.
-        if profile or (draft and draft["language"] != values["language"]):
+        source = draft and draft.get("sourceLanguage", values["sourceLanguage"])
+        if profile or (
+            draft
+            and (
+                draft["language"] != values["language"]
+                or source != values["sourceLanguage"]
+            )
+        ):
             result["draft"] = {
                 "values": {
                     "language": draft["language"],
                     "model": profile["model"] if profile else values["model"],
+                    "sourceLanguage": source,
                 },
                 "modelOptions": deepcopy(
                     profile["model_options"] if profile else model_options
@@ -467,7 +477,7 @@ class Settings:
         return self._read()["values"]["language"]
 
     def source_language(self):
-        """The language games set up from now on are written in."""
+        """The language new games start in."""
         return self._read()["sourceLanguage"]
 
     def guided_configuration(
@@ -712,7 +722,11 @@ class Settings:
         profiles = (state["draft"] or {}).get("connections", {})
         profiles.pop(connection_id, None)
         state["draft"] = (
-            {"language": state["values"]["language"], "connections": profiles}
+            {
+                "language": state["values"]["language"],
+                "sourceLanguage": state["sourceLanguage"],
+                "connections": profiles,
+            }
             if profiles
             else None
         )
@@ -725,7 +739,9 @@ class Settings:
                 "The active connection changed. Review its preferences before saving."
             )
         connection = self._connection(state)
-        normalized = preferences.values(values, connection=connection is not None)
+        normalized, source = preferences.chosen(
+            values, connection=connection is not None
+        )
         if (
             connection
             and connection["provider"] == "openrouter"
@@ -735,9 +751,10 @@ class Settings:
                 "Save the base OpenRouter model ID, then choose Batch as the translation method."
             )
         configured = preferences.model_options(model_options)
-        problem = language_pair.problem(state["sourceLanguage"], normalized["language"])
+        problem = language_pair.problem(source, normalized["language"])
         if problem:
             raise ValueError(problem)
+        state["sourceLanguage"] = source
         state["values"]["language"] = normalized["language"]
         if connection:
             connection.update(model=normalized["model"], model_options=configured)
@@ -755,7 +772,7 @@ class Settings:
             raise ValueError(
                 "The active connection changed. Reopen Settings before editing its preferences."
             )
-        preferences.values(values, draft=True)
+        _values, source = preferences.chosen(values, draft=True)
         preferences.model_options(model_options, draft=True)
         if len(json.dumps([values, model_options])) > 100000:
             raise ValueError("Preferences draft is too large.")
@@ -764,7 +781,11 @@ class Settings:
             "model": values["model"],
             "model_options": model_options,
         }
-        state["draft"] = {"language": values["language"], "connections": profiles}
+        state["draft"] = {
+            "language": values["language"],
+            "sourceLanguage": source,
+            "connections": profiles,
+        }
         self._write(state, bump=False)
         return {"saved": True}
 

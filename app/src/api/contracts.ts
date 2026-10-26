@@ -1887,9 +1887,12 @@ export type TranslationResults = {
   missing: Record<string, number>;
 };
 
+export type SourceLanguage = "Japanese" | "English";
+
 export type PreferenceValues = {
   language: string;
   model: string;
+  sourceLanguage: SourceLanguage;
 };
 
 export type ModelOptions = {
@@ -2658,6 +2661,13 @@ export type ProjectOperation = {
   message: string;
 };
 
+/** The languages a project's game translates between. */
+export type GameLanguages = {
+  source: SourceLanguage;
+  target: string;
+  characters: boolean;
+};
+
 export type Project = {
   id: string;
   name: string;
@@ -2671,6 +2681,7 @@ export type Project = {
   detail?: string;
   operation?: ProjectOperation;
   next_label?: string;
+  languages?: GameLanguages;
 };
 
 export type AppState = {
@@ -3032,6 +3043,12 @@ export type ProjectMethodRequest = {
   method: TranslationMethod;
 };
 
+export type ProjectLanguagesRequest = {
+  project_id: string;
+  source: SourceLanguage;
+  target: string;
+};
+
 export type SettingsModelDefaultsRequest = {
   connection_id: string;
   model: string;
@@ -3249,6 +3266,7 @@ export type RpcContract = {
   remove_project: { request: ProjectRequest; response: AppState };
   navigate: { request: NavigateRequest; response: AppState };
   project_method: { request: ProjectMethodRequest; response: AppState };
+  project_languages: { request: ProjectLanguagesRequest; response: AppState };
   settings_get: { request: NoParams; response: Settings };
   settings_save: { request: PreferencesRequest; response: Settings };
   settings_draft: { request: PreferencesRequest; response: Saved };
@@ -3741,7 +3759,7 @@ export const ACTIONS = {
     reports_outcome: false,
   },
   reference_pair: {
-    label: "Add Japanese / English reference pair",
+    label: "Add original / translation reference pair",
     family: "native",
     restorable: false,
     reports_outcome: false,
@@ -3814,3 +3832,6 @@ export const REQUEST_HEADINGS = {
   ],
   instructions: "Request Instructions:",
 } as const;
+
+/** The source languages, from backend/dazedtl/engine/util/languages.py. */
+export const SOURCE_LANGUAGES = ["Japanese", "English"] as const;

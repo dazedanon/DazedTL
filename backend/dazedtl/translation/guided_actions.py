@@ -428,6 +428,10 @@ class GuidedActions:
         run_output = context.run_output
         options: dict[str, Any] = context.options
         paths = []
+        if action == "prepare_game":
+            # Set up starts: a game without its own languages keeps the pair
+            # Settings name, before the review binds the game's settings.
+            language_pair.record(self.guided.settings, project["source"])
         if action == "import":
             supported = self.guided.supported_files(native)
             if not isinstance(files, list) or any(
@@ -727,9 +731,6 @@ class GuidedActions:
                 )
         if action == "start":
             return self.execute_run(project_id, native, confirmed)
-        if action == "prepare_game":
-            # Set up starts: the game keeps the language pair Settings name.
-            language_pair.record(self.guided.settings, project["source"])
         return self.execute_lifecycle(project_id, project, native, confirmed, options)
 
     def execute_run(self, project_id, native, confirmed):

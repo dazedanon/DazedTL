@@ -5,6 +5,7 @@ import type {
   ImageEditorSave,
   Screen,
   TranslationMethod,
+  SourceLanguage,
   Phase,
   GuidedOptions,
   GuidedPreferences,
@@ -220,6 +221,8 @@ export const api = {
   navigate: (screen: Screen) => request("navigate", { screen }),
   method: (project_id: string, method: TranslationMethod) =>
     request("project_method", { project_id, method }),
+  languages: (project_id: string, source: SourceLanguage, target: string) =>
+    request("project_languages", { project_id, source, target }),
   phase: (project_id: string, phase: Phase) =>
     request("guided_phase_select", { project_id, phase }),
   preview: (

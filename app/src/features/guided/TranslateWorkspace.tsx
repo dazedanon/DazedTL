@@ -5,6 +5,7 @@ import type {
   Job,
   Phase,
 } from "../../api/contracts";
+import { useLanguages } from "../../app/LanguagesProvider";
 import { Button } from "../../ui/Button";
 import { FileSelection } from "./FileSelection";
 import {
@@ -61,6 +62,7 @@ export function TranslateWorkspace({
   fileActions?: ReactNode;
   children?: ReactNode;
 }) {
+  const languages = useLanguages();
   const rows = useMemo(
     () =>
       state.files.filter(
@@ -172,7 +174,7 @@ export function TranslateWorkspace({
                     className="translation-file-lines"
                     title={
                       counted
-                        ? "Lines translated of the lines in each file that hold Japanese"
+                        ? `Lines translated of the lines in each file that hold ${languages.source}`
                         : "Lines saved of the lines the latest run prepared"
                     }
                   >
@@ -195,6 +197,7 @@ export function TranslateWorkspace({
                   phase,
                   row.name,
                   owner(row.name),
+                  languages.source,
                 );
                 const metricRun = fileMetricRun(
                     state.runs,
@@ -215,7 +218,7 @@ export function TranslateWorkspace({
                             : "Lines saved so far; the total is known when the run ends"
                           : lines.total
                             ? counted
-                              ? "Lines translated of the lines in this file that hold Japanese"
+                              ? `Lines translated of the lines in this file that hold ${languages.source}`
                               : "Lines saved of the lines the latest run prepared"
                             : lines.done
                               ? "Lines saved before the latest run ended; it did not reach the rest of the file"

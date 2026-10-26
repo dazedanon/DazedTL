@@ -152,6 +152,21 @@ def values(value, *, draft=False, connection=False):
     }
 
 
+def chosen(value, *, draft=False, connection=False):
+    """The preferences Settings sends, with the source language new games
+    start in (settings/language_pair), which the record keeps beside them:
+    (values, source language)."""
+    if not isinstance(value, dict) or "sourceLanguage" not in value:
+        raise ValueError("Unknown preference. Reopen Settings after updating the app.")
+    from . import language_pair
+
+    rest = {key: item for key, item in value.items() if key != "sourceLanguage"}
+    return (
+        values(rest, draft=draft, connection=connection),
+        language_pair.source_language(value["sourceLanguage"]),
+    )
+
+
 def options(value, *, draft=False):
     # Existing version-two preferences and recovery drafts can omit the override.
     optional = {

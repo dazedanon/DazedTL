@@ -26,6 +26,7 @@ from util.languages import (
     script,
     source_language,
     source_pattern,
+    target_uses_cjk,
 )
 from util.prompt_pair import pair_note, request_headings
 
@@ -50,6 +51,7 @@ __all__ = [
     "script",
     "source_language",
     "source_pattern",
+    "target_uses_cjk",
 ]
 
 

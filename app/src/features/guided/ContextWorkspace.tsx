@@ -14,6 +14,8 @@ import { Tabs } from "../../ui/Tabs";
 import { VirtualList } from "../../ui/VirtualList";
 import type { InvestigationPart, InvestigationResult } from "./contextView";
 import { textLocation } from "./textLocation";
+import { languageTag } from "../../app/languages";
+import { useLanguages } from "../../app/LanguagesProvider";
 import { withHandoff } from "../assistant/assistantTasks";
 import { useHandoff } from "../assistant/useAssistantTasks";
 
@@ -179,6 +181,7 @@ const showHeader = (header: ShowTextHeader) =>
   (header.name || "No nameplate") +
   (header.faceName ? ` · face ${header.faceName} ${header.faceIndex}` : "");
 export function SpeakerNames({ scan }: { scan: SpeakerScan }) {
+  const sourceTag = languageTag(useLanguages().source);
   const [tab, setTab] = useState("nameplates");
   const [query, setQuery] = useState("");
   const rows = useMemo<ResultRow[]>(
@@ -306,7 +309,7 @@ export function SpeakerNames({ scan }: { scan: SpeakerScan }) {
               <div className="context-slip-row">
                 <small>{row.label}</small>
                 <StatusHeading state={row.state} title={row.header} />
-                <span lang="ja">{row.text}</span>
+                <span lang={sourceTag}>{row.text}</span>
                 <span className="muted">{row.evidence}</span>
                 {row.reason && (
                   <span className="muted">

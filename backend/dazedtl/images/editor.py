@@ -7,6 +7,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from dazedtl.compatibility import image_editor as native
+from dazedtl.settings import language_pair
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, project_path, read_json
 
@@ -455,8 +456,8 @@ class ImageEditor:
         notes, result = {}, {}
         with self._context():
             if action == "export":
-                if hasattr(self.core.settings, "describe"):
-                    language = self.core.settings.describe()["values"]["language"]
+                if hasattr(self.core.settings, "language"):
+                    language = language_pair.pair(self.core.settings, root)["target"]
                     if (
                         not isinstance(language, str)
                         or not language

@@ -27,8 +27,10 @@ from dazedtl.languages import reading_game
 from dazedtl.plugins import PluginService
 from dazedtl.plugins.service import receipt_label
 from dazedtl.projects import location
+from dazedtl.projects.languages import ProjectLanguages
 from dazedtl.projects.location import Locations
 from dazedtl.projects.store import Projects
+from dazedtl.settings import language_pair, preferences
 from dazedtl.settings.store import Settings
 from dazedtl.storage import WorkspaceLock
 from dazedtl.system import private_stdin
@@ -117,10 +119,17 @@ class Application:
             busy=lambda: self.backend.running() or self.translation.jobs.running(),
             relocate=self.relocate,
         )
+        self.languages = ProjectLanguages(
+            self.projects,
+            self.settings,
+            holds=self.locations.holds,
+            has_work=self.has_work,
+        )
         current = self.projects.current
         if current and self.locations.holds(current):
             # The game open when the app last closed is opened again.
             self.locations.keep(current)
+            self.languages.keep(current)
         self.guided.batch_monitor.start()
 
     def has_work(self, project):
@@ -172,6 +181,9 @@ class Application:
         )
         if project:
             project = dict(project)
+            languages = available and self.languages.view(project)
+            if languages:
+                project["languages"] = languages
             project.update(
                 available=available,
                 status="Project open",
@@ -551,9 +563,10 @@ class Application:
 
     def open_project(self, source):
         root = self.game_folder(source)
-        self.locations.open(root)
-        self.sync_game_update()
-        return self.state()
+        with reading_game(root):
+            self.languages.keep(self.locations.open(root))
+            self.sync_game_update()
+            return self.state()
 
     def game_folder(self, source):
         root = Path(source).expanduser().resolve(strict=True)
@@ -577,6 +590,7 @@ class Application:
             self.locations.open(project["source"], project)
         else:
             self.projects.select(project_id)
+        self.languages.keep(self.projects.current)
         self.sync_game_update()
         return self.state()
 
@@ -584,7 +598,7 @@ class Application:
         """Find game folder: the project continues with its game at source."""
         root = self.game_folder(source)
         with reading_game(root):
-            self.locations.find(project_id, root)
+            self.languages.keep(self.locations.find(project_id, root))
             self.sync_game_update()
             return self.state()
 
@@ -618,7 +632,27 @@ class Application:
 
     def settings_save(self, revision, connection_id, values, model_options):
         self.guided.idle()
+        chosen, source = preferences.chosen(values, draft=True)
+        refused = language_pair.problem(source, chosen["language"])
+        if refused:
+            raise ValueError(refused)
+        if (source, chosen["language"]) != (
+            self.settings.source_language(),
+            self.settings.language(),
+        ):
+            # Games with work keep the pair they translate.
+            self.languages.keep_every()
         return self.settings.save(revision, connection_id, values, model_options)
+
+    def project_languages(self, project_id, source, target):
+        """Set up's choice of the game's languages."""
+        self.guided.idle()
+        if self.backend.running() or self.translation.jobs.running():
+            raise ValueError(
+                "Wait for the current operation to finish before changing the languages."
+            )
+        self.languages.change(project_id, source, target)
+        return self.state()
 
     def settings_game_update(self, revision, forge, host, owner, branch):
         settings = self.settings.save_game_update(
@@ -781,6 +815,7 @@ def routes(app):
                 "remove_project",
                 "navigate",
                 "project_method",
+                "project_languages",
             )
         },
         **{
