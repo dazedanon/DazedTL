@@ -259,7 +259,9 @@ Package requires current reported QA for the runtime manifest Git setup or the l
 It does not create remotes, push, or upload.
 Writing the game's complete `gameupdate/patch-config.txt` saves it with the patch, so manifests need not list it; the package leaves it out unless the existing GameUpdate checks find the commit is the verified public version, which they then stamp.
 Every checkpoint, package and QA record also carries DazedTL's other files the game holds, so manifests need not list them either: GameUpdate's launchers and scripts, the update check and Forge plugins Set up installs, and the playtest's fixes plugin with the `js/main.js` that loads it.
-A package refuses a `plugins.js` that switches on a plugin whose file neither the patch nor the original game holds, naming the plugin, since players' game would stop at start; the original game's plugins are those its Git records or an older prepared backup list, never DazedTL's own, such as TL Inspector.
+A package refuses a `plugins.js` that switches on a plugin whose file neither the patch nor the original game holds, naming the plugin, since players' game would stop at start; the original game's plugins are those its Git records or an older prepared backup list, never DazedTL's own.
+TL Inspector stays on the translator's computer: its file holds their editor command, so no patch carries it and `plugins.js` never lists it; the update check loads it where its file is, so installing or removing it makes no checkpoint of its own, once the game's update check is current.
+Older installs listed it, so opening such a game whose Git is set up takes it out of `plugins.js` as one checkpoint, and a package that still lists it, or holds its file, is refused.
 It likewise refuses a `js/main.js` that loads the playtest's fixes the patch lacks, or fixes no `js/main.js` in the patch loads; without a recorded or Git copy, the original of the `js/main.js` loading the fixes is that file without the loading line.
 
 For an official update, stage_update records the new release's files in the game's Git and creates a separate working copy.

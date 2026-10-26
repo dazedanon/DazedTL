@@ -200,9 +200,9 @@ If the path is a `Troops.json` page, the scene is a specific battle and the only
 
 ## Install and uninstall
 
-- Drop the plugin `.js` in `www/js/plugins/` and add one entry to `www/js/plugins.js`.
-- **Place the entry LAST.** It hooks other plugins' overrides, so anything loaded after it is invisible to the draw hooks and the `TextManager` scan.
-- Remove that line for release. Never ship the inspector in a patch.
+- In a game DazedTL set up, drop the plugin `.js` in `js/plugins/` (`www/js/plugins/` for MV) and nothing else: the update check, `TranslationUpdateCheck.js`, loads it after every plugin when the file is there.
+- **Never list it in `plugins.js`.** Patches carry `plugins.js` but never the inspector, whose file holds the translator's editor command, so a listed entry stops players' game with "Failed to load".
+- **It must load LAST.** It hooks other plugins' overrides, so anything loaded after it is invisible to the draw hooks and the `TextManager` scan.
 
 **When patching the plugin's `CFG` block programmatically, the regex replacement must be a FUNCTION, not a template string.** A template string reinterprets backslashes, so a Windows path such as `C:\Users\...` becomes an invalid JS escape sequence and the plugin fails to parse with an error that points at the wrong line.
 

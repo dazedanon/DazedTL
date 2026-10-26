@@ -66,6 +66,8 @@ class Application:
         self.closing = False
         # The games whose original files this backend started recording.
         self.recorded_games = set()
+        # The games this backend took TL Inspector out of plugins.js in.
+        self.unlisted_games = set()
         self.recent_folders = RecentFolders()
         # Records errors the app handles itself, such as one unreadable project.
         self.failure = failure or (lambda *_args, **_kwargs: None)
@@ -186,6 +188,28 @@ class Application:
             except OSError:
                 pass  # A refused write starts it again and says why.
 
+    def unlist_inspector(self, project):
+        """Takes TL Inspector out of the open game's plugins.js once per
+        session, as its own checkpoint, before queued work starts and never
+        while an operation runs, which may write plugins.js itself. It runs
+        in the request, so no other request starts one meanwhile; a game
+        needs it once, and the check costs one read of plugins.js."""
+        from dazedtl.compatibility.guided import inspector_listed, unlist_inspector
+
+        root = Path(project["source"])
+        if (
+            str(root) in self.unlisted_games
+            or self.backend.running()
+            or self.translation.jobs.running()
+        ):
+            return
+        self.unlisted_games.add(str(root))
+        if inspector_listed(root):
+            try:
+                unlist_inspector(root)
+            except Exception as error:  # noqa: BLE001 - the next session tries again
+                self.failure(error, "unlist_inspector")
+
     def originals_stop(self, project_id):
         """Stops recording the project's original game files; a write that
         needs them starts the record again."""
@@ -198,6 +222,7 @@ class Application:
         available = bool(project) and self.locations.holds(project)
         if available:
             self.record_originals(project)
+            self.unlist_inspector(project)
         if project and project.get("backend_id") and available:
             # Queued work starts before this reads what runs.
             try:

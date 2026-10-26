@@ -169,25 +169,36 @@ with engine.context():
     # backup's list holds.
     registry = published / "js/plugins.js"
     shipped = registry.read_bytes()
-    added = [published / f"js/plugins/{name}.js" for name in ("Wrap", "TLInspector")]
-    for path in added:
-        path.write_text("// Plugin\n")
+    wrap = published / "js/plugins/Wrap.js"
+    wrap.write_text("// Plugin\n")
     # The game's own TitleMessage and SaveLayout, and a plugin switched off.
     loaded = ["TitleMessage", "SaveLayout", "Wrap", "TLInspector"]
-    registry.write_text(
-        "var $plugins = [\n"
-        + "".join(f'{{"name":"{name}","status":true}},\n' for name in loaded)
-        + '{"name":"Old","status":false}\n];\n'
-    )
+
+    def plugins(names):
+        registry.write_text(
+            "var $plugins = [\n"
+            + "".join(f'{{"name":"{name}","status":true}},\n' for name in names)
+            + '{"name":"Old","status":false}\n];\n'
+        )
+
+    plugins(loaded)
     scoped = {"data/System.json", "js/plugins.js"}
     backup = ["js/plugins/savelayout.js", "js/plugins/TLInspector.js"]
+    # TL Inspector's file holds the translator's editor command, so no patch
+    # carries it or a plugins.js listing it; the refusal's advice once was
+    # to add that file to the patch.
     refusal = patch_refusal(published, scoped, backup) or ""
-    assert refusal.startswith("js/plugins.js loads the plugins TLInspector and Wrap,")
-    scoped |= {path.relative_to(published).as_posix() for path in added}
+    assert refusal.startswith("js/plugins.js loads TL Inspector,"), refusal
+    assert "Install TL Inspector again" in refusal, refusal
+    refusal = patch_refusal(published, scoped | {"js/plugins/tlinspector.js"}) or ""
+    assert refusal.startswith("The patch holds js/plugins/tlinspector.js,"), refusal
+    plugins(loaded[:-1])
+    refusal = patch_refusal(published, scoped, backup) or ""
+    assert refusal.startswith("js/plugins.js loads the plugin Wrap,"), refusal
+    scoped.add("js/plugins/Wrap.js")
     assert patch_refusal(published, scoped, backup) is None
     registry.write_bytes(shipped)
-    for path in added:
-        path.unlink()
+    wrap.unlink()
     # With no backup, the original of the main.js loading the playtest's
     # fixes is the file without that line, as the game's asset record holds
     # it; a checkpoint then refused the fixes. Each goes to players only
