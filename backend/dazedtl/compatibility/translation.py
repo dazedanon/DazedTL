@@ -874,13 +874,9 @@ class TranslationEngine:
         return self._convert_ace(patch, prepare, log)
 
     def release_inspect(self, source, release):
-        from util.version_update import GitWorkflowError
         from util.version_update.release_layout import inspect_release
 
-        try:
-            return asdict(inspect_release(source, release))
-        except GitWorkflowError as error:
-            raise ValueError(str(error)) from error
+        return asdict(inspect_release(source, release))
 
     def release_stage(self, source, copy, kind, destination):
         """Lays a release's private copy out as the game in `destination`, as
