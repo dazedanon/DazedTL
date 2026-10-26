@@ -4564,3 +4564,23 @@ class GuidedTests(unittest.TestCase):
             self.guided.readiness(self.identity, self.native, {"jobs": []})["outputs"],
             [],
         )
+
+
+class ComparisonLiteralTests(unittest.TestCase):
+    def test_a_game_with_more_maps_than_a_fixed_bound_reads_each_once(self):
+        # Every poll of the variables phase compares each map; a cache
+        # cleared at 1,024 files reread and rehashed a big game's maps on
+        # every poll.
+        from dazedtl.translation.guided_runs import GuidedRuns
+
+        with TemporaryDirectory() as temporary:
+            paths = [Path(temporary) / f"Map{index:04d}.json" for index in range(1100)]
+            for path in paths:
+                path.write_bytes(b'[{"code":111,"parameters":["$gameVariables"]}]')
+            fingerprint = digest(paths[0].read_bytes())
+            runs = GuidedRuns(SimpleNamespace(observed_digest=lambda _: fingerprint))
+            for path in paths:
+                runs.comparison_literals(path)
+            with patch.object(Path, "read_bytes", side_effect=AssertionError):
+                for path in paths:
+                    self.assertEqual(runs.comparison_literals(path)[0], fingerprint)

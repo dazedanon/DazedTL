@@ -243,6 +243,23 @@ export function imageReason(
           : imageClassificationLabel(asset.classification, target));
   return reason === displayLabels[display] ? "" : reason;
 }
+/** What discovery found, beside a heading that shows the image's state and,
+ * when `reasonShown`, its reason: led by the image's class unless that
+ * heading already names it. */
+export function imageDiscovery(
+  asset: ImageAsset,
+  listed: boolean,
+  target: string,
+  reasonShown: boolean,
+) {
+  const label =
+    imageClassificationLabel(asset.classification, target) ||
+    asset.classification;
+  const named =
+    label === displayLabels[imageDisplay(asset, listed)] ||
+    (reasonShown && label === imageReason(asset, listed, target));
+  return named ? asset.reason : `${label} · ${asset.reason}`;
+}
 /** An image's state in the shared words, then its reason. */
 export function imageStatus(
   asset: ImageAsset,

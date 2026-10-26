@@ -444,6 +444,7 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
                 ).map(([key, label, description]) => (
                   <ActionRow
                     key={key}
+                    name={label}
                     label={
                       <>
                         <span className="status-heading">

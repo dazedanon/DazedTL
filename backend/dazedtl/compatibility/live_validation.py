@@ -1,7 +1,9 @@
 """Reconcile old Live rejection receipts without rewriting runs or sending work."""
 
+import hashlib
 import json
 import re
+from contextlib import closing
 from functools import lru_cache
 from pathlib import Path
 
@@ -13,6 +15,8 @@ from .process_view import (
     _read_cached,
     _verified_digest,
     file_stamp,
+    ledger,
+    ledger_pages,
     source_values,
 )
 
@@ -86,25 +90,42 @@ def rejection_log(path, stamp):
 @lru_cache(maxsize=8)
 def outcomes(root, ledger_stamp, log_stamp, files):
     rows = _ledger_records(root, ledger_stamp, False)
+    if rows is None:
+        return {}
     records = rejection_log(Path(root) / "log/mismatchHistory.txt", log_stamp)
+    positions = {
+        row["id"]: index
+        for index, row in enumerate(rows)
+        if row["filename"] in files and row["source"] is not None
+    }
     groups = {}
-    for index, row in enumerate(rows):
-        source = source_values(row["params"])
-        if row["filename"] not in files or source is None:
-            continue
-        # Native validation retries alter only the final source message. Keep
-        # the rest of the frozen payload to reject ambiguous scene associations.
-        messages = list(row["params"].get("messages", []))
-        for position in range(len(messages) - 1, -1, -1):
-            if source_values({"messages": [messages[position]]}) == source:
-                messages[position] = {
-                    **messages[position],
-                    "content": canonical(source),
-                }
-                break
-        context = canonical({**row["params"], "messages": messages})
-        key = (row["filename"], canonical(source))
-        groups.setdefault(key, []).append((index, context, row))
+    connection = ledger(root)
+    if connection is None:
+        return {}
+    # The ledger summary keeps no request bodies; read each one in turn.
+    with closing(connection):
+        for identity, value in ledger_pages(
+            connection, ("id", "params"), ids=list(positions)
+        ):
+            index = positions[identity]
+            row, params = rows[index], json.loads(value)
+            source = row["source"]
+            # Native validation retries alter only the final source message.
+            # Keep the rest of the frozen payload to reject ambiguous scene
+            # associations.
+            messages = list(params.get("messages", []))
+            for position in range(len(messages) - 1, -1, -1):
+                if source_values({"messages": [messages[position]]}) == source:
+                    messages[position] = {
+                        **messages[position],
+                        "content": canonical(source),
+                    }
+                    break
+            context = hashlib.sha256(
+                canonical({**params, "messages": messages}).encode()
+            ).digest()
+            key = (row["filename"], canonical(source))
+            groups.setdefault(key, []).append((index, context, row))
     result = {}
     for key, group in groups.items():
         evidence = records.get(key, [])
@@ -112,10 +133,7 @@ def outcomes(root, ledger_stamp, log_stamp, files):
             len(evidence) != 1
             or len({context for _, context, _ in group}) != 1
             or evidence[0][0] != len(group)
-            or any(
-                row["state"] != "received" or row["raw_response"] is not None
-                for _, _, row in group
-            )
+            or any(row["state"] != "received" or row["raw"] for _, _, row in group)
         ):
             continue
         for index, _, _ in group:
@@ -135,9 +153,7 @@ def outcomes(root, ledger_stamp, log_stamp, files):
 
 
 def reconcile(root, rows, ledger_stamp):
-    if not any(
-        row["state"] == "received" and row["raw_response"] is None for row in rows
-    ):
+    if not any(row["state"] == "received" and not row["raw"] for row in rows):
         return rows
     files = finished_files(root)
     if not files:

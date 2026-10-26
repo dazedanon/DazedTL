@@ -46,6 +46,7 @@ The runner reports the five slowest Python tests to make runtime regressions vis
 If a Python process is still running a second before the budget ends, it prints every thread's stack, which names the test and line it waits on, and exits.
 Tests use temporary workspaces and controlled API responses; no provider, game folder or credentials are needed.
 
+`node scripts/test.mjs` is the suite entry: it orders and parallelizes the modules and holds the budget, while a plain `python -m unittest discover` runs them serially, about 12 seconds, and ignores it.
 For focused iteration, use `.venv/bin/python -I -B -m unittest discover -s tests -t . -p test_projects.py` or `node --test --test-isolation=none tests/application.test.ts` from the root.
 Run `node scripts/build.mjs` separately for static checks and the renderer build.
 It checks formatting, that stylesheets use the [design tokens](architecture.md#visual-design), that the [generated API contracts](architecture.md#api-changes) are current and that tracked paths fit the [Windows path budget](architecture.md#distribution-and-updates).
@@ -109,6 +110,12 @@ When the checkout's `QA_RULES_VERSION` differs from the release's, the task in r
 The phases run in [qa_upgrade.py](../scripts/qa_upgrade.py), the release's own copy for its tasks when it has one; it needs the release tags (`git fetch --tags`) and the setup's `.venv`, and `--work <empty folder>` keeps its files.
 A failure means a change made saved QA work stale: keep what names a task as it was, or bump `QA_RULES_VERSION` when old reviews are wrong now.
 
+## Ace fixture
+
+[tests/fixtures/ace](../tests/fixtures/ace/regenerate.py) rebuilds the VX Ace fixture with Ruby 3.4 and the RV2JSON commit the Ace port follows, neither of which setup installs.
+The [Ace fixture workflow](../.github/workflows/ace-fixture.yml) does it and fails when the committed files differ.
+It runs on changes to the fixture or the port on `dev`, and by hand, not on every push: `gh workflow run ace-fixture.yml --ref <branch>`, which works once the workflow is on `main`; before that, push a probe branch that adds its name to the workflow's push branches.
+
 ## Test scenarios
 
 `node scripts/scenario.mjs <scenario>` builds a known state to reproduce a bug in: a scratch profile and workspace, a copy of a fixture game and a free stand-in provider, never your own profile or games.
@@ -142,7 +149,7 @@ Run them outside a sandbox such as Claude Code's bwrap: KWin needs a writable `/
 
 `--app` leaves the app running and prints its DevTools and inspector ports and the project helper command; `node scripts/scenario.mjs app --work <dir>` starts it again later.
 `node scripts/scenario.mjs drive --work <dir>` with `text`, `click <accessible name>` (the whole name), `click-prefix <start of a name>` (for names ending in something that varies, such as a History row's date), `call <method> <params>`, `eval` or `shot <file>` drives it, and scripts import the same driver from [scripts/testkit/cdp.mjs](../scripts/testkit/cdp.mjs).
-`node scripts/scenario.mjs provider --work <dir> '<mode>'` changes how the stand-in answers, such as `{"stall":true}`, `{"refuse":["text"]}` or `{"long":["text"]}`, which makes lines holding the text come back as a long English message; [its header](../scripts/testkit/provider.mjs) lists the modes.
+`node scripts/scenario.mjs provider --work <dir> '<mode>'` changes how the stand-in answers: the keys it names replace those of its mode and the others stay, such as the game variant's own replies, so `'{"hold":false}'` releases a held Batch. Such as `{"stall":true}`, `{"refuse":["text"]}` or `{"long":["text"]}`, which makes lines holding the text come back as a long English message; [its header](../scripts/testkit/provider.mjs) lists the modes.
 `node scripts/scenario.mjs clean --work <dir>` stops every process the scenario started and removes its folder.
 `node scripts/scenario.mjs live [--work <dir>] [--upgrade-from <tag>]` runs the [live test](#live-test) in a private KWin of its own.
 Scenario connections reach only the stand-in: the custom connection names it, and the OpenAI preset points at it through `DAZEDTL_TEST_OPENAI_ENDPOINT`, which run workers follow too.
@@ -161,6 +168,7 @@ Notes for translators belong in the [user guide](user-guide.md#publishing-with-g
 
 In a game, `GameUpdate.bat` and `GameUpdate_linux.sh` find `patch.ps1` and `patch.sh` in the `gameupdate` folder beside them, so they work from any working directory.
 Set up also installs `gameupdate/TranslationUpdateCheck.js` as an MV and MZ plugin, the startup check; it records a manually installed update in the same `previous_patch_sha.txt` the scripts use.
+Its text for players is in its plugin parameters, which Set up fills from [messages.json](../backend/dazedtl/engine/util/translation_update_check/messages.json) in the game's target language; a language missing there shows the plugin's English defaults, and a value edited in `plugins.js` is kept.
 Test updater changes with both `patch.ps1` on Windows and `patch.sh` on Linux; these variables help:
 
 | Environment variable | Purpose |
