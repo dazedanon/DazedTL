@@ -895,11 +895,11 @@ class TranslationEngine:
 
     def line_layout(self, root):
         """The Line widths a game's RPG Maker text is fitted to: the ones
-        saved for it, or its engine's stock ones, as text QA reads them."""
-        from util.game_settings import game_wrap_widths
+        saved for it, or its engine's stock ones, as text QA reads them, and
+        the language it is translated into."""
         from util.rpgmaker_rewrap import Layout
 
-        return Layout.from_widths(game_wrap_widths(root))
+        return Layout.of_game(root)
 
     def save_line_widths(self, root, widths):
         """Saves the Line widths an assistant measured for a game, where

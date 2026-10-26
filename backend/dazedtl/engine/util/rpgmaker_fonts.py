@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from util import rpgmaker_rewrap
-from util.source_text import LETTERS
+from util.source_text import letters
 
 # The most characters a layout check lists, the most frequent first.
 LISTED = 20
@@ -174,11 +174,13 @@ def main_font(data: Path) -> tuple[Path | None, str]:
     return (fonts / found.group(1) if found else None), ""
 
 
-def fallback_glyphs(data: str | Path) -> dict[str, Any]:
+def fallback_glyphs(data: str | Path, source: str | None = None) -> dict[str, Any]:
     """The characters the game's text draws that its main font lacks, the
     most frequent first, with how often each appears and the cells the
     fitter counts it as (see :func:`util.rpgmaker_rewrap.visible_width`).
-    Japanese letters are left out, as translation replaces them."""
+    Letters of the *source* language, the active source by default, are left
+    out, as translation replaces them; a target's own, such as the kana and
+    kanji of a Japanese translation of an English game, are listed."""
     data = Path(data)
     path, fallback = main_font(data)
     result: dict[str, Any] = {"fallbackFonts": fallback} if fallback else {}
@@ -194,6 +196,7 @@ def fallback_glyphs(data: str | Path) -> dict[str, Any]:
         return {**result, "unread": "The game's font file is missing."}
     except FontUnreadable as error:
         return {**result, "unread": f"The game's font could not be read: {error}."}
+    source_letter = letters(source)
     counts: Counter[str] = Counter()
     for file in sorted(data.glob("*.json")):
         try:
@@ -206,7 +209,7 @@ def fallback_glyphs(data: str | Path) -> dict[str, Any]:
         for character, count in counts.items()
         if character.isprintable()
         and not character.isspace()
-        and not LETTERS.match(character)
+        and not source_letter.match(character)
         and rpgmaker_rewrap.visible_width(character)
         and not cmap.covers(character)
     ]

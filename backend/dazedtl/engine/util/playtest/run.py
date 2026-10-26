@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from util import rpgmaker_blocks, rpgmaker_fonts, rpgmaker_window
+from util.dazedwrap import breaks_characters, cells
+from util.game_settings import game_source_language, game_target_language
 from util.playtest.checks import GROUP_TEXT_LIMIT, HELP_ROWS, static_checks
 from util.rpgmaker_markers import comment_markers, data_plugins
 from util.rpgmaker_qa_preflight import pointer
@@ -46,7 +48,9 @@ STOP_KINDS = {
 }
 DEFAULT_MINUTES = 15
 LAYOUT_MINUTES = 6
-# English for a layout check's lines, cut to the exact width each checks.
+# Prose for a layout check's lines in the game's target language, cut to the
+# exact width each checks: English, or for a target that breaks between
+# characters its own (see util.dazedwrap.breaks_characters).
 LAYOUT_SAMPLE = (
     "Well, I suppose we should keep moving before the snow buries the road "
     "again. Master, look over there, the old bridge is still standing! We can "
@@ -54,6 +58,18 @@ LAYOUT_SAMPLE = (
     "Nothing about this place makes sense, but I will not give up on finding "
     "a way home for all of us."
 ).split()
+LAYOUT_SAMPLES = {
+    "japanese": (
+        "雪が道を埋める前に、そろそろ先へ進まないとね。ほら、あそこを見て！"
+        "古い橋がまだ残ってる。今夜は村で休んで、山の祠のことを村長に聞いて"
+        "みよう。わからないことばかりだけど、みんなで家に帰る方法をあきらめないよ。"
+    ),
+    "chinese": (
+        "我们得在大雪再次掩埋道路之前继续前进。快看那边，那座旧桥还在！今晚"
+        "可以在村子里休息，再向村长打听山上神社的事。这里的一切都说不通，但我"
+        "绝不会放弃为大家找到回家的路。"
+    ),
+}
 OPENING_SECONDS = 120
 BATTLE_SECONDS = 60
 # Problems an engine scene shows in its standard help or message window,
@@ -588,8 +604,13 @@ def read_widths(value: Any) -> dict[str, int]:
     return widths
 
 
-def layout_lines(characters: int, count: int) -> list[str]:
-    """`count` lines of English prose, each exactly `characters` long."""
+def layout_lines(characters: int, count: int, target: str = "English") -> list[str]:
+    """`count` lines of prose in *target*, each exactly `characters` long:
+    English, or for a target that breaks between characters its own prose,
+    each line exactly `characters` half-width cells (see
+    util.dazedwrap.cells), as Line widths count them."""
+    if breaks_characters(target):
+        return _full_width_lines(characters, count, target)
     lines = []
     for number in range(count):
         words = LAYOUT_SAMPLE[number * 7 % len(LAYOUT_SAMPLE):] + LAYOUT_SAMPLE
@@ -602,6 +623,22 @@ def layout_lines(characters: int, count: int) -> list[str]:
     return lines
 
 
+def _full_width_lines(characters: int, count: int, target: str) -> list[str]:
+    sample = LAYOUT_SAMPLES.get(str(target).strip().casefold(), LAYOUT_SAMPLES["japanese"])
+    lines = []
+    for number in range(count):
+        start = number * 11 % len(sample)
+        text, width = "", 0
+        for character in (sample[start:] + sample) * (characters // len(sample) + 2):
+            if width + cells(character) > characters:
+                break
+            text, width = text + character, width + cells(character)
+        # When a full-width character is too wide for the last cell, a
+        # half-width full stop takes it.
+        lines.append(text + "." * (characters - width))
+    return lines
+
+
 # The characters a width keeps spare on a window's widest line: a width that
 # fits to the last pixel leaves no room for a glyph the game's font lacks,
 # which the fallback font draws at a width that varies by operating system.
@@ -609,11 +646,15 @@ LAYOUT_HEADROOM = 3
 
 
 def layout_probes(
-    data: Path, widths: dict[str, int], glyphs: Iterable[str] = ()
+    data: Path,
+    widths: dict[str, int],
+    glyphs: Iterable[str] = (),
+    target: str = "English",
 ) -> list[dict[str, Any]]:
     """The layout check's stops: a full message window, one under the game's
-    first actor face, and a help window, each at its width. The first also
-    measures *glyphs*, the characters the game's font lacks."""
+    first actor face, and a help window, each at its width, in prose of the
+    game's *target* language. The first also measures *glyphs*, the
+    characters the game's font lacks."""
     rows = int(widths.get("messageRows") or 4)
     face = None
     try:
@@ -638,7 +679,7 @@ def layout_probes(
             "do": "text",
             "window": window,
             "characters": characters,
-            "lines": layout_lines(characters, count),
+            "lines": layout_lines(characters, count, target),
             **({"face": shown} if shown else {}),
         })
     if probes and glyphs:
@@ -674,8 +715,9 @@ def layout(
     log: Callable[[str], None] = print,
     stopped: Callable[[], bool] = lambda: False,
 ) -> dict[str, Any]:
-    """Shows English at each width in the game's own windows, measures it
-    and captures each; writes layout.json to `out` and changes no game file.
+    """Shows prose in the game's target language at each width in the game's
+    own windows, measures it and captures each; writes layout.json to `out`
+    and changes no game file.
 
     It plays only the title, New Game and the opening, and keeps its own
     reports apart from the playtest's. It confirms a setup task's measured
@@ -687,12 +729,15 @@ def layout(
     target.mkdir(parents=True, exist_ok=True)
     log("Reading the game's font")
     try:
-        fallback = rpgmaker_fonts.fallback_glyphs(data)
+        fallback = rpgmaker_fonts.fallback_glyphs(data, _source(game_root))
     except (OSError, ValueError, TypeError, KeyError, IndexError, AttributeError) as error:
         # The widths are the check's job; a game the scan cannot read still gets them.
         fallback = {"unread": f"The game's text could not be read for its font: {error}"}
     probes = layout_probes(
-        data, widths, [glyph["character"] for glyph in fallback.get("glyphs", [])]
+        data,
+        widths,
+        [glyph["character"] for glyph in fallback.get("glyphs", [])],
+        game_target_language(game_root),
     )
     runtime = tour(data, target, probes, LAYOUT_MINUTES, log, stopped, standard=False)
     reached = {stop["id"]: stop for stop in runtime.get("stops", [])}
@@ -729,6 +774,15 @@ def layout(
         json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8"
     )
     return result
+
+
+def _source(game_root: str | Path) -> str | None:
+    """The source language of the game at *game_root*, or None, the active
+    source, when its settings can't be read."""
+    try:
+        return game_source_language(game_root)
+    except (OSError, ValueError):
+        return None
 
 
 def run(

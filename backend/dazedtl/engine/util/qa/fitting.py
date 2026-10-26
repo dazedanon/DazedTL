@@ -14,7 +14,12 @@ from typing import Any
 from util import rpgmaker_blocks as blocks
 from util import rpgmaker_rewrap as rewrap
 from util import rpgmaker_script_strings as script_strings
-from util.game_settings import game_wrap_widths, normalize_wrap_widths
+from util.dazedwrap import breaks_characters
+from util.game_settings import (
+    game_target_language,
+    game_wrap_widths,
+    normalize_wrap_widths,
+)
 from util.qa import mechanical
 from util.qa.schema import _QUOTED_VALUE_RE, ADDED_BATTLER_NAME
 from util.rpgmaker_qa_manifest import (
@@ -31,19 +36,26 @@ def task_layout(
     game_root: str | Path, fit: dict[str, Any] | None = None
 ) -> dict[str, Any]:
     """The Line widths a task fits corrections to. The app passes its own;
-    without them a task reads the game's saved widths."""
+    without them a task reads the game's saved widths. A game translated
+    into a language whose lines break between characters (Chinese,
+    Japanese) names it as the target; other games' layouts stay as they
+    were."""
     fit = fit or {}
-    return {
+    layout: dict[str, Any] = {
         "widths": normalize_wrap_widths(
             fit.get("widths") or game_wrap_widths(game_root)
         ),
     }
+    target = game_target_language(game_root)
+    if breaks_characters(target):
+        layout["target"] = target
+    return layout
 
 
 def _window(record: dict[str, Any], layout: dict[str, Any]) -> rewrap.Box | None:
     """The window a record's text shows in, as DazedTL fits text to it, or
     None when nothing known limits the text."""
-    widths = rewrap.Layout.from_widths(layout["widths"])
+    widths = rewrap.Layout.from_widths(layout["widths"], layout.get("target"))
     code = record.get("event_code")
     field = (record.get("database_entity") or {}).get("field")
     source = str(record.get("source") or "")
@@ -82,6 +94,8 @@ def _box(record: dict[str, Any], layout: dict[str, Any]) -> dict[str, Any] | Non
     if window is None:
         return None
     box: dict[str, Any] = {"width": window.width, "kind": window.kind}
+    if window.target:
+        box["target"] = window.target
     if window.rows:
         box["rows"] = window.rows
     if window.paged:
@@ -112,7 +126,9 @@ def _fit_window(box: dict[str, Any]) -> rewrap.Box:
     """The fitter's window for a box. A correction is never paged: one taller
     than its message window is refused instead."""
     rows = None if box.get("pages") else box.get("rows")
-    return rewrap.Box(box["width"], rows, False, box.get("kind", "message"))
+    return rewrap.Box(
+        box["width"], rows, False, box.get("kind", "message"), target=box.get("target")
+    )
 
 
 def _widens(correction: str, live: str, width: int) -> bool:
@@ -177,7 +193,9 @@ def _as_written(
         correction, quote, script_strings.interpolated(quote, live)
     )
     if box and box.get("wraps"):
-        text = rewrap.wrap_variable(quote + text + quote, box["width"])[1:-1]
+        text = rewrap.wrap_variable(
+            quote + text + quote, box["width"], box.get("target")
+        )[1:-1]
     return text
 
 

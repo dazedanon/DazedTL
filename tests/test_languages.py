@@ -1,6 +1,7 @@
 """The language pair (util/languages): what reads as text left to translate
 in each source language, and what a Japanese source keeps exactly."""
 
+import copy
 import hashlib
 import json
 import re
@@ -9,8 +10,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
+from util import dazedwrap, target_text
 from util import rpgmaker_qa_lint as lint
-from util import target_text
+from util import rpgmaker_rewrap as rewrap
 from util.game_encoding import UnwritableText, writable
 from util.game_settings import (
     GameSettingsError,
@@ -215,3 +217,63 @@ class LanguageTests(unittest.TestCase):
             self.assertTrue(holds_source("テスト了解っ！"))
             with reading_plan({"kind": "batch"}):
                 self.assertTrue(holds_source("テスト了解っ！"))
+
+    def test_a_japanese_translation_breaks_between_characters_and_fits(self):
+        # An English game's Japanese translation has no spaces to break at:
+        # read as English, a message was one word too wide to fit anywhere.
+        message = (
+            "テスト了解っ！　すぐ行くね〜。「それから、あの山の向こうにある"
+            "\\C[2]村\\C[0]まで一緒に行こうよ！」ポーション……持った？"
+        )
+        no_start, no_end = "、。！？」ー〜…っ", "「"
+
+        def check(text, width):
+            rows = text.split("\n")
+            self.assertEqual(re.sub(r"\s", "", text), re.sub(r"\s", "", message))
+            self.assertNotIn(" ", text)
+            for row in rows:
+                self.assertLessEqual(rewrap.visible_width(row), width, rows)
+                self.assertNotIn(row[:1] or "x", no_start, rows)
+                self.assertNotIn(row[-1:] or "x", no_end, rows)
+            self.assertEqual(text.count("\\C[2]村\\C[0]"), 1, rows)
+            return rows
+
+        with reading(ENGLISH):
+            check(rewrap.wrap_message(message, 20, target="Japanese"), 20)
+            # Its full-width space stays where no line breaks.
+            rows = check(rewrap.wrap_message(message, 44, target="Japanese"), 44)
+            self.assertIn("了解っ！　すぐ", rows[0])
+            check(dazedwrap.wrapText(message, 16, target="Japanese"), 16)
+            # A half-width word stays whole, its combining marks too.
+            self.assertIn("cafés", dazedwrap.character_words("カフェcafésです").words)
+            # Apply fits a game's text as its recorded target breaks it.
+            document = [
+                {
+                    "list": [
+                        {"code": 101, "parameters": ["", 0, 0, 2, "Mika"]},
+                        {"code": 401, "parameters": [message]},
+                        {"code": 0, "parameters": []},
+                    ]
+                }
+            ]
+            widths = {"width": 24, "messageRows": 4}
+            self.assertTrue(
+                rewrap.fit_document(
+                    copy.deepcopy(document),
+                    "Map001.json",
+                    rewrap.Layout.from_widths(widths),
+                ).misfits
+            )
+            report = rewrap.fit_document(
+                document, "Map001.json", rewrap.Layout.from_widths(widths, "Japanese")
+            )
+            self.assertEqual(report.misfits, [])
+            fitted = document[0]["list"][1]["parameters"][0]
+            check(re.sub(r"\n+", "\n", fitted), 24)
+            # A text variable's line never starts with "[", which would make
+            # its break a name code.
+            variable = rewrap.wrap_variable(
+                "`あいうえおかきくけこさしすせそ[1]たちつてと`", 10, "Japanese"
+            )
+            self.assertIn("\\n", variable)
+            self.assertNotIn("\\n[", variable)

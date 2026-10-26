@@ -93,7 +93,8 @@ const narrowWidths = [
   "Narrow the Line widths and check the long message pages whole",
   async ({ page, state }) => {
     // Applied at the stock widths, the message is not laid out for 24.
-    if (messageRows(state).every((row) => row.length <= 24))
+    const applied = messageRows(state);
+    if (cells(state, applied).every((width) => width <= 24))
       throw new Error("The message was already narrow before the widths.");
     const snapshot = await page.call("workspace_snapshot");
     const { id } = snapshot.application.project;
@@ -108,31 +109,54 @@ const narrowWidths = [
       values,
     });
     // Saving widths fits the applied text in the background.
-    const words = `${await longMessage(state)}`;
     await until("the long message to page at the narrow widths", async () => {
       const rows = messageRows(state);
-      return rows.length > 2 && rows.every((row) => row.length <= 24) && rows;
+      return (
+        rows.length > 2 &&
+        cells(state, rows).every((width) => width <= 24) &&
+        rows
+      );
     });
-    const shown = messageRows(state).join(" ").replace(/\s+/g, " ");
-    if (!shown.includes(words))
-      throw new Error(`The paged message lost words: ${shown}`);
+    // Every character stays, the spaces between lines aside: English and
+    // Japanese, which breaks between characters, alike.
+    const shown = messageRows(state);
+    const letters = (rows) => rows.join("").replace(/\s+/g, "");
+    if (letters(shown) !== letters(applied))
+      throw new Error(`The paged message lost text: ${shown.join(" | ")}`);
   },
 ];
 
-/** The traveler's message the stand-in's long mode writes, as English words. */
-async function longMessage() {
-  const { longText } = await import("./provider.mjs");
-  return longText.slice(0, 40);
-}
+/** The half-width cells each of `rows` takes, as the checkout's fitter counts
+ * them (util/rpgmaker_rewrap visible_width): a full-width character, such as
+ * kana, kanji or 。, takes two. */
+const cells = (state, rows) =>
+  JSON.parse(
+    execFileSync(
+      state.env?.DAZEDTL_PYTHON || python,
+      [
+        "-X",
+        "utf8",
+        "-c",
+        "import json, sys; sys.path.insert(0, sys.argv[1]); " +
+          "from util.rpgmaker_rewrap import visible_width; " +
+          "print(json.dumps([visible_width(row) for row in json.loads(sys.argv[2])]))",
+        path.join(state.root, "backend/dazedtl/engine"),
+        JSON.stringify(rows),
+      ],
+      { encoding: "utf8" },
+    ),
+  );
 
-/** The rows of the traveler's message, its commands' lines split apart; a
- * paged message holds empty rows that fill its last page. */
-/** The text rows of the traveler's message commands in the game's Map001. */
+/** The text rows of the traveler's message commands in the game's Map001
+ * (旅人, or Traveler in the English game), its commands' lines split apart;
+ * a paged message holds empty rows that fill its last page. */
 function messageRows(state) {
   const map = JSON.parse(
     fs.readFileSync(path.join(state.game, "data/Map001.json"), "utf8"),
   );
-  const event = map.events.find((item) => item?.name === "旅人");
+  const event = map.events.find(
+    (item) => item?.name === "旅人" || item?.name === "Traveler",
+  );
   return event.pages[0].list
     .filter((command) => command.code === 401)
     .flatMap((command) => command.parameters[0].split("\n"));

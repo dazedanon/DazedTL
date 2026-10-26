@@ -288,6 +288,28 @@ for width in (1, 1.5, 2):
     ink.append(int((plain[..., :3].astype(int) - result.array[..., :3]).clip(0).sum()))
 assert ink[0] < ink[1] < ink[2], ink
 
+# A Japanese translation set in a Latin face would draw boxes: it is set in a
+# face the computer has that draws it, here the tests' own subset of Noto Sans
+# CJK, while English keeps the face chosen.
+from util.imagetools import fonts as faces
+
+faces.BUNDLED_FONT_DIR = root / "tests/fixtures/fonts"
+faces.CJK_FACES = ()
+faces._cjk_faces.cache_clear()
+japanese = "テスト了解っ！　すぐ行くね〜"
+face = faces.covering(str(font), japanese)
+assert Path(face).name == "noto-sans-cjk-jp-subset.otf", face
+assert faces.covering(str(font), "Ag") == str(font)
+block = TextBlock(
+    "b",
+    Box(10, 10, 150, 70),
+    source_text="x",
+    target_text=japanese,
+    style=Style.from_dict(dict(shadowed, shadow=None)),
+)
+result = render_entry(plain, ImageEntry("x.png", blocks=[block]))
+assert not result.failures and (result.array != plain).any(), result.notes
+
 # The game's own faces join the font list by their place in the game, so a
 # moved copy keeps them; a link out of the game and an unreadable file do not.
 sys.path.insert(0, str(root / "backend"))

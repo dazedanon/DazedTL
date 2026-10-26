@@ -169,8 +169,9 @@ class Playtest:
         )
 
     def check_layout(self, project_id, widths):
-        """Shows English at the given widths in the game's own windows; it
-        keeps its own report, never the playtest's."""
+        """Shows prose in the game's target language at the given widths in
+        the game's own windows; it keeps its own report, never the
+        playtest's."""
         preview = self.guided.preview(
             project_id, "layout_capture", None, {"widths": widths}
         )

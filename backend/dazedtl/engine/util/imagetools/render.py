@@ -38,6 +38,7 @@ from util.imagetools.fonts import (
     FittedText,
     _load,
     char_offsets,
+    covering,
     fit_text,
     line_ink,
     resolve_font,
@@ -900,8 +901,12 @@ def render_entry(
 
         room = growth_room(source, box, style, boxes, vertical=block.vertical)
         try:
+            # A Chinese or Japanese translation is set in a face that draws
+            # it, when the chosen one would draw boxes.
             font_path = variant(
-                resolve_font(style.font or font_name), style.bold, style.italic
+                covering(resolve_font(style.font or font_name), text),
+                style.bold,
+                style.italic,
             )
         except Exception as exc:
             notes[block.block_id] = Note(block.block_id, False, f"font: {exc}")

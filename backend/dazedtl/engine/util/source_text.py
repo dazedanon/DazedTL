@@ -41,6 +41,12 @@ _WORDS = {
 }
 _MARKUP = re.compile(languages.MARKUP)
 
+
+def letters(language=None) -> re.Pattern[str]:
+    """The pattern of one letter of the source *language*, the active
+    source by default."""
+    return _LETTERS[language or languages.active_source()]
+
 # Furigana: a ruby code \r[base,reading] or \rb[base,reading], in any case and
 # with any run of slashes, and a curly {base|reading} print the reading above
 # the base.

@@ -130,6 +130,7 @@ Run them outside a sandbox such as Claude Code's bwrap: KWin needs a writable `/
 - `batch-waiting`: the database submitted as a Batch that the stand-in holds.
 - `upgraded`: translated by the previous release, then opened in this checkout.
 - `paged`: the `long-dialogue` game, translated and applied, then the Line widths narrowed to 24 characters and two rows; fails unless the game shows the long message laid out for them with every word.
+  With `--game english-source`, the long message is Japanese, laid out between characters.
 - `playtested`: translated, then played by the release playtest, which prints its problems.
 
 `--game` lays [game variants](../tests/fixtures/game-variants) over the MZ fixture game, joined with `+`, such as `--game choice-help+hud+playable`.

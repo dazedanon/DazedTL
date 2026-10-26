@@ -830,7 +830,7 @@ def fitting_layout(plan):
     project = plan["project"]
     if project.get("engine") not in {"MVMZ", "ACE"}:
         return None
-    return Layout.from_widths(project.get("widths"))
+    return Layout.of_game(project["source"], project.get("widths") or {})
 
 
 def fit_output(document, name, layout, areas=None, *, newline=False, resized=False):

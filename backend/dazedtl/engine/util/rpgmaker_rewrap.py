@@ -4,9 +4,13 @@ Translation wraps the text it writes with these functions, and every later
 write of translated text (Apply, QA corrections, new Line widths) fits again
 the lines that no longer fit, so the game's text is measured and wrapped one
 way throughout; new Line widths also lay out again a message fitted to a
-narrower window (see :func:`fit_value`). Line widths count characters;
-on-screen checks, such as QA's captures and the playtest, confirm what a
-count cannot see.
+narrower window (see :func:`fit_value`). Line widths count half-width cells
+(see :func:`util.dazedwrap.cells`), and lines break as the target language
+breaks them: English at its spaces, Chinese and Japanese between characters
+(see :class:`util.dazedwrap.Words`). The target is the game's (see
+:attr:`Layout.target`) or, while a run translates, the run's. On-screen
+checks, such as QA's captures and the playtest, confirm what a count cannot
+see.
 
 Only known display fields are touched, and ``_original`` never is.
 """
@@ -14,7 +18,6 @@ Only known display fields are touched, and ``_original`` never is.
 from __future__ import annotations
 
 import re
-import unicodedata
 from collections import Counter
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
@@ -22,7 +25,12 @@ from itertools import groupby
 from typing import Any, Iterator
 
 from util import dazedwrap
-from util.game_settings import MESSAGE_ROWS_KEY, normalize_wrap_widths
+from util.game_settings import (
+    MESSAGE_ROWS_KEY,
+    game_wrap_widths,
+    load_language_pair,
+    normalize_wrap_widths,
+)
 from util import rpgmaker_blocks as blocks
 from util import rpgmaker_script_strings as script_strings
 from util.rpgmaker_blocks import PER_LINE as _PER_LINE
@@ -114,34 +122,10 @@ def drawn_text(text: str) -> str:
 # Fitting measures each word of a game's text, whose words repeat.
 @lru_cache(maxsize=1 << 16)
 def visible_width(text: str) -> int:
-    """The characters *text* takes on one line of a window (see
-    :func:`drawn_text`), each as wide as :func:`_cells` counts it."""
-    return sum(_cells(character) for character in drawn_text(text))
-
-
-@lru_cache(maxsize=1 << 12)
-def _cells(character: str) -> int:
-    """The half-width cells *character* takes. RPG Maker games draw text in
-    Japanese fonts, which draw full-width characters, and ones of ambiguous
-    width other than letters, full width: MV/MZ's and VX Ace's fonts draw
-    ♥, … and ① so, which captures of Fuuma Chronicle confirmed, while
-    accented, Greek and Cyrillic letters, such as é, stay half width (MV/MZ's
-    M+ and VX Ace's VL Gothic draw them so). Other symbols, such as ❤ and ✓,
-    are glyphs those fonts lack, which the game draws from a fallback font
-    at least full width; Latin-1's, such as ©, the fonts draw half width.
-    Combining marks and format characters, such as the emoji selector after
-    ❤️, take no room of their own."""
-    category = unicodedata.category(character)
-    if category in ("Mn", "Me", "Cf"):
-        return 0
-    width = unicodedata.east_asian_width(character)
-    if (
-        width in "FW"
-        or (width == "A" and not category.startswith("L"))
-        or (width == "N" and category == "So" and ord(character) > 0xFF)
-    ):
-        return 2
-    return 1
+    """The half-width cells *text* takes on one line of a window (see
+    :func:`drawn_text`), each character as :func:`util.dazedwrap.cells`
+    counts it."""
+    return dazedwrap.text_cells(drawn_text(text))
 
 
 def _rendered_lines(text: str) -> list[str]:
@@ -161,13 +145,13 @@ def over_width(text: str, width: int) -> bool:
 
 
 def untranslated(text: str) -> bool:
-    """Whether *text* still holds Japanese (util/source_text), which DazedTL
-    never rewraps."""
+    """Whether *text* still holds source text (util/source_text), which
+    DazedTL never rewraps."""
     return holds_source(text)
 
 
 def _translated(text: str) -> str:
-    """A message's rows without the ones left in Japanese, which keep their
+    """A message's rows without the ones left untranslated, which keep their
     rows (see wrap_message)."""
     return "\n".join(row for row in _rendered_lines(text) if not untranslated(row))
 
@@ -277,11 +261,16 @@ def _spans(kinds: list) -> list[_Span]:
 
 
 def _flow(
-    lines: list[str], per_line: str, width: int, source: str | None, rows: int | None
+    lines: list[str],
+    per_line: str,
+    width: int,
+    source: str | None,
+    rows: int | None,
+    target: str | None,
 ) -> list[str]:
-    """Rows of text wrapped to *width* (see :func:`dazedwrap.wrapShaped`),
-    keeping their blank rows before and after, with the code they repeat on
-    each row on each new row."""
+    """Rows of text in *target* wrapped to *width* (see
+    :func:`dazedwrap.wrapShaped`), keeping their blank rows before and after,
+    with the code they repeat on each row on each new row."""
     if per_line:
         lines = [_PER_LINE.sub("", line) for line in lines]
     content = [index for index, line in enumerate(lines) if line.strip()]
@@ -294,6 +283,7 @@ def _flow(
         source,
         rows,
         measure=visible_width,
+        target=target,
     ).split("\n") + [""] * (len(lines) - last - 1)
     if per_line:
         return [_repeated(per_line, line) if line.strip() else line for line in wrapped]
@@ -374,10 +364,12 @@ def wrap_message(
     source: str | None = None,
     rows: int | None = None,
     every: bool = False,
+    target: str | None = None,
 ) -> str:
     """A message laid out for its window: the body wrapped to *width* like
-    its Japanese *source* (see :func:`dazedwrap.wrapShaped`), paging after a
-    sentence where it needs more than *rows*. A speaker line stays first,
+    its *source* (see :func:`dazedwrap.wrapShaped`), paging after a sentence
+    where it needs more than *rows*, its lines breaking as text in *target*,
+    the run's target by default, breaks them. A speaker line stays first,
     ``<br>`` breaks stay ``<br>``, and codes translation repeats on each
     line, such as centring, are repeated on each new line. Blank rows at the
     end go: a message spread over several commands gets them back from
@@ -392,13 +384,15 @@ def wrap_message(
     prefix, lines, rows, uses_br = _message(text, rows)
     spans = _spans([_row_kind(line) for line in lines])
     if len(spans) == 1 and spans[0].flows:
-        wrapped = _flow(lines, spans[0].per_line, width, _source_body(source), rows)
+        wrapped = _flow(
+            lines, spans[0].per_line, width, _source_body(source), rows, target
+        )
     else:
         wrapped = []
         for span in spans:
             part = lines[span.start : span.end]
             if span.flows and (every or any(visible_width(row) > width for row in part)):
-                wrapped += _flow(part, span.per_line, width, None, rows)
+                wrapped += _flow(part, span.per_line, width, None, rows, target)
             else:
                 wrapped += part
     # A message window pages instead of cutting rows off, so a list keeps one
@@ -412,7 +406,7 @@ def wrap_message(
                 if span.flows and (
                     every or any(visible_width(row) > width for row in item)
                 ):
-                    wrapped += _flow(item, span.per_line, width, None, rows)
+                    wrapped += _flow(item, span.per_line, width, None, rows, target)
                 else:
                     wrapped += item
     result = "\n".join(wrapped)
@@ -429,22 +423,28 @@ _INLINE_ITEM = re.compile(
 )
 
 
-def wrap_help(text: str, width: int, *, source: str | None = None) -> str:
-    """A choice's help laid out for its window like its Japanese *source*
-    (see :func:`wrap_message`). A translation of several rows comes back on
-    one line, so a list the Japanese gives a row an item gets those rows
-    back, as a message's does, even when the window then needs more rows."""
-    wrapped = wrap_message(text, width, source=source)
+def wrap_help(
+    text: str, width: int, *, source: str | None = None, target: str | None = None
+) -> str:
+    """A choice's help laid out for its window like its *source* (see
+    :func:`wrap_message`). A translation of several rows comes back on one
+    line, so a list the source gives a row an item gets those rows back, as a
+    message's does, even when the window then needs more rows."""
+    wrapped = wrap_message(text, width, source=source, target=target)
     items = _item_rows(str(source or "").split("\n"))
     if items < 2 or "\n" in text or _item_rows(wrapped.split("\n")) >= items:
         return wrapped
-    return wrap_message(_INLINE_ITEM.sub("\n", text), width, source=source)
+    return wrap_message(
+        _INLINE_ITEM.sub("\n", text), width, source=source, target=target
+    )
 
 
-def wrap_text(text: str, width: int) -> str:
+def wrap_text(text: str, width: int, target: str | None = None) -> str:
     """Text with no source layout to follow, such as a script's message,
     wrapped to *width* in even lines."""
-    return dazedwrap.wrapShaped(text, int(width), measure=visible_width)
+    return dazedwrap.wrapShaped(
+        text, int(width), measure=visible_width, target=target
+    )
 
 
 def help_rows(source: str | None) -> int:
@@ -457,35 +457,36 @@ def wrap_lines(
     text: str,
     width: int,
     rows: int | None = None,
+    target: str | None = None,
 ) -> str:
     """Database text, whose line breaks are authored, fitted as the database
     pass fits it (see :func:`dazedwrap.wrapLines`): ``\\n`` breaks, or
     ``<br>`` in text without one."""
     if "<br>" in text and "\n" not in text:
         return dazedwrap.wrapLines(
-            text.replace("<br>", "\n"), width, rows, measure=visible_width
+            text.replace("<br>", "\n"), width, rows, measure=visible_width, target=target
         ).replace("\n", "<br>")
-    return dazedwrap.wrapLines(text, width, rows, measure=visible_width)
+    return dazedwrap.wrapLines(text, width, rows, measure=visible_width, target=target)
 
 
-def wrap_note(note: str, width: int) -> str:
+def wrap_note(note: str, width: int, target: str | None = None) -> str:
     """A database note with each translated prose tag body wider than
     *width* fitted to it; the rest of the note, such as other tags or a
     body left in Japanese, stays exact."""
     return _replace_spans(
         note,
         [
-            (start, end, _fit_note_body(body, width, structured))
+            (start, end, _fit_note_body(body, width, structured, target))
             for start, end, body, structured in _note_bodies(note)
             if not untranslated(body) and over_width(body, width)
         ],
     )
 
 
-def _fit_note_body(body: str, width: int, structured: bool) -> str:
+def _fit_note_body(body: str, width: int, structured: bool, target: str | None) -> str:
     if structured:
-        return dazedwrap.wrapSGDesc(body, width)
-    return wrap_lines(body, width)
+        return dazedwrap.wrapSGDesc(body, width, target)
+    return wrap_lines(body, width, target=target)
 
 
 def _note_bodies(note: str) -> Iterator[tuple[int, int, str, bool]]:
@@ -551,9 +552,12 @@ def _script_width(text: str) -> int:
 # character no game text has, outside the interpolations' private use area.
 _BEFORE_NAME_CODE = re.compile(rf"(?<=\S)\s+(?={script_strings.NAME_CODE})")
 _KEPT_SPACE = "\U000f0000"
+# Text that breaks between characters keeps such a word, or the space held
+# before it, on the line before.
+_NAME_CODE_START = re.compile(rf"{_KEPT_SPACE}|{script_strings.NAME_CODE}")
 
 
-def wrap_script(text: str, width: int) -> str:
+def wrap_script(text: str, width: int, target: str | None = None) -> str:
     """A text variable's text with its interpolations held (see
     rpgmaker_script_strings.hold), wrapped to *width* in even lines as
     :func:`wrap_text` wraps text, each interpolation as wide as a
@@ -563,6 +567,8 @@ def wrap_script(text: str, width: int) -> str:
         _BEFORE_NAME_CODE.sub(_KEPT_SPACE, text),
         int(width),
         measure=lambda word: _script_width(word.replace(_KEPT_SPACE, " ")),
+        target=target,
+        glue=_NAME_CODE_START,
     )
     return wrapped.replace(_KEPT_SPACE, " ")
 
@@ -573,7 +579,7 @@ def _script_text(value: str) -> str | None:
     return None if held is None else script_strings.HELD.sub("x" * _HELD_WIDTH, held[0])
 
 
-def wrap_variable(value: str, width: int) -> str:
+def wrap_variable(value: str, width: int, target: str | None = None) -> str:
     """A text variable's operand (122), the text between its quote marks
     with ``\\n`` escapes as its line breaks, wrapped to *width* when a line
     is wider. Its script stays as it runs: an interpolation such as
@@ -582,7 +588,9 @@ def wrap_variable(value: str, width: int) -> str:
     if held is None or max(map(_script_width, held[0].split("\n"))) <= int(width):
         return value
     body, kept, (start, end) = held
-    wrapped = script_strings.release(wrap_script(body.replace("\n", " "), width), kept)
+    wrapped = script_strings.release(
+        wrap_script(dazedwrap.one_line(body, target), width, target), kept
+    )
     return value[:start] + wrapped.replace("\n", r"\n") + value[end:]
 
 
@@ -591,16 +599,21 @@ def wrap_variable(value: str, width: int) -> str:
 
 @dataclass(frozen=True)
 class Layout:
-    """A game's Line widths."""
+    """A game's Line widths, and the language its text is translated into,
+    whose lines break at spaces or between characters (see
+    :func:`util.dazedwrap.breaks_characters`); None is the run's."""
 
     width: int
     face_width: int
     list_width: int
     note_width: int
     message_rows: int
+    target: str | None = None
 
     @classmethod
-    def from_widths(cls, widths: dict[str, Any] | None) -> Layout:
+    def from_widths(
+        cls, widths: dict[str, Any] | None, target: str | None = None
+    ) -> Layout:
         values = normalize_wrap_widths(widths or {})
         return cls(
             values["width"],
@@ -608,6 +621,22 @@ class Layout:
             values["listWidth"],
             values["noteWidth"],
             values[MESSAGE_ROWS_KEY],
+            target,
+        )
+
+    @classmethod
+    def of_game(cls, root, widths: dict[str, Any] | None = None) -> Layout:
+        """The Line widths the game at *root* is fitted to, its saved ones
+        unless *widths* are given, and the target its language pair records
+        (see util.game_settings.load_language_pair), or None, the run's, for a
+        game without one or whose settings can't be read."""
+        try:
+            pair = load_language_pair(root)
+        except (OSError, ValueError):
+            pair = None
+        return cls.from_widths(
+            game_wrap_widths(root) if widths is None else widths,
+            pair["target"] if pair else None,
         )
 
 
@@ -616,20 +645,25 @@ class Box:
     """The window a value shows in: its line width, the rows it shows, and
     whether text that needs more rows goes on to a new page (a message) or
     is cut off (a window of fixed height). ``rows`` None is unlimited, as in
-    scrolling text. ``kind`` names how the value wraps, and ``area`` the Line
-    widths entry its width comes from."""
+    scrolling text. ``kind`` names how the value wraps, ``area`` the Line
+    widths entry its width comes from, and ``target`` the language its lines
+    break as (see :class:`Layout`)."""
 
     width: int
     rows: int | None
     paged: bool
     kind: str  # "message", "scroll", "lines", "note" or "variable"
     area: str | None = None
+    target: str | None = None
 
 
 def message_box(layout: Layout, *, face: bool = False) -> Box:
     if face:
-        return Box(layout.face_width, layout.message_rows, True, "message", "faceWidth")
-    return Box(layout.width, layout.message_rows, True, "message", "width")
+        return Box(
+            layout.face_width, layout.message_rows, True, "message", "faceWidth",
+            layout.target,
+        )
+    return Box(layout.width, layout.message_rows, True, "message", "width", layout.target)
 
 
 def choice_help_box(layout: Layout, *, face: bool = False) -> Box:
@@ -638,37 +672,39 @@ def choice_help_box(layout: Layout, *, face: bool = False) -> Box:
     choice (see :func:`util.rpgmaker_blocks.help_face`). Rows the window cannot show go on
     to a page the player never sees, so the help is never paged."""
     message = message_box(layout, face=face)
-    return Box(message.width, message.rows, False, "message", message.area)
+    return Box(message.width, message.rows, False, "message", message.area, layout.target)
 
 
 def scrolling_box(layout: Layout) -> Box:
     """Scroll Text, whose rows the author lays out, often as a list such as
     credits: a row too wide wraps onto rows of its own."""
-    return Box(layout.width, None, False, "scroll", "width")
+    return Box(layout.width, None, False, "scroll", "width", layout.target)
 
 
 def help_box(layout: Layout, source: str | None, *, dialogue: bool = False) -> Box:
     """A help or status window: two rows, or as many as the source spends.
     A profile change (325) wraps to the dialogue width, as translation does."""
     if dialogue:
-        return Box(layout.width, help_rows(source), False, "lines", "width")
-    return Box(layout.list_width, help_rows(source), False, "lines", "listWidth")
+        return Box(layout.width, help_rows(source), False, "lines", "width", layout.target)
+    return Box(
+        layout.list_width, help_rows(source), False, "lines", "listWidth", layout.target
+    )
 
 
 def nickname_box(layout: Layout) -> Box:
-    return Box(layout.list_width, 1, False, "lines", "listWidth")
+    return Box(layout.list_width, 1, False, "lines", "listWidth", layout.target)
 
 
 def note_box(layout: Layout) -> Box:
     """The plugin windows that draw a note's prose tags. Their heights vary,
     so only their width is known."""
-    return Box(layout.note_width, None, False, "note", "noteWidth")
+    return Box(layout.note_width, None, False, "note", "noteWidth", layout.target)
 
 
 def variable_box(layout: Layout) -> Box:
     """A text variable (122), whose script string translation wraps to the
     list width (see :func:`wrap_variable`)."""
-    return Box(layout.list_width, None, False, "variable", "listWidth")
+    return Box(layout.list_width, None, False, "variable", "listWidth", layout.target)
 
 
 def _rows(text: str) -> list[str]:
@@ -707,8 +743,12 @@ def _widened(text: str, box: Box, source: str | None) -> str:
         laid.pop()
     laid = "\n".join(laid)
     held = _rows(text)
-    sizes = [visible_width(word) for word in " ".join(held).split()]
-    if len(held) < 2 or dazedwrap.rows_needed(sizes, box.width) >= len(held):
+    words = dazedwrap.measure_words("\n".join(held), visible_width, box.target)
+
+    def needed(width: int) -> int:
+        return dazedwrap.rows_needed(words.sizes, width, words.gaps)
+
+    if len(held) < 2 or needed(box.width) >= len(held):
         return text
     readings = [laid]
     # Only a message of more rows than its window shows was paged.
@@ -719,7 +759,9 @@ def _widened(text: str, box: Box, source: str | None) -> str:
             readings.insert(0, unpaged)
     wider: dict[str, str] = {}
     for read in readings:
-        wider[read] = wrap_message(read, box.width, source=source, rows=rows, every=True)
+        wider[read] = wrap_message(
+            read, box.width, source=source, rows=rows, every=True, target=box.target
+        )
         # Laid out for this width already, its blank rows read as paragraph
         # breaks or not.
         if wider[read] == laid:
@@ -730,9 +772,14 @@ def _widened(text: str, box: Box, source: str | None) -> str:
         if len(_rows(wider[read])) >= len(held):
             continue
         for width in range(widest_line(text), box.width):
-            if flowing and dazedwrap.rows_needed(sizes, width) < len(held):
+            if flowing and needed(width) < len(held):
                 break
-            if wrap_message(read, width, source=source, rows=rows, every=True) == laid:
+            if (
+                wrap_message(
+                    read, width, source=source, rows=rows, every=True, target=box.target
+                )
+                == laid
+            ):
                 return wider[read]
     return text
 
@@ -751,9 +798,9 @@ def fit_value(
     if not isinstance(text, str) or not text.strip():
         return text
     if box.kind == "note":
-        return wrap_note(text, box.width)
+        return wrap_note(text, box.width, box.target)
     if box.kind == "variable":
-        return wrap_variable(text, box.width)
+        return wrap_variable(text, box.width, box.target)
     rows_apart = box.kind in ("message", "scroll")
     if not over_width(_translated(text) if rows_apart else text, box.width):
         if resized and box.kind == "message":
@@ -761,13 +808,17 @@ def fit_value(
         return text
     if box.kind == "scroll":
         return "\n".join(
-            row if untranslated(row) else wrap_lines(row, box.width)
+            row if untranslated(row) else wrap_lines(row, box.width, target=box.target)
             for row in text.split("\n")
         )
     if box.kind == "lines":
-        return wrap_lines(text, box.width, box.rows)
+        return wrap_lines(text, box.width, box.rows, box.target)
     return wrap_message(
-        text, box.width, source=source, rows=box.rows if box.paged else None
+        text,
+        box.width,
+        source=source,
+        rows=box.rows if box.paged else None,
+        target=box.target,
     )
 
 
@@ -1006,7 +1057,7 @@ def _command_slots(commands: list, pointer: str, layout: Layout) -> Iterator[_Sl
                 params = commands[first]["parameters"]
                 shown = box
                 if block.kind == blocks.MESSAGE and _MARKER.match(params[0]):
-                    shown = Box(MARKED_WIDTH, box.rows, True, "message")
+                    shown = replace(box, width=MARKED_WIDTH, area=None)
                 run = tuple(commands[at]["parameters"] for at in rows)
                 slots.append((first, _Slot(
                     f"{pointer}/{first}/parameters/0", shown, source, params, 0, run,

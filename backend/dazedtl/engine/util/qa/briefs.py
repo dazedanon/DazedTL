@@ -434,13 +434,16 @@ def _render_screen_item(
 
 
 def _render_boxes(places: list[dict] | None) -> list[str]:
-    """The boxes an item's text shows in, such as 50 chars x 4 rows."""
+    """The boxes an item's text shows in, such as 50 chars x 4 rows; for a
+    target whose lines break between characters, in half-width cells, which
+    a full-width character takes two of."""
     shown = []
     for place in places or []:
         box = place.get("box") or {}
+        width = "half-width cells" if box.get("target") else "chars"
         size = " x ".join(
             f"{box[key]} {unit}"
-            for key, unit in (("width", "chars"), ("rows", "rows"))
+            for key, unit in (("width", width), ("rows", "rows"))
             if box.get(key)
         )
         text = size + (", rewrapped" if box.get("wraps") else "")

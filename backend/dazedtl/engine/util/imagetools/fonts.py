@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import math
 import os
+import unicodedata
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
 from PIL import ImageFont
 
+from util import dazedwrap
 from util.paths import PROJECT_ROOT
 
 BUNDLED_FONT_DIR = PROJECT_ROOT / "fonts"
@@ -54,6 +56,37 @@ _BOLD_CANDIDATES = (
     "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/google-noto/NotoSans-Bold.ttf",
+)
+
+# Faces that draw Japanese and Chinese, which a Chinese or Japanese
+# translation is set in when its face lacks them (see covering): the ones
+# Windows and macOS install with every language, then the ones Linux
+# distributions ship, by file name in the system's font folders.
+CJK_FACES = (
+    "YuGothM.ttc",
+    "YuGothR.ttc",
+    "meiryo.ttc",
+    "msgothic.ttc",
+    "msyh.ttc",
+    "msjh.ttc",
+    "simsun.ttc",
+    "ヒラギノ角ゴシック W3.ttc",
+    "Hiragino Sans GB.ttc",
+    "NotoSansCJK-Regular.ttc",
+    "NotoSansCJKjp-Regular.otf",
+    "NotoSansCJKsc-Regular.otf",
+    "NotoSansJP-Regular.otf",
+    "NotoSansJP-Regular.ttf",
+    "SourceHanSans-Regular.ttc",
+    "SourceHanSansJP-Regular.otf",
+    "wqy-zenhei.ttc",
+    "wqy-microhei.ttc",
+    "ipagp.ttf",
+    "ipag.ttf",
+    "VL-PGothic-Regular.ttf",
+    "VL-Gothic-Regular.ttf",
+    "TakaoPGothic.ttf",
+    "DroidSansFallbackFull.ttf",
 )
 
 # Basenames tried against available_fonts() when the absolute candidates miss.
@@ -312,6 +345,66 @@ def resolve_font(name: str | None, bold: bool = False) -> str:
     raise FileNotFoundError(f"Font not found: {name}")
 
 
+def _cjk_letter(character: str) -> bool:
+    """A Chinese or Japanese letter: kana, kanji and the like, which East
+    Asian fonts draw full width."""
+    return unicodedata.east_asian_width(character) in "WF" and unicodedata.category(
+        character
+    ).startswith("L")
+
+
+@lru_cache(maxsize=64)
+def _cmap(font_path: str):
+    """The face's character map, or None when it can't be read (see
+    util.rpgmaker_fonts.Cmap)."""
+    from util.rpgmaker_fonts import Cmap, FontUnreadable
+
+    try:
+        return Cmap(Path(font_path).read_bytes())
+    except (OSError, FontUnreadable):
+        return None
+
+
+def _draws(font_path: str, characters) -> bool:
+    """Whether the face draws every one of *characters*; a face whose
+    character map can't be read is taken to."""
+    cmap = _cmap(font_path)
+    return cmap is None or all(cmap.covers(character) for character in characters)
+
+
+@lru_cache(maxsize=1)
+def _cjk_faces() -> tuple[str, ...]:
+    """The faces this computer has that draw Chinese and Japanese, in the
+    order of :data:`CJK_FACES`, then the bundled ones."""
+    fonts = available_fonts()
+    by_name: dict[str, Path] = {}
+    for path in fonts:
+        by_name.setdefault(path.name.casefold(), path)
+    named = [str(by_name[name.casefold()]) for name in CJK_FACES if name.casefold() in by_name]
+    bundled = [
+        str(path) for path in fonts if path.parent == BUNDLED_FONT_DIR and str(path) not in named
+    ]
+    return tuple(named + bundled)
+
+
+@lru_cache(maxsize=1024)
+def covering(font_path: str, text: str) -> str:
+    """The face *text* is set in: *font_path*, unless the text holds Chinese
+    or Japanese letters it lacks, as a Latin face does, which would draw them
+    as boxes. Then it is the first face this computer has that draws Chinese
+    and Japanese (see :data:`CJK_FACES`) and every character of the text,
+    or *font_path* when none does: a face chosen in the Look panel or
+    IMGTL_FONT can draw it then."""
+    wide = {character for character in text if _cjk_letter(character)}
+    if not wide or _draws(font_path, wide):
+        return font_path
+    needed = {character for character in text if not character.isspace()}
+    for path in _cjk_faces():
+        if _cmap(path) is not None and _draws(path, needed):
+            return path
+    return font_path
+
+
 @lru_cache(maxsize=256)
 def _load(font_path: str, size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(font_path, size)
@@ -412,12 +505,36 @@ def text_budget(
 def _wrap(
     text: str, font_path: str, size: int, max_width: int, step: float = 0.0
 ) -> list[str]:
-    """Greedy wrap. Breaks on spaces for Latin, per character for CJK runs."""
+    """Greedy wrap. Breaks on spaces for Latin; text mostly in Chinese or
+    Japanese breaks between characters by the line-break rules translated
+    game text follows (see util.dazedwrap.Words), and other text without
+    spaces per character."""
     font = _load(font_path, size)
 
     def width_of(candidate: str) -> float:
         left, _, right, _ = line_ink(font, candidate, step)
         return right - left
+
+    wide = sum(map(_cjk_letter, text))
+    if wide and wide >= sum(character.isascii() and character.isalpha() for character in text):
+        pieces = dazedwrap.character_words(text)
+        lines = []
+        current = ""
+        for index, piece in enumerate(pieces.words):
+            # A piece wider than the room, such as a long number, breaks
+            # per character, as text without spaces does.
+            parts = [piece] if width_of(piece) <= max_width else list(piece)
+            for number, part in enumerate(parts):
+                space = pieces.spaces[index] if current and not number else ""
+                trial = current + space + part
+                if current and width_of(trial) > max_width:
+                    lines.append(current)
+                    current = part
+                else:
+                    current = trial
+        if current:
+            lines.append(current)
+        return lines
 
     words = text.split(" ")
     if len(words) > 1:

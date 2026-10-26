@@ -64,7 +64,7 @@ def combine_field_patterns(enabled: frozenset[str]) -> re.Pattern[str] | None:
 
 
 def _visible_length(text: str) -> int:
-    return dazedwrap._get_visible_length(text)
+    return dazedwrap.max_line_visible_length(text)
 
 
 def line_needs_wrap(text: str, width: int, *, min_visible: int = 0) -> bool:
@@ -86,8 +86,9 @@ def line_needs_wrap(text: str, width: int, *, min_visible: int = 0) -> bool:
 def wrap_line_text(text: str, width: int) -> str:
     """Word-wrap one ``text`` value, preserving WOLF inline codes.
 
-    Width is measured with :func:`util.dazedwrap._get_visible_length`, so
-    ``\\c[N]``, ``\\f[N]``, and similar codes do not consume box width.
+    Width is measured as :func:`util.dazedwrap.wrapText` measures it, so
+    ``\\c[N]``, ``\\f[N]``, and similar codes do not consume box width, and
+    a Chinese or Japanese target breaks between characters.
     """
     if not isinstance(text, str) or not text.strip() or width <= 0:
         return text

@@ -16,6 +16,7 @@ sys.path.insert(0, str(root / "backend/dazedtl/engine"))
 sys.path.insert(0, str(root / "backend"))
 
 from util import rpgmaker_qa as qa
+from util.dazedwrap import text_cells
 from util.playtest import fixes
 from util.playtest.checks import static_checks
 from util.playtest.run import (
@@ -29,6 +30,7 @@ from util.playtest.run import (
 )
 from util.rpgmaker_fonts import fallback_glyphs
 from util.rpgmaker_screens import label_fits
+from util.source_text import holds_source
 
 game = temporary / "game"
 data = game / "data"
@@ -674,6 +676,11 @@ assert probes["layout-faceWidth"]["face"] == ["face02", 3], probes
 assert not any(
     line.endswith(" ") for probe in probes.values() for line in probe["lines"]
 )
+# A game translated into Japanese shows Japanese as wide as the width counts,
+# full-width characters as two cells: English proved nothing about it.
+japanese = layout_probes(layout_data, widths, target="Japanese")[0]["lines"]
+assert [text_cells(line) for line in japanese] == [55] * 4, japanese
+assert all(holds_source(line) for line in japanese), japanese
 for wrong in ({"width": "55"}, {"width": 0}, {"messageRows": 4}):
     try:
         read_widths(wrong)
@@ -779,6 +786,9 @@ assert fallback == {
     "font": "fonts/main.woff",
     "glyphs": [{"character": "❤", "code": "U+2764", "count": 3, "counted": 2}],
 }, fallback
+# Translated from English, the game's Japanese is what the font must draw.
+english = fallback_glyphs(fonted / "data", "English")["glyphs"]
+assert {"あ", "り", "が", "と", "う"} <= {row["character"] for row in english}, english
 probes = layout_probes(layout_data, widths, ["❤"])
 assert [probe.get("glyphs") for probe in probes] == [["❤"], None, None], probes
 (fonted / "fonts" / "main.woff").write_bytes(b"wOF2" + font[4:])

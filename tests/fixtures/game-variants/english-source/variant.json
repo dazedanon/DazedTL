@@ -1,11 +1,92 @@
 {
-  "description": "An English game to translate into Japanese: the MZ game's maps, database, title and TitleMessage plugin in English, its .dazedtl/settings.json naming English as the source and Japanese as the target, and the stand-in answering in Japanese. Three replies hold what output cleanup must keep for a Japanese target: っ, 。, 「」, 【】, ！, 〜 and the source's abbreviation HP.",
+  "description": "An English game to translate into Japanese: the MZ game's maps, database, title and TitleMessage plugin in English, its .dazedtl/settings.json naming English as the source and Japanese as the target, and the stand-in answering in Japanese. Three replies hold what output cleanup must keep for a Japanese target: っ, 。, 「」, 【】, ！, 〜, a full-width space and the source's abbreviation HP. A traveler's long story (long story) comes back as a long Japanese message with no spaces to break at, which fitting lays out between characters.",
   "provider": {
     "target": "Japanese",
     "reply": {
       "I'm counting on you.": "テスト「頼んだぞっ。」【村長】",
       "Restores 50 HP.": "テストHPを50回復するッ。",
-      "Understood!": "テスト了解っ！すぐ行くね〜"
+      "Understood!": "テスト了解っ！　すぐ行くね〜",
+      "long story": "テスト森を抜ける道は長く、夜はとても冷える。だから暖かい服と食べ物をたくさん持っていくんだぞ。道から外れず、一人で歩き回らないこと！　古い祠に着いたら、すぐに村へ知らせを送ってくれ。「わかったな？」"
     }
-  }
+  },
+  "events": [
+    {
+      "name": "Traveler",
+      "note": "",
+      "x": 6,
+      "y": 8,
+      "pages": [
+        {
+          "conditions": {
+            "actorId": 1,
+            "actorValid": false,
+            "itemId": 1,
+            "itemValid": false,
+            "selfSwitchCh": "A",
+            "selfSwitchValid": false,
+            "switch1Id": 1,
+            "switch1Valid": false,
+            "switch2Id": 1,
+            "switch2Valid": false,
+            "variableId": 1,
+            "variableValid": false,
+            "variableValue": 0
+          },
+          "directionFix": false,
+          "image": {
+            "characterIndex": 0,
+            "characterName": "",
+            "direction": 2,
+            "pattern": 0,
+            "tileId": 0
+          },
+          "list": [
+            {
+              "code": 101,
+              "indent": 0,
+              "parameters": [
+                "",
+                0,
+                0,
+                2,
+                "Traveler"
+              ]
+            },
+            {
+              "code": 401,
+              "indent": 0,
+              "parameters": [
+                "Let me tell you a long story. The road through the forest is long and the nights are cold, so pack warm clothes and plenty of food. Keep to the trail, never wander off alone, and send word to the village as soon as you reach the old shrine."
+              ]
+            },
+            {
+              "code": 0,
+              "indent": 0,
+              "parameters": []
+            }
+          ],
+          "moveFrequency": 3,
+          "moveRoute": {
+            "list": [
+              {
+                "code": 0,
+                "indent": 0,
+                "parameters": []
+              }
+            ],
+            "repeat": true,
+            "skippable": false,
+            "wait": false
+          },
+          "moveSpeed": 3,
+          "moveType": 0,
+          "priorityType": 1,
+          "stepAnime": false,
+          "through": false,
+          "trigger": 0,
+          "walkAnime": true
+        }
+      ]
+    }
+  ]
 }
