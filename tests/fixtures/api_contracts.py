@@ -161,7 +161,11 @@ try:
         )
     ), "The moved project's Guided workspace changed."
     assert [p["id"] for p in after["application"]["recent"]] == [project_id]
-    call("locate_project", {"project_id": project_id, "source": str(moved)})
+    # Renamed while the project points at it, Find game folder opens it where
+    # it is now, though the project's own folder is gone.
+    found = moved.rename(game / "Renamed")
+    located = call("locate_project", {"project_id": project_id, "source": str(found)})
+    assert located["project"]["source"] == str(found), located["project"]
     # Runs saved by earlier versions keep estimate fields the contract dropped.
     from dazedtl.api import views
     from dazedtl.api.contracts.validation import check_response

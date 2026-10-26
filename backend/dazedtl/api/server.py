@@ -583,9 +583,10 @@ class Application:
     def locate_project(self, project_id, source):
         """Find game folder: the project continues with its game at source."""
         root = self.game_folder(source)
-        self.locations.find(project_id, root)
-        self.sync_game_update()
-        return self.state()
+        with reading_game(root):
+            self.locations.find(project_id, root)
+            self.sync_game_update()
+            return self.state()
 
     def remove_project(self, project_id):
         self.projects.remove(project_id)
@@ -678,10 +679,14 @@ class Application:
 
     def reading(self, params):
         """Reads text in the source language of the request's game, so the
-        engine's readers it calls follow that game's language."""
+        engine's readers it calls follow that game's language. A project
+        whose game folder is gone has no text to read until Find game folder
+        finds it, which reads the found game itself."""
         try:
             project = self.projects.get(params["project_id"])
         except KeyError, TypeError, ValueError:
+            return nullcontext()
+        if not Path(project["source"]).is_dir():
             return nullcontext()
         return reading_game(project["source"])
 
