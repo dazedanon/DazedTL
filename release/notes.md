@@ -16,3 +16,4 @@
 - **Set up:** saving a newly opened game's original files is about five times faster when most of the game is images and audio, as in most games.
 - **Set up:** **Change…** under Languages says at once that a game with work keeps its languages, instead of only after **Save languages**.
 - **Project:** a recent game whose folder is gone, such as on a disconnected drive, now reads **Game folder unavailable** in the project menu and under Recent projects, not only once opened.
+- **Footers:** a result that wraps beside its button, such as a two-line error, now ends right at the button instead of leaving a gap before it.
