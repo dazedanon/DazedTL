@@ -577,6 +577,7 @@ def recovered_text(root, relative):
 
     if not game_git_set_up(root):
         return None
+
     def trailer(key):
         return f"%(trailers:key={key},valueonly,separator=)"
 
@@ -584,14 +585,17 @@ def recovered_text(root, relative):
         root,
         "log",
         "-1",
-        "--format=%H %x00" + "%x00".join(
+        "--format=%H %x00"
+        + "%x00".join(
             trailer(key) for key in (RECOVERED_TRAILER, STAGE_TRAILER, ACTION_TRAILER)
         ),
         "--",
         relative,
     )
     commit, _, rest = found.stdout.strip().partition(" \0")
-    mark, stage, action = (value.strip() for value in (rest.split("\0") + ["", "", ""])[:3])
+    mark, stage, action = (
+        value.strip() for value in (rest.split("\0") + ["", "", ""])[:3]
+    )
     if not commit or mark != "true" or stage != "Context" or action:
         return None
     if _git(root, "status", "--porcelain", "--", relative).stdout.strip():
