@@ -21,17 +21,19 @@ from util.qa.schema import (
     DEFAULT_SCREEN_CHAR_BUDGET,
     DEFAULT_SCREEN_ITEM_LIMIT,
     FINISHED_STATUSES,
+    PREPARED_AT,
     TASK_SCHEMA,
     QAResultError,
     _canonical_bytes,
     _sha256,
 )
+from util.qa.selection import context_digests
 from util.qa.storage import (
     _atomic_write_json,
     _load_task,
     _read_json,
-    _slug,
     _task_lock,
+    game_tasks,
     located,
     read_task,
 )
@@ -97,9 +99,16 @@ def rebuild_deep_from_screen(
         if output_root is not None
         else source.parents[2]
     )
+    # Beside its source, in the folder of its game's tasks, whatever names it.
+    storage_key = (
+        source.parents[1].name if destination_root == source.parents[2] else None
+    )
     tasks = (
-        destination_root
-        / _slug(Path(source_task["game_root"]).expanduser().resolve().name)
+        game_tasks(
+            destination_root,
+            Path(source_task["game_root"]).expanduser().resolve(),
+            storage_key,
+        )
         / source_task["focus"]
     )
     before = {path.name for path in tasks.iterdir()} if tasks.is_dir() else set()
@@ -125,6 +134,7 @@ def rebuild_deep_from_screen(
         # Its screen packed as the source's, whose hints may have been
         # longer or shorter.
         screen_groups=groups,
+        storage_key=storage_key,
     )
     if rebuilt == source:
         raise ValueError("The source task already uses the current QA rules")
@@ -252,12 +262,17 @@ def _replay_screen(
     the source's workers declined are declined alike (see _source_declines),
     and set aside again as the source set them aside."""
     source_rows = source_checkpoint["screen"]["bundles"]
-    _rebuilt_root, rebuilt_task, rebuilt_checkpoint = _load_task(rebuilt)
+    _rebuilt_root, _rebuilt_task, rebuilt_checkpoint = _load_task(rebuilt)
     if _inventory_text(_read_json(rebuilt / "inventory.json")) != _inventory_text(
         _read_json(source / "inventory.json")
     ):
         raise ValueError("Cannot reuse screening after the game's text changed")
-    if rebuilt_task.get("context_sha256") != source_task.get("context_sha256"):
+    # A source prepared by a version that named the game folder in the
+    # context names the folder it was prepared in.
+    prepared = (source_task.get(PREPARED_AT) or source_task)["game_root"]
+    if source_task.get("context_sha256") not in context_digests(
+        _read_json(rebuilt / "context.json"), prepared
+    ):
         raise ValueError("Cannot reuse screening after QA's context changed")
     rebuilt_summaries = {
         row["id"]: (_screen_digest(_read_json(Path(row["path"]))), int(row["item_count"]))

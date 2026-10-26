@@ -88,6 +88,7 @@ class FullEstimate:
                     "files": names,
                     "fingerprint": inputs["fingerprint"],
                     "shape": inputs["shape"],
+                    "legacy": inputs["legacy"],
                     "configuration": inputs["configuration"],
                 }
             )
@@ -106,17 +107,23 @@ class FullEstimate:
     def basis(self, tasks, result=None):
         """The basis of ``tasks`` or, with ``result``, of the saved estimate.
         One a listed release saved for these tasks reads as made under
-        version 1."""
+        version 1. Versions up to 2.34.3 bound each task to the game folder
+        (GuidedRuns.saved); one they saved for these tasks reads as theirs."""
         current = {
             key: self.fingerprint(tasks, key) for key in ("fingerprint", "shape")
         }
         if result is None:
             return Basis(ESTIMATE_VERSION, {}, current["fingerprint"], current["shape"])
+        located = [{**task, **(task.get("legacy") or {})} for task in tasks]
         saved, version = {}, ESTIMATE_VERSION
         for key, value in current.items():
             saved[key] = result.get(key)
-            if saved[key] != value and saved[key] in {
-                self.fingerprint(tasks, key, old) for old in RELEASES
+            if saved[key] == value:
+                continue
+            if saved[key] == self.fingerprint(located, key):
+                saved[key] = value
+            elif saved[key] in {
+                self.fingerprint(located, key, old) for old in RELEASES
             }:
                 saved[key], version = value, 1
         return Basis(version, {}, saved["fingerprint"], saved["shape"])

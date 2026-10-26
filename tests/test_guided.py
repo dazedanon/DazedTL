@@ -778,6 +778,55 @@ class GuidedTests(unittest.TestCase):
             # Raising the estimate version outdates every saved estimate.
             with patch.object(full_estimate, "ESTIMATE_VERSION", 2):
                 self.assertFalse(current())
+        # The guard names the game folder, which estimates no longer bind: a
+        # moved game keeps its estimates. One saved by a version that bound
+        # the folder reads current until the game moves.
+        from desktop.backend import workflow_actions
+
+        def place(game):
+            self.backend.guided_guard = lambda *_: {
+                **evidence(self.source, ["Items.json"]),
+                "layout": {
+                    "source": str(game),
+                    "engine": "MVMZ",
+                    "data": str(game / "data"),
+                    "plugins": str(game / "js/plugins.js"),
+                    "encrypted": [],
+                },
+            }
+
+        def save(result):
+            job = self.backend.operations.jobs["estimate"]["result"]
+            job.update({key: result(key) for key in ("fingerprint", "shape")})
+
+        def quoted():
+            return self.guided.runs.quote(
+                self.identity, self.native, "database", "batch"
+            )[0]["current"]
+
+        def scope():
+            with self.guided.observations.read():
+                return self.guided.full_estimate.scope(
+                    self.identity,
+                    self.native,
+                    self.guided.event_text.status(self.identity, self.native),
+                    guard=self.guided.runs.poll_guard(self.native),
+                    cached_only=True,
+                )
+
+        place(self.root / "game")
+        with patch.object(workflow_actions, "portable", lambda guard: guard):
+            self.seed_estimate("database")
+            tasks = scope()
+            save(lambda key: self.guided.full_estimate.fingerprint(tasks, key))
+        self.assertTrue(quoted())
+        self.assertTrue(current())
+        self.seed_estimate("database")
+        tasks = scope()
+        save(lambda key: self.guided.full_estimate.fingerprint(tasks, key))
+        place(self.root / "moved")
+        self.assertTrue(quoted())
+        self.assertTrue(current())
         self.native["engine_options"]["CODE356"] = True
         self.assertFalse(current())
 

@@ -18,7 +18,7 @@ from util.freshness import (
 )
 from util.paths import new_folder
 from util.qa.advance import _screen_targets
-from util.qa.briefs import _task_instructions
+from util.qa.briefs import _task_instructions, write_instructions
 from util.qa.bundles import (
     _bundle_items,
     _candidate,
@@ -65,6 +65,7 @@ from util.qa.selection import (
     _lint_game,
     _lint_items,
     _screen_items,
+    context_digests,
     context_target,
 )
 from util.qa.storage import (
@@ -78,8 +79,8 @@ from util.qa.storage import (
     _read_json,
     _rules_version,
     _safe_task_root,
-    _slug,
     _task_lock,
+    game_tasks,
 )
 from util.qa.validation import _read_observations
 from util.rpgmaker_qa_manifest import (
@@ -167,10 +168,19 @@ def _task_keys(basis: str, baselines: list[str]) -> tuple[str, str]:
     )
 
 
+def _prepared_key(task_parent: Path, candidates: tuple[str, ...]) -> str:
+    """The first of *candidates*, keys of one task, a task was prepared
+    under, else the first."""
+    return next(
+        (key for key in candidates if (task_parent / key / "task.json").is_file()),
+        candidates[0],
+    )
+
+
 def _fingerprinted_tasks(
     task_parent: Path,
     manifest: dict[str, Any],
-    context: dict[str, Any],
+    contexts: set[str],
     screen_configuration: dict[str, Any],
     baselines: list[str],
 ) -> dict[str, str]:
@@ -180,7 +190,8 @@ def _fingerprinted_tasks(
     Those versions put a hash of QA's code files in a task's key, with the
     hash of its whole inventory. Each task's key made again from what its
     task.json recorded says which scope it has, here under *baselines*, and
-    its inventory must hold the same text.
+    its inventory must hold the same text. *contexts* are the digests its
+    context may have (context_digests).
     """
     try:
         current = str(_read_json(task_parent / CURRENT_FILE).get("task") or "")
@@ -199,7 +210,7 @@ def _fingerprinted_tasks(
                 or not isinstance(fingerprint, str)
                 or "rules_version" in task
                 or task.get("focus") != manifest["focus"]
-                or task.get("context_sha256") != context["content_sha256"]
+                or task.get("context_sha256") not in contexts
                 or task.get("screen_configuration") != screen_configuration
                 or (task.get("counts") or {}).get("records")
                 != manifest["counts"]["records"]
@@ -291,8 +302,14 @@ def prepare_task(
     earlier: bool = True,
     origins: Iterable[str] | None = None,
     screen_groups: list[list[str]] | None = None,
+    storage_key: str | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     """Create or reuse one immutable QA task and its exhaustive screen bundles.
+
+    The game's tasks and baselines are kept in *output_root*'s folder
+    *storage_key*,
+    by default one named for the game folder; the app names it for the
+    project, so a renamed game keeps its tasks.
 
     A new task builds on [earlier reviews](#earlier-reviews): lines a complete
     task of this game reviewed, unchanged since and with the same glossary
@@ -357,7 +374,7 @@ def prepare_task(
         # A line may hold several problems, each its own reason to review it.
         if all(_observation_key(row) != _observation_key(observation) for row in observed):
             observed.append(observation)
-    games = storage / _slug(game.name)
+    games = game_tasks(storage, game, storage_key)
     if since and earlier:
         _baseline_ledger(games, game, data, focus, since)
     if origins is not None:
@@ -371,26 +388,38 @@ def prepare_task(
     # from it. A baseline is the user's scope, so a task under another is
     # another task; tasks finished since leave a prepared task as it is, and
     # so do observations, which join its review.
-    full_review, task_key = _task_keys(
-        _task_basis(
-            f"rules:{QA_RULES_VERSION}",
-            focus,
-            _sha256(_canonical_bytes(_inventory_text(manifest))),
+    # Versions up to 2.34.3 named the game folder in the context, so a task
+    # one of them made of the same inputs here has the key of that context.
+    contexts = context_digests(context, game)
+    keys = [
+        _task_keys(
+            _task_basis(
+                f"rules:{QA_RULES_VERSION}",
+                focus,
+                _sha256(_canonical_bytes(_inventory_text(manifest))),
+                digest,
+                screen_configuration,
+            ),
+            baselines,
+        )
+        for digest in [
             context["content_sha256"],
-            screen_configuration,
-        ),
-        baselines,
-    )
+            *sorted(contexts - {context["content_sha256"]}),
+        ]
+    ]
     task_parent = games / focus
     task_parent.mkdir(parents=True, exist_ok=True)
     with _task_lock(task_parent):
         # A task an earlier version made of the same inputs goes on.
+        full_review, task_key = (
+            _prepared_key(task_parent, candidates) for candidates in zip(*keys)
+        )
         if QA_RULES_VERSION == 1 and not all(
             (task_parent / key / "task.json").is_file()
             for key in (full_review, task_key)
         ):
             fingerprinted = _fingerprinted_tasks(
-                task_parent, manifest, context, screen_configuration, baselines
+                task_parent, manifest, contexts, screen_configuration, baselines
             )
             if not (task_parent / full_review / "task.json").is_file():
                 full_review = fingerprinted.get("everything", full_review)
@@ -416,6 +445,8 @@ def prepare_task(
             report = preflight(data, manifest, kept)
             with _task_lock(task_dir):
                 _write_report(task_dir, report)
+                # The README names the game's folder, which may have moved.
+                write_instructions(task_dir)
             if interface:
                 _recapture(task_dir, data, manifest, progress)
             if observed:
@@ -737,7 +768,13 @@ def _unresolved_text(entry: dict[str, Any]) -> tuple[Any, Any]:
 def find_latest_task(
     output_root: str | Path, game_root: str | Path, focus: str
 ) -> Path | None:
-    base = Path(output_root).expanduser().resolve() / _slug(Path(game_root).name) / focus
+    base = (
+        game_tasks(
+            Path(output_root).expanduser().resolve(),
+            Path(game_root).expanduser().resolve(),
+        )
+        / focus
+    )
     if not base.is_dir():
         return None
     tasks = [path for path in base.iterdir() if (path / "task.json").is_file()]

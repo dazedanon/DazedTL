@@ -557,3 +557,46 @@ assert not json.loads((again / "checkpoint.json").read_text(encoding="utf-8"))[
     "observations"
 ]
 assert labels(again, kept, hashes) == ["reviewed"]
+
+# A moved or renamed game keeps its tasks. Their context names the game's
+# files relative to its folder; one a version that named the folder there
+# prepared goes on while the game stays where it was.
+from unittest import mock
+
+from dazedtl.compatibility import text
+from util.qa import selection as qa_selection
+
+LINES[0] = ("おはよう", "Hello there.")
+write_game(LINES)
+with mock.patch.object(qa_selection, "in_game", lambda path, _root: path):
+    legacy = prepare()
+assert prepare() == legacy
+LINES[0] = ("おはよう", "Good day.")
+write_game(LINES)
+fresh = prepare()
+context = json.loads((fresh / "context.json").read_text(encoding="utf-8"))
+assert context["glossary"]["path"] == ".dazedtl/glossary.txt", context["glossary"]
+# The app keeps a project's tasks in a folder named for it; the one an
+# earlier version named for the game folder goes on, which the task a
+# focus's record names shows after a rename.
+moved = game.rename(temporary / "Renamed")
+plan = {
+    "folder": str(workflow),
+    "project": {"source": str(moved)},
+    "project_id": "project",
+    "options": {"focus": "release"},
+}
+(workflow / "text-qa-release.json").unlink()
+assert text._storage_key(plan) == "project"
+(workflow / "text-qa-release.json").write_text(json.dumps({"task": str(fresh)}))
+assert text._storage_key(plan) == "game"
+# Prepared again where it is now, the task in review goes on, its README
+# naming the game there, which the app finds through the project.
+qa_storage.game_folder.layer("moved", lambda _native, _task, _value: str(moved))
+key = text._storage_key(plan)
+assert (
+    qa.prepare_task(moved, moved / "data", "release", storage, storage_key=key)[0]
+    == fresh
+)
+readme = (fresh / "README.md").read_text(encoding="utf-8")
+assert str(moved) in readme and str(game) not in readme

@@ -10,19 +10,32 @@ from dazedtl import system
 from dazedtl.storage import write_json
 
 
+def encode(value):
+    """The canonical JSON text digest hashes a value by."""
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+
+
 def digest(value):
-    raw = (
-        value
-        if isinstance(value, bytes)
-        else json.dumps(
-            value,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
+    raw = value if isinstance(value, bytes) else encode(value).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def digest_members(members):
+    """digest() of an object whose members are already encoded, by key, so
+    variants of a large object encode its shared members once."""
+    return digest(
+        (
+            "{"
+            + ",".join(f"{encode(key)}:{members[key]}" for key in sorted(members))
+            + "}"
         ).encode("utf-8")
     )
-    return hashlib.sha256(raw).hexdigest()
 
 
 def unique_object(pairs):

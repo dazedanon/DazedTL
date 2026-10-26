@@ -959,7 +959,7 @@ class GuidedActions:
                     and job.get("mode") == "estimate"
                     and job.get("status") in {"ready", "running", "waiting"}
                     and record.get("preparation_mode") == preparation_mode
-                    and record.get("fingerprint") == run_inputs["fingerprint"]
+                    and not self.guided.runs.changed(record, run_inputs, reprice=False)
                 ):
                     return self.guided.run_view(identity)
         self.require_idle_files(native, files)

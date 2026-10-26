@@ -202,6 +202,29 @@ def _stored_task(folder, task):
     return project_path(storage, relative.as_posix(), exists=False)
 
 
+def _storage_key(plan):
+    """The folder of the workspace's QA storage that holds the project's
+    tasks and baselines, named for the project so a renamed game keeps them.
+    Versions up to 2.34.3 named it for the game folder: the one holding a
+    task a focus's record names goes on, else the one named for the game
+    folder now."""
+    from util.qa.storage import game_tasks
+
+    # Preparing names tasks by their resolved paths.
+    storage = (Path(plan["folder"]) / "text-qa").resolve()
+    game = Path(plan["project"]["source"]).resolve()
+    for pointer in [_pointer(plan), *qa_pointers(plan["folder"])]:
+        try:
+            task = Path(read_json(pointer)["task"]).resolve()
+            key = task.relative_to(storage).parts[0]
+            if game_tasks(storage, game, key).is_dir():
+                return key
+        except ValueError, OSError, KeyError, TypeError, IndexError:
+            continue
+    legacy = game_tasks(storage, game)
+    return legacy.name if legacy.is_dir() else plan["project_id"]
+
+
 # Where 2.24.0 and earlier kept the user's answers to QA's questions, by task.
 EARLIER_ANSWERS = "text-qa-choices.json"
 
@@ -706,6 +729,7 @@ def run_qa(plan, log):
             kept=kept_settings(plan["project"]["source"]),
             since=plan["options"].get("since") or None,
             earlier=not plan["options"].get("everything"),
+            storage_key=_storage_key(plan),
         )
         if observations:
             log(f"QA reviews {len(observations)} line(s) the playtest found")

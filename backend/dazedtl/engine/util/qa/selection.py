@@ -23,6 +23,8 @@ from util.paths import (
     GAME_SKILL_RELATIVE,
     GAME_SKILL_RESERVED_NAMES,
     GAME_SKILLS_RELATIVE,
+    from_game,
+    in_game,
 )
 from util.qa import mechanical
 from util.qa.fitting import _record_problems
@@ -93,10 +95,16 @@ def _context_pack(
             if path.is_symlink() or not path.is_file():
                 raise ValueError(f"Unsafe custom QA context path: {path}")
             overlay_paths.append(path)
-    glossary = _read_optional(game_root / GAME_GLOSSARY_RELATIVE)
-    quirks = _read_optional(game_root / GAME_QUIRKS_RELATIVE)
-    game = _read_optional(game_root / GAME_SKILL_RELATIVE)
-    overlays = [_read_optional(path) for path in overlay_paths]
+    def read(path: Path) -> dict[str, Any]:
+        # A path in the game folder names it relative to the folder, so a
+        # moved game's task keeps its context and key.
+        document = _read_optional(path)
+        return {**document, "path": in_game(document["path"], game_root)}
+
+    glossary = read(game_root / GAME_GLOSSARY_RELATIVE)
+    quirks = read(game_root / GAME_QUIRKS_RELATIVE)
+    game = read(game_root / GAME_SKILL_RELATIVE)
+    overlays = [read(path) for path in overlay_paths]
     pack = {
         "schema": "rpgmaker-qa-context-v2",
         "glossary": glossary,
@@ -112,6 +120,21 @@ def _context_pack(
         pack["target"] = target
     pack["content_sha256"] = _sha256(_canonical_bytes(pack))
     return pack
+
+
+def context_digests(context: dict[str, Any], game_root: str | Path) -> set[str]:
+    """The content_sha256 a task's context has, and the one versions up to
+    2.34.3 gave it, whose paths named the game folder, *game_root* then."""
+    pack = {key: value for key, value in context.items() if key != "content_sha256"}
+    for key in ("glossary", "quirks", "game"):
+        if isinstance(pack.get(key), dict):
+            pack[key] = _located(pack[key], game_root)
+    pack["overlays"] = [_located(row, game_root) for row in pack.get("overlays") or []]
+    return {context["content_sha256"], _sha256(_canonical_bytes(pack))}
+
+
+def _located(document: dict[str, Any], game_root: str | Path) -> dict[str, Any]:
+    return {**document, "path": from_game(str(document.get("path") or ""), game_root)}
 
 
 def context_target(context: dict[str, Any]) -> str:

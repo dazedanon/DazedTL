@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from util import rpgmaker_qa_glossary as glossary_rules
+from util import system
 from util.game_settings import load_language_pair
 from util.prompt_pair import pair_note
 from util.qa.bundles import _load_screen_index
@@ -36,10 +37,12 @@ from util.qa.scope import _assigned_scenes, _declined_scope
 from util.qa.selection import _command_number, _glossary_entries
 from util.qa.storage import (
     _atomic_write_json,
+    _atomic_write_text,
     _decisions,
     _load_task,
     _read_json,
     _task_lock,
+    task_json,
 )
 from util.skills import rpgmaker_qa_skill_parts
 
@@ -140,6 +143,20 @@ def _task_instructions(task_dir: Path, task: dict[str, Any]) -> str:
     )
 
 
+def write_instructions(task_dir: Path) -> None:
+    """Writes the task README as it reads now, its game where it is now
+    (storage.located), unless the README already says so: the README names
+    the game's folder, which a move changes. The caller holds the task lock."""
+    path = task_dir / "README.md"
+    text = _task_instructions(task_dir, task_json(task_dir)).rstrip() + "\n"
+    try:
+        if system.read_bytes(path).decode("utf-8") == text:
+            return
+    except OSError, UnicodeDecodeError:
+        pass
+    _atomic_write_text(path, text)
+
+
 def brief(task_dir: str | Path, role: str, worker: str = "") -> str:
     """One reviewer's brief: the policy, its role, the commands, and the
     game's guidance and decisions, so a reviewer reads no other context.
@@ -199,8 +216,11 @@ def _game_guidance(root: Path) -> list[str]:
 
 
 def handoff_text(task_dir: str | Path, helper: str) -> str:
-    """The copied task: the policy's handoff for this task and helper."""
+    """The copied task: the policy's handoff for this task and helper, whose
+    README it writes for the game where it is now."""
     root, task, _checkpoint = _load_task(task_dir)
+    with _task_lock(root):
+        write_instructions(root)
     _intro, sections, _focus = _skill_sections(task["focus"])
     return _fill(
         sections["Handoff"],

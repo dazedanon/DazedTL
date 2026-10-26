@@ -9,12 +9,14 @@ import json
 import shutil
 import sys
 from pathlib import Path
+from unittest import mock
 
 root, temporary = map(Path, sys.argv[1:])
 sys.path.insert(0, str(root / "backend/dazedtl/engine"))
 
 from util import rpgmaker_qa as qa
 from util.qa import prepare as qa_prepare
+from util.qa import selection as qa_selection
 from util.qa import storage as qa_storage
 
 game = temporary / "game"
@@ -179,7 +181,10 @@ def screen(row, declined_scenes=(), declined_items=()):
     )
 
 
-task, _state = qa.prepare_task(game, data, "release", temporary / "storage")
+# Prepared as versions up to 2.34.3 did, its context naming the game folder,
+# which a rebuild under new rules still reads as the same context.
+with mock.patch.object(qa_selection, "in_game", lambda path, _root: path):
+    task, _state = qa.prepare_task(game, data, "release", temporary / "storage")
 lint, motif, scenes = rows("screen")
 (lint_family,) = bundle_of(lint)["items"]
 (motif_family,) = bundle_of(motif)["items"]
