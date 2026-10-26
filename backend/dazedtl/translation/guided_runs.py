@@ -685,6 +685,49 @@ class GuidedRuns:
         inputs = self.inputs(
             project_id, native, phase, mode, guard=guard, cached_only=cached_only
         )
+        latest = self.latest_estimate(project_id, native, phase)
+        if latest is None:
+            return {"job": None, "current": False}, inputs
+        identity, job, record = latest
+        current = self.usable(native, identity, job) and not self.changed(
+            record, inputs
+        )
+        view = (run_view or self.guided.run_view)(identity, compact=True)
+        # A model switch that keeps its requests prices it again.
+        repriced = (
+            None
+            if current or job["status"] != "complete"
+            else self.repriced(project_id, native, identity, inputs)
+        )
+        if repriced:
+            view, current = {**view, "estimate": repriced}, True
+        return {"job": view, "current": current}, inputs
+
+    def usable(self, native, identity, job):
+        """Whether an estimate run holds a finished estimate still in use,
+        which is current while its inputs are unchanged."""
+        return (
+            job["status"] == "complete"
+            and bool(job.get("estimate"))
+            and identity
+            not in self.guided.inputs(native).record().get("retired_runs", [])
+        )
+
+    def unknown_quote(self, project_id, native, run_view):
+        """Other event text's newest estimate while its inputs are not known
+        yet: current None (unknown) when it could be current."""
+        latest = self.latest_estimate(project_id, native, "advanced")
+        if latest is None:
+            return {"job": None, "current": False}
+        identity, job, _record = latest
+        return {
+            "job": run_view(identity, compact=True),
+            "current": None if self.usable(native, identity, job) else False,
+        }
+
+    def latest_estimate(self, project_id, native, phase):
+        """The newest estimate run of a phase this project owns, with its job
+        and record; None without one."""
         records = self.records(project_id)
         jobs = getattr(self.guided.backend, "manual", None)
         jobs = jobs.jobs if jobs else {}
@@ -697,24 +740,8 @@ class GuidedRuns:
                 and job.get("mode") == "estimate"
                 and record["phase"] == phase
             ):
-                current = (
-                    job["status"] == "complete"
-                    and bool(job.get("estimate"))
-                    and identity
-                    not in self.guided.inputs(native).record().get("retired_runs", [])
-                    and not self.changed(record, inputs)
-                )
-                view = (run_view or self.guided.run_view)(identity, compact=True)
-                # A model switch that keeps its requests prices it again.
-                repriced = (
-                    None
-                    if current or job["status"] != "complete"
-                    else self.repriced(project_id, native, identity, inputs)
-                )
-                if repriced:
-                    view, current = {**view, "estimate": repriced}, True
-                return {"job": view, "current": current}, inputs
-        return {"job": None, "current": False}, inputs
+                return identity, job, record
+        return None
 
     def poll_guard(self, native):
         """The guard a quote binds to. Quotes read only its shared parts, so a
@@ -742,21 +769,30 @@ class GuidedRuns:
         views = [
             run_view(identity, compact=True) for identity in owned if identity in jobs
         ]
+        # Other event text's inputs hold the selected event files' built-in
+        # matches; while readers still read them, whether its estimate is
+        # current is unknown.
+        reading = self.guided.event_text.pending(
+            self.guided.event_text.status(project_id, native)
+        )
         for phase in PHASES:
-            # Cached prices only, so a snapshot never waits on a pricing
-            # lookup; preparing, reviewing and starting a run check fully.
-            try:
-                estimates[phase], _ = self.quote(
-                    project_id,
-                    native,
-                    phase,
-                    mode,
-                    guard=guard,
-                    run_view=run_view,
-                    cached_only=True,
-                )
-            except ValueError, OSError:
-                estimates[phase] = {"job": None, "current": False}
+            if phase == "advanced" and reading:
+                estimates[phase] = self.unknown_quote(project_id, native, run_view)
+            else:
+                # Cached prices only, so a snapshot never waits on a pricing
+                # lookup; preparing, reviewing and starting a run check fully.
+                try:
+                    estimates[phase], _ = self.quote(
+                        project_id,
+                        native,
+                        phase,
+                        mode,
+                        guard=guard,
+                        run_view=run_view,
+                        cached_only=True,
+                    )
+                except ValueError, OSError:
+                    estimates[phase] = {"job": None, "current": False}
             names = self.files(native, phase)
             inputs = self.guided.inputs(native)
             sources = inputs.sources(

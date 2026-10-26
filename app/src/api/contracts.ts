@@ -590,7 +590,7 @@ export type EngineSetting = {
 
 export type PhaseEstimate = {
   job: Job | null;
-  current: boolean;
+  current: boolean | null;
 };
 
 export type ComparisonRow = {
@@ -1180,7 +1180,7 @@ export type FullEstimate = {
   result: FullEstimateResult | null;
   finished: string | null;
   took: number | null;
-  current: boolean;
+  current: boolean | null;
 };
 
 export type GuidedState = {

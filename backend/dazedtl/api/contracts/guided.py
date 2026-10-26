@@ -253,7 +253,9 @@ class EngineSetting(TypedDict):
 
 class PhaseEstimate(TypedDict):
     job: Job | None
-    current: bool
+    # None while readers still read Other event text's selected event files,
+    # which leaves whether its estimate is current unknown.
+    current: bool | None
 
 
 class ComparisonRow(TypedDict):
@@ -917,7 +919,8 @@ class FullEstimate(TypedDict):
     finished: str | None
     # Seconds the saved estimate took, as a guide to the next one.
     took: float | None
-    current: bool
+    # None while readers still read Other event text's selected event files.
+    current: bool | None
 
 
 class GuidedState(TypedDict):

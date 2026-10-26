@@ -90,7 +90,7 @@ export const estimateEmpty = (job?: Job | null) =>
 
 export function estimateFollowup(
   id: string,
-  quote: { job?: Job | null; current: boolean } | undefined,
+  quote: { job?: Job | null; current: boolean | null } | undefined,
   runs: Job[],
   inputsChanged: boolean,
 ) {
@@ -98,6 +98,9 @@ export function estimateFollowup(
     quote?.job?.id === id ? quote.job : runs.find((run) => run.id === id);
   if (!job || activeRun(job)) return { kind: "waiting" as const, job };
   if (job.status !== "complete") return { kind: "failed" as const, job };
+  // Whether it is current waits for the selected event files to be read.
+  if (!inputsChanged && quote?.job?.id === id && quote.current === null)
+    return { kind: "waiting" as const, job };
   if (quote?.job?.id !== id || !quote.current || inputsChanged)
     return { kind: "stale" as const, job };
   return {

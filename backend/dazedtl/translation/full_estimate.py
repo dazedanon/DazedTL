@@ -287,7 +287,10 @@ class FullEstimate:
         saved = self.saved(native)
         result = saved["result"] if saved else None
         current = False
-        if result:
+        if result and self.guided.event_text.pending(event_text):
+            # Other event text's inputs wait for readers: unknown, not stale.
+            current = None
+        elif result:
             try:
                 tasks = self.scope(
                     project_id,

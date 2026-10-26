@@ -479,6 +479,9 @@ export function estimateView(w: GuidedWorkspace): TaskView {
   const estimate = state.fullEstimate;
   const working = estimate.status === "working";
   const current = !!estimate.result && estimate.current;
+  // One still being checked (current null) keeps its buttons, so they do not
+  // swap emphasis for the moment its event files are read.
+  const settled = !!estimate.result && estimate.current !== false;
   // The estimate reads saved guidance and a configured model. Estimating
   // again only helps once something changed that its prices can't follow,
   // or to retry Claude's count.
@@ -495,7 +498,7 @@ export function estimateView(w: GuidedWorkspace): TaskView {
   const run = (
     <ActionControl
       label={estimate.result ? "Estimate again" : "Estimate cost"}
-      variant={current ? "default" : "primary"}
+      variant={settled ? "default" : "primary"}
       disabled={disabled || working || !!blocked}
       disabledReason={blocked}
       {...control}
@@ -523,6 +526,6 @@ export function estimateView(w: GuidedWorkspace): TaskView {
     },
     secondary: localOperation && stopControl(localOperation),
     action: run,
-    next: advance(undefined, undefined, current ? "primary" : "quiet"),
+    next: advance(undefined, undefined, settled ? "primary" : "quiet"),
   };
 }
