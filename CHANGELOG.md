@@ -3,6 +3,21 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.34.4] - 2026-10-26
+
+### Changed
+
+- **Checkpoints:** each change DazedTL makes to a game starts about a third fewer Git processes, so saves, applies and game updates finish sooner on Windows, where each process costs about 50 ms.
+
+### Fixed
+
+- **Context:** with a leftover `.git/index.lock` in the game folder, **Save context** now says so at once and leaves the file as it was; it took over a minute, saved the text anyway as "Edits made outside DazedTL", and saving the edited draft again then failed with "This guidance changed on disk. Reload before saving."
+- **Menus:** a menu or help note no longer flashes in the window's top-left corner before it moves beside its button when the app is busy.
+- **Fitting and Lines:** a Japanese game translated into Chinese is fitted to its windows and its lines read translated instead of being sent again, a Japanese translation of an English game that keeps HP is fitted, and Text QA no longer lists an English game's currency unit G as never translated. Saved Guided estimates need estimating again.
+- **Text QA:** applying or undoing QA's own corrections, or applying Plugin files, no longer marks the task as changed text, so QA's later corrections apply.
+- **Set up:** saving the first version of a game whose folder already had its own Git history, with all of it committed, no longer stops with "too many values to unpack (expected 2, got 3)".
+- **Playtest tools:** installing TL Inspector no longer puts it in the game's `plugins.js`, where a translation published from the game stopped players' game at start with "Failed to load: js/plugins/TLInspector.js". The game's update check loads it on your computer instead, and opening a game an earlier version listed it in takes it out.
+
 ## [2.34.3] - 2026-10-26
 
 ### Fixed
@@ -1045,6 +1060,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.34.4]: https://github.com/dazedanon/DazedTL/compare/v2.34.3...v2.34.4
 [2.34.3]: https://github.com/dazedanon/DazedTL/compare/v2.34.2...v2.34.3
 [2.34.2]: https://github.com/dazedanon/DazedTL/compare/v2.34.1...v2.34.2
 [2.34.1]: https://github.com/dazedanon/DazedTL/compare/v2.34.0...v2.34.1
