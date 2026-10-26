@@ -579,22 +579,25 @@ pre {
   align-items: center;
   gap: var(--space-2);
 }
-/* In bars, a control's result sits just left of its own button, so the
-   buttons keep their place and the bar its height while feedback changes. */
+/* A control's result in a bar, pending, done or failed, is one block just
+   left of its own button, so the buttons keep their place and the bar its
+   height while the result changes.
+   - Sizing: the result counts toward the bar's wrapping only up to 16rem, so
+     a long one wraps beside its button instead of moving the actions to a row
+     of their own. Its control starts at its narrowest, the button and that
+     much of the result, and grows only as far as the result's text, up to a
+     fixed cap, since the bar ignores a percentage cap while it sizes its
+     controls; the room left stays before the first action.
+   - Lines: a box never shrinks to text it wraps, so the result's lines end at
+     the button and the box's spare width falls before them, as a row's and a
+     header's results do; a status mark leads the first line. Balanced lines
+     keep a wrapped result from ending in one stray word. */
 .action-bar .action-control {
   flex-direction: row-reverse;
   align-items: center;
   gap: var(--space-2);
   max-width: 100%;
 }
-/* A result counts toward the bar's wrapping only up to 16rem, so a long one
-   wraps beside its button instead of moving the actions to a row of their
-   own: its control starts at its narrowest, the button and that much of the
-   result. It then grows only as far as the result's text, up to a fixed cap,
-   since a percentage cap would be ignored while the bar sizes its controls
-   (and a percentage in its own cap hides it from the bar's sizing); the room
-   left stays before the first action, so the other actions keep their place
-   beside it. */
 .action-bar .action-control:has(> .action-control-feedback:not(:empty)) {
   flex-grow: 1;
   width: min-content;
@@ -608,19 +611,14 @@ pre {
   flex: 1 1 auto;
   min-width: calc-size(max-content, min(size, 16rem));
   max-width: 30rem;
-  text-align: left;
+  text-align: end;
+  text-wrap: balance;
 }
 .action-bar .action-control > .action-control-feedback:not(:empty) {
   margin-top: 0;
 }
 .action-bar .action-control > .action-control-feedback:empty {
   display: none;
-}
-/* The result sits against its button; its lines start at the status icon, so
-   wrapped text never leaves a gap after the icon. */
-.action-bar .action-control-feedback > * {
-  width: fit-content;
-  margin-inline-start: auto;
 }
 .action-bar .action-control :is(.feedback, .job-status-heading) {
   justify-content: flex-end;
