@@ -33,7 +33,7 @@ from util.rpgmaker_qa_preflight import (
 )
 from util.rpgmaker_qa_reach import Reach
 from util.runtime_text import without_control_codes
-from util.source_text import holds_source, source_left
+from util.source_text import holds_source, words_left
 from util.translation_update_check.installer import PLUGIN_NAME as UPDATE_CHECK
 from util import system
 
@@ -67,10 +67,13 @@ def reading() -> dict[str, Any]:
     the active source: its words, as a JavaScript pattern, whether only
     phrases count in plugin code, and whether placeholder glyphs such as the ◯ of "Day ◯/30" count, which Japanese text
     uses for a hidden word and a translation from it into another script
-    shows as a missing character."""
+    shows as a missing character. A target that shares the source's kanji,
+    Chinese, reads only kana as Japanese left (util/source_text)."""
     japanese = languages.active_source() == languages.JAPANESE
     return {
-        "pattern": languages.source_pattern("playtest"),
+        "pattern": languages.KANA.pattern
+        if languages.shares_kanji()
+        else languages.source_pattern("playtest"),
         "placeholders": japanese,
         # A Latin source's identifiers fill plugin code, so a string there
         # counts only when it reads as words: two, or one ending a sentence.
@@ -174,24 +177,21 @@ class _Checks:
         markers = comment_markers(entries)
         source = languages.active_source()
         placeholders = reading()["placeholders"]
-        # A Latin source's words the screen check reads as left, so the
-        # abbreviations a translation keeps, such as HP, are not.
-        words = re.compile(languages.source_pattern("playtest"))
         for name, document in self.documents.items():
             if name not in STANDARD_FILES and not _MAP_RE.fullmatch(name):
                 continue
-            for parts, value, kind, translated in visible_texts(name, document, markers):
+            for parts, value, kind, translated, original in visible_texts(
+                name, document, markers
+            ):
                 if not isinstance(value, str) or not translated:
                     continue
                 location = pointer(parts)
                 # A code's argument, such as the font of \fn[和風], is not
-                # drawn (util/source_text); a name window's <名前> is.
+                # drawn (util/source_text); a name window's <名前> is. Text
+                # left reads against the source, as the engine sends it, and
+                # without a Latin source's abbreviations, such as HP.
                 shown = without_control_codes(value)
-                if (
-                    holds_source(value)
-                    if source == languages.JAPANESE
-                    else any(words.search(run) for run in source_left(value))
-                ):
+                if words_left(value, original):
                     note = f"{source} is left in this translated text."
                     check = "visible-text"
                 elif placeholders and _PLACEHOLDER_RE.search(shown):

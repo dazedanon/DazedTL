@@ -3551,6 +3551,57 @@ try:
                 "[Tested 2]: うわっ、うん〇を踏んだ！",
                 "え？",
             ]
+            # Translated into Chinese, a line's hanzi are its own text and
+            # only its kana read as Japanese left: read as Japanese, every
+            # line was sent again and counted left. A name kept letter for
+            # letter, 旅人, is translated too. Runs frozen with the second
+            # source-text policy keep sending them.
+            from util.languages import reading
+
+            replies.clear()
+            replies.update(
+                {
+                    "何だこれは": "这、这是什么？！(ﾟдﾟ)",
+                    "うん〇": "呜哇，踩到〇了！",
+                    "まだ訳せない": "这个词まだ不能翻译。",
+                    "え？": "诶？",
+                    "森の向こう": "森林那边有个村子。",
+                    "旅人": "旅人",
+                }
+            )
+            variant_events = json.loads(
+                (fixtures / "game-variants/kaomoji/variant.json").read_text("utf-8")
+            )["events"]
+            chinese = {
+                "displayName": "",
+                "events": [None, *({**event, "id": 1} for event in variant_events)],
+            }
+            configure_states(
+                {"engine": "MVMZ"}, temporary, {**policy, "sourceText": SOURCE_TEXT}
+            )
+            with reading("Japanese", "Chinese"):
+                engine_pass("Map004.json", chinese, False)
+                after = file_lines.count("Map004.json", chinese, "dialogue", markers)
+                assert after == {
+                    "lines": before["lines"],
+                    "translated": before["lines"] - 1,
+                }, (
+                    after,
+                    [
+                        c["parameters"]
+                        for e in chinese["events"][1:]
+                        for p in e["pages"]
+                        for c in p["list"]
+                    ],
+                )
+                resent = engine_pass("Map004.json", chinese, False)
+                assert len(resent) == 1 and "まだ" in resent[0], resent
+                configure_states(
+                    {"engine": "MVMZ"},
+                    temporary,
+                    {**policy, "sourceText": "source-letters-v2"},
+                )
+                assert len(engine_pass("Map004.json", chinese, False)) == 5
             configure_states(
                 {"engine": "MVMZ"}, temporary, {**policy, "sourceText": SOURCE_TEXT}
             )

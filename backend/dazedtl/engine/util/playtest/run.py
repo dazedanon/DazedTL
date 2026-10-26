@@ -813,7 +813,11 @@ def run(
     extra = read_stops(stops)
     started = time.time()
     source = _source(game)
-    with languages.reading(source) if source else nullcontext():
+    with (
+        languages.reading(source, game_target_language(game))
+        if source
+        else nullcontext()
+    ):
         log("Checking the game's files")
         static = static_checks(game, data, kept, literals)
         runtime = tour(data, target, extra, minutes, log, stopped, overlay=overlay)

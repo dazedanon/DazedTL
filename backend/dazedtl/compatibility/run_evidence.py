@@ -114,10 +114,11 @@ def stretch_notes(group, values, saved, source):
 def kept(source, response):
     """Whether a line of a kept response kept its original text because it
     failed validation (translation keep_original_lines): it is no
-    translation to reuse, so the next run sends it again."""
-    from util.source_text import source_left
+    translation to reuse, so the next run sends it again. A line given back
+    reads so for every target, a Chinese one's kanji too."""
+    from util.source_text import holds_source
 
-    return response == source and bool(source_left(response, source))
+    return response == source and holds_source(response)
 
 
 def accepted(translation, source, response, config):
