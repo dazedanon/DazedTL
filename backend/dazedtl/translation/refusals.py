@@ -16,23 +16,117 @@ CLARIFICATION = (
 )
 MESSAGE = "The provider declined this translation. No refusal text was accepted as game dialogue."
 
-# Match assistant statements about this translation task, not isolated words such
-# as 'sorry', 'refuse', or 'explicit' that can be legitimate source dialogue.
-_REFUSAL = re.compile(
-    r"^(?:sorry[,.!]?\s*|i(?:'m| am) sorry[,.!]?\s*)?(?:but\s+)?"
-    r"(?:i\s+(?:can(?:not|'t)|must decline to)|"
-    r"i(?:'m| am)\s+(?:unable|not able) to)\s+"
-    r"(?:help\s+(?:you\s+)?(?:with\s+|to\s+)?)?"
-    r"(?:translate|provide|assist with|help with|process|fulfill|comply with)\b"
-    r"[^\n]{0,240}\b(?:sexual(?:ly|i[sz]ed)?|explicit|graphic|erotic|pornographic|violence|gore|policy|policies)\b",
-    re.IGNORECASE,
+
+def _words(pattern):
+    return re.compile(rf"\b(?:{pattern})\b", re.IGNORECASE)
+
+
+# A model that talks about its task instead of translating says so in the
+# first person: it will not do the task ("I won't produce sexual content, even
+# in translation"), or it offers to do or go on with it ("I can translate
+# other scenes", "Send another batch and I'll continue"). What it talks about
+# is the task: the translation, the batch or lines it was sent, the content
+# or policy that stops it, or the request. A line is read whole, since a
+# refusal can name the task in one sentence and decline in the next. Words
+# such as 'sorry', 'refuse' or 'explicit' alone are ordinary dialogue.
+_FIRST = _words(r"i|me|my")
+_DECLINE = _words(
+    r"can ?not|can'?t|won'?t|will not|wouldn'?t|would not|don'?t|do not|"
+    r"am not|i'm not|unable|not able|must not|shouldn'?t|should not|"
+    r"(?:must|have to|need to) decline|refuse to|rather not|"
+    r"(?:have|need) to (?:skip|pass on|leave out)|i'll skip"
 )
-_BARE_REFUSAL = re.compile(
-    r"^(?:sorry[,.!]?\s*|i(?:'m| am) sorry[,.!]?\s*)?(?:but\s+)?"
-    r"i\s+(?:can(?:not|'t)|am unable to)\s+(?:help|assist|comply)\s+with\s+"
-    r"(?:this|that|your)\s+(?:request|translation)\b",
-    re.IGNORECASE,
+_GO_ON = _words(
+    r"continue|continuing|keep going|proceed|resume|pick (?:it |this )?up|"
+    r"carry on|ready for"
 )
+_OFFER = _words(r"can|happy to|glad to|instead")
+# A character who "can't stand such lewd material" declines no task; one
+# who will not produce or help with it does.
+_DO = _words(
+    r"produce|generate|write|create|provide|depict|describe|translate|render|"
+    r"output|help|assist|comply|fulfill|engage|continue|proceed|complete|process"
+)
+# A batch of potions or cookies is not the task's.
+_BATCH = r"batch(?:es)?(?! of)|(?:batch(?:es)?|chunks?) of (?:lines|text|dialogue)"
+# Asking for the next part of the task needs no first person.
+_SEND = _words(
+    r"(?:send|give|provide|share|paste)(?: me| us| over)?"
+    r"(?: (?:the|another|a|more|next|new|remaining|rest of the|following|further))+"
+    rf" (?:{_BATCH}|lines)"
+)
+# Each subject the model talks about: its words, what the line must also
+# say, each as alternatives, and the source words that make the line a
+# translation instead, such as a character who cannot translate an
+# inscription (翻訳) or a guild clerk's request (依頼).
+_SUBJECTS = (
+    (
+        _words(r"translat\w*"),
+        ((_DECLINE, _GO_ON, _OFFER),),
+        re.compile(
+            r"翻訳|通訳|訳[さしすせそ]|[和英]訳|解読|読み解|読[めんま]|translat",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        _words(_BATCH),
+        ((_DECLINE, _GO_ON),),
+        re.compile(r"バッチ|一括|ロット|batch|chunk", re.IGNORECASE),
+    ),
+    (
+        _words(r"(?:next|remaining|following|more) lines"),
+        ((_GO_ON,),),
+        re.compile(r"台詞|セリフ|せりふ|\blines?\b", re.IGNORECASE),
+    ),
+    (
+        _words(
+            r"(?:sexual(?:ly|i[sz]ed)?|explicit|graphic|erotic|pornographic|adult|"
+            r"nsfw|lewd|obscene|such|this kind of|that kind of|this type of)"
+            r"\s+(?:\w+\s+)?(?:content|material)|"
+            r"(?:graphic|sexual) violence|gore|underage|"
+            r"(?:involving|depicting|sexuali[sz]ing) (?:a |the )?(?:minor|child|children)|"
+            r"(?:reads?|appears?) (?:to be |as )(?:a )?minors?"
+        ),
+        ((_DECLINE,), (_DO,)),
+        re.compile(r"内容|コンテンツ|素材|資料|content|material", re.IGNORECASE),
+    ),
+    (
+        _words(r"polic(?:y|ies)|guidelines?"),
+        ((_DECLINE,), (_DO,)),
+        re.compile(
+            r"規則|規約|規定|方針|ポリシー|ガイドライン|決まり|ルール|polic|guideline",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        # お願い is any plea, so it does not excuse declining "this request".
+        _words(r"(?:this|that|your|the) request"),
+        ((_DECLINE,), (_DO,)),
+        re.compile(r"依頼|リクエスト|要望|要求|request", re.IGNORECASE),
+    ),
+)
+# Any subject's words: most lines hold none and skip the rest.
+_SUBJECT = re.compile(
+    "|".join(words.pattern for words, _, _ in _SUBJECTS), re.IGNORECASE
+)
+
+
+def _task_talk(plain, source):
+    """Whether `plain` is the model talking about its task, about a subject
+    `source` does not name; an unknown source names none."""
+    if not _SUBJECT.search(plain):
+        return False
+    asks = bool(_SEND.search(plain))
+    if not (asks or _FIRST.search(plain)):
+        return False
+    return any(
+        words.search(plain)
+        and (asks or all(any(word.search(plain) for word in need) for need in needs))
+        and not (source and excuse.search(source))
+        for words, needs, excuse in _SUBJECTS
+    )
+
+
 # A note left in place of a line, or inside one, such as "[Not translated: ...]",
 # "(Line left untranslated)", "[TRANSLATION DECLINED: ...]" or "Unable to
 # translate this line.". Game text has no use for these.
@@ -52,7 +146,8 @@ _NOTE = re.compile(
 _EXCUSED = (
     (
         re.compile(
-            r"[\[(（【] ?(?:declined|refus(?:al|ed)) ?[\]):：）】]", re.IGNORECASE
+            r"[\[(（【] ?(?:declined|refus(?:al|ed)) ?[\]):：）】]|^(?:declined|refused)\.?$",
+            re.IGNORECASE,
         ),
         re.compile(r"断|辞退|拒|却下"),
     ),
@@ -64,16 +159,6 @@ _EXCUSED = (
             re.IGNORECASE,
         ),
         re.compile(r"略|検閲|削除|黒塗|伏|規制|割愛|カット|ピー|[■●〇○×＊*]"),
-    ),
-    (
-        re.compile(
-            r"\bI(?:'m| am)? (?:can ?not|can't|won't|will not|unable to|not able to|"
-            r"must decline to) (?:(?:help|assist|provide|produce|give|offer|complete|"
-            r"continue) (?:you )?(?:with |to )?(?:(?:a|an|the|this|that|any|these|"
-            r"those|your) )?)?translat",
-            re.IGNORECASE,
-        ),
-        re.compile(r"翻訳|訳[さしすせ]|解読|通訳"),
     ),
 )
 # Protected placeholders, masks and control codes, which can sit around a note
@@ -94,13 +179,13 @@ def field(value, key, default=None):
 def line_refusal(text, source=None):
     """Whether one translated line holds a refusal instead of, or inside, its
     translation. `source` is the line's own source text, or all of its
-    request's; None when they are unknown, which counts only the notes that
-    game text never holds."""
+    request's; None when they are unknown, which counts the model's talk
+    about its task and the notes that game text never holds."""
     # Wrapped text splits a note across lines, some formats keep those breaks
     # as an escaped "\n", and name fields use underscores.
     plain = re.sub(r"\\n(?!\[)", " ", text.replace("’", "'"))
     plain = re.sub(r"[\s_]+", " ", _CODES.sub(" ", plain)).strip()
-    if _REFUSAL.search(plain) or _BARE_REFUSAL.search(plain) or _NOTE.search(plain):
+    if _NOTE.search(plain) or _task_talk(plain, source):
         return True
     return source is not None and any(
         note.search(plain) and not excuse.search(source) for note, excuse in _EXCUSED

@@ -1724,6 +1724,10 @@ assert (
     qa._record_problems(first, "The opening takes about twenty minutes.", pages_layout)
     == []
 )
+# A reviewer's refusal is screened by translation's rule, not applied.
+assert qa._record_problems(
+    first, "Send another batch and I'll continue.", pages_layout
+) == ["reads as a refusal or a note about the task, not as game text"]
 later = pages_records["あとで掲示板から見られます。"]
 assert (
     qa._record_problems(

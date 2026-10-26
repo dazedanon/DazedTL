@@ -207,6 +207,7 @@ It counts input tokens as Guided's estimate does, from the text each request sen
 New runs include one context-clarification retry for a confirmed provider refusal, with any additional usage billed in the originally selected mode.
 Only refused requests are retried; a second refusal stays unresolved.
 A note left in place of a line, such as "[Not translated]" or "Translation declined.", is a refusal, never game text.
+So is the model talking about its task in a line, such as "I won't produce this content, even in translation." or "Send another batch and I'll continue.", unless the line's source talks about the same thing ([refusals](../backend/dazedtl/translation/refusals.py)).
 Batch clarification jobs retain their own provider IDs and never switch to Live.
 Preserve valid authorization on resume when the exact frozen plan and quote still match.
 
