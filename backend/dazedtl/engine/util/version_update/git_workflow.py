@@ -1911,7 +1911,7 @@ def bootstrap_repository(
             translation_tree.ignored_paths,
         )
     else:
-        repo, prefix = found
+        repo, prefix, _paths = found
         _configure_exact_tree_repo(repo)
         _ensure_local_excludes(repo)
         status = inspect_repository(translated)

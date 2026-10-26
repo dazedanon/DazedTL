@@ -89,6 +89,13 @@ refused(own)
 player = ("-c", "user.name=Player", "-c", "user.email=player@example.invalid")
 git(own, *player, "commit", "-qm", "Mine")
 refused(own)
+# Once all of it is committed, the baseline is recorded on top of that work.
+mine = git(own, "rev-parse", "HEAD").strip()
+git(own, "add", "-A")
+git(own, *player, "commit", "-qm", "All mine")
+result = save(own)
+assert result["configured"] and result["worktree_clean"], result
+assert mine in git(own, "log", "--format=%H", "main").split(), result
 
 # A `git status` holds the index lock briefly; an index write waits for it.
 lock = raced / ".git/index.lock"
