@@ -806,22 +806,20 @@ def saveProgress(data, filename, *, force=False):
         return False
 
 
-class _Recorded(str):
-    """Source text the game keeps in `_original`, as the source helpers
-    return it. A helper falls back to the value itself for text never
-    translated, so the send check tells the two apart by this type: a
-    Chinese translation may keep its source's kanji letter for letter, such
-    as a name, while text never translated is all left (_has_japanese_text).
-    """
-
-    __slots__ = ()
+# The source helpers (`_param_source`, `_choice_source`, `_entry_field_source`
+# and the others) return the source the game keeps in `_original`, or None
+# for text never translated, which keeps none; their `_text` twins give the
+# text to translate, that source or the value as the game has it. The send
+# check reads a value against a recorded source only (_has_japanese_text): a
+# Chinese translation may keep its source's kanji letter for letter, such as
+# a name, while text never translated is all left.
 
 
 def _scalar_original(cmd) -> str | None:
     """Return scalar _original on an event command, or None if absent/empty."""
     orig = cmd.get("_original")
     if isinstance(orig, str) and orig.strip():
-        return _Recorded(orig)
+        return orig
     return None
 
 
@@ -872,7 +870,7 @@ def _merge_original_tree(target: dict, source: dict) -> None:
 def _overlay_original_tree(current, original):
     """Overlay a sparse _original tree on a current list/dict value."""
     if isinstance(original, str):
-        return _Recorded(original)
+        return original
     if not isinstance(original, dict):
         return copy.deepcopy(original)
 
@@ -1002,7 +1000,7 @@ SOURCE_TEXT = 3
 def _has_japanese_text(text, source=None) -> bool:
     """True when text still holds source text to translate (util/source_text,
     in the run's source language), read against *source*, the text it was
-    translated from, when known.
+    translated from, when the game keeps it; None for text never translated.
 
     Older runs read it by LANGREGEX after quote normalization: decorative
     wrappers such as 〝phytoncide〟 become ASCII quotes when convertQuotes is
@@ -1018,10 +1016,6 @@ def _has_japanese_text(text, source=None) -> bool:
             # Every Japanese letter read as left in any target, as in a
             # translation into English.
             return bool(source_left(str(text), str(source), target=ENGLISH))
-        if not isinstance(source, _Recorded) and str(source) == str(text):
-            # A source the game doesn't keep is the value itself, never
-            # translated, which reads the same without one.
-            return holds_source(str(text))
         return bool(source_left(str(text), str(source)))
     if text is None:
         return False
@@ -1099,51 +1093,93 @@ def _param_current(cmd, index: int) -> str:
     return ""
 
 
-def _param_source(cmd, index: int) -> str:
-    """Prefer scalar/path-mirrored _original; else parameters[index]."""
+def _param_source(cmd, index: int) -> str | None:
+    """The scalar or path-mirrored _original of parameters[index], or None."""
+    orig = _scalar_original(cmd)
+    if orig is not None:
+        return orig
+    tree = cmd.get("_original")
+    params = tree.get("parameters") if isinstance(tree, dict) else None
+    if not isinstance(params, dict) or index >= len(cmd.get("parameters") or []):
+        return None
+    slot = params.get(str(index))
+    return slot if isinstance(slot, str) else None
+
+
+def _param_text(cmd, index: int) -> str:
+    """parameters[index] as its source has it: the _original, scalar or
+    path-mirrored, or the parameter itself."""
     orig = _scalar_original(cmd)
     if orig is not None:
         return orig
     params = _source_parameters(cmd)
     if index < len(params) and params[index] is not None:
-        # A path-mirrored original stays _Recorded.
         value = params[index]
         return value if isinstance(value, str) else str(value)
     return ""
 
 
-def _group_source(codeList, start: int, end: int) -> str:
+_GROUP_CODES = (401, 405, -1)
+
+
+def _rows(codeList, rows, codes=None) -> list:
+    """The commands of message or comment *rows*, those of *codes* with
+    parameters when given."""
+    return [
+        codeList[idx]
+        for idx in rows
+        if idx < len(codeList)
+        and (
+            codes is None
+            or (
+                codeList[idx]
+                and codeList[idx].get("code") in codes
+                and codeList[idx].get("parameters")
+            )
+        )
+    ]
+
+
+def _rows_text(codeList, rows, codes=None) -> str:
+    """The source text of message or comment *rows*, joined (`_rows`)."""
+    texts = (_param_text(cmd, 0) for cmd in _rows(codeList, rows, codes))
+    return "\n".join(text for text in texts if text.strip())
+
+
+def _rows_recorded(codeList, rows, codes=None) -> bool:
+    """Whether the game keeps the source of any of *rows* (`_rows`)."""
+    return any(
+        _param_source(cmd, 0) is not None for cmd in _rows(codeList, rows, codes)
+    )
+
+
+def _group_text(codeList, start: int, end: int) -> str:
     """Join source text for a merged 401/405 group (indices start..end inclusive)."""
     if start < len(codeList):
         orig = _scalar_original(codeList[start])
         if orig is not None:
             return orig
-    parts = []
-    for idx in range(start, end + 1):
-        if idx >= len(codeList):
-            break
-        cmd = codeList[idx]
-        if not cmd or cmd.get("code") not in (401, 405, -1):
-            continue
-        params = cmd.get("parameters") or []
-        if not params:
-            continue
-        src = _param_source(cmd, 0)
-        if src.strip():
-            parts.append(src)
-    return "\n".join(parts)
+    return _rows_text(codeList, range(start, end + 1), _GROUP_CODES)
 
 
-def _code408_source(codeList, group) -> str:
+def _group_recorded(codeList, start: int, end: int, text: str) -> str | None:
+    """*text*, the source of the 401/405 group from *start* to *end*, when
+    the game keeps it, on the group's first row or its own; else None."""
+    rows = range(start, end + 1)
+    return text if _rows_recorded(codeList, rows, _GROUP_CODES) else None
+
+
+def _code408_text(codeList, group) -> str:
     """The Japanese a 408 group's comment holds: the first line keeps the
     Japanese of them all once translated."""
     if _scalar_original(codeList[group[0]]) is not None:
-        return _param_source(codeList[group[0]], 0)
-    return "\n".join(
-        source
-        for source in (_param_source(codeList[index], 0) for index in group)
-        if source.strip()
-    )
+        return _param_text(codeList[group[0]], 0)
+    return _rows_text(codeList, group)
+
+
+def _code408_source(codeList, group) -> str | None:
+    """A 408 group's source as the game keeps it, or None."""
+    return _code408_text(codeList, group) if _rows_recorded(codeList, group) else None
 
 
 def _message_entry(text: str, speaker: str) -> str | None:
@@ -1157,7 +1193,7 @@ def _message_entry(text: str, speaker: str) -> str | None:
     return f"[{speaker}]: {text}" if speaker else text
 
 
-def _group_raw_source(codeList, group_start: int, source_parts: list[str]) -> str:
+def _group_raw_text(codeList, group_start: int, source_parts: list[str]) -> str:
     """Batch source for merged 401/405; anchor _original wins on re-run."""
     if group_start < len(codeList):
         orig = _scalar_original(codeList[group_start])
@@ -1264,7 +1300,7 @@ def _code408_progress_units(codeList) -> int:
             continue
         block = _code408_block(codeList, index)
         group = _code408_group(codeList, block, index) if block else None
-        if group is None or not _param_source(command, 0).strip():
+        if group is None or not _param_text(command, 0).strip():
             index += 1
             continue
         if _text_needs_translation(
@@ -1341,13 +1377,21 @@ def _apply_original(cmd, raw_source: str) -> None:
     cmd["_original"] = raw_source
 
 
-def _choice_source(cmd, index: int) -> str:
-    """Prefer _original[index] for code 102 choices; else parameters[0][index]."""
+def _choice_source(cmd, index: int) -> str | None:
+    """_original[index] of a code 102 choice, or None."""
     orig_list = cmd.get("_original")
     if isinstance(orig_list, list) and index < len(orig_list):
         slot = orig_list[index]
         if slot is not None and str(slot).strip():
-            return _Recorded(slot)
+            return str(slot)
+    return None
+
+
+def _choice_text(cmd, index: int) -> str:
+    """A code 102 choice's source text: _original[index], else parameters[0][index]."""
+    source = _choice_source(cmd, index)
+    if source is not None:
+        return source
     params = cmd.get("parameters") or [[]]
     choices = params[0] if params else []
     if isinstance(choices, list) and index < len(choices) and choices[index] is not None:
@@ -1396,7 +1440,7 @@ def _choice_job(cmd):
     positions, plugin condition clauses and sources for writing them back."""
     job = {"choices": [], "indexes": [], "conditions": [], "sources": []}
     for choice in range(len(cmd["parameters"][0])):
-        rawSource = _choice_source(cmd, choice)
+        rawSource = _choice_text(cmd, choice)
         currentChoice = _choice_current(cmd, choice)
         jaString = rawSource.replace(" 。", ".")
 
@@ -1404,7 +1448,7 @@ def _choice_job(cmd):
         if not jaString.strip():
             continue
 
-        if not _text_needs_translation(currentChoice, rawSource):
+        if not _text_needs_translation(currentChoice, _choice_source(cmd, choice)):
             continue
 
         # Preserve plugin condition clauses outside the model.
@@ -1528,6 +1572,11 @@ def _split_choice_condition_suffix(text: str) -> tuple[str, str]:
 
 
 def _122_inner_source(cmd) -> str | None:
+    """Code 122's inner quoted value as the game keeps it in _original, or None."""
+    return _scalar_original(cmd)
+
+
+def _122_inner_text(cmd) -> str | None:
     """Inner quoted value for code 122: _original or extract from parameters[4]."""
     orig = _scalar_original(cmd)
     if orig is not None:
@@ -1607,17 +1656,12 @@ def _ruby_122_operand(text: str, source: str = "") -> str:
     return f'"{script_strings.release(script_strings.ruby_text(value), kept)}"'
 
 
-def _101_name_source(cmd, is_var: bool) -> str:
+def _101_name_text(cmd, is_var: bool) -> str:
     """Speaker name field for code 101: _original or parameters[4]/[0]."""
     orig = _scalar_original(cmd)
     if orig is not None:
         return orig
-    params = cmd.get("parameters") or []
-    if is_var and len(params) > 0 and params[0] is not None:
-        return str(params[0])
-    if not is_var and len(params) > 4 and params[4] is not None:
-        return str(params[4])
-    return ""
+    return _101_name_current(cmd, is_var)
 
 
 def _101_name_current(cmd, is_var: bool) -> str:
@@ -1733,14 +1777,21 @@ def _entry_orig(entry) -> dict:
     return orig if isinstance(orig, dict) else {}
 
 
-def _entry_field_source(entry, field: str) -> str:
+def _entry_field_source(entry, field: str) -> str | None:
+    """_original[field] of a database entry's scalar field, or None."""
+    slot = _entry_orig(entry).get(field)
+    if slot is not None and not isinstance(slot, (dict, list)) and str(slot).strip():
+        return str(slot)
+    return None
+
+
+def _entry_field_text(entry, field: str) -> str:
     """Prefer _original[field]; else entry[field] (database scalar fields)."""
     if not isinstance(entry, dict):
         return ""
-    orig = _entry_orig(entry)
-    slot = orig.get(field)
-    if slot is not None and not isinstance(slot, (dict, list)) and str(slot).strip():
-        return _Recorded(slot)
+    source = _entry_field_source(entry, field)
+    if source is not None:
+        return source
     val = entry.get(field)
     if val is not None:
         return str(val)
@@ -1782,15 +1833,23 @@ def _system_orig(data) -> dict:
     return orig
 
 
-def _system_scalar_source(data, field: str) -> str:
-    """Prefer root _original[field]; else data[field]."""
-    if not isinstance(data, dict):
-        return ""
-    orig = data.get("_original")
+def _system_scalar_source(data, field: str) -> str | None:
+    """Root _original[field] of System.json, or None."""
+    orig = data.get("_original") if isinstance(data, dict) else None
     if isinstance(orig, dict):
         slot = orig.get(field)
         if slot is not None and not isinstance(slot, (dict, list)) and str(slot).strip():
-            return _Recorded(slot)
+            return str(slot)
+    return None
+
+
+def _system_scalar_text(data, field: str) -> str:
+    """Prefer root _original[field]; else data[field]."""
+    if not isinstance(data, dict):
+        return ""
+    source = _system_scalar_source(data, field)
+    if source is not None:
+        return source
     val = data.get(field)
     if val is not None:
         return str(val)
@@ -1810,17 +1869,25 @@ def _apply_system_scalar_original(data, field: str, raw: str) -> None:
     orig[field] = raw
 
 
-def _system_list_source(data, list_name: str, index: int) -> str:
-    """Prefer _original[list_name][str(index)]; else data[list_name][index]."""
-    if not isinstance(data, dict):
-        return ""
-    orig = data.get("_original")
+def _system_list_source(data, list_name: str, index: int) -> str | None:
+    """_original[list_name][str(index)] of System.json, or None."""
+    orig = data.get("_original") if isinstance(data, dict) else None
     if isinstance(orig, dict):
         list_orig = orig.get(list_name)
         if isinstance(list_orig, dict):
             slot = list_orig.get(str(index))
             if slot is not None and str(slot).strip():
-                return _Recorded(slot)
+                return str(slot)
+    return None
+
+
+def _system_list_text(data, list_name: str, index: int) -> str:
+    """Prefer _original[list_name][str(index)]; else data[list_name][index]."""
+    if not isinstance(data, dict):
+        return ""
+    source = _system_list_source(data, list_name, index)
+    if source is not None:
+        return source
     lst = data.get(list_name) or []
     if index < len(lst) and lst[index] is not None:
         return str(lst[index])
@@ -1845,11 +1912,9 @@ def _apply_system_list_original(data, list_name: str, index: int, raw: str) -> N
     list_orig[key] = raw
 
 
-def _system_terms_source(data, category: str, index: int) -> str:
-    """Prefer _original.terms[category][str(index)]; else terms[category][index]."""
-    if not isinstance(data, dict):
-        return ""
-    orig = data.get("_original")
+def _system_terms_source(data, category: str, index: int) -> str | None:
+    """_original.terms[category][str(index)] of System.json, or None."""
+    orig = data.get("_original") if isinstance(data, dict) else None
     if isinstance(orig, dict):
         terms_orig = orig.get("terms")
         if isinstance(terms_orig, dict):
@@ -1857,7 +1922,17 @@ def _system_terms_source(data, category: str, index: int) -> str:
             if isinstance(cat_orig, dict):
                 slot = cat_orig.get(str(index))
                 if slot is not None and str(slot).strip():
-                    return _Recorded(slot)
+                    return str(slot)
+    return None
+
+
+def _system_terms_text(data, category: str, index: int) -> str:
+    """Prefer _original.terms[category][str(index)]; else terms[category][index]."""
+    if not isinstance(data, dict):
+        return ""
+    source = _system_terms_source(data, category, index)
+    if source is not None:
+        return source
     term_list = (data.get("terms") or {}).get(category)
     if isinstance(term_list, list) and index < len(term_list) and term_list[index] is not None:
         return str(term_list[index])
@@ -1886,11 +1961,9 @@ def _apply_system_terms_original(data, category: str, index: int, raw: str) -> N
     cat[key] = raw
 
 
-def _system_terms_message_source(data, key: str) -> str:
-    """Prefer _original.terms.messages[key]; else terms.messages[key]."""
-    if not isinstance(data, dict):
-        return ""
-    orig = data.get("_original")
+def _system_terms_message_source(data, key: str) -> str | None:
+    """_original.terms.messages[key] of System.json, or None."""
+    orig = data.get("_original") if isinstance(data, dict) else None
     if isinstance(orig, dict):
         terms_orig = orig.get("terms")
         if isinstance(terms_orig, dict):
@@ -1898,7 +1971,17 @@ def _system_terms_message_source(data, key: str) -> str:
             if isinstance(msg_orig, dict):
                 slot = msg_orig.get(key)
                 if slot is not None and str(slot).strip():
-                    return _Recorded(slot)
+                    return str(slot)
+    return None
+
+
+def _system_terms_message_text(data, key: str) -> str:
+    """Prefer _original.terms.messages[key]; else terms.messages[key]."""
+    if not isinstance(data, dict):
+        return ""
+    source = _system_terms_message_source(data, key)
+    if source is not None:
+        return source
     messages = (data.get("terms") or {}).get("messages") or {}
     val = messages.get(key)
     if val is not None:
@@ -2941,7 +3024,7 @@ def _battle_users() -> tuple[dict[int, tuple[list[str], list[str]]], str | None]
         actor_names: dict[int, str] = {}
         actor_ids: dict[int, set[int]] = {}
         for actor in entries("Actors.json"):
-            name = _entry_field_source(actor, "name").strip()
+            name = _entry_field_text(actor, "name").strip()
             # A player-named actor's slot says nothing about who it is.
             if not name or not isinstance(actor.get("id"), int):
                 continue
@@ -2993,7 +3076,7 @@ def _battle_users() -> tuple[dict[int, tuple[list[str], list[str]]], str | None]
                         party_known = False
         enemy_names: dict[int, list[str]] = {}
         for enemy in entries("Enemies.json"):
-            name = _entry_field_source(enemy, "name").strip()
+            name = _entry_field_text(enemy, "name").strip()
             if not name:
                 continue
             for action in enemy.get("actions") or []:
@@ -3254,7 +3337,7 @@ def searchNames(data, pbar, context, filename, saved=None):
             for msg_num in range(1, 5):
                 msg_field = f"message{msg_num}"
                 if msg_field in entry and entry[msg_field]:
-                    msg_text = _entry_field_source(entry, msg_field)
+                    msg_text = _entry_field_text(entry, msg_field)
                     if not _entry_field_needs_translation(entry, msg_field):
                         continue
                     needs_taro = len(msg_text) > 0 and msg_text[0] in ["は", "を", "の", "に", "が"]
@@ -3307,19 +3390,19 @@ def searchNames(data, pbar, context, filename, saved=None):
             filling = True
             if context in "Actors":
                 if len(nameList) < BATCHSIZE:
-                    name_src = _entry_field_source(data[i], "name")
+                    name_src = _entry_field_text(data[i], "name")
                     if name_src != "" and _entry_field_needs_translation(data[i], "name"):
                         nameList.append(name_src)
                         nameSourceList.append(name_src)
                         nameIndexList.append(i)
                     if "nickname" in data[i]:
-                        nick_src = _entry_field_source(data[i], "nickname")
+                        nick_src = _entry_field_text(data[i], "nickname")
                         if nick_src and _entry_field_needs_translation(data[i], "nickname"):
                             nicknameList.append(nick_src)
                             nicknameSourceList.append(nick_src)
                             nicknameIndexList.append(i)
                     if "profile" in data[i]:
-                        prof_src = _entry_field_source(data[i], "profile")
+                        prof_src = _entry_field_text(data[i], "profile")
                         if prof_src and _entry_field_needs_translation(data[i], "profile"):
                             profileList.append(prof_src)
                             profileSourceList.append(prof_src)
@@ -3329,13 +3412,13 @@ def searchNames(data, pbar, context, filename, saved=None):
                     batchFull = True
             if context in ["Armors", "Weapons", "Items"]:
                 if len(nameList) < BATCHSIZE:
-                    name_src = _entry_field_source(data[i], "name")
+                    name_src = _entry_field_text(data[i], "name")
                     if _entry_field_needs_translation(data[i], "name"):
                         nameList.append(name_src)
                         nameSourceList.append(name_src)
                         nameIndexList.append(i)
                     if "description" in data[i]:
-                        desc_src = _entry_field_source(data[i], "description")
+                        desc_src = _entry_field_text(data[i], "description")
                         if desc_src != "":
                             if _entry_field_needs_translation(data[i], "description"):
                                 descriptionList.append(desc_src)
@@ -3346,13 +3429,13 @@ def searchNames(data, pbar, context, filename, saved=None):
                     batchFull = True
             if context in ["Skills"]:
                 if len(nameList) < BATCHSIZE:
-                    name_src = _entry_field_source(data[i], "name")
+                    name_src = _entry_field_text(data[i], "name")
                     if _entry_field_needs_translation(data[i], "name"):
                         nameList.append(name_src)
                         nameSourceList.append(name_src)
                         nameIndexList.append(i)
                     if "description" in data[i]:
-                        desc_src = _entry_field_source(data[i], "description")
+                        desc_src = _entry_field_text(data[i], "description")
                         if desc_src:
                             if _entry_field_needs_translation(data[i], "description"):
                                 descriptionList.append(desc_src)
@@ -3363,7 +3446,7 @@ def searchNames(data, pbar, context, filename, saved=None):
                     batchFull = True
             if context in ["Enemies", "Classes", "MapInfos"]:
                 if len(nameList) < BATCHSIZE:
-                    name_src = _entry_field_source(data[i], "name")
+                    name_src = _entry_field_text(data[i], "name")
                     if _entry_field_needs_translation(data[i], "name"):
                         nameList.append(name_src)
                         nameSourceList.append(name_src)
@@ -3619,7 +3702,7 @@ def _standalone_speaker(name):
 def _message_end(commands, start, allowed):
     end = _text_group_end(commands, start, allowed)
     nameplate = re.fullmatch(
-        rf"\[({SPEAKER_BRACKET_INNER})\]\s*", _param_source(commands[start], 0)
+        rf"\[({SPEAKER_BRACKET_INNER})\]\s*", _param_text(commands[start], 0)
     )
     if nameplate and _standalone_speaker(nameplate[1]):
         # An English [Name] line still needs the following Japanese dialogue
@@ -3926,22 +4009,23 @@ def _searchCodes(page, pbar, jobList, filename):
                     # Speaker parse must inspect source/_original even when live
                     # parameters are already English, or the unresolved count
                     # drifts as translation progress lands in files/.
-                    preview_source = _group_source(codeList, i, previewEnd)
+                    preview_text = _group_text(codeList, i, previewEnd)
                     if not (
-                        _text_needs_translation(preview_source)
+                        _text_needs_translation(preview_text)
                         if SPEAKER_PARSE_MODE
                         else _text_needs_translation(
-                            _group_current(codeList, i, previewEnd), preview_source
+                            _group_current(codeList, i, previewEnd),
+                            _group_recorded(codeList, i, previewEnd, preview_text),
                         )
                     ):
                         if not setData:
                             _write_unsent_rows(
-                                codeList, i, previewEnd, preview_source
+                                codeList, i, previewEnd, preview_text
                             )
                         i = previewEnd + 1
                         continue
                     jaString = codeList[i]["parameters"][0]
-                    oldjaString = _param_source(codeList[i], 0)
+                    oldjaString = _param_text(codeList[i], 0)
                     speakerWork = oldjaString
                 else:
                     codeList[i]["code"] = -1
@@ -4164,7 +4248,7 @@ def _searchCodes(page, pbar, jobList, filename):
                 # Using this to keep track of 401's in a row (display text for Pass 2 formatting).
                 currentGroup.append(jaString)
                 anchor_has_orig = _scalar_original(codeList[groupStart]) is not None
-                sourceGroup.append(_param_source(codeList[i], 0))
+                sourceGroup.append(_param_text(codeList[i], 0))
                 currentSourceGroup.append(_param_current(codeList[i], 0))
 
                 # Join Up 401's into single string
@@ -4178,7 +4262,7 @@ def _searchCodes(page, pbar, jobList, filename):
                             currentGroup.append(jaString)
                             currentSourceGroup.append(_param_current(codeList[i], 0))
                             if not anchor_has_orig:
-                                sourceGroup.append(_param_source(codeList[i], 0))
+                                sourceGroup.append(_param_text(codeList[i], 0))
 
                         # Make sure not the end of the list.
                         if len(codeList) <= i + 1:
@@ -4186,12 +4270,13 @@ def _searchCodes(page, pbar, jobList, filename):
 
                 # Format String
                 if len(currentGroup) > 0:
-                    rawSource = _group_raw_source(codeList, groupStart, sourceGroup)
+                    rawSource = _group_raw_text(codeList, groupStart, sourceGroup)
                     currentSource = "\n".join(currentSourceGroup)
                     # Skip status is based on the live text, read against its
                     # preserved Japanese source.
                     if not rawSource.strip() or not _text_needs_translation(
-                        currentSource, rawSource
+                        currentSource,
+                        _group_recorded(codeList, groupStart, i, rawSource),
                     ):
                         if not setData:
                             _write_unsent_rows(codeList, groupStart, i, rawSource)
@@ -4328,7 +4413,7 @@ def _searchCodes(page, pbar, jobList, filename):
                             endtag = ""
                             list401.pop(0)
                         elif len(list401) > 0:
-                            rawSource = _group_raw_source(codeList, groupStart, sourceGroup)
+                            rawSource = _group_raw_text(codeList, groupStart, sourceGroup)
                             translatedText = list401[0]
 
                             # Remove speaker prefix if present
@@ -4484,10 +4569,10 @@ def _searchCodes(page, pbar, jobList, filename):
                 #     continue
 
                 # Set String
-                innerSource = _122_inner_source(codeList[i])
+                innerSource = _122_inner_text(codeList[i])
                 if innerSource is not None and innerSource.strip():
                     if not _text_needs_translation(
-                        _122_inner_current(codeList[i]), innerSource
+                        _122_inner_current(codeList[i]), _122_inner_source(codeList[i])
                     ):
                         i += 1
                         continue
@@ -4974,10 +5059,11 @@ def _searchCodes(page, pbar, jobList, filename):
                     continue
 
                 # Get Speaker
-                rawName = _101_name_source(codeList[i], isVar)
+                rawName = _101_name_text(codeList[i], isVar)
                 sourceName = _101_speaker_name(rawName)
-                if isinstance(rawName, _Recorded):
-                    sourceName = _Recorded(sourceName)
+                recordedName = (
+                    sourceName if _scalar_original(codeList[i]) is not None else None
+                )
                 currentName = _101_speaker_name(_101_name_current(codeList[i], isVar))
                 if SPEAKER_CONTEXT:
                     # Retain the current display name even when skip-translated
@@ -4986,7 +5072,7 @@ def _searchCodes(page, pbar, jobList, filename):
                 if sourceName and (
                     _text_needs_translation(sourceName)
                     if SPEAKER_PARSE_MODE
-                    else _text_needs_translation(currentName, sourceName)
+                    else _text_needs_translation(currentName, recordedName)
                 ):
                     response = getSpeaker(sourceName)
                     totalTokens[0] += response[1][0]
@@ -5472,17 +5558,18 @@ def _searchCodes(page, pbar, jobList, filename):
                     continue
 
                 groupStart408 = i
-                if not _param_source(codeList[i], 0).strip():
+                if not _param_text(codeList[i], 0).strip():
                     i += 1
                     continue
 
                 # A comment's translation is written back one line per 408,
                 # wrapped like its Japanese, as plugins read them; JOIN408
                 # translates its lines as one text.
-                rawSource = _code408_source(codeList, group408)
+                rawSource = _code408_text(codeList, group408)
                 i = group408[-1]
                 if not _text_needs_translation(
-                    _group_current(codeList, group408[0], group408[-1]), rawSource
+                    _group_current(codeList, group408[0], group408[-1]),
+                    _code408_source(codeList, group408),
                 ):
                     i += 1
                     continue
@@ -5852,7 +5939,7 @@ def _searchCodes(page, pbar, jobList, filename):
                     choices = codeList[i]["parameters"][0]
                     for index, choice in enumerate(choices):
                         choices[index] = _unsent_text(
-                            choice, _choice_source(codeList[i], index)
+                            choice, _choice_text(codeList[i], index)
                         )
 
             ### Event Code: 111 Script
@@ -5895,13 +5982,13 @@ def _searchCodes(page, pbar, jobList, filename):
                 ):
                     i += 1
                     continue
-                jaString = _param_source(codeList[i], 1) if AUTONAMEPOPUP101 else params[1]
+                jaString = _param_text(codeList[i], 1) if AUTONAMEPOPUP101 else params[1]
                 if not isinstance(jaString, str):
                     i += 1
                     continue
 
                 # A name some games read as a file name (util/rpgmaker_scope).
-                if rpgmaker_scope.FILE_NAME.search(_param_source(codeList[i], 1)):
+                if rpgmaker_scope.FILE_NAME.search(_param_text(codeList[i], 1)):
                     i += 1
                     continue
 
@@ -6271,14 +6358,14 @@ def searchSS(state, pbar):
     
     # Name
     if "name" in state and state["name"]:
-        name_src = _entry_field_source(state, "name")
+        name_src = _entry_field_text(state, "name")
         if _entry_field_needs_translation(state, "name"):
             batch_texts.append(name_src)
             batch_map.append(("name", "name", False, name_src))
     
     # Description
     if "description" in state and state["description"]:
-        desc_src = _entry_field_source(state, "description")
+        desc_src = _entry_field_text(state, "description")
         if _entry_field_needs_translation(state, "description"):
             batch_texts.append(desc_src)
             batch_map.append(("description", "description", False, desc_src))
@@ -6286,7 +6373,7 @@ def searchSS(state, pbar):
     # Messages - collect all with Taro prefix handling
     for msg_field in ["message1", "message2", "message3", "message4"]:
         if msg_field in state and state[msg_field]:
-            msg_text = _entry_field_source(state, msg_field)
+            msg_text = _entry_field_text(state, msg_field)
             if not _entry_field_needs_translation(state, msg_field):
                 continue
             needs_taro = len(msg_text) > 0 and msg_text[0] in ["は", "を", "の", "に", "が"]
@@ -6415,7 +6502,7 @@ def searchSS(state, pbar):
         translatedText = rpgmaker_rewrap.wrap_lines(
             translatedText,
             LISTWIDTH,
-            rpgmaker_rewrap.help_rows(_entry_field_source(state, "description")),
+            rpgmaker_rewrap.help_rows(_entry_field_text(state, "description")),
         )
         state["description"] = translatedText.replace('"', "")
     if "message1" in state and message1Response != "":
@@ -6435,8 +6522,10 @@ def searchSystem(data, pbar):
     context = ctx("database.ui_term")
 
     # Title - batch as a single-item list
-    title_src = _system_scalar_source(data, "gameTitle")
-    if _text_needs_translation(data.get("gameTitle"), title_src):
+    title_src = _system_scalar_text(data, "gameTitle")
+    if _text_needs_translation(
+        data.get("gameTitle"), _system_scalar_source(data, "gameTitle")
+    ):
         response = translateAI(
             [title_src],
             ctx("database.game_title"),
@@ -6458,8 +6547,10 @@ def searchSystem(data, pbar):
             term_sources = []
             for i in range(len(termList)):
                 if termList[i] is not None:
-                    src = _system_terms_source(data, term, i)
-                    if not _text_needs_translation(termList[i], src):
+                    src = _system_terms_text(data, term, i)
+                    if not _text_needs_translation(
+                        termList[i], _system_terms_source(data, term, i)
+                    ):
                         continue
                     term_values.append(src)
                     term_indices.append(i)
@@ -6483,8 +6574,10 @@ def searchSystem(data, pbar):
     armor_indices = []
     armor_sources = []
     for i in range(len(data["armorTypes"])):
-        src = _system_list_source(data, "armorTypes", i)
-        if not _text_needs_translation(data["armorTypes"][i], src):
+        src = _system_list_text(data, "armorTypes", i)
+        if not _text_needs_translation(
+            data["armorTypes"][i], _system_list_source(data, "armorTypes", i)
+        ):
             continue
         armor_values.append(src)
         armor_indices.append(i)
@@ -6509,8 +6602,10 @@ def searchSystem(data, pbar):
     skill_indices = []
     skill_sources = []
     for i in range(len(data["skillTypes"])):
-        src = _system_list_source(data, "skillTypes", i)
-        if not _text_needs_translation(data["skillTypes"][i], src):
+        src = _system_list_text(data, "skillTypes", i)
+        if not _text_needs_translation(
+            data["skillTypes"][i], _system_list_source(data, "skillTypes", i)
+        ):
             continue
         skill_values.append(src)
         skill_indices.append(i)
@@ -6535,8 +6630,10 @@ def searchSystem(data, pbar):
     equip_indices = []
     equip_sources = []
     for i in range(len(data.get("equipTypes", []) or [])):
-        src = _system_list_source(data, "equipTypes", i)
-        if not _text_needs_translation(data["equipTypes"][i], src):
+        src = _system_list_text(data, "equipTypes", i)
+        if not _text_needs_translation(
+            data["equipTypes"][i], _system_list_source(data, "equipTypes", i)
+        ):
             continue
         equip_values.append(src)
         equip_indices.append(i)
@@ -6561,8 +6658,10 @@ def searchSystem(data, pbar):
     element_indices = []
     element_sources = []
     for i in range(len(data["elements"])):
-        src = _system_list_source(data, "elements", i)
-        if not _text_needs_translation(data["elements"][i], src):
+        src = _system_list_text(data, "elements", i)
+        if not _text_needs_translation(
+            data["elements"][i], _system_list_source(data, "elements", i)
+        ):
             continue
         element_values.append(src)
         element_indices.append(i)
@@ -6588,8 +6687,10 @@ def searchSystem(data, pbar):
     weapon_indices = []
     weapon_sources = []
     for i in range(len(data["weaponTypes"])):
-        src = _system_list_source(data, "weaponTypes", i)
-        if not _text_needs_translation(data["weaponTypes"][i], src):
+        src = _system_list_text(data, "weaponTypes", i)
+        if not _text_needs_translation(
+            data["weaponTypes"][i], _system_list_source(data, "weaponTypes", i)
+        ):
             continue
         weapon_values.append(src)
         weapon_indices.append(i)
@@ -6616,9 +6717,11 @@ def searchSystem(data, pbar):
         var_values = []
         var_sources = []
         for idx, val in enumerate(data["variables"]):
-            src = _system_list_source(data, "variables", idx)
+            src = _system_list_text(data, "variables", idx)
             if isinstance(val, str) and src.strip():
-                if not _text_needs_translation(val, src):
+                if not _text_needs_translation(
+                    val, _system_list_source(data, "variables", idx)
+                ):
                     continue
                 var_indices.append(idx)
                 var_values.append(src)
@@ -6645,9 +6748,11 @@ def searchSystem(data, pbar):
         switch_values = []
         switch_sources = []
         for idx, val in enumerate(data["switches"]):
-            src = _system_list_source(data, "switches", idx)
+            src = _system_list_text(data, "switches", idx)
             if isinstance(val, str) and src.strip():
-                if not _text_needs_translation(val, src):
+                if not _text_needs_translation(
+                    val, _system_list_source(data, "switches", idx)
+                ):
                     continue
                 switch_indices.append(idx)
                 switch_values.append(src)
@@ -6675,9 +6780,11 @@ def searchSystem(data, pbar):
         msg_values = []
         msg_sources = []
         for key, value in messages.items():
-            src = _system_terms_message_source(data, key)
+            src = _system_terms_message_text(data, key)
             if isinstance(value, str) and src.strip():
-                if not _text_needs_translation(value, src):
+                if not _text_needs_translation(
+                    value, _system_terms_message_source(data, key)
+                ):
                     continue
                 msg_keys.append(key)
                 msg_values.append(src)
@@ -7026,7 +7133,7 @@ def _parse_actors_json_entries(data) -> tuple[dict[int, str], set[int]]:
         if aid is None:
             continue
         name = (
-            _entry_field_source(entry, "name") if AUTONAMEPOPUP101
+            _entry_field_text(entry, "name") if AUTONAMEPOPUP101
             else (entry.get("name") or "")
         ).strip()
         if name:
