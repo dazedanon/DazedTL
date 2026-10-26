@@ -1108,6 +1108,8 @@ class Guided:
             for name, document in documents.items()
         ):
             raise ValueError("Choose a guidance document.")
+        from desktop.backend.guidance import holds
+
         current = self.backend.workflows.documents(native["id"])
         # Explicit Save replaces the current guidance. The editor's older
         # revision is recovery metadata, not a conflict-review prerequisite.
@@ -1119,14 +1121,14 @@ class Guided:
             for name, document in documents.items()
             if not (
                 name in current
-                and current[name]["text"] == document["text"]
+                and holds(name, current[name], document["text"])
                 and Path(current[name]["path"]).is_file()
             )
         }
         edited = [
             name
             for name in changes
-            if changes[name]["text"] != current.get(name, {}).get("text")
+            if not holds(name, current.get(name, {}), changes[name]["text"])
         ]
         result = (
             self.save_guidance(

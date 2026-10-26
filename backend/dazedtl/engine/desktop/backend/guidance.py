@@ -38,13 +38,39 @@ def stored(name, text):
         return _split_base(text)[0].rstrip("\n")
     return text
 
+def holds(name, document, text):
+    """Whether `document`, as `documents` reads it, already holds `text`."""
+    return document.get("text") == stored(name, text)
+
 def written(root, names):
     """The game files saving the guidance documents `names` may change, which
-    a game write names: their portable files, and the files outside
-    .dazedtl a save moves or updates."""
-    from util.paths import guidance_root_files
+    a game write names: their portable files, the legacy files outside
+    .dazedtl the save moves into it, which are a document's own legacy file
+    and, for any skill, the former root skills folder, and the .gitignore
+    keeping DazedTL's rules once the game's Git is set up."""
+    from util.paths import LEGACY_GAME_SKILLS_RELATIVE, game_git_set_up
+    root = Path(root)
     own = [DOCUMENTS[name][0] if name in DOCUMENTS else f".dazedtl/skills/{name.removeprefix('custom:')}.md" for name in names]
-    return own + guidance_root_files(root)
+    legacy = [Path(DOCUMENTS[name][1]) for name in names if name in DOCUMENTS]
+    if any(name != "glossary" for name in names):
+        legacy += [path.relative_to(root) for path in (root / LEGACY_GAME_SKILLS_RELATIVE).rglob("*") if not path.is_dir()]
+    moved = list(dict.fromkeys(path.as_posix() for path in legacy if (root / path).exists() or (root / path).is_symlink()))
+    return own + moved + ([".gitignore"] if game_git_set_up(root) else [])
+
+def _replaced(root, name, held, revision):
+    """Whether a save whose write ended without its checkpoint, committed
+    since under its own name, replaced this document at `revision` with what
+    its file holds, so a draft based on that revision overwrites no one
+    else's change."""
+    from dazedtl.compatibility.checkpoint_commits import recovered_text
+    if "path" not in held:
+        return False
+    try:
+        relative = Path(held["path"]).resolve().relative_to(Path(root).resolve()).as_posix()
+    except ValueError:
+        return False
+    found = recovered_text(root, relative)
+    return found is not None and digest(stored(name, found[0] or "").encode()) == revision
 
 def document_save(root, name, revision, text):
     return documents_save(root, {name: {"revision": revision, "text": text}})
@@ -53,7 +79,8 @@ def documents_save(root, changes):
     """Saves a set of guidance documents, {name: {revision, text}}, checking
     every one before writing any, so a refused set changes no file. A change
     whose revision is out of date is no conflict when the file already holds
-    its text, which a save that wrote the file and then failed leaves."""
+    its text, or when its revision is the one a save that wrote the file and
+    then made no checkpoint replaced, as its draft then still has it."""
     root = Path(root)
     current = documents(root)
     if not isinstance(changes, dict):
@@ -66,7 +93,7 @@ def documents_save(root, changes):
         if name not in current and revision == "":
             revision = digest(b"")
         held = current.get(name, {"text": None, "revision": digest(b"")})
-        if held["revision"] != revision and held["text"] != stored(name, text):
+        if held["revision"] != revision and not holds(name, held, text) and not _replaced(root, name, held, revision):
             raise ValueError("This guidance changed on disk. Reload before saving.")
     for name, change in changes.items():
         text = change["text"]

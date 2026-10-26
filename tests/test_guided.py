@@ -2086,10 +2086,11 @@ class GuidedTests(unittest.TestCase):
         self.assertEqual(quirks.read_text(encoding="utf-8"), "")
         self.assertEqual(summaries, ["Save Glossary"])
         self.assertEqual(set(pending["documents"]), {"game"})
-        # A document whose file already holds its text writes nothing, so a
+        # A document whose file already holds its text, as documents reads it
+        # back, without a glossary's trailing newlines, writes nothing, so a
         # Save of untouched tabs makes no checkpoint.
         self.backend.workflows.documents_save = Mock()
-        self.guided.save_documents(self.identity, draft("My draft"))
+        self.guided.save_documents(self.identity, draft("My draft\n"))
         self.backend.workflows.documents_save.assert_not_called()
         self.backend.workflows.documents_save = save
         self.guided.save_documents(self.identity, draft(""))

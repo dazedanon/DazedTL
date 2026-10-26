@@ -62,6 +62,12 @@ _INDEX_WRITERS = frozenset(
     {"add", "checkout", "checkout-index", "cherry-pick", "commit", "read-tree", "reset", "rm", "update-index"}
 )
 INDEX_LOCK_WAIT = 10.0
+# Git names the lock file it found held in every language: "Unable to create '<path>/index.lock'".
+_HELD_LOCK = re.compile(rb"'([^\n]*index\.lock)'")
+_HELD_INDEX = (
+    "Another Git process is using this repository. If none is running, "
+    "delete the leftover .git/index.lock file in the game folder and try again."
+)
 # Git operations a checkout can be left in the middle of, by the file or
 # folder Git keeps in its directory while one is under way.
 PENDING_OPERATIONS = (
@@ -400,10 +406,10 @@ def _run_git(
         except (OSError, subprocess.SubprocessError) as exc:
             reason = getattr(exc, "strerror", None) or type(exc).__name__
             raise UserFacingGitError(f"git {_command_name(args)} could not run: {reason}") from exc
-        # Git names the lock file in every language: "Unable to create '<path>/index.lock'".
-        if not (raw.returncode and _command_name(args) in _INDEX_WRITERS and b"index.lock'" in raw.stderr):
+        held = _HELD_LOCK.search(raw.stderr) if raw.returncode and _command_name(args) in _INDEX_WRITERS else None
+        if held is None:
             break
-        deadline = deadline or time.monotonic() + INDEX_LOCK_WAIT
+        deadline = deadline or index_lock_deadline(Path(os.fsdecode(held.group(1))))
         if time.monotonic() >= deadline:
             break
         time.sleep(0.1)
@@ -419,18 +425,38 @@ def _run_git(
     return result
 
 
+def index_lock_deadline(lock: Path) -> float:
+    """When waiting for the index lock at `lock` gives up: once it has been held for
+    INDEX_LOCK_WAIT, by its age, which a Git process refreshing the index never
+    reaches. A lock a crashed Git left fails at once, rather than after a wait in
+    each Git command that meets it."""
+    try:
+        held = time.time() - lock.stat().st_mtime
+    except OSError:
+        held = 0.0
+    return time.monotonic() + min(INDEX_LOCK_WAIT, max(0.0, INDEX_LOCK_WAIT - held))
+
+
+def wait_for_index_lock(lock: Path) -> None:
+    """Returns once no Git process holds the index lock at `lock`, refusing as
+    `_open_index_lock` does once it has been held too long, for a write that
+    must not start while its checkpoint would fail."""
+    deadline = index_lock_deadline(lock)
+    while lock.exists():
+        if time.monotonic() >= deadline:
+            raise UserFacingGitError(_HELD_INDEX)
+        time.sleep(0.1)
+
+
 def _open_index_lock(lock: Path):
     """Creates the index lock for writing, waiting like `_run_git` while another Git process holds it."""
-    deadline = time.monotonic() + INDEX_LOCK_WAIT
+    deadline = index_lock_deadline(lock)
     while True:
         try:
             return lock.open("xb")
         except FileExistsError:
             if time.monotonic() >= deadline:
-                raise UserFacingGitError(
-                    "Another Git process is using this repository. If none is running, "
-                    "delete the leftover .git/index.lock file in the game folder and try again."
-                ) from None
+                raise UserFacingGitError(_HELD_INDEX) from None
             time.sleep(0.1)
 
 
