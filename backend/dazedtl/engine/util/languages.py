@@ -6,7 +6,9 @@ Settings, the engine and the app read them here.
 A pair is supported when its source and target use different scripts, so a
 value's letters tell whether it still needs translating. The source is one
 of SOURCE_LANGUAGES; a target is free text, read as Latin script unless it
-names a language written otherwise.
+names a language written otherwise. Chinese shares a Japanese source's
+kanji, so in a translation into it only kana tell Japanese left
+(`shares_kanji`).
 
 A Japanese source keeps each engine's own pattern exactly, by variant name:
 merging them would change what existing runs send. An English source reads
@@ -70,6 +72,9 @@ JAPANESE_LETTERS = (
     rf"㐀-䶿一-鿿豈-﫿{HALF_WIDTH_LETTERS}"
 )
 KANJI = re.compile(r"[㐀-䶿一-鿿豈-﫿]")
+# Kana letters: hiragana, katakana and half-width katakana, which Japanese
+# writes and Chinese does not.
+KANA = re.compile(rf"[ぁ-ゖァ-ヺ{HALF_WIDTH_LETTERS}]")
 
 # Latin letters: ASCII and the accented letters of Latin-1 and Latin
 # Extended-A and B, without × and ÷.
@@ -116,6 +121,15 @@ def target_uses_cjk(language) -> bool:
     return script(language) in {"chinese", "japanese"}
 
 
+def shares_kanji(source=None, target=None) -> bool:
+    """Whether a translation from *source* into *target*, the active pair
+    by default, writes with the source's own letters: Japanese into Chinese,
+    whose hanzi are kanji, so only kana read as Japanese left in it."""
+    return (source or active_source()) == JAPANESE and script(
+        target or active_target()
+    ) == "chinese"
+
+
 def source_language(value) -> str:
     """*value* as a supported source language, matched in any case."""
     for language in SOURCE_LANGUAGES:
@@ -141,19 +155,24 @@ def pair_problem(source, target) -> str | None:
     return None
 
 
-# The source language work on one game reads in, in a process that serves
-# several games, such as the app's (`reading`).
+# The source and target languages work on one game reads in, in a process
+# that serves several games, such as the app's (`reading`).
 _READING: ContextVar[str | None] = ContextVar("source_language", default=None)
+_TARGET: ContextVar[str | None] = ContextVar("target_language", default=None)
 
 
 @contextmanager
-def reading(language):
-    """Reads text as written in the source *language* within the block, in
-    this thread or task."""
+def reading(language, target=None):
+    """Reads text as written in the source *language*, and translated into
+    *target* when given, within the block, in this thread or task."""
     token = _READING.set(source_language(language))
+    named = str(target or "").strip()
+    target_token = _TARGET.set(named) if named else None
     try:
         yield
     finally:
+        if target_token is not None:
+            _TARGET.reset(target_token)
         _READING.reset(token)
 
 
@@ -163,6 +182,13 @@ def active_source() -> str:
     neither is set."""
     value = _READING.get() or os.getenv(SOURCE_ENV)
     return source_language(value) if value else DEFAULT_SOURCE
+
+
+def active_target() -> str:
+    """The target language of the work at hand: the one `reading` names, or
+    the run's ``language`` setting, which a run worker's environment
+    carries; English when neither is set."""
+    return _TARGET.get() or (os.getenv("language") or "").strip() or ENGLISH
 
 
 def source_pattern(variant="common", language=None) -> str:

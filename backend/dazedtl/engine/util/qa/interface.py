@@ -201,18 +201,22 @@ def _fit_checks(
     for record in manifest["records"]:
         window = _window(record, layout)
         live = str(record.get("live") or "")
+        source = str(record.get("source") or "")
         if (
             window is None or window.paged or not window.rows or window.kind == "note"
-            or not live.strip() or rewrap.untranslated(live)
+            or not live.strip()
+            or rewrap.untranslated(live, source or None, window.target)
         ):
             continue
         box = _box(record, layout)
-        written = _fit(live, live, box, str(record.get("source") or ""))
-        if reason := rewrap.misfit(written, window):
+        written = _fit(live, live, box, source)
+        if reason := rewrap.misfit(written, window, source or None):
             note = f"Wrapped to the game's Line widths, this text {reason}."
         elif box and box.get("help") and (
             reason := rewrap.rows_misfit(
-                blocks.help_shown(box["help"], written.split("\n")), window
+                blocks.help_shown(box["help"], written.split("\n")),
+                window,
+                source or None,
             )
         ):
             note = (

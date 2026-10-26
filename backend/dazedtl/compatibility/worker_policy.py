@@ -16,7 +16,6 @@ from dazedtl.settings.preferences import (
     PAGE_PACKING,
     REUSE_STRETCHES,
     SAME_LINE_SPEAKERS,
-    SOURCE_TEXT,
     SOURCE_TEXT_LEVELS,
     SPEAKER_CONTEXT,
     batch_input_tokens,
@@ -229,7 +228,8 @@ def install(*, coordinator=False):
                 share_stretches=policy.get("reuseStretches") == REUSE_STRETCHES,
                 map_name_identities=policy.get("mapNameIdentities")
                 == MAP_NAME_IDENTITIES,
-                source_aware=policy.get("sourceText") == SOURCE_TEXT,
+                source_aware=SOURCE_TEXT_LEVELS.get(str(policy.get("sourceText")), 0)
+                >= 2,
             )
             evidence.install(translation, sys.modules.get("modules.rpgmakermvmz"))
             record = evidence.record

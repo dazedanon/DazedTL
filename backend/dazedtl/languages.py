@@ -21,6 +21,7 @@ from util.languages import (
     SOURCE_ENV,
     SOURCE_LANGUAGES,
     active_source,
+    active_target,
     pair_problem,
     reading,
     script,
@@ -40,6 +41,7 @@ __all__ = [
     "SOURCE_ENV",
     "SOURCE_LANGUAGES",
     "active_source",
+    "active_target",
     "game_source",
     "load_language_pair",
     "pair_note",
@@ -81,6 +83,12 @@ def read_source(root: str | Path) -> str:
 
 
 def reading_game(root: str | Path):
-    """Reads text in the language of the game at *root* (`read_source`)
-    within the block."""
-    return reading(read_source(root))
+    """Reads text in the language of the game at *root* (`read_source`),
+    translated into the target its pair records, within the block; a game
+    without a pair, or whose settings can't be read, reads for the run's
+    target."""
+    try:
+        pair = load_language_pair(root)
+    except OSError, ValueError:
+        pair = None
+    return reading(read_source(root), pair["target"] if pair else None)

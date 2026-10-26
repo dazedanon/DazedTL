@@ -114,7 +114,7 @@ An old interrupted Live run without request evidence flags only its shared files
 Readers for older runs ([live_validation](../backend/dazedtl/compatibility/live_validation.py), [choice_history](../backend/dazedtl/compatibility/choice_history.py)) settle a historical request only when the frozen plan, output hashes, submission mapping and exact source identity all match; otherwise it stays unresolved, and missing bodies are never invented.
 Grouping a retry with its original is presentation only: receipt indices, submission guards and billed usage stay intact.
 The engine's response check reads source text left in a reply by the same rule as file status ([source_text](../backend/dazedtl/engine/util/source_text.py) `source_left`), so punctuation, kaomoji and censor masks the source holds pass, as do abbreviations such as HP that an English source writes in capitals.
-Only a Chinese target of a Japanese source, which shares its kanji, reads just kana as left.
+Only a Chinese target of a Japanese source, which shares its kanji, reads just kana as left, and only in a value read against its source: without one, a value may be text never translated, so every letter is left.
 Every step that reshapes a reply follows the target's script ([target_text](../backend/dazedtl/engine/util/target_text.py)): a Latin-script target is cleaned as it always was, while a Chinese or Japanese target keeps full-width punctuation, the small っ, corner brackets and quotes as the model wrote them, and names are capitalized only in Latin script.
 A reply whose only faults are some lines' content is validated and saved but for those lines, which keep their original text; the receipt names them for Inspect, they are not saved for reuse, and the next Translate sends them again.
 A reply with the wrong lines, placeholders or control codes is still rejected whole.
@@ -123,6 +123,7 @@ A reply with the wrong lines, placeholders or control codes is still rejected wh
 
 Workers record source identities independent of model, prompt and chunk size with their validated values, and continuation reuses them per text identity, never as a file-complete skip, while the source bindings and file versions match; the newest compatible run wins.
 A saved value answers a line only while it passes the response check, so a line the source-text rule reads as left is sent again; runs frozen before the `sourceText` v2 policy reuse every saved value, so their requests rebuild identically.
+Runs frozen before v3 read every Japanese letter as left whatever the target, so a Japanese to Chinese run keeps sending what it sent.
 The Live names pass before a Batch belongs to no file, so it never counts toward a file's lines or continuation reuse.
 
 ### Run history and inspection
@@ -138,8 +139,10 @@ Per-file cost and time, and Other event text's lines, come from native result re
 Database files and Maps & events read each file's status and Lines from the file itself through [file_lines](../backend/dazedtl/translation/file_lines.py), independently of selection and of the runs that wrote it.
 What an event file holds is defined once in [rpgmaker_scope](../backend/dazedtl/engine/util/rpgmaker_scope.py), which the engine translates from, and a line is left while it holds Japanese by the engine's own rule ([source_text](../backend/dazedtl/engine/util/source_text.py)) or a refusal note.
 The rule reads each value against the Japanese in its `_original`, so a lone kana or mark the source holds, such as a kaomoji's ﾉ or a censor mask's 〇, reads translated and a value given back unchanged reads left; a value without one reads every Japanese letter as left.
+The rule reads for the game's language pair: in a Chinese translation of a Japanese game only kana read as left, so a name kept letter for letter is translated; the engine tells it from text never translated by whether the game keeps an `_original` for it.
+Fitting reads each row of a message against the whole message's source, and fitting, Text QA's never-translated report and the playtest read what a player sees as left (`words_left`), which leaves out an English source's abbreviations such as HP or the currency unit G.
 The rule reads the game's source language, which [languages](../backend/dazedtl/engine/util/languages.py) defines with the patterns every reader sends and counts by: a Japanese source keeps each engine's own pattern by name, and an English source reads Latin letters outside control codes, markup tags and `{name}` placeholders as left.
-Run workers take the source from their frozen settings, and the app reads a request's game in its language (`reading`).
+Run workers take the pair from their frozen settings, and the app reads a request's game in its language pair (`reading`).
 A message, scroll or choice the game wrote without Japanese letters, such as `・・・・・。`, `？` or `「……」`, is never sent; for a Latin-script target the engine writes its punctuation in English in its place, and a Chinese or Japanese target keeps it as the game wrote it ([target_text](../backend/dazedtl/engine/util/target_text.py) `unsent_text`).
 That rule keeps the form each writer has always used, so Japanese to English output is unchanged: text a run skips inside a request keeps `・・・` and `！？` full-width and turns `。` into a period.
 Name boxes keep theirs, since a speaker's name goes into the requests for its lines.
@@ -462,7 +465,8 @@ A worker's parent on Windows is the virtual environment's launcher stub, so owne
 ## Checkpoints
 
 The game folder's Git repository is the one record of a translation: every change DazedTL makes to a game whose Git is set up is one commit on the translation branch, a checkpoint, made by [checkpoint_commits](../backend/dazedtl/compatibility/checkpoint_commits.py), whose docstring holds the rules.
-The game-write gateway records one when the outermost write to a game succeeds, after packing, so no flow commits by hand, asks the user to, or leaves work uncommitted, and a failed or stopped write commits nothing.
+The game-write gateway records one when the outermost write to a game succeeds, after packing, so no flow commits by hand, asks the user to, or leaves work uncommitted, and a write that failed or stopped while writing commits nothing.
+A write refuses before writing while the game's index lock is held, at once for a lock older than any Git command holds one, and registers first a versioned record naming its change and files, so a write whose files were written but whose checkpoint or pack then failed is committed by the next one under its own name, marked `DazedTL-Recovered`, rather than as edits made outside DazedTL; a context draft based on the revision that write replaced still saves.
 Before each write and each game update, changes made outside DazedTL get a checkpoint of their own, so a DazedTL checkpoint never mixes them in and nothing waits for a clean worktree; the checkout refusals (wrong branch, unfinished merge, unfinished asset restore) stay.
 A checkpoint's subject is its stage and a plain summary on one line, named by the action's [registry](../backend/dazedtl/actions.py) row or the writer's summary, with `DazedTL-Action` and `DazedTL-Stage` trailers beside the `DazedTL-Version` ones, so checkpoints group by stage without a saved record; DazedTL is the author of all of them.
 One save the user asks for is one write, so one checkpoint: Save guidance sends every document it saves in one request and skips those whose file already holds their text, and saving options writes Line widths only when they differ from the ones the game already uses, its engine's stock ones until any are saved, so those stay implicit.

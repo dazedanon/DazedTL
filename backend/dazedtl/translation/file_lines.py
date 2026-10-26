@@ -105,22 +105,12 @@ def _entry_original(document: Any, path: tuple) -> tuple[str, ...]:
     return (value,) if isinstance(value, str) else ()
 
 
-def _system_original(document: Any, path: tuple) -> tuple[str, ...]:
-    """A system term's source in System.json's root `_original`, which keys
-    list positions as text."""
-    value = document.get("_original") if isinstance(document, dict) else None
-    for part in path:
-        if not isinstance(value, dict):
-            return ()
-        value = value.get(str(part) if isinstance(part, int) else part)
-    return (value,) if isinstance(value, str) else ()
-
-
 def _visible(
     name: str, document: Any, markers: frozenset[str] = frozenset()
-) -> Iterator[tuple[tuple[Any, ...], Any, str, bool]]:
+) -> Iterator[tuple[tuple[Any, ...], Any, str, bool, str | None]]:
     """Text QA's reader (a QA engine source, read unchanged so its tasks'
-    fingerprint holds): each text's path, value, kind and `_original` flag."""
+    fingerprint holds): each text's path, value, kind, `_original` flag and
+    the source it keeps there."""
     from util.rpgmaker_qa_preflight import visible_texts
 
     yield from visible_texts(name, document, markers)
@@ -318,16 +308,16 @@ def _database(name: str, document: Any) -> list[Line]:
                     )
                 )
         return found
-    for path, value, kind, _translated in _visible(name, _fields(name, document)):
-        if kind == "database field" and isinstance(value, str):
-            source = _entry_original(document, path)
-        elif kind == "system term" and isinstance(value, str):
-            if path[0] in _KEPT_SYSTEM:
-                continue
-            source = _system_original(document, path)
-        else:
+    for path, value, kind, _translated, source in _visible(
+        name, _fields(name, document)
+    ):
+        if not isinstance(value, str) or kind not in ("database field", "system term"):
             continue
-        found.append(Line(kind, (path,), (value,), source))
+        if kind == "system term" and path[0] in _KEPT_SYSTEM:
+            continue
+        found.append(
+            Line(kind, (path,), (value,), (source,) if source is not None else ())
+        )
     return found
 
 
