@@ -170,6 +170,18 @@ def held(relative):
     return not parts or parts[0] not in _OWN
 
 
+def has_files(folder):
+    """Whether `folder` holds a file a record holds, from as much of a walk
+    as finds the first, for requests."""
+    for directory, names, entries in os.walk(folder):
+        if Path(directory) == Path(folder):
+            names[:] = [name for name in names if held(name)]
+            entries = [name for name in entries if held(name)]
+        if entries:
+            return True
+    return False
+
+
 def inventory(folder, stopped=lambda: False):
     """Every file of `folder` a record holds, with what says it changed:
     size, modification time and mode."""
@@ -325,20 +337,22 @@ def record(
     return commit
 
 
-def ensure_found(root, log=lambda _message: None):
-    """Records the game as found unless it has a record already; the
-    game-write gateway calls it before writing to a game whose Git is not
-    set up."""
+def ensure_found(root, log=lambda _message: None, stopped=lambda: False):
+    """Records the game as found unless it has a record already, as the
+    [background record](original_record.py) does when DazedTL opens the game
+    and the game-write gateway outside a request before writing to a game
+    whose Git is not set up. Only one record of a game runs at a time; one
+    that starts while another runs waits for it, then finds its record."""
     root = Path(root).resolve(strict=True)
     if recorded(root):
         return None
     _repository(root)
     with exclusive(_folder(root) / "found.lock"):
         # A folder with no files yet has none to keep.
-        if recorded(root) or not inventory(root):
+        if recorded(root) or not inventory(root, stopped):
             return None
         log("Recording the original game files in Git.")
-        return record(root, FOUND, progress=log)
+        return record(root, FOUND, stopped=stopped, progress=log)
 
 
 def files(root, commit) -> dict[str, tuple[str, str, int]]:
