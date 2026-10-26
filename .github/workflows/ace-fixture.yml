@@ -9,7 +9,7 @@ name: Ace fixture
 on:
   workflow_dispatch:
   push:
-    branches: [dev]
+    branches: [dev, ace-fixture-probe]
     paths:
       - tests/fixtures/ace/**
       - backend/dazedtl/engine/util/ace/**
