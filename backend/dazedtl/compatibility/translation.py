@@ -199,8 +199,8 @@ class TranslationEngine:
             return paths
         _validate_skill(BUNDLED_SKILL)
         # Both move legacy guidance into .dazedtl, create the glossary and keep
-        # DazedTL's rules in the game's .gitignore once it has a repository,
-        # so a game without one is recorded only when the assistant first
+        # DazedTL's rules in the game's .gitignore once its Git is set up, so
+        # a game before then is recorded only when the assistant first
         # changes its files.
         with write_game(
             source,

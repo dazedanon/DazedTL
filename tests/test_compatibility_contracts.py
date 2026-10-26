@@ -49,8 +49,11 @@ from util.len_patch_scope import scope_ignore
 from util.len_translation import _WORK_IGNORE_BLOCK, _prepare_local_work
 from util.paths import GAME_TOOL_GITIGNORE_BLOCK
 root = Path(sys.argv[2])
-# A checkpointed game has its repository, which the work block serves.
-(root / ".git").mkdir(exist_ok=True)
+# A checkpointed game's Git is set up, a commit on its branch, whose history
+# the work block serves.
+(root / ".git/refs/heads").mkdir(parents=True, exist_ok=True)
+(root / ".git/HEAD").write_text("ref: refs/heads/translated\\n")
+(root / ".git/refs/heads/translated").write_text("0" * 40 + "\\n")
 patch = "# BEGIN DazedTL Len patch files\\n/*\\n# END DazedTL Len patch files\\n"
 text = (_WORK_IGNORE_BLOCK + "\\n# DazedTL selected image patches\\n!/img/\\n"
         "\\n" + patch + "\\n" + GAME_TOOL_GITIGNORE_BLOCK)

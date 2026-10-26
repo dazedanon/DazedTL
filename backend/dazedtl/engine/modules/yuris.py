@@ -10,10 +10,9 @@ from pathlib import Path
 from colorama import Fore
 from tqdm import tqdm
 
-from util.target_text import name_translated, title_case
 import util.dazedwrap as dazedwrap
 from util.languages import source_pattern
-from util.speakers import strip_echoed_speaker
+from util.speakers import strip_echoed_speaker, translate_speaker
 from util.translation import (
     TranslationConfig,
     calculateCost,
@@ -353,30 +352,7 @@ def getResultString(translatedData, translationTime, filename):
 
 
 def getSpeaker(speaker):
-    if not speaker:
-        return ["", [0, 0]]
-
-    for original, translated in NAMESLIST:
-        if speaker == original:
-            return [translated, [0, 0]]
-
-    response = translateAI(
-        speaker,
-        "Reply with the " + LANGUAGE + " translation of the NPC name.",
-        False,
-    )
-    response[0] = title_case(response[0], LANGUAGE).replace("'S", "'s").replace("Speaker: ", "")
-
-    if not name_translated(response[0], LANGUAGE):
-        response = translateAI(
-            speaker,
-            "Reply with the " + LANGUAGE + " translation of the NPC name.",
-            False,
-        )
-        response[0] = title_case(response[0], LANGUAGE).replace("'S", "'s").replace("Speaker: ", "")
-
-    NAMESLIST.append([speaker, response[0]])
-    return response
+    return translate_speaker(speaker, NAMESLIST, LANGUAGE, translateAI)
 
 
 def translateAI(text, history, history_ctx=None):
