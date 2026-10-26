@@ -115,6 +115,22 @@ assert original_record.view(racing) is None, original_record.view(racing)
 [found] = original_files.records(racing)
 mode, blob, size = original_files.files(racing, found.commit)["data/System.json"]
 assert original_files.peek(racing, blob, size) == before
+# Already compressed files, such as images, are kept without zlib, which
+# took nearly all of a record's time and can't shrink them; text keeps it.
+stored = game("stored")
+(stored / "img/pictures").mkdir(parents=True, exist_ok=True)
+(stored / "img/pictures/zeros.png").write_bytes(bytes(65536))
+(stored / "data/Zeros.json").write_bytes(bytes(65536) + b"0")
+original_files.record(stored, original_files.FOUND)
+stored_files = original_files.files(stored, original_files.records(stored)[0].commit)
+
+
+def loose(path):
+    blob = stored_files[path][1]
+    return (stored / ".git/objects" / blob[:2] / blob[2:]).stat().st_size
+
+
+assert loose("img/pictures/zeros.png") > 65536 > 100 * loose("data/Zeros.json")
 engine.audit_scope(kept, {"files": {"data/Map001.json": {}, "data/Items.json": {}}})
 save(kept)
 base = git(kept, "rev-parse", "HEAD").strip()

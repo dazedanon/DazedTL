@@ -29,6 +29,7 @@ import subprocess
 import tempfile
 import time
 from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -50,6 +51,40 @@ _SUBJECTS = {
 }
 # Files hashed by one Git process, so progress and a stop come between them.
 _CHUNK = 2000
+# Git processes hashing at once: zlib on one core takes nearly all of a
+# record's time, and a few at a time keep a disk busy without thrashing it.
+_HASHERS = min(4, os.cpu_count() or 1)
+# Files already compressed, such as images, audio and archives, which zlib
+# can't shrink, so Git keeps them as they are, three times faster.
+_COMPRESSED = frozenset(
+    [
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
+        ".gif",
+        ".ogg",
+        ".m4a",
+        ".mp3",
+        ".mp4",
+        ".webm",
+        ".ogv",
+        ".woff2",
+        ".rpgmvp",
+        ".rpgmvo",
+        ".rpgmvm",
+        ".png_",
+        ".ogg_",
+        ".m4a_",
+        ".zip",
+        ".7z",
+        ".rar",
+        ".gz",
+        ".rgssad",
+        ".rgss2a",
+        ".rgss3a",
+    ]
+)
 # Blobs at least this large are written by a Git process of their own rather
 # than read into memory with others.
 _LARGE = 32 * 1024 * 1024
@@ -255,28 +290,18 @@ def record(
     if not before:
         raise ValueError("There are no game files to record.")
     names = sorted(before)
-    blobs = []
-    for start in range(0, len(names), _CHUNK):
-        if stopped():
-            raise InterruptedError("Stopped before the original files were recorded.")
-        chunk = names[start : start + _CHUNK]
-        listed = "".join(str(folder / name) + "\n" for name in chunk)
-        hashed = _git(
-            root,
-            "hash-object",
-            "-w",
-            "--no-filters",
-            "--stdin-paths",
-            input_text=listed,
-            timeout=3600,
-        ).stdout.split()
-        if len(hashed) != len(chunk):
-            raise ValueError("Git did not keep every original file.")
-        blobs.extend(hashed)
-        progress(
-            f"Recorded {start + len(chunk):,} of {len(names):,} original file"
+    found = identities(
+        root,
+        folder,
+        names,
+        stopped,
+        done=lambda done: progress(
+            f"Recorded {done:,} of {len(names):,} original file"
             f"{'' if len(names) == 1 else 's'} in Git."
-        )
+        ),
+        keep=True,
+    )
+    blobs = [found[name] for name in names]
     if inventory(folder, stopped) != before:
         raise ValueError(
             "The game's files changed while DazedTL recorded them. Try again"
@@ -457,18 +482,27 @@ def write(root, entries: Iterable[tuple[str, str, int]], target, stopped):
             system.unlink(temporary, missing_ok=True, ignore_errors=True)
 
 
-def identities(root, folder, names, stopped=lambda: False, *, keep=False):
+def identities(
+    root, folder, names, stopped=lambda: False, *, keep=False, done=lambda _n: None
+):
     """The blob each file of `folder` named in `names` would be, kept in the
-    game's Git only with `keep`."""
-    names = list(names)
-    result = {}
-    for start in range(0, len(names), _CHUNK):
-        if stopped():
-            raise InterruptedError("Stopped before the game's files were compared.")
-        chunk = names[start : start + _CHUNK]
+    game's Git only with `keep`, hashed by a few Git processes at once;
+    `done` hears how many are hashed after each round of chunks."""
+    groups = {True: [], False: []}
+    for name in names:
+        groups[PurePosixPath(name).suffix.casefold() in _COMPRESSED].append(name)
+    chunks = [
+        (group[start : start + _CHUNK], compressed)
+        for compressed, group in groups.items()
+        for start in range(0, len(group), _CHUNK)
+    ]
+
+    def hashed(chunk, compressed):
         listed = "".join(str(Path(folder) / name) + "\n" for name in chunk)
-        hashed = _git(
+        stored = ("-c", "core.compression=0", "-c", "core.looseCompression=0")
+        found = _git(
             root,
+            *(stored if keep and compressed else ()),
             "hash-object",
             *(["-w"] if keep else []),
             "--no-filters",
@@ -476,7 +510,25 @@ def identities(root, folder, names, stopped=lambda: False, *, keep=False):
             input_text=listed,
             timeout=3600,
         ).stdout.split()
-        result.update(zip(chunk, hashed))
+        if len(found) != len(chunk):
+            raise ValueError("Git did not keep every original file.")
+        return dict(zip(chunk, found))
+
+    result = {}
+    with ThreadPoolExecutor(_HASHERS) as pool:
+        # A few chunks at a time, so a stop comes between them.
+        for start in range(0, len(chunks), _HASHERS):
+            if stopped():
+                raise InterruptedError(
+                    "Stopped before the original files were recorded."
+                    if keep
+                    else "Stopped before the game's files were compared."
+                )
+            for value in pool.map(
+                lambda item: hashed(*item), chunks[start : start + _HASHERS]
+            ):
+                result.update(value)
+            done(len(result))
     return result
 
 
