@@ -11,6 +11,7 @@ import { FileSelection } from "./FileSelection";
 import {
   activeRun,
   countedPhase,
+  fileCounts,
   filePreviewRun,
   fileLines,
   fileWork,
@@ -92,11 +93,14 @@ export function TranslateWorkspace({
       works.get(name)?.owner,
       currentEstimate,
     );
-    const lines = counted ? state.sourceStatus.lines?.[name] : undefined;
+    const lines = counted ? fileCounts(state, name) : undefined;
     inspect(job || null, {
       file: name,
       index: job?.process?.files?.[name]?.first,
-      left: lines && lines.lines - lines.translated,
+      left:
+        lines && lines !== "counting"
+          ? lines.lines - lines.translated
+          : undefined,
     });
   };
   return (

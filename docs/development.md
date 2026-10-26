@@ -142,6 +142,7 @@ Run them outside a sandbox such as Claude Code's bwrap: KWin needs a writable `/
 
 `--game` lays [game variants](../tests/fixtures/game-variants) over the MZ fixture game, joined with `+`, such as `--game choice-help+hud+playable`.
 `mv` first lays the MZ fixture out as a deployed MV game, its files in `www`; `ace` takes the VX Ace fixture instead, and `ace+encrypted` ships its Data in an encrypted `Game.rgss3a`.
+The stand-in's replies are not real translations: it answers any other line with `Tested <letters>` or, for a Japanese target, `テスト` and a run of katakana made from the line's hash, which is why such replies read oddly.
 `long-dialogue` adds a traveler whose message the stand-in translates into a long English one, so a scenario can page it at narrow Line widths.
 `playable` adds RPG Maker MV's open-source engine, downloaded once into `.runtime`, so the playtest and Text QA's screen captures can run the game.
 `--from <ref>` builds the scenario with another commit or tag, from a worktree in `.runtime/checkouts`, such as the commit before a fix: `node scripts/scenario.mjs playtested --from 8ec7da3a` shows the playtest giving a HUD's Japanese the open message's identity.

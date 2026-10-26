@@ -39,7 +39,9 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
   const paid =
     preview?.action === "start" && preview.options.mode !== "estimate";
   const publishing = publicationActions.includes(preview.action);
-  const translatedOutputs = savedTranslations(state).outputs;
+  // Outputs still counted may hold translation too.
+  const saved = savedTranslations(state);
+  const translatedOutputs = [...saved.outputs, ...saved.counting];
   const reviewEstimateCurrent =
     !paid ||
     preview?.options.mode === "speakers" ||

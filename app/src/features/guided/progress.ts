@@ -17,6 +17,7 @@ import { imageFlow } from "../images/imageFlow.ts";
 import { qaTaskDone } from "./qaView.ts";
 import {
   eventTaskFiles,
+  fileCounts,
   savedTranslations,
   translationTaskComplete,
 } from "./translationView.ts";
@@ -227,12 +228,22 @@ export function guidedProgress(
 export function projectAmounts(state: GuidedState) {
   let done = 0,
     total: number | null = 0;
+  let counting = false;
   for (const file of state.files) {
-    const counted = state.sourceStatus.lines?.[file.name];
+    const counted = fileCounts(state, file.name);
+    if (counted === "counting") {
+      counting = true;
+      total = null;
+      continue;
+    }
     done += counted?.translated ?? 0;
     total = total === null || !counted ? null : total + counted.lines;
   }
-  const { outputs, applied } = savedTranslations(state);
+  const {
+    outputs,
+    applied,
+    counting: countingOutputs,
+  } = savedTranslations(state);
   const cost = state.runs
     .filter((run) => run.mode !== "estimate")
     .reduce(
@@ -248,8 +259,10 @@ export function projectAmounts(state: GuidedState) {
   return {
     done,
     total,
-    // Lines the backend is still counting (sourceStatus.counting).
-    counting: !!state.sourceStatus.counting?.length,
+    // Lines the backend is still counting (fileCounts), and saved files
+    // whose translation the count still decides.
+    counting,
+    countingFiles: countingOutputs.length > 0,
     applied: outputs.filter((name) => applied.includes(name)).length,
     outputs: outputs.length,
     cost,
