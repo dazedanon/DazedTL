@@ -79,8 +79,16 @@ export function phaseView(w: GuidedWorkspace): TaskView {
     !!pendingBatches.length;
   // A file a Live run is still translating has only partial output to apply,
   // and one no run of this task translated has nothing of its to apply.
-  const { outputs: translatedOutputs, applied: appliedOutputs } =
-    savedTranslations(state, phase);
+  const {
+    outputs: translatedOutputs,
+    applied: appliedOutputs,
+    counting: countingOutputs,
+  } = savedTranslations(state, phase);
+  // Saved files whose lines are still counted may be translated, so Apply's
+  // amount waits for the count.
+  const applyCounting = selectedNames.some((name) =>
+    countingOutputs.includes(name),
+  );
   const applyFiles = selectedNames.filter(
     (name) =>
       translatedOutputs.includes(name) &&
@@ -240,6 +248,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
     !!state.collectionError ||
     (w.archiveRead && "Convert Ace data in Set up first.") ||
     reloadBeforeApply(applyFiles, changed) ||
+    (applyCounting && "Counting lines…") ||
     // The files' rows read Applied, so Apply has nothing to do.
     (applyFiles.every((name) => appliedOutputs.includes(name)) &&
       "Saved translations applied.");
@@ -307,10 +316,10 @@ export function phaseView(w: GuidedWorkspace): TaskView {
       {/* Apply publishes each file's newest copy, the copy its row reads,
           which holds every task's saved text; Run history reapplies one
           run's own files. */}
-      {!!applyFiles.length &&
+      {(!!applyFiles.length || applyCounting) &&
         task(
           "export_selected",
-          `Apply (${applyFiles.length})`,
+          applyCounting ? "Apply" : `Apply (${applyFiles.length})`,
           {},
           applyBlocked,
           "default",

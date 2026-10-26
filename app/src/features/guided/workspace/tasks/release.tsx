@@ -204,6 +204,8 @@ export function packageView(w: GuidedWorkspace): TaskView {
   );
   // Building with no text applied packages the original text, even with
   // applied images; say so once, unless the destination must be fixed first.
+  // Saved files still counted may hold applied translation.
+  const saved = savedTranslations(state);
   const actionContext = destinationError ? undefined : updaterBlocked ? (
     <span>
       GameUpdate needs this game&apos;s repository.{" "}
@@ -219,7 +221,8 @@ export function packageView(w: GuidedWorkspace): TaskView {
       </Button>
     </span>
   ) : (
-    !savedTranslations(state).applied.length &&
+    !saved.applied.length &&
+    !saved.counting.length &&
     !state.readiness.unapplied.length && (
       <span>
         No translated text applied yet: the ZIP keeps the original text.

@@ -256,6 +256,8 @@ export function translatedFiles(
  * whose own lines are translated, or one a run changed, such as with Other
  * event text. With an event-code `phase`, only the files that task's own runs
  * translated, so its Apply counts its own work, not another task's.
+ * `counting` holds the other outputs whose lines the backend is still
+ * counting, which may yet hold translation.
  */
 export function savedTranslations(
   state: Pick<GuidedState, "runs" | "sourceStatus" | "readiness">,
@@ -263,12 +265,20 @@ export function savedTranslations(
 ) {
   const own = phase && !countedPhase(phase) ? phase : undefined;
   const changed = translatedFiles(state.runs, state.sourceStatus.retired, own);
-  const translated = (name: string) =>
-    changed.has(name) ||
-    (!own && !!state.sourceStatus.lines?.[name]?.translated);
+  const counts = (name: string) =>
+    own || changed.has(name) ? undefined : fileCounts(state, name);
+  const translated = (name: string) => {
+    const counted = counts(name);
+    return (
+      changed.has(name) || (counted !== "counting" && !!counted?.translated)
+    );
+  };
   return {
     outputs: state.readiness.outputs.filter(translated),
     applied: state.readiness.applied.filter(translated),
+    counting: state.readiness.outputs.filter(
+      (name) => counts(name) === "counting",
+    ),
   };
 }
 /**
@@ -340,7 +350,14 @@ export function fileLines(
   running?: boolean;
   counting?: boolean;
 } {
-  if (!countedPhase(phase)) return runLines(state, phase, name, work);
+  if (!countedPhase(phase)) {
+    const amounts = runLines(state, phase, name, work);
+    // Refusal notes the file may hold leave a closed amount unknown until it
+    // is counted, as its row reads (fileStatus).
+    return amounts.total !== null && fileCounts(state, name) === "counting"
+      ? { done: 0, total: null, counting: true }
+      : amounts;
+  }
   const { run } = work;
   if (
     run &&
@@ -353,16 +370,38 @@ export function fileLines(
       total: null,
       running: true,
     };
-  const counted = state.sourceStatus.lines?.[name];
+  const counted = fileCounts(state, name);
+  if (counted === "counting") return { done: 0, total: null, counting: true };
   if (counted) return { done: counted.translated, total: counted.lines };
-  return counting(state, name)
-    ? { done: 0, total: null, counting: true }
-    : { done: 0, total: null };
+  return { done: 0, total: null };
 }
-/** Whether the backend is still counting a file's lines, which it has none
- * of yet. */
-const counting = (state: Pick<GuidedState, "sourceStatus">, name: string) =>
-  !!state.sourceStatus.counting?.includes(name);
+/**
+ * A file's line counts from its newest copy (sourceStatus.lines), or
+ * "counting" while the backend still counts them, when everything they say,
+ * such as its lines translated or its refusal notes (otherNotes), is
+ * unknown; undefined when the backend could not read the file. Every reader
+ * of a file's counts asks this.
+ */
+export function fileCounts(
+  state: Pick<GuidedState, "sourceStatus">,
+  name: string,
+): FileLines | "counting" | undefined {
+  const counted = state.sourceStatus.lines?.[name];
+  if (counted) return counted;
+  const list = state.sourceStatus.counting;
+  if (!list?.length) return undefined;
+  let names = countingNames.get(list);
+  if (!names) countingNames.set(list, (names = new Set(list)));
+  return names.has(name) ? "counting" : undefined;
+}
+/** Each snapshot's counting list as a set, since every file asks it. */
+const countingNames = new WeakMap<readonly string[], Set<string>>();
+/** A file whose lines are still counted reads Working although no run works
+ * on it, so a change in the game still reads Outdated. */
+const countingState = () => ({
+  ...fileState("working", "Counting this file's lines."),
+  pending: false,
+});
 /**
  * Other event text's translated and total lines from the engine's own
  * receipts: the lines its latest run saved, out of the lines that run
@@ -386,6 +425,7 @@ function runLines(
   work: ReturnType<typeof fileWork>,
 ): { done: number; total: number | null; running?: boolean } {
   const latest = work.run;
+  const counted = fileCounts(state, name);
   // One count per source request, at its latest attempt; duplicates never count.
   const requests = (run?: Job) =>
     run && !run.temporary ? run.process?.files?.[name] : undefined;
@@ -400,7 +440,7 @@ function runLines(
   const run =
     translated && requests(translated)?.requests ? translated : latest;
   const lines = requests(run);
-  const notes = state.sourceStatus.lines?.[name]?.otherNotes ?? 0;
+  const notes = (counted !== "counting" && counted?.otherNotes) || 0;
   const done =
     run !== latest && lines
       ? Math.max(0, lines.lines - notes)
@@ -492,9 +532,11 @@ export function translationTaskComplete(
       );
     });
   return names.every((name) => {
+    // A file still counted reads Counting by its row's rule below.
+    const notes = notesOf(fileCounts(state, name));
     if (
       state.sourceStatus.changed.includes(name) ||
-      state.sourceStatus.lines?.[name]?.otherNotes
+      (notes !== "counting" && !!notes)
     )
       return false;
     const run = work(name);
@@ -597,9 +639,12 @@ export function translationFileStatus(
     run,
     settledWithoutRequests(state, phase, name, run),
     !translatedFiles(state.runs, state.sourceStatus.retired, phase).has(name),
-    state.sourceStatus.lines?.[name]?.otherNotes,
+    notesOf(fileCounts(state, name)),
   );
 }
+/** A file's refusal notes outside its counted lines, as fileStatus reads them. */
+const notesOf = (counted: ReturnType<typeof fileCounts>) =>
+  counted === "counting" ? counted : counted?.otherNotes;
 /** Unsettled Batches remain visible independently of Apply and working-file reloads. */
 export function unsettledBatches(runs: Job[], selected: readonly string[]) {
   return runs.filter(
@@ -667,15 +712,10 @@ export function countedFileStatus(
 ) {
   const active = runActivity(name, run);
   if (active) return active;
-  const counted = state.sourceStatus.lines?.[name];
+  const counted = fileCounts(state, name);
+  if (counted === "counting") return countingState();
   if (!counted)
-    return counting(state, name)
-      ? // No run's work: a change in the game still reads Outdated.
-        {
-          ...fileState("working", "Counting this file's lines."),
-          pending: false,
-        }
-      : fileState("blocked", "This file could not be read as game data.");
+    return fileState("blocked", "This file could not be read as game data.");
   if (!counted.lines)
     return fileState("done", "Nothing to translate in this file.");
   if (counted.translated < counted.lines) {
@@ -698,18 +738,19 @@ export function countedFileStatus(
  * file (translatedFiles), so a run that sent nothing for it leaves nothing to
  * apply. `notes` counts the file's refusal notes outside its Database files
  * or Maps & events lines (otherNotes), which leave a finished file needing
- * review until a run sends them.
+ * review until a run sends them; "counting" while they are unknown.
  */
 export function fileStatus(
   name: string,
   run?: Job,
   settled = false,
   untranslated = false,
-  notes = 0,
+  notes: number | "counting" = 0,
 ) {
   const status = runFileStatus(name, run, settled, untranslated);
   if (!notes || !["ready", "applied", "done"].includes(status.state))
     return status;
+  if (notes === "counting") return countingState();
   return fileState(
     "needs_review",
     `${count(notes, "line holds", "lines hold")} a refusal note an earlier run saved instead of a translation. Translate sends ${notes === 1 ? "it" : "them"} again.`,
