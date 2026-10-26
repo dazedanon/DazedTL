@@ -14,7 +14,12 @@ import { ProtectedText, RequestSource } from "./RequestSource";
 import { RequestTechnical } from "./RequestTechnical";
 import { ExpandableText } from "../../ui/ExpandableText";
 import { historyOutcome } from "./historyView";
-import { activeRun, requestAttempt, translatedLines } from "./translationView";
+import {
+  activeRun,
+  madeNoRequest,
+  requestAttempt,
+  translatedLines,
+} from "./translationView";
 import {
   requestOutcome,
   requestBatches,
@@ -811,7 +816,7 @@ function RequestProcess({
                 </div>
               ) : initialRequest && view.index < 0 ? (
                 <p className="muted">
-                  {process.noRequestFiles?.includes(initialRequest.file)
+                  {madeNoRequest(job, initialRequest.file)
                     ? "This file produced no new requests in this pass."
                     : "No saved request is linked to this file in this attempt."}{" "}
                   File contents shows its current text.

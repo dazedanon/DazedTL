@@ -56,6 +56,7 @@ export function setupView(w: GuidedWorkspace): TaskView {
     preparationComplete,
     aceNeedsExport,
     running,
+    originals,
     localOperation,
     stopControl,
     setupStep,
@@ -103,7 +104,10 @@ export function setupView(w: GuidedWorkspace): TaskView {
   const prepare = stepStatus("prepare_game", prepared);
   const prepareDetail =
     prepare === "working"
-      ? runningStage && `${runningStage.label}…`
+      ? // Its first change to the game waits for the original record.
+        originals?.running
+        ? originals.message
+        : runningStage && `${runningStage.label}…`
       : prepare === "not_started"
         ? `Formats game data${state.hasPlugins ? ", plugins.js" : ""} and adds GameUpdate files.`
         : undefined;

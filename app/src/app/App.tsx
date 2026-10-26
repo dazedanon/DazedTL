@@ -39,6 +39,7 @@ import { Message } from "../ui/Feedback";
 import { DiagnosticsAction } from "./DiagnosticsAction";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { LanguagesProvider } from "./LanguagesProvider";
+import { OriginalRecordProvider } from "../ui/OriginalRecord";
 import { updateAttention, useUpdates } from "./updates";
 
 const workspaces: readonly Screen[] = ["guided", "manual", "translation"];
@@ -408,72 +409,79 @@ export default function App() {
             label="This view"
           >
             <LanguagesProvider project={project}>
-              {!state ? (
-                error ? (
-                  // The reason says what to do; when it is a workspace this
-                  // version cannot open, an update is the way out, so the
-                  // updates stay reachable without it.
-                  <PageLayout
-                    variant="editor"
-                    aria-label="Workspace unavailable"
-                  >
-                    <PageHeader
-                      title="Workspace unavailable"
-                      description={error}
-                    />
-                    <Updates running={false} />
-                  </PageLayout>
+              <OriginalRecordProvider
+                record={project?.originals}
+                stop={() =>
+                  project ? api.stopOriginals(project.id) : Promise.resolve()
+                }
+              >
+                {!state ? (
+                  error ? (
+                    // The reason says what to do; when it is a workspace this
+                    // version cannot open, an update is the way out, so the
+                    // updates stay reachable without it.
+                    <PageLayout
+                      variant="editor"
+                      aria-label="Workspace unavailable"
+                    >
+                      <PageHeader
+                        title="Workspace unavailable"
+                        description={error}
+                      />
+                      <Updates running={false} />
+                    </PageLayout>
+                  ) : (
+                    <p className="muted">Opening your workspace…</p>
+                  )
+                ) : state.screen === "settings" ? null : workspace &&
+                  project?.method === "guided" ? (
+                  <GuidedWorkflow
+                    key={project.id}
+                    project={project}
+                    opening={action.busy}
+                    settings={openSettings}
+                    openProject={openProject}
+                    intent={intent}
+                    intentHandled={() => setIntent(null)}
+                  />
+                ) : workspace && project?.method === "len" ? (
+                  <Translation
+                    key={project.id}
+                    project={project}
+                    settings={openSettings}
+                    openProject={openProject}
+                    view={translationView}
+                  />
                 ) : (
-                  <p className="muted">Opening your workspace…</p>
-                )
-              ) : state.screen === "settings" ? null : workspace &&
-                project?.method === "guided" ? (
-                <GuidedWorkflow
-                  key={project.id}
-                  project={project}
-                  opening={action.busy}
-                  settings={openSettings}
-                  openProject={openProject}
-                  intent={intent}
-                  intentHandled={() => setIntent(null)}
-                />
-              ) : workspace && project?.method === "len" ? (
-                <Translation
-                  key={project.id}
-                  project={project}
-                  settings={openSettings}
-                  openProject={openProject}
-                  view={translationView}
-                />
-              ) : (
-                <ProjectPage
-                  state={state}
-                  busy={action.busy}
-                  open={open}
-                  select={select}
-                  recent={recent}
-                  remove={remove}
-                  report={action.report}
-                  progress={progress}
-                  amounts={amounts}
-                  tab={projectTab}
-                  onTab={(tab) =>
-                    void action.run(async () => {
-                      await flushDrafts();
-                      setProjectTab(tab);
-                      setHistoryQuery(undefined);
-                    })
-                  }
-                  historyQuery={historyQuery}
-                  historyTab={historyTab}
-                  onHistoryTab={setHistoryTab}
-                  openTask={openTask}
-                  openTranslation={openTranslation}
-                  chooseMethod={() => setMethodOpen(true)}
-                  settings={openSettings}
-                  openGuided={openGuided}
-                />
-              )}
+                  <ProjectPage
+                    state={state}
+                    busy={action.busy}
+                    open={open}
+                    select={select}
+                    recent={recent}
+                    remove={remove}
+                    report={action.report}
+                    progress={progress}
+                    amounts={amounts}
+                    tab={projectTab}
+                    onTab={(tab) =>
+                      void action.run(async () => {
+                        await flushDrafts();
+                        setProjectTab(tab);
+                        setHistoryQuery(undefined);
+                      })
+                    }
+                    historyQuery={historyQuery}
+                    historyTab={historyTab}
+                    onHistoryTab={setHistoryTab}
+                    openTask={openTask}
+                    openTranslation={openTranslation}
+                    chooseMethod={() => setMethodOpen(true)}
+                    settings={openSettings}
+                    openGuided={openGuided}
+                  />
+                )}
+              </OriginalRecordProvider>
             </LanguagesProvider>
           </ErrorBoundary>
         </main>

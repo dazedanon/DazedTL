@@ -1887,3 +1887,8 @@ pre {
   color: inherit;
   box-decoration-break: clone;
 }
+/* A write waiting for the original record shows the record's progress, with
+   Stop at the end of its line, wherever the write's failure would show. */
+.record-wait-failure {
+  color: var(--color-error-text);
+}

@@ -227,6 +227,9 @@ export function useGuidedWorkspace({
     headingRef.current?.focus({ preventScroll: true });
   }, [taskId, taskView, position.step]);
   const running = !!application.snapshot?.application.running;
+  // The background record of the game's original files, which the first
+  // change to them waits for.
+  const originals = application.snapshot?.application.project?.originals;
   const operationBusy =
     action.busy || speakerAction.busy || draft.committing || context.committing;
   const baseline = !!translation.git?.configured;
@@ -1599,6 +1602,7 @@ export function useGuidedWorkspace({
     inspectorReturnFocus,
     reapplyRun,
     running,
+    originals,
     baseline,
     job,
     findings,

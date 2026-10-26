@@ -2661,6 +2661,15 @@ export type ProjectOperation = {
   message: string;
 };
 
+/** The background record of the open game's original files, while it
+runs or after it ended without one. */
+export type OriginalRecord = {
+  running: boolean;
+  message: string;
+  error: string;
+  stopped: boolean;
+};
+
 /** The languages a project's game translates between. */
 export type GameLanguages = {
   source: SourceLanguage;
@@ -2680,6 +2689,7 @@ export type Project = {
   status?: string;
   detail?: string;
   operation?: ProjectOperation;
+  originals?: OriginalRecord;
   next_label?: string;
   languages?: GameLanguages;
 };
@@ -3273,6 +3283,7 @@ export type RpcContract = {
   project_method: { request: ProjectMethodRequest; response: AppState };
   project_languages: { request: ProjectLanguagesRequest; response: AppState };
   project_languages_lock: { request: ProjectRequest; response: LanguagesLock };
+  originals_stop: { request: ProjectRequest; response: AppState };
   settings_get: { request: NoParams; response: Settings };
   settings_save: { request: PreferencesRequest; response: Settings };
   settings_draft: { request: PreferencesRequest; response: Saved };

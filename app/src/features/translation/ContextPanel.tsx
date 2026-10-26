@@ -87,6 +87,8 @@ export function ContextPanel({
       </PageBody>
       <ActionBar
         feedback={
+          // A failed save, such as one waiting for the original game files
+          // to be recorded, shows beside Save context.
           <Feedback
             error={action.error}
             pending={draft.committing}

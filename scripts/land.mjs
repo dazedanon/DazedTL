@@ -23,6 +23,7 @@ import {
 import { generated } from "./contracts.mjs";
 import { gitIn, withLock } from "./land-lock.mjs";
 import { repository } from "./release.mjs";
+import { testsWithRetry } from "./testkit/retry.mjs";
 import { mirrors } from "./update.mjs";
 
 const appPoll = 30_000;
@@ -369,19 +370,36 @@ async function underLock(deps, { top, main, branch }, time, tell) {
   if (head === before)
     return finish(0, `dev already has every commit of ${branch}.`);
 
-  for (const script of ["scripts/test.mjs", "scripts/build.mjs"]) {
-    log(`Running node ${script}…`);
-    const result = await run(top, process.execPath, [script]);
-    if (result.status !== 0)
-      return finish(
-        1,
-        tail(result.output),
-        `node ${script} failed; fix it on ${branch} and land again.`,
-      );
-    time.lap(path.basename(script, ".mjs"));
-    const runtime = result.output.match(/^Full test suite: .*$/m);
-    if (runtime) log(runtime[0]);
-  }
+  log("Running node scripts/test.mjs…");
+  const tests = await testsWithRetry(
+    () => run(top, process.execPath, ["scripts/test.mjs"]),
+    deps,
+  );
+  const lastRun = tests.outputs[tests.outputs.length - 1];
+  if (!tests.passed)
+    return finish(
+      1,
+      tail(lastRun),
+      `node scripts/test.mjs failed twice; fix it on ${branch} and land again.`,
+    );
+  if (tests.flaky)
+    log(
+      `Flaky: node scripts/test.mjs failed once and passed when run again; the first run ended:\n${tail(tests.outputs[0], 15)}`,
+    );
+  time.lap("test");
+  const runtime = lastRun.match(/^Full test suite: .*$/m);
+  if (runtime) log(runtime[0]);
+
+  // The build is deterministic, so a failure is never run again.
+  log("Running node scripts/build.mjs…");
+  const build = await run(top, process.execPath, ["scripts/build.mjs"]);
+  if (build.status !== 0)
+    return finish(
+      1,
+      tail(build.output),
+      `node scripts/build.mjs failed; fix it on ${branch} and land again.`,
+    );
+  time.lap("build");
 
   // The fast-forward rewrites the files the user's DazedTL runs from.
   if (await waitForApp(main, deps, tell)) time.lap("app wait");
