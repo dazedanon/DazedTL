@@ -6,7 +6,8 @@ waited. Each value here is a function of the bytes it was read from and the
 inputs its key names, so it holds while those do, and a Store keeps it in
 the project's Guided folder across restarts. A section names its own
 version, which its owner raises when its code derives something else from
-the same inputs (file_lines COUNT_VERSION, event_text MATCH_VERSION); a
+the same inputs (file_lines COUNT_VERSION, event_text MATCH_VERSION,
+guided_runs LITERALS_VERSION for comparison literals); a
 store of another format, or a section of another version, reads empty. The
 store is a cache: deleting it only makes the next look read the files again.
 

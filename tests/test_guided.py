@@ -4746,7 +4746,10 @@ class ComparisonLiteralTests(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             paths = [Path(temporary) / f"Map{index:04d}.json" for index in range(1100)]
             for path in paths:
-                path.write_bytes(b'[{"code":111,"parameters":["$gameVariables"]}]')
+                path.write_text(
+                    '[{"code":111,"parameters":["$gameVariables.value(3) == \'はい\'"]}]',
+                    encoding="utf-8",
+                )
             fingerprint = digest(paths[0].read_bytes())
             runs = GuidedRuns(SimpleNamespace(observed_digest=lambda _: fingerprint))
             for path in paths:
@@ -4754,3 +4757,18 @@ class ComparisonLiteralTests(unittest.TestCase):
             with patch.object(Path, "read_bytes", side_effect=AssertionError):
                 for path in paths:
                     self.assertEqual(runs.comparison_literals(path)[0], fingerprint)
+            # A restart read every map again: the derived store keeps them.
+            store = derived.Store(Path(temporary) / derived.NAME)
+            expected = (fingerprint, [(0, "はい", ["3"])])
+            self.assertEqual(
+                GuidedRuns(runs.guided).comparison_literals(paths[0], store), expected
+            )
+            store.save()
+            restarted = GuidedRuns(runs.guided)
+            with patch.object(Path, "read_bytes", side_effect=AssertionError):
+                self.assertEqual(
+                    restarted.comparison_literals(
+                        paths[0], derived.Store(Path(temporary) / derived.NAME)
+                    ),
+                    expected,
+                )
