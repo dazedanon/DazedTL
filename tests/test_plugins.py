@@ -363,6 +363,34 @@ class PluginTests(unittest.TestCase):
         self.assertTrue(rows["www/js/plugins/PluginB.js"]["enabled"])
         self.assertFalse(rows["www/js/plugins/Other/PluginB.js"]["enabled"])
 
+    def test_the_update_check_is_no_plugin_text_of_an_english_source_game(self):
+        # DazedTL's own plugin is written in English, which an English-source
+        # game would otherwise offer for translation.
+        entries = [
+            {"name": "PluginA", "status": True, "parameters": {}},
+            {"name": "TranslationUpdateCheck", "status": True, "parameters": {}},
+        ]
+        self.write(
+            "www/js/plugins.js",
+            "var $plugins = " + json.dumps(entries) + ";\r\n",
+        )
+        self.write("www/js/plugins/PluginA.js", "drawText('Start');\r\n")
+        self.write(
+            "www/js/plugins/TranslationUpdateCheck.js",
+            "drawText('Translation update available');\r\n",
+        )
+        with patch("dazedtl.plugins.service.game_source", return_value="English"):
+            self.service.action(self.identity, "plugin_task")
+        files = self.service.load(self.identity)["files"]
+        self.assertEqual(
+            [
+                item["value"]
+                for item in files["www/js/plugins/PluginA.js"]["occurrences"]
+            ],
+            ["Start"],
+        )
+        self.assertNotIn("www/js/plugins/TranslationUpdateCheck.js", files)
+
     def test_undecided_text_stays_with_the_assistant_until_settled(self):
         request, report, _ = self.investigation(advance=False)
         answers = {row["path"]: row for row in report["files"]}
