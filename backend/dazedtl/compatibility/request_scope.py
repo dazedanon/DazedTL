@@ -18,7 +18,6 @@ from .process_view import (
     ledger_records,
     queue,
     saved,
-    source_values,
 )
 
 
@@ -264,7 +263,7 @@ def requests(root, job, queued=None, records=None):
             yield {
                 "index": index,
                 "state": state,
-                "source": source_values(row["params"]) or {},
+                "source": row["source"] or {},
                 "keys": row["sources"],
                 "file": row["filename"],
                 "response": row["response"],
