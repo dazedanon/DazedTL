@@ -242,7 +242,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
     reloadBeforeApply(applyFiles, changed) ||
     // The files' rows read Applied, so Apply has nothing to do.
     (applyFiles.every((name) => appliedOutputs.includes(name)) &&
-      "Saved translations applied.");
+      "Everything saved is already in the game.");
   const guidance = !selectedNames.length
     ? "Select files to translate."
     : !baseline
