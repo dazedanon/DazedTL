@@ -52,6 +52,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import Iterable
+from collections.abc import Set as AbstractSet
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -268,7 +269,7 @@ def _ended(value):
         return None
 
 
-def _recover(root, folder, keep=frozenset()):
+def _recover(root, folder, keep: AbstractSet[str] = frozenset()):
     """Commits each write that ended without its checkpoint as its own,
     under its name: the files it named or said it wrote, never edits made
     since. One that shares a file with `keep`, the files of the write
