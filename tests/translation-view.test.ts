@@ -1560,6 +1560,7 @@ test("an Other event text pass without requests reads Done only for files none o
   assert.deepEqual(savedTranslations(state), {
     outputs: ["Map001.json"],
     applied: [],
+    counting: [],
   });
   assert.deepEqual(
     savedTranslations({
@@ -1569,8 +1570,43 @@ test("an Other event text pass without requests reads Done only for files none o
         lines: { "Troops.json": { lines: 1, translated: 1 } },
       },
     }),
-    { outputs: ["Map001.json", "Troops.json"], applied: ["Troops.json"] },
+    {
+      outputs: ["Map001.json", "Troops.json"],
+      applied: ["Troops.json"],
+      counting: [],
+    },
   );
+  // While the backend still counts a file's lines, its refusal notes and
+  // whether its own lines are translated are unknown: its row reads
+  // Counting, the task stays open and Apply's amounts wait for the count.
+  const counting = {
+    ...applied,
+    sourceStatus: {
+      ...state.sourceStatus,
+      counting: ["Map001.json", "Troops.json"],
+    },
+  };
+  assert.equal(
+    translationFileStatus(counting, "advanced", "Map001.json").detail,
+    "Counting this file's lines.",
+  );
+  assert.deepEqual(fileLines(counting, "advanced", "Map001.json"), {
+    done: 0,
+    total: null,
+    counting: true,
+  });
+  assert.equal(
+    translationTaskComplete(counting, "advanced", [
+      "Map001.json",
+      "Troops.json",
+    ]),
+    false,
+  );
+  assert.deepEqual(savedTranslations(counting), {
+    outputs: ["Map001.json"],
+    applied: [],
+    counting: ["Troops.json"],
+  });
   // Requests count before any output is saved, since a rerun may reuse their
   // results; unknown output changes or receipts count as translation.
   const unsaved = { ...maps, outputs: {}, availableOutputs: [] };

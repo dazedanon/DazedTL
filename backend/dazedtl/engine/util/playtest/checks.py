@@ -34,7 +34,7 @@ from util.rpgmaker_qa_preflight import (
 from util.rpgmaker_qa_reach import Reach
 from util.runtime_text import without_control_codes
 from util.source_text import holds_source, words_left
-from util.translation_update_check.installer import PLUGIN_NAME as UPDATE_CHECK
+from util.translation_update_check.installer import is_game_plugin
 from util import system
 
 SCHEMA = "rpgmaker-playtest-static-v1"
@@ -373,7 +373,7 @@ class _Checks:
     ) -> None:
         """Plugins that do not compile, and source text in their code but for
         those *kept* names. DazedTL's own update check is no game text."""
-        plugins = [entry for entry in plugins if entry["name"] != UPDATE_CHECK]
+        plugins = [entry for entry in plugins if is_game_plugin(entry["name"])]
         if not plugins:
             return
         node = shutil.which("node")

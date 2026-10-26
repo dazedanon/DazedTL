@@ -4,6 +4,8 @@ import json
 import math
 import re
 import sqlite3
+import threading
+from collections import OrderedDict
 from contextlib import closing
 from functools import lru_cache
 from pathlib import Path
@@ -19,17 +21,32 @@ NAMES_FILE = "speakers"
 NAMES_RECEIPT = "Speakers"
 
 
+# The last read of the most recently used evidence files, one entry per file
+# that a change replaces: keyed by its stamp as well, every change to a large
+# queue kept another full copy until newer reads pushed it out.
+_FILES: OrderedDict[str, tuple[tuple, Any]] = OrderedDict()
+_FILES_KEPT = 8
+_FILES_LOCK = threading.Lock()
+
+
 def _read_cached(path, stamp):
     """A JSON file read once per change; ``stamp`` is its ``file_stamp``."""
+    with _FILES_LOCK:
+        kept = _FILES.pop(path, None)
+        if kept is not None and kept[0] == stamp:
+            _FILES[path] = kept
+            return kept[1]
+    # The stale copy is already released, so a large file is not held twice.
+    del kept
+    value = _read(path)
     # A file younger than one clock tick may change without a new stamp.
-    if not signature_settled(stamp):
-        return _read(path)
-    return _read_kept(path, stamp)
-
-
-@lru_cache(maxsize=8)
-def _read_kept(path, _stamp):
-    return _read(path)
+    if signature_settled(stamp):
+        with _FILES_LOCK:
+            _FILES.pop(path, None)
+            _FILES[path] = (stamp, value)
+            while len(_FILES) > _FILES_KEPT:
+                _FILES.popitem(last=False)
+    return value
 
 
 def _read(path):
