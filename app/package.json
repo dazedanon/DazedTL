@@ -1,6 +1,6 @@
 {
   "name": "dazedtl",
-  "version": "2.34.3",
+  "version": "2.34.4",
   "private": true,
   "type": "module",
   "main": "electron/main.cjs",

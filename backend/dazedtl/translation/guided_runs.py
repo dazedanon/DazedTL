@@ -9,7 +9,7 @@ from dazedtl.settings import language_pair
 from dazedtl.storage import write_json
 
 from . import repricing
-from .files import digest, read_json
+from .files import digest, digest_members, encode, read_json
 
 PHASES = ("database", "dialogue", "advanced", "variables")
 # Raise when the same inputs and settings would estimate a phase differently.
@@ -141,7 +141,11 @@ class GuidedRuns:
         cached_only=False,
         names=None,
     ):
-        """What a phase's estimate binds to; names defaults to its selection."""
+        """What a phase's estimate binds to; names defaults to its selection.
+        The guard's layout binds as a moved game leaves it, so a move keeps
+        the game's estimates."""
+        from desktop.backend.workflow_actions import portable
+
         names = self.files(native, phase) if names is None else names
         inputs = self.guided.inputs(native)
         record = inputs.record()
@@ -187,7 +191,7 @@ class GuidedRuns:
             "options": native["engine_options"],
             "layout": native["widths"],
             "comments": native["phase1_comments"],
-            "context": context,
+            "context": portable(context),
             "runtime_context": self.guided.backend.guided_run_context(pair),
         }
         review = None
@@ -203,13 +207,32 @@ class GuidedRuns:
                 "status": comparisons["status"],
                 "literalBased": True,
             }
+        shared = {
+            key: encode(item)
+            for key, item in value.items()
+            if key not in {"configuration", "context"}
+        }
+
+        def fingerprint(configuration, context):
+            return digest_members(
+                {
+                    **shared,
+                    "configuration": encode(configuration),
+                    "context": encode(context),
+                }
+            )
+
+        unpriced = repricing.unpriced(configuration)
         return {
-            "fingerprint": digest(value),
+            "fingerprint": fingerprint(configuration, value["context"]),
             # What the estimate's requests depend on, which a switch that only
             # prices them (repricing) leaves alone.
-            "shape": digest(
-                {**value, "configuration": repricing.unpriced(configuration)}
-            ),
+            "shape": fingerprint(unpriced, value["context"]),
+            # What versions up to 2.34.3 saved for these inputs (see saved).
+            "legacy": {
+                "fingerprint": fingerprint(configuration, context),
+                "shape": fingerprint(unpriced, context),
+            },
             "configuration": configuration,
             "source": sources,
             "files": names,
@@ -221,15 +244,31 @@ class GuidedRuns:
         }
 
     @staticmethod
-    def changed(record, inputs, *, reprice=True):
+    def saved(record, inputs):
+        """The basis of an estimate bound to ``record``, read for ``inputs``.
+        Versions up to 2.34.3 bound the guard's layout with the game folder
+        in it; a record whose digest is the one such a version would save for
+        ``inputs`` reads as theirs, so an update alone outdates no estimate."""
+        legacy = inputs.get("legacy") or {}
+        fingerprint, shape = (
+            inputs[key]
+            if record.get(key) is not None and record.get(key) == legacy.get(key)
+            else record.get(key)
+            for key in ("fingerprint", "shape")
+        )
+        return Basis(RUN_VERSION, {}, fingerprint, shape)
+
+    @classmethod
+    def changed(cls, record, inputs, *, reprice=True):
         """What changed since an estimate bound to ``record`` was made, or None
         while it is current for ``inputs``. With ``reprice``, settings that
         differ only in prices not known yet count as the same."""
+        saved = cls.saved(record, inputs)
         return compare(
-            Basis(RUN_VERSION, {}, record.get("fingerprint"), record.get("shape")),
+            saved,
             Basis(RUN_VERSION, {}, inputs["fingerprint"], inputs["shape"]),
             prices_unknown=reprice
-            and record.get("fingerprint") != inputs["fingerprint"]
+            and saved.settings != inputs["fingerprint"]
             and repricing.unknown_prices(
                 record["configuration"], inputs["configuration"]
             ),
@@ -244,7 +283,7 @@ class GuidedRuns:
         estimate = self.guided.backend.manual.jobs.get(identity, {}).get("estimate")
         if (
             not estimate
-            or record.get("shape") != inputs["shape"]
+            or self.saved(record, inputs).shape != inputs["shape"]
             or identity in self.guided.inputs(native).record().get("retired_runs", [])
             or not repricing.priced(inputs["configuration"])
             or not repricing.same_requests(

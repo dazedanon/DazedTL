@@ -316,7 +316,41 @@ function moveGame(state, target) {
   fs.renameSync(moving, target);
 }
 
+/**
+ * Prepares Text QA again as an assistant does, and fails unless that goes on
+ * with `task`, its README naming the game where it is now.
+ */
+async function sameQaTask(page, state, task) {
+  const prepared = await helper(page, state, "qa", "--prepare");
+  if (prepared.task !== task)
+    throw new Error(
+      `Preparing Text QA again made another task, ${prepared.task}, not ${task}.`,
+    );
+  const readme = fs.readFileSync(path.join(task, "README.md"), "utf8");
+  if (!readme.includes(state.game))
+    throw new Error(`The Text QA task's README does not name ${state.game}.`);
+  await page.idle();
+}
+
 const moved = [
+  [
+    "Estimate the whole game's cost and prepare Text QA to review every line",
+    async ({ page, state }) => {
+      const project = (await page.call("workspace_snapshot")).application
+        .project;
+      await page.call("guided_full_estimate", { project_id: project.id });
+      await page.idle();
+      const { guided } = await page.call("workspace_snapshot");
+      if (!guided.fullEstimate.current)
+        throw new Error(
+          `The whole-game estimate is not current: ${JSON.stringify(guided.fullEstimate)}`,
+        );
+      state.qaTask = (
+        await helper(page, state, "qa", "--prepare", "--everything")
+      ).task;
+      await page.idle();
+    },
+  ],
   [
     "Move the game into a Game folder inside its own and open it there",
     async ({ page, state }) => {
@@ -343,6 +377,7 @@ const moved = [
         "Opening the moved game",
       );
       state.game = game;
+      await sameQaTask(page, state, state.qaTask);
     },
   ],
   [
@@ -366,6 +401,7 @@ const moved = [
         "Finding the game",
       );
       state.game = game;
+      await sameQaTask(page, state, state.qaTask);
     },
   ],
 ];
@@ -991,7 +1027,7 @@ export const scenarios = {
   },
   moved: {
     description:
-      "plugins-applied, then the game moved into a Game folder inside its own and opened there, then renamed and found from the Project page; each must keep the project unchanged.",
+      "plugins-applied with a whole-game estimate and a Text QA task reviewing every line, then the game moved into a Game folder inside its own and opened there, then renamed and found from the Project page; each must keep the project, its estimates and its Text QA task unchanged.",
     game: "plugin-text",
     steps: () => [open, ...setup, ...translateAll, qa, plugins, ...moved],
   },

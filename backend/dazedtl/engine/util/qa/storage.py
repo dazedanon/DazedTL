@@ -101,6 +101,15 @@ def _slug(value: str) -> str:
     return cleaned[:80] or "game"
 
 
+def game_tasks(output_root: Path, game_root: Path, key: str | None = None) -> Path:
+    """The folder of *output_root* holding a game's tasks and baselines: the
+    one named *key*, as the app names it for the project so a renamed game
+    keeps them, else one named for the game folder."""
+    if key is not None and _slug(key) != key:
+        raise ValueError(f"Not a QA storage folder name: {key!r}")
+    return output_root / (key or _slug(game_root.name))
+
+
 def _read_optional(path: Path | None) -> dict[str, Any]:
     if path is None:
         return {"path": "", "status": "missing", "sha256": "", "text": ""}
