@@ -38,6 +38,14 @@ def stored(name, text):
         return _split_base(text)[0].rstrip("\n")
     return text
 
+def written(root, names):
+    """The game files saving the guidance documents `names` may change, which
+    a game write names: their portable files, and the files outside
+    .dazedtl a save moves or updates."""
+    from util.paths import guidance_root_files
+    own = [DOCUMENTS[name][0] if name in DOCUMENTS else f".dazedtl/skills/{name.removeprefix('custom:')}.md" for name in names]
+    return own + guidance_root_files(root)
+
 def document_save(root, name, revision, text):
     return documents_save(root, {name: {"revision": revision, "text": text}})
 

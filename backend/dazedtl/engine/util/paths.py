@@ -304,16 +304,27 @@ def normalize_game_tool_gitignore_text(
     return normalized
 
 
-def ensure_game_tool_gitignore(game_root: str | Path) -> bool:
+def keeps_game_tool_gitignore(game_root: str | Path) -> bool:
+    """Whether the game's .gitignore keeps DazedTL's rules: once the game has a
+    Git repository, which they serve. Until then, saving guidance changes no
+    file a record of the game's original files holds."""
+    return (Path(game_root) / ".git").exists()
+
+
+def ensure_game_tool_gitignore(game_root: str | Path, *, baseline: bool = False) -> bool:
     """Allowlist portable translation settings while ignoring other tool state.
 
     The managed block replaces older ``/.dazedtl/`` rules. Its existing position
     is retained to avoid meaningless Git churn unless a block that would
     override it comes later; only portable glossary/settings/skills are exposed.
+    A game without a repository takes them when one is made: a ``baseline``
+    installs them as it makes it.
     """
     root = Path(game_root).expanduser().resolve()
     if not root.is_dir():
         raise GameProjectPathError(f"Game folder does not exist: {root}")
+    if not baseline and not keeps_game_tool_gitignore(root):
+        return False
     path = root / ".gitignore"
     if path.is_symlink() or (path.exists() and not path.is_file()):
         raise GameProjectPathError(f"Game .gitignore is not a regular file: {path}")
@@ -530,6 +541,28 @@ def _remove_identical_legacy_glossary(preferred: Path, legacy: Path) -> None:
         raise GameProjectPathError(
             f"Could not remove redundant legacy glossary {legacy}: {exc}"
         ) from exc
+
+
+def guidance_root_files(game_root: str | Path) -> list[str]:
+    """The game's files outside .dazedtl that saving its guidance may change:
+    legacy guidance it moves into .dazedtl, and the .gitignore that keeps
+    DazedTL's rules once the game has a repository."""
+    root = Path(game_root)
+    legacy = [
+        LEGACY_GAME_GLOSSARY_RELATIVE,
+        Path(LEGACY_QUIRKS_FILENAME),
+        *(
+            path.relative_to(root)
+            for path in (root / LEGACY_GAME_SKILLS_RELATIVE).rglob("*")
+            if not path.is_dir()
+        ),
+    ]
+    files = [
+        path.as_posix()
+        for path in legacy
+        if (root / path).exists() or (root / path).is_symlink()
+    ]
+    return files + ([".gitignore"] if keeps_game_tool_gitignore(root) else [])
 
 
 def validate_game_glossary_migration(game_root: str | Path | None) -> None:

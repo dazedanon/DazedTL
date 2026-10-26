@@ -59,7 +59,7 @@ Operation commands return saved job IDs; inspect them with run until they comple
 `run --wait MINUTES` waits in one command and returns as soon as the run's state changes, so a long Batch costs the assistant one turn per wait instead of one per poll.
 
 DazedTL keeps the original game's files in the game's own Git repository, under the private ref `refs/dazedtl/originals`, which no branch push sends ([original_files](../backend/dazedtl/compatibility/original_files.py)).
-It records the game as it is before its first write to a game whose Git is not set up, and an assistant runs record_original before changing the game's files with its own tools.
+It records the game as it is before its first write to a game whose Git is not set up that changes a file outside `.dazedtl`, and an assistant runs record_original before changing the game's files with its own tools.
 Git setup records the prepared game too, and a game update the new release; projects set up before then keep reading their backups ([originals](../backend/dazedtl/translation/originals.py)).
 RPG Maker preparation uses the existing shared helper; Ace and other formats require their engine's extraction/conversion route first.
 Git setup requires a source version and a reviewed runtime manifest for a fresh baseline.

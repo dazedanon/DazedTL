@@ -1180,7 +1180,7 @@ def _install_game_gitignore(game_root: Path, *, preserve_game_files: bool = Fals
     updated = game_tool_gitattributes_text(existing)
     if not attributes.exists() or updated != existing:
         attributes.write_bytes(updated.encode("utf-8", errors="surrogateescape"))
-    return ensure_game_tool_gitignore(game_root)
+    return ensure_game_tool_gitignore(game_root, baseline=True)
 
 
 def _reject_original_checked_out_elsewhere(repo: Path) -> None:

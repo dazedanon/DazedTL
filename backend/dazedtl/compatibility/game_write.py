@@ -18,7 +18,10 @@ skills), runs inside `write_game`, which holds the rules such writes share:
 - Before the outermost write to a game whose Git is not set up, the game as
   it is then is recorded in its Git repository as the original game's files
   ([original_files](original_files.py)), unless a record is there already,
-  so no write of DazedTL's changes a file whose original is not kept.
+  so no write of DazedTL's changes a file whose original is not kept. A
+  write whose `paths` are all files no record holds, such as guidance under
+  `.dazedtl/`, records nothing, since recording a big game takes minutes; a
+  write inside it records the game first unless it names such files too.
 - Once the outermost write to a game whose Git is set up succeeds, its change
   is one checkpoint commit on the translation branch
   ([checkpoint_commits](checkpoint_commits.py)), so every change DazedTL
@@ -45,6 +48,9 @@ if TYPE_CHECKING:
 
 # The game folders a gateway is writing to in this context.
 writing = ContextVar("game_writes", default=frozenset())
+# Those of them whose original files are not recorded, as the writes there
+# named only files no record holds.
+unrecorded = ContextVar("game_writes_unrecorded", default=frozenset())
 # Git's metadata alone decides whether a checkout can take a write, so while
 # it is unchanged a write's check costs a few file stats, not a dozen Git
 # processes, which Windows starts slowly.
@@ -207,7 +213,8 @@ def write_game(
 
     `folder` is the game's Guided workspace, which keeps the packing receipt;
     `paths` the files the write will change when known, so a write that packs
-    none refuses no archive and another write's checkpoint leaves them to
+    none refuses no archive, one that changes only DazedTL's own records
+    records no original files and another write's checkpoint leaves them to
     this one; `pack=False` leaves Data as it is, for writes outside
     `ace_json`, such as guidance and .gitignore, and tools that convert
     between Data and `ace_json`; `subject` names what was written when
@@ -215,17 +222,22 @@ def write_game(
     checkpoint is named by `action`'s registry row, the action running the
     write, or else `summary` in `stage`.
     """
-    from . import checkpoint_commits
+    from . import checkpoint_commits, original_files
     from .guided import ace_blocked
 
     root = Path(root).resolve()
+    paths = None if paths is None else list(paths)
     outermost = str(root) not in writing.get()
     status = _checkout(root)
     # A folder that isn't there yet holds no original files to keep.
-    if outermost and status is None and root.is_dir():
+    first = (
+        (outermost or str(root) in unrecorded.get())
+        and status is None
+        and root.is_dir()
+    )
+    keeps = paths is None or any(map(original_files.held, paths))
+    if first and keeps:
         from dazedtl.projects import location
-
-        from . import original_files
 
         original_files.ensure_found(root, log)
         # The repository may be new; it names its project from now on.
@@ -246,6 +258,11 @@ def write_game(
     game = GameWrite(root, packs=ace, restores=restores)
     game._point = point
     token = writing.set(writing.get() | {str(root)})
+    left = unrecorded.set(
+        unrecorded.get() | {str(root)}
+        if first and not keeps
+        else unrecorded.get() - {str(root)}
+    )
     try:
         yield game
         if ace:
@@ -256,6 +273,7 @@ def write_game(
                 checkpoint_commits.current(action, summary, stage), game.touched
             )
     finally:
+        unrecorded.reset(left)
         writing.reset(token)
         if point is not None:
             point.close()

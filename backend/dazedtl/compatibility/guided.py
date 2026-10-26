@@ -205,6 +205,7 @@ def guard_context(project, observed):
 
 
 def phased_workflows(workspace, lock, operations, manual, locate):
+    from desktop.backend.guidance import written
     from desktop.backend.workflow import Workflows
 
     from .game_write import write_game
@@ -228,9 +229,11 @@ def phased_workflows(workspace, lock, operations, manual, locate):
             # Saving guidance holds its own write; the one write this starts
             # is a finished run's collection, which adds the glossary terms
             # the run found.
+            source = self.projects[project_id]["source"]
             with write_game(
-                self.projects[project_id]["source"],
+                source,
                 pack=False,
+                paths=written(source, changes),
                 summary="Add the run's new glossary terms",
                 stage="Translate",
             ):

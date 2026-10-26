@@ -157,12 +157,18 @@ class TranslationEngine:
         return documents(source)
 
     def document_save(self, source, name, revision, text):
-        from desktop.backend.guidance import document_save
+        from desktop.backend.guidance import document_save, written
 
         from .game_write import write_game
 
         # Guidance is never the game's ace_json, so nothing packs.
-        with write_game(source, pack=False, summary="Save guidance", stage="Context"):
+        with write_game(
+            source,
+            pack=False,
+            paths=written(source, [name]),
+            summary="Save guidance",
+            stage="Context",
+        ):
             return document_save(source, name, revision, text)
 
     def valid_document(self, name):

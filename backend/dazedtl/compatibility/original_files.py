@@ -30,7 +30,7 @@ import tempfile
 from collections.abc import Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from dazedtl import system
@@ -52,6 +52,8 @@ _CHUNK = 2000
 # Blobs at least this large are written by a Git process of their own rather
 # than read into memory with others.
 _LARGE = 32 * 1024 * 1024
+# The game's folders no record holds: Git's and DazedTL's own.
+_OWN = frozenset({".git", ".dazedtl"})
 
 
 @dataclass(frozen=True)
@@ -181,9 +183,16 @@ def _relative(name):
     return name
 
 
+def held(relative):
+    """Whether a record holds the file at `relative` in the game folder:
+    every file but those in `.git` and `.dazedtl`."""
+    parts = PurePosixPath(str(relative).replace("\\", "/")).parts
+    return not parts or parts[0] not in _OWN
+
+
 def inventory(folder, stopped=lambda: False):
-    """Every file of `folder` but `.git` and `.dazedtl`, with what says it
-    changed: size, modification time and mode."""
+    """Every file of `folder` a record holds, with what says it changed:
+    size, modification time and mode."""
 
     def failed(error):
         raise error
@@ -194,8 +203,8 @@ def inventory(folder, stopped=lambda: False):
             raise InterruptedError("Stopped before the original files were recorded.")
         here = Path(directory)
         if here == folder:
-            names[:] = [name for name in names if name not in {".git", ".dazedtl"}]
-            entries = [name for name in entries if name not in {".git", ".dazedtl"}]
+            names[:] = [name for name in names if held(name)]
+            entries = [name for name in entries if held(name)]
         for name in names + entries:
             path = here / name
             info = path.lstat()

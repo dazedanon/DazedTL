@@ -7,7 +7,9 @@ when code under backend/dazedtl, other than the engine's, writes such a file
 while no gateway write to that game is open. A game folder is one holding a
 game's data, plugins or VX Ace exports; DazedTL's own records under
 `.dazedtl/` are exempt, apart from the glossary, settings and skills Git
-tracks.
+tracks. It also raises when any code changes a file a record of the game's
+original files holds inside a write that left the game unrecorded, as it
+named only DazedTL's own files.
 """
 
 import os
@@ -16,7 +18,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-from dazedtl.compatibility.game_write import write_game, writing
+from dazedtl.compatibility import original_files
+from dazedtl.compatibility.game_write import unrecorded, write_game, writing
 
 APP = str(Path(__file__).resolve().parents[1] / "backend/dazedtl") + os.sep
 ENGINE = APP + "engine" + os.sep
@@ -42,6 +45,7 @@ TARGETS = {
     "os.truncate": 0,
     "shutil.rmtree": 0,
 }
+MOVES = {"os.rename", "os.replace", "shutil.move"}
 # Writers that change a game's files without the gateway, each with why.
 OUTSIDE = {
     # Start over of a game DazedTL never wrote to moves notes aside without
@@ -139,9 +143,32 @@ def _removing():
     return False
 
 
+def _unrecorded(event, args):
+    """Raises when a write changes a file a record of the original game holds
+    inside a gateway write that left the game unrecorded."""
+    if not (roots := unrecorded.get()):
+        return
+    # A move changes the file it takes as well as the one it makes.
+    taken = args[:1] if event in MOVES else ()
+    for target in (_target(event, args), *taken):
+        if not isinstance(target, (str, os.PathLike)):
+            continue
+        path = Path(os.path.abspath(os.fspath(target)))
+        for parent in path.parents:
+            if str(parent) not in roots:
+                continue
+            relative = path.relative_to(parent).as_posix()
+            if original_files.held(relative) and not original_files.recorded(parent):
+                raise RuntimeError(
+                    f"{relative} changed inside a game write that named only"
+                    " files no record of the original game holds."
+                )
+
+
 def _hook(event, args):
     if event != "open" and event not in TARGETS:
         return
+    _unrecorded(event, args)
     path = _target(event, args)
     if not isinstance(path, (str, os.PathLike)):
         return

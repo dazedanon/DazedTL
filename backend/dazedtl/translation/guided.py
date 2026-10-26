@@ -1081,12 +1081,15 @@ class Guided:
     def save_guidance(self, native, changes, summary=None):
         """Saves a set of the game's guidance documents, which Git tracks, as
         one checkpoint named by what it saved, or by `summary`."""
+        from desktop.backend.guidance import written
+
         titles = ", ".join(map(guidance_title, changes))
         # Guidance is never the game's ace_json, so nothing packs.
         with self.backend.game_write(
             native["source"],
             native["id"],
             pack=False,
+            paths=written(native["source"], changes),
             summary=summary or f"Save {titles}",
             stage="Context",
         ):

@@ -18,6 +18,7 @@ sys.path.insert(0, str(root / "backend"))
 from dazedtl.compatibility.checkpoint_commits import Change, for_action, running
 from dazedtl.compatibility.game_write import write_game
 from dazedtl.compatibility.translation import TranslationEngine
+from desktop.backend.project import digest
 from util.game_settings import save_game_wrap_widths
 from util.len_git import setup_git
 from util.len_translation import LenProject
@@ -46,6 +47,21 @@ def save(folder):
 
 engine = TranslationEngine(temporary / "profile")
 kept = game("checkpoints")
+# Saving context changes only DazedTL's own folder, which no record holds, so
+# it records nothing: recording a big game froze the app for minutes. A save
+# that moves a legacy root file into it records the game first.
+with engine.context():
+    engine.document_save(kept, "game", digest(b""), "Theme - test\n")
+assert not (kept / ".git").exists() and not (kept / ".gitignore").exists()
+legacy = game("legacy-glossary")
+(legacy / "glossary.txt").write_text("勇者 (Hero)\n", encoding="utf-8")
+with engine.context():
+    glossary = engine.documents(legacy)["glossary"]["revision"]
+    engine.document_save(legacy, "glossary", glossary, "勇者 (Hero)\n")
+from dazedtl.compatibility import original_files
+
+[found] = original_files.records(legacy)
+assert "glossary.txt" in original_files.files(legacy, found.commit)
 engine.audit_scope(kept, {"files": {"data/Map001.json": {}, "data/Items.json": {}}})
 save(kept)
 base = git(kept, "rev-parse", "HEAD").strip()
@@ -336,8 +352,6 @@ assert listed()[0]["blocker"] == {
 # of its original files, which the first write made before setup. The
 # glossary is DazedTL's, so going back to before it removes it; going back
 # and undoing it once did nothing, as if it were an unknown original file.
-from dazedtl.compatibility import original_files
-
 plugin = "js/plugins/TitleMessage.js"
 oldest = listed()[-2]
 assert oldest["title"] == "Apply selected saved outputs", oldest
