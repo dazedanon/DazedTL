@@ -948,9 +948,7 @@ def keep_script_names(target: Path) -> None:
     script keeps."""
     unsafe = re.compile(r"^(\s*)(\w+)\.gsub!\((.*\\<.*\\>.*\\:.*)$", re.MULTILINE)
     main = target / "RV2JSON.rb"
-    fixed, found = unsafe.subn(
-        r"\1\2 = \2.gsub(\3", main.read_text(encoding="utf-8")
-    )
+    fixed, found = unsafe.subn(r"\1\2 = \2.gsub(\3", main.read_text(encoding="utf-8"))
     main.write_text(fixed, encoding="utf-8")
     # One in the dump and one in the pack, each stripping a script's name.
     if found != 2:
