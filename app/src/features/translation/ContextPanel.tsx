@@ -16,7 +16,7 @@ import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
 import { Button } from "../../ui/Button";
 import { DocumentEditor } from "../../ui/DocumentEditor";
-import { Feedback, Message } from "../../ui/Feedback";
+import { Feedback } from "../../ui/Feedback";
 import { PageBody } from "../../ui/PageLayout";
 import { HelpPopover } from "../../ui/HelpPopover";
 import { checkoutRefusal } from "./checkout";
@@ -70,7 +70,6 @@ export function ContextPanel({
             workspace. Each run keeps the exact context it used.
           </HelpPopover>
         </p>
-        <Message message={action.error} onDismiss={action.clear} />
         <DocumentEditor
           documents={state.documents}
           drafts={draft.drafts}
@@ -89,6 +88,7 @@ export function ContextPanel({
       <ActionBar
         feedback={
           <Feedback
+            error={action.error}
             pending={draft.committing}
             dirty={dirty}
             notice={action.notice}

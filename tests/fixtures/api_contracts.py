@@ -3,6 +3,7 @@
 import inspect
 import json
 import sys
+import time
 from pathlib import Path
 
 root, temporary = map(Path, sys.argv[1:])
@@ -10,6 +11,7 @@ sys.path.insert(0, str(root / "backend"))
 
 from dazedtl.api.contracts.methods import METHODS
 from dazedtl.api.server import Application, dispatcher, routes
+from dazedtl.compatibility import original_files, original_record
 
 game = temporary / "game"
 (game / "data").mkdir(parents=True)
@@ -144,6 +146,13 @@ try:
     ):
         call(method, {"project_id": project_id})
     call("workspace_snapshot", {})
+    # Opening the game started recording its original files in the
+    # background, which no task waits for once it is done.
+    for _attempt in range(200):
+        if original_files.recorded(game):
+            break
+        time.sleep(0.05)
+    assert original_files.recorded(game), "Opening the game recorded nothing."
     # A game moved into a folder inside its old one, as the user tidied a
     # download, opens as the same project with its work and stages; until
     # then the project offers Find game folder.
@@ -248,6 +257,7 @@ finally:
     app.closing = True
     app.guided.batch_monitor.close()
     app.translation.jobs.close()
+    original_record.close()
     app.images.close()
     try:
         app.backend.close()
