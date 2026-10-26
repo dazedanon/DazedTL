@@ -18,6 +18,8 @@ saved work of its own; then both stay, and the folder keeps that project.
 """
 
 import json
+import threading
+import time
 from pathlib import Path
 
 from dazedtl import system
@@ -164,6 +166,73 @@ def workflow_game(folder):
         if parent.parent.name == "workflows" and parent.parent.parent.name == "engine":
             return owners(parent.parent.parent.parent).get(parent.name)
     return None
+
+
+# How a project whose game folder is gone reads, open or in the recent list.
+UNAVAILABLE = {
+    "status": "Game folder unavailable",
+    "detail": "Reconnect the drive, or find the game where it is now.",
+}
+
+
+class RecentFolders:
+    """Whether each recent game's folder is there, for the recent list.
+
+    A disconnected network drive can stall a look at its folder for a long
+    time, so each folder is looked at in a thread of its own, at most every
+    `fresh` seconds, and a snapshot waits for those looks only `wait`
+    seconds; a folder whose look has not answered yet reads as there, and the
+    next snapshot after the look shows what it found."""
+
+    def __init__(self, fresh=30.0, wait=0.1):
+        self.fresh = fresh
+        self.wait = wait
+        self.lock = threading.Lock()
+        # Each folder's last answer and when it came.
+        self.seen = {}
+        # The looks still running, by folder.
+        self.looking = {}
+
+    def _look(self, source, done):
+        here = Path(source).is_dir()
+        with self.lock:
+            self.seen[source] = (here, time.monotonic())
+            self.looking.pop(source, None)
+        done.set()
+
+    def mark(self, recent, project, available):
+        """The recent projects, each marked unavailable while its folder is
+        gone; the open project as `available` says it reads open."""
+        now = time.monotonic()
+        looks = []
+        with self.lock:
+            for item in recent:
+                source = item["source"]
+                seen = self.seen.get(source)
+                if (project and item["id"] == project["id"]) or (
+                    seen and now - seen[1] < self.fresh
+                ):
+                    continue
+                done = self.looking.get(source)
+                if done is None:
+                    done = self.looking[source] = threading.Event()
+                    threading.Thread(
+                        target=self._look, args=(source, done), daemon=True
+                    ).start()
+                looks.append(done)
+        for done in looks:
+            done.wait(max(0.0, now + self.wait - time.monotonic()))
+        rows = []
+        with self.lock:
+            for item in recent:
+                if project and item["id"] == project["id"]:
+                    here = available
+                else:
+                    here = self.seen.get(item["source"], (True, 0.0))[0]
+                rows.append(
+                    {**item, "available": here, **({} if here else UNAVAILABLE)}
+                )
+        return rows
 
 
 class Locations:

@@ -445,6 +445,12 @@ class ProjectLanguagesRequest(TypedDict):
     target: str
 
 
+class LanguagesLock(TypedDict):
+    """Why a game's languages can't change any more; empty while they can."""
+
+    reason: str
+
+
 class SettingsModelDefaultsRequest(TypedDict):
     connection_id: str
     model: str
@@ -676,6 +682,8 @@ METHODS: dict[str, Method] = {
     "navigate": Method(NavigateRequest, AppState),
     "project_method": Method(ProjectMethodRequest, AppState),
     "project_languages": Method(ProjectLanguagesRequest, AppState),
+    # Read as Set up's languages dialog opens: it reads every saved run.
+    "project_languages_lock": Method(ProjectRequest, LanguagesLock, refresh=False),
     # Settings
     "settings_get": Method(NoParams, Settings, refresh=False),
     "settings_save": Method(PreferencesRequest, Settings),

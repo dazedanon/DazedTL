@@ -181,6 +181,12 @@
 .project-recent-remove:is(:hover, :focus-visible):not(:disabled) svg {
   color: var(--color-text);
 }
+/* A recent game whose folder is gone, in the menu and on the Project page. */
+.recent-project-unavailable > .status-icon {
+  color: var(--color-warning);
+  margin-inline-end: var(--space-1);
+  vertical-align: middle;
+}
 .method-note {
   color: var(--color-muted);
   font-size: var(--font-control);

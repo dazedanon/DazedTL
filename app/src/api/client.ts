@@ -223,6 +223,8 @@ export const api = {
     request("project_method", { project_id, method }),
   languages: (project_id: string, source: SourceLanguage, target: string) =>
     request("project_languages", { project_id, source, target }),
+  languagesLock: (project_id: string) =>
+    request("project_languages_lock", { project_id }),
   phase: (project_id: string, phase: Phase) =>
     request("guided_phase_select", { project_id, phase }),
   preview: (

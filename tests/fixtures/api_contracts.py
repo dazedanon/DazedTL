@@ -51,6 +51,7 @@ try:
     assert project, "The fixture game did not open."
     project_id = project["id"]
     call("select_project", {"project_id": project_id})
+    assert call("project_languages_lock", {"project_id": project_id}) == {"reason": ""}
     call("navigate", {"screen": "guided"})
     guided = call("workspace_snapshot", {})["guided"]
     settings = call("settings_get", {})

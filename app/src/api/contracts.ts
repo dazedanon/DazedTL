@@ -3049,6 +3049,11 @@ export type ProjectLanguagesRequest = {
   target: string;
 };
 
+/** Why a game's languages can't change any more; empty while they can. */
+export type LanguagesLock = {
+  reason: string;
+};
+
 export type SettingsModelDefaultsRequest = {
   connection_id: string;
   model: string;
@@ -3267,6 +3272,7 @@ export type RpcContract = {
   navigate: { request: NavigateRequest; response: AppState };
   project_method: { request: ProjectMethodRequest; response: AppState };
   project_languages: { request: ProjectLanguagesRequest; response: AppState };
+  project_languages_lock: { request: ProjectRequest; response: LanguagesLock };
   settings_get: { request: NoParams; response: Settings };
   settings_save: { request: PreferencesRequest; response: Settings };
   settings_draft: { request: PreferencesRequest; response: Saved };

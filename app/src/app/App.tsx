@@ -33,7 +33,7 @@ import Translation, {
   type TranslationView,
 } from "../features/translation/Translation";
 import { Menu, MenuItem, MenuSeparator } from "../ui/Menu";
-import { PathText } from "../ui/PathText";
+import { RecentProjectName } from "../features/project/RecentProject";
 import { Button } from "../ui/Button";
 import { Message } from "../ui/Feedback";
 import { DiagnosticsAction } from "./DiagnosticsAction";
@@ -270,12 +270,7 @@ export default function App() {
                   }}
                 >
                   <FolderOpen size={16} aria-hidden="true" />
-                  <span>
-                    <strong>{item.name}</strong>
-                    <small>
-                      <PathText path={item.source} />
-                    </small>
-                  </span>
+                  <RecentProjectName project={item} />
                   {item.id === project.id && (
                     <Check size={15} aria-label="Open now" />
                   )}

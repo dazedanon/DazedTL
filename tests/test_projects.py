@@ -333,6 +333,23 @@ class LocationTests(unittest.TestCase):
         self.assertEqual((found["id"], found["source"]), (project["id"], str(new)))
         self.assertEqual(self.projects.current["id"], project["id"])
 
+    def test_recent_games_whose_folder_is_gone_read_unavailable(self):
+        """The recent list marked only the open project's missing folder; each
+        other folder is looked at again only once its last look is stale."""
+        here = {"id": "here", "source": str(self.game("here"))}
+        gone = {"id": "gone", "source": str(self.game("gone"))}
+        folders = location.RecentFolders(wait=5)
+        marked = folders.mark([here, gone], None, False)
+        self.assertEqual([row["available"] for row in marked], [True, True])
+        shutil.rmtree(gone["source"])
+        self.assertTrue(folders.mark([gone], None, False)[0]["available"])
+        folders.fresh = 0
+        unavailable = folders.mark([here, gone], here, False)
+        self.assertEqual(
+            [(row["available"], row.get("status")) for row in unavailable],
+            [(False, "Game folder unavailable")] * 2,
+        )
+
     def test_a_games_languages_change_until_it_has_work_then_stay(self):
         """Set up's choice of a game's languages, and the pair a game with
         work keeps when Settings' default pair changes."""
@@ -356,7 +373,10 @@ class LocationTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "same script"):
             languages.change(new["id"], "English", "French")
+        self.assertEqual(languages.locked(new), "")
         self.worked.update((old["id"], new["id"]))
+        # Set up reads the same refusal before Save as Save gives.
+        self.assertIn("English into Japanese", languages.locked(new))
         with self.assertRaisesRegex(ValueError, "can't change"):
             languages.change(new["id"], "Japanese", "English")
         # A game set up before pairs were recorded keeps the pair its work

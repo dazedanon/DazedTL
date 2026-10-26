@@ -3,6 +3,7 @@
  * the game has work (backend/dazedtl/projects/languages.py). */
 import { useState } from "react";
 import { api } from "../../api/client";
+import { messageOf } from "../../api/errors";
 import {
   SOURCE_LANGUAGES,
   type GameLanguages as Languages,
@@ -12,6 +13,7 @@ import { useApplication } from "../../app/ApplicationProvider";
 import { pairLabel } from "../../app/languages";
 import { useLanguages } from "../../app/LanguagesProvider";
 import { useAction } from "../../state/useAction";
+import { useRead } from "../../state/useRead";
 import { ActionBar } from "../../ui/ActionBar";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { Button } from "../../ui/Button";
@@ -132,6 +134,10 @@ function LanguagesDialog({
   const action = useAction({ observer: application });
   const [source, setSource] = useState<SourceLanguage>(languages.source);
   const [target, setTarget] = useState(languages.target);
+  // A game with work keeps its languages; reading that reads every saved run,
+  // so the dialog asks as it opens. A failed read leaves Save to refuse.
+  const lock = useRead(projectId, () => api.languagesLock(projectId));
+  const locked = lock.value?.reason ?? "";
   const unchanged =
     source === languages.source && target.trim() === languages.target;
   const edit =
@@ -149,26 +155,40 @@ function LanguagesDialog({
     >
       <DialogHeader title="Change this game's languages?" />
       <DialogBody>
-        <p>
-          Every run on this game translates these languages, so they can change
-          only until its first run.
-        </p>
-        <LanguageFields
-          id="game-languages"
-          source={source}
-          target={target}
-          onSource={edit(setSource)}
-          onTarget={edit(setTarget)}
-        />
+        {locked ? (
+          <Notice tone="warning">
+            <span>{locked}</span>
+          </Notice>
+        ) : (
+          <p>
+            Every run on this game translates these languages, so they can
+            change only until its first run.
+          </p>
+        )}
+        <fieldset disabled={!!locked}>
+          <LanguageFields
+            id="game-languages"
+            source={source}
+            target={target}
+            onSource={edit(setSource)}
+            onTarget={edit(setTarget)}
+          />
+        </fieldset>
       </DialogBody>
-      <ActionBar feedback={<Message message={action.error} />}>
+      <ActionBar
+        feedback={
+          <Message
+            message={action.error || (lock.error ? messageOf(lock.error) : "")}
+          />
+        }
+      >
         <Button data-autofocus disabled={action.busy} onClick={close}>
           Cancel
         </Button>
         <Button
           variant="primary"
           pending={action.busy}
-          disabled={unchanged || !target.trim()}
+          disabled={unchanged || !target.trim() || lock.pending || !!locked}
           onClick={() =>
             void action.run(async () => {
               await api.languages(projectId, source, target);

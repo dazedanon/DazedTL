@@ -8,6 +8,7 @@ To install it, see the [README](../README.md).
 - **Projects.** Every game folder you open is a project.
   Open one with **Open a game** on the Project page.
   The **×** beside a game in the project menu or under Recent projects removes it from the list, closing it if it is open; its work stays, and opening the game again brings it back.
+  A game whose folder is gone, such as on a disconnected drive, reads **Game folder unavailable** there; open it to find the game where it is now.
 - **Two methods.** A new game asks how to translate it: **Guided steps** for RPG Maker MV, MZ and VX Ace, or [Assistant-led](#assistant-led) for any game.
   **Change method** on the Project page switches later and keeps the other method's work.
 - **Your assistant.** Many steps copy a task for your AI coding assistant, such as Claude Code or Codex.

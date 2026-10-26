@@ -27,6 +27,7 @@ import { displayLabels, displayMarks } from "../../ui/displayStatus";
 import { useRefocus } from "../../ui/useRefocus";
 import { engineLabel, selectionNames, sentence } from "../../ui/displayText";
 import { AssistantTaskList } from "../assistant/AssistantTaskList";
+import { RecentProjectName } from "./RecentProject";
 import { useAssistantTasks } from "../assistant/useAssistantTasks";
 import { ActivityHistory } from "../guided/ActivityHistory";
 import type { HistoryTab } from "../guided/historyView";
@@ -836,12 +837,7 @@ function NoProject({
               <div key={item.id} className="project-recent">
                 <Button disabled={busy} onClick={() => select(item.id)}>
                   <Folder size={17} aria-hidden="true" />
-                  <span>
-                    <strong>{item.name}</strong>
-                    <small>
-                      <PathText path={item.source} />
-                    </small>
-                  </span>
+                  <RecentProjectName project={item} />
                   <ArrowRight size={15} aria-hidden="true" />
                 </Button>
                 <Button

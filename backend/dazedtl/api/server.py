@@ -29,7 +29,7 @@ from dazedtl.plugins import PluginService
 from dazedtl.plugins.service import receipt_label
 from dazedtl.projects import location
 from dazedtl.projects.languages import ProjectLanguages
-from dazedtl.projects.location import Locations
+from dazedtl.projects.location import Locations, RecentFolders
 from dazedtl.projects.store import Projects
 from dazedtl.settings import language_pair, preferences
 from dazedtl.settings.store import Settings
@@ -66,6 +66,7 @@ class Application:
         self.closing = False
         # The games whose original files this backend started recording.
         self.recorded_games = set()
+        self.recent_folders = RecentFolders()
         # Records errors the app handles itself, such as one unreadable project.
         self.failure = failure or (lambda *_args, **_kwargs: None)
         self.workspace = Path(workspace).resolve()
@@ -203,6 +204,7 @@ class Application:
             or original_record.running(),
             provider_ready=self.settings.ready(),
             observing=bool(project),
+            recent=self.recent_folders.mark(value["recent"], project, available),
         )
         if project:
             project = dict(project)
@@ -216,11 +218,7 @@ class Application:
                 next_label="Continue setup",
             )
             if not project["available"]:
-                project.update(
-                    status="Game folder unavailable",
-                    detail="Reconnect the drive, or find the game where it is now.",
-                    next_label="Find game folder",
-                )
+                project.update(location.UNAVAILABLE, next_label="Find game folder")
             elif project.get("backend_id"):
                 try:
                     native = self.backend.workflows.state(project["backend_id"])
@@ -679,6 +677,15 @@ class Application:
         self.languages.change(project_id, source, target)
         return self.state()
 
+    def project_languages_lock(self, project_id):
+        """Why Set up can't change the game's languages, read as its dialog
+        opens."""
+        project = self.projects.get(project_id)
+        # Saving names a missing folder itself.
+        if not self.locations.holds(project):
+            return {"reason": ""}
+        return {"reason": self.languages.locked(project)}
+
     def settings_game_update(self, revision, forge, host, owner, branch):
         settings = self.settings.save_game_update(
             revision,
@@ -843,6 +850,10 @@ def routes(app):
     methods = {
         "workspace_snapshot": (app.snapshot, lambda value, _params: value),
         "workspace_recheck": (app.recheck, lambda value, _params: value),
+        "project_languages_lock": (
+            app.project_languages_lock,
+            lambda value, _params: value,
+        ),
         **{
             name: (getattr(app, name), lambda value, _params: views.application(value))
             for name in (

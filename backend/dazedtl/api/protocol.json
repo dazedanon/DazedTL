@@ -1,5 +1,5 @@
 {
-  "version": "d65ca82de82ac32b",
+  "version": "1ac875a26078f181",
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
@@ -39,6 +39,10 @@
     },
     "project_languages": {
       "refresh": true,
+      "duringClose": false
+    },
+    "project_languages_lock": {
+      "refresh": false,
       "duringClose": false
     },
     "settings_get": {

@@ -72,9 +72,22 @@ class ProjectLanguages:
             return False
         return recorded(project["source"]) or self.has_work(project)
 
+    def locked(self, project):
+        """Why the game's pair can't change any more, or "" while it can: a
+        game with work keeps the pair all its saved runs mean. It reads every
+        saved run, so Set up asks as its dialog opens, never in a snapshot."""
+        if not self.has_work(project):
+            return ""
+        current = language_pair.pair(self.settings, project["source"])
+        return (
+            f"This game already has work translating {current['source']} into "
+            f"{current['target']}, so its languages can't change; every saved "
+            "run would mean something else. Open a fresh copy of the game as a "
+            "new project to translate it another way."
+        )
+
     def change(self, project_id, source, target):
-        """Set up's choice of the game's pair, refused once the game has work,
-        whose saved runs all mean the pair it has now."""
+        """Set up's choice of the game's pair, refused once it is locked."""
         project = self.projects.get(project_id)
         if not self.holds(project):
             raise ValueError("Find the game folder before changing its languages.")
@@ -88,11 +101,7 @@ class ProjectLanguages:
             if load_language_pair(root) is None:
                 language_pair.choose(root, chosen["source"], chosen["target"])
             return
-        if self.has_work(project):
-            raise ValueError(
-                f"This game already has work translating {current['source']} into "
-                f"{current['target']}, so its languages can't change; every saved "
-                "run would mean something else. Open a fresh copy of the game as a "
-                "new project to translate it another way."
-            )
+        refusal = self.locked(project)
+        if refusal:
+            raise ValueError(refusal)
         language_pair.choose(root, chosen["source"], chosen["target"])
