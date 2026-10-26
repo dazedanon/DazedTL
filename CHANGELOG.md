@@ -3,6 +3,14 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.34.2] - 2026-10-26
+
+### Fixed
+
+- **Context:** **Save context** and **Copy starting prompt** still froze the app for minutes on a big game where an earlier save had been interrupted, for example by closing DazedTL while it saved; they now finish at once.
+- **Context:** a failed **Save context** or other file write now names the file and why (for example that it is read-only), and a leftover Git lock says another Git process is using the game instead of "The operation could not finish."
+- **Set up:** the first change DazedTL made to a big game whose version history wasn't set up yet froze the app for minutes while it saved the game's original files; it now saves them in the background as soon as you open the game, and a change that has to wait for them says so.
+
 ## [2.34.1] - 2026-10-26
 
 ### Fixed
@@ -1017,6 +1025,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.34.2]: https://github.com/dazedanon/DazedTL/compare/v2.34.1...v2.34.2
 [2.34.1]: https://github.com/dazedanon/DazedTL/compare/v2.34.0...v2.34.1
 [2.34.0]: https://github.com/dazedanon/DazedTL/compare/v2.33.2...v2.34.0
 [2.33.2]: https://github.com/dazedanon/DazedTL/compare/v2.33.1...v2.33.2

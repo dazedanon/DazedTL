@@ -2,7 +2,7 @@
 import json
 import os
 import re
-from util.target_text import name_translated, title_case
+from util.speakers import translate_speaker
 import util.dazedwrap as dazedwrap
 import threading
 import time
@@ -1079,41 +1079,8 @@ def translatePlugin(data, pbar, filename, translatedList):
 
 # Save some money and enter the character before translation
 def getSpeaker(speaker):
-    match speaker:
-        case "ファイン":
-            return ["Fine", [0, 0]]
-        case "":
-            return ["", [0, 0]]
-        case _:
-            # Find Speaker
-            for i in range(len(NAMESLIST)):
-                if speaker == NAMESLIST[i][0]:
-                    return [NAMESLIST[i][1], [0, 0]]
+    return translate_speaker(speaker, NAMESLIST, LANGUAGE, translateAI)
 
-            # Translate and Store Speaker
-            response = translateAI(
-                f"{speaker}",
-                "Reply with the " + LANGUAGE + " translation of the NPC name.",
-                False,
-            )
-            response[0] = title_case(response[0], LANGUAGE)
-            response[0] = response[0].replace("'S", "'s")
-            response[0] = response[0].replace("Speaker: ", "")
-
-            # Retry if name doesn't translate for some reason
-            if not name_translated(response[0], LANGUAGE):
-                response = translateAI(
-                    f"{speaker}",
-                    "Reply with the " + LANGUAGE + " translation of the NPC name.",
-                    False,
-                )
-                response[0] = title_case(response[0], LANGUAGE)
-                response[0] = response[0].replace("'S", "'s")
-
-            speakerList = [speaker, response[0]]
-            NAMESLIST.append(speakerList)
-            return response
-    return [speaker, [0, 0]]
 
 def translateAI(text, history, history_ctx=None):
     """

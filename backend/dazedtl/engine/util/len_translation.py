@@ -13,7 +13,7 @@ from types import SimpleNamespace
 from util import system
 from util.paths import (
     DATA_DIR, GAME_TOOL_GITIGNORE_BEGIN, GLOSSARY_BASE_SEPARATOR, LEN_PATCH_GITIGNORE_BEGIN, LEN_WORK_GITIGNORE_BEGIN,
-    LEN_WORK_GITIGNORE_END, SKILLS_DIR, game_glossary_path, glossary_base_text, keeps_game_tool_gitignore,
+    LEN_WORK_GITIGNORE_END, SKILLS_DIR, game_git_set_up, game_glossary_path, glossary_base_text,
     runtime_data_file, runtime_data_files_pinned,
     prepare_game_translation_context, read_game_glossary, without_gitignore_section,
 )
@@ -476,8 +476,8 @@ def _prepare_local_work(project: LenProject) -> None:
     """Keep all Len working state local, before the patch rules and the
     portable-settings allowlist after them, which Git setup and each
     checkpoint put in that order. Like those rules, the block waits for the
-    game's repository, which it serves."""
-    if not keeps_game_tool_gitignore(project.game_root):
+    game's Git setup, whose history it serves."""
+    if not game_git_set_up(project.game_root):
         project.work_root.mkdir(parents=True, exist_ok=True)
         return
     ignore = project.game_root / ".gitignore"

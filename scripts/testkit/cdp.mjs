@@ -278,8 +278,9 @@ export class Page {
    * Waits until the window has taken the size the app gives it, through the
    * app's main process at inspector port `inspect`. A window manager
    * maximizes a window a moment after it shows, so a click aimed before
-   * that lands where a control was; Linux without a Wayland compositor, as
-   * under CI's Xvfb, has no window manager to wait for.
+   * that lands where a control was; Linux without the testkit's own compositor
+   * (DAZEDTL_TEST_MANAGED_WINDOW), as under CI's Xvfb, has no window manager
+   * to wait for.
    * @param {{ root: string, inspect: number }} options
    */
   async settle({ root, inspect }) {
@@ -288,7 +289,7 @@ export class Page {
       await until("the window to take its full size", async () => {
         const bounds = await main.evaluate(`(() => {
           const window = process.mainModule.require("electron").BrowserWindow.getAllWindows()[0];
-          const managed = process.platform !== "linux" || !!process.env.WAYLAND_DISPLAY;
+          const managed = process.platform !== "linux" || !!process.env.DAZEDTL_TEST_MANAGED_WINDOW;
           return window && (!managed || window.isMaximized()) ? window.getContentBounds() : null;
         })()`);
         if (!bounds) return false;

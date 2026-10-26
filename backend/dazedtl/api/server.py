@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from dazedtl.api.contracts.methods import METHODS
 from dazedtl.api.local import LocalAPI
+from dazedtl.compatibility import game_write, original_files, original_record
 from dazedtl.compatibility.dazedmtl import ExistingBackend
 from dazedtl.compatibility.runtime import ENGINE_ROOT
 from dazedtl.compatibility.translation import TranslationEngine
@@ -63,6 +64,8 @@ PROTOCOL = json.loads(
 class Application:
     def __init__(self, workspace, allow_providers, failure=None):
         self.closing = False
+        # The games whose original files this backend started recording.
+        self.recorded_games = set()
         # Records errors the app handles itself, such as one unreadable project.
         self.failure = failure or (lambda *_args, **_kwargs: None)
         self.workspace = Path(workspace).resolve()
@@ -164,10 +167,30 @@ class Application:
                 )
         self.assistant_tasks.relocate(project["id"], before)
 
+    def record_originals(self, project):
+        """Starts recording the open game's original files once, before any
+        task changes them, unless its Git is set up; a refused write starts
+        a stopped or failed record again."""
+        from util.paths import game_git_set_up
+
+        root = Path(project["source"])
+        if (
+            str(root) not in self.recorded_games
+            and not game_git_set_up(root)
+            and original_files.has_files(root)
+        ):
+            self.recorded_games.add(str(root))
+            try:
+                original_record.start(root)
+            except OSError:
+                pass  # A refused write starts it again and says why.
+
     def state(self):
         value = self.projects.state()
         project = value["project"]
         available = bool(project) and self.locations.holds(project)
+        if available:
+            self.record_originals(project)
         if project and project.get("backend_id") and available:
             # Queued work starts before this reads what runs.
             try:
@@ -175,7 +198,9 @@ class Application:
             except ValueError, OSError, RuntimeError, subprocess.SubprocessError:
                 pass  # The snapshot reports an unreadable project.
         value.update(
-            running=self.backend.running() or self.translation.jobs.running(),
+            running=self.backend.running()
+            or self.translation.jobs.running()
+            or original_record.running(),
             provider_ready=self.settings.ready(),
             observing=bool(project),
         )
@@ -724,6 +749,18 @@ class Application:
             return nullcontext()
         return reading_game(project["source"])
 
+    def error_roots(self, params):
+        """The folders a failure may name files in: the request's game and the profile."""
+        roots = [self.workspace]
+        try:
+            roots.insert(0, Path(self.projects.get(params["project_id"])["source"]))
+        except KeyError, TypeError, ValueError:
+            pass
+        return [*roots, *(root.resolve() for root in roots)]
+
+    def explain(self, exc, params):
+        return views.error(exc, self.error_roots(params))
+
     def prepare_model_pricing(self, name, params):
         """Only explicit price/estimate actions may perform public price reads."""
         explicit = name == "settings_model_defaults"
@@ -1048,6 +1085,15 @@ def dispatcher(app, check=False):
         from dazedtl.api.contracts import validation as checks
 
     def run(name, params):
+        # No request records a game's original files, which takes minutes on
+        # a big game while every other request waits.
+        token = game_write.requesting.set(True)
+        try:
+            return _run(name, params)
+        finally:
+            game_write.requesting.reset(token)
+
+    def _run(name, params):
         handler, present = methods[name]
         app.prepare_model_pricing(name, params)
         # These provider lookups run without the engine context lock, so a slow
@@ -1112,6 +1158,7 @@ def serve(args, diagnostics):
         PROTOCOL["version"],
         assistant_dispatch(app, dispatch),
         diagnostics.failure,
+        app.explain,
     )
     # Electron matches replies by id, so previews may answer out of order
     # while the loop keeps reading; every other request still runs in turn.
@@ -1159,7 +1206,9 @@ def serve(args, diagnostics):
                 "result": dispatch(name, params),
             }
         except Exception as exc:  # noqa: BLE001
-            error = views.error(exc)
+            error = app.explain(
+                exc, request.get("params") if isinstance(request, dict) else None
+            )
             # Validation and missing-file messages reach the user as written;
             # only failures shown as a generic message need a diagnostic trail.
             if error["code"] in {"internal", "storage"}:
@@ -1212,6 +1261,7 @@ def serve(args, diagnostics):
         app.guided.batch_monitor.close()
         local.close()
         app.translation.jobs.close()
+        original_record.close()
         app.images.close()
         try:
             app.backend.close()

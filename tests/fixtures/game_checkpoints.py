@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -15,6 +16,7 @@ root, temporary = map(Path, sys.argv[1:])
 sys.path.insert(0, str(root / "backend/dazedtl/engine"))
 sys.path.insert(0, str(root / "backend"))
 
+from dazedtl.compatibility import game_write
 from dazedtl.compatibility.checkpoint_commits import Change, for_action, running
 from dazedtl.compatibility.game_write import write_game
 from dazedtl.compatibility.translation import TranslationEngine
@@ -55,21 +57,45 @@ kept = game("checkpoints")
 # the app for minutes. A save that moves a legacy root file into it records
 # the game first.
 prompted = game("prompted")
+# A record stopped before it finished leaves the empty repository it began
+# with, which is no Git setup either, so both still recorded the game.
+interrupted = game("interrupted")
+git(interrupted, "init", "-q")
 with engine.context():
     engine.document_save(kept, "game", digest(b""), "Theme - test\n")
-    # Copy starting prompt records the game's languages, then prepares.
-    language_pair.choose(prompted, DEFAULT_SOURCE, "English")
-    engine.prepare(prompted, DEFAULTS)
+    engine.document_save(interrupted, "game", digest(b""), "Theme - test\n")
+    for folder in (prompted, interrupted):
+        # Copy starting prompt records the game's languages, then prepares.
+        language_pair.choose(folder, DEFAULT_SOURCE, "English")
+        engine.prepare(folder, DEFAULTS)
 for unrecorded in (kept, prompted):
     assert not (unrecorded / ".git").exists(), unrecorded
+for unrecorded in (kept, prompted, interrupted):
     assert not (unrecorded / ".gitignore").exists(), unrecorded
-legacy = game("legacy-glossary")
-(legacy / "glossary.txt").write_text("勇者 (Hero)\n", encoding="utf-8")
-with engine.context():
-    glossary = engine.documents(legacy)["glossary"]["revision"]
-    engine.document_save(legacy, "glossary", glossary, "勇者 (Hero)\n")
 from dazedtl.compatibility import original_files
 
+assert not original_files.recorded(interrupted)
+legacy = game("legacy-glossary")
+(legacy / "glossary.txt").write_text("勇者 (Hero)\n", encoding="utf-8")
+# A request's write that changes a file a record holds never records the
+# game, which froze the app for minutes on a big one: it refuses, changing
+# nothing, and the background record it starts lets it through once done.
+answering = game_write.requesting.set(True)
+try:
+    for attempt in range(200):
+        try:
+            with engine.context():
+                glossary = engine.documents(legacy)["glossary"]["revision"]
+                engine.document_save(legacy, "glossary", glossary, "勇者 (Hero)\n")
+        except ValueError as refused:
+            assert "recording the game's original files" in str(refused), refused
+            assert (legacy / "glossary.txt").is_file()
+            time.sleep(0.05)
+        else:
+            break
+finally:
+    game_write.requesting.reset(answering)
+assert attempt, "The first save recorded the game inside its request."
 [found] = original_files.records(legacy)
 assert "glossary.txt" in original_files.files(legacy, found.commit)
 engine.audit_scope(kept, {"files": {"data/Map001.json": {}, "data/Items.json": {}}})
