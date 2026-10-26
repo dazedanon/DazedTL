@@ -11,3 +11,5 @@
 - **Translate:** on a game with more than about a thousand maps, the variables step no longer rereads every map each second, which kept the app busy and slow.
 - **GameUpdate:** a game translated into Japanese shows players its "Translation update available" message in Japanese; Set up writes the text into the update check's plugin settings, where it can be edited.
 - **Images:** **Compare images** no longer names what discovery found an image to be twice, such as "Recommended" beside its state and again under Discovery.
+- **Set up:** **Change…** under Languages says at once that a game with work keeps its languages, instead of only after **Save languages**.
+- **Project:** a recent game whose folder is gone, such as on a disconnected drive, now reads **Game folder unavailable** in the project menu and under Recent projects, not only once opened.
