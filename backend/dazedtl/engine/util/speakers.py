@@ -18,8 +18,9 @@ import re
 from pathlib import Path
 
 from util import rpgmaker_blocks as blocks
-from util.languages import source_pattern
+from util.languages import ENGLISH, source_pattern
 from util.paths import DATA_DIR
+from util.target_text import name_translated, title_case
 
 # ============================================================================
 # [Speaker]: prefix parsing
@@ -503,3 +504,36 @@ def parse_prefixed(text: str):
 def restore_source(prefix: str, speaker: str, body: str) -> str:
     """Rebuild WOLF's native ``Speaker\nbody`` layout (with any window prefix)."""
     return f"{prefix}{speaker}\n{body}"
+
+
+# ============================================================================
+# Speaker name translation for the plain engine modules
+# ============================================================================
+
+
+def translate_speaker(speaker, names, language, translate):
+    """A speaker name translated once per run: ``[translated, [in, out tokens]]``.
+
+    *names* is the module's ``[original, translated]`` cache and gains each new
+    name; *translate* is its ``translateAI``. A reply is title-cased for a Latin
+    target, loses a stray ``Speaker: `` echo and is asked for once more when it
+    does not read as a translation.
+    """
+    if not speaker:
+        return ["", [0, 0]]
+    if speaker == "ファイン" and language == ENGLISH:
+        return ["Fine", [0, 0]]
+    for original, translated in names:
+        if speaker == original:
+            return [translated, [0, 0]]
+    if speaker == "？？？":
+        return ["???", [0, 0]]
+
+    prompt = "Reply with the " + language + " translation of the NPC name."
+    for _ in range(2):
+        response = translate(speaker, prompt, False)
+        response[0] = title_case(response[0], language).replace("'S", "'s").replace("Speaker: ", "")
+        if name_translated(response[0], language):
+            break
+    names.append([speaker, response[0]])
+    return response
