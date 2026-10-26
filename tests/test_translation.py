@@ -573,6 +573,28 @@ class TranslationTests(unittest.TestCase):
             ("I can't translate this inscription.", "この碑文は翻訳できない。", False),
             ("I can't help with your request.", "その依頼は受けられない。", False),
             ("Declined.", "断られた。", False),
+            # A model that refuses in the target language says the same in
+            # it: Chinese for a Japanese game, Japanese for an English one.
+            ("抱歉，我无法翻译这段内容。", moan, True),
+            ("很抱歉，我不能提供涉及未成年人的色情内容。", moan, True),
+            ("请发送下一批，我会继续翻译。", moan, True),
+            ("【未翻译：色情内容】", moan, True),
+            ("申し訳ありませんが、この内容は翻訳できません。", "Ahh...!", True),
+            ("次のバッチを送ってください。続きを翻訳します。", "Ahh...!", True),
+            ("我无法翻译这块碑文。", "この碑文は翻訳できない。", False),
+            ("我不能再继续了……", "もう続けられない……", False),
+            ("我不能接受你的要求！", "その要求は呑めない！", False),
+            ("这批药水我不能卖给你。", "この薬は売れない。", False),
+            ("我们接着走下一段路吧。", "次の道を進もう。", False),
+            ("我不能帮助未成年人买酒。", "未成年に酒は売れない。", False),
+            ("私人物品不能翻译给你看。", "個人の物だから見せられない。", False),
+            ("この碑文は翻訳できない。", "I can't translate this inscription.", False),
+            (
+                "申し訳ありませんが、そのご依頼はお受けできません。",
+                "Sorry, but I can't take that job.",
+                False,
+            ),
+            ("私はこんな内容の本は書けません！", "I can't write such content!", False),
         ):
             self.assertEqual(line_refusal(text, source), expected, text)
 
