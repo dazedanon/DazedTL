@@ -1212,6 +1212,11 @@ test("translation followup uses the matching estimate count and exits for termin
     estimateFollowup(job.id, { ...quote, current: false }, [job], false).kind,
     "stale",
   );
+  // Unknown while the selected event files are still read, not stale.
+  assert.equal(
+    estimateFollowup(job.id, { ...quote, current: null }, [job], false).kind,
+    "waiting",
+  );
   assert.equal(estimateFollowup(job.id, quote, [job], true).kind, "stale");
   assert.equal(
     estimateFollowup(

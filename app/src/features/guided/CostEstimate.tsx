@@ -89,15 +89,18 @@ export function CostEstimate({
   const working = value.status === "working";
   const now = useSecond(working);
   const progress = working ? value.progress : null;
-  const state: DisplayState = working
-    ? "working"
-    : !result
-      ? value.status === "failed"
-        ? "blocked"
-        : "not_started"
-      : value.current
-        ? "done"
-        : "outdated";
+  // Whether the saved estimate is current waits for the selected event files.
+  const checking = !working && !!result && value.current === null;
+  const state: DisplayState =
+    working || checking
+      ? "working"
+      : !result
+        ? value.status === "failed"
+          ? "blocked"
+          : "not_started"
+        : value.current
+          ? "done"
+          : "outdated";
   const batch = mode === "batch" && !!result?.batchSupported;
   const tasks = result?.tasks ?? [];
   const batchLow = estimateTotal(tasks, "batchCost");
@@ -147,9 +150,11 @@ export function CostEstimate({
       description={
         state === "outdated"
           ? "The guidance, source choices, game files, model or DazedTL itself changed since this estimate."
-          : !result && !working
-            ? "Estimate every Translate task that uses your API key, over all its files."
-            : undefined
+          : checking
+            ? "Reading the selected event files to check this estimate…"
+            : !result && !working
+              ? "Estimate every Translate task that uses your API key, over all its files."
+              : undefined
       }
     >
       {!!progress?.tasks.length && (

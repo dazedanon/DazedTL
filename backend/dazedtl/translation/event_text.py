@@ -802,6 +802,14 @@ After saving, run `{command} --apply`. It validates the report and saves its rec
             )
         return found
 
+    @staticmethod
+    def pending(current):
+        """Whether readers still read the selected event files' built-in
+        matches while a source is enabled (*current* from status): until they
+        finish, whether an estimate including Other event text is current is
+        unknown, not changed."""
+        return bool(current["enabled"] and current["reading"])
+
     def require(self, project_id, native):
         current = self.status(project_id, native)
         if current["reading"]:

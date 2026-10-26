@@ -4181,6 +4181,31 @@ class GuidedTests(unittest.TestCase):
             )
             with self.guided.observations.read(), self.assertRaises(ValueError):
                 self.guided.event_text.require(self.identity, self.native)
+            # Estimates whose inputs hold those matches read as unknown, not
+            # out of date, until the readers finish.
+            self.backend.operations.jobs["estimate"] = {
+                "id": "estimate",
+                "action": "full_estimate",
+                "project_id": self.native["id"],
+                "created": "2026-01-01",
+                "updated": "2026-01-01",
+                "status": "complete",
+                "result": {"fingerprint": "saved", "shape": "saved", "tasks": []},
+            }
+            with self.guided.observations.read():
+                found = self.guided.event_text.status(self.identity, self.native)
+                whole = self.guided.full_estimate.status(
+                    self.identity, self.native, found
+                )
+                quotes = self.guided.runs.snapshot(
+                    self.identity,
+                    self.native,
+                    {"retired": [], "changed": []},
+                    run_view=lambda identity, compact=False: {"id": identity},
+                )["estimates"]
+            self.assertIsNone(whole["current"])
+            # Without an estimate there is none to check.
+            self.assertEqual(quotes["advanced"], {"job": None, "current": False})
         # Execution reads them itself.
         self.assertFalse(
             self.guided.event_text.status(self.identity, self.native)["reading"]
