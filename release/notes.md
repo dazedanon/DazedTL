@@ -7,3 +7,4 @@
 - **Playtest tools:** installing or removing TL Inspector or Forge no longer says so twice or makes the window jump.
 - **Forge:** quick load (Ctrl+Q) no longer crashes some games with an error screen right after loading, such as "Cannot read properties of undefined (reading 'massCharacters')".
 - **Settings:** a successful **Check connection** no longer repeats its result beside the button.
+- **Images:** **Compare images** no longer names what discovery found an image to be twice, such as "Recommended" beside its state and again under Discovery.
