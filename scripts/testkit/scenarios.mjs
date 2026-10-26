@@ -80,7 +80,7 @@ const translateAll = [
         const text = await page.text();
         return (
           (!/Apply \(\d+\)/.test(text) ||
-            text.includes("Everything saved is already in the game.")) &&
+            text.includes("Nothing new to apply.")) &&
           "skip"
         );
       });
