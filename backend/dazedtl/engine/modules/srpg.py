@@ -3,6 +3,7 @@ import json
 import os
 import re
 import shutil
+from util.target_text import name_translated, title_case
 import util.dazedwrap as dazedwrap
 import threading
 import time
@@ -2119,18 +2120,18 @@ def getSpeaker(speaker):
         "Reply with the " + LANGUAGE + " translation of the NPC name.",
         False,
     )
-    response[0] = response[0].title()
+    response[0] = title_case(response[0], LANGUAGE)
     response[0] = response[0].replace("'S", "'s")
     response[0] = response[0].replace("Speaker: ", "")
     
     # Retry if name doesn't translate for some reason
-    if re.search(r"([a-zA-Z？?])", response[0]) is None:
+    if not name_translated(response[0], LANGUAGE):
         response = translateAI(
             speaker,
             "Reply with the " + LANGUAGE + " translation of the NPC name.",
             False,
         )
-        response[0] = response[0].title()
+        response[0] = title_case(response[0], LANGUAGE)
         response[0] = response[0].replace("'S", "'s")
     
     speakerList = [speaker, response[0]]

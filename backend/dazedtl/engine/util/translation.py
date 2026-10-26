@@ -59,6 +59,15 @@ from util.prompt_pair import (
 )
 from util.source_text import source_left
 from util import system
+from util.target_text import (
+    BRACKETS,
+    SKIPPED,
+    clean_reply,
+    corner_quotes,
+    normalize_dialogue_typography,
+    reply_quotes,
+    unsent_text,
+)
 
 class _LazyModule:
     """A provider SDK that loads on its first real use.
@@ -601,16 +610,19 @@ def validate_translation_content(
             # translation keep the source's punctuation, kaomoji and censor
             # masks. Japanese inside protected runtime-code parameters is
             # absent here and is restored only after validation.
+            # A Chinese target shares the kanji of a Japanese source, so only
+            # its kana read as left; any other pair's scripts differ.
             left = source_left(trans_str, orig_str)
-            if normalized_target == "chinese" and any(
-                re.search(r"[ぁ-ゖァ-ヺ\uFF66-\uFF9D]", run) for run in left
-            ):
-                invalid_indices.append(i)
-                reasons.append(
-                    f"Line{i+1}: Japanese kana remains in Chinese translation"
-                )
-                continue
-            if not cjk_target and left:
+            if active_source() == JAPANESE and cjk_target:
+                if normalized_target == "chinese" and any(
+                    re.search(r"[ぁ-ゖァ-ヺ\uFF66-\uFF9D]", run) for run in left
+                ):
+                    invalid_indices.append(i)
+                    reasons.append(
+                        f"Line{i+1}: Japanese kana remains in Chinese translation"
+                    )
+                    continue
+            elif left:
                 invalid_indices.append(i)
                 reasons.append(f"Line{i+1}: Source-language text remains in translation")
                 continue
@@ -3561,56 +3573,6 @@ class TranslationConfig:
             self.useSfxReference = bool(useSfxReference)
 
 
-def convert_corner_brackets(text, enabled=True):
-    """Replace Japanese quotation marks with ASCII double quotes when enabled."""
-    if not enabled or not isinstance(text, str):
-        return text
-    return (
-        text.replace("「", '"')
-        .replace("」", '"')
-        .replace("『", '"')
-        .replace("』", '"')
-        .replace("〝", '"')
-        .replace("〞", '"')
-        .replace("〟", '"')
-    )
-
-
-# Japanese punctuation a game writes around text with no Japanese letters,
-# such as ・・・・・。 or ？, and the English a translation writes for it. A
-# middle dot alone stays: English uses it as a bullet.
-_ENGLISH_MARKS = str.maketrans({"！": "!", "？": "?", "（": "(", "）": ")"})
-_MIDDLE_DOTS = re.compile(r"・(?: ?・)+")
-_JAPANESE_COMMA = re.compile(r"、(?=[^\s\"')」』])")
-# Marks that already end a sentence, so a full stop after one adds nothing.
-_SENTENCE_ENDS = frozenset(".…‥!?♪♡♥～〜~")
-
-
-def english_punctuation(text, quotes=True):
-    """Text that holds no Japanese letters with the Japanese punctuation
-    around it in English: dotted ellipses (・・・) as periods, ！？（） and 、
-    as ASCII, 。 as a period unless the sentence already ends, and corner
-    brackets as quotes when *quotes* is on (convert_corner_brackets). Codes
-    keep their arguments exactly."""
-    parts = split_protected_codes(text)
-    last = ""
-    for index in range(0, len(parts), 2):
-        run = _MIDDLE_DOTS.sub(lambda dots: dots[0].replace("・", "."), parts[index])
-        run = convert_corner_brackets(run.translate(_ENGLISH_MARKS), quotes)
-        run = _JAPANESE_COMMA.sub(", ", run).replace("、", ",")
-        written = []
-        for char in run:
-            if char == "。":
-                if last in _SENTENCE_ENDS:
-                    continue
-                char = "."
-            written.append(char)
-            if not char.isspace():
-                last = char
-        parts[index] = "".join(written)
-    return "".join(parts)
-
-
 _LITELLM_PRICING_URL = (
     "https://raw.githubusercontent.com/BerriAI/litellm/main"
     "/model_prices_and_context_window.json"
@@ -5357,87 +5319,9 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
     return response
 
 
-_DIALOGUE_TYPOGRAPHY_RE = re.compile(
-    # Leave runtime tokens, URLs, paths and inline code byte-for-byte intact.
-    r"(?P<protected>" + "|".join(PROTECTED_PATTERNS) +
-    r'|\b[\w+.-]+://[^\s"<>]+|\bwww\.[^\s"<>]+'
-    r'|(?:[A-Za-z]:[\\/]|(?<!\w)~[\\/]|\.{0,2}/)[^\s"<>]+'
-    r'|`[^`\r\n]+`)'
-    r"|(?P<apostrophe>[‘’‛ʼ＇])"
-    # A drawn-out word ending, not an approximation, range or bitwise operator.
-    r"|(?<=[^\W\d_])(?P<tail>[~〜]+)"
-    r"(?:(?=__PROTECTED_\d+__)|(?![\w~〜]|\.[A-Za-z0-9]))"
-)
-
-
-def normalize_dialogue_typography(text):
-    """Use font-safe apostrophes and centered dialogue tildes in decoded prose."""
-    if not isinstance(text, str) or not any(char in text for char in "~〜‘’‛ʼ＇"):
-        return text
-    return _DIALOGUE_TYPOGRAPHY_RE.sub(
-        lambda match: (
-            match.group("protected")
-            or ("'" if match.group("apostrophe") else "～" * len(match.group("tail")))
-        ),
-        text,
-    )
-
-
-def cleanTranslatedText(translatedText, language):
-    """Clean and format translated text"""
-    placeholders = {
-        f"{language} Translation: ": "",
-        "Translation: ": "",
-        "っ": "",
-        "ッ": "",
-        "。": ".",
-        # Note: 「 and 」 are NOT replaced here — replacing them with ASCII " would
-        # corrupt raw JSON strings before extraction.  They are handled per-line
-        # in _clean_extracted_line() after JSON parsing (when convertQuotes is on).
-        "—": "―",
-        "】": "]",
-        "【": "[",
-        "é": "e",
-        "```json": "",
-        "```": "",
-    }
-    
-    for target, replacement in placeholders.items():
-        translatedText = translatedText.replace(target, replacement)
-
-    # Japanese fonts may give smart apostrophes fullwidth advances and raise ~.
-    # Normalize prose before engine-specific line wrapping measures the output.
-    translatedText = normalize_dialogue_typography(translatedText)
-
-    # Remove Repeating Characters
-    pattern = re.compile(r"(.)\s*\1(?:\s*\1){" + str(20 - 1) + r",}")
-    translatedText = pattern.sub(lambda match: match.group(0).replace(" ", "")[:20], translatedText)
-
-    # Elongate Long Dashes (Since GPT Ignores them...)
-    translatedText = elongateCharacters(translatedText)
-    return translatedText
-
-
-def elongateCharacters(text):
-    """Replace ー sequences with elongated characters"""
-    # Define a pattern to match one character followed by two or more ー characters.
-    # The lookbehind is restricted to non-ー Japanese/CJK characters so that:
-    #   - standalone ー separators (e.g. "ーーーーーーーーーー") are left untouched
-    #   - ー sequences preceded by a JSON quote or other non-Japanese char are not corrupted
-    pattern = r"(?<=([\u3040-\u309F\u30A0-\u30FB\u30FD-\u30FF\u4E00-\u9FEF\uFF61-\uFF9F]))ー{2,}"
-
-    # Define a replacement function that elongates the captured character
-    def repl(match):
-        char = match.group(1)  # The character before the ー sequence
-        count = len(match.group(0)) - 1  # Number of ー characters
-        return char * count  # Replace ー sequence with the character repeated
-
-    # Use re.sub() to replace the pattern in the text
-    return re.sub(pattern, repl, text)
-
-
-def extractTranslation(translatedTextList, isList, pbar=None):
-    """Extract translation from JSON response.
+def extractTranslation(translatedTextList, isList, pbar=None, language=None):
+    """Extract translation from JSON response, its text written for the
+    target *language* (util/target_text; None reads as English).
 
     This function is resilient to a few common model mistakes:
     - Wraps output in code fences or outer quotes
@@ -5465,19 +5349,8 @@ def extractTranslation(translatedTextList, isList, pbar=None):
         if s[1:2] == "{" and s[-2:-1] == "}":
             s = s[1:-1]
 
-    # Normalize a broad set of Unicode “smart” quotes to ASCII equivalents.
-    translation_table = {
-        0x201C: "'",  # “ left double quotation mark
-        0x201D: "'",  # ” right double quotation mark
-        0xFF02: "'",  # ＂ fullwidth quotation mark
-
-        0x2018: "'",  # ‘ left single quotation mark
-        0x2019: "'",  # ’ right single quotation mark
-        0x201B: "'",  # ‛ single high-reversed-9 quotation mark
-        0x02BC: "'",  # ʼ modifier letter apostrophe
-        0xFF07: "'",  # ＇ fullwidth apostrophe
-    }
-    s = s.translate(translation_table)
+    # A Latin-script target's typographic quotes as ASCII (util/target_text).
+    s = reply_quotes(s, language)
 
     # Remove trailing commas before object/array closures
     s = re.sub(r",(\s*[}\]])", r"\1", s)
@@ -5492,7 +5365,10 @@ def extractTranslation(translatedTextList, isList, pbar=None):
 
         # Handle array-based schema: {"translations": ["...", ...]}
         if isinstance(lineDict, dict) and "translations" in lineDict and isinstance(lineDict["translations"], list):
-            stringList = [normalize_dialogue_typography(str(v)) for v in lineDict["translations"]]
+            stringList = [
+                normalize_dialogue_typography(str(v), language)
+                for v in lineDict["translations"]
+            ]
             return stringList if isList else (stringList[0] if stringList else None)
 
         # Build list in numeric order if keys are LineN
@@ -5509,7 +5385,9 @@ def extractTranslation(translatedTextList, isList, pbar=None):
             stringList = list(lineDict.values())
 
         # Escaped Unicode only becomes punctuation after JSON decoding.
-        stringList = [normalize_dialogue_typography(value) for value in stringList]
+        stringList = [
+            normalize_dialogue_typography(value, language) for value in stringList
+        ]
         return stringList if isList else (stringList[0] if stringList else None)
 
     except Exception as e:
@@ -5528,7 +5406,7 @@ def extractTranslation(translatedTextList, isList, pbar=None):
                     decoded = json.loads(f'"{v}"')
                 except Exception:
                     decoded = v
-                items.append(normalize_dialogue_typography(decoded))
+                items.append(normalize_dialogue_typography(decoded, language))
 
             return items if isList else (items[0] if items else None)
         except Exception as e2:
@@ -5919,10 +5797,14 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                 pbar.update(len(tItem) if isinstance(tItem, list) else 1)
             if isinstance(tItem, list):
                 for j in range(len(tItem)):
-                    tItem[j] = cleanTranslatedText(tItem[j], config.language)
+                    tItem[j] = unsent_text(
+                        tItem[j], config.language, SKIPPED, quotes=False
+                    )
                 tList[index] = tItem
             else:
-                tList[index] = cleanTranslatedText(tItem, config.language)
+                tList[index] = unsent_text(
+                    tItem, config.language, SKIPPED, quotes=False
+                )
             continue
 
         # Ellipsis-only bypass: strings whose translatable content is purely '…' characters
@@ -5938,7 +5820,9 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
             return bool(inner) and all(c in '\u2026\u30FC' for c in inner)
 
         def _convert_ellipsis(s):
-            return convert_corner_brackets(str(s), config.convertQuotes)
+            return unsent_text(
+                str(s), config.language, BRACKETS, quotes=config.convertQuotes
+            )
 
         if isinstance(tItem, list):
             if all(_is_ellipsis_only(s) for s in tItem):
@@ -5996,9 +5880,9 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                     continue
                 item_str = str(tItem[j]).strip() if tItem[j] else ""
                 if item_str and item_str != "Placeholder Text" and not re.search(config.langRegex, item_str):
-                    cleaned = cleanTranslatedText(tItem[j], config.language)
-                    cleaned = convert_corner_brackets(cleaned, config.convertQuotes).strip()
-                    no_japanese_map[j] = cleaned
+                    no_japanese_map[j] = unsent_text(
+                        tItem[j], config.language, SKIPPED, quotes=config.convertQuotes
+                    ).strip()
 
         # Combine skip sets and rebuild protected_items / all_replacements
         skip_indices = set(corrupted_map.keys()) | set(no_japanese_map.keys())
@@ -6131,9 +6015,14 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
             # Older cached dialogue predates glyph normalization. Repair it at
             # the output boundary as well, without another paid provider call.
             if isinstance(cached_result, list):
-                cached_result = [normalize_dialogue_typography(v) for v in cached_result]
+                cached_result = [
+                    normalize_dialogue_typography(v, config.language)
+                    for v in cached_result
+                ]
             else:
-                cached_result = normalize_dialogue_typography(cached_result)
+                cached_result = normalize_dialogue_typography(
+                    cached_result, config.language
+                )
             if queue_for_batch:
                 _record_batch_collect_stats(
                     cached_items=len(source_values),
@@ -6443,7 +6332,7 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
 
             # Clean the translation first for consistency
             cleaned_text = (
-                cleanTranslatedText(translatedText, config.language)
+                clean_reply(translatedText, config.language)
                 if isinstance(translatedText, str)
                 else ""
             )
@@ -6451,7 +6340,9 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
             # Process and validate translation result
             if cleaned_text:
                 if isinstance(tItem, list):
-                    extracted = extractTranslation(cleaned_text, True, pbar)
+                    extracted = extractTranslation(
+                        cleaned_text, True, pbar, config.language
+                    )
 
                     # Check 1: Mismatch in length -> still a hard failure
                     if extracted is None or len(clean_tItem) != len(extracted):
@@ -6534,7 +6425,9 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                                     if not isinstance(line, str):
                                         return line
                                     line = line.replace("Placeholder Text", "").strip()
-                                    return convert_corner_brackets(line, config.convertQuotes)
+                                    return corner_quotes(
+                                        line, config.language, config.convertQuotes
+                                    )
 
                                 if not content_valid:
                                     is_valid = False
@@ -6574,7 +6467,9 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                                     ]
                 else:
                     # Single string: extract from JSON schema response
-                    extracted = extractTranslation(cleaned_text, False, pbar)
+                    extracted = extractTranslation(
+                        cleaned_text, False, pbar, config.language
+                    )
                     if extracted is None:
                         is_valid = False
                         if pbar:
@@ -6632,8 +6527,10 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                                         for warning in content_warnings:
                                             pbar.write(f"  - {warning}")
                                     # Accept output - all validations passed
-                                    final_cleaned = convert_corner_brackets(
-                                        final_cleaned, config.convertQuotes
+                                    final_cleaned = corner_quotes(
+                                        final_cleaned,
+                                        config.language,
+                                        config.convertQuotes,
                                     )
                                     final_translations = final_cleaned
             else:

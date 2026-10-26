@@ -12,6 +12,7 @@ from util import rpgmaker_script_strings as script_strings
 
 from . import game_ini, rgssad, rv2json
 from util import system
+from util.game_settings import game_target_language
 
 ACTIONS = ("ace_decrypt", "ace_extract", "ace_pack")
 # A text variable's (code 122) operand as earlier versions translated it in
@@ -120,7 +121,7 @@ def run(
             return written
         if system_json.is_file():
             title = json.loads(system_json.read_text(encoding="utf-8-sig")).get("gameTitle")
-            game_ini.write_title(ini, title, log)
+            game_ini.write_title(ini, title, log, game_target_language(root))
         return [*written, ini]
     else:
         raise ValueError("Unknown Ace action: " + action)

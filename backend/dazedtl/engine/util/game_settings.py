@@ -301,6 +301,18 @@ def game_source_language(game_root: str | Path) -> str:
     return pair["source"] if pair else languages.DEFAULT_SOURCE
 
 
+def game_target_language(game_root: str | Path) -> str:
+    """The language the game records it is translated into, read where only
+    the game is known, such as in Text QA and when packing; English for a
+    game without a pair or whose settings can't be read. Settings' target
+    for a game without a pair is known only to the app."""
+    try:
+        pair = load_language_pair(game_root)
+    except (OSError, ValueError):
+        return "English"
+    return pair["target"] if pair else "English"
+
+
 def save_language_pair(game_root: str | Path, source: str, target: str) -> Path:
     """Atomically record the game's language pair, keeping other settings."""
     source = languages.source_language(source)

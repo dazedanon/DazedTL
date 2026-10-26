@@ -20,7 +20,8 @@ such as <br> and {name} placeholders.
 A value is read against the source it was translated from where one is known
 (`source_left`): a lone kana, mark or letter the source holds is part of a
 symbol the translation keeps, such as a kaomoji's ﾉ or a censor mask's 〇,
-and a value given back unchanged is all left. Without a source, every letter
+as is an abbreviation a Latin source writes in capitals, such as HP, and a
+value given back unchanged is all left. Without a source, every letter
 of the source language is left (`holds_source`).
 """
 
@@ -62,7 +63,9 @@ def source_left(text, source=None, language=None) -> list[str]:
     kana, mark or letter that the source holds as often, never a kanji, is
     part of a symbol the translation keeps, such as the ﾉ and ゞ of a kaomoji
     or the 〇 of a censor mask (うん〇 -> sh〇t), so it is not left; asking
-    again can only give it back. A value that gives back the source's letters
+    again can only give it back. So is an abbreviation in capitals that a
+    Latin source holds as often, such as the HP of HPを50回復する for
+    Restores 50 HP. A value that gives back the source's letters
     and digits unchanged, such as え？ for え？, translated nothing and keeps no
     symbol: all its source text is left, as it is without a source."""
     if not isinstance(text, str):
@@ -76,10 +79,18 @@ def source_left(text, source=None, language=None) -> list[str]:
     if _letters_and_digits(source) == _letters_and_digits(spoken):
         return runs
     kept = Counter(_LETTERS[language].findall(source))
+    # Abbreviations a Latin source holds, such as HP or NPC, which a
+    # translation into another script keeps as written.
+    abbreviations = Counter(
+        word for word in _WORDS[language].findall(source)
+        if language != JAPANESE and word.isupper()
+    )
     found = []
     for run in runs:
         if len(run) == 1 and kept[run] > 0 and not KANJI.match(run):
             kept[run] -= 1
+        elif abbreviations[run] > 0:
+            abbreviations[run] -= 1
         else:
             found.append(run)
     return found

@@ -1,4 +1,11 @@
 {
-  "description": "An English game to translate into Japanese: the MZ game's maps, database, title and TitleMessage plugin in English, its .dazedtl/settings.json naming English as the source and Japanese as the target, and the stand-in answering in Japanese.",
-  "provider": { "target": "Japanese" }
+  "description": "An English game to translate into Japanese: the MZ game's maps, database, title and TitleMessage plugin in English, its .dazedtl/settings.json naming English as the source and Japanese as the target, and the stand-in answering in Japanese. Three replies hold what output cleanup must keep for a Japanese target: っ, 。, 「」, 【】, ！, 〜 and the source's abbreviation HP.",
+  "provider": {
+    "target": "Japanese",
+    "reply": {
+      "I'm counting on you.": "テスト「頼んだぞっ。」【村長】",
+      "Restores 50 HP.": "テストHPを50回復するッ。",
+      "Understood!": "テスト了解っ！すぐ行くね〜"
+    }
+  }
 }

@@ -2,6 +2,7 @@
 import json
 import os
 import re
+from util.target_text import name_translated, title_case
 import util.dazedwrap as dazedwrap
 import threading
 import time
@@ -14,7 +15,7 @@ from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost
-from util.speakers import strip_speaker_prefix
+from util.speakers import strip_echoed_speaker
 import tempfile
 from util import system
 
@@ -915,14 +916,7 @@ def translateDialogueSrcTl(data, filename):
 
             # Strip speaker prefix if the AI echoed it back
             # Handles: [Speaker]: text  |  Speaker: text  |  Speaker(text) / CJK(text)
-            before_strip = translatedText
-            translatedText = strip_speaker_prefix(translatedText)
-            if translatedText == before_strip:
-                # Fallback: strip any leading Japanese/CJK name followed by ( or :
-                cjk_m = re.match(r'^[一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]+\s*[\(（:]\s*', translatedText)
-                if cjk_m:
-                    translatedText = translatedText[cjk_m.end():]
-                    translatedText = re.sub(r'\s*[)）]\s*$', '', translatedText)
+            translatedText = strip_echoed_speaker(translatedText, LANGUAGE)
 
             data[key]["tl"] = translatedText
             save_progress_json(data, filename)
@@ -1151,13 +1145,7 @@ def translateJSON(data, filename, translatedList):
                         stringList = None
 
                     # Remove speaker prefix — handles [Name]: / Name: / CJK(text)
-                    before_strip = translatedText
-                    translatedText = strip_speaker_prefix(translatedText)
-                    if translatedText == before_strip:
-                        cjk_m = re.match(r'^[一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]+\s*[\(（:]\s*', translatedText)
-                        if cjk_m:
-                            translatedText = translatedText[cjk_m.end():]
-                            translatedText = re.sub(r'\s*[)）]\s*$', '', translatedText)
+                    translatedText = strip_echoed_speaker(translatedText, LANGUAGE)
 
                     # Escape Quotes
                     translatedText = re.sub(r'(?<!\\)"', r"", translatedText)
@@ -1321,18 +1309,18 @@ def getSpeaker(speaker):
                 "Reply with the " + LANGUAGE + " translation of the NPC name.",
                 False,
             )
-            response[0] = response[0].title()
+            response[0] = title_case(response[0], LANGUAGE)
             response[0] = response[0].replace("'S", "'s")
             response[0] = response[0].replace("Speaker: ", "")
 
             # Retry if name doesn't translate for some reason
-            if re.search(r"([a-zA-Z？?])", response[0]) == None:
+            if not name_translated(response[0], LANGUAGE):
                 response = translateAI(
                     f"{speaker}",
                     "Reply with the " + LANGUAGE + " translation of the NPC name.",
                     False,
                 )
-                response[0] = response[0].title()
+                response[0] = title_case(response[0], LANGUAGE)
                 response[0] = response[0].replace("'S", "'s")
 
             speakerList = [speaker, response[0]]

@@ -11,6 +11,11 @@ loses Scripts= and starts the game as RPG Maker XP. Only plain ASCII reads
 the same everywhere, so packing writes the title in ASCII (é as e, ～ as
 ~, ♥ left out) and changes only the Title line, keeping every other byte;
 a file that is already UTF-16 keeps its encoding and the whole title.
+
+A game translated into Japanese is played where Windows reads Shift-JIS,
+as the Japanese editor wrote it, so its title is written in Shift-JIS
+whole; a title Shift-JIS can't hold leaves the old one, as a title with
+no ASCII form does.
 """
 
 from __future__ import annotations
@@ -19,6 +24,8 @@ import re
 import unicodedata
 from collections.abc import Callable
 from pathlib import Path
+
+from util.languages import script
 
 # The encoding the Japanese editor writes Game.ini in.
 EDITOR_ENCODING = "cp932"
@@ -154,9 +161,14 @@ def _with_title(text: str, value: str) -> tuple[str, str | None]:
     return "".join(lines), None
 
 
-def write_title(path: Path, title: object, log: Callable[[str], None] = print) -> bool:
-    """Sets the ini's Title to the game title; False when it already shows
-    that title or there is none to write."""
+def write_title(
+    path: Path,
+    title: object,
+    log: Callable[[str], None] = print,
+    language: str = "English",
+) -> bool:
+    """Sets the ini's Title to the game title, translated into *language*;
+    False when it already shows that title or there is none to write."""
     if not isinstance(title, str):
         return False
     # An ini value is one line, and Windows trims the spaces around it.
@@ -183,10 +195,18 @@ def write_title(path: Path, title: object, log: Callable[[str], None] = print) -
                     return False
             except UnicodeDecodeError:
                 pass
-        value = ascii_title(value)
-        if not value:
-            log(f"{path.name} keeps its title: most of the new one has no ASCII form")
-            return False
+        if script(language) == "japanese":
+            try:
+                # As latin-1 text, so the line joins the file's other bytes.
+                value = value.encode(EDITOR_ENCODING).decode("latin-1")
+            except UnicodeEncodeError:
+                log(f"{path.name} keeps its title: Shift-JIS can't write the new one")
+                return False
+        else:
+            value = ascii_title(value)
+            if not value:
+                log(f"{path.name} keeps its title: most of the new one has no ASCII form")
+                return False
         updated, previous = _with_title(text, value)
         if previous == value:
             return False

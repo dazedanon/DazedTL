@@ -59,6 +59,7 @@ from util.qa.selection import (
     _lint_game,
     _lint_items,
     _screen_items,
+    context_target,
 )
 from util.qa.storage import (
     DECISIONS_FILE,
@@ -424,7 +425,11 @@ def prepare_task(
             forced_candidates = {
                 item["id"]: _candidate(forced_reasons)
                 for item in compact_items
-                if (forced_reasons := _forced_deep_reasons(item))
+                if (
+                    forced_reasons := _forced_deep_reasons(
+                        item, context_target(context)
+                    )
+                )
                 and not settled(item["id"], forced_reasons)
             }
             for cluster_id, failed in _database_checks(manifest, data).items():

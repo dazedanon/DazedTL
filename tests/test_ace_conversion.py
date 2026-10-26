@@ -192,6 +192,15 @@ class AceConversionTests(unittest.TestCase):
                     ini.read_bytes(),
                     original.replace("テストゲーム", shown).encode("cp932"),
                 )
+            # A game translated into Japanese is played where Windows reads
+            # Shift-JIS, so its title is written whole, as the editor writes it.
+            game_ini.write_title(
+                ini, "オークの逆襲♪", log=lambda _line: None, language="Japanese"
+            )
+            self.assertEqual(
+                ini.read_bytes(),
+                original.replace("テストゲーム", "オークの逆襲♪").encode("cp932"),
+            )
 
     def test_packing_writes_text_variables_translated_for_mv_mz_as_ruby_strings(
         self,

@@ -2,6 +2,7 @@
 import json
 import os
 import re
+from util.target_text import name_translated, title_case
 import util.dazedwrap as dazedwrap
 import threading
 import time
@@ -17,6 +18,7 @@ from util.translation import TranslationConfig, translateAI as sharedtranslateAI
 from util.speakers import strip_speaker_prefix
 import tempfile
 from util import system
+from util.game_encoding import UnwritableText, writable
 
 # Globals
 MODEL = os.getenv("model")
@@ -110,11 +112,14 @@ def handleKirikiri(filename, estimate):
             # never written (e.g. no translatable lines triggered saves), write it now.
             try:
                 if translatedData[0]:
+                    lines = writable(translatedData[0], "cp932", filename)
                     os.makedirs("translated", exist_ok=True)
                     final_path = os.path.join("translated", filename)
                     # Write directly (small risk window acceptable on final flush)
                     with open(final_path, "w", encoding="cp932", errors="ignore", newline="\n") as f:
-                        f.writelines(translatedData[0])
+                        f.writelines(lines)
+            except UnwritableText as error:
+                translatedData[2] = error
             except Exception:
                 traceback.print_exc()
 
@@ -193,6 +198,8 @@ def save_progress_lines(lines, filename, encoding="cp932"):
     """
     if ESTIMATE:
         return
+    # A line the encoding can't write fails the file (util/game_encoding).
+    lines = writable(lines, encoding, filename)
 
     max_attempts = 5
     backoff = 0.05  # seconds
@@ -492,18 +499,18 @@ def getSpeaker(speaker):
                 "Reply with the " + LANGUAGE + " translation of the NPC name.",
                 False,
             )
-            response[0] = response[0].title()
+            response[0] = title_case(response[0], LANGUAGE)
             response[0] = response[0].replace("'S", "'s")
             response[0] = response[0].replace("Speaker: ", "")
 
             # Retry if name doesn't translate for some reason
-            if re.search(r"([a-zA-Z？?])", response[0]) == None:
+            if not name_translated(response[0], LANGUAGE):
                 response = translateAI(
                     f"{speaker}",
                     "Reply with the " + LANGUAGE + " translation of the NPC name.",
                     False,
                 )
-                response[0] = response[0].title()
+                response[0] = title_case(response[0], LANGUAGE)
                 response[0] = response[0].replace("'S", "'s")
 
             speakerList = [speaker, response[0]]

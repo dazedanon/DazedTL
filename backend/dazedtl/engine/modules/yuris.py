@@ -10,9 +10,10 @@ from pathlib import Path
 from colorama import Fore
 from tqdm import tqdm
 
+from util.target_text import name_translated, title_case
 import util.dazedwrap as dazedwrap
 from util.languages import source_pattern
-from util.speakers import strip_speaker_prefix
+from util.speakers import strip_echoed_speaker
 from util.translation import (
     TranslationConfig,
     calculateCost,
@@ -305,17 +306,7 @@ def translateYuris(data, filename):
 
 def stripSpeakerPrefix(translated_text):
     """Same behavior as modules/json.translateJSON: strip [Name]: prefix from TL lines."""
-    before_strip = translated_text
-    translated_text = strip_speaker_prefix(translated_text)
-    if translated_text == before_strip:
-        cjk_m = re.match(
-            r"^[一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]+\s*[\(（:]\s*",
-            translated_text,
-        )
-        if cjk_m:
-            translated_text = translated_text[cjk_m.end():]
-            translated_text = re.sub(r"\s*[)）]\s*$", "", translated_text)
-    return translated_text.strip()
+    return strip_echoed_speaker(translated_text, LANGUAGE).strip()
 
 
 def save_progress_json(data, filename):
@@ -374,15 +365,15 @@ def getSpeaker(speaker):
         "Reply with the " + LANGUAGE + " translation of the NPC name.",
         False,
     )
-    response[0] = response[0].title().replace("'S", "'s").replace("Speaker: ", "")
+    response[0] = title_case(response[0], LANGUAGE).replace("'S", "'s").replace("Speaker: ", "")
 
-    if re.search(r"([a-zA-Z？?])", response[0]) is None:
+    if not name_translated(response[0], LANGUAGE):
         response = translateAI(
             speaker,
             "Reply with the " + LANGUAGE + " translation of the NPC name.",
             False,
         )
-        response[0] = response[0].title().replace("'S", "'s").replace("Speaker: ", "")
+        response[0] = title_case(response[0], LANGUAGE).replace("'S", "'s").replace("Speaker: ", "")
 
     NAMESLIST.append([speaker, response[0]])
     return response

@@ -62,6 +62,28 @@ def strip_speaker_prefix(text: str) -> str:
     return SPEAKER_PREFIX_RE.sub("", text, count=1)
 
 
+# A Japanese name a model put before a line it translated, as in ミカ：Hello
+# or ミカ(Hello), and the closing parenthesis such a line ends with.
+_ECHOED_NAME_RE = re.compile(r"^[一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]+\s*[\(（:]\s*")
+_ECHOED_CLOSE_RE = re.compile(r"\s*[)）]\s*$")
+
+
+def strip_echoed_speaker(text: str, language) -> str:
+    """A translated line without the speaker a model echoed: a
+    ``[Speaker]:`` prefix, or else, for a target written in another script
+    than Japanese, a leading Japanese name with ``(`` or ``:``. A Chinese or
+    Japanese target writes such a word as text (util/target_text)."""
+    from util.target_text import full_width
+
+    stripped = strip_speaker_prefix(text)
+    if stripped != text or full_width(language):
+        return stripped
+    echoed = _ECHOED_NAME_RE.match(text)
+    if not echoed:
+        return text
+    return _ECHOED_CLOSE_RE.sub("", text[echoed.end():])
+
+
 def extract_dialogue_after_speaker(text: str) -> str | None:
     """Return dialogue body after an optional ``[Speaker]:`` prefix, or ``None``."""
     if not text:

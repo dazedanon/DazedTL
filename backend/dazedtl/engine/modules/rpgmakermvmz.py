@@ -4,7 +4,7 @@ import json
 import os
 import re
 import util.dazedwrap as dazedwrap
-from util.languages import source_pattern, target_uses_cjk
+from util.languages import source_pattern
 from util import rpgmaker_blocks, rpgmaker_rewrap, rpgmaker_scope
 from util import rpgmaker_script_strings as script_strings
 import threading
@@ -24,8 +24,6 @@ from util.translation import (
     batch_collect_file_stats,
     begin_file_cost_tracking,
     calculateCost,
-    convert_corner_brackets,
-    english_punctuation,
     getPricingConfig,
     get_var_translation,
     last_translation_had_mismatch,
@@ -50,6 +48,8 @@ from util.rpgmaker_markers import comment_markers, game_plugins
 from util.rpgmaker_files import mvmz_file_kind
 from util.id_ranges import id_in_ranges
 from util.source_text import furigana_base, holds_source, source_left
+from util import target_text
+from util.target_text import convert_corner_brackets
 from util import system
 
 # Globals
@@ -1020,26 +1020,24 @@ def _text_needs_translation(current, source=None) -> bool:
     return not IGNORETLTEXT or _has_japanese_text(current, source)
 
 
-def _english_punctuation(text, source: str):
-    """Text whose *source*, as the game wrote it, holds no Japanese letters,
-    such as ・・・・・。 or ？, with its Japanese punctuation in English
-    (util/translation), as its translation would show it; such text is never
-    sent. Any other text stays as it is."""
-    if (
-        not isinstance(text, str)
-        or _has_japanese_text(source)
-        or target_uses_cjk(LANGUAGE)
-    ):
+def _unsent_text(text, source: str):
+    """Text whose *source*, as the game wrote it, holds no source letters,
+    such as ・・・・・。 or ？, as its translation would show it, the way a
+    parser writes rows it never sends (util/target_text ROWS): a Latin
+    target's punctuation in English. Any other text stays as it is."""
+    if not isinstance(text, str) or _has_japanese_text(source):
         return text
-    return english_punctuation(text, TRANSLATION_CONFIG.convertQuotes)
+    return target_text.unsent_text(
+        text, LANGUAGE, target_text.ROWS, TRANSLATION_CONFIG.convertQuotes
+    )
 
 
-def _write_english_punctuation(codeList, start: int, end: int, source: str) -> None:
+def _write_unsent_rows(codeList, start: int, end: int, source: str) -> None:
     """Write the message or scroll rows from *start* to *end*, whose
-    *source* needs no translation, with English punctuation in place."""
+    *source* needs no translation, as their translation would show them."""
     for row in codeList[start : end + 1]:
         if row.get("code") in (401, 405) and row.get("parameters"):
-            row["parameters"][0] = _english_punctuation(row["parameters"][0], source)
+            row["parameters"][0] = _unsent_text(row["parameters"][0], source)
 
 
 _TARO_PLACEHOLDER_RE = re.compile(r"\bTaro(?:['’]s)?\b", re.IGNORECASE)
@@ -3913,7 +3911,7 @@ def _searchCodes(page, pbar, jobList, filename):
                         )
                     ):
                         if not setData:
-                            _write_english_punctuation(
+                            _write_unsent_rows(
                                 codeList, i, previewEnd, preview_source
                             )
                         i = previewEnd + 1
@@ -4172,7 +4170,7 @@ def _searchCodes(page, pbar, jobList, filename):
                         currentSource, rawSource
                     ):
                         if not setData:
-                            _write_english_punctuation(codeList, groupStart, i, rawSource)
+                            _write_unsent_rows(codeList, groupStart, i, rawSource)
                         speaker = ""
                         i += 1
                         continue
@@ -4313,19 +4311,24 @@ def _searchCodes(page, pbar, jobList, filename):
                             translatedText = strip_speaker_prefix(translatedText)
 
                             # Remove 。 that appears after ... in AI output
-                            translatedText = re.sub(r'\.\.\.(。)+', '...', translatedText)
+                            translatedText = target_text.full_stops(
+                                translatedText, LANGUAGE, target_text.AFTER_ELLIPSIS
+                            )
 
-                            # Ensure a space follows sentence-ending punctuation before a capital letter.
-                            # Japanese doesn't use spaces after ！/？, so the AI omits them too.
-                            translatedText = re.sub(r'([!?])([A-Z])', r'\1 \2', translatedText)
+                            # Spacing of a Latin-script target; Japanese and
+                            # Chinese put no spaces between sentences.
+                            if not target_text.full_width(LANGUAGE):
+                                # Ensure a space follows sentence-ending punctuation before a capital letter.
+                                # Japanese doesn't use spaces after ！/？, so the AI omits them too.
+                                translatedText = re.sub(r'([!?])([A-Z])', r'\1 \2', translatedText)
 
-                            # Ensure a single space before a run of RPGMaker pause/wait codes
-                            # (\. \! \| \^) when immediately preceded by a word/punctuation char.
-                            # Matches the whole code run at once so no intra-run spaces are added.
-                            translatedText = re.sub(r'([^\s\\])((?:\\[.!|^])+)', r'\1 \2', translatedText)
+                                # Ensure a single space before a run of RPGMaker pause/wait codes
+                                # (\. \! \| \^) when immediately preceded by a word/punctuation char.
+                                # Matches the whole code run at once so no intra-run spaces are added.
+                                translatedText = re.sub(r'([^\s\\])((?:\\[.!|^])+)', r'\1 \2', translatedText)
 
-                            # Fix '- '
-                            translatedText = translatedText.replace("- ", "-")
+                                # Fix '- '
+                                translatedText = translatedText.replace("- ", "-")
 
                             # Textwrap
                             if FIXTEXTWRAP is True:
@@ -5822,7 +5825,7 @@ def _searchCodes(page, pbar, jobList, filename):
                 if not setData:
                     choices = codeList[i]["parameters"][0]
                     for index, choice in enumerate(choices):
-                        choices[index] = _english_punctuation(
+                        choices[index] = _unsent_text(
                             choice, _choice_source(codeList[i], index)
                         )
 
@@ -6767,7 +6770,7 @@ def _normalize_speaker_nameplate(translated: str) -> str:
         words = words[-2:]
     elif len(words) > 4:
         words = words[:3]
-    out = " ".join(words).title().replace("'S", "'s")
+    out = target_text.title_case(" ".join(words), LANGUAGE).replace("'S", "'s")
     # str.title() capitalizes after apostrophes ("Ma'am" -> "Ma'Am").
     out = re.sub(r"\bMa['’]Am\b", "Ma'am", out, flags=re.IGNORECASE)
     out = re.sub(
@@ -6803,8 +6806,8 @@ def _speaker_translation_valid(source: str, translated: str) -> bool:
     target = str(LANGUAGE or "").strip().casefold()
     if target == "chinese":
         return re.search(r"[ぁ-ゖァ-ヺー\uFF66-\uFF9F]", normalized) is None
-    if target == "japanese":
-        return True
+    # Another target, Japanese included, has a source in another script,
+    # whose letters the name must have left.
     return (
         normalized.casefold() != str(source or "").strip().casefold()
         and not _has_japanese_text(normalized)
@@ -7429,7 +7432,7 @@ def _normalized_translation(source, translated):
     """
     if not isinstance(source, str) or not isinstance(translated, str):
         return translated
-    return rpgmaker_qa_lint.normalize(source, translated)
+    return rpgmaker_qa_lint.normalize(source, translated, LANGUAGE)
 
 def resetSpeakerState():
     """Clear all speaker-related globals so a fresh run doesn't carry over stale data."""

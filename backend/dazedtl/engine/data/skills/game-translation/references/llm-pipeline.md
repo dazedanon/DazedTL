@@ -595,7 +595,7 @@ Build the lookup table from a **full database dump once**, flattened to `{"type:
 **Normalize decoded English prose too, including cached replies and text that bypasses the model.**
 A raw JSON response may spell an apostrophe as `\u2019`, which only becomes a curly glyph after `json.loads`.
 Use straight ASCII apostrophes for contractions, possessives and single-quoted prose before measuring, wrapping or serializing translated output.
-DazedMTLTool applies `util.translation.normalize_dialogue_typography` at its decoded-output and cache boundaries; direct-agent pipelines must apply the same rule to localized text values.
+DazedMTLTool applies `util.target_text.normalize_dialogue_typography` at its decoded-output and cache boundaries for a Latin-script target; direct-agent pipelines must apply the same rule to localized text values.
 Preserve protected runtime tokens, paths, URLs, inline code and `_original` metadata, and escape the result for its host format rather than replacing punctuation across raw game files.
 
 **Scope NFKC to half-width kana spans only:**

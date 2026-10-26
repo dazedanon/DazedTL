@@ -8,6 +8,11 @@ idempotent and run in a fixed order, so accepted fixes also apply on top of a
 deep correction. Text identical to its source was never translated and gets
 no fixes. Some families read the whole game, such as its quoted titles and
 its glossary, from a `Game` made once per inventory.
+
+Each family names the targets it reads (`targets`): English alone, any target
+written in Latin script, or any target. The game's target, English unless its
+pair says otherwise, decides which families run, so a Japanese translation
+gets no English spacing or apostrophe fixes.
 """
 
 from __future__ import annotations
@@ -22,37 +27,47 @@ FAMILIES: dict[str, dict[str, str]] = {
     "lint:heart-spacing": {
         "category": "formatting",
         "description": "A new sentence starts right after ♥ with no space.",
+        "targets": "latin",
     },
     "lint:stray-sokuon": {
         "category": "formatting",
         "description": "A stray letter after an ellipsis stands for the small っ.",
+        "targets": "english",
     },
     "lint:dakuten-apostrophe": {
         "category": "formatting",
         "description": "An apostrophe left by a dakuten mark splits a real word.",
+        "targets": "english",
     },
     "lint:merged-list": {
         "category": "formatting",
         "description": "List items that start separate lines in the source share one line.",
+        "targets": "any",
     },
     "lint:quoted-title": {
         "category": "ui",
         "description": "A quoted title no longer matches the title it names.",
+        "targets": "latin",
     },
     "lint:duplicated-label": {
         "category": "formatting",
         "description": "A bracketed label appears twice where the source has it once.",
+        "targets": "latin",
     },
     "lint:level-tag-spacing": {
         "category": "formatting",
         "description": "A level tag or bracketed label touches the word or number beside it.",
+        "targets": "latin",
     },
     "lint:glossary-term": {
         "category": "terminology",
         "description": "A glossary term is rendered another way than the glossary gives it.",
+        "targets": "english",
     },
 }
 ORDER = tuple(FAMILIES)
+# The target a game without a recorded language pair translates into.
+DEFAULT_TARGET = "English"
 # Families whose fix was right on every line it matched in released games and
 # keeps the line's breaks and codes. The rest need a reviewer, the whole game,
 # or a change of line structure; see docs/architecture.md.
@@ -94,8 +109,9 @@ _DUPLICATED_LABEL_RE = re.compile(r"(\[[^\]\n]{1,40}\])\s*\1")
 
 class Game(NamedTuple):
     """What families read from the whole game: each single-line Japanese
-    text's English forms, which quoted titles must match, and its glossary
-    with the renderings its English holds."""
+    text's English forms, which quoted titles must match, its glossary with
+    the renderings its English holds, and the language it is translated
+    into."""
 
     titles: Mapping[str, set[str]] = {}
     # An rpgmaker_qa_glossary.Glossary, or None for a text checked alone.
@@ -103,6 +119,19 @@ class Game(NamedTuple):
     # The (Japanese, English) renderings reviewers recorded as decisions,
     # which a glossary fix may not undo.
     decided: tuple[tuple[str, str], ...] = ()
+    target: str = DEFAULT_TARGET
+
+
+def applies(family: str, target: str) -> bool:
+    """Whether a family checks a translation into *target*."""
+    from util.languages import LATIN, script
+
+    targets = FAMILIES[family]["targets"]
+    if targets == "english":
+        return str(target or "").strip().casefold() == "english"
+    if targets == "latin":
+        return script(target) == LATIN
+    return True
 
 
 def _heart_spacing(source: str, text: str, game: Game) -> str:
@@ -285,13 +314,20 @@ def title_map(clusters: list[dict[str, Any]]) -> dict[str, set[str]]:
     return titles
 
 
-def game(manifest: dict[str, Any], glossary_text: str) -> Game:
-    """What the families read from a whole inventory and its glossary."""
+def game(
+    manifest: dict[str, Any], glossary_text: str, target: str = DEFAULT_TARGET
+) -> Game:
+    """What the families read from a whole inventory, its glossary and the
+    language it is translated into. The glossary rules read English
+    renderings (rpgmaker_qa_glossary), so another target reads none."""
     from util import rpgmaker_qa_glossary as glossary
 
+    if not applies("lint:glossary-term", target):
+        glossary_text = ""
     return Game(
         title_map(manifest["clusters"]),
         glossary.build(glossary_text, manifest["records"]),
+        target=target,
     )
 
 
@@ -313,14 +349,15 @@ def compose(source: str, text: str, families: Collection[str], game: Game) -> st
     if text == source:
         return text
     for family in ORDER:
-        if family in families:
+        if family in families and applies(family, game.target):
             text = FIXERS[family](source, text, game)
     return text
 
 
-def normalize(source: str, text: str) -> str:
-    """A new translation of a source line, with the automatic families' fixes."""
-    return compose(source, text, AUTOMATIC, Game())
+def normalize(source: str, text: str, target: str = DEFAULT_TARGET) -> str:
+    """A new translation of a source line into *target*, with the automatic
+    families' fixes."""
+    return compose(source, text, AUTOMATIC, Game(target=target))
 
 
 def proposals(source: str, live: str, game: Game) -> dict[str, str]:
@@ -329,6 +366,8 @@ def proposals(source: str, live: str, game: Game) -> dict[str, str]:
     if live == source:
         return found
     for family in ORDER:
+        if not applies(family, game.target):
+            continue
         fixed = FIXERS[family](source, live, game)
         if fixed != live:
             found[family] = fixed

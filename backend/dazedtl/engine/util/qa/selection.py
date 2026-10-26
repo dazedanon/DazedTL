@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Any
 from util import rpgmaker_qa_checks as checks
 from util import rpgmaker_qa_glossary as glossary_rules
 from util import rpgmaker_qa_lint as lint
+from util.game_settings import game_target_language
+from util.languages import target_uses_cjk
 from util.paths import (
     GAME_GLOSSARY_RELATIVE,
     GAME_QUIRKS_RELATIVE,
@@ -103,8 +105,18 @@ def _context_pack(
         "overlays": overlays,
         "reference_translations": reference_context(game_root, current_sources),
     }
+    # The target only when the game records another than English, so a task
+    # prepared before targets were read stays as it was.
+    target = game_target_language(game_root)
+    if target != lint.DEFAULT_TARGET:
+        pack["target"] = target
     pack["content_sha256"] = _sha256(_canonical_bytes(pack))
     return pack
+
+
+def context_target(context: dict[str, Any]) -> str:
+    """The language a task's context says the game is translated into."""
+    return str(context.get("target") or lint.DEFAULT_TARGET)
 
 
 def _semantic_manifest_sha256(manifest: dict[str, Any]) -> str:
@@ -607,7 +619,9 @@ def _game(manifest: dict[str, Any], context: dict[str, Any]) -> lint.Game:
     key = (manifest["content_sha256"], context["content_sha256"])
     if key not in _LINT_GAMES:
         _LINT_GAMES.clear()
-        _LINT_GAMES[key] = lint.game(manifest, context["glossary"]["text"])
+        _LINT_GAMES[key] = lint.game(
+            manifest, context["glossary"]["text"], context_target(context)
+        )
     return _LINT_GAMES[key]
 
 
@@ -789,39 +803,60 @@ def _kanji_value(text: str) -> int | None:
     return value or None
 
 
-def _number_defect(source: str, live: str) -> bool:
+def _number_defect(source: str, live: str, target: str = lint.DEFAULT_TARGET) -> bool:
     """Whether a number mismatch can be a translation defect worth deep review.
 
     A number the English adds or changes always is. A source number missing
     from the English is only when it is not an ordinal or idiom, not a small
     count English writes as a word ("three", "once"), and not a word already.
+    A Chinese or Japanese translation writes numbers in kanji and counters
+    of its own, which count as the source's do, and may write a small count
+    an English source spells out as a digit.
     """
+    from util.source_text import LETTERS
+
     evidence = mechanical.evidence(source, live, None)
-    visible = unicodedata.normalize("NFKC", source)
+    sides = (source, live) if target_uses_cjk(target) else (source,)
     idioms = Counter(
         number.lstrip("0") or "0"
-        for match in _ORDINAL_OR_IDIOM_NUMBER_RE.finditer(visible)
+        for side in sides
+        for match in _ORDINAL_OR_IDIOM_NUMBER_RE.finditer(
+            unicodedata.normalize("NFKC", side)
+        )
         for number in match.groups() if number
     )
     kanji = Counter(
-        str(value) for match in _KANJI_NUMBER_RE.finditer(source)
+        str(value)
+        for side in sides
+        for match in _KANJI_NUMBER_RE.finditer(side)
         if (value := _kanji_value(match.group(0))) is not None
     )
     source_numbers = Counter(evidence["source_visible_numbers"])
     live_numbers = Counter(evidence["live_visible_numbers"])
-    if live_numbers - source_numbers - kanji - idioms:
+    added = live_numbers - source_numbers - kanji - idioms
+    if target_uses_cjk(target) and not LETTERS.search(source):
+        added = Counter({
+            number: count for number, count in added.items()
+            if not (number.isdigit() and int(number) <= 10)
+        })
+    if added:
         return True
     missing = source_numbers - live_numbers - idioms
+    if target_uses_cjk(target):
+        missing -= kanji
     return any(
         not (number.isdigit() and int(number) <= 10) for number in missing
     )
 
 
-def _forced_deep_reasons(item: dict[str, Any]) -> list[str]:
+def _forced_deep_reasons(
+    item: dict[str, Any], target: str = lint.DEFAULT_TARGET
+) -> list[str]:
     """Return only high-confidence reasons that override a clean screen receipt.
 
     Number and runtime-token flags force deep review only when they can be a
-    defect: a changed number, or a source code the English lost.
+    defect: a changed number, or a source code the translation into
+    *target* lost.
     """
     source, live = str(item["source"]), str(item["translation"])
     evidence = mechanical.evidence(source, live, None)
@@ -829,7 +864,8 @@ def _forced_deep_reasons(item: dict[str, Any]) -> list[str]:
         reason for reason in item.get("risk") or []
         if reason in FORCED_DEEP_MECHANICAL_FLAGS
         and not (
-            reason == "visible-number-mismatch" and not _number_defect(source, live)
+            reason == "visible-number-mismatch"
+            and not _number_defect(source, live, target)
         )
         and not (
             reason == "runtime-token-mismatch"

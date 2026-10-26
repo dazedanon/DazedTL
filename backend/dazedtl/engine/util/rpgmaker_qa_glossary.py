@@ -14,6 +14,9 @@ term another way, such as "you" for a character, or that means an ordinary
 word written like a term, such as 回復 beside a skill named Heal, has no
 rendering to replace. Text QA proposes each fix as its glossary lint family,
 which a reviewer checks, so a term used as an ordinary word stays as it is.
+
+The rules read Japanese terms and English words, so Text QA reads a glossary
+only for a game translated into English (rpgmaker_qa_lint `game`).
 """
 
 from __future__ import annotations

@@ -2,6 +2,7 @@
 import json
 import os
 import re
+from util.target_text import name_translated, title_case
 import util.dazedwrap as dazedwrap
 import threading
 import time
@@ -16,6 +17,7 @@ from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost
 import tempfile
 from util import system
+from util.game_encoding import UnwritableText, writable
 
 # Globals
 MODEL = os.getenv("model")
@@ -103,17 +105,24 @@ def handleOnscripter(filename, estimate):
 
     else:
         try:
-            with open("translated/" + filename, "w", encoding="cp932", errors="ignore") as outFile:
-                start = time.time()
-                translatedData = openFiles(filename)
+            start = time.time()
+            translatedData = openFiles(filename)
 
-                # Print Result
-                end = time.time()
-                outFile.writelines(translatedData[0])
+            # Print Result
+            end = time.time()
+            with LOCK:
+                TOKENS[0] += translatedData[1][0]
+                TOKENS[1] += translatedData[1][1]
+            try:
+                # A line the encoding can't write fails the file (util/game_encoding).
+                lines = writable(translatedData[0], "cp932", filename)
+            except UnwritableText as error:
+                translatedData[2] = error
                 tqdm.write(getResultString(translatedData, end - start, filename))
-                with LOCK:
-                    TOKENS[0] += translatedData[1][0]
-                    TOKENS[1] += translatedData[1][1]
+                return "Fail"
+            with open("translated/" + filename, "w", encoding="cp932", errors="ignore") as outFile:
+                outFile.writelines(lines)
+            tqdm.write(getResultString(translatedData, end - start, filename))
         except Exception:
             traceback.print_exc()
             return "Fail"
@@ -186,6 +195,7 @@ def save_progress_lines(lines, filename, encoding="cp932"):
     try:
         if ESTIMATE:
             return
+        lines = writable(lines, encoding, filename)
         os.makedirs("translated", exist_ok=True)
         tmp_fd, tmp_path = tempfile.mkstemp(prefix=f"{filename}.", suffix=".tmp", dir="translated")
         try:
@@ -195,6 +205,8 @@ def save_progress_lines(lines, filename, encoding="cp932"):
         finally:
             if os.path.exists(tmp_path):
                 system.unlink(tmp_path, ignore_errors=True)
+    except UnwritableText:
+        raise
     except Exception:
         traceback.print_exc()
 
@@ -391,18 +403,18 @@ def getSpeaker(speaker):
                 "Reply with the " + LANGUAGE + " translation of the NPC name.",
                 False,
             )
-            response[0] = response[0].title()
+            response[0] = title_case(response[0], LANGUAGE)
             response[0] = response[0].replace("'S", "'s")
             response[0] = response[0].replace("Speaker: ", "")
 
             # Retry if name doesn't translate for some reason
-            if re.search(r"([a-zA-Z？?])", response[0]) == None:
+            if not name_translated(response[0], LANGUAGE):
                 response = translateAI(
                     f"{speaker}",
                     "Reply with the " + LANGUAGE + " translation of the NPC name.",
                     False,
                 )
-                response[0] = response[0].title()
+                response[0] = title_case(response[0], LANGUAGE)
                 response[0] = response[0].replace("'S", "'s")
 
             speakerList = [speaker, response[0]]

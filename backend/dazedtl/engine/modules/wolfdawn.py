@@ -58,6 +58,7 @@ import traceback
 
 from colorama import Fore
 from tqdm import tqdm
+from util.target_text import title_case
 from util.languages import source_pattern
 from util.paths import read_active_glossary
 from util.skills import ctx, load_system_prompt
@@ -355,8 +356,7 @@ def _speaker_translation_valid(source: str, translated: str) -> bool:
     target = str(LANGUAGE or "").strip().casefold()
     if target == "chinese":
         return re.search(r"[ぁ-ゖァ-ヺー\uFF66-\uFF9F]", normalized) is None
-    if target == "japanese":
-        return True
+    # Another target, Japanese included, has a source in another script.
     if normalized.casefold() == str(source or "").strip().casefold():
         return False
     # Preserve WOLF's long-standing support for mixed-script localized names
@@ -409,7 +409,7 @@ def _vocab_speaker_lookup(speaker: str) -> str | None:
 
 def _normalize_speaker_name(translated: str) -> str:
     """Title-case / tidy a short NPC-name translation (mirrors other engines)."""
-    out = translated.strip().title().replace("'S", "'s").replace("Speaker: ", "")
+    out = title_case(translated.strip(), LANGUAGE).replace("'S", "'s").replace("Speaker: ", "")
     return re.sub(
         r"(\d)(St|Nd|Rd|Th)\b",
         lambda m: m.group(1) + m.group(2).lower(),

@@ -3506,7 +3506,9 @@ try:
                 ["?????", "Leave"],
             ]
             assert (
-                parser.english_punctuation(r"\SE[ドン！]・・・。\C[0]OK。", True)
+                parser.target_text.english_punctuation(
+                    r"\SE[ドン！]・・・。\C[0]OK。", True
+                )
                 == r"\SE[ドン！]...\C[0]OK."
             )
             # The kaomoji game variant, answered as its stand-in answers it but
