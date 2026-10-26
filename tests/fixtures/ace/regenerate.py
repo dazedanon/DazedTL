@@ -946,17 +946,14 @@ def keep_script_names(target: Path) -> None:
     the line that strips the characters a file name cannot hold with gsub!
     assigns the stripped copy to a local instead of changing the string the
     script keeps."""
-    unsafe = re.compile(r"^(\s*)(\w+)\.gsub!\((.*<>:.*)$", re.MULTILINE)
-    found = 0
-    for path in sorted(target.rglob("*.rb")):
-        code = path.read_text(encoding="utf-8")
-        fixed, count = unsafe.subn(r"\1\2 = \2.gsub(\3", code)
-        if count:
-            path.write_text(fixed, encoding="utf-8")
-            found += count
-    if found != 1:
+    unsafe = re.compile(r"^(\s*)(\w+)\.gsub!\((.*\\<.*\\>.*\\:.*)$", re.MULTILINE)
+    main = target / "RV2JSON.rb"
+    fixed, found = unsafe.subn(r"\1\2 = \2.gsub(\3", main.read_text(encoding="utf-8"))
+    main.write_text(fixed, encoding="utf-8")
+    # One in the dump and one in the pack, each stripping a script's name.
+    if found != 2:
         raise RuntimeError(
-            "RV2JSON's script name clean-up was not one gsub! on a local variable."
+            "RV2JSON's script name clean-up was not two gsub! on a local variable."
         )
 
 
