@@ -304,11 +304,32 @@ def normalize_game_tool_gitignore_text(
     return normalized
 
 
-def keeps_game_tool_gitignore(game_root: str | Path) -> bool:
-    """Whether the game's .gitignore keeps DazedTL's rules: once the game has a
-    Git repository, which they serve. Until then, saving guidance changes no
-    file a record of the game's original files holds."""
-    return (Path(game_root) / ".git").exists()
+def game_git_set_up(game_root: str | Path) -> bool:
+    """Whether the game's Git is set up: it has a repository whose current
+    branch has a commit, as Git setup makes. One holding only DazedTL's record
+    of the original files, or the empty one a stopped record left, has none.
+    Until it is set up, the game's .gitignore leaves out DazedTL's rules and
+    Len's work block, which serve that history, so saving guidance changes no
+    file a record of the original files holds, and a write makes no
+    checkpoint. Read from two files, for requests and polls."""
+    git = Path(game_root) / ".git"
+    if not git.exists():
+        return False
+    try:
+        head = (git / "HEAD").read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        # A `.git` file points at a repository elsewhere, which is set up.
+        return True
+    if not head.startswith("ref: "):
+        return True
+    branch = head.removeprefix("ref: ").strip()
+    if (git / branch).is_file():
+        return True
+    try:
+        packed = (git / "packed-refs").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return any(line.endswith(" " + branch) for line in packed.splitlines())
 
 
 def ensure_game_tool_gitignore(game_root: str | Path, *, baseline: bool = False) -> bool:
@@ -317,13 +338,13 @@ def ensure_game_tool_gitignore(game_root: str | Path, *, baseline: bool = False)
     The managed block replaces older ``/.dazedtl/`` rules. Its existing position
     is retained to avoid meaningless Git churn unless a block that would
     override it comes later; only portable glossary/settings/skills are exposed.
-    A game without a repository takes them when one is made: a ``baseline``
+    A game whose Git is not set up takes them when it is: a ``baseline``
     installs them as it makes it.
     """
     root = Path(game_root).expanduser().resolve()
     if not root.is_dir():
         raise GameProjectPathError(f"Game folder does not exist: {root}")
-    if not baseline and not keeps_game_tool_gitignore(root):
+    if not baseline and not game_git_set_up(root):
         return False
     path = root / ".gitignore"
     if path.is_symlink() or (path.exists() and not path.is_file()):
@@ -546,7 +567,7 @@ def _remove_identical_legacy_glossary(preferred: Path, legacy: Path) -> None:
 def guidance_root_files(game_root: str | Path) -> list[str]:
     """The game's files outside .dazedtl that saving its guidance may change:
     legacy guidance it moves into .dazedtl, and the .gitignore that keeps
-    DazedTL's rules once the game has a repository."""
+    DazedTL's rules once the game's Git is set up."""
     root = Path(game_root)
     legacy = [
         LEGACY_GAME_GLOSSARY_RELATIVE,
@@ -562,7 +583,7 @@ def guidance_root_files(game_root: str | Path) -> list[str]:
         for path in legacy
         if (root / path).exists() or (root / path).is_symlink()
     ]
-    return files + ([".gitignore"] if keeps_game_tool_gitignore(root) else [])
+    return files + ([".gitignore"] if game_git_set_up(root) else [])
 
 
 def validate_game_glossary_migration(game_root: str | Path | None) -> None:

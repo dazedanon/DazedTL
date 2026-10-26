@@ -154,26 +154,6 @@ def recorded(root):
     return (Path(root) / ".git").is_dir() and bool(_tip(root))
 
 
-def unborn(root):
-    """Whether the game's repository has no commit on its current branch,
-    as one the gateway made for the record alone, from a look at two files."""
-    git = Path(root) / ".git"
-    try:
-        head = (git / "HEAD").read_text(encoding="utf-8", errors="replace").strip()
-    except OSError:
-        return False
-    if not head.startswith("ref: "):
-        return False
-    branch = head.removeprefix("ref: ").strip()
-    if (git / branch).is_file():
-        return False
-    try:
-        packed = (git / "packed-refs").read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return True
-    return not any(line.endswith(" " + branch) for line in packed.splitlines())
-
-
 def _relative(name):
     if any(ord(char) < 32 for char in name) or "\\" in name:
         raise ValueError(
