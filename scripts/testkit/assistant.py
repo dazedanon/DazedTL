@@ -23,6 +23,9 @@ import subprocess
 from pathlib import Path
 
 JAPANESE = re.compile(r"[぀-ヿ一-鿿]")
+LATIN = re.compile(r"[A-Za-z]")
+# A file name, a switch name or another identifier of an English game.
+IDENTIFIER = re.compile(r"(?=[\w./-]*[\d_./])[\w./-]+")
 WORK = ".dazedtl/len-method/work"
 MANIFEST = f"{WORK}/manifest.json"
 
@@ -37,6 +40,15 @@ class Assistant:
         # A VX Ace game's text is translated in its JSON exports.
         self.ace = any(game.glob("Data/*.rvdata2"))
         self.data = "ace_json" if self.ace else "data"
+        # The game's language pair, which the game's own settings may name.
+        settings = game / ".dazedtl/settings.json"
+        languages = (
+            json.loads(settings.read_text(encoding="utf-8-sig")).get("languages", {})
+            if settings.is_file()
+            else {}
+        )
+        self.source = languages.get("source", "Japanese")
+        self.target = languages.get("target", "English")
 
     def helper(self, *args):
         result = subprocess.run(
@@ -130,7 +142,7 @@ class Assistant:
         markers = self.help_markers()
         for path in sorted((self.game / self.data).glob("*.json")):
             document = json.loads(path.read_text(encoding="utf-8-sig"))
-            for pointer, text in walk(document, markers=markers):
+            for pointer, text in walk(document, markers=markers, source=self.source):
                 rows.append(
                     {
                         "id": f"{path.stem}{pointer}",
@@ -142,6 +154,9 @@ class Assistant:
                     }
                 )
         return rows
+
+    def answer(self, identity, source):
+        return reply(identity, source, self.target)
 
     def organize(self):
         self.report("extraction")
@@ -168,7 +183,8 @@ class Assistant:
                 index += 1
                 continue
             translations = {
-                key: english(key, value) for key, value in request["sources"].items()
+                key: self.answer(key, value)
+                for key, value in request["sources"].items()
             }
             receipt = self.work / f"receipt-{index}.json"
             receipt.write_text(
@@ -256,8 +272,16 @@ def kept_parameters(node, markers):
     return set()
 
 
-def walk(node, pointer="", markers=frozenset()):
-    """Every Japanese string, leaving out the kept parameters and move routes
+def is_source(text, language):
+    """Whether `text` is text of the game's source language: Japanese kana and
+    kanji, or for English Latin letters in anything but an identifier."""
+    if language == "English":
+        return bool(LATIN.search(text)) and not IDENTIFIER.fullmatch(text)
+    return bool(JAPANESE.search(text))
+
+
+def walk(node, pointer="", markers=frozenset(), source="Japanese"):
+    """Every string of the source language, leaving out the kept parameters and move routes
     (205, their steps repeated in 505, and an event page's own), whose
     scripts players never read."""
     if isinstance(node, dict):
@@ -270,13 +294,13 @@ def walk(node, pointer="", markers=frozenset()):
             if key == "parameters" and indexes:
                 for index, item in enumerate(value):
                     if index not in indexes:
-                        yield from walk(item, f"{pointer}/{key}/{index}", markers)
+                        yield from walk(item, f"{pointer}/{key}/{index}", markers, source)
             else:
-                yield from walk(value, f"{pointer}/{key}", markers)
+                yield from walk(value, f"{pointer}/{key}", markers, source)
     elif isinstance(node, list):
         for index, value in enumerate(node):
-            yield from walk(value, f"{pointer}/{index}", markers)
-    elif isinstance(node, str) and JAPANESE.search(node):
+            yield from walk(value, f"{pointer}/{index}", markers, source)
+    elif isinstance(node, str) and is_source(node, source):
         yield pointer, node
 
 
@@ -305,11 +329,19 @@ def set_pointer(document, pointer, value):
         node[parts[-1]] = value
 
 
-def english(identity, source):
-    """Readable English that keeps the line count, unique to the line."""
+def reply(identity, source, target="English"):
+    """Readable text in the target language that keeps the line count, unique
+    to the line."""
     return "\n".join(
-        f"Tested line {hashlib.sha256(f'{identity}:{number}'.encode()).hexdigest()[:6]}."
-        for number in range(len(source.split("\n")))
+        (
+            f"テスト行{mark}。"
+            if target == "Japanese"
+            else f"Tested line {mark}."
+        )
+        for mark in (
+            hashlib.sha256(f"{identity}:{number}".encode()).hexdigest()[:6]
+            for number in range(len(source.split("\n")))
+        )
     )
 
 
