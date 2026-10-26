@@ -187,23 +187,26 @@ export function filePreviewRun(
     return estimate;
   return saved;
 }
-/** The observer supplies newest-first runs; a resumed worker owns its files. */
-export function fileRun(
+/** The newest current run that includes a file, which Inspect opens; a
+ * resumed worker owns its files (fileWork). */
+export const fileRun = (
   runs: Job[],
   phase: Phase,
   name: string,
   retired: readonly string[] = [],
-) {
-  const matches = runs.filter(
-    (run) =>
-      run.logicalPhase === phase &&
-      run.mode !== "estimate" &&
-      !retired.includes(run.id) &&
-      !run.retiredFiles?.includes(name) &&
-      run.files?.includes(name),
-  );
-  return matches.find(activeWorker) || matches[0];
-}
+) => fileWork(runs, phase, name, retired).owner;
+/** Whether a current run of a task, not an estimate, includes a file. */
+const includesFile = (
+  run: Job,
+  phase: Phase,
+  name: string,
+  retired: readonly string[],
+) =>
+  run.logicalPhase === phase &&
+  run.mode !== "estimate" &&
+  !retired.includes(run.id) &&
+  !run.retiredFiles?.includes(name) &&
+  !!run.files?.includes(name);
 const translatedCache = new WeakMap<
   Job[],
   Map<string, { retired: readonly string[]; names: Set<string> }>
@@ -280,7 +283,7 @@ function nothingFound(name: string, run: Job, untranslated: boolean) {
     (run.outputsAvailable && !!run.outputs?.[name]);
   if (run.outputs?.[name] && !saved) return false;
   return (
-    (run.mode === "batch" && !!run.process?.noRequestFiles?.includes(name)) ||
+    madeNoRequest(run, name) ||
     (!!saved &&
       !run.partialOutputs?.includes(name) &&
       !run.process?.validationIssues?.some((issue) => issue.file === name))
@@ -330,9 +333,10 @@ export function fileLines(
   state: Pick<GuidedState, "runs" | "sourceStatus">,
   phase: Phase,
   name: string,
+  work = fileWork(state.runs, phase, name, state.sourceStatus.retired),
 ): { done: number; total: number | null; running?: boolean } {
-  if (!countedPhase(phase)) return runLines(state, phase, name);
-  const run = fileRun(state.runs, phase, name, state.sourceStatus.retired);
+  if (!countedPhase(phase)) return runLines(state, phase, name, work);
+  const { run } = work;
   if (
     run &&
     !run.temporary &&
@@ -369,8 +373,9 @@ function runLines(
   state: Pick<GuidedState, "runs" | "sourceStatus">,
   phase: Phase,
   name: string,
+  work: ReturnType<typeof fileWork>,
 ): { done: number; total: number | null; running?: boolean } {
-  const latest = fileRun(state.runs, phase, name, state.sourceStatus.retired);
+  const latest = work.run;
   // One count per source request, at its latest attempt; duplicates never count.
   const requests = (run?: Job) =>
     run && !run.temporary ? run.process?.files?.[name] : undefined;
@@ -380,7 +385,7 @@ function runLines(
     !run.partialOutputs?.includes(name);
   const translated =
     latest && !requests(latest)?.requests && finished(latest)
-      ? fileMetricRun(state.runs, phase, name, state.sourceStatus.retired)
+      ? work.changed
       : undefined;
   const run =
     translated && requests(translated)?.requests ? translated : latest;
@@ -464,9 +469,11 @@ export function translationTaskComplete(
   if (!names.length) return false;
   const finished = (status: { state: DisplayState }) =>
     status.state === "applied" || status.state === "done";
+  const work = (name: string) =>
+    fileWork(state.runs, phase, name, state.sourceStatus.retired).run;
   if (countedPhase(phase))
     return names.every((name) => {
-      const run = fileRun(state.runs, phase, name, state.sourceStatus.retired);
+      const run = work(name);
       // A worker may still write a file it already saved.
       return (
         !state.sourceStatus.changed.includes(name) &&
@@ -480,7 +487,7 @@ export function translationTaskComplete(
       state.sourceStatus.lines?.[name]?.otherNotes
     )
       return false;
-    const run = fileRun(state.runs, phase, name, state.sourceStatus.retired);
+    const run = work(name);
     if (settledWithoutRequests(state, phase, name, run))
       return finished(translationFileStatus(state, phase, name, run));
     if (
@@ -502,72 +509,85 @@ export function translationTaskComplete(
   });
 }
 /**
- * A Batch that prepared no request for a file and saved no output of its own
- * (every request reused, or nothing to send at all) changed nothing in it.
+ * Whether a run made no request for a file: a Batch whose finished
+ * collection prepared none for it (every request reused, or nothing to send
+ * at all). The backend records it for Batches only (noRequestFiles).
  */
-function leftAlone(name: string, run: Job) {
-  return (
-    run.mode === "batch" &&
-    !run.outputs?.[name] &&
-    !!run.process?.noRequestFiles?.includes(name)
-  );
+export const madeNoRequest = (run: Job, name: string) =>
+  run.mode === "batch" && !!run.process?.noRequestFiles?.includes(name);
+/** A run that made no request for a file and saved no output of its own
+ * changed nothing in it. */
+const leftAlone = (run: Job, name: string) =>
+  madeNoRequest(run, name) && !run.outputs?.[name];
+/** Whether a run's saved output of a file differs from the file it read; a
+ * run from before that record changed it when it made a request for it and
+ * recorded its metrics. */
+const changedFile = (run: Job, name: string) =>
+  run.changedOutputs !== undefined
+    ? run.changedOutputs.includes(name)
+    : !madeNoRequest(run, name) && !!run.process?.fileMetrics?.[name];
+/**
+ * The runs a file in a translation task reads, from the observer's
+ * newest-first runs: `owner`, the newest current run that includes the file,
+ * a resumed worker first, which Inspect opens; `run`, whose work the row's
+ * status, Lines, activity and the task's done mark show; and `changed`, the
+ * last run that changed the file, whose cost and time the row shows. `run` is
+ * the owner, except that a run that left the file alone leaves it as the run
+ * before it did, applied or not; with no earlier run the file has nothing to
+ * translate. A Batch never leaves alone a file it still has requests for, so
+ * its other files keep the task open while it works. This is the one rule
+ * for which run a file shows.
+ */
+export function fileWork(
+  runs: Job[],
+  phase: Phase,
+  name: string,
+  retired: readonly string[] = [],
+): { owner?: Job; run?: Job; changed?: Job } {
+  let newest: Job | undefined, active: Job | undefined;
+  let own: Job | undefined, ownActive: Job | undefined;
+  let changed: Job | undefined, changedActive: Job | undefined;
+  for (const run of runs) {
+    if (!includesFile(run, phase, name, retired)) continue;
+    const working = activeWorker(run);
+    newest ??= run;
+    if (working) active ??= run;
+    if (!leftAlone(run, name)) {
+      own ??= run;
+      if (working) ownActive ??= run;
+    }
+    if (!run.temporary && changedFile(run, name)) {
+      changed ??= run;
+      if (working) changedActive ??= run;
+    }
+  }
+  const owner = active || newest;
+  return {
+    owner,
+    run: owner && leftAlone(owner, name) ? ownActive || own || owner : owner,
+    changed: changedActive || changed,
+  };
 }
 /**
- * A file's state in a translation task's file list. A run that left the file
- * alone leaves it as the run before it did, applied or not; with no earlier
- * run the file has nothing to translate. This is the one rule for the row and
- * for translationTaskComplete.
+ * A file's state in a translation task's file list, from the run whose work
+ * it shows (fileWork). This is the one rule for the row and for
+ * translationTaskComplete.
  */
 export function translationFileStatus(
   state: Pick<GuidedState, "runs" | "sourceStatus" | "readiness">,
   phase: Phase,
   name: string,
-  given = fileRun(state.runs, phase, name, state.sourceStatus.retired),
+  run = fileWork(state.runs, phase, name, state.sourceStatus.retired).run,
   source = DEFAULT_LANGUAGES.source,
 ) {
   if (countedPhase(phase))
-    return countedFileStatus(state, phase, name, given, source);
-  const run =
-    given && leftAlone(name, given)
-      ? (fileRun(
-          state.runs.filter((other) => !leftAlone(name, other)),
-          phase,
-          name,
-          state.sourceStatus.retired,
-        ) ?? given)
-      : given;
+    return countedFileStatus(state, phase, name, run, source);
   return fileStatus(
     name,
     run,
     settledWithoutRequests(state, phase, name, run),
     !translatedFiles(state.runs, state.sourceStatus.retired, phase).has(name),
     state.sourceStatus.lines?.[name]?.otherNotes,
-  );
-}
-/** Status follows current work; metrics follow the last run that changed this file. */
-export function fileMetricRun(
-  runs: Job[],
-  phase: Phase,
-  name: string,
-  retired: readonly string[] = [],
-) {
-  const matches = runs.filter(
-    (run) =>
-      run.logicalPhase === phase &&
-      run.mode !== "estimate" &&
-      !run.temporary &&
-      !retired.includes(run.id) &&
-      !run.retiredFiles?.includes(name) &&
-      run.files?.includes(name),
-  );
-  const changed = (run: Job) =>
-    run.changedOutputs !== undefined
-      ? run.changedOutputs.includes(name)
-      : !run.process?.noRequestFiles?.includes(name) &&
-        !!run.process?.fileMetrics?.[name];
-  return (
-    matches.find((run) => activeWorker(run) && changed(run)) ||
-    matches.find(changed)
   );
 }
 /** Unsettled Batches remain visible independently of Apply and working-file reloads. */
@@ -632,7 +652,7 @@ export function countedFileStatus(
   state: Pick<GuidedState, "runs" | "sourceStatus" | "readiness">,
   phase: Phase,
   name: string,
-  run = fileRun(state.runs, phase, name, state.sourceStatus.retired),
+  run = fileWork(state.runs, phase, name, state.sourceStatus.retired).run,
   source = DEFAULT_LANGUAGES.source,
 ) {
   const active = runActivity(name, run);
@@ -700,9 +720,10 @@ function runActivity(name: string, run?: Job) {
   const awaiting = fileState("needs_review", "Awaiting your cost approval.");
   if (run.temporary)
     return activeWorker(run) ? (run.approval ? awaiting : progress) : undefined;
-  const noRequests =
-    run.mode === "batch" && run.process?.noRequestFiles?.includes(name);
-  if (noRequests || (run.workerStatus ?? run.status) === "complete")
+  if (
+    madeNoRequest(run, name) ||
+    (run.workerStatus ?? run.status) === "complete"
+  )
     return undefined;
   const requests = run.process?.files?.[name];
   const states = requests?.states || [];

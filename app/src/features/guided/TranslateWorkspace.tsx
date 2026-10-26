@@ -12,9 +12,8 @@ import {
   activeRun,
   countedPhase,
   filePreviewRun,
-  fileRun,
   fileLines,
-  fileMetricRun,
+  fileWork,
   translationFileStatus,
 } from "./translationView";
 import type { RequestInspectionTarget } from "./ProcessPanel";
@@ -73,15 +72,24 @@ export function TranslateWorkspace({
   const selected = new Set(values.selected);
   const changedFiles = new Set(state.sourceStatus.changed);
   const scoped = rows.filter((row) => selected.has(row.name));
-  const owner = (name: string) =>
-    fileRun(state.runs, phase, name, state.sourceStatus.retired);
+  // The runs each row shows, read once per row.
+  const works = useMemo(
+    () =>
+      new Map(
+        rows.map((row) => [
+          row.name,
+          fileWork(state.runs, phase, row.name, state.sourceStatus.retired),
+        ]),
+      ),
+    [rows, state.runs, phase, state.sourceStatus.retired],
+  );
   const counted = countedPhase(phase);
   const openFile = (name: string) => {
     const job = filePreviewRun(
       name,
       run,
       estimate,
-      owner(name),
+      works.get(name)?.owner,
       currentEstimate,
     );
     const lines = counted ? state.sourceStatus.lines?.[name] : undefined;
@@ -148,12 +156,7 @@ export function TranslateWorkspace({
             (activeRun(run) && run?.mode !== "batch") ||
             rows.some(
               (row) =>
-                fileMetricRun(
-                  state.runs,
-                  phase,
-                  row.name,
-                  state.sourceStatus.retired,
-                )?.process?.fileMetrics?.[row.name],
+                works.get(row.name)?.changed?.process?.fileMetrics?.[row.name],
             )
           }
         >
@@ -192,21 +195,17 @@ export function TranslateWorkspace({
                 </>
               ),
               details: (row) => {
+                const work = works.get(row.name)!;
                 const status = translationFileStatus(
                   state,
                   phase,
                   row.name,
-                  owner(row.name),
+                  work.run,
                   languages.source,
                 );
-                const metricRun = fileMetricRun(
-                    state.runs,
-                    phase,
-                    row.name,
-                    state.sourceStatus.retired,
-                  ),
+                const metricRun = work.changed,
                   metrics = metricRun?.process?.fileMetrics?.[row.name];
-                const lines = fileLines(state, phase, row.name);
+                const lines = fileLines(state, phase, row.name, work);
                 return (
                   <>
                     <span

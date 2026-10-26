@@ -13,6 +13,46 @@
  * The check is deliberately fail-open. Missing files, unsupported configs,
  * network failures, malformed responses, and all other errors are ignored so
  * they can never prevent the game from starting.
+ *
+ * The parameters hold the text players see, in the translation's language;
+ * an empty one shows its English default.
+ *
+ * @param title
+ * @text Title
+ * @default Translation update available
+ *
+ * @param detail
+ * @text Message
+ * @default A newer version of this translation is available. Close the game and run GameUpdate, or patch it manually from the repository:
+ *
+ * @param repositoryLink
+ * @text Repository link
+ * @default Open translation repository (manual patch)
+ *
+ * @param installedButton
+ * @text Installed button
+ * @default I installed this update manually
+ *
+ * @param installedConfirm
+ * @text Installed confirmation
+ * @default Only confirm after closing the game and copying the latest translation files into this game. Mark this update as installed?
+ *
+ * @param saveFailed
+ * @text Save failure
+ * @default The translation version could not be saved. The game can continue, but this warning may appear again.
+ *
+ * @param continueButton
+ * @text Continue button
+ * @default Continue
+ *
+ * @param alertText
+ * @text Plain warning
+ * @desc Shown in a plain alert, followed by Plain warning help and the repository address, where the game has no page to draw on.
+ * @default A newer version of this translation is available.
+ *
+ * @param alertHelp
+ * @text Plain warning help
+ * @default Close the game and run GameUpdate.bat (Windows) or GameUpdate_linux.sh (Linux) from the game folder.
  */
 
 (function() {
@@ -20,6 +60,34 @@
 
     var REQUEST_TIMEOUT_MS = 5000;
     var MAX_RESPONSE_BYTES = 1024 * 1024;
+    var ENGLISH = {
+        title: "Translation update available",
+        detail: "A newer version of this translation is available. Close the game and run GameUpdate, or patch it manually from the repository:",
+        repositoryLink: "Open translation repository (manual patch)",
+        installedButton: "I installed this update manually",
+        installedConfirm: "Only confirm after closing the game and copying the latest " +
+            "translation files into this game. Mark this update as installed?",
+        saveFailed: "The translation version could not be saved. The game can " +
+            "continue, but this warning may appear again.",
+        continueButton: "Continue",
+        alertText: "A newer version of this translation is available.",
+        alertHelp: "Close the game and run GameUpdate.bat (Windows) or " +
+            "GameUpdate_linux.sh (Linux) from the game folder."
+    };
+    var parameters = {};
+    try {
+        if (typeof PluginManager !== "undefined" && PluginManager.parameters) {
+            parameters = PluginManager.parameters("TranslationUpdateCheck") || {};
+        }
+    } catch (_parametersError) {
+        // English text is shown without the game's own.
+    }
+
+    // The text players see for *key*: the game's own, or English.
+    function text(key) {
+        var value = parameters[key];
+        return typeof value === "string" && value.trim() ? value : ENGLISH[key];
+    }
 
     function nodeRequire(name) {
         if (typeof require === "function") {
@@ -280,14 +348,14 @@
         panel.style.boxShadow = "0 12px 36px rgba(0, 0, 0, 0.55)";
 
         var title = document.createElement("div");
-        title.textContent = "Translation update available";
+        title.textContent = text("title");
         title.style.fontSize = "22px";
         title.style.fontWeight = "bold";
         title.style.marginBottom = "12px";
         panel.appendChild(title);
 
         var detail = document.createElement("div");
-        detail.textContent = "A newer version of this translation is available. Close the game and run GameUpdate, or patch it manually from the repository:";
+        detail.textContent = text("detail");
         detail.style.fontSize = "16px";
         detail.style.lineHeight = "1.5";
         detail.style.marginBottom = "14px";
@@ -295,7 +363,7 @@
 
         var link = document.createElement("a");
         link.href = repoUrl;
-        link.textContent = "Open translation repository (manual patch)";
+        link.textContent = text("repositoryLink");
         link.style.display = "inline-block";
         link.style.color = "#72b7ff";
         link.style.fontSize = "16px";
@@ -312,7 +380,7 @@
 
         var installed = document.createElement("button");
         installed.type = "button";
-        installed.textContent = "I installed this update manually";
+        installed.textContent = text("installedButton");
         installed.style.padding = "8px 12px";
         installed.style.marginRight = "10px";
         installed.style.fontSize = "14px";
@@ -321,20 +389,14 @@
             try {
                 var confirmed = typeof window === "undefined" ||
                     typeof window.confirm !== "function" ||
-                    window.confirm(
-                        "Only confirm after closing the game and copying the latest " +
-                        "translation files into this game. Mark this update as installed?"
-                    );
+                    window.confirm(text("installedConfirm"));
                 if (!confirmed) return;
                 fs.writeFileSync(statePath, latestSha + "\n", "ascii");
                 if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
             } catch (_stateError) {
                 try {
                     if (typeof window !== "undefined" && typeof window.alert === "function") {
-                        window.alert(
-                            "The translation version could not be saved. The game can " +
-                            "continue, but this warning may appear again."
-                        );
+                        window.alert(text("saveFailed"));
                     }
                 } catch (_stateWarningError) {
                     // Failure to save or explain updater state never affects the game.
@@ -345,7 +407,7 @@
 
         var close = document.createElement("button");
         close.type = "button";
-        close.textContent = "Continue";
+        close.textContent = text("continueButton");
         close.style.padding = "8px 18px";
         close.style.fontSize = "16px";
         close.style.cursor = "pointer";
@@ -365,9 +427,7 @@
 
     function warnPlayer(repoUrl, latestSha, statePath, fs) {
         try {
-            var message = "A newer version of this translation is available.\n\n" +
-                "Close the game and run GameUpdate.bat (Windows) or " +
-                "GameUpdate_linux.sh (Linux) from the game folder.\n\n" + repoUrl;
+            var message = text("alertText") + "\n\n" + text("alertHelp") + "\n\n" + repoUrl;
             if (showClickableWarning(repoUrl, latestSha, statePath, fs)) return;
             if (typeof window !== "undefined" && typeof window.alert === "function") {
                 window.alert(message);

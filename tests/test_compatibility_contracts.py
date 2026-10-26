@@ -149,6 +149,37 @@ for refused in ({"text": ".dazedtl/len-method/work/parts.json"},
 print(json.dumps(results))
 """
 
+UPDATE_CHECK_TEXT = """
+import json, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from util.game_settings import save_language_pair
+from util.rpgmaker_plugin_registry import plugin_entries
+from util.translation_update_check.installer import install
+root = Path(sys.argv[2])
+plugins = root / "js/plugins.js"
+plugins.parent.mkdir()
+plugins.write_text('var $plugins =\\n[\\n{"name":"A","status":true,"description":"","parameters":{}}\\n];\\n')
+def entries():
+    return [entry for entry in plugin_entries(plugins.read_text("utf-8"))
+            if entry["name"] == "TranslationUpdateCheck"]
+results = []
+install(root)
+results.append(entries()[0]["parameters"])
+save_language_pair(root, "English", "Japanese")
+install(root)
+shown = entries()[0]["parameters"]
+results.append(shown["title"])
+plugins.write_text(plugins.read_text("utf-8").replace(shown["continueButton"], "つづく"))
+install(root)
+results.append(entries()[0]["parameters"]["continueButton"])
+save_language_pair(root, "Japanese", "English")
+install(root)
+results.append(entries()[0]["parameters"])
+results.append(len(entries()))
+print(json.dumps(results, ensure_ascii=False))
+"""
+
 
 def script(source, *paths):
     background = Background()
@@ -161,6 +192,7 @@ def script(source, *paths):
 gitignore = script(GITIGNORE, ENGINE)
 patch_files = script(PATCH_FILES, ENGINE, ENGINE.parents[1])
 images_phase = script(IMAGES_PHASE, ENGINE)
+update_check_text = script(UPDATE_CHECK_TEXT, ENGINE)
 
 
 def finished(background):
@@ -1946,6 +1978,16 @@ class ManualJobs:
                 "Unit a appears in more than one part.",
                 "Only a text export can list parts, in place of its units list.",
             ],
+        )
+
+    def test_the_update_check_speaks_the_games_target_language(self):
+        # The update check showed players its English text whatever language
+        # the game was translated into. A game without a recorded pair is
+        # translated into English, and a value written in plugins.js by hand
+        # stays.
+        self.assertEqual(
+            json.loads(finished(update_check_text)),
+            [{}, "翻訳の更新があります", "つづく", {"continueButton": "つづく"}, 1],
         )
 
     def test_bundled_forge_accepts_the_install_patches(self):

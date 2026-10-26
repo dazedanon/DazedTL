@@ -168,6 +168,7 @@ Notes for translators belong in the [user guide](user-guide.md#publishing-with-g
 
 In a game, `GameUpdate.bat` and `GameUpdate_linux.sh` find `patch.ps1` and `patch.sh` in the `gameupdate` folder beside them, so they work from any working directory.
 Set up also installs `gameupdate/TranslationUpdateCheck.js` as an MV and MZ plugin, the startup check; it records a manually installed update in the same `previous_patch_sha.txt` the scripts use.
+Its text for players is in its plugin parameters, which Set up fills from [messages.json](../backend/dazedtl/engine/util/translation_update_check/messages.json) in the game's target language; a language missing there shows the plugin's English defaults, and a value edited in `plugins.js` is kept.
 Test updater changes with both `patch.ps1` on Windows and `patch.sh` on Linux; these variables help:
 
 | Environment variable | Purpose |

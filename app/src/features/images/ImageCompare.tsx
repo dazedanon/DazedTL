@@ -12,7 +12,7 @@ import { Notice } from "../../ui/Notice";
 import { ExpandableText } from "../../ui/ExpandableText";
 import { imageDisplay } from "../../ui/displayStatus";
 import { StatusMark } from "../../ui/StatusMark";
-import { imageClassificationLabel, imageReason } from "./imageSelection";
+import { imageDiscovery, imageReason } from "./imageSelection";
 import { useRead } from "../../state/useRead";
 
 export function ImageCompare({
@@ -67,6 +67,8 @@ export function ImageCompare({
   const [background, setBackground] = useState("checker");
   const [comment, setComment] = useState("");
   const blocking = asset.state === "blocked" || !!asset.sourceIssue;
+  const reasonShown = !blocking && !asset.heldReason;
+  const reason = reasonShown && imageReason(asset, listed, target);
   return (
     <Modal
       label={`Compare ${asset.filename}`}
@@ -87,11 +89,7 @@ export function ImageCompare({
             the actions that answer it; any other reason sits beside the state. */}
         <span className="image-review-status">
           <StatusMark state={imageDisplay(asset, listed)} />
-          {!blocking &&
-            !asset.heldReason &&
-            imageReason(asset, listed, target) && (
-              <span>{imageReason(asset, listed, target)}</span>
-            )}
+          {reason && <span>{reason}</span>}
         </span>
         <label>
           Zoom
@@ -201,7 +199,7 @@ export function ImageCompare({
                 <dt>Discovery</dt>
                 <dd>
                   <ExpandableText
-                    text={`${imageClassificationLabel(asset.classification, target) || asset.classification} · ${asset.reason}`}
+                    text={imageDiscovery(asset, listed, target, reasonShown)}
                     label="Discovery finding"
                     appearance="inline"
                   />
