@@ -294,7 +294,9 @@ def walk(node, pointer="", markers=frozenset(), source="Japanese"):
             if key == "parameters" and indexes:
                 for index, item in enumerate(value):
                     if index not in indexes:
-                        yield from walk(item, f"{pointer}/{key}/{index}", markers, source)
+                        yield from walk(
+                            item, f"{pointer}/{key}/{index}", markers, source
+                        )
             else:
                 yield from walk(value, f"{pointer}/{key}", markers, source)
     elif isinstance(node, list):
@@ -333,11 +335,7 @@ def reply(identity, source, target="English"):
     """Readable text in the target language that keeps the line count, unique
     to the line."""
     return "\n".join(
-        (
-            f"テスト行{mark}。"
-            if target == "Japanese"
-            else f"Tested line {mark}."
-        )
+        (f"テスト行{mark}。" if target == "Japanese" else f"Tested line {mark}.")
         for mark in (
             hashlib.sha256(f"{identity}:{number}".encode()).hexdigest()[:6]
             for number in range(len(source.split("\n")))
