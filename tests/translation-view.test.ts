@@ -950,6 +950,21 @@ test("context preview separates matched guidance from static prompts and transla
     [dynamic, "前の台詞", "Translate item names."],
   );
   assert.equal(sections[2].notes, true);
+  // An English game's requests name their source in the heading.
+  assert.deepEqual(
+    requestContext({
+      ...payload,
+      messages: [
+        messages[0],
+        {
+          role: "user",
+          content:
+            "Preceding English Source Context (untranslated):\nUse for scene context.\n```\nEarlier line\n```",
+        },
+      ],
+    }).map((section) => section.text),
+    [dynamic, "Earlier line"],
+  );
   assert.deepEqual(
     requestContext({
       ...payload,

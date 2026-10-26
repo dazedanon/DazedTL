@@ -189,7 +189,7 @@ class GuidedRuns:
             "layout": native["widths"],
             "comments": native["phase1_comments"],
             "context": context,
-            "runtime_context": self.guided.backend.guided_run_context(),
+            "runtime_context": self.guided.backend.guided_run_context(pair),
         }
         review = None
         if phase == "advanced":

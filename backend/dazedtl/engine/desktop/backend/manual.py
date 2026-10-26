@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath
 
 from util.game_settings import WRAP_WIDTH_KEYS
 from util.paths import PROMPT_PATH, GLOSSARY_BASE_PATH, TRANSLATION_CONTEXTS_PATH, SFX_REFERENCE_PATH, runtime_data_file
+from util.prompt_pair import render_for_run
 from util.translation_task import TRANSLATION_MODULE_SPECS, format_estimate_total, translation_module
 from .project import atomic_json, digest, file_digest
 from .settings import SettingsStore
@@ -198,7 +199,12 @@ def snapshot_context(directory, plan, workspace):
     context.mkdir()
     for name, path in (("system.md", PROMPT_PATH), ("base-glossary.txt", GLOSSARY_BASE_PATH),
                        ("translation_contexts.json", TRANSLATION_CONTEXTS_PATH), ("sfx.json", SFX_REFERENCE_PATH)):
-        shutil.copyfile(runtime_data_file(path, workspace), context / name)
+        if path is PROMPT_PATH and "settings" in plan:
+            # A run freezes the base rules as it sends them, in its languages.
+            raw = runtime_data_file(path, workspace).read_bytes()
+            (context / name).write_bytes(render_for_run(raw, plan["settings"]))
+        else:
+            shutil.copyfile(runtime_data_file(path, workspace), context / name)
     game = directory / "game"
     metadata = game / ".dazedtl"
     metadata.mkdir(parents=True)

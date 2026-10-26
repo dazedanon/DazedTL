@@ -3803,3 +3803,14 @@ export const ACTIONS = {
 } as const satisfies Record<string, ActionView>;
 
 export type ActionName = keyof typeof ACTIONS;
+
+/** A saved request's headings, from backend/dazedtl/engine/util/prompt_pair.py. */
+export const REQUEST_HEADINGS = {
+  glossary: "Here are glossary entries",
+  sfx: "Japanese SFX reference",
+  sourceContext: [
+    "Preceding Japanese Source Context",
+    "Preceding English Source Context",
+  ],
+  instructions: "Request Instructions:",
+} as const;

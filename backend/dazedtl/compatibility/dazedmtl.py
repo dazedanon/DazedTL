@@ -303,7 +303,10 @@ class ExistingBackend:
             )
         return json.loads(raw.decode("utf-8"))
 
-    def guided_run_context(self):
+    def guided_run_context(self, pair):
+        """Digests of the shared files a run on a game with the language
+        *pair* reads: the base rules as the run renders them, so a part for
+        other languages never puts its runs out of date."""
         from util.paths import (
             GLOSSARY_BASE_PATH,
             PROMPT_PATH,
@@ -311,17 +314,24 @@ class ExistingBackend:
             TRANSLATION_CONTEXTS_PATH,
             runtime_data_file,
         )
+        from util.prompt_pair import render, run_language
 
         from dazedtl.translation.files import digest
 
+        prompt = runtime_data_file(PROMPT_PATH, self.workspace).read_bytes()
+        rendered = render(
+            prompt.decode("utf-8"), pair["source"], run_language(pair["target"])
+        )
         return {
-            path.name: digest(runtime_data_file(path, self.workspace).read_bytes())
-            for path in (
-                PROMPT_PATH,
-                GLOSSARY_BASE_PATH,
-                TRANSLATION_CONTEXTS_PATH,
-                SFX_REFERENCE_PATH,
-            )
+            PROMPT_PATH.name: digest(rendered.encode("utf-8")),
+            **{
+                path.name: digest(runtime_data_file(path, self.workspace).read_bytes())
+                for path in (
+                    GLOSSARY_BASE_PATH,
+                    TRANSLATION_CONTEXTS_PATH,
+                    SFX_REFERENCE_PATH,
+                )
+            },
         }
 
     def phase_files(self, native, phase):

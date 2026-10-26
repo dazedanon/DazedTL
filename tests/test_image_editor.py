@@ -200,7 +200,7 @@ class EditorTests(unittest.TestCase):
         self.backend.manual = SimpleNamespace(
             jobs={}, active=None, running=lambda: False, resume=Mock()
         )
-        self.backend.guided_run_context = lambda: {"system.md": "fixture-context"}
+        self.backend.guided_run_context = lambda _pair: {"system.md": "fixture-context"}
         self.backend.saved_run_configuration = lambda identity: {
             "engine": "Image Text",
             "selected": ["image_text.json"],

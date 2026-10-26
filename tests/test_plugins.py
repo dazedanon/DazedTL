@@ -117,6 +117,7 @@ class PluginTests(unittest.TestCase):
             idle=lambda _: None,
             clean_drafts=lambda _: None,
             writable=lambda _: None,
+            settings=SimpleNamespace(language=lambda: "English"),
         )
         self.backend = SimpleNamespace(
             source=self.root / "engine", game_write=game_write
@@ -1199,6 +1200,7 @@ class PluginTests(unittest.TestCase):
                 idle=lambda _: None,
                 clean_drafts=lambda _: None,
                 writable=lambda _: None,
+                settings=SimpleNamespace(language=lambda: "English"),
             )
             service = PluginService(
                 projects, translation, self.backend, documents=self.documents
@@ -1431,6 +1433,7 @@ class AceScriptTests(unittest.TestCase):
                 idle=lambda _: None,
                 clean_drafts=lambda _: None,
                 writable=lambda _: None,
+                settings=SimpleNamespace(language=lambda: "English"),
                 engine=SimpleNamespace(
                     ace_data=TranslationEngine.ace_data,
                     ace_script_order=TranslationEngine.ace_script_order,

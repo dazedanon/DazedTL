@@ -108,7 +108,7 @@ class Engine:
     def documents(self, _source):
         return {}
 
-    def prepare(self, source, _options, *, refresh=True):
+    def prepare(self, source, _options, *, language="English", refresh=True):
         self.refreshed = refresh
         return {"skill": "SKILL.md", "setup": str(Path(source) / "setup.md")}
 

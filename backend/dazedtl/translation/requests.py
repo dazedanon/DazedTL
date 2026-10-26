@@ -18,13 +18,29 @@ SPEAKERS = (
     "or include them in the output). Use them with the glossary for character voice and pronoun context, "
     "and preserve any speaker tags actually present in the source."
 )
-VOICE = (
-    "A line without a listed speaker has no identified speaker, which is valid. "
-    "Do not inherit a previous speaker or infer identity or gender from speech style. "
-    "Narration and UI need not have a speaker. Resolve the subject and addressee separately from the speaker, "
-    "using the surrounding Japanese in the same scene and event branch. Preserve source-supported ambiguity "
-    "and voice without inventing a character identity."
-)
+
+
+def source_language(context):
+    """The source language of a request, whose context names it when it is
+    not Japanese."""
+    # Imported when used: test stand-ins for the engine's util package may be
+    # in place when requests are first imported.
+    from dazedtl.languages import JAPANESE
+
+    return context.get("source_language", JAPANESE)
+
+
+def voice(context):
+    """The note on speakers and voice for a request."""
+    return (
+        "A line without a listed speaker has no identified speaker, which is valid. "
+        "Do not inherit a previous speaker or infer identity or gender from speech style. "
+        "Narration and UI need not have a speaker. Resolve the subject and addressee separately from the speaker, "
+        f"using the surrounding {source_language(context)} in the same scene and event branch. "
+        "Preserve source-supported ambiguity and voice without inventing a character identity."
+    )
+
+
 QA_NOTES = "Source ambiguities for targeted review; these are uncertainties, not established facts:"
 
 
@@ -142,7 +158,7 @@ def provider_view(request, configuration):
             for kind, lines in grouped(context["line_kinds"]).items()
         )
         + "\n"
-        + VOICE
+        + voice(context)
     )
     if context.get("qa_notes"):
         parts.append(
@@ -402,8 +418,8 @@ def logical_request(batch, context):
             + json.dumps(batch["kinds"], ensure_ascii=False)
             + "\nUnknown speakers are valid. Do not inherit a previous speaker or infer identity or gender from speech style. "
             "Narration and UI need not have a speaker. Resolve the subject and addressee separately from the speaker, "
-            "using the surrounding Japanese in the same scene and event branch. Preserve source-supported ambiguity "
-            "and voice without inventing a character identity."
+            f"using the surrounding {source_language(context)} in the same scene and event branch. "
+            "Preserve source-supported ambiguity and voice without inventing a character identity."
         )
         if context["qa_notes"]:
             context["user"] += (

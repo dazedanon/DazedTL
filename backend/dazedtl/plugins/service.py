@@ -11,7 +11,8 @@ from pathlib import Path, PurePosixPath
 
 from dazedtl import foreign_work, freshness
 from dazedtl.foreign_work import ForeignWorkError
-from dazedtl.languages import game_source
+from dazedtl.languages import game_source, pair_note
+from dazedtl.settings import language_pair
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation import originals as game_originals
 from dazedtl.translation import reference_folders
@@ -1692,8 +1693,15 @@ class PluginService:
             )
         return labels
 
+    def languages(self, root):
+        """The source and target of the game at *root*."""
+        pair = language_pair.pair(self.translation.settings, root)
+        return pair["source"], pair["target"]
+
     def capture_view(self, project_id, request, served):
         """Where the label capture stands for the request's copies as they are."""
+        _, root = self.record(project_id)
+        _source, target = self.languages(root)
         saved = self.captured(project_id) or {}
         operation = saved.get("operation")
         view = {"requestId": request["requestId"]}
@@ -1750,7 +1758,7 @@ class PluginService:
             )
         elif "unavailable" in saved:
             following = (
-                "DazedTL couldn't run the game, so size the English from how short of "
+                f"DazedTL couldn't run the game, so size the {target} from how short of "
                 "room each label is; the app records that the labels weren't seen."
             )
         elif all(row["fits"] for row in view["labels"]) and len(view["labels"]) == len(
@@ -1760,7 +1768,7 @@ class PluginService:
         else:
             following = (
                 "Look at each capture, shorten the labels that don't fit and capture "
-                "again; keep a label only when no shorter English keeps its meaning."
+                f"again; keep a label only when no shorter {target} keeps its meaning."
             )
         view["next"] = following
         return view
@@ -2261,22 +2269,27 @@ class PluginService:
             "binding": value["binding"],
             "complete": False,
         }
-        text = windows_note() + (
-            (
-                "Translate the text this VX Ace game's Ruby scripts show to players. This is one DazedTL Plugin files task, which covers the scripts of VX Ace games; copying it did not start an assistant. Keep DazedTL open.\n"
-                "Work through it in this conversation: after each report, the helper below checks it and returns the next request, until every script is investigated and its player text translated. "
-                if ace
-                else "Translate the text this game's plugins show to players. This is one DazedTL Plugin files task; copying it did not start an assistant. Keep DazedTL open.\n"
-                "Work through it in this conversation: after each report, the helper below checks it and returns the next request, until every plugin file is investigated and its player text translated, and every plugin label Text QA found too long for the screen is shortened. "
-            )
-            + "Do not ask the user to copy another prompt or approve routine steps; ask only about choices the evidence cannot settle, after finishing the independent work.\n\n"
-            "Read the request JSON: " + str(request_path) + "\n"
-            "Save a structured report at: " + str(report_path) + "\n"
-            "Bind version, kind, projectId, requestId and binding exactly, and use only the requested files, occurrence IDs and SHA-256 hashes. "
+        source, target = self.languages(root)
+        text = (
+            windows_note()
+            + pair_note(source, target)
             + (
-                "Never run scripts or the game, providers or translation APIs. Event script calls belong to Other event text; do not edit event or database JSON, Data files or images.\n\n"
-                if ace
-                else "Never run plugin or game code, providers or translation APIs. Event plugin commands belong to Other event text; do not edit event or database JSON or images.\n\n"
+                (
+                    "Translate the text this VX Ace game's Ruby scripts show to players. This is one DazedTL Plugin files task, which covers the scripts of VX Ace games; copying it did not start an assistant. Keep DazedTL open.\n"
+                    "Work through it in this conversation: after each report, the helper below checks it and returns the next request, until every script is investigated and its player text translated. "
+                    if ace
+                    else "Translate the text this game's plugins show to players. This is one DazedTL Plugin files task; copying it did not start an assistant. Keep DazedTL open.\n"
+                    "Work through it in this conversation: after each report, the helper below checks it and returns the next request, until every plugin file is investigated and its player text translated, and every plugin label Text QA found too long for the screen is shortened. "
+                )
+                + "Do not ask the user to copy another prompt or approve routine steps; ask only about choices the evidence cannot settle, after finishing the independent work.\n\n"
+                "Read the request JSON: " + str(request_path) + "\n"
+                "Save a structured report at: " + str(report_path) + "\n"
+                "Bind version, kind, projectId, requestId and binding exactly, and use only the requested files, occurrence IDs and SHA-256 hashes. "
+                + (
+                    "Never run scripts or the game, providers or translation APIs. Event script calls belong to Other event text; do not edit event or database JSON, Data files or images.\n\n"
+                    if ace
+                    else "Never run plugin or game code, providers or translation APIs. Event plugin commands belong to Other event text; do not edit event or database JSON or images.\n\n"
+                )
             )
         )
         if kind == "investigation":
@@ -2328,9 +2341,11 @@ class PluginService:
                     + str(root)
                     + "; its order is its place in the order RGSS3 runs the scripts, and a later script can redefine an earlier one's methods. "
                     "Follow each string to where the scripts use it: drawing (draw_text, add_command, set_text, $game_message), Vocab constants, menus and help text, but also comparisons, hash keys, case/when, lookups, note tag patterns and file names (Cache, Audio, Bitmap, Font). "
-                    "Check the event scripts in ace_json/*.json too (codes 355, 655 and conditional branches 111): text an event compares, or stores in a variable a script or event compares later, keeps its Japanese. "
+                    "Check the event scripts in ace_json/*.json too (codes 355, 655 and conditional branches 111): text an event compares, or stores in a variable a script or event compares later, "
+                    f"keeps its {source}. "
                     "Comments and =begin blocks are not player text.\n"
-                    "Dispositions: visible (players see it), latent (display text players never see because nothing uses it), protected (compared, looked up, or used as a key or file name), editor_only, non_visible. Only visible text that is safe to change is translated; the rest keeps its Japanese. "
+                    "Dispositions: visible (players see it), latent (display text players never see because nothing uses it), protected (compared, looked up, or used as a key or file name), editor_only, non_visible. Only visible text that is safe to change is translated; "
+                    f"the rest keeps its {source}. "
                     "Set safe to true only when changing the text cannot change behavior. The app already protects original database and note tag names, and strings the code compares, uses as hash or index keys or lists in a when clause, so those occurrences are not listed.\n"
                     "Give every listed occurrence a disposition, evidence and a reason. A file is done once its entry has examined true, file-level evidence and every listed occurrence decided. "
                     "You may report some files, run the helper and continue with the request it returns for the rest.\n"
@@ -2338,7 +2353,8 @@ class PluginService:
                     else "INVESTIGATE. Decide whether players see each listed occurrence. Do not edit runtime files, working copies, settings or source backups in this stage.\n"
                     "Read each listed source and its configuration in js/plugins.js. Recursively decode every parameter layer and follow each string to where the plugin uses it: drawing, messages, menus and help text, but also comparisons, lookups, keys and file names. "
                     "Check defaults and fallbacks; comments and editor metadata are not player text.\n"
-                    "Dispositions: visible (an enabled plugin shows it to players), latent (display text players never see because its plugin is disabled or it is only a default), protected (compared, looked up, or used as a key or file name), editor_only, non_visible. Only visible text that is safe to change is translated; the rest keeps its Japanese. "
+                    "Dispositions: visible (an enabled plugin shows it to players), latent (display text players never see because its plugin is disabled or it is only a default), protected (compared, looked up, or used as a key or file name), editor_only, non_visible. Only visible text that is safe to change is translated; "
+                    f"the rest keeps its {source}. "
                     "Set safe to true only when changing the text cannot change behavior. The app already protects original database names, notetag names and plugin command arguments, so those occurrences are not listed.\n"
                     "Give every listed occurrence a disposition, evidence and a reason. A file is done once its entry has examined true, file-level evidence and every listed occurrence decided. "
                     "You may report some files, run the helper and continue with the request it returns for the rest.\n"
@@ -2365,9 +2381,9 @@ class PluginService:
                         "path": "exact requested path",
                         "sourceHash": "request hash",
                         "candidateHash": "working copy SHA-256",
-                        "evidence": "Japanese/English meaning and layout review performed",
+                        "evidence": f"{source}/{target} meaning and layout review performed",
                         "targets": {
-                            "requested occurrence ID": "exact decoded English target"
+                            "requested occurrence ID": f"exact decoded {target} target"
                         },
                     }
                 ],
@@ -2376,9 +2392,9 @@ class PluginService:
                 "the glossary and guidance files in the request",
                 *(
                     [
-                        "the Translate stage's English output in "
+                        f"the Translate stage's {target} output in "
                         + context["translated"]
-                        + " (its Japanese sources are in the files folder beside it)"
+                        + f" (its {source} sources are in the files folder beside it)"
                     ]
                     if context["translated"]
                     else []
@@ -2389,7 +2405,7 @@ class PluginService:
             text += (
                 "TRANSLATE. Translate the listed occurrences in each file's working copy (candidate); runtime files and frozen originals (original) are read-only. "
                 "Their paths are relative to the game folder " + str(root) + ".\n"
-                "Keep names and terms consistent with the game's established English: "
+                f"Keep names and terms consistent with the game's established {target}: "
                 + ", ".join(sources[:-1])
                 + " and "
                 + sources[-1]
@@ -2428,22 +2444,23 @@ class PluginService:
                         "path": "exact requested path",
                         "sourceHash": "request hash",
                         "candidateHash": "working copy SHA-256",
-                        "evidence": "how the shorter English keeps the meaning and fits",
+                        "evidence": f"how the shorter {target} keeps the meaning and fits",
                         "targets": {
-                            "requested candidate ID": "exact decoded shorter English"
+                            "requested candidate ID": f"exact decoded shorter {target}"
                         },
                     }
                 ],
             }
             text += (
                 "SHORTEN. Text QA ran the game, captured its screens and found these plugin labels too long for the screen: the game squeezes or cuts them off. "
-                "Each label lists its screen, its capture (an image to look at) and how short of room it is: squeezed 0.75 means the game drew it at 75% of the width it needs, so the English needs about a quarter less width; clipped means its end is cut off. "
-                "Its candidates are the plugin text it can come from, with the Japanese source where the app has it.\n"
+                "Each label lists its screen, its capture (an image to look at) and how short of room it is: squeezed 0.75 means the game drew it at 75% of the width it needs, "
+                f"so the {target} needs about a quarter less width; clipped means its end is cut off. "
+                f"Its candidates are the plugin text it can come from, with the {source} source where the app has it.\n"
                 "Look at each capture, read the plugin's code to find which candidates it draws there, and shorten those in each file's working copy (candidate) until the label fits; runtime files and frozen copies (original) are read-only. "
                 "Their paths are relative to the game folder " + str(root) + ".\n"
-                "Keep the meaning, the glossary's terms and the same English wherever the game shows the same term; a setting that lists several labels keeps its separators and item count. "
+                f"Keep the meaning, the glossary's terms and the same {target} wherever the game shows the same term; a setting that lists several labels keeps its separators and item count. "
                 "Change only listed candidates, keeping quote style, structure, interpolation and control codes.\n"
-                "Size the shorter English from how short of room each label is, with the font and window width the plugin's code sets, then check it on screen: run\n"
+                f"Size the shorter {target} from how short of room each label is, with the font and window width the plugin's code sets, then check it on screen: run\n"
                 + helper_command(
                     self.translation.workspace,
                     project_id,
@@ -2454,7 +2471,8 @@ class PluginService:
                 )
                 + "\nDazedTL plays the game in a hidden window with your working copies served in place of the game's files, writing nothing into the game, and captures each label's screen again. "
                 "For each label it lists the text the screen should draw now, whether it draws it in full, a note on what it draws instead, and the capture; look at each capture, and shorten again and capture again until the labels fit.\n"
-                "Report a decision for every label: shortened, with each changed candidate in its file's targets, or kept with the reason, only when no shorter English keeps its meaning or the plugin draws none of its candidates there. "
+                "Report a decision for every label: shortened, with each changed candidate in its file's targets, or kept with the reason, "
+                f"only when no shorter {target} keeps its meaning or the plugin draws none of its candidates there. "
                 "The app accepts a shortened label only when the latest capture of exactly these working copies shows it fitting; when DazedTL can't run the game, the capture says so, and the app records the label as not seen. "
                 "The app also checks each working copy as it checks translations; when a check fails, the helper returns a request with each failedCheck. Applying to the game stays in the app.\n"
             )

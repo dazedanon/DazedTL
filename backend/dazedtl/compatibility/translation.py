@@ -170,7 +170,7 @@ class TranslationEngine:
 
         return valid_document_name(name)
 
-    def prepare(self, source, options, *, refresh=True):
+    def prepare(self, source, options, *, language="English", refresh=True):
         from util.len_progress import initialize_progress
         from util.len_translation import (
             BUNDLED_SKILL,
@@ -196,7 +196,7 @@ class TranslationEngine:
         with write_game(
             source, pack=False, summary="Prepare the project files", stage="Set up"
         ):
-            shared = shared_context(project)
+            shared = shared_context(project, language)
             _prepare_local_work(project)
         layout = rpgmaker_layout(source)
         setup = (
@@ -236,6 +236,8 @@ class TranslationEngine:
         from util.len_translation import request_contexts
         from util.skills import ctx
 
+        from dazedtl.languages import JAPANESE, active_source
+
         from .game_write import write_game
 
         batches = [
@@ -267,12 +269,17 @@ class TranslationEngine:
             summary="Prepare translation requests",
             stage="Translate",
         ):
-            compiled = request_contexts(self.project(source, options), batches)
+            compiled = request_contexts(
+                self.project(source, options), batches, language
+            )
+        reading = active_source()
         for original, result in zip(plan["batches"], compiled):
             context = result["context"]
-            # Match the shared engine's target-language substitution without touching source text.
-            context["system"] = context["system"].replace("English", language)
             context["target_language"] = language
+            # A Japanese source, every request's before the source became a
+            # setting, keeps its requests' shape.
+            if reading != JAPANESE:
+                context["source_language"] = reading
             context["scene_context"] = original.get("scene_context", "")
             if original.get("instruction_key"):
                 context["request_instructions"] = ctx(

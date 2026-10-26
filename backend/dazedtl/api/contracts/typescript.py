@@ -14,6 +14,7 @@ import typing_extensions
 
 from dazedtl.actions import ROWS
 from dazedtl.api.contracts.methods import METHODS
+from dazedtl.languages import request_headings
 
 MODULES = (
     "common",
@@ -150,10 +151,21 @@ class Renderer:
         )
 
 
+def headings():
+    """The headings the renderer reads a saved request's parts by, as one
+    constant."""
+    return (
+        "/** A saved request's headings, from backend/dazedtl/engine/util/prompt_pair.py. */\n"
+        f"export const REQUEST_HEADINGS = {json.dumps(request_headings(), ensure_ascii=False)} as const;"
+    )
+
+
 def render():
     renderer = Renderer()
     parts = [renderer.declaration(value) for value in declarations()]
-    source = "\n\n".join([*parts, renderer.methods(), renderer.actions()]) + "\n"
+    source = (
+        "\n\n".join([*parts, renderer.methods(), renderer.actions(), headings()]) + "\n"
+    )
     methods = {
         name: {"refresh": method.refresh, "duringClose": method.during_close}
         for name, method in METHODS.items()

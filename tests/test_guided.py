@@ -354,7 +354,7 @@ class GuidedTests(unittest.TestCase):
                 "phase": self.guided.runs.records(self.identity)[identity]["phase"],
             }
         }
-        self.backend.guided_run_context = lambda: {"system.md": "fixture-context"}
+        self.backend.guided_run_context = lambda _pair: {"system.md": "fixture-context"}
         self.translation = SimpleNamespace(
             workspace=self.root / "profile",
             jobs=SimpleNamespace(running=lambda: False),
@@ -534,13 +534,13 @@ class GuidedTests(unittest.TestCase):
                 "current"
             ]
         )
-        self.backend.guided_run_context = lambda: {"system.md": "changed-context"}
+        self.backend.guided_run_context = lambda _pair: {"system.md": "changed-context"}
         self.assertFalse(
             reopened.runs.quote(self.identity, self.native, "database", "batch")[0][
                 "current"
             ]
         )
-        self.backend.guided_run_context = lambda: {"system.md": "fixture-context"}
+        self.backend.guided_run_context = lambda _pair: {"system.md": "fixture-context"}
         self.backend.guided_guard = lambda *_: {"glossary": "changed-guidance"}
         self.assertFalse(
             reopened.runs.quote(self.identity, self.native, "database", "batch")[0][
@@ -849,7 +849,9 @@ class GuidedTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "estimate inputs changed"):
             self.guided.execute(self.identity, preview["token"])
         preview = self.preview()
-        self.backend.guided_run_context = lambda: {"system.md": "new-system-prompt"}
+        self.backend.guided_run_context = lambda _pair: {
+            "system.md": "new-system-prompt"
+        }
         with self.assertRaisesRegex(ValueError, "estimate inputs changed"):
             self.guided.execute(self.identity, preview["token"])
         self.assertEqual(self.started, [])

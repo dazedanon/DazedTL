@@ -42,7 +42,21 @@ from util.batch_providers import KIMI_API_URL, is_kimi_api
 from util import extensions
 from util.sfx_reference import build_sfx_reference_text
 from util.vocab import decorative_glossary_alias, split_glossary_row
-from util.languages import JAPANESE, active_source, source_pattern, target_uses_cjk
+from util.languages import (
+    JAPANESE,
+    LATIN_LETTERS,
+    active_source,
+    source_pattern,
+    target_uses_cjk,
+)
+from util.prompt_pair import (
+    GLOSSARY_HEADING,
+    INSTRUCTIONS_HEADING,
+    delivered_note,
+    render as render_prompt,
+    run_language,
+    source_context_note,
+)
 from util.source_text import source_left
 from util import system
 
@@ -1368,7 +1382,7 @@ def _log_kept_lines(config, filename, payload, output, kept, attempts, pbar):
     except Exception:
         pass
     with open(config.mismatchLogPath, "a+", encoding="utf-8") as mismatchFile:
-        mismatchFile.write(f"Lines kept in Japanese: {filename}\n")
+        mismatchFile.write(f"Lines kept in {active_source()}: {filename}\n")
         mismatchFile.write(f"After {attempts} attempts:\n")
         for reason in kept.values():
             mismatchFile.write(f"{reason}\n")
@@ -3499,7 +3513,7 @@ class TranslationConfig:
         
         # Load from environment if not provided
         self.model = model or os.getenv("model")
-        self.language = (language or os.getenv("language", "english")).capitalize()
+        self.language = run_language(language)
         
         # Load prompt and vocab files if not provided
         if prompt is None:
@@ -3956,7 +3970,7 @@ def _parsed_vocab(vocabText):
         if (
             not line
             or line.startswith('```')
-            or line.startswith(('Here are some vocabulary', 'Here are glossary entries'))
+            or line.startswith(('Here are some vocabulary', GLOSSARY_HEADING))
         ):
             continue
         
@@ -4037,7 +4051,7 @@ def honorific_stripped_speaker_forms(source: str) -> list[str]:
     (``源氏``, ``御殿``), which are often part of the name itself.
     """
     text = str(source or "").strip()
-    if not text:
+    if not text or active_source() != JAPANESE:
         return []
     base = _JP_HONORIFIC_SUFFIX_RE.sub("", text).strip(" ・\u3000")
     if not base or base == text:
@@ -4178,7 +4192,13 @@ def nameplate_gloss_for_alias(alias: str, aliases: list[str], translated: str) -
     only a curated slash-alias spelling.
     """
     gloss = str(translated or "").strip()
-    if not gloss or len(aliases) <= 1 or _aliases_look_orthographic(aliases):
+    # The rules read Japanese nameplates.
+    if (
+        not gloss
+        or len(aliases) <= 1
+        or active_source() != JAPANESE
+        or _aliases_look_orthographic(aliases)
+    ):
         return gloss
     longest = max(aliases, key=len)
     query = str(alias or "").strip()
@@ -4261,10 +4281,23 @@ def _vocab_term_in_text(term, text):
         if japanese:
             if _japanese_term_in_text(variant, text):
                 return True
-        elif variant in text:
+        elif variant in text and (
+            # A Japanese source's Latin terms, such as HP, match anywhere; an
+            # English source's terms match whole words and their plurals, so
+            # "Cat" is in "Cats" but not in "Category".
+            active_source() == JAPANESE or _latin_term_pattern(variant).search(text)
+        ):
             return True
 
     return False
+
+
+@lru_cache(maxsize=16384)
+def _latin_term_pattern(term):
+    """A term's matcher as a whole word of Latin text, or its plural."""
+    return re.compile(
+        rf"(?<![{LATIN_LETTERS}]){re.escape(term)}(?:e?s)?(?![{LATIN_LETTERS}])"
+    )
 
 
 @lru_cache(maxsize=16384)
@@ -4591,7 +4624,7 @@ def buildMatchedVocabText(vocabPairs, subbedText, history=None):
     # Format matched vocabulary with categories
     if matchedCategories:
         formattedLines = [
-            "Here are glossary entries with the approved spelling and translation.\n"
+            GLOSSARY_HEADING + " with the approved spelling and translation.\n"
         ]
         for category, lines in matchedCategories.items():
             if category:  # Only add category header if it exists
@@ -4639,12 +4672,14 @@ def createContextParts(config, subbedText, formatType, history=None, *, speaker_
         # curated-over-generated rules without matching opaque request IDs.
         match_text = json.dumps([_text_for_vocab_search(subbedText), *tags], ensure_ascii=False)
     matchedVocabText = buildMatchedVocabText(vocabPairs, match_text, history)
+    # The SFX dictionary reads Japanese onomatopoeia.
     matchedSfxText = build_sfx_reference_text(
         subbedText,
-        enabled=bool(getattr(config, "useSfxReference", True)),
+        enabled=bool(getattr(config, "useSfxReference", True))
+        and active_source() == JAPANESE,
     )
 
-    static_system = config.prompt.replace("English", config.language)
+    static_system = render_prompt(config.prompt, active_source(), config.language)
 
     if formatType == "json":
         user = f"```json\n{subbedText}\n```"
@@ -4825,13 +4860,8 @@ class _AnthropicCompat:
 
 def _context_heading(kind):
     if kind == CONTEXT_INSTRUCTIONS:
-        return "Request Instructions:"
-    return (
-        "Preceding Japanese Source Context (untranslated):\n"
-        "Use these lines only to understand the scene. Do not copy Japanese "
-        "spellings from them or treat them as approved terminology; the "
-        "glossary is authoritative."
-    )
+        return INSTRUCTIONS_HEADING
+    return source_context_note()
 
 
 def _context_block(history, kind):
@@ -4842,17 +4872,11 @@ def _context_block(history, kind):
 
 
 def _delivered_context_block(delivered_context):
-    """Label the English already delivered for the preceding source lines."""
+    """Label the translation already delivered for the preceding source lines."""
     items = _context_items(delivered_context)
     if not items:
         return ""
-    return (
-        "Preceding English Translation (already delivered):\n"
-        "The English for the same preceding lines, in order. Where the scene "
-        "continues, keep its narration tense, forms of address, and voice; do "
-        "not repeat or revise it. The Japanese source and the glossary stay "
-        "authoritative.\n```\n" + "\n".join(items) + "\n```"
-    )
+    return delivered_note() + "\n```\n" + "\n".join(items) + "\n```"
 
 
 def _request_context_blocks(history, context_kind, request_instructions=None,
@@ -6277,7 +6301,7 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                     f"IMPORTANT: Your previous attempt was incorrect or incomplete. Please ensure:\n"
                     f"1. The entire output is translated to {config.language} with no untranslated characters\n"
                     f"2. The JSON structure is correct with NO EMPTY or near-empty translations\n"
-                    f"   - Every line with Japanese text MUST be fully translated\n"
+                    f"   - Every line with {active_source()} text MUST be fully translated\n"
                     f"   - Do NOT leave translations empty (\"\") or as single punctuation marks (\":\")\n"
                     f"3. ALL placeholders (like __PROTECTED_0__, __PROTECTED_1__, etc.) are preserved EXACTLY as they appear in the input\n"
                     f"   - Do not modify, translate, or remove any __PROTECTED_N__ placeholders\n"

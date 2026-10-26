@@ -54,6 +54,7 @@ from pathlib import Path
 from typing import Any
 
 from util import rpgmaker_blocks as blocks
+from util.languages import JAPANESE, active_source
 
 SCHEMA = "rpgmaker-header-check-v1"
 FLAG_LIMIT = 200
@@ -475,12 +476,16 @@ def _relabeled(boxes: list[dict[str, Any]]) -> set[int]:
 
 
 def check(data_root: str | Path) -> dict[str, Any]:
-    """Likely Show Text header slips in a game's event files."""
+    """Likely Show Text header slips in a game's event files. The
+    self-address and pronoun rules read Japanese honorifics and pronouns, so
+    they check a Japanese source only."""
     data = Path(data_root).expanduser().resolve()
     boxes = _boxes(data)
     speech = _Speech(boxes)
+    japanese = active_source() == JAPANESE
     found = (
-        _face_flags(boxes) + _self_address_flags(boxes) + _pronoun_flags(boxes)
+        _face_flags(boxes)
+        + (_self_address_flags(boxes) + _pronoun_flags(boxes) if japanese else [])
         + _unnamed_flags(boxes, speech)
     )
     relabeled = _relabeled(boxes)

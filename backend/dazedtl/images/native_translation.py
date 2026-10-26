@@ -7,6 +7,7 @@ from pathlib import Path
 from dazedtl.api.views import job as public_job
 from dazedtl.compatibility import image_translation as native
 from dazedtl.freshness import Basis, compare
+from dazedtl.languages import JAPANESE
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, project_path, read_json
 
@@ -98,7 +99,10 @@ class ImageNativeTranslation:
             raise ValueError(
                 "The target language changed. Export current image text before estimating."
             )
-        context = self.backend.guided_run_context()
+        # Images keep a Japanese source and Settings' target for now.
+        context = self.backend.guided_run_context(
+            {"source": JAPANESE, "target": configuration["language"]}
+        )
         candidates = [
             root / ".dazedtl/glossary.txt",
             root / "glossary.txt",

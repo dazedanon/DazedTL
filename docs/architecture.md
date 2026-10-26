@@ -40,6 +40,8 @@ The runtime was imported from `b91bede18fd2bbd5a9b99f1a866f061bc13865c1` with it
 Saved manual runs record the [engine version](../backend/dazedtl/engine/desktop/backend/manual.py) that prepared them and resume only on that version; raise it when a change would make a resumed run build requests or parse files differently.
 The compatibility layer extends engine behavior only through declared [extension points](../backend/dazedtl/engine/util/extensions.py) and engine settings, never by replacing engine functions; mark an engine function as a point where DazedTL needs to extend it, rather than wrapping it from outside.
 The base translation rules in [system.md](../backend/dazedtl/engine/data/skills/system.md), the shared prompt templates, field instructions, base glossary and SFX reference live in the engine's [data](../backend/dazedtl/engine/data) directory.
+The base rules are a template on the run's source and target, and the request headings and assistant briefs name the languages from the same [prompt_pair](../backend/dazedtl/engine/util/prompt_pair.py) module; Japanese to English renders exactly as before the languages became a setting, so its runs, estimates and caches stay current.
+The base glossary, the SFX reference and the honorific rules apply to a Japanese source only.
 The base prompt bounds localization to supplied source text to preserve its register without inviting new scene content or assistant responses in game dialogue.
 Existing workspace `engine/shared-data` overrides retain precedence and native path validation.
 Resources are not seeded into profiles, so future default changes reach new preparations without overwriting customizations; frozen run context stays authoritative for execution and recovery.

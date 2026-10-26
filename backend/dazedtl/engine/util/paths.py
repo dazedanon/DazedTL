@@ -12,6 +12,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from util import system
+from util.languages import JAPANESE, active_source
 
 # Product identity (QSettings / desktop / window titles).
 ORG_NAME = "DazedTranslations"
@@ -446,6 +447,16 @@ def glossary_base_path() -> Path:
     return runtime_data_file(GLOSSARY_BASE_PATH)
 
 
+def glossary_base_text() -> str:
+    """The shipped base glossary's terms, which a game's glossary adds below
+    its own: for a Japanese source only, since they are Japanese honorifics
+    and interface words."""
+    if active_source() != JAPANESE:
+        return ""
+    base_path = glossary_base_path()
+    return base_path.read_text(encoding="utf-8") if base_path.is_file() else ""
+
+
 def _game_glossary_paths(
     game_root: str | Path | None,
 ) -> tuple[Path, Path, Path] | None:
@@ -641,9 +652,9 @@ def prepare_game_translation_context(
 
 def _seed_game_glossary_text() -> str:
     """Build an empty game glossary with the current shipped base."""
-    base_path = glossary_base_path()
-    base = base_path.read_text(encoding="utf-8") if base_path.is_file() else ""
-    return _EMPTY_GLOSSARY_PLACEHOLDER + "\n" + GLOSSARY_BASE_SEPARATOR + base
+    return (
+        _EMPTY_GLOSSARY_PLACEHOLDER + "\n" + GLOSSARY_BASE_SEPARATOR + glossary_base_text()
+    )
 
 
 def ensure_game_glossary(game_root: str | Path | None) -> Path:
@@ -732,16 +743,10 @@ def read_active_glossary() -> str:
             if not include_base:
                 return custom + ("\n" if custom else "")
 
-            base_path = glossary_base_path()
-            base = (
-                base_path.read_text(encoding="utf-8")
-                if base_path.is_file()
-                else ""
-            )
+            base = glossary_base_text()
             if not base:
                 return custom + ("\n" if custom else "")
             prefix = custom + "\n\n" if custom else ""
             return prefix + GLOSSARY_BASE_SEPARATOR + base
         return text
-    base_path = glossary_base_path()
-    return base_path.read_text(encoding="utf-8") if base_path.is_file() else ""
+    return glossary_base_text()

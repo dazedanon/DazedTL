@@ -1634,7 +1634,7 @@ class ManualJobs:
         note = "Check whether the visitor or guard left."
         source_context = "門に二人がいる。"
 
-        def contexts(_project, batches):
+        def contexts(_project, batches, _language):
             self.assertEqual(
                 set(batches[0]),
                 {"id", "sources", "speakers", "source_context", "instruction_key"},

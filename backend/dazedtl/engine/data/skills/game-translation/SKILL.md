@@ -13,6 +13,14 @@ description: >-
 End-to-end playbook for translating a Japanese game to English: **detect engine → extract player-facing text → translate behind a locked glossary + game bible → inject/patch → validate in-game**.
 The translation must preserve meaning and character voice in natural English, alongside complete text coverage, stable terminology, and intact game controls.
 
+## Language pair
+
+This skill and its references are written for the default pair, a Japanese game translated into English.
+DazedTL also translates other pairs whose languages use different scripts, such as an English game into Japanese; the brief that starts the run names the pair when it is not Japanese into English, and the request contexts DazedTL compiles carry it.
+For another pair, read Japanese as the game's source language and English as the target wherever the guidance names the languages.
+Guidance about Japanese itself (honorifics, kana and kanji, dropped pronouns, particles, the SFX dictionary and the base glossary's Japanese forms) applies to a Japanese source only, and rules for English text (contractions, the ASCII apostrophe, `System.json.locale` set to `en_US`) apply to an English target only.
+The methodology itself (coverage, extraction, protected controls, fitting, injection, QA and delivery) applies to every pair.
+
 ## One prompt owns the whole run
 
 The default request is a complete local translation and patch delivery. The user selects

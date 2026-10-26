@@ -15,6 +15,7 @@ import re
 import unicodedata
 
 from util.paths import SFX_REFERENCE_PATH, runtime_data_file
+from util.prompt_pair import SFX_HEADING
 
 
 MAX_MATCHED_ENTRIES = 12
@@ -257,7 +258,7 @@ def build_sfx_reference_text(
         return ""
 
     lines = [
-        "Japanese SFX reference (contextual suggestions, not approved fixed translations).",
+        f"{SFX_HEADING} (contextual suggestions, not approved fixed translations).",
         "Choose the sense that fits the scene and render it naturally in the requested target language.",
         "The English equivalents below are semantic hints, not required output wording.",
         "",

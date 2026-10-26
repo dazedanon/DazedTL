@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any
 
 from util import rpgmaker_qa_glossary as glossary_rules
+from util.game_settings import load_language_pair
+from util.prompt_pair import pair_note
 from util.qa.bundles import _load_screen_index
 from util.qa.interface import _place_text
 from util.qa.records import (
@@ -113,6 +115,19 @@ def _skill_values(task_dir: Path, task: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def _languages(task: dict[str, Any]) -> str:
+    """What a brief adds for the game's languages: a note when the game
+    records a pair, which the policy, written for Japanese into English,
+    reads differently."""
+    try:
+        pair = load_language_pair(task["game_root"])
+    except (OSError, ValueError):
+        # A game whose settings can't be read reads as Japanese, as the
+        # census and Lines read it.
+        return ""
+    return pair_note(pair["source"], pair["target"]) if pair else ""
+
+
 def _task_instructions(task_dir: Path, task: dict[str, Any]) -> str:
     """The task README: the QA policy with every role's brief, for this task."""
     intro, sections, focus = _skill_sections(task["focus"])
@@ -120,7 +135,7 @@ def _task_instructions(task_dir: Path, task: dict[str, Any]) -> str:
         f"## {title}\n\n{text}" for title, text in sections.items() if title != "Handoff"
     )
     return _fill(
-        f"# Text QA task\n\nTask: `{task_dir}`\n\n{focus}\n\n{intro}\n\n{body}\n",
+        f"# Text QA task\n\n{_languages(task)}Task: `{task_dir}`\n\n{focus}\n\n{intro}\n\n{body}\n",
         _skill_values(task_dir, task),
     )
 
@@ -142,7 +157,7 @@ def brief(task_dir: str | Path, role: str, worker: str = "") -> str:
             _atomic_write_json(root / "checkpoint.json", checkpoint)
     root, task, _checkpoint = _load_task(task_dir)
     _intro, sections, focus = _skill_sections(task["focus"])
-    parts = [focus] + [
+    parts = [_languages(task) + focus] + [
         f"## {name}\n\n{sections[name]}"
         for name in ("Policy", *_BRIEF_SECTIONS[role], "Commands", "Result formats")
     ]

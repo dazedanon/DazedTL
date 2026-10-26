@@ -55,6 +55,8 @@ from util.paths import (
 from util.provider_costs import cache_read_multiplier, cache_write_multiplier
 from util.project_scanner import find_data_folder
 from util.sfx_reference import sfx_reference_identity
+from util.languages import active_source
+from util.prompt_pair import render as render_prompt, run_language
 from util.skills import load_system_prompt
 from util.translation import (
     buildClaudeRequest,
@@ -1119,9 +1121,10 @@ def _assign_review_samples(
 
 def _build_logical_requests(segments: list[dict], system_prompt: str,
                             glossary: str, batch_size: int,
-                            use_sfx_reference: bool = True) -> list[dict]:
+                            use_sfx_reference: bool = True,
+                            language: str = "English") -> list[dict]:
     config = TranslationConfig(
-        language="English",
+        language=language,
         prompt=system_prompt,
         vocab=glossary,
         batchSize=batch_size,
@@ -1270,7 +1273,11 @@ def build_manifest(files_dir: str | Path, *, target_segments: int = DEFAULT_SEGM
                    system_prompt: str | None = None,
                    glossary: str | None = None,
                    game_root: str | Path | None = None,
-                   use_sfx_reference: bool | None = None) -> dict:
+                   use_sfx_reference: bool | None = None,
+                   language: str | None = None) -> dict:
+    """The evaluation's requests, translating into *language*, the run's
+    target by default."""
+    target = run_language(language)
     if repetitions < 1:
         raise ValueError("Repetitions must be at least 1")
     if batch_size < 1:
@@ -1287,10 +1294,12 @@ def build_manifest(files_dir: str | Path, *, target_segments: int = DEFAULT_SEGM
     )
     if context_root is not None and not context_root.is_dir():
         raise FileNotFoundError(f"RPG Maker game folder does not exist: {context_root}")
-    system = (
+    system = render_prompt(
         load_system_prompt(context_root)
         if system_prompt is None
-        else system_prompt
+        else system_prompt,
+        active_source(),
+        target,
     )
     active_glossary = (
         read_game_glossary(context_root)
@@ -1320,7 +1329,7 @@ def build_manifest(files_dir: str | Path, *, target_segments: int = DEFAULT_SEGM
             "useSfxReference", "true"
         ).strip().lower() in ("true", "1", "yes")
     requests = _build_logical_requests(
-        segments, system, active_glossary, batch_size, use_sfx_reference
+        segments, system, active_glossary, batch_size, use_sfx_reference, target
     )
     _validate_request_output_capacity(requests)
     stability_ids = _stability_request_ids(
@@ -1346,7 +1355,7 @@ def build_manifest(files_dir: str | Path, *, target_segments: int = DEFAULT_SEGM
         "created_at": _utc_now(),
         "source_dir": str(data_dir),
         "game_root": str(context_root) if context_root is not None else "",
-        "target_language": "English",
+        "target_language": target,
         "batch_size": batch_size,
         "sample_size": batch_size,
         "requested_segments": target_segments,

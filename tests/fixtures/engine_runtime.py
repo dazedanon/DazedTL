@@ -368,10 +368,13 @@ try:
 
     check_response("guided_inspect", views.job(app.guided.run_view(job["id"])))
     assert (game / "Items.json").read_bytes() == original
+    # The run freezes the base rules rendered for its languages.
+    from util.prompt_pair import render_for_run
+
     frozen = manual.folder(job["id"]) / "context/system.md"
-    assert (
-        frozen.read_bytes()
-        == (root / "backend/dazedtl/engine/data/skills/system.md").read_bytes()
+    assert frozen.read_bytes() == render_for_run(
+        (root / "backend/dazedtl/engine/data/skills/system.md").read_bytes(),
+        json.loads((manual.folder(job["id"]) / "plan.json").read_text())["settings"],
     )
     # Already-translated 101 names used to disappear from requests. Bracketed
     # tutorial prose also took the short-name prompt and became a bogus label.

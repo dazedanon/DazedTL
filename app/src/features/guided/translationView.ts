@@ -1,9 +1,10 @@
-import type {
-  FileLines,
-  GuidedState,
-  Job,
-  Phase,
-  RunPayload,
+import {
+  type FileLines,
+  type GuidedState,
+  type Job,
+  type Phase,
+  REQUEST_HEADINGS,
+  type RunPayload,
 } from "../../api/contracts.ts";
 import { type DisplayState, displayLabels } from "../../ui/displayStatus.ts";
 
@@ -873,6 +874,14 @@ export function translatedLines(
     : null;
 }
 
+const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// The matched glossary and SFX reference that follow a request's static prompt.
+const MATCHED = `(?:${escaped(REQUEST_HEADINGS.glossary)}|${escaped(REQUEST_HEADINGS.sfx)})`;
+const AFTER_PROMPT = new RegExp(
+  `^\`\`\`[\\s\\S]*?\\n\`\`\`\\s*(?=${MATCHED}|$)`,
+);
+const MATCHED_START = new RegExp(`^${MATCHED}`);
+
 /** Read only identifiable per-request blocks; never substitute today's glossary. */
 export function requestContext(payload: RunPayload) {
   const text = (value: unknown): string =>
@@ -894,23 +903,19 @@ export function requestContext(payload: RunPayload) {
     .map((value) =>
       Array.isArray(value)
         ? text(value.slice(1))
-        : text(value).replace(
-            /^```[\s\S]*?\n```\s*(?=Here are glossary entries|Japanese SFX reference|$)/,
-            "",
-          ),
+        : text(value).replace(AFTER_PROMPT, ""),
     )
-    .filter((value) =>
-      /^(Here are glossary entries|Japanese SFX reference)/.test(value.trim()),
-    );
+    .filter((value) => MATCHED_START.test(value.trim()));
   const context = payload.context as {
     source_items?: string[];
     instructions?: string[];
   } | null;
-  const section = (prefix: string) =>
+  const section = (prefixes: readonly string[]) =>
     messages
       .filter(
         (message) =>
-          message.role === "user" && text(message.content).startsWith(prefix),
+          message.role === "user" &&
+          prefixes.some((prefix) => text(message.content).startsWith(prefix)),
       )
       .map((message) => {
         const content = text(message.content);
@@ -925,15 +930,15 @@ export function requestContext(payload: RunPayload) {
     {
       title: "Preceding scene context",
       text: (
-        context?.source_items || section("Preceding Japanese Source Context")
+        context?.source_items || section(REQUEST_HEADINGS.sourceContext)
       ).join("\n"),
       notes: false,
     },
     {
       title: "Request-specific instructions",
-      text: (context?.instructions || section("Request Instructions:")).join(
-        "\n",
-      ),
+      text: (
+        context?.instructions || section([REQUEST_HEADINGS.instructions])
+      ).join("\n"),
       notes: true,
     },
   ].filter((section) => section.text.trim());

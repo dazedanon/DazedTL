@@ -20,12 +20,14 @@ from util.languages import (
     MARKUP,
     SOURCE_ENV,
     SOURCE_LANGUAGES,
+    active_source,
     pair_problem,
     reading,
     script,
     source_language,
     source_pattern,
 )
+from util.prompt_pair import pair_note, request_headings
 
 __all__ = [
     "DEFAULT_SOURCE",
@@ -36,12 +38,15 @@ __all__ = [
     "MARKUP",
     "SOURCE_ENV",
     "SOURCE_LANGUAGES",
+    "active_source",
     "game_source",
     "load_language_pair",
+    "pair_note",
     "pair_problem",
     "read_source",
     "reading",
     "reading_game",
+    "request_headings",
     "script",
     "source_language",
     "source_pattern",

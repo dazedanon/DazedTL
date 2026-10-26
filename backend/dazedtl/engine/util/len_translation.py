@@ -13,9 +13,11 @@ from types import SimpleNamespace
 from util import system
 from util.paths import (
     DATA_DIR, GLOSSARY_BASE_SEPARATOR, LEN_PATCH_GITIGNORE_BEGIN, LEN_WORK_GITIGNORE_BEGIN,
-    LEN_WORK_GITIGNORE_END, SKILLS_DIR, game_glossary_path, runtime_data_file, runtime_data_files_pinned, prepare_game_translation_context, read_game_glossary,
-    without_gitignore_section,
+    LEN_WORK_GITIGNORE_END, SKILLS_DIR, game_glossary_path, glossary_base_text, runtime_data_file, runtime_data_files_pinned,
+    prepare_game_translation_context, read_game_glossary, without_gitignore_section,
 )
+from util.languages import active_source
+from util.prompt_pair import pair_note, render as render_prompt, run_language
 from util.skills import load_generic_project_setup, load_project_setup, load_system_prompt
 from util.reference_games import load_registry, reference_context
 from util.project_preparation import rpgmaker_layout
@@ -119,21 +121,23 @@ def _validate_skill(root: Path) -> None:
         raise ValueError("Incomplete game-translation skill: missing references/")
 
 
-def shared_context(project: LenProject) -> dict:
-    """Read the same portable guidance used by Workflow, without changing process settings."""
+def shared_context(project: LenProject, language: str | None = None) -> dict:
+    """Read the same portable guidance used by Workflow, without changing process settings,
+    for translating the active source language into *language*, the run's by default."""
+    language = run_language(language)
     _validate_project(project)
     prepare_game_translation_context(project.game_root)
     glossary = read_game_glossary(project.game_root)
     custom = glossary.split(GLOSSARY_BASE_SEPARATOR, 1)[0].rstrip()
     # The shared editor owns the custom section; refreshed shipped defaults are derived.
-    base = runtime_data_file(DATA_DIR / "glossary_base.txt")
+    base = glossary_base_text() if project.include_glossary_base else ""
     glossary = custom + "\n"
-    if project.include_glossary_base and base.is_file():
-        glossary += "\n" + GLOSSARY_BASE_SEPARATOR + base.read_text(encoding="utf-8")
+    if base:
+        glossary += "\n" + GLOSSARY_BASE_SEPARATOR + base
     context = {
         "schema": 1,
         "game_root": str(project.game_root),
-        "system": load_system_prompt(project.game_root),
+        "system": render_prompt(load_system_prompt(project.game_root), active_source(), language),
         "glossary": glossary,
         "glossary_file": str(game_glossary_path(project.game_root, migrate=False)),
         "skills_folder": str(project.game_root / ".dazedtl" / "skills"),
@@ -172,7 +176,7 @@ def _line_speakers(sources, speakers):
 def request_context(project: LenProject, sources: list[str] | dict[str, str], *,
                     instruction_key: str | None = None, source_context: str = "",
                     speakers: list[str | None] | dict[str, str | None] | None = None,
-                    _shared=None, _reference_pack=None) -> dict:
+                    language: str | None = None, _shared=None, _reference_pack=None) -> dict:
     """Compile one batch with DazedTL's actual glossary/SFX matching and current instructions.
 
     No provider calls. Pipelines consume these fields directly instead of rebuilding prompts.
@@ -187,9 +191,10 @@ def request_context(project: LenProject, sources: list[str] | dict[str, str], *,
         raise ValueError("Source IDs must be nonempty strings.")
     line_speakers = _line_speakers(sources, speakers)
     speaker_names = list(line_speakers.values()) if isinstance(line_speakers, dict) else line_speakers or []
-    shared = _shared if _shared is not None else shared_context(project)
+    language = run_language(language)
+    shared = _shared if _shared is not None else shared_context(project, language)
     payload = json.dumps(sources, ensure_ascii=False)
-    config = SimpleNamespace(prompt=shared["system"], vocab=shared["glossary"], language="English", useSfxReference=True)
+    config = SimpleNamespace(prompt=shared["system"], vocab=shared["glossary"], language=language, useSfxReference=True)
     system, glossary, sfx, user = createContextParts(
         config, payload, "json", speaker_names=tuple(dict.fromkeys(name for name in speaker_names if name)),
     )
@@ -208,7 +213,7 @@ def request_context(project: LenProject, sources: list[str] | dict[str, str], *,
     result = {
         "schema": 1, "context_sha256": shared["content_sha256"],
         "system": system, "glossary": glossary, "sfx_reference": sfx,
-        "request_instructions": ctx(instruction_key, language="English", context=source_context) if instruction_key else "",
+        "request_instructions": ctx(instruction_key, language=language, context=source_context) if instruction_key else "",
         "preceding_japanese_source_context": source_context,
         "user": user,
         "reference_translations": (_reference_pack if _reference_pack is not None
@@ -236,14 +241,16 @@ def _reference_subset(references, sources):
     return pack
 
 
-def request_contexts(project: LenProject, batches: list[dict]) -> list[dict]:
-    """Compile a scene-ordered set with one guidance load and one reference census.
+def request_contexts(project: LenProject, batches: list[dict], language: str | None = None) -> list[dict]:
+    """Compile a scene-ordered set with one guidance load and one reference census,
+    translating into *language*, the run's by default.
 
     Returned requests are identical to independent request_context calls. A changed
     dependency aborts the whole operation; no persistent cache can bless stale work.
     """
     if not isinstance(batches, list) or not batches:
         raise ValueError("Supply a nonempty list of context batches.")
+    language = run_language(language)
     identities = set()
     sources = []
     for batch in batches:
@@ -262,16 +269,16 @@ def request_contexts(project: LenProject, batches: list[dict]) -> list[dict]:
     # big compile thousands of path lookups, which Windows makes slow. The
     # check below looks again.
     with runtime_data_files_pinned():
-        shared = shared_context(project)
+        shared = shared_context(project, language)
         references = reference_context(project.game_root, sources)
         result = []
         for batch in batches:
             values = batch["sources"]
             pack = _reference_subset(references, values)
             request = request_context(project, **{key: value for key, value in batch.items() if key != "id"},
-                                      _shared=shared, _reference_pack=pack)
+                                      language=language, _shared=shared, _reference_pack=pack)
             result.append({"id": batch["id"], "sources": batch["sources"], "context": request})
-    if shared_context(project)["content_sha256"] != shared["content_sha256"] or reference_context(project.game_root, sources) != references:
+    if shared_context(project, language)["content_sha256"] != shared["content_sha256"] or reference_context(project.game_root, sources) != references:
         raise ValueError("Guidance or references changed during compilation; retry the entire operation.")
     return result
 
@@ -379,6 +386,7 @@ def import_glossary(project: LenProject, document: dict) -> dict:
 
 def build_handoff(project: LenProject, skill_root: Path = BUNDLED_SKILL, *, desktop_workspace=None) -> str:
     _validate_project(project)
+    source, target = active_source(), run_language()
     mode = (
         "Translate with the coding assistant's existing access. No DazedTL translation API calls, "
         "API-driver setup or hosted image generation are authorized. Delegation follows the user's instructions."
@@ -391,10 +399,10 @@ def build_handoff(project: LenProject, skill_root: Path = BUNDLED_SKILL, *, desk
         "Never silently switch to Live requests. Copying this prompt does not approve an unknown bill."
     )
     images = (
-        "Translate all images containing player-facing Japanese text, including archived assets, UI states "
+        f"Translate all images containing player-facing {source} text, including archived assets, UI states "
         "and animation frames; fit and validate their text in game. This opts into the skill's image scope."
         if project.include_images else
-        "Image translation is excluded. Report remaining baked Japanese labels separately."
+        f"Image translation is excluded. Report remaining baked {source} labels separately."
     )
     desktop_note = ""
     if desktop_workspace is not None:
@@ -405,7 +413,7 @@ def build_handoff(project: LenProject, skill_root: Path = BUNDLED_SKILL, *, desk
                         "For custom Python provider adapters, call desktop.backend.cli_environment.configure "
                         "with this path before importing translation/provider modules. Do not copy credentials "
                         "into scripts, command arguments, prompts or game files.\n")
-    return f"""Use Len's game-translation skill to translate this Japanese game into English and deliver a validated local patch.
+    return f"""{pair_note(source, target)}Use Len's game-translation skill to translate this {source} game into {target} and deliver a validated local patch.
 
 Game folder: {json.dumps(str(project.game_root), ensure_ascii=False)}
 Skill entrypoint: {json.dumps(str(skill_root / 'SKILL.md'), ensure_ascii=False)}
@@ -427,7 +435,7 @@ Install Forge for MV/MZ: {json.dumps(project.install_forge)}. The preparation he
 
 Use this game's shared .dazedtl/glossary.txt and .dazedtl/skills/*.md as authoritative guidance. Read setup.md in the workspace and complete its guidance phase yourself before continuing; its guidance-only boundary ends with that phase. Refresh context.json through the live context/context-many helpers after guidance changes. Extract speaker metadata and handle user-supplied reference games yourself. Keep authored tools, translations and QA records in the workspace's work/ folder and back up ignored work separately.
 
-Before creating a missing original baseline, verify the selected folder is still untranslated and pass --current-is-untranslated to git-setup, or supply --original with a verified matching source. This is an agent check, not a user task or a requirement for a second download. Normal tool preparation does not make a game translated. Never replace a known Japanese baseline with current English. Preserve source metadata during injection, use the MV/MZ source-preserving writer where applicable, and synchronize the reviewed runtime patch with git-scope before local checkpoint commits.
+Before creating a missing original baseline, verify the selected folder is still untranslated and pass --current-is-untranslated to git-setup, or supply --original with a verified matching source. This is an agent check, not a user task or a requirement for a second download. Normal tool preparation does not make a game translated. Never replace a known {source} baseline with current {target}. Preserve source metadata during injection, use the MV/MZ source-preserving writer where applicable, and synchronize the reviewed runtime patch with git-scope before local checkpoint commits.
 
 Maintain status.md and progress.json yourself using progress-update after saved batches and milestones, at least every 10 minutes during active work, and before long waits or handoff. Show completed/discovered units, coverage status, phase, estimated remaining active work, next checkpoint and any blocker. Keep translation, review, images, injection, runtime QA and packaging distinct. The user should be able to watch progress without maintaining files or issuing phase prompts.
 
