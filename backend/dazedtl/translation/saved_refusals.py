@@ -86,7 +86,9 @@ def find(document, original=lambda: None):
             return
         for key, child in pairs:
             if isinstance(child, str):
-                if fields:
+                # An empty source excuses no note, which finds every
+                # candidate first.
+                if fields and line_refusal(child, ""):
                     strings.append(((*path, key), child))
             elif isinstance(child, (dict, list)):
                 walk(
@@ -101,12 +103,7 @@ def find(document, original=lambda: None):
     walk(document, ())
     # Outside event commands the engine keeps every value where the original
     # has it, so a value without `_original` takes the original's at its path.
-    # An empty source excuses no note, which finds every candidate first.
-    candidates = [
-        (path, value)
-        for path, value in strings
-        if path not in covered and line_refusal(value, "")
-    ]
+    candidates = [(path, value) for path, value in strings if path not in covered]
     source_document = original() if candidates else None
     for path, value in candidates:
         try:

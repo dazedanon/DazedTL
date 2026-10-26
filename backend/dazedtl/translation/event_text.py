@@ -98,13 +98,6 @@ def builtin_hits(raw, builtins):
     return found
 
 
-def _size(path):
-    try:
-        return path.stat().st_size
-    except OSError:
-        return 0
-
-
 def original_commands(value):
     """A file's event commands as the original game had them: a translated
     command reads the `_original` the engine kept, for a file whose original
@@ -220,48 +213,45 @@ class EventText:
         # Each selected event file's built-in matches, once per file content
         # and parser definitions.
         builtins = {key: catalog_builtins(catalog, key) for key in SELECTORS}
-        section, used = HITS, set()
+        section, found = HITS, {}
         missing, waiting = {}, set()
         for relative, (identity, path) in event_inputs.items():
             name = derived.key(dependencies[relative], catalog["fingerprint"])
-            used.add(name)
             if store.has(section, name):
-                continue
-            if defer and store.pending(section, name):
+                found[name] = store.get(section, name)
+            elif defer and store.pending(section, name):
                 waiting.add(relative)
             else:
                 missing[relative] = (identity, path, name)
         if defer and missing:
-            readable = {
-                relative: row
-                for relative, row in missing.items()
-                if store.readable(section, row[2])
-            }
-            sizes = {
-                relative: store.get(ORIGINALS, identity["original"])[1]
-                if "original" in identity
-                else _size(path)
-                for relative, (identity, path, _name) in readable.items()
-            }
-            if sum(sizes.values()) > derived.INLINE_BYTES:
-                store.read(
-                    [
-                        {
-                            "kind": "hits",
-                            "section": section,
-                            "key": name,
-                            "size": sizes[relative],
-                            "source": str(root),
-                            "blob": identity.get("original"),
-                            "path": str(path),
-                            "builtins": builtins,
-                        }
-                        for relative, (identity, path, name) in readable.items()
-                    ]
-                )
-                waiting.update(readable)
-                for relative in readable:
-                    del missing[relative]
+
+            def task(relative, size):
+                identity, path, name = missing[relative]
+                return {
+                    "kind": "hits",
+                    "section": section,
+                    "key": name,
+                    "size": size,
+                    "source": str(root),
+                    "blob": identity.get("original"),
+                    "path": str(path),
+                    "digest": dependencies[relative],
+                    "builtins": builtins,
+                }
+
+            handed = store.defer(
+                section,
+                {relative: row[2] for relative, row in missing.items()},
+                lambda relative: (
+                    store.get(ORIGINALS, missing[relative][0]["original"])[1]
+                    if "original" in missing[relative][0]
+                    else derived.size(missing[relative][1])
+                ),
+                task,
+            )
+            waiting.update(handed)
+            for relative in handed:
+                del missing[relative]
         by_blob = {
             identity["original"]: name
             for identity, _path, name in missing.values()
@@ -269,10 +259,16 @@ class EventText:
         }
         if by_blob:
             for blob, raw in engine.original_blobs(root, list(by_blob)):
-                store.put(section, by_blob[blob], builtin_hits(raw, builtins))
-        for identity, path, name in missing.values():
+                found[by_blob[blob]] = builtin_hits(raw, builtins)
+                store.put(section, by_blob[blob], found[by_blob[blob]])
+        for relative, (identity, path, name) in missing.items():
             if "original" not in identity:
-                store.put(section, name, builtin_hits(path.read_bytes(), builtins))
+                raw = path.read_bytes()
+                found[name] = builtin_hits(raw, builtins)
+                # Matches of bytes that changed since their digest hold for
+                # this look only.
+                if digest(raw) == dependencies[relative]:
+                    store.put(section, name, found[name])
         value = {
             "version": REQUEST_VERSION,
             "project_id": project_id,
@@ -295,17 +291,16 @@ class EventText:
         else:
             hits = {key: [] for key in SELECTORS}
             for relative in event_inputs:
-                found = store.get(
-                    section,
-                    derived.key(dependencies[relative], catalog["fingerprint"]),
-                )
+                matches = found[
+                    derived.key(dependencies[relative], catalog["fingerprint"])
+                ]
                 for key in SELECTORS:
-                    hits[key].extend(found[key])
+                    hits[key].extend(matches[key])
             value["builtins"] = {
                 key: sorted(set(markers)) for key, markers in hits.items()
             }
             # Files and definitions change; keep only what this scope reads.
-            store.keep(section, used)
+            store.keep(section, set(found))
             store.keep(ORIGINALS, set(originals.values()))
             store.save()
         return {**value, "fingerprint": digest(value)}

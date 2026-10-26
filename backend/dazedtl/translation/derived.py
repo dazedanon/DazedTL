@@ -19,6 +19,7 @@ saved. Execution and explicit inspection read for themselves.
 
 import json
 import os
+import secrets
 import subprocess
 import sys
 import threading
@@ -46,6 +47,14 @@ _lock = threading.Lock()
 def key(*parts):
     """A section key: its parts as compact JSON."""
     return json.dumps(parts, ensure_ascii=False, separators=(",", ":"))
+
+
+def size(path):
+    """A file's size in bytes, 0 when it cannot be read."""
+    try:
+        return Path(path).stat().st_size
+    except OSError:
+        return 0
 
 
 def store(folder):
@@ -147,19 +156,49 @@ class Store:
                     separators=(",", ":"),
                 ).encode("utf-8")
                 self.changed = False
+            # Beside the store and never creating its folder, which Start over
+            # may remove meanwhile.
+            temporary = self.path.with_name(f".{NAME}.{secrets.token_hex(4)}.tmp")
             try:
-                system.write_bytes(self.path, raw)
+                with open(temporary, "xb") as stream:
+                    stream.write(raw)
+                system.replace(temporary, self.path)
             except OSError:
+                system.unlink(temporary, missing_ok=True, ignore_errors=True)
                 with self.lock:
                     self.changed = True  # The next look saves again.
+
+    def defer(self, section, missing, size, task):
+        """Hands values a look misses to readers when reading them would hold
+        it too long; returns the names it handed. `missing` maps each name
+        to its key in `section`, `size(name)` gives the bytes it reads and
+        `task(name, size)` its reader task. A value a reader failed stays
+        with the look."""
+        with self.lock:
+            readable = [
+                name
+                for name, key in missing.items()
+                if (section, key) not in self.failed
+            ]
+        sizes = {name: size(name) for name in readable}
+        if sum(sizes.values()) <= INLINE_BYTES:
+            return []
+        self.read([task(name, sizes[name]) for name in readable])
+        return readable
 
     def pending(self, section, name):
         """Whether a reader is reading the value now."""
         with self.lock:
             return (section, name) in self.reading
 
+    def fail(self, section, name):
+        """Notes a value no reader can read in this backend, such as an
+        original Git cannot give, so looks stop asking for it."""
+        with self.lock:
+            self.failed.add((section, name))
+
     def readable(self, section, name):
-        """Whether a reader may read the value: none failed it."""
+        """Whether the value may be read: none failed it."""
         with self.lock:
             return (section, name) not in self.failed
 
@@ -275,7 +314,7 @@ def run(tasks, emit):
             continue
         try:
             value = _read(task, git_blobs)
-        except OSError, ValueError:
+        except OSError, ValueError, Unread:
             continue  # The backend reads it again, and reports what fails.
         emit(task["section"], task["key"], value)
         names = task.get("names")
@@ -307,9 +346,25 @@ def _hits(raw, task):
     return builtin_hits(raw, task["builtins"])
 
 
+class Unread(Exception):
+    """An input a value needs that could not be read, such as an original
+    Git did not give; the value is left to the look, which keeps none."""
+
+
+def current(path, expected):
+    """A file's bytes, while they are still those of digest `expected`,
+    which a value read from them is kept under."""
+    from .files import digest
+
+    raw = Path(path).read_bytes()
+    if digest(raw) != expected:
+        raise Unread
+    return raw
+
+
 def _read(task, git_blobs):
     if task["kind"] == "hits":
-        return _hits(Path(task["path"]).read_bytes(), task)
+        return _hits(current(task["path"], task["digest"]), task)
     from dazedtl.languages import reading
 
     from .file_lines import read_counts
@@ -321,9 +376,9 @@ def _read(task, git_blobs):
         try:
             return decode_json(git_blobs.original_bytes(source, blob))
         except OSError, ValueError:
-            return None
+            raise Unread from None
 
-    raw = Path(task["path"]).read_bytes()
+    raw = current(task["path"], task["digest"])
     with reading(*task["pair"]):
         return read_counts(
             task["name"],

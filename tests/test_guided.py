@@ -4136,11 +4136,13 @@ class GuidedTests(unittest.TestCase):
             )
             self.assertEqual(counting, [])
             # A rule change counts again.
-            with patch.object(file_lines, "COUNT_VERSION", 2):
+            with (
+                patch.object(file_lines, "COUNT_VERSION", 2),
+                patch.object(derived.Store, "read") as read,
+            ):
                 inputs.line_counts(phases, frozenset(), counting)
             self.assertEqual(sorted(counting), sorted(phases))
-            for process in list(derived.store(self.folder).processes):
-                process.wait(timeout=8)
+            self.assertEqual(len(read.call_args.args[0]), 2)
 
     def test_a_look_waits_for_event_files_without_reading_findings_out_of_date(self):
         # A look left many event files' built-in matches to readers; until

@@ -40,6 +40,14 @@ def display_name(raw, ace=False):
         return None  # A shape the reader does not know holds no name it reads.
 
 
+def original_blob(identity):
+    """The Git blob of a file's original game file and whether it is VX Ace's
+    own (rvdata2); (None, False) without one."""
+    native = identity.get("native_original") or {}
+    blob = identity.get("original") or native.get("blob")
+    return blob, bool(blob) and "native_original" in identity
+
+
 def original_bindings(record):
     result = {}
     for row in record["inputs"].values():
@@ -346,50 +354,65 @@ class GuidedInputs:
             used.add(key)
             if store.has(section, key):
                 found[name] = store.get(section, key)
-            elif not store.pending(section, key):
-                missing[name] = (phase, path, key)
-            elif counting is not None:
+            elif counting is not None and store.pending(section, key):
                 counting.append(name)
             else:
-                missing[name] = (phase, path, key)
+                missing[name] = (phase, path, key, fingerprint)
         if counting is not None and missing:
-            readable = {
-                name: row
-                for name, row in missing.items()
-                if store.readable(section, row[2])
-            }
-            sizes = {}
-            for name, (_phase, path, _key) in readable.items():
-                try:
-                    sizes[name] = path.stat().st_size
-                except OSError:
-                    sizes[name] = 0
-            if sum(sizes.values()) > derived.INLINE_BYTES:
-                store.read(
-                    [
-                        self._count_task(
-                            name, phase, path, key, markers, pair, identities, sizes
-                        )
-                        for name, (phase, path, key) in readable.items()
-                    ]
-                )
-                counting.extend(readable)
-                for name in readable:
-                    del missing[name]
-        for name, (phase, path, key) in missing.items():
+
+            def task(name, size):
+                phase, path, key, fingerprint = missing[name]
+                blob, ace = original_blob(identities[name])
+                return {
+                    "kind": "lines",
+                    "section": section,
+                    "key": key,
+                    "size": size,
+                    "name": name,
+                    "path": str(path),
+                    "digest": fingerprint,
+                    "phase": phase,
+                    "markers": sorted(markers),
+                    "original": identities[name].get("original"),
+                    "source": str(self.source),
+                    "pair": list(pair),
+                    "names": [blob, ace] if blob else None,
+                    "names_section": NAMES_SECTION,
+                }
+
+            handed = store.defer(
+                section,
+                {name: row[2] for name, row in missing.items()},
+                lambda name: derived.size(missing[name][1]),
+                task,
+            )
+            counting.extend(handed)
+            for name in handed:
+                del missing[name]
+        for name, (phase, path, key, fingerprint) in missing.items():
             try:
                 raw = path.read_bytes()
             except OSError:
                 continue
+            unread = []
+
+            def original(name=name, unread=unread):
+                blob = identities[name].get("original")
+                if not blob:
+                    return None
+                try:
+                    return decode_json(self.original_bytes(self.source, blob))
+                except OSError, ValueError:
+                    unread.append(blob)
+                    return None
+
             found[name] = read_counts(
-                name,
-                raw,
-                phase,
-                markers,
-                identities[name].get("original"),
-                lambda name=name: self.original_document(name),
+                name, raw, phase, markers, identities[name].get("original"), original
             )
-            store.put(section, key, found[name])
+            # Counts read without an original Git failed to give, or from
+            # bytes that changed since their digest, hold for this look only.
+            if not unread and digest(raw) == fingerprint:
+                store.put(section, key, found[name])
         if counting is None or not counting:
             # Files change with every run; keep only their current versions.
             store.keep(section, used)
@@ -411,29 +434,6 @@ class GuidedInputs:
         store.save()
         return result
 
-    def _count_task(self, name, phase, path, key, markers, pair, identities, sizes):
-        """What a reader needs to count one file (derived.run)."""
-        from .file_lines import COUNT_VERSION
-
-        identity = identities[name]
-        native = identity.get("native_original") or {}
-        blob = identity.get("original") or native.get("blob")
-        return {
-            "kind": "lines",
-            "section": f"lines/{COUNT_VERSION}",
-            "key": key,
-            "size": sizes[name],
-            "name": name,
-            "path": str(path),
-            "phase": phase,
-            "markers": sorted(markers),
-            "original": identity.get("original"),
-            "source": str(self.source),
-            "pair": list(pair),
-            "names": [blob, "native_original" in identity] if blob else None,
-            "names_section": NAMES_SECTION,
-        }
-
     def original_names(self, names, *, whole=False):
         """The original game file's map display name for each named file,
         read once per original version; None where no original is known.
@@ -445,13 +445,14 @@ class GuidedInputs:
         identities = self.identities(list(names))
         blobs = {}
         for name in names:
-            identity = identities[name]
-            native = identity.get("native_original") or {}
-            blob = identity.get("original") or native.get("blob")
+            blob, ace = original_blob(identities[name])
             if blob:
-                blobs[name] = (blob, "native_original" in identity)
+                blobs[name] = (blob, ace)
         unknown = [
-            blob for blob, _ in blobs.values() if not store.has(NAMES_SECTION, blob)
+            blob
+            for blob, _ in blobs.values()
+            if not store.has(NAMES_SECTION, blob)
+            and store.readable(NAMES_SECTION, blob)
         ]
         if unknown:
             native = {blob for blob, ace in blobs.values() if ace}
@@ -459,7 +460,11 @@ class GuidedInputs:
                 for blob, raw in self.original_blobs(self.source, unknown):
                     store.put(NAMES_SECTION, blob, display_name(raw, blob in native))
             except OSError, ValueError:
-                pass  # Without Git's originals, the names stay out of scope.
+                # Without Git's originals, the names stay out of scope; this
+                # backend asks Git for them no more.
+                for blob in unknown:
+                    if not store.has(NAMES_SECTION, blob):
+                        store.fail(NAMES_SECTION, blob)
         if whole:
             store.keep(NAMES_SECTION, {blob for blob, _ in blobs.values()})
         return {name: store.get(NAMES_SECTION, blobs[name][0]) for name in blobs}
