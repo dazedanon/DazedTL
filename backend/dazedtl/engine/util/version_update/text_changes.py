@@ -25,7 +25,7 @@ from util.languages import DEFAULT_SOURCE
 from util.languages import source_pattern
 from util.rpgmaker_plugin_registry import PluginRegistryError, plugin_entries
 
-from .git_workflow import GitWorkflowError, UpdatePreview, inspect_repository, merged_file, _tree_files
+from .git_workflow import GitWorkflowError, UpdatePreview, game_prefix, merged_file, _tree_files
 from .json_merge import expand
 from .script_merge import is_plugin_registry, paired_lines, quoted_text
 from util import system
@@ -313,10 +313,9 @@ def text_changes(game_root: str | Path, preview: UpdatePreview) -> TextChanges:
         # Its run start reports the problem; the preview reads Japanese.
         language = DEFAULT_SOURCE
     text_pattern = re.compile(source_pattern("update_text", language))
-    status = inspect_repository(game)
-    if not status.repo_root:
-        raise GitWorkflowError("The game is not in a Git repository")
-    repo, prefix = status.repo_root, status.game_prefix
+    # The preview found the repository just now.
+    repo = preview.repo_root
+    prefix = game_prefix(repo, game)
     full = (lambda path: f"{prefix}/{path}") if prefix else (lambda path: path)
     base_tree = preview.baseline_tree or f"{preview.original_commit}^{{tree}}"
     trees = {

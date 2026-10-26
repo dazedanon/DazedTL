@@ -70,6 +70,7 @@ from util.qa.selection import (
 from util.qa.interface import (
     CAPTURE_RECORD,
     CAPTURE_SCHEMA,
+    capture_outdated,
     _fit_checks,
     interface_capture,
     INTERFACE_FOLDER,
@@ -158,10 +159,12 @@ from util.qa.prepare import (
     CURRENT_FILE,
     _earlier_reviews,
     find_latest_task,
+    game_text,
     inventory_matches,
     prepare_task,
     replaced_by,
     require_current,
     SCOPE_FILE,
+    text_digest,
 )
 from util.qa.rebuild import rebuild_deep_from_screen

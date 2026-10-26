@@ -223,6 +223,11 @@ task, state = qa.prepare_task(
     kept=kept,
 )
 assert state["stage"] == "screen", state
+# The app binds the task to the text it reviewed, read from the game without
+# building an inventory.
+assert qa.game_text(data, "release") == qa.text_digest(
+    json.loads((task / "inventory.json").read_text(encoding="utf-8"))
+)
 forced = json.loads((task / "checkpoint.json").read_text())["deep"]["candidate_reasons"]
 # Japanese residue forces deep review, and so does a likely header slip.
 assert {
@@ -1090,6 +1095,9 @@ def message(source):
 
 
 assert message("よく来たね、アリナちゃん") == "Welcome back."
+assert qa.game_text(data, "release") == qa.text_digest(
+    qa.build_manifest(data, "release")
+)
 # The correction of the re-screened line applies only outside the declined scene.
 assert [
     command["parameters"][0]

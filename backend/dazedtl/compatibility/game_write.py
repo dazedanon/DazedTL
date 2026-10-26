@@ -52,6 +52,8 @@ from dazedtl.translation.files import digest, project_path
 from dazedtl.translation.git_status_cache import RepositoryStatusCache
 
 if TYPE_CHECKING:
+    from util.version_update.git_workflow import Checkout
+
     from .checkpoint_commits import Checkpoint
 
 # The game folders a gateway is writing to in this context.
@@ -63,8 +65,8 @@ unrecorded = ContextVar("game_writes_unrecorded", default=frozenset())
 # game's original files.
 requesting = ContextVar("game_writes_requesting", default=False)
 # Git's metadata alone decides whether a checkout can take a write, so while
-# it is unchanged a write's check costs a few file stats, not a dozen Git
-# processes, which Windows starts slowly.
+# it is unchanged a write's check costs a few file stats, not the three Git
+# processes of a read, which Windows starts slowly.
 _statuses = RepositoryStatusCache(stable=True)
 
 
@@ -143,8 +145,8 @@ class GameWrite:
         self.everything = True
 
 
-def _checkout(root):
-    """The status of the game's own repository when its Git is set up, which
+def _checkout(root) -> Checkout | None:
+    """The read of the game's own repository when its Git is set up, which
     takes a checkpoint of each write, or None; refuses while the checkout
     can't take the write."""
     # A game takes translation work only in a repository of its own; one
@@ -153,16 +155,27 @@ def _checkout(root):
 
     if not game_git_set_up(root):
         return None
-    from util.len_git import git_status
-    from util.len_translation import LenProject
-
     from dazedtl.translation.operations import checkout_issue
 
-    status = _statuses.get(str(root), root, lambda: git_status(LenProject(root)))
-    if not status.get("configured"):
+    status = _statuses.get(str(root), root, lambda: _read(root))
+    if status is None or not status.configured:
         return None
-    if issue := checkout_issue(status):
+    if issue := checkout_issue(vars(status)):
         raise ValueError(issue)
+    return status
+
+
+def _read(root):
+    """The read of the game's repository, refusing a game whose settings it
+    can't read or whose DazedTL folders are links, as a checkpoint would
+    fail or write elsewhere after the write."""
+    from util.len_translation import LenProject, _validate_project
+    from util.version_update.git_workflow import read_checkout
+
+    _validate_project(LenProject(root))
+    status = read_checkout(root)
+    if status is not None and status.configured:
+        status.preserve_game_files  # noqa: B018
     return status
 
 
@@ -270,7 +283,7 @@ def write_game(
         raise ValueError(blocked)
     change = checkpoint_commits.current(action, summary, stage)
     point = (
-        checkpoint_commits.Checkpoint(root, paths, change)
+        checkpoint_commits.Checkpoint(root, paths, change, status)
         if outermost and status is not None
         else None
     )

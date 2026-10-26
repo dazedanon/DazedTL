@@ -8,8 +8,9 @@ from datetime import datetime
 from pathlib import Path
 
 from dazedtl import system
+from dazedtl.freshness import Basis, compare
 from dazedtl.projects import location
-from dazedtl.storage import write_json
+from dazedtl.storage import exclusive, write_json
 from dazedtl.translation import publication
 from dazedtl.translation.files import (
     decode_json,
@@ -53,29 +54,91 @@ def _finding_kind(row):
     return "review"
 
 
-def binding(plan):
-    """What a prepared task reviews, as moving the game leaves it."""
-    from desktop.backend.workflow_actions import portable
+# The form of a prepared task's binding, the record of the game text it is
+# current with. 2 binds the text the task reviewed and, for each set of its
+# own corrections in the game, the text the game then holds, so QA's own
+# Apply or Undo is no change to the game; the record before, unnumbered, bound
+# the whole game folder (see _bound_texts).
+BINDING_VERSION = 2
 
-    guard = {
-        key: value
-        for key, value in plan["guard"].items()
-        if key not in {"files", "translated", "variables"}
-    }
-    index = Path(plan["folder"]) / "source-inputs.json"
+
+def binding(plan, text):
+    """A new task's binding: the text_digest of its inventory, the game's text
+    before any of its corrections is in it."""
     return {
+        "version": BINDING_VERSION,
         "project": plan["project_id"],
-        "guard": portable(guard),
-        "source_inputs": digest(index.read_bytes()) if index.exists() else None,
+        "texts": [{"applied": [], "text": text}],
     }
 
 
-def _saved_binding(saved):
-    """A saved task's binding; one from before then names its game's folder."""
-    from desktop.backend.workflow_actions import portable
+def _texts(saved):
+    """The game text a saved binding expects, by the sorted corrections of
+    its task that are in the game."""
+    return {tuple(row["applied"]): row["text"] for row in saved["binding"]["texts"]}
 
-    value = {key: item for key, item in saved["binding"].items() if key != "source"}
-    return {**value, "guard": portable(value["guard"])}
+
+def _bind(plan, task, texts):
+    """Saves the game text *task* is current with, by the corrections of it
+    in the game, beside what its binding holds; preparing again since, which
+    replaced the task, leaves the new one's as it is."""
+    pointer = _pointer(plan)
+    with _pointer_lock(pointer):
+        saved = read_json(pointer)
+        if _task_folder(plan, saved).resolve() != Path(task).resolve():
+            return
+        held = (
+            _texts(saved) if saved["binding"].get("version") == BINDING_VERSION else {}
+        )
+        held.update(texts)
+        write_json(
+            pointer,
+            {
+                **saved,
+                "binding": {
+                    "version": BINDING_VERSION,
+                    "project": saved["binding"].get("project", plan["project_id"]),
+                    "texts": [
+                        {"applied": list(applied), "text": text}
+                        for applied, text in sorted(held.items())
+                    ],
+                },
+            },
+        )
+
+
+def _pointer_lock(pointer):
+    """Held while a focus's record is written, so preparing QA again and
+    saving the text of a correction never write over each other."""
+    return exclusive(pointer.with_name(pointer.name + ".lock"))
+
+
+def _bound_texts(plan, saved, root, in_game):
+    """The game text a saved task's binding expects (see _texts), saving a
+    binding of an earlier form as BINDING_VERSION. One saved before bound the
+    whole game folder, which the task's own Apply changed; it reads as
+    current with the text of the task's inventory and, once some of its
+    corrections are in the game, with the text the game holds now, since QA
+    could not tell its own changes from others then."""
+    from util import rpgmaker_qa as qa
+
+    if saved["binding"].get("version") == BINDING_VERSION:
+        return _texts(saved)
+    texts = {(): qa.text_digest(read_json(root / "inventory.json"))}
+    if in_game:
+        texts[in_game] = qa.game_text(plan["project"]["data"], _focus(plan))
+    _bind(plan, root, texts)
+    return texts
+
+
+def _in_game(findings, questions):
+    """The corrections of a task that are in the game, sorted: its findings
+    and chosen proposals applied and not undone since."""
+    return tuple(
+        sorted(
+            row["id"] for row in findings + questions if row.get("state") == "applied"
+        )
+    )
 
 
 def qa_handoff(task, helper="project.py qa"):
@@ -117,11 +180,14 @@ def qa_selection(state, action, options):
     return chosen, proposals
 
 
+def _focus(plan):
+    """The QA focus a plan reads."""
+    return plan["options"].get("focus", "release")
+
+
 def _pointer(plan):
     """The record naming the focus's prepared task."""
-    return Path(plan["folder"]) / (
-        "text-qa-" + plan["options"].get("focus", "release") + ".json"
-    )
+    return Path(plan["folder"]) / ("text-qa-" + _focus(plan) + ".json")
 
 
 def _task_folder(plan, saved):
@@ -280,24 +346,8 @@ def qa_state(plan):
     saved, root, task, checkpoint, document = _prepared(plan)
     # A finished task stays current through any update.
     rules_changed = qa.rules_changed(task, checkpoint)
-    now = binding(plan)
     engine_status = qa.status(root)
     stage = engine_status.get("stage", "")
-    before = _saved_binding(saved)
-    same_text = _beside_plugins(before) == _beside_plugins(now)
-    # The game's plugins, as a playtest fix or a Plugin files apply changes
-    # them, leave the text a finished review corrects as it was.
-    current = not rules_changed and (
-        before == now or (stage == "complete" and same_text)
-    )
-    # Only the game's plugins changed during review: preparing again captures
-    # the screens again and keeps the review, which the copied task's
-    # assistant does after its own fixes.
-    plugins_changed = not current and not rules_changed and same_text
-    if current:
-        # Plugin files decides what it keeps in Japanese without changing the
-        # game's files; the never-translated report follows its decisions.
-        qa.refresh_kept(root, kept_settings(plan["project"]["source"]))
     # Batches applied or undone from this task, oldest first; a restored one
     # counts for neither. Records saved before batches named their task count
     # when made after it was prepared.
@@ -386,6 +436,22 @@ def qa_state(plan):
         for row in document.get("uncertain_playtests", [])
         if row.get("correction")
     ]
+    # The task is current while the game holds the text it reviewed with its
+    # own corrections in place, whatever else changed, such as plugins. A
+    # finished task stays current through an update of QA's rules.
+    in_game = _in_game(findings, questions)
+    expected = _bound_texts(plan, saved, root, in_game).get(in_game)
+    current = not rules_changed and not compare(
+        Basis(BINDING_VERSION, {"text": expected}) if expected else None,
+        Basis(
+            BINDING_VERSION,
+            {"text": qa.game_text(plan["project"]["data"], _focus(plan))},
+        ),
+    )
+    if current:
+        # Plugin files decides what it keeps in Japanese without changing the
+        # game's files; the never-translated report follows its decisions.
+        qa.refresh_kept(root, kept_settings(plan["project"]["source"]))
     # Its corrections are in the game once one was applied and nothing QA
     # made since, such as a follow-up round's finding, waits to be.
     applied = (
@@ -450,28 +516,12 @@ def qa_state(plan):
         ),
         **({"activity": activity} if activity else {}),
         **({"rules_changed": True} if rules_changed else {}),
-        **({"plugins_changed": True} if plugins_changed else {}),
         "prepared_at": task["created_at"],
         "message": "Saved results match current project text."
         if current
         else "An update changed QA's rules while this task was in review."
         if rules_changed
-        else "The game's plugins changed since this QA task was prepared; "
-        "preparing it again keeps its review."
-        if plugins_changed
         else "The game text changed since this QA task was prepared.",
-    }
-
-
-def _beside_plugins(value):
-    """A QA binding without the game's plugin list and plugin files."""
-    return {
-        **value,
-        "guard": {
-            key: item
-            for key, item in value["guard"].items()
-            if key not in {"plugins", "plugin_files"}
-        },
     }
 
 
@@ -485,6 +535,19 @@ def qa_pointers(folder):
 def qa_pointed_task(folder, pointer):
     """The task folder a focus's record names, inside QA's storage."""
     return _task_folder({"folder": str(folder)}, read_json(pointer))
+
+
+def qa_capture_outdated(task, data):
+    """Whether the game's plugins changed since the prepared QA task in
+    *task* captured its screens, so preparing it again captures them again
+    and keeps its review; a capture record or plugin files it can't read
+    count as unchanged."""
+    from util import rpgmaker_qa as qa
+
+    try:
+        return qa.capture_outdated(task, data)
+    except OSError, ValueError:
+        return False
 
 
 def qa_capture(task):
@@ -646,9 +709,8 @@ def run_qa(plan, log):
         )
         if observations:
             log(f"QA reviews {len(observations)} line(s) the playtest found")
-        if not qa.inventory_matches(
-            task, qa.build_manifest(plan["project"]["data"], focus)
-        ):
+        manifest = qa.build_manifest(plan["project"]["data"], focus)
+        if not qa.inventory_matches(task, manifest):
             raise ValueError(
                 "The cached QA inventory changed. Retain it for investigation and prepare a fresh task."
             )
@@ -661,10 +723,16 @@ def run_qa(plan, log):
                 "screen-index.json",
             )
         }
-        write_json(
-            folder / ("text-qa-" + focus + ".json"),
-            {"task": str(task), "binding": binding(plan), "immutable": immutable},
-        )
+        pointer = folder / ("text-qa-" + focus + ".json")
+        with _pointer_lock(pointer):
+            write_json(
+                pointer,
+                {
+                    "task": str(task),
+                    "binding": binding(plan, qa.text_digest(manifest)),
+                    "immutable": immutable,
+                },
+            )
         handoff = qa_handoff(task)
     else:
         handoff = None
@@ -1030,10 +1098,22 @@ def prepare_publication(plan):
                         "correction can't be applied again. Run QA again to check it."
                     ) from exc
                 raise
-            for name in {row["file"] for row in selected["operations"]}:
+            changed = {row["file"] for row in selected["operations"]}
+            for name in changed:
                 candidates[(prefix / name).as_posix()] = project_path(
                     scratch, name
                 ).read_bytes()
+            if state["current"]:
+                # The game's text with this batch in it is the task's own, so
+                # its Apply or Undo leaves the task current; a batch on text
+                # changed since leaves it as it was.
+                named = set(chosen + proposals)
+                in_game = set(_in_game(state["findings"], state["questions"]))
+                after = in_game | named if action == "qa_apply" else in_game - named
+                text = qa.game_text(
+                    data, _focus(plan), {name: scratch / name for name in changed}
+                )
+                _bind(plan, state["task"], {tuple(sorted(after)): text})
     else:
         raise ValueError("Unknown text publication.")
     frozen = publication.freeze(
