@@ -44,7 +44,6 @@ anywhere else.
 
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import asdict
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
@@ -156,15 +155,27 @@ def _checkout(root) -> Checkout | None:
 
     if not game_git_set_up(root):
         return None
-    from util.version_update.git_workflow import read_checkout
-
     from dazedtl.translation.operations import checkout_issue
 
-    status = _statuses.get(str(root), root, lambda: read_checkout(root))
+    status = _statuses.get(str(root), root, lambda: _read(root))
     if status is None or not status.configured:
         return None
-    if issue := checkout_issue(asdict(status)):
+    if issue := checkout_issue(vars(status)):
         raise ValueError(issue)
+    return status
+
+
+def _read(root):
+    """The read of the game's repository, refusing a game whose settings it
+    can't read or whose DazedTL folders are links, as a checkpoint would
+    fail or write elsewhere after the write."""
+    from util.len_translation import LenProject, _validate_project
+    from util.version_update.git_workflow import read_checkout
+
+    _validate_project(LenProject(root))
+    status = read_checkout(root)
+    if status is not None and status.configured:
+        status.preserve_game_files  # noqa: B018
     return status
 
 

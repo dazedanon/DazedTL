@@ -25,7 +25,7 @@ from util.languages import DEFAULT_SOURCE
 from util.languages import source_pattern
 from util.rpgmaker_plugin_registry import PluginRegistryError, plugin_entries
 
-from .git_workflow import GitWorkflowError, UpdatePreview, merged_file, _tree_files
+from .git_workflow import GitWorkflowError, UpdatePreview, game_prefix, merged_file, _tree_files
 from .json_merge import expand
 from .script_merge import is_plugin_registry, paired_lines, quoted_text
 from util import system
@@ -315,8 +315,7 @@ def text_changes(game_root: str | Path, preview: UpdatePreview) -> TextChanges:
     text_pattern = re.compile(source_pattern("update_text", language))
     # The preview found the repository just now.
     repo = preview.repo_root
-    relative = game.relative_to(repo)
-    prefix = "" if relative == Path(".") else relative.as_posix()
+    prefix = game_prefix(repo, game)
     full = (lambda path: f"{prefix}/{path}") if prefix else (lambda path: path)
     base_tree = preview.baseline_tree or f"{preview.original_commit}^{{tree}}"
     trees = {

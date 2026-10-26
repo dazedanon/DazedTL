@@ -231,7 +231,7 @@ def checkout(game, *pending):
         translation_commit="1" * 40,
         pending_operations=pending,
         asset_sync_pending=False,
-        settings={},
+        settings={"dazedtl.preservegamefiles": "true"},
     )
 
 

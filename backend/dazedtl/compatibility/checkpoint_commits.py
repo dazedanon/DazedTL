@@ -324,6 +324,7 @@ def _status(root):
         "status",
         "--porcelain=v2",
         "--branch",
+        "--no-ahead-behind",
         "-z",
         "--no-renames",
         "--untracked-files=all",
@@ -351,13 +352,13 @@ _trees: dict[str, str] = {}
 
 def _tree(root, commit, tree=None):
     """The tree of `commit`, which is `tree` when given."""
-    if commit not in _trees:
+    known = _trees.get(commit)
+    if known is None:
+        known = tree or _git(root, "rev-parse", f"{commit}^{{tree}}").stdout.strip()
         if len(_trees) >= 64:
             _trees.clear()
-        _trees[commit] = (
-            tree or _git(root, "rev-parse", f"{commit}^{{tree}}").stdout.strip()
-        )
-    return _trees[commit]
+        _trees[commit] = known
+    return known
 
 
 def _commit(root, paths, change, head):

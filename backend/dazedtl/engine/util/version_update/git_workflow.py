@@ -238,7 +238,7 @@ class Checkout:
     selected_root: Path
     repo: Path
     prefix: str
-    # The PENDING_OPERATIONS' paths and the index's, by name.
+    # The PENDING_OPERATIONS' paths, the index's and the config file's, by name.
     git_paths: Mapping[str, Path]
     current_branch: str | None
     translation_branch: str | None
@@ -250,6 +250,9 @@ class Checkout:
     # DazedTL's repository-local settings (`_settings`), None when Git could
     # not read them.
     settings: Mapping[str, str | None] | None
+    # The config file as the settings were read, which tells whether they
+    # still hold.
+    config_stat: tuple[int, int, int] | None = None
 
     @property
     def configured(self) -> bool:
@@ -263,6 +266,20 @@ class Checkout:
     def preserve_game_files(self) -> bool:
         return _preserve_policy(self.repo, self.settings)
 
+    def settings_hold(self) -> bool:
+        """Whether the config file is as it was when the settings were read."""
+        return self.config_stat is not None and self.config_stat == _stat(
+            self.git_paths["config"]
+        )
+
+
+def _stat(path: Path) -> tuple[int, int, int] | None:
+    try:
+        value = path.stat()
+    except OSError:
+        return None
+    return value.st_mtime_ns, value.st_size, value.st_ino
+
 
 # The repository read the Git calls of an operation reuse (`carrying`).
 _carried: ContextVar[Checkout | None] = ContextVar("carried_checkout", default=None)
@@ -271,9 +288,8 @@ _carried: ContextVar[Checkout | None] = ContextVar("carried_checkout", default=N
 @contextmanager
 def carrying(checkout: Checkout | None) -> Iterator[None]:
     """Runs an operation whose Git calls reuse `checkout`, a read of its
-    repository, for what the operation leaves as it is: the repository's
-    settings, such as whether it keeps game files as they are. Only for an
-    operation that changes no setting, which setup does."""
+    repository: its settings, such as whether it keeps game files as they
+    are, while its config file is unchanged, and its index's path."""
     token = _carried.set(checkout)
     try:
         yield
@@ -572,7 +588,11 @@ def _config_bool(value: str | None) -> bool | None:
 def _preserve_game_files(repo: Path) -> bool:
     """Len projects keep native encodings/layout and their reviewed ignore policy."""
     carried = _carried.get()
-    if carried is not None and carried.repo == repo:
+    if (
+        carried is not None
+        and repo in (carried.repo, carried.selected_root)
+        and carried.settings_hold()
+    ):
         return carried.preserve_game_files
     return _preserve_policy(repo, _settings(repo))
 
@@ -774,6 +794,15 @@ class _Repository(NamedTuple):
     branch: str | None = None
 
 
+def game_prefix(repo: Path, selected: Path) -> str:
+    """The path of the game folder `selected` in the repository at `repo`."""
+    try:
+        relative = selected.resolve().relative_to(repo)
+    except ValueError as exc:
+        raise GitWorkflowError("Selected game folder is outside its Git repository") from exc
+    return "" if relative == Path(".") else relative.as_posix()
+
+
 def _repository_for(selected: Path, *names: str, head: bool = False) -> _Repository | None:
     """The repository holding `selected` and the repository-internal paths
     `names`, with `head` the branch HEAD is on, from the same Git call; a
@@ -793,11 +822,7 @@ def _repository_for(selected: Path, *names: str, head: bool = False) -> _Reposit
     if len(lines) != len(names):
         raise GitWorkflowError("Git did not resolve every repository path")
     repo = Path(top.strip()).resolve()
-    try:
-        relative = selected.resolve().relative_to(repo)
-    except ValueError as exc:
-        raise GitWorkflowError("Selected game folder is outside its Git repository") from exc
-    prefix = "" if relative == Path(".") else relative.as_posix()
+    prefix = game_prefix(repo, selected)
     if unborn:
         symbolic = _run_git(repo, "symbolic-ref", "-q", "HEAD", check=False).stdout.strip()
     branch = symbolic.removeprefix("refs/heads/") if symbolic.startswith("refs/heads/") else None
@@ -832,13 +857,14 @@ def read_checkout(game_root: str | Path) -> Checkout | None:
     more."""
     selected = Path(game_root).expanduser().resolve()
     found = (
-        _repository_for(selected, *PENDING_OPERATIONS, "index", head=True)
+        _repository_for(selected, *PENDING_OPERATIONS, "index", "config", head=True)
         if selected.is_dir()
         else None
     )
     if found is None:
         return None
     repo, prefix, paths, current_branch = found
+    config_stat = _stat(paths["config"])
     settings = _settings(repo)
     registered = _registered_translation_branch(repo, settings or {}, current_branch)
     commits = _ref_commits(
@@ -859,6 +885,7 @@ def read_checkout(game_root: str | Path) -> Checkout | None:
         ),
         asset_sync_pending=_asset_state_path(repo, prefix, "pending-assets").exists(),
         settings=settings,
+        config_stat=config_stat,
     )
 
 
