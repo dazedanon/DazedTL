@@ -3,6 +3,14 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.34.5] - 2026-10-26
+
+### Fixed
+
+- **Projects:** a game moved or renamed after estimating keeps its Guided and whole-game cost estimates, and preparing Text QA again goes on with the task in review, whose instructions name the game's new folder.
+- **Translate:** a model's refusal written as prose, such as "I won't produce this content, even in translation." or "Send another batch and I'll continue.", or as a bare "Declined.", is no longer accepted as dialogue, and Lines counts lines an earlier run saved that way as left, so the next Translate sends them again. Text QA no longer applies a correction that reads as a refusal.
+- **Translate:** opening a big game's translation workspace no longer holds the whole app for seconds while it counts every file's lines and reads its event files; files still being counted read **Counting…**, and the counts are kept across restarts.
+
 ## [2.34.4] - 2026-10-26
 
 ### Changed
@@ -1060,6 +1068,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.34.5]: https://github.com/dazedanon/DazedTL/compare/v2.34.4...v2.34.5
 [2.34.4]: https://github.com/dazedanon/DazedTL/compare/v2.34.3...v2.34.4
 [2.34.3]: https://github.com/dazedanon/DazedTL/compare/v2.34.2...v2.34.3
 [2.34.2]: https://github.com/dazedanon/DazedTL/compare/v2.34.1...v2.34.2
