@@ -27,7 +27,7 @@ from util.playtest.checks import reading as playtest_reading
 from util.prompt_pair import render, render_for_run
 from util.qa.selection import _number_defect
 from util.source_text import holds_source, source_left
-from util.speakers import strip_echoed_speaker
+from util.speakers import strip_echoed_speaker, translate_speaker
 from util.translation import (
     CONTEXT_SOURCE,
     _context_block,
@@ -176,6 +176,50 @@ class LanguageTests(unittest.TestCase):
             target_text.clean_reply("「頼んだぞっ。」【村長】", "English"),
             "「頼んだぞ.」[村長]",
         )
+
+    def test_the_plain_engines_translate_a_speaker_name_the_same_way(self):
+        asked = []
+
+        def translate(text, prompt, history):
+            asked.append((text, prompt))
+            return (
+                ["Speaker: gran'S", [1, 1]]
+                if len(asked) == 1
+                else ["old 'S man", [1, 1]]
+            )
+
+        names = []
+        first = translate_speaker("老人", names, "English", translate)
+        self.assertEqual(first, ["Gran's", [1, 1]])
+        self.assertEqual(
+            asked, [("老人", "Reply with the English translation of the NPC name.")]
+        )
+        self.assertEqual(
+            translate_speaker("老人", names, "English", translate), ["Gran's", [0, 0]]
+        )
+        self.assertEqual(len(asked), 1)
+        # A reply with no letters is asked for once more.
+        asked.clear()
+        retry = translate_speaker(
+            "店主",
+            names,
+            "English",
+            lambda *a: (
+                asked.append(a),
+                ["店主", [0, 0]] if len(asked) == 1 else ["Shop Owner", [0, 0]],
+            )[1],
+        )
+        self.assertEqual((retry[0], len(asked)), ("Shop Owner", 2))
+        self.assertEqual(
+            translate_speaker("？？？", names, "English", translate), ["???", [0, 0]]
+        )
+        self.assertEqual(
+            translate_speaker("ファイン", [], "English", translate), ["Fine", [0, 0]]
+        )
+        self.assertEqual(translate_speaker("", [], "English", translate), ["", [0, 0]])
+        asked.clear()
+        translate_speaker("ファイン", [], "French", translate)
+        self.assertEqual(len(asked), 1)
 
     def test_punctuation_only_text_keeps_each_writers_english_form(self):
         # One rule with each writer's form, so Japanese to English output
