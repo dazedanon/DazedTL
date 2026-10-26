@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import test from "node:test";
 import { appEnvironment, stopApp } from "../scripts/testkit/app.mjs";
 import { displayName } from "../scripts/testkit/display.mjs";
-import { withRetry } from "../scripts/testkit/retry.mjs";
+import { testsWithRetry, withRetry } from "../scripts/testkit/retry.mjs";
 
 test("a check that fails once and then passes is a flake, and two failures still fail", async () => {
   const runs: number[] = [];
@@ -28,6 +28,42 @@ test("a check that fails once and then passes is a flake, and two failures still
     flaky: false,
   });
   assert.equal(cleared, 1);
+});
+
+test("a test run that fails on a busy machine runs again once the load falls, waiting at most five minutes", async () => {
+  const suite =
+    (...statuses: number[]) =>
+    async () => {
+      const status = statuses.shift() ?? 1;
+      return { status, output: `run ${status}` };
+    };
+  let waited = 0;
+  const logged: string[] = [];
+  const deps = (...loads: number[]) => ({
+    wait: async (ms: number) => (waited += ms),
+    log: (line: string) => logged.push(line),
+    load: () => loads.shift() ?? loads.at(-1) ?? 3,
+  });
+  // A passing run waits for nothing.
+  assert.deepEqual(await testsWithRetry(suite(0), deps(3)), {
+    passed: true,
+    flaky: false,
+    outputs: ["run 0"],
+  });
+  assert.equal(waited, 0);
+  // A failed run waits while the machine is busy, then passes as a flake.
+  const flaky = await testsWithRetry(suite(1, 0), deps(2, 2, 0.5));
+  assert.deepEqual(flaky, {
+    passed: true,
+    flaky: true,
+    outputs: ["run 1", "run 0"],
+  });
+  assert.equal(waited, 20_000);
+  assert.equal(logged.length, 1);
+  // A machine that stays busy delays the second run five minutes at most.
+  waited = 0;
+  assert.equal((await testsWithRetry(suite(1, 1), deps(4))).passed, false);
+  assert.equal(waited, 300_000);
 });
 
 test("two runs whose work folders share a last part get different displays", () => {
