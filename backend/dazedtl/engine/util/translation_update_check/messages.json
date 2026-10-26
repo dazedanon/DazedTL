@@ -1,0 +1,13 @@
+{
+  "Japanese": {
+    "title": "翻訳の更新があります",
+    "detail": "この翻訳の新しいバージョンがあります。ゲームを閉じて GameUpdate を実行するか、リポジトリから手動でパッチを当ててください：",
+    "repositoryLink": "翻訳リポジトリを開く（手動パッチ）",
+    "installedButton": "この更新は手動でインストールしました",
+    "installedConfirm": "ゲームを閉じて、最新の翻訳ファイルをこのゲームにコピーした後でのみ確認してください。この更新をインストール済みにしますか？",
+    "saveFailed": "翻訳のバージョンを保存できませんでした。ゲームは続けられますが、この警告がまた表示されることがあります。",
+    "continueButton": "続ける",
+    "alertText": "この翻訳の新しいバージョンがあります。",
+    "alertHelp": "ゲームを閉じて、ゲームフォルダーの GameUpdate.bat（Windows）または GameUpdate_linux.sh（Linux）を実行してください。"
+  }
+}

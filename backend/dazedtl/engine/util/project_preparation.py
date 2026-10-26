@@ -134,10 +134,12 @@ def write_gameupdate_config(game_root: str | Path, *, env_path=None) -> tuple[bo
     return False, f"skipped {CONFIG}: {state['message']}"
 
 
-def install_startup_check(game_root: str | Path) -> tuple[bool, str]:
+def install_startup_check(game_root: str | Path, *, settings_root: str | Path | None = None) -> tuple[bool, str]:
+    """Install the update check, its text in the target language of the game
+    at *settings_root*, the game itself unless named."""
     from util.translation_update_check import install
 
-    ok, message = install(game_root)
+    ok, message = install(game_root, settings_root=settings_root)
     if ok:
         # The registration is part of preparation too; finish in the same
         # canonical layout so a second setup does not introduce formatting churn.
@@ -236,7 +238,7 @@ def prepare_rpgmaker_patch(patch_root: str | Path, game_root: str | Path, *, log
         _game_path(root, plugins)
         format_plugins_js(plugins)
         # The patch replaces plugins.js, so it needs the startup check again.
-        installed, message = install_startup_check(root)
+        installed, message = install_startup_check(root, settings_root=game)
         if not installed:
             raise ValueError(message)
         emit(message)
