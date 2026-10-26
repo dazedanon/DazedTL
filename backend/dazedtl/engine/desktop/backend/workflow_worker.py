@@ -11,6 +11,20 @@ sys.path.insert(0, str(ROOT))
 PROTOCOL = sys.stdout
 
 
+def reading_plan(plan):
+    """Reads text in the source language of the plan's game within the
+    block, as the app reads a request's game (dazedtl.languages), so an
+    action such as Apply or a fit to new Line widths tells the game's text
+    left from its translation; a plan without a game reads as before."""
+    from contextlib import nullcontext
+
+    from dazedtl.languages import reading_game
+
+    project = plan.get("project")
+    source = project.get("source") if isinstance(project, dict) else None
+    return reading_game(source) if isinstance(source, str) and source else nullcontext()
+
+
 def main():
     from util import system
 
@@ -45,7 +59,8 @@ def main():
             from desktop.backend.batches import run_action
         elif plan.get("kind") == "evaluation":
             from desktop.backend.evaluations import run_action
-        result = run_action(plan, log)
+        with reading_plan(plan):
+            result = run_action(plan, log)
         emit("finished", status="failed" if isinstance(result, dict) and result.get("ok") is False else "complete",
              message=result.get("message") or "Completed: " + plan["label"] if isinstance(result, dict) else "Completed: " + plan["label"], result=json_value(result))
     except Exception as exc:

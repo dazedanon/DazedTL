@@ -202,3 +202,16 @@ class LanguageTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(UnwritableText, "line 2 holds 안"):
             writable(["はい\n", "안녕\n"], "cp932", "scene.ks")
+
+    def test_a_guided_action_reads_its_games_source(self):
+        # Read as Japanese, an English game's Apply took its Japanese
+        # translation for text left to translate and never fitted it.
+        from desktop.backend.workflow_worker import reading_plan
+
+        with TemporaryDirectory() as temporary:
+            save_language_pair(temporary, "English", "Japanese")
+            with reading_plan({"project": {"source": temporary}}):
+                self.assertFalse(holds_source("テスト了解っ！"))
+            self.assertTrue(holds_source("テスト了解っ！"))
+            with reading_plan({"kind": "batch"}):
+                self.assertTrue(holds_source("テスト了解っ！"))
