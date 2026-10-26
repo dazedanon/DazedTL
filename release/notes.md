@@ -8,3 +8,4 @@
 - **Forge:** quick load (Ctrl+Q) no longer crashes some games with an error screen right after loading, such as "Cannot read properties of undefined (reading 'massCharacters')".
 - **Settings:** a successful **Check connection** no longer repeats its result beside the button.
 - **Translate:** a long Live run no longer makes DazedTL use more memory with every request it saves; a run of a few thousand requests could take over a gigabyte while it ran.
+- **Translate:** on a game with more than about a thousand maps, the variables step no longer rereads every map each second, which kept the app busy and slow.
