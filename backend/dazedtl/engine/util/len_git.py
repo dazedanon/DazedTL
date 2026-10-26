@@ -5,19 +5,19 @@ from pathlib import Path
 
 from util.len_translation import LenProject, _validate_project
 from util.version_update import (
-    GitWorkflowError, bootstrap_repository, inspect_repository,
-    record_version_metadata, register_translation_branch,
+    GitWorkflowError, bootstrap_repository, record_version_metadata,
+    register_translation_branch,
 )
-from util.version_update.git_workflow import _preserve_game_files, _run_git, unfinished_bootstrap
+from util.version_update.git_workflow import _run_git, read_repository, unfinished_bootstrap
 
 
 def git_status(project: LenProject) -> dict:
     """Inspect without initializing Git, moving branches, or staging files."""
     _validate_project(project)
-    status = inspect_repository(project.game_root)
+    status, checkout = read_repository(project.game_root)
     result = {key: str(value) if isinstance(value, Path) else value for key, value in asdict(status).items()}
     result["pending_operations"] = list(status.pending_operations)
-    result["preserve_game_files"] = _preserve_game_files(status.repo_root) if status.repo_root else True
+    result["preserve_game_files"] = checkout.preserve_game_files if checkout else True
     result["configured"] = bool(status.original_exists and status.translation_exists)
     result["available_original_refs"] = []
     if status.repo_root and not status.original_exists:

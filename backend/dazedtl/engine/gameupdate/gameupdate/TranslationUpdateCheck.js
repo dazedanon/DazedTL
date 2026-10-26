@@ -17,6 +17,10 @@
  * The parameters hold the text players see, in the translation's language;
  * an empty one shows its English default.
  *
+ * It also loads the translator's TL Inspector, js/plugins/TLInspector.js,
+ * when that file is in the game. The Inspector stays on the translator's
+ * computer and out of plugins.js, so players' games never ask for it.
+ *
  * @param title
  * @text Title
  * @default Translation update available
@@ -60,6 +64,8 @@
 
     var REQUEST_TIMEOUT_MS = 5000;
     var MAX_RESPONSE_BYTES = 1024 * 1024;
+    // The translator's TL Inspector, relative to index.html.
+    var INSPECTOR = "js/plugins/TLInspector.js";
     var ENGLISH = {
         title: "Translation update available",
         detail: "A newer version of this translation is available. Close the game and run GameUpdate, or patch it manually from the repository:",
@@ -468,6 +474,34 @@
         }
     }
 
+    // Loads TL Inspector after every plugin, where its file is: the game's
+    // folder is the one RPG Maker keeps saves under, beside index.html. Its
+    // own script element, not PluginManager's, so a file that fails to load
+    // is no "Failed to load" error. A plugins.js that still lists it, as
+    // DazedTL's installs once did, loads it already.
+    function loadInspector() {
+        try {
+            var fs = nodeRequire("fs");
+            var path = nodeRequire("path");
+            var main = typeof process !== "undefined" && process.mainModule;
+            if (!fs || !path || !main || !main.filename || typeof document === "undefined") return;
+            if (!fs.statSync(path.join(path.dirname(main.filename), INSPECTOR)).isFile()) return;
+            var listed = typeof $plugins !== "undefined" && $plugins.some(function(plugin) {
+                return plugin && plugin.status && plugin.name === "TLInspector";
+            });
+            if (listed) return;
+            var script = document.createElement("script");
+            script.type = "text/javascript";
+            script.src = INSPECTOR;
+            script.async = false;
+            script.onerror = function() {};
+            document.body.appendChild(script);
+        } catch (_inspectorError) {
+            // Without its file, or outside NW.js, the game runs without it.
+        }
+    }
+
+    loadInspector();
     try {
         setTimeout(checkForUpdate, 0);
     } catch (_startupError) {

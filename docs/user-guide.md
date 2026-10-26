@@ -195,6 +195,7 @@ Check has one task, **Text QA**, and it is optional.
   If no assistant will play the game, as for a QA task copied before an update added the playtest, **Run QA again** copies a task that does.
 
 **Playtest tools** at the top installs TL Inspector and Forge to help you playtest MV and MZ games.
+TL Inspector stays on your computer and never goes into the translation you publish.
 Apply and playtest an early scene before translating everything.
 
 Applying replaces the game's files with the translations.

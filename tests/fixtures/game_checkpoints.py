@@ -343,6 +343,11 @@ assert sorted([changed(), changed("HEAD~1")]) == [
     ["data/Items.json"],
     ["data/Map001.json"],
 ], history()
+# Git lists a changed file by its whole name, spaces and all.
+for raw in (b"[]", b"[null]"):
+    write("data/Map 002.json", raw)
+    clean()
+    assert git(kept, "show", "HEAD:data/Map 002.json").encode() == raw
 # An assistant's older git-scope with a shorter manifest keeps the files
 # DazedTL's checkpoints let into the patch.
 from util.len_patch_scope import sync_patch_scope
@@ -704,4 +709,59 @@ assert not git(forged, "status", "--porcelain"), git(forged, "status")
 assert {"js/plugins.js", "js/plugins/Forge_MZ.js"} <= set(
     git(forged, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").split()
 )
+# TL Inspector's file holds the translator's editor command, so it stays out
+# of the patch; installing it once listed it in plugins.js too, which a
+# checkpoint took, so a patch of the branch stopped players' game at start.
+# The update check Set up installs loads it now, so installing and removing
+# it make no checkpoint, and a game an older install listed it in takes it
+# out as one.
+from dazedtl.compatibility.guided import inspector_listed, unlist_inspector
+from util.len_patch_scope import patch_refusal
+from util.project_preparation import install_startup_check
+from util.rpgmaker_plugin_registry import update_plugin_entry
+from util.tl_inspector import installer as inspector
+
+inspected = game("inspector")
+assert install_startup_check(inspected)[0]
+check = "js/plugins/TranslationUpdateCheck.js"
+engine.audit_scope(
+    inspected, {"files": {"data/Map001.json": {}, "js/plugins.js": {}, check: {}}}
+)
+save(inspected)
+set_up = git(inspected, "rev-parse", "HEAD")
+for action in ("inspector_install", "inspector_remove"):
+    with running(for_action(action)), write_game(inspected, pack=False):
+        if action == "inspector_install":
+            assert inspector.install(inspected, cfg={"editorCmd": "/home/me/code"})[0]
+            assert inspector.status(inspected)["message"] == "Installed"
+        else:
+            assert inspector.uninstall(inspected)[0]
+    assert git(inspected, "rev-parse", "HEAD") == set_up, action
+    assert not git(inspected, "status", "--porcelain"), git(inspected, "status")
+assert not (inspected / "js/plugins/TLInspector.js").exists()
+registry = inspected / "js/plugins.js"
+listing = update_plugin_entry(
+    registry.read_text(encoding="utf-8"),
+    "TLInspector",
+    '{"name": "TLInspector", "status": true, "description": "TL source inspector", '
+    '"parameters": {}}',
+    "\n",
+)
+with write_game(inspected, pack=False, summary="Install TL Inspector", stage="Check"):
+    registry.write_text(listing, encoding="utf-8")
+(inspected / "js/plugins/TLInspector.js").write_text("// Inspector\n")
+tracked = set(git(inspected, "ls-files").split())
+assert "js/plugins/TLInspector.js" not in tracked
+assert "Install TL Inspector again" in (patch_refusal(inspected, tracked) or "")
+assert inspector_listed(inspected)
+listed_at = git(inspected, "rev-parse", "HEAD")
+unlist_inspector(inspected)
+assert git(inspected, "rev-parse", "HEAD~1") == listed_at
+assert git(inspected, "log", "-1", "--format=%s").strip() == (
+    "Check: Take TL Inspector out of plugins.js"
+)
+assert '"TLInspector"' not in git(inspected, "show", "HEAD:js/plugins.js")
+assert patch_refusal(inspected, set(git(inspected, "ls-files").split())) is None
+assert inspector.status(inspected)["message"] == "Installed"
+assert not inspector_listed(inspected)
 print("ok")

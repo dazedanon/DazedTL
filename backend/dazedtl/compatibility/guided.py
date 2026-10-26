@@ -70,6 +70,39 @@ def tools_state(native):
     return result
 
 
+def inspector_listed(source):
+    """Whether the game's checkpoints need TL Inspector taken out of its
+    plugins.js (`unlist_inspector`)."""
+    from util.paths import game_git_set_up
+    from util.tl_inspector import installer as inspector
+
+    root = Path(source)
+    try:
+        return game_git_set_up(root) and inspector.listed(root)
+    except OSError, UnicodeError:
+        return False
+
+
+def unlist_inspector(source):
+    """Takes TL Inspector out of the plugins.js of a game whose Git is set up,
+    as one checkpoint. Older installs listed it there while its file, which
+    holds the translator's editor command, stays out of every patch, so a
+    patch of the branch stopped players' game at start; the update check
+    loads it now, so the translator keeps their hotkey."""
+    from util.tl_inspector import installer as inspector
+
+    from .checkpoint_commits import Change, running
+    from .game_write import write_game
+
+    with (
+        running(Change("Take TL Inspector out of plugins.js", "Check")),
+        write_game(source, pack=False),
+    ):
+        ok, message = inspector.unlist(Path(source))
+    if not ok:
+        raise ValueError(message)
+
+
 def release_scope(source, known):
     from util.release_package import ReleasePackageError, _release_patch_sha
 
@@ -449,6 +482,7 @@ def runtime_files(source):
     )
     from util.paths import GAME_REPOSITORY_METADATA, is_game_tool_file
     from util.project_preparation import rpgmaker_layout
+    from util.tl_inspector import installer as inspector
     from util.version_update.git_workflow import _run_git
 
     from dazedtl.translation.release import applied_assets, exclusion
@@ -496,6 +530,8 @@ def runtime_files(source):
             path.relative_to(root).as_posix()
             for path in paths
             if not exclusion(path.relative_to(root).as_posix())
+            # TL Inspector stays on the translator's computer.
+            and not inspector.is_plugin_file(path.relative_to(root).as_posix())
         }
     )
     patch_manifest(names)

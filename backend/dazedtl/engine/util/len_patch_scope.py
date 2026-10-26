@@ -164,6 +164,12 @@ def _plugin_refusal(root: Path, scope: Collection[str], original: Iterable[str],
             name = entry.get("name")
             if not entry.get("status") or not isinstance(name, str) or not name:
                 continue
+            if name.casefold() == INSPECTOR.casefold():
+                # Its file never joins a patch (`_inspector_refusal`); the
+                # update check loads it instead.
+                return (f"{registry} loads TL Inspector, which stays on your computer, so players' game "
+                        "would stop at start. Install TL Inspector again in Playtest tools, which takes it "
+                        f"out of {registry}, or remove it there.")
             # The game asks for the plugin by URL, which takes either slash.
             path = posixpath.normpath(folder + name.replace("\\", "/") + ".js")
             if path.startswith("../") or path.casefold() in patch:
@@ -176,6 +182,19 @@ def _plugin_refusal(root: Path, scope: Collection[str], original: Iterable[str],
             return (f"{registry} loads the plugin{plural} {_listed(sorted(missing))}, whose file{plural} "
                     "neither the patch nor the original game has, so players' game would stop at start. "
                     f"Add {_listed(sorted(missing.values()))} to the patch manifest.")
+    return None
+
+
+def _inspector_refusal(scope: Collection[str]) -> str | None:
+    """Why a patch holding TL Inspector's file may not go to players: the
+    file holds the translator's editor command, and the update check would
+    load the Inspector in players' games."""
+    from util.tl_inspector.installer import is_plugin_file
+
+    held = sorted(path for path in scope if is_plugin_file(path))
+    if held:
+        return (f"The patch holds {_listed(held)}, TL Inspector, which holds your editor's command "
+                "and stays on your computer. Take it out of the patch manifest.")
     return None
 
 
@@ -204,7 +223,8 @@ def patch_refusal(root: Path, scope: Collection[str], original_names: Collection
     repo = Path(root)
     originals = _tree_files(repo, "original", "")
     assets = _load_asset_manifest(repo, "") or {}
-    return (_plugin_refusal(repo, scope, chain(originals, assets, original_names), None)
+    return (_inspector_refusal(scope)
+            or _plugin_refusal(repo, scope, chain(originals, assets, original_names), None)
             or _fixes_refusal(repo, scope))
 
 
