@@ -3,9 +3,11 @@
 // bug needs. A variant is a folder in tests/fixtures/game-variants whose
 // files are copied over the game; its variant.json may add plugins to
 // js/plugins.js, values to System.json, maps to MapInfos.json, events to
-// Map001 and commands to the village chief's event there, and set the
-// stand-in provider's mode, such as lines it refuses. makeRelease builds the
-// developer's next version of a game.
+// Map001 and commands to the village chief's event there, add random
+// pictures, start an empty Git repository, and set the stand-in provider's
+// mode, such as lines it refuses. makeRelease builds the developer's next
+// version of a game.
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
@@ -117,6 +119,23 @@ export function addVariant(game, name) {
     );
     fs.writeFileSync(file, JSON.stringify(map));
   }
+  if (variant.assets) {
+    // Random bytes, which no compression shrinks, as images and audio are.
+    const folder = path.join(game, "img/pictures");
+    fs.mkdirSync(folder, { recursive: true });
+    const { files, megabytes } = variant.assets;
+    const size = Math.floor((megabytes * 1024 * 1024) / files);
+    for (let index = 0; index < files; index += 1)
+      fs.writeFileSync(
+        path.join(folder, `picture${String(index).padStart(5, "0")}.png`),
+        crypto.randomBytes(size),
+      );
+  }
+  if (variant.emptyRepository)
+    // As DazedTL makes it for a record, on its translation branch.
+    execFileSync("git", ["-C", game, "init", "-q", "-b", "main"], {
+      stdio: "ignore",
+    });
   return variant.provider || {};
 }
 
