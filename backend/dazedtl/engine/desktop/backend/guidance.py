@@ -26,19 +26,26 @@ def documents(root):
         path = found[0] if found else root / candidates[0]
         if path.exists() and path.stat().st_size > 1_000_000:
             raise ValueError("Guidance files must be below 1 MB.")
-        text = path.read_text(encoding="utf-8-sig") if path.exists() else ""
-        if name == "glossary":
-            from util.vocab import _split_base
-            text = _split_base(text)[0].rstrip("\n")
+        text = stored(name, path.read_text(encoding="utf-8-sig") if path.exists() else "")
         result[name] = {"text": text, "revision": digest(text.encode()), "path": str(path)}
     return result
+
+def stored(name, text):
+    """`text` as `documents` reads it back from a file that holds it: a
+    glossary file also keeps the shipped base, which is not part of it."""
+    if name == "glossary":
+        from util.vocab import _split_base
+        return _split_base(text)[0].rstrip("\n")
+    return text
 
 def document_save(root, name, revision, text):
     return documents_save(root, {name: {"revision": revision, "text": text}})
 
 def documents_save(root, changes):
     """Saves a set of guidance documents, {name: {revision, text}}, checking
-    every one before writing any, so a refused set changes no file."""
+    every one before writing any, so a refused set changes no file. A change
+    whose revision is out of date is no conflict when the file already holds
+    its text, which a save that wrote the file and then failed leaves."""
     root = Path(root)
     current = documents(root)
     if not isinstance(changes, dict):
@@ -50,7 +57,8 @@ def documents_save(root, changes):
         revision = change.get("revision")
         if name not in current and revision == "":
             revision = digest(b"")
-        if current.get(name, {"revision": digest(b"")})["revision"] != revision:
+        held = current.get(name, {"text": None, "revision": digest(b"")})
+        if held["revision"] != revision and held["text"] != stored(name, text):
             raise ValueError("This guidance changed on disk. Reload before saving.")
     for name, change in changes.items():
         text = change["text"]

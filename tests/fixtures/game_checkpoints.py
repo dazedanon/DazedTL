@@ -163,6 +163,39 @@ finally:
 assert git(kept, "rev-parse", "HEAD") == head
 git(kept, "checkout", "--", "data/Map001.json")
 clean()
+# A context save over that lock writes the glossary, then fails at its
+# checkpoint, leaving a draft that holds the revision from before the write.
+# Saving the draft again once the lock is gone must succeed: the file holds
+# its text, so it was refused as a conflict with the failed save's own write.
+draft = engine.documents(kept)["glossary"]
+stale.write_bytes(b"")
+try:
+    with patch.object(git_workflow, "INDEX_LOCK_WAIT", 0.2):
+        engine.document_save(kept, "glossary", draft["revision"], "水 (Water)\n")
+except GitWorkflowError as error:
+    assert "index.lock" in str(error), error
+else:
+    raise AssertionError("A guidance save committed over a stale index lock.")
+finally:
+    stale.unlink()
+assert engine.documents(kept)["glossary"]["text"] == "水 (Water)"
+saved = engine.document_save(kept, "glossary", draft["revision"], "水 (Water)\n")
+assert saved["glossary"]["text"] == "水 (Water)", saved
+clean()
+assert ".dazedtl/glossary.txt" in git(kept, "ls-files").split()
+# A real conflict, other text in the file, is still refused, and so is a
+# revision of a document the game has no file for.
+for name, revision, text in (
+    ("glossary", draft["revision"], "薬 (Elixir)"),
+    ("custom:nothing", "stale", ""),
+):
+    try:
+        engine.document_save(kept, name, revision, text)
+    except ValueError as error:
+        assert "changed on disk" in str(error), error
+    else:
+        raise AssertionError(f"A guidance save of {name} was not refused.")
+clean()
 meeting = threading.Barrier(2)
 errors = []
 
