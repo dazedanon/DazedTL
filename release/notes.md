@@ -1,5 +1,9 @@
 <!-- The next release's notes; see docs/development.md#release-notes. -->
 
+### Added
+
+- **Set up:** each game shows the languages it translates, such as English to Japanese, and **Change…** picks them until its first run; **Settings > Translation defaults** chooses the source language new games start with beside the target, and the app's labels, Images and the release playtest name the game's own languages. Games in the same script, such as English to Spanish, aren't supported yet.
+
 ### Fixed
 
 - **Playtest tools:** a published patch of a game with Forge installed no longer stops players' game at start with "Failed to load" for the Forge plugin: installing Forge now saves its plugin file in the game's checkpoint with plugins.js, and a game already missing it gets it in DazedTL's next change to the game.
