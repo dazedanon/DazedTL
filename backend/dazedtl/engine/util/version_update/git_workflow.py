@@ -174,6 +174,12 @@ class GitWorkflowError(RuntimeError):
     """Raised when an exact Git workflow operation cannot complete safely."""
 
 
+class UserFacingGitError(GitWorkflowError):
+    """A Git failure worded for the user, with no path outside the game; the page shows it as written."""
+
+    user_facing = True
+
+
 @dataclass(frozen=True)
 class RepositoryStatus:
     selected_root: Path
@@ -386,14 +392,14 @@ def _run_git(
                 timeout=timeout,
             )
         except FileNotFoundError as exc:
-            raise GitWorkflowError("Git is not installed or is not available on PATH") from exc
+            raise UserFacingGitError("Git is not installed or is not available on PATH") from exc
         # The exceptions' own text is a Python command list; say which Git command,
         # after any -c settings in front of it.
         except subprocess.TimeoutExpired as exc:
-            raise GitWorkflowError(f"git {_command_name(args)} did not finish within {timeout} seconds.") from exc
+            raise UserFacingGitError(f"git {_command_name(args)} did not finish within {timeout} seconds.") from exc
         except (OSError, subprocess.SubprocessError) as exc:
             reason = getattr(exc, "strerror", None) or type(exc).__name__
-            raise GitWorkflowError(f"git {_command_name(args)} could not run: {reason}") from exc
+            raise UserFacingGitError(f"git {_command_name(args)} could not run: {reason}") from exc
         # Git names the lock file in every language: "Unable to create '<path>/index.lock'".
         if not (raw.returncode and _command_name(args) in _INDEX_WRITERS and b"index.lock'" in raw.stderr):
             break
@@ -421,8 +427,9 @@ def _open_index_lock(lock: Path):
             return lock.open("xb")
         except FileExistsError:
             if time.monotonic() >= deadline:
-                raise GitWorkflowError(
-                    f"Unable to create '{lock}': File exists. Another Git process is using this repository."
+                raise UserFacingGitError(
+                    "Another Git process is using this repository. If none is running, "
+                    "delete the leftover .git/index.lock file in the game folder and try again."
                 ) from None
             time.sleep(0.1)
 

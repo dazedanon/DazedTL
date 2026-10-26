@@ -361,11 +361,14 @@ try {
     console.log(`Removed ${state.work}.`);
   } else if (command === "provider") {
     const state = readState(option("--work"));
-    const mode = JSON.parse(positional[1] || "{}");
-    fs.writeFileSync(
-      path.join(state.work, "provider/mode.json"),
-      JSON.stringify(mode),
-    );
+    // Merged into the mode the game variant and earlier calls set, so a
+    // variant's target and replies survive.
+    const file = path.join(state.work, "provider/mode.json");
+    const current = fs.existsSync(file)
+      ? JSON.parse(fs.readFileSync(file, "utf8"))
+      : {};
+    const mode = { ...current, ...JSON.parse(positional[1] || "{}") };
+    fs.writeFileSync(file, JSON.stringify(mode));
     console.log(`The stand-in now answers with ${JSON.stringify(mode)}.`);
   } else if (command === "drive") await drive(readState(option("--work")));
   else if (command === "live") {

@@ -22,6 +22,10 @@ skills), runs inside `write_game`, which holds the rules such writes share:
   write whose `paths` are all files no record holds, such as guidance under
   `.dazedtl/`, records nothing, since recording a big game takes minutes; a
   write inside it records the game first unless it names such files too.
+  For the same reason a write while the backend answers a request never
+  records: it refuses until the [background record](original_record.py)
+  is done, which it starts again after a stop or a failure. A write in an
+  operation's worker records, waiting for a background record first.
 - Once the outermost write to a game whose Git is set up succeeds, its change
   is one checkpoint commit on the translation branch
   ([checkpoint_commits](checkpoint_commits.py)), so every change DazedTL
@@ -51,6 +55,9 @@ writing = ContextVar("game_writes", default=frozenset())
 # Those of them whose original files are not recorded, as the writes there
 # named only files no record holds.
 unrecorded = ContextVar("game_writes_unrecorded", default=frozenset())
+# Set while the backend answers a request, whose writes never record a
+# game's original files.
+requesting = ContextVar("game_writes_requesting", default=False)
 # Git's metadata alone decides whether a checkout can take a write, so while
 # it is unchanged a write's check costs a few file stats, not a dozen Git
 # processes, which Windows starts slowly.
@@ -137,11 +144,10 @@ def _checkout(root):
     takes a checkpoint of each write, or None; refuses while the checkout
     can't take the write."""
     # A game takes translation work only in a repository of its own; one
-    # without, before version tracking is set up, has no checkout to keep,
-    # nor has one holding only the record of the game's original files.
-    from . import original_files
+    # whose Git is not set up has no checkout to keep.
+    from util.paths import game_git_set_up
 
-    if not (root / ".git").exists() or original_files.unborn(root):
+    if not game_git_set_up(root):
         return None
     from util.len_git import git_status
     from util.len_translation import LenProject
@@ -239,6 +245,14 @@ def write_game(
     if first and keeps:
         from dazedtl.projects import location
 
+        if (
+            requesting.get()
+            and not original_files.recorded(root)
+            and original_files.has_files(root)
+        ):
+            from . import original_record
+
+            raise ValueError(original_record.refusal(root))
         original_files.ensure_found(root, log)
         # The repository may be new; it names its project from now on.
         location.adopt(root)

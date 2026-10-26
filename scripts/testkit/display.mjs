@@ -167,6 +167,8 @@ export async function startDisplay({ name, log, width = 1400, height = 1000 }) {
         // Unset, Chromium would fall back to the desktop's wayland-0.
         WAYLAND_DISPLAY: name,
         GDK_BACKEND: "x11",
+        // A window manager sizes the window, which a click waits for.
+        DAZEDTL_TEST_MANAGED_WINDOW: "1",
       },
     };
   } catch (error) {

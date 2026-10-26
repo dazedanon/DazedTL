@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 
 _BOOTSTRAP_START = "/*<DazedMTLTool-Forge-bootstrap>*/"
 _BOOTSTRAP_END = "/*</DazedMTLTool-Forge-bootstrap>*/"
@@ -42,6 +43,16 @@ _STORAGE_INIT_RE = re.compile(
 _KEYS_TAB_KEYDOWN_GUARD_RE = re.compile(
     rf"!(?P<shortcuts>{_ID})\._isFocusedOnInput\(\)&&!(?P=shortcuts)\._hasSelection\(\)"
     rf"&&!\((?P<ui>{_ID})\.visible&&(?P=ui)\.activeTab===(?P<tabs>{_ID})\.Shortcuts\)"
+)
+_QUICK_LOAD_RE = re.compile(
+    rf"quickLoad:function\(\)\{{var {_ID}={_ID}\(function\*\({_ID}=1\)\{{"
+    rf"if\(window\.DataManager&&window\.SceneManager&&window\.Scene_Map\)try\{{"
+    rf"let {_ID}=window\.DataManager\.loadGame\({_ID}\);"
+    rf"[^{{}}]*?(?P<api>{_ID})\.scene\.completeQuickLoad\("
+)
+# Defines window.__dazedForgeQuickLoad, which the patched quickLoad calls.
+_QUICK_LOAD_JS = (
+    Path(__file__).with_name("quick_load.js").read_text(encoding="utf-8").strip()
 )
 
 
@@ -305,6 +316,7 @@ def _bootstrap_js(hotkey: str) -> str:
     );
   }} catch (e) {{}}
 }})();
+{_QUICK_LOAD_JS}
 {_BOOTSTRAP_END}"""
 
 
@@ -406,14 +418,31 @@ def _keep_toggle_ui_active_on_keys_tab(text: str) -> str:
     return text
 
 
+def _quick_load_from_own_scene(text: str) -> str:
+    """Send Forge's quick load through the bootstrap's loading scene."""
+    matches = list(_QUICK_LOAD_RE.finditer(text))
+    if len(matches) != 1:
+        raise ValueError("Could not route Forge's quick load through its own scene")
+    api = matches[0].group("api")
+    start = matches[0].start()
+    return (
+        text[:start]
+        + f"quickLoad:(e=1)=>window.__dazedForgeQuickLoad(e,t=>{api}.scene.__dazedQuickLoadNow(t)),"
+        + "__dazedQuickLoadNow:"
+        + text[start + len("quickLoad:") :]
+    )
+
+
 def apply_modern_forge_patches(text: str, hotkey: str) -> str:
-    """Inject the Dazed hotkey and settings bootstrap and keep the toggle active."""
+    """Inject the Dazed hotkey and settings bootstrap, keep the toggle active
+    and quick load from a scene of its own."""
     text = _strip_existing_bootstrap(text)
     text = _patch_toggle_ui_default(text, hotkey)
     text = _disable_launcher_default(text)
     text = _relocate_config_file(text)
     text = _patch_storage_adapter(text)
     text = _keep_toggle_ui_active_on_keys_tab(text)
+    text = _quick_load_from_own_scene(text)
     bootstrap = _bootstrap_js(hotkey)
     match = re.search(r"\*/\s*\n", text)
     if not match:

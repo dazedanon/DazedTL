@@ -3,6 +3,7 @@
 import inspect
 import json
 import sys
+import time
 from pathlib import Path
 
 root, temporary = map(Path, sys.argv[1:])
@@ -10,6 +11,7 @@ sys.path.insert(0, str(root / "backend"))
 
 from dazedtl.api.contracts.methods import METHODS
 from dazedtl.api.server import Application, dispatcher, routes
+from dazedtl.compatibility import original_files, original_record
 
 game = temporary / "game"
 (game / "data").mkdir(parents=True)
@@ -99,6 +101,14 @@ try:
         },
     )
     call("guided_context_status", {"project_id": project_id})
+    # Opening the game started recording its original files in the
+    # background; a task's write into the game waits for that record, which
+    # takes longer on a busy machine.
+    for _attempt in range(200):
+        if original_files.recorded(game):
+            break
+        time.sleep(0.05)
+    assert original_files.recorded(game), "Opening the game recorded nothing."
     call("guided_skill", {"project_id": project_id, "name": "setup"})
     call("assistant_task_dismiss", {"project_id": project_id, "kind": "names"})
     call("guided_draft", {"project_id": project_id, "documents": {}})
@@ -248,6 +258,7 @@ finally:
     app.closing = True
     app.guided.batch_monitor.close()
     app.translation.jobs.close()
+    original_record.close()
     app.images.close()
     try:
         app.backend.close()
