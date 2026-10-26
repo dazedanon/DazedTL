@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { Button } from "./Button";
+import { placeOnOpen, placePopover } from "./popoverPlacement";
 import { useRefocus } from "./useRefocus";
 
 const MenuContext = createContext<{
@@ -57,19 +58,8 @@ export function Menu({
   ];
   const refocus = useRefocus(items);
   const position = () => {
-    const popup = list.current,
-      target = anchor.current;
-    if (!popup || !target) return;
-    const rect = target.getBoundingClientRect();
-    const box = popup.getBoundingClientRect();
-    const margin = 8,
-      gap = 4;
-    const below = window.innerHeight - rect.bottom - gap - margin;
-    const upwards = box.height > below && rect.top - gap - margin > below;
-    const left = align === "end" ? rect.right - box.width : rect.left;
-    popup.style.left = `${Math.max(margin, Math.min(left, window.innerWidth - box.width - margin))}px`;
-    popup.style.top = `${Math.max(margin, upwards ? rect.top - gap - box.height : rect.bottom + gap)}px`;
-    popup.style.maxHeight = `${(upwards ? rect.top : window.innerHeight - rect.bottom) - gap - margin}px`;
+    if (list.current && anchor.current)
+      placePopover(list.current, anchor.current, { align, fit: true });
   };
   const search = () =>
     list.current?.querySelector<HTMLInputElement>("[data-menu-search]");
@@ -118,6 +108,7 @@ export function Menu({
         aria-label={label}
         className="menu-list"
         onKeyDown={keys}
+        onBeforeToggle={(event) => placeOnOpen(event, position)}
         onToggle={(event) => {
           anchor.current?.setAttribute(
             "aria-expanded",
@@ -134,7 +125,6 @@ export function Menu({
             return;
           }
           onOpen?.();
-          position();
           revealCurrent(list.current);
           // onOpen may reset a filter, which renders after this event.
           requestAnimationFrame(() => revealCurrent(list.current));

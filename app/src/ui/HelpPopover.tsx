@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { CircleHelp } from "lucide-react";
+import { placeOnOpen, placePopover } from "./popoverPlacement";
 
 /** The right edge of the room a button's page offers: its scrolling
  * container's content, which stops short of that container's scrollbar. */
@@ -35,21 +36,15 @@ export function HelpPopover({
   const popover = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const position = () => {
-    if (!button.current || !popover.current) return;
-    const anchor = button.current.getBoundingClientRect();
-    const box = popover.current.getBoundingClientRect();
-    const gap = 8;
-    popover.current.style.left = `${Math.max(gap, Math.min(anchor.left, roomRight(button.current) - box.width - gap))}px`;
-    popover.current.style.top = `${Math.max(
-      gap,
-      anchor.bottom + gap + box.height <= window.innerHeight
-        ? anchor.bottom + gap
-        : anchor.top - box.height - gap,
-    )}px`;
+    if (button.current && popover.current)
+      placePopover(popover.current, button.current, {
+        gap: 8,
+        right: roomRight(button.current),
+      });
   };
+  // Opening places it; an open note follows its button.
   useEffect(() => {
     if (!open) return;
-    position();
     window.addEventListener("resize", position);
     window.addEventListener("scroll", position, true);
     return () => {
@@ -75,6 +70,7 @@ export function HelpPopover({
         id={contentId}
         popover="auto"
         className="help-popover"
+        onBeforeToggle={(event) => placeOnOpen(event, position)}
         onToggle={(event) => setOpen(event.newState === "open")}
       >
         {children}
