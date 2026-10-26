@@ -139,7 +139,7 @@ def stop(root):
     root = Path(root).resolve()
     with _lock:
         record = _records.get(str(root))
-        if not _alive(record):
+        if record is None or not _alive(record):
             raise ValueError("The original game files are no longer being recorded.")
         record.stopping = True
         record.message = "Stopping…"
