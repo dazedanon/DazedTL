@@ -10,9 +10,9 @@
 - Queue work that spans several areas, reworks a rule or saved data, or touches files a running queue item owns in `~/DazedTranslations/DazedTL-plan.md` with the `dazedtl-plan` skill instead of starting it directly; one coordinator session starts each item once what it waits for has landed.
 - When a change is done, land it yourself with the `dazedtl-land` skill instead of waiting to be asked.
 - Put problems you notice outside the task under New in the bug list (`~/DazedTranslations/DazedTL-bugs.md`) instead of fixing them; the `dazedtl-triage` skill works through it.
-- Match the model and effort to the job, and set both when you start or propose a session:
-  - High on the strongest model: design, reworks, hard debugging, and the queue coordinator, whose decisions steer other sessions.
-  - Medium or a cheaper model: known one-area fixes, triage sorting, reviews, probes, merges, pushes and mechanical edits.
+- Run every session and subagent you start or propose on Opus 5.5 (`claude-opus-5-5`, Agent model `opus`), never Sonnet or Haiku, and match the effort to the job:
+  - High: design, reworks, hard debugging, and the queue coordinator, whose decisions steer other sessions.
+  - Medium: known one-area fixes, triage sorting, reviews, probes, merges, pushes and mechanical edits.
 - Before fixing a bug, read the git history of the code involved.
   If the same behavior was fixed before, stop and report the root cause with a proposed rework instead of patching it again.
 - Give each rule one definition, such as how a text block's rows are grouped or how a file's status is counted, and call it from every place that needs it.
