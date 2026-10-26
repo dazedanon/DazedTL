@@ -3,6 +3,19 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.34.0] - 2026-10-26
+
+### Added
+
+- **Set up:** each game shows the languages it translates, such as English to Japanese, and **Change…** picks them until its first run; **Settings > Translation defaults** chooses the source language new games start with beside the target, and the app's labels, Images and the release playtest name the game's own languages. Games in the same script, such as English to Spanish, aren't supported yet.
+
+### Fixed
+
+- **Playtest tools:** a published patch of a game with Forge installed no longer stops players' game at start with "Failed to load" for the Forge plugin: installing Forge now saves its plugin file in the game's checkpoint with plugins.js, and a game already missing it gets it in DazedTL's next change to the game.
+- **Translate:** a Chinese translation of a WOLF, KiriKiri or other game outside RPG Maker now wraps to its line width between characters, by the Chinese and Japanese line-break rules, instead of running past the window as one long line.
+- **Images:** Chinese or Japanese text drawn into an image no longer shows as boxes when the chosen font lacks its letters: it is drawn in a Chinese or Japanese font the computer has.
+- **Translate:** NScripter, KiriKiri and WOLF games no longer lose accented letters such as the ñ of "Señor": they are written without the accent, and a file holding a letter the game's Japanese text encoding can't write at all stops with a message naming the line instead of saving it with the letter missing.
+
 ## [2.33.2] - 2026-10-23
 
 ### Fixed
@@ -997,6 +1010,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.34.0]: https://github.com/dazedanon/DazedTL/compare/v2.33.2...v2.34.0
 [2.33.2]: https://github.com/dazedanon/DazedTL/compare/v2.33.1...v2.33.2
 [2.33.1]: https://github.com/dazedanon/DazedTL/compare/v2.33.0...v2.33.1
 [2.33.0]: https://github.com/dazedanon/DazedTL/compare/v2.32.1...v2.33.0
