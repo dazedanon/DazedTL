@@ -206,7 +206,7 @@ export function useGuidedWorkspace({
   // has its own Apply, and one confirms only the files it applied.
   const [appliedFiles, setAppliedFiles] = useState<Record<string, string>>({});
   // The label each action had when clicked: an install turns its button into
-  // Update, but its result still confirms the install.
+  // Update, so only a click on Update confirms an update.
   const [clickedLabels, setClickedLabels] = useState<Record<string, string>>(
     {},
   );
@@ -943,9 +943,13 @@ export function useGuidedWorkspace({
       !!toolCounterpart &&
       !!current &&
       jobTime(operationJob(toolCounterpart) || {}) > jobTime(current);
-    // An update leaves the row's status as it was, so a tool change from
-    // this visit still confirms beside its button.
-    const toolDoneHere = finishedHere && !!toolCounterpart && !superseded;
+    // An install or removal shows in the row's status; an update leaves it
+    // as it was, so only an update from this visit confirms beside its button.
+    const toolUpdatedHere =
+      finishedHere &&
+      !!toolCounterpart &&
+      !superseded &&
+      clickedLabels[name] === "Update";
     // A pack from this visit confirms beside its button.
     const packedHere = name === "ace_pack" && finishedHere;
     const display =
@@ -1012,15 +1016,8 @@ export function useGuidedWorkspace({
         )}
         {...(appliedHere
           ? { notice: "Saved translations applied." }
-          : toolDoneHere
-            ? {
-                // Short, so the row's buttons stay side by side.
-                notice: name.endsWith("_remove")
-                  ? "Removed."
-                  : clickedLabels[name] === "Update"
-                    ? "Updated."
-                    : "Installed.",
-              }
+          : toolUpdatedHere
+            ? { notice: "Updated." }
             : packedHere
               ? { notice: "Packed into the game." }
               : builtHere

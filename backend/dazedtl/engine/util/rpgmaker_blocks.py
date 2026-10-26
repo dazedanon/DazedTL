@@ -64,10 +64,17 @@ ROW_CODES = {401: 401, 405: 405, 408: 408, 108: 408}
 PER_LINE = re.compile(r"^(?:\\+a[clr](?![A-Za-z])|\\+>|\\+px\[\d+\])+ ?", re.IGNORECASE)
 
 
+def is_command_list(value: Any) -> bool:
+    """Whether a data file's value is an event command list."""
+    return isinstance(value, list) and any(
+        isinstance(item, dict) and "code" in item for item in value
+    )
+
+
 def command_lists(document: Any, path: tuple = ()) -> Iterator[tuple[tuple, list]]:
     """Every event command list in a data file, by the path to it."""
     if isinstance(document, list):
-        if any(isinstance(item, dict) and "code" in item for item in document):
+        if is_command_list(document):
             yield path, document
             return
         for index, child in enumerate(document):
@@ -160,6 +167,16 @@ class Block:
         """Whether players read it: a comment only under a marker a plugin
         shows."""
         return self.kind not in (HELP, COMMENT) or self.marker in markers
+
+    @property
+    def start(self) -> int:
+        """The index of its first command."""
+        return self.head if self.head is not None else self.rows[0]
+
+    @property
+    def end(self) -> int:
+        """The index after its last command."""
+        return (self.rows[-1] if self.rows else self.start) + 1
 
     def part(self, index: int) -> Part | None:
         """The part holding the command at *index*, its anchor or a row."""
@@ -467,7 +484,7 @@ def blocks(commands: list, *, original: list | None = None) -> Iterator[Block]:
             index += 1
             continue
         yield block
-        index = max(block.rows[-1] if block.rows else index, index) + 1
+        index = block.end
 
 
 def block_at(commands: list, index: int, *, original: list | None = None) -> Block | None:

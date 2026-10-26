@@ -51,10 +51,6 @@ def main():
         from desktop.backend.workflow_actions import run_action, json_value
         if plan.get("kind") == "len":
             from desktop.backend.len_method import run_action
-        elif plan.get("kind") == "version":
-            from desktop.backend.version_update import run_action
-        elif plan.get("kind") == "assets":
-            from desktop.backend.assets import run_action
         elif plan.get("kind") == "batch":
             from desktop.backend.batches import run_action
         elif plan.get("kind") == "evaluation":
