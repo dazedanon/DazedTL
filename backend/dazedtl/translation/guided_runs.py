@@ -15,6 +15,10 @@ PHASES = ("database", "dialogue", "advanced", "variables")
 # Raise when the same inputs and settings would estimate a phase differently.
 # It is part of every estimate's fingerprint, so raising it outdates them all.
 RUN_VERSION = 6
+# Raise when a file's comparison literals are read differently from the same
+# bytes; the derived store keeps them under it across restarts.
+LITERALS_VERSION = 1
+LITERALS = f"literals/{LITERALS_VERSION}"
 
 
 class GuidedRuns:
@@ -82,11 +86,20 @@ class GuidedRuns:
             ),
         )
 
-    def comparison_literals(self, path):
+    def comparison_literals(self, path, store=None):
+        """A file's digest and its code 111 comparison literals, kept in
+        memory and, given the project's derived *store*, across restarts."""
         fingerprint = self.guided.observed_digest(path)
         cached = self.comparison_files.get(path, fingerprint)
         if cached is not None:
             return cached
+        saved = store.get(LITERALS, fingerprint) if store is not None else None
+        if isinstance(saved, list) and all(
+            isinstance(row, list) and len(row) == 3 for row in saved
+        ):
+            result = (fingerprint, [tuple(row) for row in saved])
+            self.comparison_files.put(path, fingerprint, result)
+            return result
 
         def commands(value):
             if isinstance(value, list):
@@ -128,6 +141,10 @@ class GuidedRuns:
         # observed_digest; the next observation will invalidate this entry.
         result = (digest(raw), literals)
         self.comparison_files.put(path, result[0], result)
+        # Literals of bytes that changed since their digest hold for this
+        # look only.
+        if store is not None and result[0] == fingerprint:
+            store.put(LITERALS, fingerprint, [list(row) for row in literals])
         return result
 
     def inputs(
@@ -472,6 +489,8 @@ class GuidedRuns:
     def _compared(self, native):
         from util.source_text import holds_source
 
+        from . import derived
+
         try:
             cache, _ = self.cache(native)
             names = self.files(native, "variables")
@@ -479,12 +498,25 @@ class GuidedRuns:
             sources = inputs.sources(
                 names, inputs.record()["inputs"], self.guided.observed_digest
             )
-            matched, missing, files, rows, working = 0, 0, [], [], {}
-            for name in names:
+            store = derived.store(inputs.folder)
+            matched, missing, files, rows, read = 0, 0, [], [], {}
+            try:
+                for name in names:
+                    read[name] = self.comparison_literals(
+                        self.working_path(native, name, sources[name]), store
+                    )
+                # Files change with every run; a look at every map keeps
+                # only their current versions.
+                if set(names) == set(
+                    self.guided.backend.phase_files(native, "variables")
+                ):
+                    store.keep(LITERALS, {found[0] for found in read.values()})
+            finally:
+                # What was read stays read, even when a file failed.
+                store.save()
+            working = {name: found[0] for name, found in read.items()}
+            for name, (_, literals) in read.items():
                 count = 0
-                working[name], literals = self.comparison_literals(
-                    self.working_path(native, name, sources[name])
-                )
                 for command_index, literal, variables in literals:
                     if native["engine_options"].get(
                         "IGNORETLTEXT", True
