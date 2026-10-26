@@ -5,3 +5,4 @@
 - **Context:** a failed **Save context** shows its reason beside the button, and it and any other failed file write now name the file and why (for example that it is read-only), and a leftover Git lock says another Git process is using the game instead of "The operation could not finish."
 - **Inspect:** in **File contents**, every line after a message of more than one row showed beside another line's source text; each message now shows as one line beside its own source.
 - **Playtest tools:** installing or removing TL Inspector or Forge no longer says so twice or makes the window jump.
+- **Settings:** a successful **Check connection** no longer repeats its result beside the button.
