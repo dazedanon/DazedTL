@@ -387,6 +387,7 @@ ROWS = (
         "native",
         stage="Check",
         counterpart="inspector_install",
+        one_click=True,
         ready=True,
         tools=True,
         reports_outcome=True,
