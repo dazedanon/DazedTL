@@ -4,12 +4,18 @@ inventory and bundles a new task starts with."""
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
 from util import system
-from util.freshness import Basis, compare
+from util.freshness import (
+    Basis,
+    Digests,
+    compare,
+    signature,
+    signature_settled,
+)
 from util.paths import new_folder
 from util.qa.advance import _screen_targets
 from util.qa.briefs import _task_instructions
@@ -76,7 +82,16 @@ from util.qa.storage import (
     _task_lock,
 )
 from util.qa.validation import _read_observations
-from util.rpgmaker_qa_manifest import QUOTED_TRANSFORMS, build_manifest, write_manifest
+from util.rpgmaker_qa_manifest import (
+    QUOTED_TRANSFORMS,
+    build_manifest,
+    data_files,
+    file_inventory,
+    inventory_root,
+    record_order,
+    unresolved_order,
+    write_manifest,
+)
 from util.rpgmaker_qa_preflight import preflight
 from util.rpgmaker_qa_verify import verify_manifest
 
@@ -89,6 +104,12 @@ SCOPE_FILE = "scope.json"
 # Beside a focus's tasks, the key of the one preparing QA returned last; the
 # others are replaced, and a helper still holding one's path is sent on.
 CURRENT_FILE = "current.json"
+# Each data file's part of the game's text, by focus, reused while the file is
+# unchanged: the app reads the game's text on every status of a task.
+_FILE_TEXT = Digests()
+# The game's text digest by data folder and focus, with the stat signatures of
+# the files it was read from, so a status of an unchanged game reads no file.
+_GAME_TEXT: dict[tuple[str, str], tuple[tuple, str]] = {}
 
 
 def replaced_by(task_dir: str | Path) -> Path | None:
@@ -620,14 +641,66 @@ def inventory_matches(task_dir: str | Path, manifest: dict[str, Any]) -> bool:
     task = _read_json(root / "task.json")
     inventory = _read_json(root / "inventory.json")
     claimed = inventory.pop("content_sha256", None)
-
-    def text(value: dict[str, Any]) -> str:
-        return _sha256(_canonical_bytes(_inventory_text(value)))
-
     return claimed == _sha256(_canonical_bytes(inventory)) and not compare(
-        Basis(_rules_version(task), {"inventory": task.get("manifest_sha256"), "text": text(inventory)}),
-        Basis(_rules_version(task), {"inventory": claimed, "text": text(manifest)}),
+        Basis(
+            _rules_version(task),
+            {"inventory": task.get("manifest_sha256"), "text": text_digest(inventory)},
+        ),
+        Basis(_rules_version(task), {"inventory": claimed, "text": text_digest(manifest)}),
     )
+
+
+def text_digest(manifest: dict[str, Any]) -> str:
+    """A digest of the text an inventory holds (see _inventory_text)."""
+    return _sha256(_canonical_bytes(_inventory_text(manifest)))
+
+
+def game_text(
+    data_root: str | Path, focus: str, replaced: Mapping[str, Path] | None = None
+) -> str:
+    """The text_digest of an inventory of *focus* built from the game's data
+    folder now, without building one: each file's part is read again only
+    once the file changed, and the digest only once one did. *replaced* reads
+    some of the folder's files, by their name in it, from elsewhere, such as
+    corrections not yet written."""
+    root = inventory_root(data_root, focus)
+    sources = []
+    for path in data_files(root):
+        name = path.relative_to(root).as_posix()
+        source = Path((replaced or {}).get(name, path))
+        sources.append((name, source, source.stat()))
+    stamps = tuple((name, signature(info)) for name, _path, info in sources)
+    key = (str(root), focus)
+    saved = _GAME_TEXT.get(key)
+    if saved and saved[0] == stamps:
+        return saved[1]
+    records: list[dict[str, Any]] = []
+    unresolved: list[tuple[tuple[str, str, str], tuple[Any, Any]]] = []
+    for name, source, info in sources:
+
+        def read(source: Path = source, name: str = name) -> tuple[list, list]:
+            _row, found, missing = file_inventory(source, name, focus)
+            return [_record_text(record) for record in found], [
+                (unresolved_order(entry), _unresolved_text(entry)) for entry in missing
+            ]
+
+        found, missing = _FILE_TEXT.remember((focus, str(source)), info, read)
+        records += found
+        unresolved += missing
+    records.sort(key=record_order)
+    unresolved.sort(key=lambda entry: entry[0])
+    text = _sha256(
+        _canonical_bytes(
+            {
+                "focus": focus,
+                "records": records,
+                "unresolved": [entry[1] for entry in unresolved],
+            }
+        )
+    )
+    if all(signature_settled(stamp) for _name, stamp in stamps):
+        _GAME_TEXT[key] = (stamps, text)
+    return text
 
 
 def _inventory_text(manifest: dict[str, Any]) -> dict[str, Any]:
@@ -638,21 +711,27 @@ def _inventory_text(manifest: dict[str, Any]) -> dict[str, Any]:
     marks, nor the hashes of the extractor's source and of what it made."""
     return {
         "focus": manifest.get("focus"),
-        "records": [
-            {
-                "identity": record["identity"],
-                "live": record["live"],
-                "live_pointers": record["live_pointers"],
-                "event_code": record.get("event_code"),
-                "quoted": record["live_transform"] in QUOTED_TRANSFORMS,
-            }
-            for record in manifest["records"]
-        ],
+        "records": [_record_text(record) for record in manifest["records"]],
         "unresolved": [
-            (entry.get("file"), entry.get("source_pointer"))
-            for entry in manifest.get("unresolved") or []
+            _unresolved_text(entry) for entry in manifest.get("unresolved") or []
         ],
     }
+
+
+def _record_text(record: dict[str, Any]) -> dict[str, Any]:
+    """One inventory record's part of _inventory_text."""
+    return {
+        "identity": record["identity"],
+        "live": record["live"],
+        "live_pointers": record["live_pointers"],
+        "event_code": record.get("event_code"),
+        "quoted": record["live_transform"] in QUOTED_TRANSFORMS,
+    }
+
+
+def _unresolved_text(entry: dict[str, Any]) -> tuple[Any, Any]:
+    """One unresolved entry's part of _inventory_text."""
+    return (entry.get("file"), entry.get("source_pointer"))
 
 
 def find_latest_task(

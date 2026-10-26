@@ -64,6 +64,16 @@ def interface_capture(task_dir: str | Path) -> dict[str, Any] | None:
     }
 
 
+def capture_outdated(task_dir: str | Path, data: str | Path) -> bool:
+    """Whether the game's plugin files changed since the task's latest
+    capture, so preparing it again captures its screens again; a task
+    without a capture record has none to take again."""
+    previous = _capture_record(Path(task_dir))
+    return previous is not None and previous.get(
+        "plugins_sha256"
+    ) != rpgmaker_screens.plugins_sha256(data)
+
+
 def _capture_folder(root: Path) -> Path:
     found = interface_capture(root)
     return found["folder"] if found else root / INTERFACE_FOLDER

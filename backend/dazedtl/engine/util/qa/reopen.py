@@ -7,7 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from util import rpgmaker_screens, system
+from util import system
 from util.paths import unlink_with_retry
 from util.qa.advance import _issue_deep
 from util.qa.interface import (
@@ -16,6 +16,7 @@ from util.qa.interface import (
     _capture_record,
     _capture_round,
     _save_capture_record,
+    capture_outdated,
 )
 from util.qa.ledger import REVIEWED_FILE
 from util.qa.schema import _utc_now
@@ -43,9 +44,7 @@ def _recapture(
     corrections changes the inventory and so the task, so no correction of
     it is in the game when its findings are made again."""
     previous = _capture_record(root)
-    if previous is None or previous.get(
-        "plugins_sha256"
-    ) == rpgmaker_screens.plugins_sha256(data):
+    if previous is None or not capture_outdated(root, data):
         return
     record, places = _capture_round(
         data, root, previous["round"] + 1, manifest, progress

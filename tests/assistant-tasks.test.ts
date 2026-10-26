@@ -127,13 +127,7 @@ test("copied tasks wait for a newer result, and dismissed ones read Not started"
   assert.deepEqual(states(qa("new")), [["waiting", ""]]);
   const nextRound = { prepared_at: "2026-10-07T11:00:00.000000+00:00" };
   assert.deepEqual(states(qa("old", nextRound)), [["waiting", ""]]);
-  // The assistant's own playtest fix changes the game's plugins; it prepares
-  // QA again, keeping the review, so the task still waits rather than reading
-  // Outdated, which other changes still do.
   const stale = { current: false, message: "Changed." };
-  assert.deepEqual(states(qa("new", { ...stale, plugins_changed: true })), [
-    ["waiting", ""],
-  ]);
   assert.deepEqual(states(qa("new", stale)), [["outdated", "Changed."]]);
   // A copy for MV/MZ names the playtest's report: after QA's apply its
   // assistant plays the game again, so the task waits until a playtest of the

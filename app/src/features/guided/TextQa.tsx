@@ -88,9 +88,6 @@ export function TextQaWork({
   beside?: ReactNode;
 }) {
   const phase = qaPhase(qa);
-  // The game's plugins changed, as after the assistant's own fix, and the
-  // assistant prepares QA again, keeping its review.
-  const resuming = phase === "outdated" && !!qa.plugins_changed && waiting;
   // Once applied, only a proposal the user chose went into the game.
   const questions = qa.applied
     ? qa.questions.filter((row) => row.choice === "use")
@@ -102,19 +99,17 @@ export function TextQaWork({
       ? applied
         ? "applied"
         : "done"
-      : resuming
-        ? "waiting"
-        : phase === "outdated" || phase === "blocked"
-          ? phase
-          : phase === "questions"
-            ? "needs_review"
-            : phase === "clean"
-              ? "done"
-              : phase === "ready"
-                ? "ready"
-                : waiting || phase === "running"
-                  ? "waiting"
-                  : "not_started";
+      : phase === "outdated" || phase === "blocked"
+        ? phase
+        : phase === "questions"
+          ? "needs_review"
+          : phase === "clean"
+            ? "done"
+            : phase === "ready"
+              ? "ready"
+              : waiting || phase === "running"
+                ? "waiting"
+                : "not_started";
   const undo = (id: string) =>
     run("qa-undo:" + id, "undo", { findings: [id] }, "Undone.");
   const reapply = (id: string) =>
@@ -129,26 +124,22 @@ export function TextQaWork({
         description={
           phase === "not_started"
             ? "Start QA to prepare its task and copy it to your assistant."
-            : resuming
-              ? "The game's plugins changed during QA; your assistant prepares it again, which keeps the review done so far."
-              : phase === "outdated"
-                ? (qa.rules_changed
-                    ? "An update changed QA's rules while this task was in review. "
-                    : qa.plugins_changed
-                      ? "The game's plugins changed during QA. "
-                      : "The game text changed after QA. ") + rerun
-                : phase === "blocked"
-                  ? `${qa.message} ${rerun}`
-                  : phase === "running"
-                    ? (qaReviewedBefore(qa)
-                        ? "Your assistant is reviewing the text changed since earlier QA. "
-                        : "Your assistant is reviewing. ") +
-                      "Corrections apply on their own once they pass the editorial pass."
-                    : phase === "questions"
-                      ? "QA applies its corrections once you answer the questions below."
-                      : phase === "ready"
-                        ? "Your assistant applies these corrections next; you can also apply them here."
-                        : qaSummary(qa)
+            : phase === "outdated"
+              ? (qa.rules_changed
+                  ? "An update changed QA's rules while this task was in review. "
+                  : "The game text changed after QA. ") + rerun
+              : phase === "blocked"
+                ? `${qa.message} ${rerun}`
+                : phase === "running"
+                  ? (qaReviewedBefore(qa)
+                      ? "Your assistant is reviewing the text changed since earlier QA. "
+                      : "Your assistant is reviewing. ") +
+                    "Corrections apply on their own once they pass the editorial pass."
+                  : phase === "questions"
+                    ? "QA applies its corrections once you answer the questions below."
+                    : phase === "ready"
+                      ? "Your assistant applies these corrections next; you can also apply them here."
+                      : qaSummary(qa)
         }
         help={
           "Verified corrections go into the game as one text batch, saved as a version. Undo puts back one correction and Apply again redoes it" +

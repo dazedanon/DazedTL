@@ -1,5 +1,6 @@
 """Text QA's helper steps apply findings only through the app's publication."""
 
+import hashlib
 import json
 import unittest
 from pathlib import Path
@@ -24,7 +25,10 @@ def fake_guided(folder, qa, method="guided"):
 
     guided = SimpleNamespace(
         projects=SimpleNamespace(get=lambda _id: {"backend_id": "native"}),
-        record=lambda _id: ({}, {"id": "native", "source": str(folder)}),
+        record=lambda _id: (
+            {},
+            {"id": "native", "source": str(folder), "data": str(Path(folder) / "data")},
+        ),
         saved_form=lambda _id: {"text": {"focus": "release"}},
         backend=SimpleNamespace(
             guided_text_state=lambda _native, _focus: {"qa": qa},
@@ -168,9 +172,15 @@ class TextQATests(unittest.TestCase):
             task = Path(folder) / "task"
             screens = task / "interface" / "round-1"
             screens.mkdir(parents=True)
+            # A capture of the game as it is, which has no plugins.
+            capture = {
+                "round": 1,
+                "folder": "round-1",
+                "summary": {},
+                "plugins_sha256": hashlib.sha256().hexdigest(),
+            }
             (task / "interface" / "capture.json").write_text(
-                json.dumps({"round": 1, "folder": "round-1", "summary": {}}),
-                encoding="utf-8",
+                json.dumps(capture), encoding="utf-8"
             )
             (screens / "screens.json").write_text(
                 json.dumps(
@@ -217,6 +227,14 @@ class TextQATests(unittest.TestCase):
                 ],
             )
             self.assertIn("Before qa --apply", state["next"])
+            self.assertNotIn("captures them again", state["next"])
+            # The assistant's own fixes change the game's plugins during
+            # review, which leaves the text QA reviews current: preparing
+            # again captures the screens again and keeps the review.
+            (Path(folder) / "js").mkdir()
+            (Path(folder) / "js" / "plugins.js").write_text("[]", encoding="utf-8")
+            state = TextQA(guided).run("project", "status")  # type: ignore[arg-type]
+            self.assertIn("run qa --prepare, which captures them again", state["next"])
             # A capture taken again after the corrections change the game's
             # text needs a fresh task, so applied QA lists none; Guided's
             # Plugin files shortens them itself.

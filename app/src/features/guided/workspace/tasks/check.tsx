@@ -210,14 +210,8 @@ export function qaView(w: GuidedWorkspace): TaskView {
     phase === "not_started" ? (
       start("Start text QA")
     ) : phase === "outdated" || phase === "blocked" ? (
-      // Preparing again sets aside a task the app can't read. The assistant
-      // prepares again itself once its own fixes change the game's plugins.
-      start(
-        "Run QA again",
-        assisted && qa.plugins_changed && phase === "outdated"
-          ? "default"
-          : "primary",
-      )
+      // Preparing again sets aside a task the app can't read.
+      start("Run QA again", "primary")
     ) : phase === "applied" || phase === "clean" ? (
       // Text edited since, such as new translation, or the playtest's
       // findings can take another pass, which the assistant takes itself.

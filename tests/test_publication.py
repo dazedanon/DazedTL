@@ -435,18 +435,14 @@ class PublicationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "already applied"):
             qa_selection(state, "qa_apply", {"findings": ["QA-0001"]})
 
-    def test_saved_qa_findings_and_unreadable_tasks_reach_the_app_by_contract(self):
-        # Engine findings carry extra engine fields; passing them through broke
-        # the workspace snapshot contract. Corrections come from the findings.
-        import json
+    def qa_task(self):
+        """A prepared QA task of the database focus, complete with two
+        findings and an older task's question, read through a stand-in
+        engine."""
         from types import ModuleType, SimpleNamespace
 
-        from dazedtl.api.contracts.guided import QaState
-        from dazedtl.api.contracts.validation import _close_contracts
         from dazedtl.compatibility import text
-        from dazedtl.compatibility.dazedmtl import ExistingBackend
         from dazedtl.translation.files import digest
-        from pydantic import TypeAdapter
 
         task_dir = self.folder / "text-qa/database/task"
         for name in (
@@ -468,6 +464,8 @@ class PublicationTests(unittest.TestCase):
         engine.task_sha256 = lambda task: "task"
         engine.status = lambda root: {"stage": "complete"}
         engine.answers = lambda root: {}
+        engine.text_digest = lambda manifest: "reviewed"
+        engine.game_text = lambda data, focus, replaced=None: "reviewed"
         refreshed = []
         engine.refresh_kept = lambda root, kept: refreshed.append((root, kept))
         write_json(
@@ -556,7 +554,7 @@ class PublicationTests(unittest.TestCase):
             self.folder / "text-qa-database.json",
             {
                 "task": str(task_dir),
-                "binding": text.binding(plan),
+                "binding": text.binding(plan, "reviewed"),
                 "immutable": {
                     name: digest((task_dir / name).read_bytes())
                     for name in (
@@ -570,6 +568,142 @@ class PublicationTests(unittest.TestCase):
         )
         package = ModuleType("util")
         package.rpgmaker_qa = engine
+        return SimpleNamespace(
+            task_dir=task_dir,
+            engine=engine,
+            package=package,
+            plan=plan,
+            refreshed=refreshed,
+        )
+
+    def test_a_qa_tasks_own_corrections_leave_it_current(self):
+        # QA's own Apply rewrote the text its task reviewed, which read as a
+        # change to the game: the task read "The game text changed" and
+        # refused its later corrections. Its binding follows its corrections.
+        from types import ModuleType
+
+        # Imported before the stand-in engine replaces util: QA's status reads
+        # what Plugin files keeps.
+        import dazedtl.plugins.service  # noqa: F401
+        from dazedtl.compatibility import text
+        from dazedtl.translation.files import digest
+
+        qa = self.qa_task()
+        engine, plan = qa.engine, qa.plan
+        game = self.root / "data/A.json"
+
+        def game_text(data, focus, replaced=None):
+            return digest(Path((replaced or {}).get("A.json", game)).read_bytes())
+
+        def corrections(root, chosen, proposals, undo=False):
+            return {"operations": [{"file": "A.json"}], "ids": chosen, "undo": undo}
+
+        def apply(staging, task, selected, before, **options):
+            # The corrections in a file the game's text holds.
+            path = Path(task["data_root"]) / "A.json"
+            fixed = set(read_json(path).get("fixed", []))
+            ids = set(selected["ids"])
+            fixed = fixed - ids if selected["undo"] else fixed | ids
+            write_json(path, {**read_json(path), "fixed": sorted(fixed)})
+
+        engine.game_text = game_text
+        engine.correction_map = corrections
+        engine.apply_loaded_correction_map = apply
+        engine.APPROVED_NONBLOCKING_MECHANICAL_FLAGS = frozenset()
+        actions = ModuleType("desktop.backend.workflow_actions")
+        actions.validate_plan = lambda plan: None
+        actions.action_guard = lambda *_: {}
+        modules = {
+            "util": qa.package,
+            "util.rpgmaker_qa": engine,
+            "desktop.backend.workflow_actions": actions,
+        }
+        reviewed = game_text(None, "database")
+
+        def status(plan=plan):
+            with replaced_modules(modules):
+                return text.qa_state(plan)
+
+        def run(action, findings):
+            batch = {
+                **plan,
+                "action": action,
+                "label": action,
+                "options": {
+                    **plan["options"],
+                    "task": str(qa.task_dir),
+                    "findings": findings,
+                },
+            }
+            with replaced_modules(modules):
+                text.prepare_publication(batch)
+            p.publish(self.folder, self.root, batch["publication"])
+            return status()
+
+        def states(state):
+            return [(row["id"], row.get("state", "")) for row in state["findings"]]
+
+        # A binding an earlier release saved bound the whole game folder; one
+        # with corrections in the game reads current as the game is then.
+        pointer = self.folder / "text-qa-database.json"
+        saved = read_json(pointer)
+        write_json(pointer, {**saved, "binding": {"project": "project", "guard": {}}})
+        engine.text_digest = lambda manifest: reviewed
+        self.assertTrue(status()["current"])
+        first = run("qa_apply", ["QA-0001"])
+        self.assertEqual(
+            (first["current"], states(first)),
+            (True, [("QA-0001", "applied"), ("QA-0002", "")]),
+        )
+        self.assertEqual(read_json(pointer)["binding"]["version"], 2)
+        # A later correction applies, and undoing one leaves the task current
+        # too.
+        later = run("qa_apply", ["QA-0002"])
+        undone = run("qa_undo", ["QA-0001"])
+        self.assertEqual(
+            [(state["current"], states(state)) for state in (later, undone)],
+            [
+                (True, [("QA-0001", "applied"), ("QA-0002", "applied")]),
+                (True, [("QA-0001", "undone"), ("QA-0002", "applied")]),
+            ],
+        )
+        # The game's plugins, as Plugin files changes them, are not the text
+        # QA reviewed.
+        self.assertTrue(status({**plan, "guard": {"plugins": "changed"}})["current"])
+        # Text changed by anything else outdates the task, and a follow-up
+        # round's correction waits for QA to run again.
+        write_json(game, {**read_json(game), "text": "edited"})
+        document = read_json(qa.task_dir / "findings.json")
+        document["findings"].append({**document["findings"][0], "id": "QA-0003"})
+        write_json(qa.task_dir / "findings.json", document)
+        state = status()
+        self.assertEqual(
+            (state["current"], state["message"]),
+            (False, "The game text changed since this QA task was prepared."),
+        )
+        with self.assertRaisesRegex(ValueError, "game text changed"):
+            run("qa_apply", ["QA-0003"])
+
+    def test_saved_qa_findings_and_unreadable_tasks_reach_the_app_by_contract(self):
+        # Engine findings carry extra engine fields; passing them through broke
+        # the workspace snapshot contract. Corrections come from the findings.
+        import json
+        from types import SimpleNamespace
+
+        from dazedtl.api.contracts.guided import QaState
+        from dazedtl.api.contracts.validation import _close_contracts
+        from dazedtl.compatibility import text
+        from dazedtl.compatibility.dazedmtl import ExistingBackend
+        from pydantic import TypeAdapter
+
+        qa = self.qa_task()
+        task_dir, engine, package, plan, refreshed = (
+            qa.task_dir,
+            qa.engine,
+            qa.package,
+            qa.plan,
+            qa.refreshed,
+        )
         with replaced_modules({"util": package, "util.rpgmaker_qa": engine}):
             state = text.qa_state(plan)
         _close_contracts()
@@ -649,22 +783,6 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(
             [row.get("state", "") for row in state["findings"]],
             ["applied", "applied", ""],
-        )
-        # A Plugin files apply after QA read the finished task as Outdated
-        # once its corrections were undone, with no way to apply them again;
-        # only a task still in review prepares again for new plugins.
-        plugins = {**plan, "guard": {"plugins": "changed"}}
-        with replaced_modules({"util": package, "util.rpgmaker_qa": engine}):
-            finished = text.qa_state(plugins)
-            engine.status = lambda root: {"stage": "ready-finalize"}
-            reviewing = text.qa_state(plugins)
-            engine.status = lambda root: {"stage": "complete"}
-        self.assertEqual(
-            [
-                (state["current"], "plugins_changed" in state)
-                for state in (finished, reviewing)
-            ],
-            [(True, False), (False, True)],
         )
 
         # A task the app couldn't read read as Not started with no reason, and

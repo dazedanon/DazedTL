@@ -310,191 +310,224 @@ def _display_shape(code: int | None, classification: str) -> str:
     }.get(code, "event-command" if code is not None else classification)
 
 
-def build_manifest(data_root: str | Path, focus: str) -> dict[str, Any]:
-    """Return a deterministic, side-effect-free QA inventory manifest."""
+def record_order(record: dict[str, Any]) -> str:
+    """Where a record goes in an inventory's records."""
+    return record["identity"]
+
+
+def unresolved_order(entry: dict[str, Any]) -> tuple[str, str, str]:
+    """Where an entry goes in an inventory's unresolved list."""
+    return (entry["file"], entry.get("source_pointer") or "", entry["reason"])
+
+
+def inventory_root(data_root: str | Path, focus: str) -> Path:
+    """The data folder an inventory of *focus* reads, once both are valid."""
     if focus not in FOCUSES:
         raise ValueError(f"unknown focus: {focus!r}")
     root = Path(data_root).expanduser().resolve()
     if not root.is_dir():
         raise ValueError(f"data folder does not exist: {root}")
+    return root
+
+
+def data_files(root: Path) -> list[Path]:
+    """The JSON files of the data folder *root* an inventory reads, in its order."""
+    return sorted(
+        (item for item in root.rglob("*.json") if item.is_file()),
+        key=lambda item: item.relative_to(root).as_posix(),
+    )
+
+
+def file_inventory(
+    path: Path, filename: str, focus: str
+) -> tuple[dict[str, str], list[dict[str, Any]], list[dict[str, Any]]]:
+    """One data file's part of an inventory of *focus*: its file row, its
+    records and what could not be resolved, which build_manifest sorts with
+    the other files'. *filename* names the file in the data folder."""
+    raw = path.read_bytes()
+    row = {"path": filename, "sha256": _sha256(raw)}
+    records: list[dict[str, Any]] = []
+    unresolved: list[dict[str, Any]] = []
+    try:
+        document = json.loads(raw.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        unresolved.append(
+            {"file": filename, "source_pointer": None, "reason": f"parse-error: {exc}"}
+        )
+        return row, records, unresolved
+
+    def walk(
+        value: Any,
+        path_parts: tuple[object, ...],
+        command_list: list[Any] | None = None,
+        command_index: int | None = None,
+    ) -> None:
+        if isinstance(value, dict):
+            code = value.get("code") if isinstance(value.get("code"), int) else None
+            original = value.get("_original")
+            if original is not None:
+                classification = _classification(path.name, code)
+                include = focus == "release" or focus == classification
+                if include:
+                    leaves = list(string_leaves(original))
+                    if not leaves:
+                        unresolved.append(
+                            {
+                                "file": filename,
+                                "source_pointer": pointer(path_parts + ("_original",)),
+                                "classification": classification,
+                                "reason": "empty-or-non-string-original",
+                            }
+                        )
+                    for original_path, source in leaves:
+                        source_path = path_parts + ("_original",) + original_path
+                        if (
+                            filename,
+                            pointer(source_path),
+                        ) in TOOL_MANAGED_QA_EXCLUSIONS:
+                            continue
+                        mapping = live_mapping(
+                            value,
+                            path_parts,
+                            original_path,
+                            code,
+                            command_list,
+                            command_index,
+                        )
+                        if mapping is None:
+                            unresolved.append(
+                                {
+                                    "file": filename,
+                                    "source_pointer": pointer(source_path),
+                                    "classification": classification,
+                                    "reason": "unsupported-scalar-original-shape",
+                                }
+                            )
+                            continue
+                        live_paths, mapping_kind = mapping
+                        try:
+                            live, live_transform = read_live(document, live_paths, code)
+                        except (KeyError, IndexError, TypeError, ValueError) as exc:
+                            unresolved.append(
+                                {
+                                    "file": filename,
+                                    "source_pointer": pointer(source_path),
+                                    "classification": classification,
+                                    "reason": f"unresolvable-live-counterpart: {exc}",
+                                }
+                            )
+                            continue
+                        source_hash = _sha256(source)
+                        record = {
+                            "identity": _record_identity(
+                                filename, pointer(source_path), source_hash
+                            ),
+                            "file": filename,
+                            "source_pointer": pointer(source_path),
+                            "live_pointers": [pointer(item) for item in live_paths],
+                            "source_sha256": source_hash,
+                            "source": source,
+                            "live": live,
+                            "classification": classification,
+                            "mapping": mapping_kind,
+                            "live_transform": live_transform,
+                            "event_code": code,
+                            "display_shape": _display_shape(code, classification),
+                            "source_char_length": len(source),
+                            "live_char_length": len(live),
+                            "length_band": _length_band(live),
+                            "mechanical": mechanical.evidence(source, live, code),
+                        }
+                        if code == 408 and command_list is not None:
+                            _choice_help(record, command_list, int(command_index))
+                        if code in DIALOGUE_CODES and command_list is not None:
+                            record["speaker"] = _speaker(
+                                command_list, int(command_index), code
+                            )
+                            if code == 102:
+                                params = value.get("parameters") or []
+                                indent = value.get("indent")
+                                branches = []
+                                cursor = int(command_index) + 1
+                                while cursor < len(command_list):
+                                    branch = command_list[cursor]
+                                    if not isinstance(branch, dict):
+                                        cursor += 1
+                                        continue
+                                    if branch.get("code") == 404 and branch.get("indent") == indent:
+                                        break
+                                    if branch.get("code") == 402 and branch.get("indent") == indent:
+                                        branch_params = branch.get("parameters") or []
+                                        branches.append(
+                                            {
+                                                "index": branch_params[0] if branch_params else None,
+                                                "label": branch_params[1] if len(branch_params) > 1 else None,
+                                            }
+                                        )
+                                    cursor += 1
+                                record["choice_context"] = {
+                                    "cancel_type": params[1] if len(params) > 1 else None,
+                                    "default_type": params[2] if len(params) > 2 else None,
+                                    "position_type": params[3] if len(params) > 3 else None,
+                                    "background": params[4] if len(params) > 4 else None,
+                                    "branches": branches,
+                                }
+                        if classification == "database":
+                            record["database_entity"] = {
+                                "id": value.get("id"),
+                                "name": value.get("name") if isinstance(value.get("name"), str) else None,
+                                "field": "/".join(str(item) for item in original_path),
+                            }
+                        if classification == "risky-codes":
+                            params = value.get("parameters") or []
+                            record["risky_context"] = {
+                                "plugin_header": params[0]
+                                if code == 357 and params and isinstance(params[0], str)
+                                else None,
+                                "actor_id": params[0]
+                                if code in {320, 324, 325} and params
+                                else None,
+                                "visibility": "requires-runtime-evidence",
+                            }
+                        records.append(record)
+
+            for key in sorted(value):
+                if key != "_original":
+                    walk(value[key], path_parts + (key,))
+        elif isinstance(value, list):
+            is_commands = any(
+                isinstance(item, dict) and isinstance(item.get("code"), int)
+                for item in value
+            )
+            for index, child in enumerate(value):
+                walk(
+                    child,
+                    path_parts + (index,),
+                    value if is_commands else command_list,
+                    index if is_commands else command_index,
+                )
+
+    walk(document, ())
+    return row, records, unresolved
+
+
+def build_manifest(data_root: str | Path, focus: str) -> dict[str, Any]:
+    """Return a deterministic, side-effect-free QA inventory manifest."""
+    root = inventory_root(data_root, focus)
 
     files: list[dict[str, str]] = []
     records: list[dict[str, Any]] = []
     unresolved: list[dict[str, Any]] = []
+    for path in data_files(root):
+        row, found, missing = file_inventory(
+            path, path.relative_to(root).as_posix(), focus
+        )
+        files.append(row)
+        records += found
+        unresolved += missing
 
-    json_paths = sorted(
-        (item for item in root.rglob("*.json") if item.is_file()),
-        key=lambda item: item.relative_to(root).as_posix(),
-    )
-    for path in json_paths:
-        filename = path.relative_to(root).as_posix()
-        raw = path.read_bytes()
-        files.append({"path": filename, "sha256": _sha256(raw)})
-        try:
-            document = json.loads(raw.decode("utf-8-sig"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            unresolved.append(
-                {"file": filename, "source_pointer": None, "reason": f"parse-error: {exc}"}
-            )
-            continue
-
-        def walk(
-            value: Any,
-            path_parts: tuple[object, ...],
-            command_list: list[Any] | None = None,
-            command_index: int | None = None,
-        ) -> None:
-            if isinstance(value, dict):
-                code = value.get("code") if isinstance(value.get("code"), int) else None
-                original = value.get("_original")
-                if original is not None:
-                    classification = _classification(path.name, code)
-                    include = focus == "release" or focus == classification
-                    if include:
-                        leaves = list(string_leaves(original))
-                        if not leaves:
-                            unresolved.append(
-                                {
-                                    "file": filename,
-                                    "source_pointer": pointer(path_parts + ("_original",)),
-                                    "classification": classification,
-                                    "reason": "empty-or-non-string-original",
-                                }
-                            )
-                        for original_path, source in leaves:
-                            source_path = path_parts + ("_original",) + original_path
-                            if (
-                                filename,
-                                pointer(source_path),
-                            ) in TOOL_MANAGED_QA_EXCLUSIONS:
-                                continue
-                            mapping = live_mapping(
-                                value,
-                                path_parts,
-                                original_path,
-                                code,
-                                command_list,
-                                command_index,
-                            )
-                            if mapping is None:
-                                unresolved.append(
-                                    {
-                                        "file": filename,
-                                        "source_pointer": pointer(source_path),
-                                        "classification": classification,
-                                        "reason": "unsupported-scalar-original-shape",
-                                    }
-                                )
-                                continue
-                            live_paths, mapping_kind = mapping
-                            try:
-                                live, live_transform = read_live(document, live_paths, code)
-                            except (KeyError, IndexError, TypeError, ValueError) as exc:
-                                unresolved.append(
-                                    {
-                                        "file": filename,
-                                        "source_pointer": pointer(source_path),
-                                        "classification": classification,
-                                        "reason": f"unresolvable-live-counterpart: {exc}",
-                                    }
-                                )
-                                continue
-                            source_hash = _sha256(source)
-                            record = {
-                                "identity": _record_identity(
-                                    filename, pointer(source_path), source_hash
-                                ),
-                                "file": filename,
-                                "source_pointer": pointer(source_path),
-                                "live_pointers": [pointer(item) for item in live_paths],
-                                "source_sha256": source_hash,
-                                "source": source,
-                                "live": live,
-                                "classification": classification,
-                                "mapping": mapping_kind,
-                                "live_transform": live_transform,
-                                "event_code": code,
-                                "display_shape": _display_shape(code, classification),
-                                "source_char_length": len(source),
-                                "live_char_length": len(live),
-                                "length_band": _length_band(live),
-                                "mechanical": mechanical.evidence(source, live, code),
-                            }
-                            if code == 408 and command_list is not None:
-                                _choice_help(record, command_list, int(command_index))
-                            if code in DIALOGUE_CODES and command_list is not None:
-                                record["speaker"] = _speaker(
-                                    command_list, int(command_index), code
-                                )
-                                if code == 102:
-                                    params = value.get("parameters") or []
-                                    indent = value.get("indent")
-                                    branches = []
-                                    cursor = int(command_index) + 1
-                                    while cursor < len(command_list):
-                                        branch = command_list[cursor]
-                                        if not isinstance(branch, dict):
-                                            cursor += 1
-                                            continue
-                                        if branch.get("code") == 404 and branch.get("indent") == indent:
-                                            break
-                                        if branch.get("code") == 402 and branch.get("indent") == indent:
-                                            branch_params = branch.get("parameters") or []
-                                            branches.append(
-                                                {
-                                                    "index": branch_params[0] if branch_params else None,
-                                                    "label": branch_params[1] if len(branch_params) > 1 else None,
-                                                }
-                                            )
-                                        cursor += 1
-                                    record["choice_context"] = {
-                                        "cancel_type": params[1] if len(params) > 1 else None,
-                                        "default_type": params[2] if len(params) > 2 else None,
-                                        "position_type": params[3] if len(params) > 3 else None,
-                                        "background": params[4] if len(params) > 4 else None,
-                                        "branches": branches,
-                                    }
-                            if classification == "database":
-                                record["database_entity"] = {
-                                    "id": value.get("id"),
-                                    "name": value.get("name") if isinstance(value.get("name"), str) else None,
-                                    "field": "/".join(str(item) for item in original_path),
-                                }
-                            if classification == "risky-codes":
-                                params = value.get("parameters") or []
-                                record["risky_context"] = {
-                                    "plugin_header": params[0]
-                                    if code == 357 and params and isinstance(params[0], str)
-                                    else None,
-                                    "actor_id": params[0]
-                                    if code in {320, 324, 325} and params
-                                    else None,
-                                    "visibility": "requires-runtime-evidence",
-                                }
-                            records.append(record)
-
-                for key in sorted(value):
-                    if key != "_original":
-                        walk(value[key], path_parts + (key,))
-            elif isinstance(value, list):
-                is_commands = any(
-                    isinstance(item, dict) and isinstance(item.get("code"), int)
-                    for item in value
-                )
-                for index, child in enumerate(value):
-                    walk(
-                        child,
-                        path_parts + (index,),
-                        value if is_commands else command_list,
-                        index if is_commands else command_index,
-                    )
-
-        walk(document, ())
-
-    records.sort(key=lambda item: item["identity"])
-    unresolved.sort(
-        key=lambda item: (item["file"], item.get("source_pointer") or "", item["reason"])
-    )
+    records.sort(key=record_order)
+    unresolved.sort(key=unresolved_order)
     grouped: dict[tuple[str, str], list[str]] = {}
     for record in records:
         grouped.setdefault((record["source"], record["live"]), []).append(record["identity"])

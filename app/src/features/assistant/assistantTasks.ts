@@ -252,12 +252,10 @@ function standing(
       return !own || record.finishedAt === undefined || qaTaskDone(guided)
         ? { state: "finished" }
         : waiting();
-    // The assistant's own fixes change the game's plugins, and it prepares QA
-    // again, keeping its review; other changes outdate the findings.
-    if (phase === "outdated")
-      return own && qa.plugins_changed
-        ? waiting()
-        : { state: "outdated", detail: qa.message };
+    // Changes to the text QA reviewed, other than its own corrections,
+    // outdate the findings; the game's plugins, which the assistant's own
+    // fixes change, do not.
+    if (phase === "outdated") return { state: "outdated", detail: qa.message };
     // Only the user's answers hold QA up; the assistant applies the rest.
     if (phase === "questions") {
       const questions = qa.questions.filter((row) => !row.choice).length;
