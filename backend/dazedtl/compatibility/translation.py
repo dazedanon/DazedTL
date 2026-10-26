@@ -177,6 +177,7 @@ class TranslationEngine:
         return valid_document_name(name)
 
     def prepare(self, source, options, *, language="English", refresh=True):
+        from desktop.backend.guidance import written
         from util.len_progress import initialize_progress
         from util.len_translation import (
             BUNDLED_SKILL,
@@ -197,10 +198,16 @@ class TranslationEngine:
         if not refresh:
             return paths
         _validate_skill(BUNDLED_SKILL)
-        # Both move legacy guidance into .dazedtl and keep DazedTL's rules in
-        # the game's .gitignore.
+        # Both move legacy guidance into .dazedtl, create the glossary and keep
+        # DazedTL's rules in the game's .gitignore once it has a repository,
+        # so a game without one is recorded only when the assistant first
+        # changes its files.
         with write_game(
-            source, pack=False, summary="Prepare the project files", stage="Set up"
+            source,
+            pack=False,
+            paths=written(source, ["glossary"]),
+            summary="Prepare the project files",
+            stage="Set up",
         ):
             shared = shared_context(project, language)
             _prepare_local_work(project)

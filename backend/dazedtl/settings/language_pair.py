@@ -79,7 +79,7 @@ def keep(settings, root):
 
 def choose(root, source, target):
     """Records *source* into *target* as the pair of the game at *root*."""
-    from util.game_settings import save_language_pair
+    from util.game_settings import GAME_SETTINGS_RELATIVE, save_language_pair
 
     from dazedtl.compatibility.game_write import write_game
 
@@ -87,8 +87,14 @@ def choose(root, source, target):
     refused = problem(source, target)
     if refused:
         raise ValueError(refused)
+    # DazedTL's own settings, which records of the original game leave out,
+    # so choosing records none.
     with write_game(
-        root, pack=False, summary="Record the game's languages", stage="Set up"
+        root,
+        pack=False,
+        paths=[GAME_SETTINGS_RELATIVE.as_posix()],
+        summary="Record the game's languages",
+        stage="Set up",
     ):
         save_language_pair(root, source, target)
 

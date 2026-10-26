@@ -49,6 +49,8 @@ from util.len_patch_scope import scope_ignore
 from util.len_translation import _WORK_IGNORE_BLOCK, _prepare_local_work
 from util.paths import GAME_TOOL_GITIGNORE_BLOCK
 root = Path(sys.argv[2])
+# A checkpointed game has its repository, which the work block serves.
+(root / ".git").mkdir(exist_ok=True)
 patch = "# BEGIN DazedTL Len patch files\\n/*\\n# END DazedTL Len patch files\\n"
 text = (_WORK_IGNORE_BLOCK + "\\n# DazedTL selected image patches\\n!/img/\\n"
         "\\n" + patch + "\\n" + GAME_TOOL_GITIGNORE_BLOCK)
@@ -59,6 +61,9 @@ print((root / ".gitignore").read_text() == text)
 _prepare_local_work(SimpleNamespace(game_root=root, work_root=root / "work"))
 result = (root / ".gitignore").read_text()
 print(result.index(_WORK_IGNORE_BLOCK) < result.index(patch) and result.endswith(patch + "\\n" + GAME_TOOL_GITIGNORE_BLOCK))
+(root / ".gitignore").write_text(GAME_TOOL_GITIGNORE_BLOCK)
+_prepare_local_work(SimpleNamespace(game_root=root, work_root=root / "work"))
+print((root / ".gitignore").read_text().endswith("\\n" + GAME_TOOL_GITIGNORE_BLOCK))
 for text in (GAME_TOOL_GITIGNORE_BLOCK + "\\n" + patch, patch + "\\n" + GAME_TOOL_GITIGNORE_BLOCK):
     scoped = scope_ignore(text, {"data/x.json"})
     print(scope_ignore(scoped, {"data/x.json"}) == scoped)
@@ -1909,8 +1914,10 @@ class ManualJobs:
         # Rescoping the patch block left its blank lines behind, so every
         # version committed a .gitignore with 3 more, whichever block came first,
         # and rules written after the block gained a blank line above them.
+        # A game recorded before Git setup has the allowlist alone, and a work
+        # block after it hid the glossary from Git.
         stdout = finished(gitignore)
-        self.assertEqual(stdout.split(), ["True"] * 5)
+        self.assertEqual(stdout.split(), ["True"] * 6)
 
     def test_git_setup_accepts_declared_files_the_patch_will_add(self):
         # A Unity mod patch delivers only files the original lacks, such as

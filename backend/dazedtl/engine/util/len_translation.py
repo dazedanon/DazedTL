@@ -12,8 +12,9 @@ from types import SimpleNamespace
 
 from util import system
 from util.paths import (
-    DATA_DIR, GLOSSARY_BASE_SEPARATOR, LEN_PATCH_GITIGNORE_BEGIN, LEN_WORK_GITIGNORE_BEGIN,
-    LEN_WORK_GITIGNORE_END, SKILLS_DIR, game_glossary_path, glossary_base_text, runtime_data_file, runtime_data_files_pinned,
+    DATA_DIR, GAME_TOOL_GITIGNORE_BEGIN, GLOSSARY_BASE_SEPARATOR, LEN_PATCH_GITIGNORE_BEGIN, LEN_WORK_GITIGNORE_BEGIN,
+    LEN_WORK_GITIGNORE_END, SKILLS_DIR, game_glossary_path, glossary_base_text, keeps_game_tool_gitignore,
+    runtime_data_file, runtime_data_files_pinned,
     prepare_game_translation_context, read_game_glossary, without_gitignore_section,
 )
 from util.languages import active_source
@@ -463,10 +464,22 @@ def _write_atomic(path: Path, text: str) -> None:
         system.unlink(temporary, ignore_errors=True)
 
 
+def _below_work(text: str) -> int:
+    """Where the first block that goes below Len's work block starts: the
+    patch rules, or the portable-settings allowlist, which a game recorded
+    before its Git setup has alone; -1 without either."""
+    found = [index for index in (text.find(LEN_PATCH_GITIGNORE_BEGIN), text.find(GAME_TOOL_GITIGNORE_BEGIN)) if index >= 0]
+    return min(found, default=-1)
+
+
 def _prepare_local_work(project: LenProject) -> None:
     """Keep all Len working state local, before the patch rules and the
     portable-settings allowlist after them, which Git setup and each
-    checkpoint put in that order."""
+    checkpoint put in that order. Like those rules, the block waits for the
+    game's repository, which it serves."""
+    if not keeps_game_tool_gitignore(project.game_root):
+        project.work_root.mkdir(parents=True, exist_ok=True)
+        return
     ignore = project.game_root / ".gitignore"
     text = ignore.read_text(encoding="utf-8", errors="surrogateescape") if ignore.exists() else ""
     if text.count(_WORK_IGNORE_BEGIN) != text.count(_WORK_IGNORE_END) or text.count(_WORK_IGNORE_BEGIN) > 1:
@@ -479,14 +492,14 @@ def _prepare_local_work(project: LenProject) -> None:
         # A current block anywhere above the patch rules already keeps the work
         # local. A checkpoint can leave the image patch rules after it, and
         # moving it again would change a committed .gitignore.
-        patch = text.find(LEN_PATCH_GITIGNORE_BEGIN)
-        if text[start:end] + "\n" == _WORK_IGNORE_BLOCK and (patch < 0 or end < patch):
+        below = _below_work(text)
+        if text[start:end] + "\n" == _WORK_IGNORE_BLOCK and (below < 0 or end < below):
             project.work_root.mkdir(parents=True, exist_ok=True)
             return
         text = without_gitignore_section(text, start, end)
-    patch_start = text.find(LEN_PATCH_GITIGNORE_BEGIN)
-    if patch_start >= 0:
-        updated = text[:patch_start].rstrip() + "\n\n" + _WORK_IGNORE_BLOCK + "\n" + text[patch_start:].lstrip("\r\n")
+    below = _below_work(text)
+    if below >= 0:
+        updated = text[:below].rstrip() + "\n\n" + _WORK_IGNORE_BLOCK + "\n" + text[below:].lstrip("\r\n")
     else:
         updated = text.rstrip() + "\n\n" + _WORK_IGNORE_BLOCK
     if not ignore.exists() or ignore.read_text(encoding="utf-8", errors="surrogateescape") != updated:

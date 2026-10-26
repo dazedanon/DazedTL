@@ -18,6 +18,9 @@ sys.path.insert(0, str(root / "backend"))
 from dazedtl.compatibility.checkpoint_commits import Change, for_action, running
 from dazedtl.compatibility.game_write import write_game
 from dazedtl.compatibility.translation import TranslationEngine
+from dazedtl.languages import DEFAULT_SOURCE
+from dazedtl.settings import language_pair
+from dazedtl.translation.project import DEFAULTS
 from desktop.backend.project import digest
 from util.game_settings import save_game_wrap_widths
 from util.len_git import setup_git
@@ -47,12 +50,19 @@ def save(folder):
 
 engine = TranslationEngine(temporary / "profile")
 kept = game("checkpoints")
-# Saving context changes only DazedTL's own folder, which no record holds, so
-# it records nothing: recording a big game froze the app for minutes. A save
-# that moves a legacy root file into it records the game first.
+# Saving context and Copy starting prompt change only DazedTL's own folder,
+# which no record holds, so they record nothing: recording a big game froze
+# the app for minutes. A save that moves a legacy root file into it records
+# the game first.
+prompted = game("prompted")
 with engine.context():
     engine.document_save(kept, "game", digest(b""), "Theme - test\n")
-assert not (kept / ".git").exists() and not (kept / ".gitignore").exists()
+    # Copy starting prompt records the game's languages, then prepares.
+    language_pair.choose(prompted, DEFAULT_SOURCE, "English")
+    engine.prepare(prompted, DEFAULTS)
+for unrecorded in (kept, prompted):
+    assert not (unrecorded / ".git").exists(), unrecorded
+    assert not (unrecorded / ".gitignore").exists(), unrecorded
 legacy = game("legacy-glossary")
 (legacy / "glossary.txt").write_text("勇者 (Hero)\n", encoding="utf-8")
 with engine.context():
