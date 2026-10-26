@@ -146,11 +146,12 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
 
     action = plan["action"]
     if action == "record_original":
-        # The gateway records the game before DazedTL's first write; an
-        # assistant about to change it with its own tools asks first. A game
-        # whose Git is set up holds translation, never its original.
+        # DazedTL records the game in the background once it opens it; an
+        # assistant about to change it with its own tools asks first, which
+        # waits for that record. A game whose Git is set up holds
+        # translation, never its original.
         if not engine.git_status(source, options)["configured"]:
-            original_files.ensure_found(source, progress)
+            original_files.ensure_found(source, progress, stopped)
         result = {
             "recorded": originals.available(workspace, job["project_id"], source, state)
         }
@@ -169,7 +170,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
                 raise ValueError(
                     "Review a runtime patch manifest and ignore rules before creating a Git baseline."
                 )
-            original_files.ensure_found(source, progress)
+            original_files.ensure_found(source, progress, stopped)
             manifest = read_json(project_path(source, arguments["manifest"]))
             engine.audit_scope(source, manifest)
             original_files.record(

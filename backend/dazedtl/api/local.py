@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from dazedtl import system
+from dazedtl.api import views
 from dazedtl.storage import write_json
 
 # The selected project's operations an external assistant may call: every
@@ -31,7 +32,14 @@ AGENT_METHODS = frozenset(
 
 
 class LocalAPI:
-    def __init__(self, workspace, version, dispatch, failure=lambda *_args: None):
+    def __init__(
+        self,
+        workspace,
+        version,
+        dispatch,
+        failure=lambda *_args: None,
+        explain=lambda exc, _params: views.error(exc),
+    ):
         self.path = Path(workspace) / "agent-connection.json"
         if self.path.is_symlink():
             raise ValueError("The agent connection must be a regular workspace file.")
@@ -75,9 +83,10 @@ class LocalAPI:
                         "value": dispatch(method, value.get("params", {})),
                     }
                 except Exception as exc:  # noqa: BLE001
-                    # The assistant sees only a generic message for anything
-                    # but a ValueError, so keep the cause for Copy diagnostics.
-                    if not isinstance(exc, ValueError):
+                    params = value.get("params") if isinstance(value, dict) else None
+                    shown = explain(exc, params if isinstance(params, dict) else {})
+                    # Only failures shown as a generic message need a diagnostic trail.
+                    if shown["code"] in {"internal", "storage"}:
                         failure(
                             exc,
                             f"helper {method}" if isinstance(method, str) else "helper",
@@ -85,9 +94,7 @@ class LocalAPI:
                     result = {
                         "ok": False,
                         "version": version,
-                        "error": str(exc)
-                        if isinstance(exc, ValueError)
-                        else "The project operation could not finish.",
+                        "error": shown["message"],
                     }
                 raw = json.dumps(result, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
