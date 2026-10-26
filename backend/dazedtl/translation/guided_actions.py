@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from dazedtl.actions import ACTIONS, GUIDED, spec
+from dazedtl.settings import language_pair
 from dazedtl.storage import write_json
 
 from . import preparation
@@ -726,6 +727,9 @@ class GuidedActions:
                 )
         if action == "start":
             return self.execute_run(project_id, native, confirmed)
+        if action == "prepare_game":
+            # Set up starts: the game keeps the language pair Settings name.
+            language_pair.record(self.guided.settings, project["source"])
         return self.execute_lifecycle(project_id, project, native, confirmed, options)
 
     def execute_run(self, project_id, native, confirmed):
@@ -961,7 +965,9 @@ class GuidedActions:
         self.guided.inputs(native).prepare(files)
         native["imported"] = list(dict.fromkeys([*native["imported"], *files]))
         self.guided.backend.workflows.save(native)
-        self.guided.settings.prepare_engine(mode=mode)
+        self.guided.settings.prepare_engine(
+            mode=mode, pair=self.guided.runs.pair(native)
+        )
         self.guided.backend.manual.source_versions = (
             run_inputs.get("file_versions", {}) if run_inputs else {}
         )

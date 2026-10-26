@@ -14,6 +14,7 @@ from colorama import Fore
 from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
+from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost
 # from modules.json import translateSimpleKeyValueJSON
 import tempfile
@@ -38,7 +39,7 @@ BAR_FORMAT = "{l_bar}{bar:10}{r_bar}{bar:-10b}"
 # Flag to control line break replacement
 REPLACE_LINEBREAKS_WITH_PIPES = True
 
-LANGREGEX = r"[一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]+"
+LANGREGEX = source_pattern()
 TRANSLATION_CONFIG = TranslationConfig(
     model=MODEL,
     language=LANGUAGE,

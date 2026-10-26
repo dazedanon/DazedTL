@@ -182,8 +182,9 @@ class WorkflowTests(unittest.TestCase):
             },
         }
         settings_data = {
-            "version": 2,
+            "version": 3,
             "revision": 1,
+            "sourceLanguage": "Japanese",
             "values": {"language": "English"},
             "active": "connection",
             "connections": [connection],
@@ -191,6 +192,8 @@ class WorkflowTests(unittest.TestCase):
         self.settings_data = settings_data
         self.settings = SimpleNamespace(
             _read=lambda: deepcopy(settings_data),
+            language=lambda: settings_data["values"]["language"],
+            source_language=lambda: settings_data["sourceLanguage"],
             _connection=Settings._connection,
             _configured=Settings._configured,
             model_defaults=lambda *_args, **_kwargs: {},
@@ -485,7 +488,7 @@ class WorkflowTests(unittest.TestCase):
         # The project stays in Assistant only; the estimate keeps its own mode.
         record = self.service.jobs.store.record(finishing["id"])
         self.assertFalse(
-            self.service.job_views([record], "agent")[0]["settings_changed"]
+            self.service.job_views([record], "agent", self.game)[0]["settings_changed"]
         )
         # Approval gets past the settings check; this test app sends nothing.
         # It leaves compiling every request again to the run's worker.

@@ -4,6 +4,7 @@ import json
 import os
 import re
 import util.dazedwrap as dazedwrap
+from util.languages import source_pattern, target_uses_cjk
 from util import rpgmaker_blocks, rpgmaker_rewrap, rpgmaker_scope
 from util import rpgmaker_script_strings as script_strings
 import threading
@@ -34,7 +35,6 @@ from util.translation import (
     set_var_translations_batch,
     speaker_source_lookup_keys,
     split_vocab_source_aliases,
-    target_uses_cjk,
     translateAI as sharedtranslateAI,
 )
 from util.vocab import split_glossary_row, unverified_nameplate_row
@@ -49,7 +49,7 @@ from util.paths import (
 from util.rpgmaker_markers import comment_markers, game_plugins
 from util.rpgmaker_files import mvmz_file_kind
 from util.id_ranges import id_in_ranges
-from util.source_text import furigana_base, holds_source, japanese_left
+from util.source_text import furigana_base, holds_source, source_left
 from util import system
 
 # Globals
@@ -141,7 +141,7 @@ _EMPTY_ACTOR_IDS_CACHE: set[int] | None = None
 # Regex - Need to change this if you want to translate from/to other languages. Default is Japanese Regex
 # Intentionally skips U+309B (゛). Decorative CJK quotes are normalized via
 # convert_corner_brackets before detection so they do not false-trigger alone.
-LANGREGEX = r"[\u3000\u3002-\u3009\u300C-\u303F\u3040-\u309A\u309C-\u30FA\u31F0-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFF61-\uFF9F]+"
+LANGREGEX = source_pattern("mvmz")
 
 # Get pricing configuration based on the model
 PRICING_CONFIG = getPricingConfig(MODEL)
@@ -986,8 +986,9 @@ SOURCE_TEXT = 2
 
 
 def _has_japanese_text(text, source=None) -> bool:
-    """True when text still holds Japanese to translate (util/source_text),
-    read against *source*, the Japanese it was translated from, when known.
+    """True when text still holds source text to translate (util/source_text,
+    in the run's source language), read against *source*, the text it was
+    translated from, when known.
 
     Older runs read it by LANGREGEX after quote normalization: decorative
     wrappers such as 〝phytoncide〟 become ASCII quotes when convertQuotes is
@@ -999,7 +1000,7 @@ def _has_japanese_text(text, source=None) -> bool:
             return False
         if SOURCE_TEXT < 2 or source is None:
             return holds_source(str(text))
-        return bool(japanese_left(str(text), str(source)))
+        return bool(source_left(str(text), str(source)))
     if text is None:
         return False
     sample = str(text)

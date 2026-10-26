@@ -58,6 +58,7 @@ import traceback
 
 from colorama import Fore
 from tqdm import tqdm
+from util.languages import source_pattern
 from util.paths import read_active_glossary
 from util.skills import ctx, load_system_prompt
 from util.translation import (
@@ -112,7 +113,7 @@ MISMATCH = []  # Files that hit a length-mismatch during translation
 FILENAME = None
 
 # Regex - default matches Japanese (kanji, kana, full-width forms).
-LANGREGEX = r"[一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]+"
+LANGREGEX = source_pattern()
 
 # Skip lines whose ``text`` is already translated. WolfDawn keeps Japanese in
 # ``source`` forever, so skip-translated must look at ``text``, not ``source``.

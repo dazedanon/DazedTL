@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -22,6 +23,7 @@ from dazedtl.foreign_work import ForeignWorkError
 from dazedtl.images import ImageService
 from dazedtl.images.editor import ImageEditor
 from dazedtl.images.native_translation import ImageNativeTranslation
+from dazedtl.languages import reading_game
 from dazedtl.plugins import PluginService
 from dazedtl.plugins.service import receipt_label
 from dazedtl.projects import location
@@ -674,6 +676,15 @@ class Application:
                     connection_id, model, batch_endpoints=endpoints
                 )
 
+    def reading(self, params):
+        """Reads text in the source language of the request's game, so the
+        engine's readers it calls follow that game's language."""
+        try:
+            project = self.projects.get(params["project_id"])
+        except KeyError, TypeError, ValueError:
+            return nullcontext()
+        return reading_game(project["source"])
+
     def prepare_model_pricing(self, name, params):
         """Only explicit price/estimate actions may perform public price reads."""
         explicit = name == "settings_model_defaults"
@@ -1009,7 +1020,11 @@ def dispatcher(app, check=False):
         # must not enter the engine context: it redirects stdout process-wide.
         if name in CONCURRENT:
             return present(handler(**params), params)
-        with app.backend.context(), app.translation.engine.context():
+        with (
+            app.backend.context(),
+            app.translation.engine.context(),
+            app.reading(params),
+        ):
             if app.closing:
                 raise ValueError(
                     "The app is closing. Reopen it to resume saved project work."

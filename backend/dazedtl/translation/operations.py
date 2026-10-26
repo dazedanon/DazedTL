@@ -11,6 +11,7 @@ from dazedtl import system
 from dazedtl.actions import stopped_note
 from dazedtl.compatibility import original_files
 from dazedtl.compatibility.checkpoint_commits import for_action, in_phase, running
+from dazedtl.languages import game_source
 from dazedtl.storage import staging_folder, write_json
 
 from . import backups, originals, progress_report
@@ -82,6 +83,7 @@ def take_census(
             dump(folder) if folder else None,
             progress,
             snapshot.peek,
+            game_source(source),
         )
     result.update(snapshot=snapshot.id, decoded_folder=decoded or None)
     write_json(census_path(workspace, project_id), result)

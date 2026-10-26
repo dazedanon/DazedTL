@@ -115,9 +115,9 @@ def kept(source, response):
     """Whether a line of a kept response kept its original text because it
     failed validation (translation keep_original_lines): it is no
     translation to reuse, so the next run sends it again."""
-    from util.source_text import japanese_left
+    from util.source_text import source_left
 
-    return response == source and bool(japanese_left(response, source))
+    return response == source and bool(source_left(response, source))
 
 
 def accepted(translation, source, response, config):

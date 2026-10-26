@@ -5,6 +5,7 @@ import re
 from contextlib import closing
 
 from dazedtl.freshness import Basis, compare
+from dazedtl.settings import language_pair
 from dazedtl.storage import write_json
 
 from . import repricing
@@ -162,13 +163,14 @@ class GuidedRuns:
             name: record.get("file_versions", {}).get(name, "") for name in names
         }
         # A snapshot reads cached prices only, which may not be known yet.
+        pair = self.pair(native)
         configuration = self.guided.observations.once(
-            ("configuration", mode, cached_only),
+            ("configuration", mode, cached_only, pair["source"], pair["target"]),
             lambda: self.guided.settings.guided_configuration(
-                mode, cached_only=cached_only, unpriced=cached_only
+                mode, cached_only=cached_only, unpriced=cached_only, pair=pair
             ),
         )
-        reused_names = self.name_reuse(native, configuration.get("language"))
+        reused_names = self.name_reuse(native, pair)
         value = {
             "file_versions": versions,
             "version": RUN_VERSION,
@@ -294,7 +296,7 @@ class GuidedRuns:
         # without cached prices must not make the project unavailable.
         rows = [
             row
-            for row in self.name_reuse(native, self.guided.settings.language())
+            for row in self.name_reuse(native, self.pair(native))
             if row["runId"] not in published
         ]
         # Every snapshot runs this, so the names wait out a checkout the
@@ -340,17 +342,23 @@ class GuidedRuns:
             # glossary changes.
             self.name_failures[project_id] = glossary["revision"]
 
-    def name_reuse(self, native, language):
+    def pair(self, native):
+        """The language pair the game's runs translate between."""
+        return language_pair.pair(self.guided.settings, native["source"])
+
+    def name_reuse(self, native, pair):
+        """Names earlier runs of the game translated between the same
+        language *pair*, which a new run reuses."""
         return self.guided.observations.once(
-            ("names", native["id"], language),
-            lambda: self._name_reuse(native, language),
+            ("names", native["id"], pair["source"], pair["target"]),
+            lambda: self._name_reuse(native, pair),
         )
 
-    def _name_reuse(self, native, language):
+    def _name_reuse(self, native, pair):
         from dazedtl.compatibility.preparations import temporary
         from dazedtl.compatibility.speaker_results import RECEIPT, reusable
 
-        if not language:
+        if not pair["target"]:
             return []
         inputs = self.guided.inputs(native).record()
         versions, retired = (
@@ -377,7 +385,8 @@ class GuidedRuns:
                 plan = self.guided.run_configuration(identity)
                 if (
                     (plan.get("workflow") or {}).get("id") != native["id"]
-                    or (plan.get("settings") or {}).get("language") != language
+                    or (plan.get("settings") or {}).get("language") != pair["target"]
+                    or language_pair.run_source(plan.get("settings")) != pair["source"]
                     or any(
                         versions.get(name, "")
                         != plan.get("dazedtl_source_versions", {}).get(name, "")
@@ -417,6 +426,12 @@ class GuidedRuns:
         )
 
     def _comparisons(self, native):
+        from dazedtl.languages import reading_game
+
+        with reading_game(native["source"]):
+            return self._compared(native)
+
+    def _compared(self, native):
         from util.source_text import holds_source
 
         try:

@@ -11,6 +11,7 @@ from colorama import Fore
 from tqdm import tqdm
 
 import util.dazedwrap as dazedwrap
+from util.languages import source_pattern
 from util.speakers import strip_speaker_prefix
 from util.translation import (
     TranslationConfig,
@@ -41,7 +42,7 @@ BAR_FORMAT = "{l_bar}{bar:10}{r_bar}{bar:-10b}"
 POSITION = 0
 LEAVE = False
 
-LANGREGEX = r"[一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]+"
+LANGREGEX = source_pattern()
 PRICING_CONFIG = getPricingConfig(MODEL)
 BATCHSIZE = PRICING_CONFIG["batchSize"]
 

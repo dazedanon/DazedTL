@@ -25,6 +25,8 @@ Ruby compiled.
 import re
 from typing import NoReturn
 
+from dazedtl.languages import JAPANESE, source_pattern
+
 KEYWORDS = {
     "BEGIN",
     "END",
@@ -861,7 +863,9 @@ class Lexer:
         does for JavaScript: hash keys, index lookups, compared values,
         when clauses, loaded files, and strings whose embedded code holds
         Japanese; and those a matcher method takes."""
-        japanese = re.compile(r"[\u3040-\u30ff\u3400-\u9fff]")
+        # Code holds Latin letters whatever the game's language, so only
+        # Japanese embedded in it reads as text the code matches.
+        japanese = re.compile(source_pattern("script", JAPANESE))
         for literal in self.literals:
             tokens, position = literal["_tokens"], literal["_token"]
             before = tokens[position - 1] if position > 0 else {}

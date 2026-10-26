@@ -12,6 +12,7 @@ from colorama import Fore
 from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
+from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost
 import tempfile
 from util import system
@@ -54,7 +55,7 @@ wide_to_ascii = dict((i, chr(i - 0xFEE0)) for i in range(0xFF01, 0xFF5F))
 wide_to_ascii.update({0x3000: " ", 0x2212: "-"})  # space and minus
 
 # Regex - Need to change this if you want to translate from/to other languages. Default is Japanese Regex
-LANGREGEX = r"[一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]+"
+LANGREGEX = source_pattern()
 
 # Get pricing configuration based on the model
 PRICING_CONFIG = getPricingConfig(MODEL)

@@ -325,7 +325,7 @@ class GuidedTests(unittest.TestCase):
         self.priced = []
         self.uncached = False
 
-        def guided_configuration(mode, cached_only=False, unpriced=False):
+        def guided_configuration(mode, cached_only=False, unpriced=False, pair=None):
             self.priced.append(cached_only)
             configuration = {
                 **deepcopy(self.configuration),
@@ -895,7 +895,8 @@ class GuidedTests(unittest.TestCase):
         # Protect paying for the same names again after declining the map Batch,
         # while keeping unrelated projects, languages and source passes isolated.
         identity, root, plan = self.declined_names_run()
-        reused = self.guided.runs.name_reuse(self.native, "English")
+        english = {"source": "Japanese", "target": "English"}
+        reused = self.guided.runs.name_reuse(self.native, english)
         self.assertEqual(
             reused,
             [
@@ -929,19 +930,29 @@ class GuidedTests(unittest.TestCase):
             reused,
         )
         self.assertIsNone(self.backend.manual.reused_names)
-        self.assertEqual(self.guided.runs.name_reuse(self.native, "French"), [])
+        self.assertEqual(
+            self.guided.runs.name_reuse(self.native, {**english, "target": "French"}),
+            [],
+        )
+        # Names from an English game's run never answer for a Japanese one's.
+        self.assertEqual(
+            self.guided.runs.name_reuse(
+                self.native, {"source": "English", "target": "Japanese"}
+            ),
+            [],
+        )
         with self.assertRaises(ValueError):
             self.guided.name_results(self.identity, "foreign")
         plan["workflow"]["id"] = "foreign"
         write_json(root / "plan.json", plan)
-        self.assertEqual(self.guided.runs.name_reuse(self.native, "English"), [])
+        self.assertEqual(self.guided.runs.name_reuse(self.native, english), [])
         plan["workflow"]["id"] = "native"
         write_json(root / "plan.json", plan)
         write_json(
             self.folder / "source-inputs.json",
             {"version": 1, "inputs": {}, "retired_runs": [identity]},
         )
-        self.assertEqual(self.guided.runs.name_reuse(self.native, "English"), [])
+        self.assertEqual(self.guided.runs.name_reuse(self.native, english), [])
 
     def test_declined_batch_adds_its_paid_names_to_the_game_glossary_once(self):
         # Paid names stayed in the declined run's own glossary, so the game's

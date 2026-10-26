@@ -5,13 +5,15 @@
 //
 //   { "refuse": ["text"], "decline": ["text"], "fail": ["text"],
 //     "failFirst": false, "stall": false, "answer": null, "hold": false,
-//     "batchSeconds": 0, "long": ["text"], "reply": { "text": "reply" } }
+//     "batchSeconds": 0, "long": ["text"], "reply": { "text": "reply" },
+//     "target": null }
 //
 // - refuse: lines holding the text come back as a refusal note until the
 //   app sends its clarification; decline: they always do.
 // - fail: requests holding the text get HTTP 400.
 // - failFirst: each request's first attempt keeps its Japanese, so the app's
 //   validation retries it.
+// - target: "Japanese" answers an English game's lines in Japanese.
 // - long: lines holding the text come back as a long English message, the
 //   same sentences for every line, so a game can page one at narrow widths.
 // - reply: lines holding a key come back as its reply on every attempt, such
@@ -69,19 +71,39 @@ function* objects(text) {
 
 export const japanese = /[　-〿぀-ヿ㐀-鿿＀-￯]/g;
 
+/** Codes and placeholders an English line keeps in its translation. */
+const codes = /(__PROTECTED_\d+__|\\+[A-Za-z]+(?:\[[^\]]*\])?|%\d)/;
+
 /**
- * Answers like a model that translates every line: Japanese becomes a marker
- * unique to the line, while speaker prefixes, placeholders and numbers stay.
+ * Answers like a model that translates every line: the source's words become
+ * a marker unique to the line, while speaker prefixes, placeholders and
+ * numbers stay. An English line, for a Japanese `target`, gets a Japanese
+ * marker in place of its Latin words.
  */
-export function translate(value) {
+export function translate(value, target) {
   const text = String(value);
   const speaker = /^(\[[^\n]*?\]:\s*)([\s\S]*)$/.exec(text);
   const [prefix, body] = speaker ? [speaker[1], speaker[2]] : ["", text];
+  const hash = crypto.createHash("sha256").update(text).digest("hex");
+  if (target === "Japanese") {
+    const kept = body
+      .split(codes)
+      .map((part, index) =>
+        index % 2 ? part : part.replace(/[A-Za-z]+/g, " "),
+      )
+      .join("")
+      .replace(/\s+/g, " ")
+      .trim();
+    const marker = hash
+      .slice(0, 8)
+      .replace(
+        /./g,
+        (digit) => "アイウエオカキクケコサシスセソタ"[parseInt(digit, 16)],
+      );
+    return `${prefix}テスト${marker}${kept ? ` ${kept}` : ""}`;
+  }
   const kept = body.replace(japanese, " ").replace(/\s+/g, " ").trim();
-  const marker = crypto
-    .createHash("sha256")
-    .update(text)
-    .digest("hex")
+  const marker = hash
     .slice(0, 8)
     .replace(/\d/g, (digit) => "ghijklmnop"[Number(digit)]);
   return `${prefix}Tested ${marker}${kept ? ` ${kept}` : ""}`;
@@ -93,7 +115,8 @@ export const longText =
 
 /** Whether a game value is one the stand-in translated. */
 export const translated = (value) =>
-  typeof value === "string" && value.startsWith("Tested ");
+  typeof value === "string" &&
+  (value.startsWith("Tested ") || value.startsWith("テスト"));
 
 /** The request's text, all messages joined. */
 function requestText(params) {
@@ -206,7 +229,7 @@ export async function startProvider({ folder, port = 0 }) {
       )
         return "[Not translated: explicit content]";
       if (settings.failFirst && attempt === 1) return source;
-      const english = translate(source);
+      const english = translate(source, settings.target);
       return (settings.long || []).some((item) => source.includes(item))
         ? `${english} ${longText}`
         : english;

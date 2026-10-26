@@ -26,6 +26,7 @@ import time
 import traceback
 from colorama import Fore
 from tqdm import tqdm
+from util.languages import source_pattern
 from util.translation import (
     TranslationConfig,
     translateAI as sharedtranslateAI,
@@ -52,7 +53,7 @@ POSITION = 0
 LEAVE = False
 PBAR = None
 
-LANGREGEX = r"[一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９｡-ﾟ]+"
+LANGREGEX = source_pattern("imagetext")
 
 PRICING_CONFIG = getPricingConfig(MODEL)
 BATCHSIZE = PRICING_CONFIG["batchSize"]

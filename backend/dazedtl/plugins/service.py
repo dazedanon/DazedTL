@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 
 from dazedtl import foreign_work, freshness
 from dazedtl.foreign_work import ForeignWorkError
+from dazedtl.languages import game_source
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation import originals as game_originals
 from dazedtl.translation import reference_folders
@@ -1106,6 +1107,7 @@ class PluginService:
     def scan(self, project_id, value):
         project, root = self.record(project_id)
         prefix, rows, config = self.inventory(project_id)
+        language = game_source(root)
         # Explicit JSON dependencies discovered in a previous request remain addressable.
         for path, row in value["files"].items():
             if row["kind"] == "json":
@@ -1139,7 +1141,7 @@ class PluginService:
             )
             try:
                 row["occurrences"] = (
-                    occurrences(path, raw_files[path], parsed[path])
+                    occurrences(path, raw_files[path], parsed[path], language=language)
                     if path in parsed and not row["issue"]
                     else []
                 )
@@ -2914,6 +2916,7 @@ class PluginService:
                         parsed["candidate/" + path],
                         [*approved, *fitted],
                         {**kept, **targets},
+                        language=game_source(root),
                     )
                     complete = set(targets) == ids
                     status = (
@@ -3226,6 +3229,7 @@ class PluginService:
             parsed["edited/" + path],
             list(approved.values()),
             targets,
+            language=game_source(root),
         )
         if edited == base:
             raise ValueError("No label text changed in the working copy.")
@@ -3310,6 +3314,7 @@ class PluginService:
             parsed["edited/" + path],
             [*own.values(), *fitted.values()],
             merged,
+            language=game_source(root),
         )
         # Whether the file's translation is in the game, or waits with it.
         settled = self.row_status(value, row) != "ready" or bool(
@@ -3562,6 +3567,7 @@ class PluginService:
                         parsed["candidate/" + path],
                         approved,
                         result["targets"],
+                        language=game_source(root),
                     )
                 if current == after:
                     raise ValueError("Runtime already matches this output.")

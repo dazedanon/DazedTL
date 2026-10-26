@@ -264,3 +264,12 @@ def upgrade_v1(value):
             "connections": profiles,
         }
     return value
+
+
+def upgrade_v2(value):
+    """Settings from before the source language was one: every game's text
+    was Japanese."""
+    from dazedtl.languages import DEFAULT_SOURCE
+
+    value["sourceLanguage"] = DEFAULT_SOURCE
+    return value

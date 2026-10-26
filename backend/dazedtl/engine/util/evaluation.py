@@ -41,6 +41,7 @@ from util.api_errors import concise_api_error
 from util.evaluation_settings import (
     DEFAULT_MAX_OUTPUT_TOKENS, SETTING_FIELDS, candidate_label, generation_settings,
 )
+from util.languages import source_pattern
 from util.paths import (
     GAME_GLOSSARY_RELATIVE,
     GAME_SKILLS_RELATIVE,
@@ -99,8 +100,8 @@ REVIEW_QUALITY_METRICS = (
 )
 MAX_OUTPUT_TOKENS_PER_REQUEST = DEFAULT_MAX_OUTPUT_TOKENS
 LIVE_REQUEST_MAX_ATTEMPTS = 3
-JAPANESE_RE = re.compile(r"[一-龠々〆〤ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]")
-LANGUAGE_REGEX = r"[一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]+"
+JAPANESE_RE = re.compile(source_pattern("evaluation"))
+LANGUAGE_REGEX = source_pattern()
 OPENROUTER_MODEL_API = "https://openrouter.ai/api/v1/model/"
 OPENROUTER_PRICING_TTL_SECONDS = 300
 _openrouter_pricing_cache: dict[

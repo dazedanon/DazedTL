@@ -1,0 +1,1 @@
+[null,{"id":1,"name":"Inn","switchId":1,"trigger":0,"list":[{"code":101,"indent":0,"parameters":["",0,0,2,"Innkeeper"]},{"code":401,"indent":0,"parameters":["Welcome!"]},{"code":401,"indent":0,"parameters":["It's 10G a night."]},{"code":0,"indent":0,"parameters":[]}]}]

@@ -20,7 +20,9 @@ from dazedtl.compatibility.translation import (
     TranslationProvider,
     explained,
 )
+from dazedtl.languages import JAPANESE, SOURCE_ENV, read_source
 from dazedtl.projects import location
+from dazedtl.settings import language_pair
 from dazedtl.settings.execution import worker_secret
 from dazedtl.storage import WorkspaceError, WorkspaceLock
 from dazedtl.translation import progress_report
@@ -75,6 +77,17 @@ def run_locked(workspace, identity, store):
     os.environ.update(
         PYTHON_DOTENV_DISABLED="1", DAZEDTL_DESKTOP_WORKSPACE=str(engine.profile)
     )
+    # The language the game's text is written in, as the run froze it
+    # (settings/language_pair), for the engine's readers in this process.
+    source = (
+        language_pair.run_source(plan["configuration"])
+        if plan.get("configuration")
+        else read_source(plan["source"])
+        if plan.get("source")
+        else JAPANESE
+    )
+    if source != JAPANESE:
+        os.environ[SOURCE_ENV] = source
     try:
         with engine.context():
             if plan["kind"] == "operation":

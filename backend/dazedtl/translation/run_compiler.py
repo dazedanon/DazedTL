@@ -104,6 +104,7 @@ def scope_coverage(engine, workspace, project_id, root, units):
         read_json(rules_file) if rules_file.exists() else None,
         census.fields(value),
         census.files(value),
+        census.counted_language(value),
     )
     report, uncovered = census.coverage(
         value,

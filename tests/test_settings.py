@@ -1142,8 +1142,9 @@ class SettingsTests(unittest.TestCase):
             install_settings=Mock(),
         )
         state = {
-            "version": 2,
+            "version": 3,
             "revision": 0,
+            "sourceLanguage": "Japanese",
             "values": {"language": "English", "model": "model-one"},
             "legacy": {"values": metadata["values"], "engines": {}, "draft": None},
             "model_options": {},
@@ -1383,3 +1384,46 @@ class SettingsTests(unittest.TestCase):
             finally:
                 release.set()
         self.assertLess(time.monotonic() - started, 1)
+
+    def test_settings_from_before_the_source_read_japanese_and_refuse_one_script_pairs(
+        self,
+    ):
+        # Upgrading must keep every existing run Japanese, freezing nothing
+        # new into its settings, while a pair a run can't tell apart is
+        # refused before it is saved.
+        metadata = {"values": {"language": "English", "model": "fixture-model"}}
+        adapter = SimpleNamespace(settings_metadata=lambda: metadata)
+        state = {
+            "version": 2,
+            "revision": 0,
+            "values": {"language": "English", "model": "fixture-model"},
+            "legacy": {"values": metadata["values"], "engines": {}, "draft": None},
+            "model_options": {},
+            "active": "",
+            "draft": None,
+            "connections": [],
+        }
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "settings/settings.json"
+            write_json(path, state)
+            settings = Settings(temporary, adapter)
+            self.assertEqual(settings.source_language(), "Japanese")
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["version"], 3)
+            self.assertEqual(
+                configuration(settings, "agent"),
+                {
+                    "mode": "agent",
+                    "language": "English",
+                    "model": "",
+                    "connection_id": "",
+                    "entries_per_request": None,
+                },
+            )
+            english = {"source": "English", "target": "Japanese"}
+            frozen = configuration(settings, "agent", pair=english)
+            self.assertEqual(
+                (frozen["language"], frozen["sourceLanguage"]), ("Japanese", "English")
+            )
+            with self.assertRaisesRegex(ValueError, "same script"):
+                settings.save(0, "", {"language": "Japanese", "model": "m"}, {})
+            self.assertEqual(settings.language(), "English")

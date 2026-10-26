@@ -111,7 +111,7 @@ A refusal cannot enter game dialogue; a Guided phase puts the source back for li
 An old interrupted Live run without request evidence flags only its shared files and phase in the overlap advisory, since its send outcomes cannot be rebuilt locally.
 Readers for older runs ([live_validation](../backend/dazedtl/compatibility/live_validation.py), [choice_history](../backend/dazedtl/compatibility/choice_history.py)) settle a historical request only when the frozen plan, output hashes, submission mapping and exact source identity all match; otherwise it stays unresolved, and missing bodies are never invented.
 Grouping a retry with its original is presentation only: receipt indices, submission guards and billed usage stay intact.
-The engine's response check reads Japanese left in a reply by the same rule as file status ([source_text](../backend/dazedtl/engine/util/source_text.py) `japanese_left`), so punctuation, kaomoji and censor masks the source holds pass.
+The engine's response check reads Japanese left in a reply by the same rule as file status ([source_text](../backend/dazedtl/engine/util/source_text.py) `source_left`), so punctuation, kaomoji and censor masks the source holds pass.
 A reply whose only faults are some lines' content is validated and saved but for those lines, which keep their original text; the receipt names them for Inspect, they are not saved for reuse, and the next Translate sends them again.
 A reply with the wrong lines, placeholders or control codes is still rejected whole.
 
@@ -134,6 +134,8 @@ Per-file cost and time, and Other event text's lines, come from native result re
 Database files and Maps & events read each file's status and Lines from the file itself through [file_lines](../backend/dazedtl/translation/file_lines.py), independently of selection and of the runs that wrote it.
 What an event file holds is defined once in [rpgmaker_scope](../backend/dazedtl/engine/util/rpgmaker_scope.py), which the engine translates from, and a line is left while it holds Japanese by the engine's own rule ([source_text](../backend/dazedtl/engine/util/source_text.py)) or a refusal note.
 The rule reads each value against the Japanese in its `_original`, so a lone kana or mark the source holds, such as a kaomoji's ﾉ or a censor mask's 〇, reads translated and a value given back unchanged reads left; a value without one reads every Japanese letter as left.
+The rule reads the game's source language, which [languages](../backend/dazedtl/engine/util/languages.py) defines with the patterns every reader sends and counts by: a Japanese source keeps each engine's own pattern by name, and an English source reads Latin letters outside control codes, markup tags and `{name}` placeholders as left.
+Run workers take the source from their frozen settings, and the app reads a request's game in its language (`reading`).
 A message, scroll or choice the game wrote without Japanese letters, such as `・・・・・。`, `？` or `「……」`, is never sent, and the engine writes its punctuation in English in its place ([translation](../backend/dazedtl/engine/util/translation.py) `english_punctuation`).
 Name boxes keep theirs, since a speaker's name goes into the requests for its lines.
 The engine probe ([engine_runtime](../tests/fixtures/engine_runtime.py)) checks that the engine sends exactly the lines this counts as left, and nothing on a second pass, so the count and the engine cannot drift apart.
@@ -369,6 +371,9 @@ Hangs throw nothing, so a [watchdog](../backend/dazedtl/watchdog.py) records the
 The report names the checkout revision and whether tracked files changed, since code locations resolve only against that revision.
 
 Connections and preferences share one atomic record in workspace `settings/settings.json`.
+It also holds the source language games are set up in, which the app does not offer yet; Set up records a pair with another source in the game's `.dazedtl/settings.json`, and every run on the game freezes that pair ([language_pair](../backend/dazedtl/settings/language_pair.py)).
+A pair whose languages share a script is refused, since letters can't tell its text left from translated.
+A Japanese source names no source in frozen settings, the translation cache and Batch keys or the census, so work saved before the source became a setting stays current.
 Saved secrets never enter renderer responses or recovery drafts, and model drafts are bound to connection IDs.
 The public preference schema is [preferences.py](../backend/dazedtl/settings/preferences.py); legacy engine values are kept privately through a backed-up versioned upgrade and materialized only before engine actions.
 Provider presets declare their transport protocol independently of their identity, such as Kimi on OpenAI's formats and OpenRouter's own [Batch transport](../backend/dazedtl/compatibility/openrouter_batch.py) on the engine's Batch provider points.

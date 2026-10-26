@@ -1,9 +1,10 @@
-"""Whether text still holds Japanese to translate: the one rule the RPG Maker
+"""Whether text still holds source text to translate: the one rule the RPG Maker
 MV/MZ engine sends text by, the response check accepts a translation by,
 Guided's run reuse answers a line by and Guided's line counts read a line as
 left by (translation/file_lines.py), and that event-text tools such as custom
 patterns and fitting, Text QA and the playtest share.
 
+The source language is the run's (util/languages), Japanese by default.
 Japanese to translate is a Japanese letter (kana, kanji or half-width kana)
 outside control codes and their arguments. Punctuation and brackets are not
 letters: a translation keeps 【】 labels and 「」, and a game writes its own
@@ -13,34 +14,31 @@ holding only those reads finished. A control code's argument, such as
 so a translation that keeps one reads finished too. Furigana is the exception:
 its base is text the player reads, so \\rb[魔王,まおう] holds Japanese.
 
-A value is read against the Japanese source it was translated from where one
-is known (`japanese_left`): a lone kana or mark the source holds is part of a
+English to translate is a Latin letter outside control codes, markup tags
+such as <br> and {name} placeholders.
+
+A value is read against the source it was translated from where one is known
+(`source_left`): a lone kana, mark or letter the source holds is part of a
 symbol the translation keeps, such as a kaomoji's ﾉ or a censor mask's 〇,
-and a value given back unchanged is all left. Without a source, every
-Japanese letter is left (`holds_source`).
+and a value given back unchanged is all left. Without a source, every letter
+of the source language is left (`holds_source`).
 """
 
 import re
 import unicodedata
 from collections import Counter
 
-from util.runtime_text import (
-    HALF_WIDTH_LETTERS,
-    without_control_codes,
-    without_protected_codes,
-)
+from util import languages
+from util.languages import ENGLISH, JAPANESE, KANJI
+from util.runtime_text import without_control_codes, without_protected_codes
 
-# Japanese letters: 々〆〇, kana, kanji and half-width kana. The middle dot
-# and long vowel mark (・ー), which English uses as bullets and dashes, are not
-# letters, nor are the voicing marks (゛゜, ﾞﾟ and their combining forms):
-# in Japanese one always follows a kana, which reads as a letter itself, and
-# alone it is a symbol, such as the eyes of the kaomoji (ﾟдﾟ).
-KANJI = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
-LETTERS = re.compile(
-    r"[\u3005-\u3007\u3041-\u3096\u309d-\u30fa\u31f0-\u31ff"
-    rf"\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff{HALF_WIDTH_LETTERS}]"
-)
-_WORD = re.compile(LETTERS.pattern + "+")
+# Japanese letters (util/languages JAPANESE_LETTERS).
+LETTERS = re.compile(f"[{languages.JAPANESE_LETTERS}]")
+_LETTERS = {JAPANESE: LETTERS, ENGLISH: re.compile(f"[{languages.LATIN_LETTERS}]")}
+_WORDS = {
+    language: re.compile(letters.pattern + "+") for language, letters in _LETTERS.items()
+}
+_MARKUP = re.compile(languages.MARKUP)
 
 # Furigana: a ruby code \r[base,reading] or \rb[base,reading], in any case and
 # with any run of slashes, and a curly {base|reading} print the reading above
@@ -57,25 +55,27 @@ def furigana_base(text: str) -> str:
     return CURLY_RUBY.sub(r"\1", text) if "{" in text else text
 
 
-def japanese_left(text, source=None) -> list[str]:
-    """The Japanese *text* still holds, as runs of letters outside control
-    codes, reading furigana as its base. Given the Japanese *source* it was
-    translated from, a lone kana or mark that the source holds as often, never
-    a kanji, is part of a symbol the translation keeps, such as the ﾉ and ゞ of
-    a kaomoji or the 〇 of a censor mask (うん〇 -> sh〇t), so it is not left;
-    asking again can only give it back. A value that gives back the source's
-    letters and digits unchanged, such as え？ for え？, translated nothing and
-    keeps no symbol: all its Japanese is left, as it is without a source."""
+def source_left(text, source=None, language=None) -> list[str]:
+    """The source text *text* still holds, as runs of letters of the source
+    *language* (the active source by default) outside control codes, reading
+    furigana as its base. Given the *source* it was translated from, a lone
+    kana, mark or letter that the source holds as often, never a kanji, is
+    part of a symbol the translation keeps, such as the ﾉ and ゞ of a kaomoji
+    or the 〇 of a censor mask (うん〇 -> sh〇t), so it is not left; asking
+    again can only give it back. A value that gives back the source's letters
+    and digits unchanged, such as え？ for え？, translated nothing and keeps no
+    symbol: all its source text is left, as it is without a source."""
     if not isinstance(text, str):
         return []
-    spoken = _spoken(text)
-    runs = _WORD.findall(spoken)
+    language = language or languages.active_source()
+    spoken = _spoken(text, language)
+    runs = _WORDS[language].findall(spoken)
     if not runs or not isinstance(source, str) or source == text:
         return runs
-    source = _spoken(source)
+    source = _spoken(source, language)
     if _letters_and_digits(source) == _letters_and_digits(spoken):
         return runs
-    kept = Counter(LETTERS.findall(source))
+    kept = Counter(_LETTERS[language].findall(source))
     found = []
     for run in runs:
         if len(run) == 1 and kept[run] > 0 and not KANJI.match(run):
@@ -85,17 +85,19 @@ def japanese_left(text, source=None) -> list[str]:
     return found
 
 
-def holds_source(text) -> bool:
-    """Whether *text* still holds Japanese, read without a source
-    (`japanese_left`): the source itself, or a value whose source is
-    unknown."""
-    return bool(japanese_left(text))
+def holds_source(text, language=None) -> bool:
+    """Whether *text* still holds text in the source *language*, read
+    without a source (`source_left`): the source itself, or a value whose
+    source is unknown."""
+    return bool(source_left(text, language=language))
 
 
-def _spoken(text: str) -> str:
+def _spoken(text: str, language: str) -> str:
     """*text* as the player reads it: furigana as its base, without control
-    codes, other protected codes or their placeholders in a request."""
-    return without_control_codes(without_protected_codes(furigana_base(text)))
+    codes, other protected codes or their placeholders in a request, and
+    for a Latin source without markup tags and {name} placeholders."""
+    text = without_control_codes(without_protected_codes(furigana_base(text)))
+    return _MARKUP.sub("", text) if language != JAPANESE else text
 
 
 def _letters_and_digits(text: str) -> list[str]:

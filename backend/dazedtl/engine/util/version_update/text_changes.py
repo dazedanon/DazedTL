@@ -20,6 +20,9 @@ from dataclasses import asdict, dataclass, field
 from difflib import SequenceMatcher
 from pathlib import Path
 
+from util.game_settings import GameSettingsError, game_source_language
+from util.languages import DEFAULT_SOURCE
+from util.languages import source_pattern
 from util.rpgmaker_plugin_registry import PluginRegistryError, plugin_entries
 
 from .git_workflow import GitWorkflowError, UpdatePreview, inspect_repository, merged_file, _tree_files
@@ -27,7 +30,6 @@ from .json_merge import expand
 from .script_merge import is_plugin_registry, paired_lines, quoted_text
 from util import system
 
-JAPANESE = re.compile(r"[぀-ヿ㐀-䶿一-鿿ｦ-ﾟ]")
 # A file's lines a preview keeps for display, and all files' lines together;
 # the counts always cover every line.
 FILE_LINES = 200
@@ -126,16 +128,16 @@ def _script(raw: bytes | None) -> list[str] | None:
         return None
 
 
-def _text_line(line: str) -> str:
-    """A script line that holds Japanese in quotes, or nothing for code and
-    comments, such as a plugin's help."""
+def _text_line(line: str, text_pattern: re.Pattern) -> str:
+    """A script line that holds source text in quotes, or nothing for code
+    and comments, such as a plugin's help."""
     text = line.strip()
-    if text.startswith(("//", "/*", "*")) or not any(JAPANESE.search(value) for value in quoted_text(text)):
+    if text.startswith(("//", "/*", "*")) or not any(text_pattern.search(value) for value in quoted_text(text)):
         return ""
     return text
 
 
-def _documents(path, base, translated, official, merged):
+def _documents(path, base, translated, official, merged, text_pattern):
     """The sides as documents whose strings share keys: a release's by its
     own, a translation by its source's and the merge by the new release's;
     None when the new release's file cannot be read."""
@@ -152,11 +154,11 @@ def _documents(path, base, translated, official, merged):
     # A translation and a merge may add or remove lines, so each line takes
     # the key of the release line it stands for.
     return (
-        None if old is None else [_text_line(line) for line in old],
+        None if old is None else [_text_line(line, text_pattern) for line in old],
         None
         if translation is None
         else {line: translation[other].strip() for line, other in paired_lines(old or [], translation).items()},
-        [_text_line(line) for line in new],
+        [_text_line(line, text_pattern) for line in new],
         None if result is None else {line: result[other].strip() for line, other in paired_lines(new, result).items()},
     )
 
@@ -222,10 +224,10 @@ def _pairs(old, new):
     return pairs
 
 
-def _compare(path, base, translated, official, merged, budget) -> FileText:
+def _compare(path, base, translated, official, merged, budget, text_pattern) -> FileText:
     text = FileText(path)
-    before = [(key, value) for key, value in _strings(base) if JAPANESE.search(value)] if base is not None else []
-    after = [(key, value) for key, value in _strings(official) if JAPANESE.search(value)]
+    before = [(key, value) for key, value in _strings(base) if text_pattern.search(value)] if base is not None else []
+    after = [(key, value) for key, value in _strings(official) if text_pattern.search(value)]
     translation = dict(_strings(translated)) if translated is not None else {}
     result = dict(_strings(merged)) if merged is not None else dict(_strings(official))
 
@@ -260,7 +262,7 @@ def _compare(path, base, translated, official, merged, budget) -> FileText:
             english = translated_text(key, source) if key is not None else None
             if english is not None:
                 text.replaced += 1
-            if value is not None and JAPANESE.search(result.get(new_key, value)):
+            if value is not None and text_pattern.search(result.get(new_key, value)):
                 text.to_translate += 1
             note(
                 LineChange(
@@ -273,7 +275,7 @@ def _compare(path, base, translated, official, merged, budget) -> FileText:
     return text
 
 
-def _replace_whole(path, current, official, budget) -> FileText:
+def _replace_whole(path, current, official, budget, text_pattern) -> FileText:
     """A file the update copies over the game's, compared with the game's
     copy, the only earlier version there is, string by string in order."""
     text = FileText(path)
@@ -285,10 +287,10 @@ def _replace_whole(path, current, official, budget) -> FileText:
             continue
         old = now[start:end]
         for index, value in enumerate(new[new_start:new_end]):
-            if not JAPANESE.search(value):
+            if not text_pattern.search(value):
                 continue
             was = old[index] if index < len(old) else None
-            if was is not None and not JAPANESE.search(was):
+            if was is not None and not text_pattern.search(was):
                 change = LineChange("replaced", None, was, value)
                 text.replaced += 1
             else:
@@ -305,6 +307,12 @@ def _replace_whole(path, current, official, budget) -> FileText:
 def text_changes(game_root: str | Path, preview: UpdatePreview) -> TextChanges:
     """The lines a previewed update adds, changes and removes in the game's JSON files and plugins."""
     game = Path(game_root).expanduser().resolve()
+    try:
+        language = game_source_language(game)
+    except GameSettingsError:
+        # Its run start reports the problem; the preview reads Japanese.
+        language = DEFAULT_SOURCE
+    text_pattern = re.compile(source_pattern("update_text", language))
     status = inspect_repository(game)
     if not status.repo_root:
         raise GitWorkflowError("The game is not in a Git repository")
@@ -344,9 +352,9 @@ def text_changes(game_root: str | Path, preview: UpdatePreview) -> TextChanges:
             # Both sides changed the file: what the merge keeps, or the new
             # release's file when Git cannot merge it, such as binary content.
             merged = merged_file(repo, full(path), *(entry[1] for entry in entries)) or official
-        documents = _documents(path, base, translated, official, merged)
+        documents = _documents(path, base, translated, official, merged, text_pattern)
         if documents is not None:
-            files.append(_compare(path, *documents, budget))
+            files.append(_compare(path, *documents, budget, text_pattern))
     # Files outside Git, such as maps no translation version saved, replace
     # the game's copy whole, and no old release is kept to compare with.
     for change in preview.external_changes:
@@ -355,7 +363,7 @@ def text_changes(game_root: str | Path, preview: UpdatePreview) -> TextChanges:
         official = _parse(_read_file(preview.source_root / change.path))
         if official is not None:
             current = _parse(_read_file(game / change.path))
-            files.append(_replace_whole(change.path, current, official, budget))
+            files.append(_replace_whole(change.path, current, official, budget, text_pattern))
     files = [entry for entry in files if entry.to_translate or entry.replaced or entry.lines]
     return TextChanges(
         sum(entry.to_translate for entry in files),

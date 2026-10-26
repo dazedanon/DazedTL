@@ -3,7 +3,7 @@
 from dazedtl.translation.files import read_json
 from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
 
-from . import openrouter, preferences, providers
+from . import language_pair, openrouter, preferences, providers
 
 
 def connection_summary(settings):
@@ -31,15 +31,17 @@ def entries_per_request(settings):
 LOOKED_UP = ("rates", "maxOutputTokens", "openrouterBatch")
 
 
-def configuration(settings, mode, *, cached_only=False, unpriced=False):
-    """The settings a run freezes. ``unpriced`` returns them with unknown
-    rates instead of refusing, for comparisons that read cached prices only."""
+def configuration(settings, mode, *, cached_only=False, unpriced=False, pair=None):
+    """The settings a run freezes, translating between the game's language
+    *pair* (settings/language_pair), Japanese into Settings' target when
+    none is given. ``unpriced`` returns them with unknown rates instead of
+    refusing, for comparisons that read cached prices only."""
     state = settings._read()
-    language = state["values"]["language"]
+    languages = language_pair.frozen({}, pair or language_pair.default(settings))
     if mode == "agent":
         return {
             "mode": mode,
-            "language": language,
+            **languages,
             "model": "",
             "connection_id": "",
             "entries_per_request": None,
@@ -74,7 +76,7 @@ def configuration(settings, mode, *, cached_only=False, unpriced=False):
         )
     value = {
         "mode": mode,
-        "language": language,
+        **languages,
         "model": connection["model"],
         "connection_id": connection["id"],
         "provider": connection["provider"],
@@ -133,7 +135,7 @@ def configuration(settings, mode, *, cached_only=False, unpriced=False):
 
 def worker_secret(workspace, frozen):
     value = read_json(workspace / "settings/settings.json", limit=8_000_000)
-    if value.get("version") != 2:
+    if value.get("version") != 3:
         raise ValueError("Open this workspace in DazedTL before resuming the run.")
     connection = next(
         (

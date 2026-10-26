@@ -42,7 +42,8 @@ from util.batch_providers import KIMI_API_URL, is_kimi_api
 from util import extensions
 from util.sfx_reference import build_sfx_reference_text
 from util.vocab import decorative_glossary_alias, split_glossary_row
-from util.source_text import japanese_left
+from util.languages import JAPANESE, active_source, source_pattern, target_uses_cjk
+from util.source_text import source_left
 from util import system
 
 class _LazyModule:
@@ -495,12 +496,6 @@ def validate_placeholders(original_text, translated_text, replacements):
     return is_valid, missing, extra
 
 
-def target_uses_cjk(language) -> bool:
-    """Whether a target language is Chinese or Japanese, which are written
-    with full-width punctuation."""
-    return str(language or "").strip().casefold() in {"chinese", "japanese"}
-
-
 def validate_translation_content(
     original_items, translated_items, langRegex, target_language=None
 ):
@@ -592,7 +587,7 @@ def validate_translation_content(
             # translation keep the source's punctuation, kaomoji and censor
             # masks. Japanese inside protected runtime-code parameters is
             # absent here and is restored only after validation.
-            left = japanese_left(trans_str, orig_str)
+            left = source_left(trans_str, orig_str)
             if normalized_target == "chinese" and any(
                 re.search(r"[ぁ-ゖァ-ヺ\uFF66-\uFF9D]", run) for run in left
             ):
@@ -1269,6 +1264,11 @@ def get_cache_key(payload, language, cache_context=None, request_context=None):
     # Use hash to keep keys short but unique
     payload_str = str(payload) if payload is not None else ""
     combined = f"{payload_str}|{language}"
+    # A Japanese source, every run's before the source became a setting,
+    # keeps its keys; another source's translations never answer for it.
+    source = active_source()
+    if source != JAPANESE:
+        combined += f"|source:{source}"
     # Preserve legacy keys when this payload matches no glossary entries. Those
     # translations are unaffected by glossary edits, so invalidating them would
     # only waste cache/batch work during an upgrade.
@@ -3519,8 +3519,8 @@ class TranslationConfig:
         else:
             self.vocab = vocab
         
-        # Set language regex (default is Japanese)
-        self.langRegex = langRegex or r"[一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]+"
+        # The pattern of text to send, the source language's by default.
+        self.langRegex = langRegex or source_pattern()
         
         # Set batch size — derive from pricing config unless explicitly supplied
         if batchSize is None:

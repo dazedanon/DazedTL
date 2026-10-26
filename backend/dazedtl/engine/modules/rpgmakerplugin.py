@@ -12,6 +12,7 @@ from colorama import Fore
 from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
+from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost
 import tempfile
 from util import system
@@ -46,7 +47,7 @@ LEAVE = False
 PBAR = None
 
 # Regex - Need to change this if you want to translate from/to other languages. Default is Japanese Regex
-LANGREGEX = r"[一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]+"
+LANGREGEX = source_pattern()
 
 # Get pricing configuration based on the model
 PRICING_CONFIG = getPricingConfig(MODEL)
@@ -276,7 +277,7 @@ def translatePlugin(data, pbar, filename, translatedList):
         # Nested array strings (e.g., this.disp_list = { key: { subkey: ["string1", "string2"] } })
         # Matches strings inside arrays within object literals
         if in_disp_list:
-            regex_nested = r'"([^"]*[一-龠ぁ-ゔァ-ヴー]+[^"]*)"'
+            regex_nested = source_pattern("disp_list")
             matchList = re.findall(regex_nested, data[i])
             if len(matchList) > 0:
                 for match in matchList:

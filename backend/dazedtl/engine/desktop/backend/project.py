@@ -14,9 +14,9 @@ from util.paths import replace_with_retry
 from util.project_preparation import rpgmaker_layout
 from util.qa import mechanical
 from util.rpgmaker_qa_manifest import pointer, resolve_pointer
+from util.languages import source_pattern
 from util.runtime_text import protect_script_codes, validate_control_codes
 
-JAPANESE = re.compile(r"[ぁ-ゔァ-ヴ一-龠]")
 DATABASES = {"Actors.json", "Items.json", "Weapons.json", "Armors.json", "Skills.json", "States.json", "Classes.json", "Enemies.json"}
 FIELDS = {"name", "nickname", "description", "profile", "message1", "message2", "message3", "message4"}
 
@@ -56,7 +56,7 @@ def extract_records(filename: str, document) -> list[dict]:
     result = []
 
     def add(parts, text, category):
-        if isinstance(text, str) and JAPANESE.search(text) and len(text) <= 512:
+        if isinstance(text, str) and re.search(source_pattern("records"), text) and len(text) <= 512:
             location = pointer(parts)
             result.append({"id": digest(f"{filename}:{location}:{text}".encode())[:24],
                            "file": filename, "pointer": location, "source": text, "category": category})

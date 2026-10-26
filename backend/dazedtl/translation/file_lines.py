@@ -339,12 +339,12 @@ def state(line: Line, notes: frozenset[str]) -> str | None:
     """Whether a line is "translated", "untranslated" or holds a refusal
     "note"; None when it is out of scope, and "unknown" for a translated map
     name or note label, whose source only the original game file has."""
-    from util.source_text import holds_source, japanese_left
+    from util.source_text import holds_source, source_left
 
     # Notes are rare: only then do the lines' paths become pointers.
     if notes and any(_pointer(path) in notes for path in line.paths):
         return "note"
-    if any(japanese_left(text, source) for text, source in line.sent()):
+    if any(source_left(text, source) for text, source in line.sent()):
         return "untranslated"
     if any(holds_source(source) for source in line.sources):
         return "translated"

@@ -13,6 +13,7 @@ from colorama import Fore
 from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
+from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost
 from util.speakers import strip_speaker_prefix
 from util import system
@@ -45,7 +46,7 @@ FILENAME = None
 BRACKETNAMES = False
 
 # Regex - Need to change this if you want to translate from/to other languages. Default is Japanese Regex
-LANGREGEX = r"[一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]+"
+LANGREGEX = source_pattern()
 
 # Get pricing configuration based on the model
 PRICING_CONFIG = getPricingConfig(MODEL)
@@ -535,8 +536,8 @@ def searchCodes(events, pbar, jobList, filename):
                     # Grab String
                     jaString = codeList[i]["stringArgs"][0]
 
-                    # Japanses Text Only
-                    if not re.search(r"[一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９]+", jaString):
+                    # Source Text Only
+                    if not re.search(source_pattern("wolf_strings"), jaString):
                         i += 1
                         continue
 

@@ -20,17 +20,42 @@ from functools import cache, lru_cache
 from itertools import pairwise
 from pathlib import PurePosixPath
 
+from dazedtl.languages import (
+    ENGLISH_RUN,
+    JAPANESE,
+    LATIN_LETTERS,
+    MARKUP,
+    source_pattern,
+)
+
 VERSION = 1
 
-_RUN = re.compile("[　-〿぀-ヿㇰ-ㇿ㐀-䶿一-鿿豈-﫿！-｠｡-ﾟ￠-￮]+")
-_WORD = re.compile("[぀-ヿㇰ-ㇿ㐀-䶿一-鿿豈-﫿ｦ-ﾟ]")
+_RUN = re.compile(source_pattern("census_run", JAPANESE))
+_WORD = re.compile(source_pattern("census_word", JAPANESE))
+_ENGLISH_RUN = re.compile(ENGLISH_RUN)
+_LATIN = re.compile(f"[{LATIN_LETTERS}]")
+_CODES = re.compile(MARKUP)
 
 
-def runs(text):
-    """Maximal runs of Japanese characters that hold at least one kana or kanji."""
+def runs(text, language=JAPANESE):
+    """Maximal runs of text in the source *language*: of Japanese characters
+    that hold at least one kana or kanji, or of an English sentence's
+    letters, digits, spaces and punctuation outside markup that hold a
+    letter."""
     if not isinstance(text, str):
         return []
+    if language != JAPANESE:
+        return [
+            match
+            for match in _ENGLISH_RUN.findall(_CODES.sub("\n", text))
+            if _LATIN.search(match)
+        ]
     return [match for match in _RUN.findall(text) if _WORD.search(match)]
+
+
+def counted_language(census):
+    """The source language a saved census counted text in."""
+    return census.get("language", JAPANESE)
 
 
 # What the census reads directly, opens itself, decodes with WolfDawn, or
@@ -945,7 +970,7 @@ def protected(kind, field):
     return any(_kind(k, kind) and matches(f, field) for k, f in PROTECTED)
 
 
-def rules_input(value, fields, files=None):
+def rules_input(value, fields, files=None, language=JAPANESE):
     """The assistant's scope rules, given the census's {kind: fields} and
     {kind: files}. A rule sets aside a field across the game, optionally only
     in files matching a path pattern or only exact runs (values), and is
@@ -996,10 +1021,10 @@ def rules_input(value, fields, files=None):
         if "values" in rule and (
             not isinstance(rule["values"], list)
             or not rule["values"]
-            or any(runs(item) != [item] for item in rule["values"])
+            or any(runs(item, language) != [item] for item in rule["values"])
         ):
             raise ValueError(
-                f"Scope rule {index} needs values that are each one Japanese run as the census counts it."
+                f"Scope rule {index} needs values that are each one {language} run as the census counts it."
             )
         if any(protected(kind, have) and matches(field, have) for have in fields[kind]):
             raise ValueError(
@@ -1018,11 +1043,12 @@ def rules_input(value, fields, files=None):
 # --- Census entries and coverage ------------------------------------------------
 
 
-def entries(rows, name, source):
-    """Census entries for one file's rows: only strings that hold Japanese."""
+def entries(rows, name, source, language=JAPANESE):
+    """Census entries for one file's rows: only strings that hold text in
+    the source *language*."""
     result = []
     for kind, location, field, text in rows or []:
-        found = runs(text)
+        found = runs(text, language)
         if found:
             result.append(
                 {
@@ -1058,9 +1084,10 @@ def coverage(census, sources, glossary, rules):
     # Occurrences count: a line extracted once doesn't cover the same words
     # in another map, so each census run takes one matching unit run. Units
     # hold the game's text exactly, so their runs match the census's.
-    available = Counter(run for text in sources for run in runs(text))
+    language = counted_language(census)
+    available = Counter(run for text in sources for run in runs(text, language))
     unit_runs = set(available)
-    terms = {run for term in glossary for run in runs(term)}
+    terms = {run for term in glossary for run in runs(term, language)}
 
     def extracted(run):
         if run in terms:
@@ -1181,7 +1208,7 @@ def split_messages(census, sources):
                 )
     alone, joined, extracted = set(), set(), set()
     for text in sources:
-        found = runs(text)
+        found = runs(text, counted_language(census))
         alone.add(tuple(found))
         joined.update(pairwise(found))
         extracted.update(found)
@@ -1237,7 +1264,13 @@ def wanted(names, head=None):
 
 
 def scan(
-    names, load, decoders, decoded=None, progress=lambda _message: None, peek=None
+    names,
+    load,
+    decoders,
+    decoded=None,
+    progress=lambda _message: None,
+    peek=None,
+    language=JAPANESE,
 ):
     """The census of a game's files.
 
@@ -1261,7 +1294,7 @@ def scan(
         if rows is None:
             unreadable.append(name)
         else:
-            found.extend(entries(rows, name, source))
+            found.extend(entries(rows, name, source, language))
 
     for count, name in enumerate(names, 1):
         how = candidate(name, head)
@@ -1333,11 +1366,11 @@ def scan(
             if rows is None:
                 unreadable.append(name)
             else:
-                found.extend(entries(rows, name, "tool"))
+                found.extend(entries(rows, name, "tool", language))
     for name, data in decoded or []:
         if candidate(name) == "read":
             take(name, data, "assistant_dump")
-    return {
+    result = {
         "version": VERSION,
         "entries": found,
         "unreadable": sorted(unreadable),
@@ -1345,3 +1378,8 @@ def scan(
         "needs_dump": sorted(needs_dump),
         "decoded": decoded is not None,
     }
+    # A Japanese census, as every census was before the source became a
+    # setting, names no language.
+    if language != JAPANESE:
+        result["language"] = language
+    return result

@@ -197,7 +197,9 @@ class FullEstimate:
                 + " ".join(event_text["errors"])
             )
         # The same frozen model options a Translate estimate starts with.
-        self.guided.settings.prepare_engine(mode="estimate")
+        self.guided.settings.prepare_engine(
+            mode="estimate", pair=self.guided.runs.pair(native)
+        )
         policy = deepcopy(self.guided.backend.manual.request_policy)
         tasks = self.scope(project_id, native, event_text)
         saved = self.saved(native)

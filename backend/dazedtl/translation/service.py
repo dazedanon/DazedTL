@@ -11,6 +11,7 @@ from typing import Any
 
 from dazedtl.actions import history_label
 from dazedtl.freshness import Basis, compare
+from dazedtl.settings import language_pair
 from dazedtl.settings.execution import (
     configuration,
     connection_summary,
@@ -412,7 +413,9 @@ class Translation:
             "originalsRecorded": originals.available(
                 self.workspace, project_id, project.root, saved_lifecycle
             ),
-            "jobs": self.job_views(saved_jobs, selected["options"]["mode"]),
+            "jobs": self.job_views(
+                saved_jobs, selected["options"]["mode"], project.root
+            ),
             "active": self.jobs.running(project_id),
             "warnings": warnings,
             "checkoutIssue": refused,
@@ -458,6 +461,8 @@ class Translation:
             self.idle(project_id)
         self.clean_drafts(project_id)
         _record, project = self.project(project_id)
+        # Set up starts: the game keeps the language pair Settings name.
+        language_pair.record(self.settings, project.root)
         mode = self.default_mode()
         selected = project.read(mode)
         if not selected["initialized"]:
@@ -560,7 +565,7 @@ Additional project instructions:
         )
         return {"handoff": handoff, "path": str(handoff_path)}
 
-    def job_views(self, jobs, mode):
+    def job_views(self, jobs, mode, root):
         """Saved runs as pages show them. An estimate waiting for approval
         takes the current settings' prices when they change only its price
         (see repricing), with an approval token for that price; otherwise it
@@ -592,7 +597,7 @@ Additional project instructions:
                     # that can't form a run at all leave nothing to approve.
                     try:
                         current[priced] = self.api_configuration(
-                            priced, cached_only=True, unpriced=True
+                            priced, root, cached_only=True, unpriced=True
                         )
                     except ValueError:
                         current[priced] = None, None
@@ -674,7 +679,7 @@ Additional project instructions:
             raise ValueError(
                 "Choose API Batch or Live API in Options to estimate this run again."
             )
-        current, provider = self.api_configuration(mode)
+        current, provider = self.api_configuration(mode, project.root)
         if not changed_since(
             current, job["configuration_sha256"], plan["configuration"], reprice=False
         ) or self.repriceable(plan["configuration"], current, provider):
@@ -807,7 +812,9 @@ Additional project instructions:
         if "input_path" in arguments:
             project.artifact(arguments["input_path"])
         selected = project.read()["options"]
-        cfg, batch_provider = self.api_configuration(mode or selected["mode"])
+        cfg, batch_provider = self.api_configuration(
+            mode or selected["mode"], project.root
+        )
         if cfg["mode"] == "batch" and not batch_provider:
             raise ValueError(
                 "This route does not support Batch execution. Choose a supported connection or explicitly select Live."
@@ -841,11 +848,15 @@ Additional project instructions:
         )
         return self.jobs.start(job["id"], project_id)
 
-    def api_configuration(self, mode, *, cached_only=False, unpriced=False):
-        """The settings a run compiled now would freeze, with the Batch route
-        that sets its price factor."""
+    def api_configuration(self, mode, root, *, cached_only=False, unpriced=False):
+        """The settings a run on the game at *root* compiled now would
+        freeze, with the Batch route that sets its price factor."""
         cfg = configuration(
-            self.settings, mode, cached_only=cached_only, unpriced=unpriced
+            self.settings,
+            mode,
+            cached_only=cached_only,
+            unpriced=unpriced,
+            pair=language_pair.pair(self.settings, root),
         )
         batch_provider = None
         if cfg["mode"] != "agent":
@@ -1053,7 +1064,8 @@ Additional project instructions:
                     plan.get("finishes"),
                     plan["configuration"]["mode"],
                     project.read()["options"]["mode"],
-                )
+                ),
+                project.root,
             )
             if approval_token == job["approval_token"]:
                 if changed_since(

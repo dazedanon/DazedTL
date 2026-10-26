@@ -9,6 +9,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from dazedtl.freshness import Digests
+from dazedtl.languages import SOURCE_ENV
 from dazedtl.translation.files import ObservedFiles, digest
 
 from . import process_view
@@ -148,7 +149,11 @@ class RunObservations:
                 )
                 if key in plan
             }
-            value["settings"] = {"language": plan.get("settings", {}).get("language")}
+            # The run's language pair (settings/language_pair).
+            settings = plan.get("settings", {})
+            value["settings"] = {"language": settings.get("language")}
+            if SOURCE_ENV in settings:
+                value["settings"][SOURCE_ENV] = settings[SOURCE_ENV]
             if signature[0] == stamp(path):
                 self.plans[path] = (signature, value)
                 self.plans.move_to_end(path)

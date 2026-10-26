@@ -317,6 +317,40 @@ class CensusTests(unittest.TestCase):
             report["rules"],
         )
 
+    def test_an_english_game_counts_its_english_and_units_cover_it(self):
+        # An English game's text is Latin letters: none of it may read as
+        # finished, and codes, tags and Japanese are no English runs.
+        files = {
+            "data/Map001.json": {
+                "displayName": "Starting Village",
+                "events": [
+                    None,
+                    {
+                        "pages": [
+                            {
+                                "list": [
+                                    command(401, ["\\C[2]Mika\\C[0]: Welcome!<br>"]),
+                                    command(401, ["ようこそ"]),
+                                ]
+                            }
+                        ]
+                    },
+                ],
+            }
+        }
+        data = {name: json.dumps(value).encode() for name, value in files.items()}
+        result = census.scan(
+            sorted(data), data.__getitem__, Decoders(), language="English"
+        )
+        self.assertEqual(
+            [entry["runs"] for entry in result["entries"]],
+            [["Starting Village"], ["Mika", "Welcome!"]],
+        )
+        _report, uncovered = census.coverage(
+            result, ["Starting Village", "\\C[2]Mika\\C[0]: Welcome!<br>"], [], []
+        )
+        self.assertEqual(uncovered, [])
+
     def test_mod_loaders_and_documents_beside_a_game_are_not_its_text(self):
         result = scan(
             {

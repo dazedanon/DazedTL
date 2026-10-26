@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 from util import system
 from util import api_keys
 from util.engine_options import ENGINE_PRESETS, engine_options, validate_engine_options
+from util.languages import SOURCE_ENV, source_language
 from util.paths import PROJECT_ROOT
 from .project import atomic_json
 
@@ -75,6 +76,12 @@ def validate_endpoint(value):
 
 def validate_values(values):
     schema = {item["key"]: item for item in FIELDS}
+    # A run's source language other than Japanese, which only a run names
+    # (dazedtl/settings/language_pair), so a Japanese run's settings keep
+    # the values they had before the source became a setting.
+    source = values.get(SOURCE_ENV) if isinstance(values, dict) else None
+    if source is not None:
+        values = {key: value for key, value in values.items() if key != SOURCE_ENV}
     if not isinstance(values, dict) or set(values) - schema.keys():
         raise ValueError("Unknown application setting.")
     if values.get("gameUpdateForge") == "gitea":
@@ -107,6 +114,8 @@ def validate_values(values):
                 raise ValueError(f"{schema[key]['label']} must be a JSON array of names.") from None
             if not isinstance(selected, list) or not all(isinstance(name, str) and name.strip() for name in selected):
                 raise ValueError(f"{schema[key]['label']} must be a JSON array of names.")
+    if source is not None:
+        result[SOURCE_ENV] = source_language(source)
     return result
 
 

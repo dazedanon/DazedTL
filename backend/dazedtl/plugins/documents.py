@@ -6,14 +6,15 @@ import shutil
 import subprocess
 import threading
 from collections import OrderedDict
+from functools import cache
 from pathlib import Path
 
 from dazedtl import system
+from dazedtl.languages import JAPANESE, source_pattern
 from dazedtl.translation.files import digest, unique_object
 
 from . import ruby
 
-JAPANESE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff]")
 # The start of a JSON object or array, for values that fail to decode.
 OPAQUE = re.compile(r'^\s*(?:\{\s*"|\[\s*["\[{])')
 TOKENS = re.compile(
@@ -350,14 +351,22 @@ def occurrence_id(path, fingerprint, literal, logical):
     )[:24]
 
 
-def occurrences(path, raw, parsed, *, every=False):
-    """Each Japanese text location in a parsed file, or every one."""
+@cache
+def _source(language):
+    """Text in the source *language*, as a script holds it."""
+    return re.compile(source_pattern("script", language))
+
+
+def occurrences(path, raw, parsed, *, every=False, language=JAPANESE):
+    """Each location of text in the source *language* in a parsed file, or
+    every one."""
+    source = _source(language)
     fingerprint = digest(raw)
     rows = []
     for index, literal in enumerate(parsed["literals"]):
         values = leaves(literal["value"])
         for logical, value, opaque in values:
-            if not every and not JAPANESE.search(value):
+            if not every and not source.search(value):
                 continue
             identity = occurrence_id(path, fingerprint, literal, logical)
             rows.append(
@@ -387,7 +396,10 @@ def untagged(source, target, tags):
     return target
 
 
-def validate(raw, candidate, original, current, approved, targets):
+def validate(
+    raw, candidate, original, current, approved, targets, *, language=JAPANESE
+):
+    source = _source(language)
     if current["issues"]:
         raise ValueError("Syntax check failed: " + current["issues"][0])
     left, right = original["literals"], current["literals"]
@@ -401,14 +413,15 @@ def validate(raw, candidate, original, current, approved, targets):
             )
         )
     changed = {row["token"] for row in approved if row["id"] in targets}
-    # Japanese tags that unchanged code in this file still matches; longest first.
+    # Source-text tags that unchanged code in this file still matches;
+    # longest first.
     tags = sorted(
         {
             literal["value"]
             for index, literal in enumerate(left)
             if literal.get("matcher")
             and index not in changed
-            and JAPANESE.search(literal["value"])
+            and source.search(literal["value"])
         },
         key=len,
         reverse=True,
@@ -426,9 +439,9 @@ def validate(raw, candidate, original, current, approved, targets):
             raise ValueError(
                 "Control codes, interpolation or placeholders changed: " + row["id"]
             )
-        if JAPANESE.search(untagged(row["value"], target, tags)):
+        if source.search(untagged(row["value"], target, tags)):
             raise ValueError(
-                "Approved occurrence still contains Japanese; revise it or explicitly retain/exclude it."
+                f"Approved occurrence still contains {language}; revise it or explicitly retain/exclude it."
             )
         by_token.setdefault(row["token"], {})[tuple(row["logical"])] = target
     before, after, bpos, apos = [], [], 0, 0

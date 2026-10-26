@@ -110,15 +110,18 @@ def preview(inputs, name, runtime, offset=0, query=""):
 def lines_left(inputs, name, runtime, phase, markers, offset=0, query=""):
     """The lines still left in the file's newest copy, as its Lines count
     reads them (file_lines.left)."""
+    from dazedtl.languages import reading_game
+
     from .file_lines import left
 
     _check(offset, query)
     path, _base, origin = _origin(inputs, name, runtime)
     value = read_json(path, limit=32_000_000)
-    found = (
-        {**row, "source": row["source"] or None}
-        for row in left(
-            name, value, phase, markers, lambda: inputs.original_document(name)
-        )
-    )
+    with reading_game(inputs.source):
+        found = [
+            {**row, "source": row["source"] or None}
+            for row in left(
+                name, value, phase, markers, lambda: inputs.original_document(name)
+            )
+        ]
     return _page(name, origin, value, found, offset, query)

@@ -306,7 +306,15 @@ class GuidedInputs:
         """Each file's line counts (file_lines.count) in its newest copy, by
         file to its phase ("database" or "dialogue"); choice help counts under
         *markers*. A file read once stays counted until its bytes change, and
-        a file that cannot be read has none."""
+        a file that cannot be read has none, all read in the game's source
+        language."""
+        from dazedtl.languages import read_source, reading
+
+        language = read_source(self.source)
+        with reading(language):
+            return self._line_counts(phases, markers, language)
+
+    def _line_counts(self, phases, markers, language):
         from util.source_text import holds_source
 
         from .file_lines import count
@@ -324,6 +332,7 @@ class GuidedInputs:
                     phase,
                     markers if phase == "dialogue" else None,
                     identities[name].get("original"),
+                    language,
                 )
                 if key not in LINE_COUNTS:
                     LINE_COUNTS[key] = count(

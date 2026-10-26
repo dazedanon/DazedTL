@@ -10,6 +10,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from util import languages
 from util.paths import (
     GLOSSARY_BASE_ENABLED_ENV,
     GLOSSARY_OVERRIDE_ENV,
@@ -256,6 +257,59 @@ def save_game_update(game_root: str | Path, values: Mapping[str, str]) -> Path:
 
     def update(data: dict) -> None:
         data["gameUpdate"] = record
+
+    return _update_settings(Path(game_root).expanduser().resolve(), update)
+
+
+def load_language_pair(game_root: str | Path) -> dict[str, str] | None:
+    """The game's language pair, {"source", "target"}, which Set up records
+    from Settings and every run on the game reads; None for a game set up
+    before the pair was recorded, which translates Japanese into the target
+    Settings name."""
+    game_metadata_dir(game_root)
+    path = game_settings_path(game_root)
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        raise GameSettingsError(f"Game settings path is not a regular file: {path}")
+    if not path.is_file():
+        return None
+    value = _read_settings(path).get("languages")
+    if value is None:
+        return None
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"source", "target"}
+        or not isinstance(value["target"], str)
+        or not value["target"].strip()
+    ):
+        raise GameSettingsError(
+            f"Expected languages to name a source and a target in {path}"
+        )
+    try:
+        source = languages.source_language(value["source"])
+    except ValueError as error:
+        raise GameSettingsError(f"{error} ({path})") from error
+    problem = languages.pair_problem(source, value["target"])
+    if problem:
+        raise GameSettingsError(f"{problem} ({path})")
+    return {"source": source, "target": value["target"].strip()}
+
+
+def game_source_language(game_root: str | Path) -> str:
+    """The language the game's text is written in: its pair's source, or
+    Japanese for a game without a pair."""
+    pair = load_language_pair(game_root)
+    return pair["source"] if pair else languages.DEFAULT_SOURCE
+
+
+def save_language_pair(game_root: str | Path, source: str, target: str) -> Path:
+    """Atomically record the game's language pair, keeping other settings."""
+    source = languages.source_language(source)
+    problem = languages.pair_problem(source, target)
+    if problem:
+        raise GameSettingsError(problem)
+
+    def update(data: dict) -> None:
+        data["languages"] = {"source": source, "target": target.strip()}
 
     return _update_settings(Path(game_root).expanduser().resolve(), update)
 

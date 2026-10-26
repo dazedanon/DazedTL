@@ -12,6 +12,7 @@ from colorama import Fore
 from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
+from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost
 from util.speakers import strip_speaker_prefix
 import tempfile
@@ -52,7 +53,7 @@ CHOICES = True
 DIALOGUE = True
 
 # Regex - Need to change this if you want to translate from/to other languages. Default is Japanese Regex
-LANGREGEX = r"[一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]+"
+LANGREGEX = source_pattern()
 
 # Get pricing configuration based on the model
 PRICING_CONFIG = getPricingConfig(MODEL)

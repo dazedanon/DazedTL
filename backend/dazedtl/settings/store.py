@@ -10,18 +10,23 @@ from typing import Any, TypeGuard
 from dazedtl.storage import WorkspaceError, read_versioned_json, write_json
 from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
 
-from . import openrouter, preferences, providers
+from . import language_pair, openrouter, preferences, providers
 
 
 class Settings:
     def __init__(self, workspace, adapter):
+        from dazedtl.languages import DEFAULT_SOURCE
+
         self.adapter = adapter
         self._openrouter_prices = {}
         self.path = Path(workspace) / "settings" / "settings.json"
         self.metadata = adapter.settings_metadata()
         self.empty = {
-            "version": 2,
+            "version": 3,
             "revision": 0,
+            # The language games set up from now on are written in
+            # (settings/language_pair); the app offers no choice yet.
+            "sourceLanguage": DEFAULT_SOURCE,
             "values": {
                 key: self.metadata["values"][key] for key in ("language", "model")
             },
@@ -51,6 +56,11 @@ class Settings:
         try:
             preferences.values(value.get("values"))
             preferences.model_options(value.get("model_options"))
+            if (
+                language_pair.source_language(value.get("sourceLanguage"))
+                != value["sourceLanguage"]
+            ):
+                raise invalid
         except ValueError as exc:
             raise invalid from exc
         connections = value.get("connections")
@@ -161,7 +171,10 @@ class Settings:
                 "workspace_invalid", "Choose a regular settings file below 8 MB."
             )
         return read_versioned_json(
-            self.path, self.empty, {1: preferences.upgrade_v1}, self._validate
+            self.path,
+            self.empty,
+            {1: preferences.upgrade_v1, 2: preferences.upgrade_v2},
+            self._validate,
         )
 
     def _write(self, value, bump=True):
@@ -314,8 +327,8 @@ class Settings:
                 "engines": draft["engines"],
                 "models": {state["active"]: model},
             }
-        state = preferences.upgrade_v1(state)
-        state["version"] = 2
+        state = preferences.upgrade_v2(preferences.upgrade_v1(state))
+        state["version"] = 3
         self._write(state, bump=False)
 
     def _values(self, state):
@@ -453,13 +466,25 @@ class Settings:
         """The target language, which needs no connection or model prices."""
         return self._read()["values"]["language"]
 
-    def guided_configuration(self, mode, *, cached_only=False, unpriced=False):
+    def source_language(self):
+        """The language games set up from now on are written in."""
+        return self._read()["sourceLanguage"]
+
+    def guided_configuration(
+        self, mode, *, cached_only=False, unpriced=False, pair=None
+    ):
+        """A Guided run's frozen settings, translating between the game's
+        language *pair* (settings/language_pair), Japanese into Settings'
+        target when none is given."""
         from .execution import configuration
 
         state = self._read()
+        pair = pair or language_pair.default(self)
         return {
-            **configuration(self, mode, cached_only=cached_only, unpriced=unpriced),
-            "engine_settings": self._values(state),
+            **configuration(
+                self, mode, cached_only=cached_only, unpriced=unpriced, pair=pair
+            ),
+            "engine_settings": language_pair.frozen(self._values(state), pair),
             "stateGrouping": "compatible-states-v1",
             "choiceCollection": preferences.CHOICE_COLLECTION,
             "speakerContext": preferences.SPEAKER_CONTEXT,
@@ -710,6 +735,9 @@ class Settings:
                 "Save the base OpenRouter model ID, then choose Batch as the translation method."
             )
         configured = preferences.model_options(model_options)
+        problem = language_pair.problem(state["sourceLanguage"], normalized["language"])
+        if problem:
+            raise ValueError(problem)
         state["values"]["language"] = normalized["language"]
         if connection:
             connection.update(model=normalized["model"], model_options=configured)
@@ -1001,7 +1029,10 @@ class Settings:
         self._write(current, bump=False)
         return self.describe()
 
-    def prepare_engine(self, mode=None, resume=None):
+    def prepare_engine(self, mode=None, resume=None, pair=None):
+        """Writes the engine's settings before an engine action; a new run
+        translates between the game's language *pair*
+        (settings/language_pair)."""
         state = self._read()
         active = self._connection(state)
         if mode and active and not self._configured(active):
@@ -1015,6 +1046,8 @@ class Settings:
         if mode in {"translate", "batch"} and not self._configured(active):
             raise ValueError("Save an API connection in Settings before translating.")
         values = self._values(state)
+        if pair is not None:
+            values = language_pair.frozen(values, pair)
         if mode and active and active["provider"]:
             self.adapter.validate_route(values)
         if mode == "batch" and not self.translation_defaults()["batch_supported"]:

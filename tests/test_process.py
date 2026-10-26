@@ -1020,7 +1020,7 @@ class ProcessTests(unittest.TestCase):
             # the response check reads as left, such as one an older build
             # saved with Japanese in it, which the engine sends again: the
             # reuse would answer it on every run while it reads untranslated.
-            from util.source_text import japanese_left
+            from util.source_text import source_left
 
             stale_root = Path(temporary) / "stale"
             write_json(stale_root / "files/Items.json", data)
@@ -1035,7 +1035,7 @@ class ProcessTests(unittest.TestCase):
                 [
                     index
                     for index, pair in enumerate(zip(sources, responses))
-                    if japanese_left(pair[1], pair[0])
+                    if source_left(pair[1], pair[0])
                 ],
                 [],
             )

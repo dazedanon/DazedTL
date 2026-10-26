@@ -18,6 +18,7 @@ import re
 from pathlib import Path
 
 from util import rpgmaker_blocks as blocks
+from util.languages import source_pattern
 from util.paths import DATA_DIR
 
 # ============================================================================
@@ -339,13 +340,8 @@ def _score_command_list(cmd_list: list, scores: dict) -> None:
         i += 1
 
 
-_JP_RE = re.compile(
-    r"[\u3000-\u303F\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\uF900-\uFAFF\uFF61-\uFF9F]"
-)
-
-
 def _has_japanese(text: str) -> bool:
-    return bool(_JP_RE.search(text))
+    return bool(re.search(source_pattern("speakers"), text))
 
 
 # ============================================================================
