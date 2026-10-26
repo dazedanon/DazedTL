@@ -181,7 +181,9 @@ export class ApplicationStore {
           // freeze progress; a backend that keeps failing is read less often.
           this.failures
             ? Math.min(2000 * 2 ** (this.failures - 1), 30000)
-            : application.running
+            : // The original record's progress shows beside writes waiting
+              // for it, while no operation runs.
+              application.running || application.project?.originals?.running
               ? 500
               : 2000,
         );

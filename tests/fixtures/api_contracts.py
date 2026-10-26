@@ -5,10 +5,12 @@ import json
 import sys
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 root, temporary = map(Path, sys.argv[1:])
 sys.path.insert(0, str(root / "backend"))
 
+from dazedtl.api import views
 from dazedtl.api.contracts.methods import METHODS
 from dazedtl.api.server import Application, dispatcher, routes
 from dazedtl.compatibility import original_files, original_record
@@ -153,6 +155,24 @@ try:
             break
         time.sleep(0.05)
     assert original_files.recorded(game), "Opening the game recorded nothing."
+    # While it runs, every reply carries its progress for the writes that
+    # wait for it, whose refusals the page tells apart by their code.
+    running = {
+        "running": True,
+        "message": "Recorded 2 of 3 original files in Git.",
+        "error": "",
+        "stopped": False,
+    }
+    with patch.object(original_record, "view", lambda _root: running):
+        shown = call("workspace_snapshot", {})["application"]["project"]
+        assert shown["originals"] == running, shown
+    assert views.error(original_record.RecordPending("Wait."))["code"] == "recording"
+    try:
+        call("originals_stop", {"project_id": project_id})
+    except ValueError as error:
+        assert "no longer being recorded" in str(error), error
+    else:
+        raise AssertionError("A finished record stopped.")
     # A game moved into a folder inside its old one, as the user tidied a
     # download, opens as the same project with its work and stages; until
     # then the project offers Find game folder.

@@ -676,6 +676,9 @@ METHODS: dict[str, Method] = {
     "navigate": Method(NavigateRequest, AppState),
     "project_method": Method(ProjectMethodRequest, AppState),
     "project_languages": Method(ProjectLanguagesRequest, AppState),
+    # Stops recording the game's original files, which a write needing them
+    # starts again.
+    "originals_stop": Method(ProjectRequest, AppState),
     # Settings
     "settings_get": Method(NoParams, Settings, refresh=False),
     "settings_save": Method(PreferencesRequest, Settings),

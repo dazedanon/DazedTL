@@ -1,6 +1,9 @@
-import { Check, X } from "lucide-react";
+import { useState } from "react";
+import { Check, LoaderCircle, X } from "lucide-react";
 import { Button } from "./Button";
 import { ExpandableText } from "./ExpandableText";
+import { messageOf, waitsForRecord } from "../api/errors";
+import { useOriginalRecord } from "./OriginalRecord";
 export function Feedback({
   error = "",
   loading = false,
@@ -16,6 +19,7 @@ export function Feedback({
   notice?: string;
   loadingText?: string;
 }) {
+  if (error && waitsForRecord(error)) return <RecordWait />;
   return (
     <div
       className={`feedback ${error ? "error" : ""}`}
@@ -68,6 +72,7 @@ export function Message({
   onDismiss?: () => void;
 }) {
   if (!message) return null;
+  if (waitsForRecord(message)) return <RecordWait />;
   return (
     <div className="banner" role="alert">
       {/* A long failure, such as a contract report, stays an excerpt that
@@ -85,4 +90,52 @@ export function Message({
       )}
     </div>
   );
+}
+
+/** In place of a write's refusal: the original record's progress with Stop
+ * while it runs, then how it ended, so the user knows when trying again
+ * works. */
+function RecordWait() {
+  const { record, stop } = useOriginalRecord();
+  const [stopping, setStopping] = useState(false);
+  const [failure, setFailure] = useState("");
+  if (record?.running)
+    // Read like other pending results, with Stop at the end of the line.
+    return (
+      <div className="feedback" role="status">
+        <LoaderCircle size={15} className="job-status-spinner" aria-hidden />
+        <span>
+          {record.message}{" "}
+          <Button
+            variant="link"
+            pending={stopping}
+            disabled={record.message === "Stopping…"}
+            onClick={() => {
+              setStopping(true);
+              setFailure("");
+              stop()
+                .catch((error: unknown) => setFailure(messageOf(error)))
+                .finally(() => setStopping(false));
+            }}
+          >
+            Stop
+          </Button>
+          {failure && <span className="record-wait-failure"> {failure}</span>}
+        </span>
+      </div>
+    );
+  if (record?.stopped)
+    return (
+      <div className="feedback" role="status">
+        Recording the original game files stopped. Try again to record them
+        first.
+      </div>
+    );
+  if (record?.error)
+    return (
+      <Feedback
+        error={`The game's original files weren't recorded: ${record.error} Try again to record them again.`}
+      />
+    );
+  return <Feedback notice="The original game files are recorded. Try again." />;
 }

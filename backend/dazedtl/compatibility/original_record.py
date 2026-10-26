@@ -24,6 +24,11 @@ from dazedtl import system
 from . import original_files
 
 
+class RecordPending(ValueError):
+    """A request's write that waits for the record of the game's original
+    files, which the page shows with the record's progress."""
+
+
 @dataclass
 class _Record:
     process: system.Process
@@ -97,27 +102,32 @@ def _follow(root, record):
 
 def view(root):
     """The record of the game at `root` this backend started: whether it
-    runs, its progress, and why it ended without a record; None without one
-    or once the game is recorded."""
+    runs, its progress, and that it stopped or why it failed; None without
+    one, or once one finished."""
     root = Path(root).resolve()
     with _lock:
         record = _records.get(str(root))
         if record is None:
             return None
         running = _alive(record)
-        if not running and original_files.recorded(root):
+        if not running and (
+            original_files.recorded(root) or not (record.error or record.stopping)
+        ):
             return None
         return {
             "running": running,
-            "message": record.message if running else "",
+            "message": ("Stopping…" if record.stopping else record.message)
+            if running
+            else "",
             "error": "" if running or record.stopping else record.error,
             "stopped": not running and record.stopping,
         }
 
 
 def refusal(root):
-    """Why a request's write to the game at `root` waits for the record of
-    its original files, which this starts again after a stop or a failure."""
+    """The refusal of a request's write to the game at `root` that waits for
+    the record of its original files, which this starts again after a stop
+    or a failure."""
     root = Path(root).resolve()
     with _lock:
         record = _records.get(str(root))
@@ -130,8 +140,10 @@ def refusal(root):
         " before it changes any of them. Try again once that finishes."
     )
     if error:
-        return f"The game's original files weren't recorded: {error} {waiting}"
-    return waiting
+        return RecordPending(
+            f"The game's original files weren't recorded: {error} {waiting}"
+        )
+    return RecordPending(waiting)
 
 
 def stop(root):
@@ -142,7 +154,6 @@ def stop(root):
         if record is None or not _alive(record):
             raise ValueError("The original game files are no longer being recorded.")
         record.stopping = True
-        record.message = "Stopping…"
         _ask_stop(record)
 
 
@@ -153,13 +164,6 @@ def _ask_stop(record):
         record.process.stdin.flush()
     except OSError:
         pass
-
-
-def running():
-    """Whether any record this backend started runs, so the app polls its
-    progress."""
-    with _lock:
-        return any(map(_alive, _records.values()))
 
 
 def close(timeout=4):

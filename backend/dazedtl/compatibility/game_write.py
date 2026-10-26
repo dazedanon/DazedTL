@@ -252,7 +252,7 @@ def write_game(
         ):
             from . import original_record
 
-            raise ValueError(original_record.refusal(root))
+            raise original_record.refusal(root)
         original_files.ensure_found(root, log)
         # The repository may be new; it names its project from now on.
         location.adopt(root)

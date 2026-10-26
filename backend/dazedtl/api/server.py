@@ -185,6 +185,12 @@ class Application:
             except OSError:
                 pass  # A refused write starts it again and says why.
 
+    def originals_stop(self, project_id):
+        """Stops recording the project's original game files; a write that
+        needs them starts the record again."""
+        original_record.stop(self.projects.get(project_id)["source"])
+        return self.state()
+
     def state(self):
         value = self.projects.state()
         project = value["project"]
@@ -198,9 +204,7 @@ class Application:
             except ValueError, OSError, RuntimeError, subprocess.SubprocessError:
                 pass  # The snapshot reports an unreadable project.
         value.update(
-            running=self.backend.running()
-            or self.translation.jobs.running()
-            or original_record.running(),
+            running=self.backend.running() or self.translation.jobs.running(),
             provider_ready=self.settings.ready(),
             observing=bool(project),
         )
@@ -209,6 +213,8 @@ class Application:
             languages = available and self.languages.view(project)
             if languages:
                 project["languages"] = languages
+            if available and (record := original_record.view(project["source"])):
+                project["originals"] = record
             project.update(
                 available=available,
                 status="Project open",
@@ -853,6 +859,7 @@ def routes(app):
                 "navigate",
                 "project_method",
                 "project_languages",
+                "originals_stop",
             )
         },
         **{

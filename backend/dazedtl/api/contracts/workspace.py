@@ -18,6 +18,16 @@ class ProjectOperation(TypedDict):
     message: str
 
 
+class OriginalRecord(TypedDict):
+    """The background record of the open game's original files, while it
+    runs or after it ended without one."""
+
+    running: bool
+    message: str
+    error: str
+    stopped: bool
+
+
 class GameLanguages(TypedDict):
     """The languages a project's game translates between."""
 
@@ -41,6 +51,7 @@ class Project(TypedDict):
     status: NotRequired[str]
     detail: NotRequired[str]
     operation: NotRequired[ProjectOperation]
+    originals: NotRequired[OriginalRecord]
     next_label: NotRequired[str]
     # The open project's, while its game can be read.
     languages: NotRequired[GameLanguages]

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from dazedtl.api.contracts import ContractViolation
 from dazedtl.api.contracts.runs import RunEstimate
+from dazedtl.compatibility.original_record import RecordPending
 
 ESTIMATE_FIELDS = RunEstimate.__required_keys__ | RunEstimate.__optional_keys__
 
@@ -37,6 +38,7 @@ def project(value):
             "status",
             "detail",
             "operation",
+            "originals",
             "next_label",
             "languages",
         ),
@@ -309,6 +311,8 @@ def error(exc, roots=()):
         return {"code": "internal", "message": str(exc)}
     if isinstance(exc, FileNotFoundError) and not exc.filename:
         return {"code": "not_found", "message": str(exc)}
+    if isinstance(exc, RecordPending):
+        return {"code": "recording", "message": str(exc)}
     # `user_facing` marks errors worded for the user (Git workflow errors).
     if isinstance(exc, ValueError) or getattr(exc, "user_facing", False):
         return {"code": "validation", "message": str(exc)}
