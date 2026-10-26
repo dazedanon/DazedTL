@@ -51,7 +51,13 @@ def start(root):
         if _alive(_records.get(str(root))) or original_files.recorded(root):
             return
         process = system.popen(
-            [sys.executable, "-I", "-B", str(Path(__file__).with_name("original_worker.py")), str(root)],
+            [
+                sys.executable,
+                "-I",
+                "-B",
+                str(Path(__file__).with_name("original_worker.py")),
+                str(root),
+            ],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -60,7 +66,9 @@ def start(root):
             group=True,
         )
         record = _records[str(root)] = _Record(process)
-        record.follower = threading.Thread(target=_follow, args=(root, record), daemon=True)
+        record.follower = threading.Thread(
+            target=_follow, args=(root, record), daemon=True
+        )
         record.follower.start()
 
 
