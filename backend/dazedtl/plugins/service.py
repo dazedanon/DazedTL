@@ -1137,7 +1137,9 @@ class PluginService:
             original_issue = str(exc)
         protected = set(originals.get("keys", []))
         for path in [
-            path for path, row in rows.items() if not is_game_plugin(row.get("plugin", ""))
+            path
+            for path, row in rows.items()
+            if not is_game_plugin(row.get("plugin", ""))
         ]:
             del rows[path]
         for path, row in rows.items():

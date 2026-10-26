@@ -383,7 +383,10 @@ class PluginTests(unittest.TestCase):
             self.service.action(self.identity, "plugin_task")
         files = self.service.load(self.identity)["files"]
         self.assertEqual(
-            [item["value"] for item in files["www/js/plugins/PluginA.js"]["occurrences"]],
+            [
+                item["value"]
+                for item in files["www/js/plugins/PluginA.js"]["occurrences"]
+            ],
             ["Start"],
         )
         self.assertNotIn("www/js/plugins/TranslationUpdateCheck.js", files)
