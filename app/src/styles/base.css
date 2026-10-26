@@ -53,7 +53,7 @@ button:hover:not(:disabled) {
   background: var(--color-control-hover);
   border-color: var(--color-control-hover-border);
 }
-button:disabled {
+:is(button, input, select, textarea):disabled {
   opacity: 0.45;
   cursor: default;
 }
