@@ -219,20 +219,24 @@ export function TranslateWorkspace({
                             ? counted
                               ? `Lines translated of the lines in this file that hold ${languages.source}`
                               : "Lines saved of the lines the latest run prepared"
-                            : lines.done
-                              ? "Lines saved before the latest run ended; it did not reach the rest of the file"
-                              : lines.total === 0
-                                ? "Nothing to translate in this file"
-                                : counted
-                                  ? "This file could not be read as game data"
-                                  : "Line counts appear once a run prepares this file"
+                            : lines.counting
+                              ? "DazedTL is counting this file's lines"
+                              : lines.done
+                                ? "Lines saved before the latest run ended; it did not reach the rest of the file"
+                                : lines.total === 0
+                                  ? "Nothing to translate in this file"
+                                  : counted
+                                    ? "This file could not be read as game data"
+                                    : "Line counts appear once a run prepares this file"
                       }
                     >
                       {lines.running || (!lines.total && lines.done)
                         ? `${lines.done.toLocaleString()} so far`
                         : lines.total
                           ? `${lines.done.toLocaleString()} / ${lines.total.toLocaleString()}`
-                          : "-"}
+                          : lines.counting
+                            ? "Counting…"
+                            : "-"}
                     </span>
                     {/* A file changed in the game needs reloading before
                         new work, whatever its last run left. */}

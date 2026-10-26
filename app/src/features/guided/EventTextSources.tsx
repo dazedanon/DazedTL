@@ -159,8 +159,9 @@ export function EventTextSources({
                         {selection(values, row.selector).length} of{" "}
                         {row.choices.length} registered entries selected
                         {!values[row.key] && " (source off)"}.{" "}
-                        {state.builtinHits[row.key]?.length || 0} built-in
-                        handlers detected in this scope.
+                        {state.reading
+                          ? "Reading this scope for built-in handlers…"
+                          : `${state.builtinHits[row.key]?.length || 0} built-in handlers detected in this scope.`}
                         {(() => {
                           const own = customNames(values, row.key).length;
                           return own

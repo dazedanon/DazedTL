@@ -35,6 +35,7 @@ from dazedtl.settings import language_pair, preferences
 from dazedtl.settings.store import Settings
 from dazedtl.storage import WorkspaceLock
 from dazedtl.system import private_stdin
+from dazedtl.translation import derived
 from dazedtl.translation.assistant_tasks import AssistantTasks
 from dazedtl.translation.files import read_json
 from dazedtl.translation.guided import Guided
@@ -1305,6 +1306,7 @@ def serve(args, diagnostics):
         local.close()
         app.translation.jobs.close()
         original_record.close()
+        derived.close()
         app.images.close()
         try:
             app.backend.close()

@@ -556,6 +556,8 @@ export type EventTextState = {
   recommended: Record<string, EngineValue>;
   rows: EventTextRow[];
   builtinHits: Record<string, string[]>;
+  /** DazedTL is still reading the selected event files' built-in matches; builtinHits holds none yet and errors wait for them. */
+  reading: boolean;
   applied: boolean;
   errors: string[];
   enabled: string[];
@@ -632,6 +634,8 @@ export type SourceStatus = {
   noRequests?: Partial<Record<Phase, Record<string, string>>>;
   /** Each Database files and Maps & events file's lines, read from its newest copy; a file that cannot be read has none. */
   lines?: Record<string, FileLines>;
+  /** Files whose lines DazedTL is still counting, which have none in lines yet. */
+  counting?: string[];
 };
 
 /** What a batch's restore waits for: for one undone through its

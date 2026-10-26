@@ -20,8 +20,16 @@ from dazedtl.compatibility.event_text import (
 from dazedtl.freshness import Basis, compare
 from dazedtl.storage import write_json
 
+from . import derived
 from .files import digest, project_path, read_json
 
+# Raise when builtin_hits() finds other matches in the same bytes with the
+# same definitions, so the matches the profile keeps (translation/derived)
+# are read again.
+MATCH_VERSION = 1
+HITS = f"hits/{MATCH_VERSION}"
+# An original game file's digest and size in bytes, by its Git blob.
+ORIGINALS = "originals"
 SPACING = {"space", "nbsp", "underscore"}
 FINDING = {
     "decision",
@@ -56,6 +64,45 @@ def commands(value):
         for key, item in value.items():
             if key != "_original":
                 yield from commands(item)
+
+
+def catalog_builtins(catalog, key):
+    """The markers of a selector's built-in handlers in the parser catalog."""
+    return next(row for row in catalog["controls"] if row["key"] == key)["builtins"]
+
+
+def builtin_hits(raw, builtins):
+    """The registered built-ins one event file's commands use, by selector
+    (SELECTORS), from the file's bytes; `builtins` lists each selector's
+    markers (catalog_builtins)."""
+    found = {key: [] for key in SELECTORS}
+    # Only commands coded 357, 355 or 655 hold built-ins; a file whose text
+    # has none of these codes skips the parse.
+    parsed = (
+        json.loads(raw.decode("utf-8-sig"))
+        if b"\\u" in raw or SELECTED_CODES.search(raw)
+        else []
+    )
+    for command in commands(parsed):
+        key = (
+            "CODE357"
+            if command["code"] == 357
+            else "CODE355655"
+            if command["code"] in (355, 655)
+            else None
+        )
+        if key and command["parameters"] and isinstance(command["parameters"][0], str):
+            found[key].extend(
+                marker for marker in builtins[key] if marker in command["parameters"][0]
+            )
+    return found
+
+
+def _size(path):
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
 
 
 def original_commands(value):
@@ -96,8 +143,6 @@ class EventText:
 
     def __init__(self, guided):
         self.guided = guided
-        self.originals = {}
-        self.hits = {}
 
     def catalog(self):
         return self.guided.backend.guided_event_text_catalog()
@@ -109,7 +154,13 @@ class EventText:
         }
         return self.guided.backend.guided_event_text_options(values)
 
-    def context(self, project_id, native, catalog):
+    def context(self, project_id, native, catalog, *, defer=False):
+        """The selected event scope and everything an investigation of it
+        depends on, with its fingerprint. With `defer`, as a look reads it,
+        many event files' built-in matches go to readers
+        (translation/derived): until they are read, the context takes the
+        saved request's when that holds them, else it is `reading`, with
+        no builtins or fingerprint."""
         inputs = self.guided.inputs(native)
         names = sorted(self.guided.supported_files(native))
         sources = inputs.sources(
@@ -152,38 +203,76 @@ class EventText:
                 dependencies[relative] = None
             else:
                 dependencies[relative] = self.guided.observed_digest(path)
-        # Git reads each original blob once for the life of the app, all
-        # through one process; the selected event files' built-in matches
-        # come from the same bytes.
-        unread = dict.fromkeys(
-            blob for blob in originals.values() if blob not in self.originals
-        )
-        unmatched = {
-            identity["original"]
-            for identity, _path in event_inputs.values()
-            if "original" in identity
-            and (
-                identity["original"] in unread
-                or (self.originals[identity["original"]], catalog["fingerprint"])
-                not in self.hits
-            )
-        }
-        for blob, raw in self.guided.translation.engine.original_blobs(
-            root, [*unread, *sorted(unmatched.difference(unread))]
-        ):
-            self.originals[blob] = digest(raw)
-            if blob in unmatched:
-                self.match(lambda raw=raw: raw, self.originals[blob], catalog)
+        # Git reads each original blob once, all through one process, and the
+        # profile keeps its digest and size.
+        store = derived.store(inputs.folder)
+        engine = self.guided.translation.engine
+        unread = [
+            blob
+            for blob in dict.fromkeys(originals.values())
+            if not store.has(ORIGINALS, blob)
+        ]
+        if unread:
+            for blob, raw in engine.original_blobs(root, unread):
+                store.put(ORIGINALS, blob, [digest(raw), len(raw)])
         for relative, blob in originals.items():
-            dependencies[relative] = self.originals[blob]
-        hits = {key: [] for key in SELECTORS}
+            dependencies[relative] = store.get(ORIGINALS, blob)[0]
+        # Each selected event file's built-in matches, once per file content
+        # and parser definitions.
+        builtins = {key: catalog_builtins(catalog, key) for key in SELECTORS}
+        section, used = HITS, set()
+        missing, waiting = {}, set()
         for relative, (identity, path) in event_inputs.items():
-            if "original" not in identity:
-                self.match(path.read_bytes, dependencies[relative], catalog)
-            for key in SELECTORS:
-                hits[key].extend(
-                    self.hits[(dependencies[relative], catalog["fingerprint"])][key]
+            name = derived.key(dependencies[relative], catalog["fingerprint"])
+            used.add(name)
+            if store.has(section, name):
+                continue
+            if defer and store.pending(section, name):
+                waiting.add(relative)
+            else:
+                missing[relative] = (identity, path, name)
+        if defer and missing:
+            readable = {
+                relative: row
+                for relative, row in missing.items()
+                if store.readable(section, row[2])
+            }
+            sizes = {
+                relative: store.get(ORIGINALS, identity["original"])[1]
+                if "original" in identity
+                else _size(path)
+                for relative, (identity, path, _name) in readable.items()
+            }
+            if sum(sizes.values()) > derived.INLINE_BYTES:
+                store.read(
+                    [
+                        {
+                            "kind": "hits",
+                            "section": section,
+                            "key": name,
+                            "size": sizes[relative],
+                            "source": str(root),
+                            "blob": identity.get("original"),
+                            "path": str(path),
+                            "builtins": builtins,
+                        }
+                        for relative, (identity, path, name) in readable.items()
+                    ]
                 )
+                waiting.update(readable)
+                for relative in readable:
+                    del missing[relative]
+        by_blob = {
+            identity["original"]: name
+            for identity, _path, name in missing.values()
+            if "original" in identity
+        }
+        if by_blob:
+            for blob, raw in engine.original_blobs(root, list(by_blob)):
+                store.put(section, by_blob[blob], builtin_hits(raw, builtins))
+        for identity, path, name in missing.values():
+            if "original" not in identity:
+                store.put(section, name, builtin_hits(path.read_bytes(), builtins))
         value = {
             "version": REQUEST_VERSION,
             "project_id": project_id,
@@ -193,45 +282,61 @@ class EventText:
             "original_blobs": originals,
             "runtime_dependencies": runtime_dependencies,
             "definitions": catalog["fingerprint"],
-            "builtins": {key: sorted(set(value)) for key, value in hits.items()},
         }
+        if waiting:
+            # Matches are a function of the event files and definitions, so
+            # a request that read the same ones found the same; without one,
+            # they wait for the readers.
+            saved = self.saved_builtins(project_id, value, event_inputs)
+            store.save()
+            if saved is None:
+                return {**value, "builtins": None, "fingerprint": None, "reading": True}
+            value["builtins"] = saved
+        else:
+            hits = {key: [] for key in SELECTORS}
+            for relative in event_inputs:
+                found = store.get(
+                    section,
+                    derived.key(dependencies[relative], catalog["fingerprint"]),
+                )
+                for key in SELECTORS:
+                    hits[key].extend(found[key])
+            value["builtins"] = {
+                key: sorted(set(markers)) for key, markers in hits.items()
+            }
+            # Files and definitions change; keep only what this scope reads.
+            store.keep(section, used)
+            store.keep(ORIGINALS, set(originals.values()))
+            store.save()
         return {**value, "fingerprint": digest(value)}
 
-    def match(self, read, fingerprint, catalog):
-        """Records the registered built-ins one event file's commands use, once
-        per file content and parser definitions; `read` returns its bytes."""
-        signature = (fingerprint, catalog["fingerprint"])
-        if signature in self.hits:
-            return
-        raw = read()
-        found = {key: [] for key in SELECTORS}
-        # Only commands coded 357, 355 or 655 hold built-ins; a file whose
-        # text has none of these codes skips the parse.
-        parsed = (
-            json.loads(raw.decode("utf-8-sig"))
-            if b"\\u" in raw or SELECTED_CODES.search(raw)
-            else []
-        )
-        for command in commands(parsed):
-            key = (
-                "CODE357"
-                if command["code"] == 357
-                else "CODE355655"
-                if command["code"] in (355, 655)
-                else None
+    def saved_builtins(self, project_id, value, event_inputs):
+        """The built-in matches of the saved request, when it read the same
+        selected event files at the same content with the same definitions;
+        else None."""
+        path = self.guided.path(project_id, "event-text-request")
+        try:
+            request = read_json(path, limit=4_000_000) if path.exists() else None
+        except OSError, ValueError:
+            return None
+        if not isinstance(request, dict):
+            return None
+        dependencies = request.get("dependencies")
+        builtins = request.get("builtins")
+        if (
+            request.get("version") != REQUEST_VERSION
+            or request.get("files") != value["files"]
+            or request.get("definitions") != value["definitions"]
+            or not isinstance(dependencies, dict)
+            or any(
+                dependencies.get(relative) != value["dependencies"][relative]
+                for relative in event_inputs
             )
-            if (
-                key
-                and command["parameters"]
-                and isinstance(command["parameters"][0], str)
-            ):
-                control = next(row for row in catalog["controls"] if row["key"] == key)
-                found[key].extend(
-                    marker
-                    for marker in control["builtins"]
-                    if marker in command["parameters"][0]
-                )
-        self.hits[signature] = found
+            or not isinstance(builtins, dict)
+            or set(builtins) != set(SELECTORS)
+        ):
+            return None
+        return builtins
 
     def request(self, project_id, native):
         catalog = self.catalog()
@@ -297,9 +402,11 @@ Preserve all identity fields exactly and cover every listed source, with no extr
 After saving, run `{command} --apply`. It validates the report and saves its recommendations as this game's source choices: sources reported enable/high/safe turn on with their targets, and every other source turns off. A stale, foreign or invalid report is rejected with the reason; fix the report and run the command again. If it reports a running action or unsaved guided options, ask the user to let the action finish or to save or discard the options in DazedTL, then run it again.
 """
 
-    def inspect(self, project_id, native):
+    def inspect(self, project_id, native, *, defer=False):
+        """The saved findings' state against the current event scope; with
+        `defer`, a look's (context)."""
         catalog = self.catalog()
-        context = self.context(project_id, native, catalog)
+        context = self.context(project_id, native, catalog, defer=defer)
         defaults = self.unset()
         rows: list[dict[str, Any]] = [
             dict(
@@ -322,8 +429,9 @@ After saving, run `{command} --apply`. It validates the report and saves its rec
             "fingerprint": context["fingerprint"],
             "recommended": defaults,
             "rows": rows,
-            "builtinHits": context["builtins"],
+            "builtinHits": context["builtins"] or {},
             "requestId": None,
+            "reading": bool(context.get("reading")),
         }
         path = self.guided.path(project_id, "event-text-request")
         if not path.exists():
@@ -560,7 +668,13 @@ After saving, run `{command} --apply`. It validates the report and saves its rec
 
     def _status(self, project_id, native):
         try:
-            findings = self.inspect(project_id, native)
+            # A look leaves many event files to readers; execution and the
+            # helper read them all.
+            findings = self.inspect(
+                project_id,
+                native,
+                defer=self.guided.observations.files() is not None,
+            )
         except (OSError, ValueError, UnicodeError, KeyError, TypeError) as exc:
             findings = {
                 "status": "invalid",
@@ -571,11 +685,17 @@ After saving, run `{command} --apply`. It validates the report and saves its rec
                 "rows": [],
                 "builtinHits": {},
                 "requestId": None,
+                "reading": False,
             }
         try:
             options = self.options(native)
-            errors = self.structural(
-                options, self.catalog(), {"builtins": findings["builtinHits"]}
+            # Built-in matches still being read can't show a choice wrong yet.
+            errors = (
+                []
+                if findings["reading"]
+                else self.structural(
+                    options, self.catalog(), {"builtins": findings["builtinHits"]}
+                )
             )
         except (ValueError, TypeError) as exc:
             options, errors = {}, [str(exc)]
@@ -689,6 +809,8 @@ After saving, run `{command} --apply`. It validates the report and saves its rec
 
     def require(self, project_id, native):
         current = self.status(project_id, native)
+        if current["reading"]:
+            raise ValueError("DazedTL is still reading the selected event files.")
         if current["errors"] or not current["enabled"]:
             raise ValueError(
                 " ".join(current["errors"])

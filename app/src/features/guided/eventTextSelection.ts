@@ -123,6 +123,8 @@ export function sourceErrors(
         values[row.key] &&
         !value.length &&
         !customNames(values, row.key).length &&
+        // Matches still being read can't show the choice wrong yet.
+        !state.reading &&
         !state.builtinHits[row.key]?.length
       )
         errors.push(

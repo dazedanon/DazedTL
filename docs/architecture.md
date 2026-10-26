@@ -355,6 +355,7 @@ Do not add whole-game parsing, a process per file or full request-history recons
 A poll checks every saved run, so a digest cache it reads on every poll must keep that whole working set: one bounded below a long run history rereads every file on every poll.
 [ObservedFiles](../backend/dazedtl/translation/files.py) and [Digests](../backend/dazedtl/engine/util/freshness.py) reuse a file's digest while its stat signature holds, and run views and request rows come from bounded [process summaries](../backend/dazedtl/compatibility/process_view.py).
 Requests, the project helper's included, run one at a time behind the lock every snapshot needs, so work that takes seconds on a big game starts an operation worker instead of running in the request.
+Values a look derives from a game's files, such as each file's line counts and the event files' built-in matches, live in the project's [derived store](../backend/dazedtl/translation/derived.py), keyed on the bytes and inputs they were read from and a version per kind, so they outlast a restart; a look that would read many files hands them to reader processes and shows them as still being read.
 Measure nontrivial additions with representative generated data.
 Backend disconnection invalidates pending reads, so a late response cannot restore an obsolete connected state.
 

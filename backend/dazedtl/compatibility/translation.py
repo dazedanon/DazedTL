@@ -2,7 +2,6 @@
 
 import json
 import os
-import subprocess
 import tempfile
 from contextlib import contextmanager, redirect_stdout
 from dataclasses import asdict
@@ -17,26 +16,9 @@ from dazedtl.translation.files import digest
 from dazedtl.translation.git_status_cache import RepositoryStatusCache, file_signature
 from dazedtl.translation.requests import output_schema, provider_view
 
-from . import request_parameters
+from . import git_blobs, request_parameters
+from .git_blobs import git as _git
 from .openrouter_batch import ResultsUnavailable
-
-
-def _git(arguments, purpose, timeout=120):
-    """Runs Git for its raw output; a failure says what it was for in words."""
-    try:
-        result = system.run(
-            ["git", *arguments], capture_output=True, timeout=timeout, check=False
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise ValueError(f"Git could not {purpose} within {timeout} seconds.") from exc
-    except OSError as exc:
-        raise ValueError(f"Git could not {purpose}: {exc.strerror or exc}") from exc
-    if result.returncode:
-        detail = result.stderr.decode("utf-8", errors="replace").strip()
-        raise ValueError(
-            f"Git could not {purpose}: {detail or f'exit status {result.returncode}'}"
-        )
-    return result.stdout
 
 
 class ProviderFailure(RuntimeError):
@@ -594,58 +576,11 @@ class TranslationEngine:
             )
 
     def original_bytes(self, source, blob):
-        import re
-
-        if not isinstance(blob, str) or not re.fullmatch(r"[0-9a-f]{40,64}", blob):
-            raise ValueError("Choose a verified original source blob.")
-        return _git(
-            ["-C", str(source), "cat-file", "blob", blob],
-            "read the game's original files",
-            timeout=30,
-        )
+        return git_blobs.original_bytes(source, blob)
 
     def original_blobs(self, source, blobs):
-        """Yields each blob with its bytes, read through one Git process, which
-        Windows starts far faster than one process per file."""
-        import re
-
-        blobs = list(dict.fromkeys(blobs))
-        if any(
-            not isinstance(blob, str) or not re.fullmatch(r"[0-9a-f]{40,64}", blob)
-            for blob in blobs
-        ):
-            raise ValueError("Choose a verified original source blob.")
-        if not blobs:
-            return
-        purpose = "Git could not read the game's original files"
-        with tempfile.TemporaryFile() as requests:
-            requests.write("".join(blob + "\n" for blob in blobs).encode("ascii"))
-            requests.seek(0)
-            try:
-                process = system.popen(
-                    ["git", "-C", str(source), "cat-file", "--batch"],
-                    stdin=requests,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                )
-            except OSError as exc:
-                raise ValueError(f"{purpose}: {exc.strerror or exc}") from exc
-            with process:
-                assert process.stdout is not None and process.stderr is not None
-                for blob in blobs:
-                    header = process.stdout.readline().split()
-                    if not header:
-                        # Git stopped, so its error is complete.
-                        detail = process.stderr.read().decode("utf-8", "replace")
-                        raise ValueError(f"{purpose}: {detail.strip() or 'no output'}")
-                    if len(header) != 3 or header[:2] != [blob.encode(), b"blob"]:
-                        process.kill()
-                        raise ValueError(f"{purpose}: {blob} is not a saved file.")
-                    raw = process.stdout.read(int(header[2]))
-                    if len(raw) != int(header[2]) or process.stdout.read(1) != b"\n":
-                        process.kill()
-                        raise ValueError(f"{purpose}: {blob} ended early.")
-                    yield blob, raw
+        """Yields each blob with its bytes, read through one Git process."""
+        return git_blobs.original_blobs(source, blobs)
 
     def error_message(self, error):
         if explained(error):

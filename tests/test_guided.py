@@ -3,6 +3,7 @@
 import json
 import os
 import shutil
+import time
 import unittest
 from copy import deepcopy
 from pathlib import Path
@@ -18,7 +19,9 @@ from dazedtl.storage import write_json
 from dazedtl.translation import (
     comment_text,
     context_setup,
+    derived,
     event_text,
+    file_lines,
     header_review,
     preparation,
     speaker_setup,
@@ -4089,6 +4092,91 @@ class GuidedTests(unittest.TestCase):
                 {"Map001.json": "dialogue"}, frozenset()
             ),
             {"Map001.json": {"lines": 1, "translated": 1}},
+        )
+
+    def test_a_look_leaves_many_files_to_readers_whose_counts_outlast_a_restart(self):
+        # Opening a big game counted every file in the request, which held
+        # every other request for seconds, and counted them all again after
+        # each restart.
+        write_json(
+            self.source / "Map001.json",
+            {
+                "displayName": "",
+                "events": [
+                    {"pages": [{"list": [{"code": 401, "parameters": ["村だ"]}]}]}
+                ],
+            },
+        )
+        phases = {"Items.json": "database", "Map001.json": "dialogue"}
+        inputs = self.guided.inputs(self.native)
+        expected = inputs.line_counts(phases, frozenset())
+        self.assertEqual(expected["Map001.json"], {"lines": 1, "translated": 0})
+
+        def restart():
+            derived._stores.pop(str(self.folder / derived.NAME), None)
+
+        (self.folder / derived.NAME).unlink()
+        restart()
+        counting = []
+        with patch.object(derived, "INLINE_BYTES", 0):
+            self.assertEqual(inputs.line_counts(phases, frozenset(), counting), {})
+            self.assertEqual(sorted(counting), sorted(phases))
+            store = derived.store(self.folder)
+            for process in list(store.processes):
+                process.wait(timeout=8)
+            # The follower saves what its reader sent once it ends.
+            deadline = time.monotonic() + 2
+            while store.reading and time.monotonic() < deadline:
+                time.sleep(0.005)
+            # The readers counted as the look would have.
+            restart()
+            counting = []
+            self.assertEqual(
+                inputs.line_counts(phases, frozenset(), counting), expected
+            )
+            self.assertEqual(counting, [])
+            # A rule change counts again.
+            with patch.object(file_lines, "COUNT_VERSION", 2):
+                inputs.line_counts(phases, frozenset(), counting)
+            self.assertEqual(sorted(counting), sorted(phases))
+            for process in list(derived.store(self.folder).processes):
+                process.wait(timeout=8)
+
+    def test_a_look_waits_for_event_files_without_reading_findings_out_of_date(self):
+        # A look left many event files' built-in matches to readers; until
+        # they finish, the saved request still answers for the files it read,
+        # and without one nothing is called wrong or out of date.
+        request, _report = self.event_report()
+        (self.folder / derived.NAME).unlink()
+        derived._stores.pop(str(self.folder / derived.NAME), None)
+
+        def look():
+            with self.guided.observations.read():
+                return self.guided.event_text.status(self.identity, self.native)
+
+        with (
+            patch.object(derived, "INLINE_BYTES", -1),
+            patch.object(derived.Store, "read") as read,
+        ):
+            findings = look()
+            self.assertTrue(read.called)
+            self.assertEqual(
+                (findings["status"], findings["fingerprint"], findings["reading"]),
+                ("ready", request["fingerprint"], False),
+            )
+            self.assertEqual(findings["builtinHits"], request["builtins"])
+            self.guided.path(self.identity, "event-text-request").unlink()
+            self.native["engine_options"]["CODE357"] = True
+            findings = look()
+            self.assertEqual(
+                (findings["status"], findings["reading"], findings["errors"]),
+                ("missing", True, []),
+            )
+            with self.guided.observations.read(), self.assertRaises(ValueError):
+                self.guided.event_text.require(self.identity, self.native)
+        # Execution reads them itself.
+        self.assertFalse(
+            self.guided.event_text.status(self.identity, self.native)["reading"]
         )
 
     def test_estimate_freezes_estimate_mode_without_changing_the_saved_api_choice(self):

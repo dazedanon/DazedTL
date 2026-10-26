@@ -32,20 +32,6 @@ def commands(value):
     return bool(value) and isinstance(value[0], dict) and "code" in value[0]
 
 
-def children(value):
-    """A value's lists and objects. Lists of numbers, such as a map's tiles,
-    hold no text and are skipped whole."""
-    if isinstance(value, dict):
-        items = ((key, child) for key, child in value.items() if key != "_original")
-    elif value and not isinstance(value[0], (int, float)):
-        items = enumerate(value)
-    else:
-        return
-    for key, child in items:
-        if isinstance(child, (dict, list)):
-            yield key, child
-
-
 def resolve(document, path):
     for part in path:
         document = document[part]
@@ -60,12 +46,16 @@ def find(document, original=lambda: None):
     # importing its mapping keeps QA's extractor hash, and its tasks, current.
     from util.rpgmaker_qa_manifest import live_mapping, read_live, string_leaves
 
-    found, covered = [], set()
+    found, covered, strings = [], set(), []
 
-    def walk(value, path, listed=None, index=None):
+    # One walk reads both kinds of note: the values an `_original` keeps a
+    # source for (`notes`, until a command holds them), and the strings
+    # outside event command lists (`fields`), whose source the original
+    # game file keeps at the same path.
+    def walk(value, path, listed=None, index=None, notes=True, fields=True):
         if isinstance(value, dict):
             code = value.get("code") if isinstance(value.get("code"), int) else None
-            if value.get("_original") is not None:
+            if notes and value.get("_original") is not None:
                 for relative, source in string_leaves(value["_original"]):
                     mapping = live_mapping(value, path, relative, code, listed, index)
                     if mapping is None:
@@ -78,43 +68,45 @@ def find(document, original=lambda: None):
                     if live != source and line_refusal(live, source):
                         found.append(Note(tuple(mapping[0]), source, code, transform))
             # A command's own parameters hold no `_original` of their own.
-            if code is None:
-                for key, child in children(value):
-                    walk(child, path + (key,))
+            notes = notes and code is None
+            inside, pairs = (
+                False,
+                ((key, child) for key, child in value.items() if key != "_original"),
+            )
         else:
             inside = commands(value)
-            for position, child in children(value):
+            fields = fields and not inside
+            # Lists of numbers, such as a map's tiles, hold no text.
+            pairs = (
+                enumerate(value)
+                if value and not isinstance(value[0], (int, float))
+                else ()
+            )
+        if not (notes or fields):
+            return
+        for key, child in pairs:
+            if isinstance(child, str):
+                if fields:
+                    strings.append(((*path, key), child))
+            elif isinstance(child, (dict, list)):
                 walk(
                     child,
-                    path + (position,),
-                    value if inside else listed,
-                    position if inside else index,
+                    (*path, key),
+                    value if inside else None if isinstance(value, dict) else listed,
+                    key if inside else None if isinstance(value, dict) else index,
+                    notes,
+                    fields,
                 )
 
     walk(document, ())
     # Outside event commands the engine keeps every value where the original
     # has it, so a value without `_original` takes the original's at its path.
     # An empty source excuses no note, which finds every candidate first.
-    candidates = []
-
-    def fields(value, path):
-        if isinstance(value, list) and commands(value):
-            return
-        pairs = (
-            ((key, child) for key, child in value.items() if key != "_original")
-            if isinstance(value, dict)
-            else enumerate(value)
-            if value and not isinstance(value[0], (int, float))
-            else ()
-        )
-        for key, child in pairs:
-            if isinstance(child, str):
-                if (*path, key) not in covered and line_refusal(child, ""):
-                    candidates.append(((*path, key), child))
-            elif isinstance(child, (dict, list)):
-                fields(child, (*path, key))
-
-    fields(document, ())
+    candidates = [
+        (path, value)
+        for path, value in strings
+        if path not in covered and line_refusal(value, "")
+    ]
     source_document = original() if candidates else None
     for path, value in candidates:
         try:

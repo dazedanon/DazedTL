@@ -326,15 +326,20 @@ export const countedPhase = (phase: Phase) =>
  * them from the file's newest copy (sourceStatus.lines), except that a Live
  * run still working on the file knows only the lines it saved so far
  * (`running`); the count takes over once it is done with the file. A file the
- * backend could not read has no total. Other event text reads its runs'
- * receipts.
+ * backend could not read has no total, nor one it is still counting
+ * (`counting`). Other event text reads its runs' receipts.
  */
 export function fileLines(
   state: Pick<GuidedState, "runs" | "sourceStatus">,
   phase: Phase,
   name: string,
   work = fileWork(state.runs, phase, name, state.sourceStatus.retired),
-): { done: number; total: number | null; running?: boolean } {
+): {
+  done: number;
+  total: number | null;
+  running?: boolean;
+  counting?: boolean;
+} {
   if (!countedPhase(phase)) return runLines(state, phase, name, work);
   const { run } = work;
   if (
@@ -349,10 +354,15 @@ export function fileLines(
       running: true,
     };
   const counted = state.sourceStatus.lines?.[name];
-  return counted
-    ? { done: counted.translated, total: counted.lines }
+  if (counted) return { done: counted.translated, total: counted.lines };
+  return counting(state, name)
+    ? { done: 0, total: null, counting: true }
     : { done: 0, total: null };
 }
+/** Whether the backend is still counting a file's lines, which it has none
+ * of yet. */
+const counting = (state: Pick<GuidedState, "sourceStatus">, name: string) =>
+  !!state.sourceStatus.counting?.includes(name);
 /**
  * Other event text's translated and total lines from the engine's own
  * receipts: the lines its latest run saved, out of the lines that run
@@ -645,8 +655,8 @@ export function linesLeft(counted: FileLines, source: string) {
  * still in progress for the file, else what the file's newest copy holds.
  * Lines left read Not started until any is translated or holds a refusal
  * note; a file with none left is in the game when its translated copy is,
- * or when it has no translated copy of its own. Its detail names the game's
- * *source* language.
+ * or when it has no translated copy of its own; one the backend is still
+ * counting is Working. Its detail names the game's *source* language.
  */
 export function countedFileStatus(
   state: Pick<GuidedState, "runs" | "sourceStatus" | "readiness">,
@@ -659,7 +669,13 @@ export function countedFileStatus(
   if (active) return active;
   const counted = state.sourceStatus.lines?.[name];
   if (!counted)
-    return fileState("blocked", "This file could not be read as game data.");
+    return counting(state, name)
+      ? // No run's work: a change in the game still reads Outdated.
+        {
+          ...fileState("working", "Counting this file's lines."),
+          pending: false,
+        }
+      : fileState("blocked", "This file could not be read as game data.");
   if (!counted.lines)
     return fileState("done", "Nothing to translate in this file.");
   if (counted.translated < counted.lines) {

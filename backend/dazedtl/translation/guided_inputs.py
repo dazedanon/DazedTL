@@ -13,12 +13,10 @@ from dazedtl.storage import write_bytes, write_json
 from .files import decode_json, digest, project_path, read_json
 from .saved_refusals import restore
 
-# Line counts per file version, by its path, digest, phase scope and original.
-LINE_COUNTS: dict[tuple, dict] = {}
-# The original game file's map display name, by its Git blob.
-ORIGINAL_NAMES: dict[str, str | None] = {}
-# Entries both keep beyond the files they hold now.
-LINE_LIMIT = 50_000
+# The derived store's section of original game files' map display names, by
+# their Git blob (display_name). Raise its version when display_name reads
+# another name from the same bytes.
+NAMES_SECTION = "names/1"
 _DISPLAY_NAME = re.compile(rb'"displayName"\s*:\s*("(?:[^"\\]|\\.)*")')
 
 
@@ -302,73 +300,148 @@ class GuidedInputs:
             (self.data / name).relative_to(self.source).as_posix()
         )
 
-    def line_counts(self, phases, markers):
+    def line_counts(self, phases, markers, counting=None):
         """Each file's line counts (file_lines.count) in its newest copy, by
         file to its phase ("database" or "dialogue"); choice help counts under
         *markers*. A file read once stays counted until its bytes change, and
         a file that cannot be read has none, all read in the game's language
-        pair."""
+        pair. Given a *counting* list, files too many to read at once go to
+        readers (translation/derived) and their names to that list, without
+        counts until a later look."""
         from dazedtl.languages import active_source, active_target, reading_game
 
         with reading_game(self.source):
             return self._line_counts(
-                phases, markers, (active_source(), active_target())
+                phases, markers, (active_source(), active_target()), counting
             )
 
-    def _line_counts(self, phases, markers, pair):
+    def _line_counts(self, phases, markers, pair, counting):
         from util.source_text import holds_source
 
-        from .file_lines import count
+        from . import derived
+        from .file_lines import COUNT_VERSION, read_counts
 
+        section = f"lines/{COUNT_VERSION}"
+        store = derived.store(self.folder)
         identities = self.identities(list(phases))
-        result, names, used = {}, {}, set()
+        found, missing, used = {}, {}, set()
         for name, phase in phases.items():
             try:
                 path = self.newest(name)
-                key = (
-                    str(path),
+                fingerprint = (
                     self.observed.digest(path)
                     if self.observed is not None
-                    else digest(path.read_bytes()),
-                    phase,
-                    markers if phase == "dialogue" else None,
-                    identities[name].get("original"),
-                    pair,
+                    else digest(path.read_bytes())
                 )
-                if key not in LINE_COUNTS:
-                    LINE_COUNTS[key] = count(
-                        name,
-                        decode_json(path.read_bytes()),
-                        phase,
-                        markers,
-                        lambda name=name: self.original_document(name),
-                    )
             except OSError, ValueError:
                 continue
-            except AttributeError, IndexError, KeyError, TypeError:
-                # Data shaped unlike RPG Maker's, such as a comment whose
-                # parameters are an object, has no lines to count.
-                continue
+            key = derived.key(
+                name,
+                fingerprint,
+                phase,
+                sorted(markers) if phase == "dialogue" else None,
+                identities[name].get("original"),
+                list(pair),
+            )
             used.add(key)
-            counts = dict(LINE_COUNTS[key])
+            if store.has(section, key):
+                found[name] = store.get(section, key)
+            elif not store.pending(section, key):
+                missing[name] = (phase, path, key)
+            elif counting is not None:
+                counting.append(name)
+            else:
+                missing[name] = (phase, path, key)
+        if counting is not None and missing:
+            readable = {
+                name: row
+                for name, row in missing.items()
+                if store.readable(section, row[2])
+            }
+            sizes = {}
+            for name, (_phase, path, _key) in readable.items():
+                try:
+                    sizes[name] = path.stat().st_size
+                except OSError:
+                    sizes[name] = 0
+            if sum(sizes.values()) > derived.INLINE_BYTES:
+                store.read(
+                    [
+                        self._count_task(
+                            name, phase, path, key, markers, pair, identities, sizes
+                        )
+                        for name, (phase, path, key) in readable.items()
+                    ]
+                )
+                counting.extend(readable)
+                for name in readable:
+                    del missing[name]
+        for name, (phase, path, key) in missing.items():
+            try:
+                raw = path.read_bytes()
+            except OSError:
+                continue
+            found[name] = read_counts(
+                name,
+                raw,
+                phase,
+                markers,
+                identities[name].get("original"),
+                lambda name=name: self.original_document(name),
+            )
+            store.put(section, key, found[name])
+        if counting is None or not counting:
+            # Files change with every run; keep only their current versions.
+            store.keep(section, used)
+        result, names = {}, {}
+        for name in phases:
+            # A file that holds no game data has no counts.
+            if found.get(name) is None:
+                continue
+            counts = dict(found[name])
             if "mapName" in counts:
                 names[name] = counts.pop("mapName")
             result[name] = counts
-        if len(LINE_COUNTS) > LINE_LIMIT:
-            # Files change with every run; keep only their current versions.
-            for key in set(LINE_COUNTS) - used:
-                del LINE_COUNTS[key]
         # A translated map display name keeps no `_original`: it is a line
         # when the original game file's name holds Japanese.
-        for name, original in self.original_names(names).items():
+        for name, original in self.original_names(names, whole=not counting).items():
             if holds_source(original):
                 result[name]["lines"] += 1
                 result[name]["translated"] += 1
+        store.save()
         return result
 
-    def original_names(self, names):
+    def _count_task(self, name, phase, path, key, markers, pair, identities, sizes):
+        """What a reader needs to count one file (derived.run)."""
+        from .file_lines import COUNT_VERSION
+
+        identity = identities[name]
+        native = identity.get("native_original") or {}
+        blob = identity.get("original") or native.get("blob")
+        return {
+            "kind": "lines",
+            "section": f"lines/{COUNT_VERSION}",
+            "key": key,
+            "size": sizes[name],
+            "name": name,
+            "path": str(path),
+            "phase": phase,
+            "markers": sorted(markers),
+            "original": identity.get("original"),
+            "source": str(self.source),
+            "pair": list(pair),
+            "names": [blob, "native_original" in identity] if blob else None,
+            "names_section": NAMES_SECTION,
+        }
+
+    def original_names(self, names, *, whole=False):
         """The original game file's map display name for each named file,
-        read once per original version; None where no original is known."""
+        read once per original version; None where no original is known.
+        `whole` when *names* are every named file the game has now, whose
+        names alone the store then keeps."""
+        from . import derived
+
+        store = derived.store(self.folder)
         identities = self.identities(list(names))
         blobs = {}
         for name in names:
@@ -377,19 +450,19 @@ class GuidedInputs:
             blob = identity.get("original") or native.get("blob")
             if blob:
                 blobs[name] = (blob, "native_original" in identity)
-        unknown = [blob for blob, _ in blobs.values() if blob not in ORIGINAL_NAMES]
+        unknown = [
+            blob for blob, _ in blobs.values() if not store.has(NAMES_SECTION, blob)
+        ]
         if unknown:
-            if len(ORIGINAL_NAMES) > LINE_LIMIT:
-                ORIGINAL_NAMES.clear()
             native = {blob for blob, ace in blobs.values() if ace}
             try:
                 for blob, raw in self.original_blobs(self.source, unknown):
-                    ORIGINAL_NAMES[blob] = display_name(raw, blob in native)
+                    store.put(NAMES_SECTION, blob, display_name(raw, blob in native))
             except OSError, ValueError:
                 pass  # Without Git's originals, the names stay out of scope.
-            for blob in unknown:
-                ORIGINAL_NAMES.setdefault(blob, None)
-        return {name: ORIGINAL_NAMES.get(blobs[name][0]) for name in blobs}
+        if whole:
+            store.keep(NAMES_SECTION, {blob for blob, _ in blobs.values()})
+        return {name: store.get(NAMES_SECTION, blobs[name][0]) for name in blobs}
 
     def restore_refusals(self, names):
         """Gives the lines of these working copies that hold a refusal note an

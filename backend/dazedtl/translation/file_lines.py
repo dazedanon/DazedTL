@@ -368,21 +368,83 @@ def note_pointers(document: Any, original: Callable[[], Any]) -> frozenset[str]:
     )
 
 
+def may_hold_notes(raw: bytes, original_blob: str | None) -> bool:
+    """Whether a file's bytes can hold a refusal note an earlier run saved
+    (saved_refusals). Without an `_original`, a note is a value that differs
+    from the original game file's at its path: a file without a known
+    original, or byte for byte its original's (the Git blob `original_blob`),
+    holds none."""
+    # An escaped key could spell `_original` too.
+    if b'"_original"' in raw or b"\\u" in raw:
+        return True
+    if original_blob is None:
+        return False
+    if not isinstance(original_blob, str) or len(original_blob) not in (40, 64):
+        return True
+    import hashlib
+
+    blob = hashlib.new("sha1" if len(original_blob) == 40 else "sha256")
+    blob.update(b"blob %d\0" % len(raw))
+    blob.update(raw)
+    return blob.hexdigest() != original_blob
+
+
+# Raise when count() or read_counts() return other counts for the same bytes
+# and inputs, such as after a change to what counts as a line, as translated or
+# as a refusal note: the counts the profile keeps (translation/derived) are
+# then read again.
+COUNT_VERSION = 1
+
+
+def read_counts(
+    name: str,
+    raw: bytes,
+    phase: str,
+    markers: frozenset[str],
+    original_blob: str | None = None,
+    original: Callable[[], Any] = lambda: None,
+) -> dict[str, Any] | None:
+    """count() of a file's bytes, None when they hold no game data it reads;
+    `original_blob` is the original game file's Git blob, when known, and
+    `original` reads its document."""
+    from .files import decode_json
+
+    try:
+        return count(
+            name,
+            decode_json(raw),
+            phase,
+            markers,
+            original,
+            look_for_notes=may_hold_notes(raw, original_blob),
+        )
+    except ValueError:
+        return None
+    except AttributeError, IndexError, KeyError, TypeError:
+        # Data shaped unlike RPG Maker's, such as a comment whose parameters
+        # are an object, has no lines to count.
+        return None
+
+
 def count(
     name: str,
     document: Any,
     phase: str,
     markers: frozenset[str],
     original: Callable[[], Any] = lambda: None,
+    *,
+    look_for_notes: bool = True,
 ) -> dict[str, Any]:
     """A file's line counts: lines in scope, those translated, those holding
     a refusal note and the choice help left; `otherNotes` counts refusal notes
     in a Maps & events file's values outside these lines, such as Other event
     text (a database file counts them as lines left), and `mapName`
-    is a translated map display name whose source decides its scope."""
+    is a translated map display name whose source decides its scope.
+    `look_for_notes` false skips looking for notes in a file that holds
+    none (may_hold_notes())."""
     from util.source_text import holds_source
 
-    notes = note_pointers(document, original)
+    notes = note_pointers(document, original) if look_for_notes else frozenset()
     counted: set[str] = set()
     result: dict[str, Any] = {"lines": 0, "translated": 0}
     sources: dict[tuple, list[str]] | None = None

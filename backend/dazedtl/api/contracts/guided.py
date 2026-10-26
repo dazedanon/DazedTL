@@ -216,6 +216,10 @@ class EventTextState(TypedDict):
     recommended: dict[str, EngineValue]
     rows: list[EventTextRow]
     builtinHits: dict[str, list[str]]
+    reading: Annotated[
+        bool,
+        "DazedTL is still reading the selected event files' built-in matches; builtinHits holds none yet and errors wait for them.",
+    ]
     # The current findings' recommendations were saved as source choices.
     applied: bool
     errors: list[str]
@@ -309,6 +313,12 @@ class SourceStatus(TypedDict):
         Annotated[
             dict[str, FileLines],
             "Each Database files and Maps & events file's lines, read from its newest copy; a file that cannot be read has none.",
+        ]
+    ]
+    counting: NotRequired[
+        Annotated[
+            list[str],
+            "Files whose lines DazedTL is still counting, which have none in lines yet.",
         ]
     ]
 
