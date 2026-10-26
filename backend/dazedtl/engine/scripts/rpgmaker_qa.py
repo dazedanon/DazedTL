@@ -138,11 +138,33 @@ def main() -> int:
 
     args = parser.parse_args()
     try:
-        return run(parser, args)
+        with _reading(args):
+            return run(parser, args)
     except (ValueError, OSError) as exc:
         # A refusal is for the reviewer to act on, not a traceback to read.
         print(f"error: {exc}", file=sys.stderr)
         return 1
+
+
+def _reading(args: argparse.Namespace):
+    """Reads text in the language pair of the game the command works on, as
+    the app reads it (dazedtl.languages), so a reviewer's work tells a
+    Chinese translation's hanzi from Japanese left."""
+    from contextlib import nullcontext
+
+    from dazedtl.languages import reading_game
+    from util.qa.storage import task_json
+
+    try:
+        game = (
+            args.game_root
+            if args.command == "prepare"
+            else task_json(args.task)["game_root"]
+        )
+    except (OSError, ValueError, KeyError, TypeError):
+        # The command reports a task it can't read itself.
+        return nullcontext()
+    return reading_game(game)
 
 
 def run(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:

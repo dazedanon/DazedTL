@@ -29,7 +29,8 @@ from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from typing import Any, Iterable
 
-from util.source_text import holds_source
+from util.languages import active_target, target_uses_cjk
+from util.source_text import source_left
 
 # Players never read MapInfos.json names; a map shows its own display name.
 UNSEEN_FILES = frozenset({"MapInfos.json"})
@@ -253,6 +254,10 @@ def terms(rows: Iterable[tuple[str, str, str, bool]]) -> list[Term]:
     """Every row's Japanese forms, longest first, so each claims its span
     before a shorter term inside it. A Japanese the game's glossary gives
     two English accepts either and has no fix."""
+    # The check reads a translation's words between spaces, which a Chinese
+    # or Japanese target doesn't write, so a translation into one is checked
+    # by its reviewers alone.
+    spaced = not target_uses_cjk(active_target())
     found: dict[str, Term] = {}
     for order, (source, english, section, is_base) in enumerate(rows):
         english = _undecorated(english)
@@ -291,7 +296,11 @@ def terms(rows: Iterable[tuple[str, str, str, bool]]) -> list[Term]:
                     # Hiragana alone is grammar or an ordinary word, such as
                     # さん inside たくさん.
                     and bool(_KANJI.search(alias) or _KATAKANA.search(alias))
-                    and not holds_source(english)
+                    # A target that still holds the Japanese it names, read
+                    # in the game's pair, where a Chinese one's hanzi are its
+                    # own, is no translation to check.
+                    and not source_left(english, alias)
+                    and spaced
                 ),
             )
     return sorted(found.values(), key=lambda term: (-len(term.source), term.order))

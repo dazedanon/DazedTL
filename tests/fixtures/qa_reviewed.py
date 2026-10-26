@@ -498,10 +498,12 @@ def made_by_2_24(task):
     return task.rename(task.with_name(key))
 
 
-# A task 2.24.0 or earlier made of the same text and scope goes on, in review
-# here, and its helpers find it current.
-scoped = made_by_2_24(scoped)
-assert prepare(since="1.10") == prepare() == scoped
+# A task 2.24.0 or earlier made of the same text and scope was reviewed under
+# QA rules version 1, so one in review prepares again under the current
+# rules, and its helpers find the new one current.
+earlier = made_by_2_24(scoped)
+scoped = prepare(since="1.10")
+assert scoped != earlier and prepare() == scoped
 qa.require_current(scoped)
 row = qa.next_bundle(scoped, "rev-a")
 qa.release_bundle(scoped, row["id"])

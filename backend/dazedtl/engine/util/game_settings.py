@@ -288,7 +288,10 @@ def load_language_pair(game_root: str | Path) -> dict[str, str] | None:
         source = languages.source_language(value["source"])
     except ValueError as error:
         raise GameSettingsError(f"{error} ({path})") from error
-    problem = languages.pair_problem(source, value["target"])
+    # A target DazedTL doesn't know, recorded before Set up refused one,
+    # reads as Latin script until Set up changes it.
+    known = languages.language(value["target"]) is not None
+    problem = known and languages.pair_problem(source, value["target"])
     if problem:
         raise GameSettingsError(f"{problem} ({path})")
     return {"source": source, "target": value["target"].strip()}

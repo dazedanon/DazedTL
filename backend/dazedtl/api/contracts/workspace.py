@@ -36,6 +36,11 @@ class GameLanguages(TypedDict):
     # The target is written in Chinese or Japanese characters, which stock
     # Line widths, measured on Latin letters, fit too wide.
     characters: bool
+    # The BCP 47 tags of the source and target (util/languages), the `lang`
+    # of text in them so the system draws that language's forms, such as
+    # Japanese kanji over Chinese ones; None for a name DazedTL doesn't know.
+    sourceTag: str | None
+    targetTag: str | None
 
 
 class Project(TypedDict):

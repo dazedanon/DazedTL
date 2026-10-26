@@ -8,7 +8,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { PlaytestProblem, PlaytestState } from "../../api/contracts";
 import { api } from "../../api/client";
-import { languageTag } from "../../app/languages";
 import { useLanguages } from "../../app/LanguagesProvider";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { Button } from "../../ui/Button";
@@ -319,9 +318,10 @@ function PlaytestStrings({
   const languages = useLanguages();
   const source = languages.source;
   // A placeholder glyph is left in translated text.
-  const lang = languageTag(
-    problem.check === "placeholder-glyph" ? languages.target : source,
-  );
+  const lang =
+    (problem.check === "placeholder-glyph"
+      ? languages.targetTag
+      : languages.sourceTag) ?? undefined;
   const texts = problem.texts || [];
   return (
     <Modal label="Strings" onDismiss={onClose} size="lg">

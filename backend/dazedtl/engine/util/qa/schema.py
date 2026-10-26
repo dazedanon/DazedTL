@@ -17,8 +17,9 @@ TASK_SCHEMA = "rpgmaker-qa-task-v3"
 # other change to DazedTL's code leaves saved QA work current, and the
 # previous-release check (scripts/qa-upgrade.mjs) fails on one that breaks it
 # without a bump. Tasks from before this version was kept, up to 2.24.0,
-# count as version 1.
-QA_RULES_VERSION = 1
+# count as version 1. Version 2 reads Japanese left against each line's source
+# in the game's language pair, so a Chinese translation's hanzi are no residue.
+QA_RULES_VERSION = 2
 CHECKPOINT_SCHEMA = "rpgmaker-qa-checkpoint-v3"
 BUNDLE_SCHEMA = "rpgmaker-qa-bundle-v3"
 SCREEN_RESULT_SCHEMA = "rpgmaker-qa-screen-result-v2"

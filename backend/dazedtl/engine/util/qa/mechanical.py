@@ -15,7 +15,7 @@ from collections import Counter
 from typing import Any
 
 from util import rpgmaker_blocks as blocks
-from util.source_text import holds_source
+from util.source_text import source_left
 
 _RUNTIME_TOKEN_RE = re.compile(
     r"\\(?:[A-Za-z]+\[[^\]\r\n]*\]|[{}.!|^><])"
@@ -143,7 +143,9 @@ def evidence(source: str, live: str, code: int | None) -> dict[str, Any]:
         flags.append("empty-live")
     if source == live:
         flags.append("unchanged-source")
-    if holds_source(live):
+    # Read against its source in the game's pair: a Chinese translation of a
+    # Japanese game writes hanzi of its own.
+    if source_left(live, source):
         flags.append("source-language-residue")
     if not _runtime_tokens_match(source, live):
         flags.append("runtime-token-mismatch")

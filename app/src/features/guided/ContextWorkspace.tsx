@@ -14,7 +14,6 @@ import { Tabs } from "../../ui/Tabs";
 import { VirtualList } from "../../ui/VirtualList";
 import type { InvestigationPart, InvestigationResult } from "./contextView";
 import { textLocation } from "./textLocation";
-import { languageTag } from "../../app/languages";
 import { useLanguages } from "../../app/LanguagesProvider";
 import { withHandoff } from "../assistant/assistantTasks";
 import { useHandoff } from "../assistant/useAssistantTasks";
@@ -181,7 +180,7 @@ const showHeader = (header: ShowTextHeader) =>
   (header.name || "No nameplate") +
   (header.faceName ? ` · face ${header.faceName} ${header.faceIndex}` : "");
 export function SpeakerNames({ scan }: { scan: SpeakerScan }) {
-  const sourceTag = languageTag(useLanguages().source);
+  const sourceTag = useLanguages().sourceTag ?? undefined;
   const [tab, setTab] = useState("nameplates");
   const [query, setQuery] = useState("");
   const rows = useMemo<ResultRow[]>(
