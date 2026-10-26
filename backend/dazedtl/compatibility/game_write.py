@@ -137,11 +137,10 @@ def _checkout(root):
     takes a checkpoint of each write, or None; refuses while the checkout
     can't take the write."""
     # A game takes translation work only in a repository of its own; one
-    # without, before version tracking is set up, has no checkout to keep,
-    # nor has one holding only the record of the game's original files.
-    from . import original_files
+    # whose Git is not set up has no checkout to keep.
+    from util.paths import game_git_set_up
 
-    if not (root / ".git").exists() or original_files.unborn(root):
+    if not game_git_set_up(root):
         return None
     from util.len_git import git_status
     from util.len_translation import LenProject

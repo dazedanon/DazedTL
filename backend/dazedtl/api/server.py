@@ -724,6 +724,18 @@ class Application:
             return nullcontext()
         return reading_game(project["source"])
 
+    def error_roots(self, params):
+        """The folders a failure may name files in: the request's game and the profile."""
+        roots = [self.workspace]
+        try:
+            roots.insert(0, Path(self.projects.get(params["project_id"])["source"]))
+        except KeyError, TypeError, ValueError:
+            pass
+        return [*roots, *(root.resolve() for root in roots)]
+
+    def explain(self, exc, params):
+        return views.error(exc, self.error_roots(params))
+
     def prepare_model_pricing(self, name, params):
         """Only explicit price/estimate actions may perform public price reads."""
         explicit = name == "settings_model_defaults"
@@ -1112,6 +1124,7 @@ def serve(args, diagnostics):
         PROTOCOL["version"],
         assistant_dispatch(app, dispatch),
         diagnostics.failure,
+        app.explain,
     )
     # Electron matches replies by id, so previews may answer out of order
     # while the loop keeps reading; every other request still runs in turn.
@@ -1159,7 +1172,9 @@ def serve(args, diagnostics):
                 "result": dispatch(name, params),
             }
         except Exception as exc:  # noqa: BLE001
-            error = views.error(exc)
+            error = app.explain(
+                exc, request.get("params") if isinstance(request, dict) else None
+            )
             # Validation and missing-file messages reach the user as written;
             # only failures shown as a generic message need a diagnostic trail.
             if error["code"] in {"internal", "storage"}:

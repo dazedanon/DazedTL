@@ -1,5 +1,9 @@
 """Public application views; legacy worker records never cross the UI boundary."""
 
+import errno
+import os
+from pathlib import Path
+
 from dazedtl.api.contracts import ContractViolation
 from dazedtl.api.contracts.runs import RunEstimate
 
@@ -256,14 +260,58 @@ def preview(value):
     )
 
 
-def error(exc):
+_REASONS = {
+    errno.EACCES: "it is read-only or not allowed to change",
+    errno.EPERM: "it is read-only or not allowed to change",
+    errno.EROFS: "the location is read-only",
+    errno.ENOSPC: "the disk is full",
+    errno.ENOENT: "it no longer exists",
+    errno.EBUSY: "another program is using it",
+    errno.ETXTBSY: "another program is using it",
+    errno.ENAMETOOLONG: "the path is too long",
+}
+
+
+def _shown_file(path, roots):
+    """The file as the user knows it: relative to its game or profile folder,
+    and nothing at all when it lies elsewhere."""
+    try:
+        file = Path(os.fsdecode(path))
+    except TypeError, ValueError:
+        return None
+    for root in roots:
+        try:
+            return file.relative_to(root).as_posix()
+        except ValueError:
+            continue
+    return None
+
+
+def _storage(exc, roots):
+    reason = _REASONS.get(exc.errno)
+    if reason is None and getattr(exc, "winerror", None) in {5, 32, 33}:
+        reason = "it is read-only or another program is using it"
+    file = _shown_file(exc.filename, roots) if exc.filename else None
+    if file and reason:
+        return f"Could not write {file}: {reason}."
+    if file:
+        return f"Could not write {file}."
+    if reason:
+        return f"A file operation failed: {reason}."
+    return "The file operation could not finish."
+
+
+def error(exc, roots=()):
+    """The page's version of a failure. `roots` are the game and profile
+    folders whose files may be named; no message names a path outside them."""
     if isinstance(exc, ContractViolation):
         # Only raised when development checks are on; show which field drifted.
         return {"code": "internal", "message": str(exc)}
-    if isinstance(exc, FileNotFoundError):
+    if isinstance(exc, FileNotFoundError) and not exc.filename:
         return {"code": "not_found", "message": str(exc)}
-    if isinstance(exc, ValueError):
+    # `user_facing` marks errors worded for the user (Git workflow errors).
+    if isinstance(exc, ValueError) or getattr(exc, "user_facing", False):
         return {"code": "validation", "message": str(exc)}
     if isinstance(exc, OSError):
-        return {"code": "storage", "message": "The file operation could not finish."}
+        return {"code": "storage", "message": _storage(exc, roots)}
     return {"code": "internal", "message": "The operation could not finish."}
