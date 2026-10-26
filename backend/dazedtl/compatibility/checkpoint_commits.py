@@ -570,16 +570,29 @@ def _index(root):
 def recovered_text(root, relative):
     """The text of the file at `relative` before and after the latest
     checkpoint that changed it, None where there was no file, when that
-    checkpoint is a write committed after it ended without one and the file
-    is as it left it; otherwise None."""
+    checkpoint is a context save (stage Context, no action) committed after
+    it ended without its checkpoint and the file is as it left it; a run's or
+    QA's change to it is another's, so otherwise None."""
     from util.paths import game_git_set_up
 
     if not game_git_set_up(root):
         return None
-    marker = f"%(trailers:key={RECOVERED_TRAILER},valueonly,separator=)"
-    found = _git(root, "log", "-1", f"--format=%H %x00{marker}", "--", relative)
-    commit, _, mark = found.stdout.strip().partition(" \0")
-    if not commit or mark.strip() != "true":
+    def trailer(key):
+        return f"%(trailers:key={key},valueonly,separator=)"
+
+    found = _git(
+        root,
+        "log",
+        "-1",
+        "--format=%H %x00" + "%x00".join(
+            trailer(key) for key in (RECOVERED_TRAILER, STAGE_TRAILER, ACTION_TRAILER)
+        ),
+        "--",
+        relative,
+    )
+    commit, _, rest = found.stdout.strip().partition(" \0")
+    mark, stage, action = (value.strip() for value in (rest.split("\0") + ["", "", ""])[:3])
+    if not commit or mark != "true" or stage != "Context" or action:
         return None
     if _git(root, "status", "--porcelain", "--", relative).stdout.strip():
         return None

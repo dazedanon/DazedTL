@@ -302,6 +302,29 @@ assert history()[:2] == ["Context: Save guidance||Context"] * 2, history()
 assert changed("HEAD~1") == changed() == [".dazedtl/glossary.txt"]
 recovered = trailers.format("DazedTL-Recovered")
 assert git(kept, "log", "-2", "--format=" + recovered).splitlines() == ["", "true"]
+# Only a guidance save's own recovered write excuses its draft: a run's or
+# QA's glossary change that ended without its checkpoint is another's change,
+# and a stale draft overwrites none of it.
+other = engine.documents(kept)["glossary"]
+other_text = "水 (Water)\n火 (Fire)\n薬 (Elixir)\n"
+try:
+    with running(for_action("glossary_apply")):
+        with write_game(kept, paths=[".dazedtl/glossary.txt"]) as written:
+            written.put(".dazedtl/glossary.txt", other_text.encode())
+            lock_left()
+except GitWorkflowError as error:
+    assert "index.lock" in str(error), error
+finally:
+    stale.unlink(missing_ok=True)
+write("data/Map001.json", b'{"by": "a write that recovers the glossary change"}')
+clean()
+assert engine.documents(kept)["glossary"]["text"] == other_text.rstrip("\n")
+try:
+    engine.document_save(kept, "glossary", other["revision"], "木 (Tree)\n")
+except ValueError as error:
+    assert "changed on disk" in str(error), error
+else:
+    raise AssertionError("A stale draft overwrote another write's glossary change.")
 # A real conflict, other text in the file, is still refused, and so is a
 # revision of a document the game has no file for.
 for name, revision, text in (
