@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..ace import rgssad
-from .git_workflow import GitWorkflowError, _is_local_only_asset, _is_tool_owned_path
+from .git_workflow import GitWorkflowError, UserFacingGitError, _is_local_only_asset, _is_tool_owned_path
 
 # A release holding at least this share of the game's files replaces the game;
 # one holding less is a patch, since replacing would remove the rest.
@@ -83,7 +83,7 @@ def _walk(root: Path) -> list[str]:
         for name in sorted(names):
             found.append((relative / name).as_posix())
             if len(found) > FILE_LIMIT:
-                raise GitWorkflowError(
+                raise UserFacingGitError(
                     f"{root} holds more than {FILE_LIMIT:,} files. "
                     "Choose the folder of the game's release."
                 )
@@ -248,10 +248,10 @@ def inspect_release(game_root: str | Path, release_root: str | Path) -> ReleaseI
     game = Path(game_root).expanduser().resolve()
     release = Path(release_root).expanduser().resolve()
     if not release.is_dir():
-        raise GitWorkflowError(f"Release folder not found: {release}")
+        raise UserFacingGitError(f"Release folder not found: {release}")
     files = _walk(release)
     if not files:
-        raise GitWorkflowError("The release folder is empty.")
+        raise UserFacingGitError("The release folder is empty.")
     own = _game_files(game)
     # Archived files line up as the game holds them once extracted, and an
     # Ace release's data covers the exports converting it writes.
@@ -308,7 +308,7 @@ def stage_release(
         )
         key = _fold(named)
         if key in placed:
-            raise GitWorkflowError(
+            raise UserFacingGitError(
                 f"The patch has two files for {'/'.join(named)}: {placed[key]} and {path}."
             )
         placed[key] = path
