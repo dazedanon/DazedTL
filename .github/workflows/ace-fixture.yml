@@ -1,0 +1,40 @@
+# Rebuilds the VX Ace fixture with Ruby 3.4 and RV2JSON and fails when the
+# committed files differ, which checks tests/fixtures/ace/regenerate.py and
+# the fixture's expected JSON and data. It runs by hand and for changes to the
+# fixture or the Ace port, not for every push. See "Ace fixture" in
+# docs/development.md; run it on a branch with:
+# gh workflow run ace-fixture.yml --ref <branch>
+name: Ace fixture
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev]
+    paths:
+      - tests/fixtures/ace/**
+      - backend/dazedtl/engine/util/ace/**
+      - .github/workflows/ace-fixture.yml
+
+permissions:
+  contents: read
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: .python-version
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+      # The commit the port follows, recorded in RV2JSON.LICENSE.txt.
+      - uses: actions/checkout@v7
+        with:
+          repository: Sinflower/RV2JSON
+          ref: 35db081809af3989e1c13d04d9be0dce0e074bf9
+          path: rv2json
+      - run: python tests/fixtures/ace/regenerate.py ruby rv2json
+      - run: git diff --exit-code -- tests/fixtures/ace

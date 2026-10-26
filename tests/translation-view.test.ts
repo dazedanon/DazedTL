@@ -19,7 +19,7 @@ import {
   estimateRequestCount,
   filePreviewRun,
   fileRun,
-  fileMetricRun,
+  fileWork,
   fileLines,
   fileStatus,
   phaseRun,
@@ -39,6 +39,10 @@ import {
   observedRun,
   requestAttempt,
 } from "../app/src/features/guided/translationView.ts";
+
+/** The last run that changed a file, whose cost and time its row shows. */
+const fileMetricRun = (...args: Parameters<typeof fileWork>) =>
+  fileWork(...args).changed;
 
 /** A file's observed requests, one per state given, as the backend sums them. */
 function requested(
@@ -1644,6 +1648,14 @@ test("a Batch that prepared no request for a file leaves its row and the task's 
   check([nothingQueued, earlier(false)], false, "Ready to apply", false);
   // Applied work stays Applied.
   check([nothingQueued, earlier(true)], true, "Applied", true);
+  // A Batch stopped while it waited on other files' requests left this file
+  // alone too: the done mark and Lines read the run the row reads.
+  const stopped = { ...nothingQueued, status: "interrupted", phase: "poll" };
+  check([stopped, earlier(true)], true, "Applied", true);
+  assert.deepEqual(
+    fileLines(state([stopped, earlier(true)], true), "advanced", files[0]),
+    fileLines(state([earlier(true)], true), "advanced", files[0]),
+  );
   // No run translated the file, so there is nothing to translate.
   check([nothingQueued], false, "Done", true);
 });

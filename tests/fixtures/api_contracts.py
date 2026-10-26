@@ -103,6 +103,14 @@ try:
         },
     )
     call("guided_context_status", {"project_id": project_id})
+    # Opening the game started recording its original files in the
+    # background; a task's write into the game waits for that record, which
+    # takes longer on a busy machine.
+    for _attempt in range(200):
+        if original_files.recorded(game):
+            break
+        time.sleep(0.05)
+    assert original_files.recorded(game), "Opening the game recorded nothing."
     call("guided_skill", {"project_id": project_id, "name": "setup"})
     call("assistant_task_dismiss", {"project_id": project_id, "kind": "names"})
     call("guided_draft", {"project_id": project_id, "documents": {}})
@@ -148,13 +156,6 @@ try:
     ):
         call(method, {"project_id": project_id})
     call("workspace_snapshot", {})
-    # Opening the game started recording its original files in the
-    # background, which no task waits for once it is done.
-    for _attempt in range(200):
-        if original_files.recorded(game):
-            break
-        time.sleep(0.05)
-    assert original_files.recorded(game), "Opening the game recorded nothing."
     # While it runs, every reply carries its progress for the writes that
     # wait for it, whose refusals the page tells apart by their code.
     running = {

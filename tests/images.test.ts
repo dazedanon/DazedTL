@@ -5,6 +5,7 @@ import {
   folderTree,
   gridStep,
   idsBetween,
+  imageDiscovery,
   rebaseImageDraft,
   sameImages,
   virtualRows,
@@ -230,5 +231,27 @@ test("the folder list counts what choosing a folder shows", () => {
       ["img/pictures/a", 0],
       ["img/pictures/b", 0],
     ],
+  );
+});
+
+test("Compare names an image's discovery class once", () => {
+  // Protect against the Discovery line repeating the class its heading
+  // already shows, while it still names a class the heading leaves out.
+  const found = {
+    id: "img/Title.png",
+    state: "indexed",
+    classification: "recommended",
+    reason: "Japanese label",
+  } as ImageAsset;
+  assert.equal(imageDiscovery(found, true, "English", true), "Japanese label");
+  // A blocked image's heading shows what blocks it instead.
+  assert.equal(
+    imageDiscovery({ ...found, state: "blocked" }, true, "English", false),
+    "Recommended · Japanese label",
+  );
+  // A reviewed image's heading names who reviewed it.
+  assert.equal(
+    imageDiscovery({ ...found, userReviewed: true }, true, "English", true),
+    "Recommended · Japanese label",
   );
 });

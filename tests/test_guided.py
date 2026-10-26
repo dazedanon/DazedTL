@@ -23,6 +23,7 @@ from dazedtl.translation import (
     preparation,
     speaker_setup,
 )
+from dazedtl.translation.file_preview import text_fields
 from dazedtl.translation.files import digest, evidence, read_json
 from dazedtl.translation.guided import Guided, retained_position
 from dazedtl.translation.guided_inputs import GuidedInputs
@@ -32,6 +33,66 @@ from tests.engine import engine_module, replaced_modules
 from tests.game_writes import game_write
 
 custom_patterns = engine_module("util/custom_patterns.py")
+
+
+class FilePreviewTests(unittest.TestCase):
+    def test_rows_after_a_joined_message_pair_with_their_own_source(self):
+        # Translation writes a message's text over its first row and drops
+        # the rows after it; later rows must not shift onto other source.
+        from util import rpgmaker_blocks as blocks
+
+        source = [
+            {"code": 101, "parameters": ["", 0, 0, 2, "村長"]},
+            {"code": 401, "parameters": ["よく来てくれた。"]},
+            {"code": 401, "parameters": ["森に杖が眠っている。"]},
+            {"code": 101, "parameters": ["", 0, 0, 2, "ミカ"]},
+            {"code": 401, "parameters": ["わかった！"]},
+            {"code": 355, "parameters": ["$gameMessage.add('杖');"]},
+            {"code": 102, "parameters": [["はい", "いいえ"], 1]},
+            {"code": 0, "parameters": []},
+        ]
+        output = deepcopy(source)
+        blocks.write_text(output, (1, 2), "Thanks for coming.\nA wand sleeps.")
+        output[1]["_original"] = "よく来てくれた。\n森に杖が眠っている。"
+        output[0]["parameters"][4] = "Chief"
+        output[4]["parameters"][0] = "Got it!"
+        output[5]["parameters"][0] = "$gameMessage.add('A');"
+        # A rewrapped script gains a line; the choice after it keeps its own.
+        output.insert(6, {"code": 655, "parameters": ["$gameMessage.add('wand');"]})
+        output[7]["parameters"][0] = ["Yes", "No"]
+        fields = [
+            ("/list/0/parameters/4", "村長", "Chief"),
+            (
+                "/list/1/parameters/0",
+                "よく来てくれた。\n森に杖が眠っている。",
+                "Thanks for coming.\nA wand sleeps.",
+            ),
+            ("/list/3/parameters/0", "わかった！", "Got it!"),
+            (
+                "/list/4/parameters/0",
+                "$gameMessage.add('杖');",
+                "$gameMessage.add('A');",
+            ),
+            ("/list/5/parameters/0", None, "$gameMessage.add('wand');"),
+            ("/list/6/parameters/0/0", "はい", "Yes"),
+            ("/list/6/parameters/0/1", "いいえ", "No"),
+        ]
+        # The emptied row stays until the engine writes the list back.
+        self.assertEqual(
+            [
+                (row["location"], row["source"], row["text"])
+                for row in text_fields({"list": output}, {"list": source})
+            ][:3],
+            [fields[0], fields[1], ("/list/4/parameters/0", *fields[2][1:])],
+        )
+        output = [command for command in output if not blocks.emptied(command)]
+        self.assertEqual(
+            [
+                (row["location"], row["source"], row["text"])
+                for row in text_fields({"list": output}, {"list": source})
+            ],
+            fields,
+        )
 
 
 class RetainedPositionTests(unittest.TestCase):
@@ -4503,3 +4564,23 @@ class GuidedTests(unittest.TestCase):
             self.guided.readiness(self.identity, self.native, {"jobs": []})["outputs"],
             [],
         )
+
+
+class ComparisonLiteralTests(unittest.TestCase):
+    def test_a_game_with_more_maps_than_a_fixed_bound_reads_each_once(self):
+        # Every poll of the variables phase compares each map; a cache
+        # cleared at 1,024 files reread and rehashed a big game's maps on
+        # every poll.
+        from dazedtl.translation.guided_runs import GuidedRuns
+
+        with TemporaryDirectory() as temporary:
+            paths = [Path(temporary) / f"Map{index:04d}.json" for index in range(1100)]
+            for path in paths:
+                path.write_bytes(b'[{"code":111,"parameters":["$gameVariables"]}]')
+            fingerprint = digest(paths[0].read_bytes())
+            runs = GuidedRuns(SimpleNamespace(observed_digest=lambda _: fingerprint))
+            for path in paths:
+                runs.comparison_literals(path)
+            with patch.object(Path, "read_bytes", side_effect=AssertionError):
+                for path in paths:
+                    self.assertEqual(runs.comparison_literals(path)[0], fingerprint)

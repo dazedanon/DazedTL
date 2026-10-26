@@ -4,7 +4,7 @@ import json
 import re
 from contextlib import closing
 
-from dazedtl.freshness import Basis, compare
+from dazedtl.freshness import Basis, Digests, compare
 from dazedtl.settings import language_pair
 from dazedtl.storage import write_json
 
@@ -20,7 +20,8 @@ RUN_VERSION = 6
 class GuidedRuns:
     def __init__(self, guided):
         self.guided = guided
-        self.comparison_files = {}
+        # Each file's comparison literals, kept for every file a poll compares.
+        self.comparison_files = Digests()
         # The game glossary revision a name publish last failed on.
         self.name_failures = {}
 
@@ -83,8 +84,8 @@ class GuidedRuns:
 
     def comparison_literals(self, path):
         fingerprint = self.guided.observed_digest(path)
-        cached = self.comparison_files.get(path)
-        if cached and cached[0] == fingerprint:
+        cached = self.comparison_files.get(path, fingerprint)
+        if cached is not None:
             return cached
 
         def commands(value):
@@ -123,12 +124,10 @@ class GuidedRuns:
                         (index, literal, variables)
                         for literal in re.findall(r"['\"`](.*?)['\"`]", parameter)
                     )
-        if len(self.comparison_files) >= 1024:
-            self.comparison_files.clear()
         # Bind to the bytes actually parsed if a writer changed the file after
         # observed_digest; the next observation will invalidate this entry.
         result = (digest(raw), literals)
-        self.comparison_files[path] = result
+        self.comparison_files.put(path, result[0], result)
         return result
 
     def inputs(
