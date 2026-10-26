@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import test from "node:test";
-import { stopApp } from "../scripts/testkit/app.mjs";
+import { appEnvironment, stopApp } from "../scripts/testkit/app.mjs";
 import { displayName } from "../scripts/testkit/display.mjs";
 import { withRetry } from "../scripts/testkit/retry.mjs";
 
@@ -53,3 +53,22 @@ test(
     assert.throws(() => process.kill(-group, 0), { code: "ESRCH" });
   },
 );
+
+test("a scenario app under a test display gets none of the desktop session", () => {
+  const desktop = {
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus",
+    XDG_RUNTIME_DIR: "/run/user/1000",
+    WAYLAND_DISPLAY: "wayland-1",
+    PULSE_SERVER: "unix:/run/user/1000/pulse/native",
+    HOME: "/home/user",
+  };
+  const display = { DISPLAY: ":7", WAYLAND_DISPLAY: "private" };
+  assert.deepEqual(appEnvironment(desktop, display, "linux"), {
+    HOME: "/home/user",
+    ...display,
+  });
+  assert.equal(
+    appEnvironment(desktop, {}, "linux").DBUS_SESSION_BUS_ADDRESS,
+    desktop.DBUS_SESSION_BUS_ADDRESS,
+  );
+});

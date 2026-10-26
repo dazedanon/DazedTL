@@ -62,6 +62,30 @@ export async function ensureRenderer(root) {
  *   debug: number, inspect: number, env?: Record<string, string>,
  *   args?: string[] }} options
  */
+/**
+ * The variables of a scenario app: those of this process, plus `env`. Under a
+ * test display on Linux the app also gets none of the desktop session it
+ * could reach: its bus, audio and runtime folder, and a Wayland compositor
+ * other than the one `env` names, so a sound or a notification a scenario
+ * triggers stays off the user's desktop.
+ * @param {NodeJS.ProcessEnv} base
+ * @param {Record<string, string>} env
+ * @param {string} platform
+ */
+export function appEnvironment(base, env, platform = process.platform) {
+  const variables = { ...base };
+  delete variables.ELECTRON_RUN_AS_NODE;
+  if (platform === "linux" && env.DISPLAY)
+    for (const name of Object.keys(variables))
+      if (
+        /^(DBUS_|XDG_RUNTIME_DIR$|XDG_SESSION_|WAYLAND_|PULSE_|PIPEWIRE_)/.test(
+          name,
+        )
+      )
+        delete variables[name];
+  return { ...variables, ...env };
+}
+
 export async function startApp({
   root,
   profile,
@@ -86,8 +110,7 @@ export async function startApp({
       updates,
       JSON.stringify({ checkedAt: new Date().toISOString() }),
     );
-  const variables = { ...process.env };
-  delete variables.ELECTRON_RUN_AS_NODE;
+  const variables = appEnvironment(process.env, env);
   const key =
     Object.keys(variables).find((name) => name.toUpperCase() === "PATH") ||
     "PATH";
@@ -96,22 +119,23 @@ export async function startApp({
     path.delimiter,
   );
   const output = fs.openSync(log, "a");
-  const child = spawn(
+  const isolated = env.DISPLAY && process.platform === "linux";
+  const electron = [
     electronOf(root),
-    [
-      path.join(root, "app"),
-      `--remote-debugging-port=${debug}`,
-      `--inspect=${inspect}`,
-      ...(env.DISPLAY && process.platform === "linux"
-        ? ["--ozone-platform=x11"]
-        : []),
-      ...args,
-    ],
+    path.join(root, "app"),
+    `--remote-debugging-port=${debug}`,
+    `--inspect=${inspect}`,
+    ...(isolated ? ["--ozone-platform=x11", "--mute-audio"] : []),
+    ...args,
+  ];
+  const child = spawn(
+    // Its own session bus, where a desktop notification has nobody to show it.
+    isolated ? "dbus-run-session" : electron[0],
+    isolated ? ["--", ...electron] : electron.slice(1),
     {
       cwd: root,
       env: {
         ...variables,
-        ...env,
         // Requests the backend and window make outside this machine go to a
         // proxy that is not there. Run workers start from a clean
         // environment without it, so the stand-in's address must reach them
