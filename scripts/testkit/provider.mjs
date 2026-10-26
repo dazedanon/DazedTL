@@ -78,7 +78,9 @@ const codes = /(__PROTECTED_\d+__|\\+[A-Za-z]+(?:\[[^\]]*\])?|%\d)/;
  * Answers like a model that translates every line: the source's words become
  * a marker unique to the line, while speaker prefixes, placeholders and
  * numbers stay. An English line, for a Japanese `target`, gets a Japanese
- * marker in place of its Latin words.
+ * marker in place of its Latin words. The marker is a hash read as katakana,
+ * so these replies are not sensible Japanese: they only have to be unique per
+ * line and read as Japanese. A game variant's `reply` supplies readable ones.
  */
 export function translate(value, target) {
   const text = String(value);
