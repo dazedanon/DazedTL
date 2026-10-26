@@ -176,8 +176,74 @@ def ledger_records(root, filename=None):
     ]
 
 
-@lru_cache(maxsize=8)
+# Each run's ledger summary, one entry per run that is rebuilt when its ledger
+# changes. Rows keep what request rows and summaries show; request and
+# provider bodies stay in the ledger until an exact payload is read.
+_LEDGERS = Digests(limit=8)
+_FIELDS = (
+    "id",
+    "params",
+    "state",
+    "error",
+    "usage",
+    "sources",
+    "filename",
+    "response",
+    "raw_response",
+    "clarification_of",
+    "retry_of",
+    "kept_lines",
+)
+
+
+def ledger_pages(connection, fields, *, filename=None, ids=None, page=256):
+    """The ledger's requests in id order with these columns, NULL where an
+    older ledger lacks one: all, only ``filename``'s or only ``ids``. A page
+    is read at a time, so the caller's work holds no read lock that would
+    keep the run's worker from recording its requests."""
+    names = {row[1] for row in connection.execute("PRAGMA table_info(requests)")}
+    columns = ",".join(name if name in names else "NULL" for name in fields)
+    if ids is not None:
+        ids = sorted(ids)
+        for start in range(0, len(ids), page):
+            chunk = ids[start : start + page]
+            yield from connection.execute(
+                f"SELECT {columns} FROM requests WHERE id IN "
+                f"({','.join('?' * len(chunk))}) ORDER BY id",
+                chunk,
+            ).fetchall()
+        return
+    last = None
+    while True:
+        rows = connection.execute(
+            f"SELECT id,{columns} FROM requests WHERE "
+            + ("1" if last is None else "id>?")
+            + ("" if filename is None else " AND filename=?")
+            + " ORDER BY id LIMIT ?",
+            ([] if last is None else [last])
+            + ([] if filename is None else [filename])
+            + [page],
+        ).fetchall()
+        for row in rows:
+            yield row[1:]
+        if len(rows) < page:
+            return
+        last = rows[-1][0]
+
+
 def _ledger_records(root, signature, consumed, filename=None):
+    key = (root, consumed, filename)
+    rows = _LEDGERS.get(key, signature)
+    if rows is None:
+        rows = _read_ledger(root, consumed, filename)
+        if rows is not None:
+            _LEDGERS.put(key, signature, rows)
+    return rows
+
+
+def _read_ledger(root, consumed, filename):
+    from dazedtl.translation.refusals import CLARIFICATION, refused
+
     connection = ledger(root)
     if connection is None:
         return None
@@ -185,30 +251,8 @@ def _ledger_records(root, signature, consumed, filename=None):
         names = {row[1] for row in connection.execute("PRAGMA table_info(requests)")}
         if not names:
             return None  # A worker opens the file before creating its tables.
-        fields = (
-            "id",
-            "params",
-            "state",
-            "error",
-            "usage",
-            "sources",
-            "filename",
-            "response",
-            "raw_response",
-            "clarification_of",
-            "retry_of",
-            "kept_lines",
-        )
         if filename is not None and "filename" not in names:
             return []
-        rows = connection.execute(
-            "SELECT "
-            + ",".join(name if name in names else "NULL" for name in fields)
-            + " FROM requests"
-            + ("" if filename is None else " WHERE filename=?")
-            + " ORDER BY id",
-            () if filename is None else (filename,),
-        ).fetchall()
         validated = {}
         if (
             consumed
@@ -222,65 +266,87 @@ def _ledger_records(root, signature, consumed, filename=None):
                     "SELECT identity,source,response FROM validated_items"
                 )
             }
-    result = []
-    for row in rows:
-        entry: dict[str, Any] = dict(zip(fields, row))
-        for key in (
-            "params",
-            "error",
-            "usage",
-            "sources",
-            "response",
-            "raw_response",
-            "kept_lines",
-        ):
-            entry[key] = json.loads(entry[key]) if entry[key] is not None else None
-        source = source_values(entry["params"]) or {}
-        keys = entry["sources"] or []
-        # Older Batch workers cleared raw responses after consume. Recover only
-        # exact native-validated source identities from this same saved run.
-        # Never present this local translation as an original provider body.
-        if (
-            consumed
-            and entry["response"] is None
-            and source
-            and len(keys) == len(source)
-            and all(
-                key in validated and validated[key][0] == text
-                for key, text in zip(keys, source.values())
+        # A page at a time: a long run's bodies are never all in memory.
+        result, signatures = [], []
+        for values in ledger_pages(connection, _FIELDS, filename=filename):
+            entry: dict[str, Any] = dict(zip(_FIELDS, values))
+            for key in (
+                "params",
+                "error",
+                "usage",
+                "sources",
+                "response",
+                "raw_response",
+                "kept_lines",
+            ):
+                entry[key] = json.loads(entry[key]) if entry[key] is not None else None
+            params = entry.pop("params")
+            raw = entry.pop("raw_response")
+            source = entry["source"] = source_values(params)
+            keys = entry["sources"] or []
+            # Older Batch workers cleared raw responses after consume. Recover
+            # only exact native-validated source identities from this same
+            # saved run. Never present this local translation as an original
+            # provider body.
+            if (
+                consumed
+                and entry["response"] is None
+                and source
+                and len(keys) == len(source)
+                and all(
+                    key in validated and validated[key][0] == text
+                    for key, text in zip(keys, source.values())
+                )
+            ):
+                entry.update(
+                    state="validated",
+                    response=[validated[key][1] for key in keys],
+                    responseOrigin="validated",
+                )
+            elif consumed and entry["state"] == "prepared":
+                entry["state"] = "uncertain"
+            # Whether the provider's own body was saved; exact payloads read it.
+            entry["raw"] = raw is not None
+            if raw is None and entry["response"] is not None:
+                entry.setdefault(
+                    "responseOrigin",
+                    "validated" if isinstance(entry["response"], list) else None,
+                )
+            # Older workers could accept a refusal that happened to fit the
+            # schema. Flag the saved output without rewriting history or
+            # claiming it was fixed.
+            response = raw or entry["response"]
+            if isinstance(response, list):
+                response = {"text": json.dumps(response, ensure_ascii=False)}
+            elif isinstance(response, dict) and "content" in response:
+                response = {**response, "text": response["content"]}
+            entry["provider_refusal"] = response is not None and refused(
+                response, source or {}
             )
-        ):
-            entry.update(
-                state="validated",
-                response=[validated[key][1] for key in keys],
-                responseOrigin="validated",
+            if entry["state"] != "rejected" and entry["provider_refusal"]:
+                entry.update(
+                    state="rejected",
+                    error={
+                        "message": "The provider declined this request. Review any previously saved output before applying it."
+                    },
+                )
+            messages = params.get("messages") or []
+            asks = bool(messages) and messages[-1] == {
+                "role": "user",
+                "content": CLARIFICATION,
+            }
+            signatures.append(
+                (
+                    request_signature(entry, {**params, "messages": messages[:-1]})
+                    if asks
+                    else None,
+                    request_signature(entry, params)
+                    if entry["provider_refusal"]
+                    else None,
+                )
             )
-        elif consumed and entry["state"] == "prepared":
-            entry["state"] = "uncertain"
-        if entry["raw_response"] is None and entry["response"] is not None:
-            entry.setdefault(
-                "responseOrigin",
-                "validated" if isinstance(entry["response"], list) else None,
-            )
-        # Older workers could accept a refusal that happened to fit the schema.
-        # Flag the saved output without rewriting history or claiming it was fixed.
-        from dazedtl.translation.refusals import refused
-
-        response = entry["raw_response"] or entry["response"]
-        if isinstance(response, list):
-            response = {"text": json.dumps(response, ensure_ascii=False)}
-        elif isinstance(response, dict) and "content" in response:
-            response = {**response, "text": response["content"]}
-        entry["provider_refusal"] = response is not None and refused(response, source)
-        if entry["state"] != "rejected" and entry["provider_refusal"]:
-            entry.update(
-                state="rejected",
-                error={
-                    "message": "The provider declined this request. Review any previously saved output before applying it."
-                },
-            )
-        result.append(entry)
-    link_clarifications(result)
+            result.append(entry)
+    link_clarifications(result, signatures)
     link_retries(result)
     return result
 
@@ -289,24 +355,22 @@ def request_signature(row, params):
     return digest([row["filename"], row["sources"], params])
 
 
-def link_clarifications(rows):
-    """Link display attempts only; historical ambiguity never merges requests."""
-    from dazedtl.translation.refusals import CLARIFICATION
+def link_clarifications(rows, signatures):
+    """Link display attempts only; historical ambiguity never merges requests.
 
-    identities, originals, signatures = {}, {}, {}
+    ``signatures`` holds each row's request signatures: without its final
+    message when the row asks for a clarification, and whole when the
+    provider refused it, else None."""
+    identities, originals, refusals = {}, {}, {}
     used = set()
     for index, row in enumerate(rows):
-        params = row["params"]
-        messages = params.get("messages") or []
-        if messages and messages[-1] == {"role": "user", "content": CLARIFICATION}:
-            parent_signature = request_signature(
-                row, {**params, "messages": messages[:-1]}
-            )
+        parent_signature, own = signatures[index]
+        if parent_signature is not None:
             if row.get("clarification_of") is not None:
                 parent = identities.get(row["clarification_of"])
                 candidates = (
                     [parent]
-                    if parent is not None and signatures.get(parent) == parent_signature
+                    if parent is not None and refusals.get(parent) == parent_signature
                     else []
                 )
             else:
@@ -316,8 +380,8 @@ def link_clarifications(rows):
                 used.add(candidates[0])
         identities[row["id"]] = index
         if row["provider_refusal"] and "clarificationOf" not in row:
-            signatures[index] = request_signature(row, params)
-            originals.setdefault(signatures[index], []).append(index)
+            refusals[index] = own
+            originals.setdefault(own, []).append(index)
 
 
 def link_retries(rows):
@@ -331,7 +395,7 @@ def link_retries(rows):
 
     def lines(row):
         return json.dumps(
-            [row["filename"], row["sources"] or source_values(row["params"])],
+            [row["filename"], row["sources"] or row["source"]],
             ensure_ascii=False,
             sort_keys=True,
         )
@@ -1505,7 +1569,7 @@ def payload(root, index, job=None, prepared=False):
     names = [] if prepared else queued_names(root, requests)
     total = len(names) + len(requests)
     if index < len(names):
-        return ledger_payload(names, index, total)
+        return ledger_payload(root, names, index, total)
     if requests:
         keys = list(requests)
         position = index - len(names)
@@ -1648,24 +1712,59 @@ def payload(root, index, job=None, prepared=False):
     rows = ledger_records(root)
     if rows is None:
         raise ValueError("Exact payloads were not recorded for this older Live run.")
-    return ledger_payload(rows, index, len(rows))
+    return ledger_payload(root, rows, index, len(rows))
 
 
-def ledger_payload(rows, index, total):
+def ledger_bodies(root, rows):
+    """These ledger rows with the request and provider bodies the ledger
+    summary leaves out. A body recovered from the run log stays."""
+    bodies = {}
+    try:
+        connection = ledger(root)
+        if connection is not None:
+            with closing(connection):
+                for key, params, response, filename in ledger_pages(
+                    connection,
+                    ("id", "params", "raw_response", "filename"),
+                    ids=[row["id"] for row in rows],
+                ):
+                    bodies[key] = (
+                        json.loads(params),
+                        json.loads(response) if response is not None else None,
+                        filename,
+                    )
+    except sqlite3.Error as error:
+        raise ValueError("The saved request could not be read.") from error
+    result = []
+    for row in rows:
+        params, raw, filename = bodies.get(row["id"], (None, None, None))
+        # A run started over in the same folder numbers its requests anew.
+        if (
+            params is None
+            or filename != row["filename"]
+            or source_values(params) != row["source"]
+        ):
+            raise ValueError("This request is no longer available.")
+        result.append({"params": params, "raw_response": raw, **row})
+    return result
+
+
+def ledger_payload(root, rows, index, total):
     """A saved Live request with every attempt at its lines."""
     if index >= len(rows):
         raise ValueError("This request is no longer available.")
-    value = live_payload(rows[index], index, total)
     parent = attempt_root(rows, index)
     group = [
         number
         for number in range(parent, len(rows))
         if attempt_root(rows, number) == parent
     ]
+    full = dict(zip(group, ledger_bodies(root, [rows[number] for number in group])))
+    value = live_payload(full[index], index, total)
     if len(group) > 1:
         value["responseAttempts"] = []
         for number in group:
-            detail = live_payload(rows[number], number, total)
+            detail = live_payload(full[number], number, total)
             value["responseAttempts"].append(
                 {
                     "kind": "original"

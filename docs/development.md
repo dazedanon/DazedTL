@@ -46,6 +46,7 @@ The runner reports the five slowest Python tests to make runtime regressions vis
 If a Python process is still running a second before the budget ends, it prints every thread's stack, which names the test and line it waits on, and exits.
 Tests use temporary workspaces and controlled API responses; no provider, game folder or credentials are needed.
 
+`node scripts/test.mjs` is the suite entry: it orders and parallelizes the modules and holds the budget, while a plain `python -m unittest discover` runs them serially, about 12 seconds, and ignores it.
 For focused iteration, use `.venv/bin/python -I -B -m unittest discover -s tests -t . -p test_projects.py` or `node --test --test-isolation=none tests/application.test.ts` from the root.
 Run `node scripts/build.mjs` separately for static checks and the renderer build.
 It checks formatting, that stylesheets use the [design tokens](architecture.md#visual-design), that the [generated API contracts](architecture.md#api-changes) are current and that tracked paths fit the [Windows path budget](architecture.md#distribution-and-updates).
@@ -108,6 +109,12 @@ With this checkout's code and a stand-in detector change, which gives every line
 When the checkout's `QA_RULES_VERSION` differs from the release's, the task in review must refuse more review instead, and QA prepares a new one.
 The phases run in [qa_upgrade.py](../scripts/qa_upgrade.py), the release's own copy for its tasks when it has one; it needs the release tags (`git fetch --tags`) and the setup's `.venv`, and `--work <empty folder>` keeps its files.
 A failure means a change made saved QA work stale: keep what names a task as it was, or bump `QA_RULES_VERSION` when old reviews are wrong now.
+
+## Ace fixture
+
+[tests/fixtures/ace](../tests/fixtures/ace/regenerate.py) rebuilds the VX Ace fixture with Ruby 3.4 and the RV2JSON commit the Ace port follows, neither of which setup installs.
+The [Ace fixture workflow](../.github/workflows/ace-fixture.yml) does it and fails when the committed files differ.
+It runs on changes to the fixture or the port on `dev`, and by hand, not on every push: `gh workflow run ace-fixture.yml --ref <branch>`, which works once the workflow is on `main`; before that, push a probe branch that adds its name to the workflow's push branches.
 
 ## Test scenarios
 

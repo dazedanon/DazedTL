@@ -267,6 +267,14 @@ class ObservationTests(unittest.TestCase):
                         view["files"]["Map001.json"]["states"], ["submitted"]
                     )
                     self.assertTrue(view["retryBlocked"])
+                # A Live run's ledger changes with every request. The rows
+                # its view keeps hold no request bodies, which held
+                # gigabytes on long runs; the exact payload reads them.
+                self.assertNotIn("params", process_view.ledger_records(root)[0])
+                self.assertEqual(
+                    process_view.payload(root, 0)["messages"][0]["content"],
+                    '{"Line1":"薬"}',
+                )
             finally:
                 connection.close()
 
