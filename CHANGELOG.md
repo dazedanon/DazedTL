@@ -3,6 +3,13 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.34.1] - 2026-10-26
+
+### Fixed
+
+- **Context:** after **Save context** failed while the game's version history was locked, every later save said "This guidance changed on disk" with no way past it but discarding the draft; the draft now saves once the lock is gone, including after a restart.
+- **Context:** the first **Save context** or **Copy starting prompt** on a game whose version history was not set up yet could freeze the whole app for minutes on a big game, and closing it said saving was taking longer than expected; both now finish at once.
+
 ## [2.34.0] - 2026-10-26
 
 ### Added
@@ -1010,6 +1017,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.34.1]: https://github.com/dazedanon/DazedTL/compare/v2.34.0...v2.34.1
 [2.34.0]: https://github.com/dazedanon/DazedTL/compare/v2.33.2...v2.34.0
 [2.33.2]: https://github.com/dazedanon/DazedTL/compare/v2.33.1...v2.33.2
 [2.33.1]: https://github.com/dazedanon/DazedTL/compare/v2.33.0...v2.33.1
