@@ -114,7 +114,7 @@ A failure means a change made saved QA work stale: keep what names a task as it 
 
 [tests/fixtures/ace](../tests/fixtures/ace/regenerate.py) rebuilds the VX Ace fixture with Ruby 3.4 and the RV2JSON commit the Ace port follows, neither of which setup installs.
 The [Ace fixture workflow](../.github/workflows/ace-fixture.yml) does it and fails when the committed files differ.
-It runs on changes to the fixture or the port on `dev`, and by hand, not on every push: `gh workflow run ace-fixture.yml --ref <branch>`.
+It runs on changes to the fixture or the port on `dev`, and by hand, not on every push: `gh workflow run ace-fixture.yml --ref <branch>`, which works once the workflow is on `main`; before that, push a probe branch that adds its name to the workflow's push branches.
 
 ## Test scenarios
 
