@@ -248,6 +248,8 @@ export function projectAmounts(state: GuidedState) {
   return {
     done,
     total,
+    // Lines the backend is still counting (sourceStatus.counting).
+    counting: !!state.sourceStatus.counting?.length,
     applied: outputs.filter((name) => applied.includes(name)).length,
     outputs: outputs.length,
     cost,

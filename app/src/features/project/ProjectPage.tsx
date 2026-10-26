@@ -492,10 +492,12 @@ function FindGameFolder({
 /** Amounts appear once there is something to count; zeroes stay hidden. */
 function ProjectAmounts({ amounts }: { amounts: Amounts }) {
   const figures = [
-    amounts.done > 0 && {
+    (amounts.done > 0 || amounts.counting) && {
       key: "lines",
-      value:
-        amounts.total !== null
+      // Holds its place while the backend counts, so the others stay put.
+      value: amounts.counting
+        ? "Counting…"
+        : amounts.total !== null
           ? `${amounts.done.toLocaleString()} / ${amounts.total.toLocaleString()}`
           : amounts.done.toLocaleString(),
       label: "lines translated",
