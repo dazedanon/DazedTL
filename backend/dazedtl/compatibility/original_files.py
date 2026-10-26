@@ -27,6 +27,7 @@ import os
 import stat
 import subprocess
 import tempfile
+import time
 from collections.abc import Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -34,7 +35,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from dazedtl import system
-from dazedtl.storage import exclusive
+from dazedtl.storage import exclusive, hold
 
 from .checkpoint_commits import _git
 
@@ -273,8 +274,8 @@ def record(
             raise ValueError("Git did not keep every original file.")
         blobs.extend(hashed)
         progress(
-            f"Recorded {start + len(chunk):,} original file"
-            f"{'' if start + len(chunk) == 1 else 's'} in Git · {chunk[-1]}"
+            f"Recorded {start + len(chunk):,} of {len(names):,} original file"
+            f"{'' if len(names) == 1 else 's'} in Git."
         )
     if inventory(folder, stopped) != before:
         raise ValueError(
@@ -347,7 +348,18 @@ def ensure_found(root, log=lambda _message: None, stopped=lambda: False):
     if recorded(root):
         return None
     _repository(root)
-    with exclusive(_folder(root) / "found.lock"):
+    lock = _folder(root) / "found.lock"
+    held_lock = hold(lock)
+    if held_lock is None:
+        # Another record of the game runs, such as the background one.
+        log("Waiting for the original game files to be recorded.")
+        while (held_lock := hold(lock)) is None:
+            if stopped():
+                raise InterruptedError(
+                    "Stopped before the original files were recorded."
+                )
+            time.sleep(0.2)
+    with held_lock:
         # A folder with no files yet has none to keep.
         if recorded(root) or not inventory(root, stopped):
             return None
