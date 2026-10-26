@@ -308,10 +308,12 @@ assert git(kept, "log", "-2", "--format=" + recovered).splitlines() == ["", "tru
 other = engine.documents(kept)["glossary"]
 other_text = "水 (Water)\n火 (Fire)\n薬 (Elixir)\n"
 try:
-    with running(for_action("glossary_apply")):
-        with write_game(kept, paths=[".dazedtl/glossary.txt"]) as written:
-            written.put(".dazedtl/glossary.txt", other_text.encode())
-            lock_left()
+    with (
+        running(for_action("glossary_apply")),
+        write_game(kept, paths=[".dazedtl/glossary.txt"]) as written,
+    ):
+        written.put(".dazedtl/glossary.txt", other_text.encode())
+        lock_left()
 except GitWorkflowError as error:
     assert "index.lock" in str(error), error
 finally:
