@@ -11,6 +11,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from dazedtl.translation.refusals import line_refusal
 from util import rpgmaker_blocks as blocks
 from util import rpgmaker_rewrap as rewrap
 from util import rpgmaker_script_strings as script_strings
@@ -327,6 +328,12 @@ def correction_problems(
     )
     if written == live:
         problems.append("the correction matches the current text")
+    if line_refusal(correction, source):
+        # Translation's own rule: a reviewer's refusal or talk about the
+        # task is never game text.
+        problems.append(
+            "reads as a refusal or a note about the task, not as game text"
+        )
     lines = correction.split("\n")
     if live_transform in _SCRIPT_QUOTES and _BREAK_BEFORE_CODE.search(correction):
         # Written as "\n", the break would start a code such as \n[1] instead.

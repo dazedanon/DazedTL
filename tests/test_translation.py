@@ -543,6 +543,38 @@ class TranslationTests(unittest.TestCase):
         ):
             text = json.dumps(lines)
             self.assertEqual(refused({"text": text}, sources), expected, text)
+        # The model talking about its task in any sentence shape is a
+        # refusal, unless the line's source talks about the same thing.
+        from dazedtl.translation.refusals import line_refusal
+
+        moan = "あっ、んっ……そこ、だめぇ……！"
+        for text, source, expected in (
+            (
+                (
+                    "I won't produce sexual content\ninvolving a character who "
+                    "reads as a\nminor, even in translation."
+                ),
+                moan,
+                True,
+            ),
+            ("Send another batch and I'll\ncontinue.", moan, True),
+            (
+                "I can translate adult scenes where every participant is adult.",
+                moan,
+                True,
+            ),
+            ("Declined.", moan, True),
+            ("I can't help with this. It is explicit sexual content.", moan, True),
+            ("I'm sorry, but I can't help with this request.", "お願い！", True),
+            ("I'll continue the mission a little longer.", "任務を継続する。", False),
+            ("I'm wasting this batch just to mess with you.", "嫌がらせ用だ。", False),
+            ("I'll continue with the next batch of potions.", "次の分を作る。", False),
+            ("I can't stand such lewd material!", "こんなエロ本……！", False),
+            ("I can't translate this inscription.", "この碑文は翻訳できない。", False),
+            ("I can't help with your request.", "その依頼は受けられない。", False),
+            ("Declined.", "断られた。", False),
+        ):
+            self.assertEqual(line_refusal(text, source), expected, text)
 
     def test_saved_refusal_notes_get_their_source_back(self):
         from dazedtl.translation.saved_refusals import find, restore
