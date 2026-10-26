@@ -328,12 +328,15 @@
 }
 .translation-action-scope small {
   display: block;
-  /* A guidance line shortens with the bar's room; its title has all of it. */
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* A guidance line shortens with the bar's room and keeps a Show more for
+     all of it; an expanded one scrolls in its own space. */
   color: var(--color-muted);
   font: inherit;
+}
+.translation-action-scope small > .expandable-text {
+  display: block;
+  max-height: 12rem;
+  overflow-y: auto;
 }
 .translation-preview-check {
   font-size: var(--font-small);

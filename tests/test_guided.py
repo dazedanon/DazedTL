@@ -3352,8 +3352,13 @@ class GuidedTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.guided.execute(self.identity, preview["token"])
         self.assertEqual(self.backend.workflows.execute.call_count, len(immediate))
-        self.assertTrue(
+        # Removing TL Inspector deletes only its git-ignored plugin file and
+        # starts on one click; Forge's removal changes tracked files.
+        self.assertFalse(
             self.guided.preview(self.identity, "inspector_remove")["confirmation"]
+        )
+        self.assertTrue(
+            self.guided.preview(self.identity, "forge_remove")["confirmation"]
         )
 
     def test_new_paid_reviews_allow_overlap_and_retain_historical_receipts(self):

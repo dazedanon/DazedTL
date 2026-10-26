@@ -2,6 +2,7 @@
 import type { ReactNode } from "react";
 import { api } from "../../../../api/client";
 import { Button } from "../../../../ui/Button";
+import { ExpandableText } from "../../../../ui/ExpandableText";
 import { Message } from "../../../../ui/Feedback";
 import { RunFailure } from "../../RunFailure";
 import { TranslateWorkspace } from "../../TranslateWorkspace";
@@ -251,7 +252,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
     (applyCounting && "Counting lines…") ||
     // The files' rows read Applied, so Apply has nothing to do.
     (applyFiles.every((name) => appliedOutputs.includes(name)) &&
-      "Everything saved is already in the game.");
+      "Nothing new to apply.");
   const guidance = !selectedNames.length
     ? "Select files to translate."
     : !baseline
@@ -287,7 +288,17 @@ export function phaseView(w: GuidedWorkspace): TaskView {
     <div className="translation-action-scope">
       {/* Apply's label counts the saved files. */}
       <strong>{selectedNames.length} selected</strong>
-      <small title={footerGuidance}>{footerGuidance}</small>
+      {/* One line of the guidance fits beside the count; a longer one keeps an
+          explicit Show more instead of being cut off at narrow widths. */}
+      <small>
+        <ExpandableText
+          key={footerGuidance}
+          text={footerGuidance}
+          label="Translate guidance"
+          appearance="inline"
+          lines={1}
+        />
+      </small>
     </div>
   );
   const secondary = (
