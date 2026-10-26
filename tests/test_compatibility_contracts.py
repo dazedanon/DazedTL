@@ -182,9 +182,21 @@ print(json.dumps(results, ensure_ascii=False))
 
 
 def script(source, *paths):
+    # UTF-8 mode, as the app and the probe launcher run Python, so a script's
+    # Japanese text survives Windows' locale encoding.
     background = Background()
     return background.start(
-        [sys.executable, "-I", *bytecode(), "-c", source, *paths, background.folder],
+        [
+            sys.executable,
+            "-I",
+            "-X",
+            "utf8",
+            *bytecode(),
+            "-c",
+            source,
+            *paths,
+            background.folder,
+        ],
         merge=False,
     )
 
