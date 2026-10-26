@@ -6,7 +6,6 @@ import { Modal } from "../../ui/Modal";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { LineChange, type LineChangeRow } from "../../ui/LineChange";
 import type { GameLanguages } from "../../api/contracts";
-import { languageTag } from "../../app/languages";
 import { useLanguages } from "../../app/LanguagesProvider";
 import {
   textChanges,
@@ -149,7 +148,7 @@ const kindLabel = (line: TextLine) =>
 
 /** A line's versions: the old release's, the new one's and its translation. */
 function lineRows(line: TextLine, languages: GameLanguages): LineChangeRow[] {
-  const lang = languageTag(languages.source);
+  const lang = languages.sourceTag ?? undefined;
   const original = (
     label: string,
     text: string | null,
@@ -165,7 +164,7 @@ function lineRows(line: TextLine, languages: GameLanguages): LineChangeRow[] {
             label: "Translation",
             text: line.translation,
             change: "removed" as const,
-            lang: languageTag(languages.target),
+            lang: languages.targetTag ?? undefined,
           },
         ];
   switch (line.kind) {

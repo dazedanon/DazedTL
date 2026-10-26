@@ -124,11 +124,11 @@ class Game(NamedTuple):
 
 def applies(family: str, target: str) -> bool:
     """Whether a family checks a translation into *target*."""
-    from util.languages import LATIN, script
+    from util.languages import LATIN, script, tag
 
     targets = FAMILIES[family]["targets"]
     if targets == "english":
-        return str(target or "").strip().casefold() == "english"
+        return tag(target) == "en"
     if targets == "latin":
         return script(target) == LATIN
     return True

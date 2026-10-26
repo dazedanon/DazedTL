@@ -5,8 +5,9 @@ Settings, the engine and the app read them here.
 
 A pair is supported when its source and target use different scripts, so a
 value's letters tell whether it still needs translating. The source is one
-of SOURCE_LANGUAGES; a target is free text, read as Latin script unless it
-names a language written otherwise. Chinese shares a Japanese source's
+of SOURCE_LANGUAGES; a target is free text that names a language one way
+or another (`language`), and a name DazedTL doesn't know is refused, never
+read as Latin script. Chinese shares a Japanese source's
 kanji, so in a translation into it only kana tell Japanese left
 (`shares_kanji`).
 
@@ -17,8 +18,11 @@ Latin letters outside control codes and their arguments.
 
 import os
 import re
+import unicodedata
 from contextlib import contextmanager
 from contextvars import ContextVar
+from functools import lru_cache
+from typing import NamedTuple
 
 from util.runtime_text import HALF_WIDTH_LETTERS, PROTECTED_PATTERNS
 
@@ -32,8 +36,130 @@ DEFAULT_SOURCE = JAPANESE
 SOURCE_ENV = "sourceLanguage"
 
 LATIN = "latin"
-# Scripts by language name, casefolded; any other language is Latin.
-_SCRIPTS = {"japanese": "japanese", "chinese": "chinese", "korean": "korean"}
+
+
+class Language(NamedTuple):
+    """A language as a pair names it: the script it is written in and its
+    BCP 47 tag, which the app gives text in it so the system draws that
+    language's forms, such as Japanese kanji over Chinese ones."""
+
+    script: str
+    tag: str
+
+
+# The languages a pair can name, by English name: the script each is written
+# in and its tag, with the other names a user may give it, its own name and
+# its ISO 639 codes (`language`).
+_LANGUAGES: dict[str, tuple[str, str, tuple[str, ...]]] = {
+    "japanese": ("japanese", "ja", ("日本語", "ja", "jp", "jpn")),
+    "chinese": (
+        "chinese",
+        "zh",
+        (
+            "中文", "汉语", "漢語", "华语", "華語", "普通话", "普通話", "国语",
+            "國語", "粤语", "粵語", "mandarin", "cantonese", "zh", "zho", "chi",
+        ),
+    ),
+    "korean": ("korean", "ko", ("한국어", "조선어", "ko", "kor")),
+    "english": (LATIN, "en", ("en", "eng")),
+    "spanish": (LATIN, "es", ("español", "castellano", "castilian", "es", "spa")),
+    "portuguese": (LATIN, "pt", ("português", "pt", "por")),
+    "french": (LATIN, "fr", ("français", "fr", "fra", "fre")),
+    "german": (LATIN, "de", ("deutsch", "de", "deu", "ger")),
+    "italian": (LATIN, "it", ("italiano", "it", "ita")),
+    "dutch": (LATIN, "nl", ("nederlands", "flemish", "nl", "nld", "dut")),
+    "polish": (LATIN, "pl", ("polski", "pl", "pol")),
+    "czech": (LATIN, "cs", ("čeština", "cs", "ces", "cze")),
+    "slovak": (LATIN, "sk", ("slovenčina", "sk", "slk")),
+    "hungarian": (LATIN, "hu", ("magyar", "hu", "hun")),
+    "romanian": (LATIN, "ro", ("română", "ro", "ron", "rum")),
+    "croatian": (LATIN, "hr", ("hrvatski", "hr", "hrv")),
+    "slovenian": (LATIN, "sl", ("slovene", "slovenščina", "sl", "slv")),
+    "swedish": (LATIN, "sv", ("svenska", "sv", "swe")),
+    "norwegian": (LATIN, "no", ("norsk", "bokmål", "nynorsk", "no", "nb", "nn", "nor")),
+    "danish": (LATIN, "da", ("dansk", "da", "dan")),
+    "finnish": (LATIN, "fi", ("suomi", "fi", "fin")),
+    "icelandic": (LATIN, "is", ("íslenska", "is", "isl")),
+    "estonian": (LATIN, "et", ("eesti", "et", "est")),
+    "latvian": (LATIN, "lv", ("latviešu", "lv", "lav")),
+    "lithuanian": (LATIN, "lt", ("lietuvių", "lt", "lit")),
+    "turkish": (LATIN, "tr", ("türkçe", "tr", "tur")),
+    "vietnamese": (LATIN, "vi", ("tiếng việt", "vi", "vie")),
+    "indonesian": (LATIN, "id", ("bahasa indonesia", "id", "ind")),
+    "malay": (LATIN, "ms", ("bahasa melayu", "ms", "msa", "may")),
+    "filipino": (LATIN, "fil", ("tagalog", "fil", "tl", "tgl")),
+    "catalan": (LATIN, "ca", ("català", "ca", "cat")),
+    "galician": (LATIN, "gl", ("galego", "gl", "glg")),
+    "basque": (LATIN, "eu", ("euskara", "eu", "eus")),
+    "irish": (LATIN, "ga", ("gaeilge", "ga", "gle")),
+    "welsh": (LATIN, "cy", ("cymraeg", "cy", "cym")),
+    "albanian": (LATIN, "sq", ("shqip", "sq", "sqi")),
+    "esperanto": (LATIN, "eo", ("eo", "epo")),
+    "latin": (LATIN, "la", ("latina", "la", "lat")),
+    "swahili": (LATIN, "sw", ("kiswahili", "sw", "swa")),
+    "afrikaans": (LATIN, "af", ("af", "afr")),
+    "russian": ("cyrillic", "ru", ("русский", "ru", "rus")),
+    "ukrainian": ("cyrillic", "uk", ("українська", "uk", "ukr")),
+    "belarusian": ("cyrillic", "be", ("беларуская", "be", "bel")),
+    "bulgarian": ("cyrillic", "bg", ("български", "bg", "bul")),
+    "serbian": ("cyrillic", "sr", ("српски", "sr", "srp")),
+    "macedonian": ("cyrillic", "mk", ("македонски", "mk", "mkd")),
+    "kazakh": ("cyrillic", "kk", ("қазақ", "kk", "kaz")),
+    "mongolian": ("cyrillic", "mn", ("монгол", "mn", "mon")),
+    "greek": ("greek", "el", ("ελληνικά", "el", "ell", "gre")),
+    "arabic": ("arabic", "ar", ("العربية", "ar", "ara")),
+    "persian": ("arabic", "fa", ("farsi", "فارسی", "fa", "fas", "per")),
+    "urdu": ("arabic", "ur", ("اردو", "ur", "urd")),
+    "hebrew": ("hebrew", "he", ("עברית", "he", "heb")),
+    "thai": ("thai", "th", ("ไทย", "th", "tha")),
+    "hindi": ("devanagari", "hi", ("हिन्दी", "हिंदी", "hi", "hin")),
+    "bengali": ("bengali", "bn", ("bangla", "বাংলা", "bn", "ben")),
+}
+# Tags Chinese is written by, as a qualifier names the variety.
+_CHINESE_TAGS = {
+    "simplified": "zh-Hans", "hans": "zh-Hans", "简体": "zh-Hans",
+    "簡體": "zh-Hans", "简": "zh-Hans", "mainland": "zh-Hans", "china": "zh-Hans",
+    "prc": "zh-Hans", "singapore": "zh-Hans", "大陆": "zh-Hans", "大陸": "zh-Hans",
+    "cn": "zh-Hans", "sg": "zh-Hans", "traditional": "zh-Hant", "hant": "zh-Hant",
+    "繁體": "zh-Hant", "繁体": "zh-Hant", "繁": "zh-Hant", "taiwan": "zh-Hant",
+    "taiwanese": "zh-Hant", "hong": "zh-Hant", "kong": "zh-Hant",
+    "macau": "zh-Hant", "macao": "zh-Hant", "台灣": "zh-Hant", "台湾": "zh-Hant",
+    "香港": "zh-Hant", "tw": "zh-Hant", "hk": "zh-Hant", "mo": "zh-Hant",
+}
+# Words a name may add beside its language outside brackets: the variety or
+# the place it is written in, as in Simplified Chinese or Brazilian
+# Portuguese, or its script, as in Serbian Latin.
+_QUALIFIERS = frozenset(
+    (
+        *_CHINESE_TAGS,
+        *(
+            "brazilian european american latin mexican british australian "
+            "canadian international standard modern cyrillic us uk"
+        ).split(),
+    )
+)
+_NAMES = {
+    alias.casefold(): english
+    for english, (_script, _tag, aliases) in _LANGUAGES.items()
+    for alias in (english, *aliases)
+}
+# A qualifier in brackets, as in Portuguese (Brazil) or 中文（简体）.
+_BRACKETS = re.compile(r"[(\[（【]([^)\]）】]*)[)\]）】]")
+# What separates a name's words.
+_SEPARATORS = re.compile(r"[\s,/·・_-]+")
+# A BCP 47 tag: a language code and its region or script, such as zh-Hant.
+_CODE = re.compile(r"([a-z]{2,3})(?:[-_][a-z0-9]{2,8})*")
+# The names and qualifiers written without spaces, at which a run such as
+# 简体中文 splits.
+_CJK_NAMES = re.compile(
+    "|".join(
+        sorted(
+            (re.escape(name) for name in (*_NAMES, *_QUALIFIERS) if not name.isascii()),
+            key=len,
+            reverse=True,
+        )
+    )
+)
 
 # Japanese text by each reader's own pattern. COMMON is the engines' shared
 # LANGREGEX and the translator's default; MVMZ is RPG Maker MV/MZ's, which
@@ -110,9 +236,71 @@ ENGLISH_RUN = (
 )
 
 
-def script(language) -> str:
-    """The script *language* is written in; an unknown name reads as Latin."""
-    return _SCRIPTS.get(str(language or "").strip().casefold(), LATIN)
+@lru_cache(maxsize=64)
+def language(name) -> Language | None:
+    """The language *name* names, or None for a name DazedTL doesn't know,
+    which a pair refuses (`pair_problem`). A name is the language's English
+    name, its own or a code, such as Chinese, 中文 or zh-TW, with qualifiers
+    in brackets, such as Portuguese (Brazil), or beside it from a short list,
+    such as Simplified Chinese or Serbian Latin."""
+    text = unicodedata.normalize("NFKC", str(name or "")).strip().casefold()
+    qualifiers = _words(" ".join(_BRACKETS.findall(text)))
+    base = _BRACKETS.sub(" ", text).strip()
+    code = _CODE.fullmatch(base)
+    if base in _NAMES:
+        found = _NAMES[base]
+    elif code and code[1] in _NAMES:
+        found = _NAMES[code[1]]
+        qualifiers += _SEPARATORS.split(base)[1:]
+    else:
+        words = _words(base)
+        named = [word for word in words if word not in _QUALIFIERS]
+        found = _NAMES.get(" ".join(named))
+        if found is None:
+            return None
+        qualifiers += [word for word in words if word in _QUALIFIERS]
+    return _language(found, qualifiers)
+
+
+def _words(text: str) -> list[str]:
+    """The words of *text*, a han or kana run split at the names and
+    qualifiers written in it, such as 简体 and 中文."""
+    found = []
+    for word in _SEPARATORS.split(text):
+        pieces = _CJK_NAMES.findall(word) if not word.isascii() else ()
+        if word in _NAMES or "".join(pieces) != word:
+            pieces = [word]
+        found.extend(piece for piece in pieces if piece)
+    return found
+
+
+def _language(english: str, qualifiers: list[str]) -> Language:
+    """The Language of *english* as *qualifiers* write it: Chinese tagged by
+    its variety, and a language written in Cyrillic or Latin letters, such
+    as Serbian, in the script they name."""
+    script, tag, _aliases = _LANGUAGES[english]
+    if english == "chinese":
+        tag = next(
+            (_CHINESE_TAGS[word] for word in qualifiers if word in _CHINESE_TAGS),
+            tag,
+        )
+    if script == "cyrillic" and "latin" in qualifiers:
+        script = LATIN
+    return Language(script, tag)
+
+
+def script(name) -> str:
+    """The script the language *name* names is written in (`language`). A
+    name DazedTL doesn't know, which Settings and Set up refuse, reads as
+    Latin in a pair recorded before they did."""
+    found = language(name)
+    return found.script if found else LATIN
+
+
+def tag(name) -> str | None:
+    """The BCP 47 tag of the language *name* names, or None."""
+    found = language(name)
+    return found.tag if found else None
 
 
 def target_uses_cjk(language) -> bool:
@@ -144,7 +332,14 @@ def source_language(value) -> str:
 
 def pair_problem(source, target) -> str | None:
     """Why DazedTL can't translate *source* into *target*, or None: a pair
-    whose languages share a script can't tell text left from translated."""
+    whose languages share a script can't tell text left from translated,
+    and a target DazedTL doesn't know can't be read for its script."""
+    if language(target) is None:
+        return (
+            f"DazedTL doesn't know the language \"{str(target or '').strip()}\", "
+            "so it can't tell which text is left to translate. Name it in "
+            "English, such as Simplified Chinese, Spanish or Korean."
+        )
     if script(source) == script(target):
         return (
             f"DazedTL can't translate {source} into {str(target).strip()}: "

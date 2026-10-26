@@ -2678,6 +2678,8 @@ export type GameLanguages = {
   source: SourceLanguage;
   target: string;
   characters: boolean;
+  sourceTag: string | null;
+  targetTag: string | null;
 };
 
 export type Project = {

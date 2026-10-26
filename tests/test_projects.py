@@ -364,13 +364,32 @@ class LocationTests(unittest.TestCase):
         )
         old = self.locations.open(self.game("old", repository=False))
         new = self.locations.open(self.game("new", repository=False))
-        japanese = {"source": "Japanese", "target": "English", "characters": False}
+        japanese = {
+            "source": "Japanese",
+            "target": "English",
+            "characters": False,
+            "sourceTag": "ja",
+            "targetTag": "en",
+        }
+        english = {
+            "source": "English",
+            "target": "Japanese",
+            "characters": True,
+            "sourceTag": "en",
+            "targetTag": "ja",
+        }
         self.assertEqual(languages.view(new), japanese)
-        languages.change(new["id"], "english", "Japanese")
+        # A Chinese target is Chinese however it is named; a name DazedTL
+        # doesn't know is refused, never read as Latin script.
+        languages.change(new["id"], "Japanese", "Simplified Chinese")
         self.assertEqual(
-            languages.view(new),
-            {"source": "English", "target": "Japanese", "characters": True},
+            (languages.view(new)["characters"], languages.view(new)["targetTag"]),
+            (True, "zh-Hans"),
         )
+        with self.assertRaisesRegex(ValueError, "doesn't know the language"):
+            languages.change(new["id"], "Japanese", "Klingon")
+        languages.change(new["id"], "english", "Japanese")
+        self.assertEqual(languages.view(new), english)
         with self.assertRaisesRegex(ValueError, "same script"):
             languages.change(new["id"], "English", "French")
         self.assertEqual(languages.locked(new), "")
@@ -387,7 +406,4 @@ class LocationTests(unittest.TestCase):
         self.assertEqual(languages.view(old), japanese)
         # A game not set up yet starts with the pair Settings name.
         fresh = self.locations.open(self.game("fresh", repository=False))
-        self.assertEqual(
-            languages.view(fresh),
-            {"source": "English", "target": "Japanese", "characters": True},
-        )
+        self.assertEqual(languages.view(fresh), english)

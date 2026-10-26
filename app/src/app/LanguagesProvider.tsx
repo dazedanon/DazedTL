@@ -12,13 +12,14 @@ export function LanguagesProvider({
   project?: Project | null;
   children: ReactNode;
 }) {
-  const { source, target, characters } =
+  const { source, target, characters, sourceTag, targetTag } =
     project?.languages ?? DEFAULT_LANGUAGES;
   // One value per pair, so observations that keep it re-render nothing.
   const value = useMemo(
-    () => ({ source, target, characters }),
-    [source, target, characters],
+    () => ({ source, target, characters, sourceTag, targetTag }),
+    [source, target, characters, sourceTag, targetTag],
   );
+
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 

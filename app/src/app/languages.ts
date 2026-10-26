@@ -9,36 +9,10 @@ export const DEFAULT_LANGUAGES: GameLanguages = {
   source: "Japanese",
   target: "English",
   characters: false,
+  sourceTag: "ja",
+  targetTag: "en",
 };
 
 /** "Japanese to English". */
 export const pairLabel = (languages: GameLanguages) =>
   `${languages.source} to ${languages.target}`;
-
-// BCP 47 tags of the languages games are written in or translated into
-// most, by name; any other name leaves the page's language.
-const TAGS: Record<string, string> = {
-  arabic: "ar",
-  chinese: "zh",
-  english: "en",
-  french: "fr",
-  german: "de",
-  indonesian: "id",
-  italian: "it",
-  japanese: "ja",
-  korean: "ko",
-  polish: "pl",
-  portuguese: "pt",
-  russian: "ru",
-  spanish: "es",
-  thai: "th",
-  turkish: "tr",
-  ukrainian: "uk",
-  vietnamese: "vi",
-};
-
-/** The `lang` attribute of text in a language, so the system draws it in
- * that language's forms, such as Japanese kanji over Chinese ones. */
-export function languageTag(name: string): string | undefined {
-  return TAGS[name.trim().toLowerCase()];
-}

@@ -22,11 +22,13 @@ from util.languages import (
     SOURCE_LANGUAGES,
     active_source,
     active_target,
+    language,
     pair_problem,
     reading,
     script,
     source_language,
     source_pattern,
+    tag,
     target_uses_cjk,
 )
 from util.prompt_pair import pair_note, request_headings
@@ -43,6 +45,7 @@ __all__ = [
     "active_source",
     "active_target",
     "game_source",
+    "language",
     "load_language_pair",
     "pair_note",
     "pair_problem",
@@ -53,6 +56,7 @@ __all__ = [
     "script",
     "source_language",
     "source_pattern",
+    "tag",
     "target_uses_cjk",
 ]
 

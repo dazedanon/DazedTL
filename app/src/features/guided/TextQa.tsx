@@ -20,7 +20,6 @@ import { AssistantTask, type AssistantTaskState } from "../../ui/AssistantTask";
 import { Button } from "../../ui/Button";
 import { ExpandableText } from "../../ui/ExpandableText";
 import { LineChange } from "../../ui/LineChange";
-import { languageTag } from "../../app/languages";
 import { useLanguages } from "../../app/LanguagesProvider";
 import { Notice } from "../../ui/Notice";
 import { StatusMark } from "../../ui/StatusMark";
@@ -213,9 +212,9 @@ function Change({
   const original = {
     label: languages.source,
     text: source,
-    lang: languageTag(languages.source),
+    lang: languages.sourceTag ?? undefined,
   };
-  const lang = languageTag(languages.target);
+  const lang = languages.targetTag ?? undefined;
   return (
     <LineChange
       rows={
@@ -521,7 +520,8 @@ const sourcePreview = 3;
  * whether players can reach it and why, then its first texts.
  */
 function UntranslatedSource({ source }: { source: QaUntranslatedSource }) {
-  const lang = languageTag(useLanguages().source);
+  const lang = useLanguages().sourceTag ?? undefined;
+
   const [expanded, setExpanded] = useState(false);
   const { title, kind } = qaSource(source);
   const listed = source.texts.length;

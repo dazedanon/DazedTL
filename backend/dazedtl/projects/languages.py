@@ -7,7 +7,7 @@ later."""
 from pathlib import Path
 
 from dazedtl.compatibility.original_files import recorded
-from dazedtl.languages import load_language_pair, target_uses_cjk
+from dazedtl.languages import load_language_pair, tag, target_uses_cjk
 from dazedtl.settings import language_pair, preferences
 
 # Writing a record goes through the game write gateway, which may refuse.
@@ -32,6 +32,8 @@ class ProjectLanguages:
             "source": pair["source"],
             "target": pair["target"],
             "characters": target_uses_cjk(pair["target"]),
+            "sourceTag": tag(pair["source"]),
+            "targetTag": tag(pair["target"]),
         }
 
     def keep(self, project):

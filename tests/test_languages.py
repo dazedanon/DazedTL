@@ -275,7 +275,8 @@ class LanguageTests(unittest.TestCase):
         # nothing was fitted, and an English source's HP kept in Japanese
         # was English left, so its row overflowed unfitted.
         chinese = "测试：恢复50点生命值。这是一个很长的说明文字，一直延续下去。"
-        with reading("Japanese", "Chinese"):
+        # However the target names Chinese, its hanzi are its own text.
+        with reading("Japanese", "Simplified Chinese"):
             self.assertEqual(source_left(chinese, "テスト：ＨＰを回復する。"), [])
             self.assertEqual(source_left("测试ですね", "テストです"), ["测试ですね"])
             # A name kept letter for letter is translated; text without a
@@ -297,7 +298,7 @@ class LanguageTests(unittest.TestCase):
             )
         layout = {"width": 30, "listWidth": 30}
         cases = (
-            ("Japanese", "Chinese", chinese, "テスト：ＨＰを５０回復する。"),
+            ("Japanese", "繁體中文", chinese, "テスト：ＨＰを５０回復する。"),
             (
                 ENGLISH,
                 "Japanese",
