@@ -26,7 +26,7 @@ from . import original_files
 
 @dataclass
 class _Record:
-    process: subprocess.Popen
+    process: system.Process
     message: str = "Recording the original game files in Git."
     error: str = ""
     stopping: bool = False

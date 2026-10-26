@@ -16,8 +16,8 @@ root, temporary = map(Path, sys.argv[1:])
 sys.path.insert(0, str(root / "backend/dazedtl/engine"))
 sys.path.insert(0, str(root / "backend"))
 
-from dazedtl.compatibility.checkpoint_commits import Change, for_action, running
 from dazedtl.compatibility import game_write
+from dazedtl.compatibility.checkpoint_commits import Change, for_action, running
 from dazedtl.compatibility.game_write import write_game
 from dazedtl.compatibility.translation import TranslationEngine
 from dazedtl.languages import DEFAULT_SOURCE
