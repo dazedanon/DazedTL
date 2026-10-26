@@ -4,6 +4,7 @@ import os
 import re
 import sqlite3
 import time
+import tracemalloc
 import unittest
 from copy import deepcopy
 from pathlib import Path
@@ -277,6 +278,39 @@ class ObservationTests(unittest.TestCase):
                 )
             finally:
                 connection.close()
+
+    def test_a_changing_batch_queue_keeps_one_copy_between_polls(self):
+        # A collecting Batch's queue file changes between polls, and a large
+        # game's queue is about 100 MB; a read cached per change kept a full
+        # copy of each version.
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "log/batch_requests.json"
+
+            def change(version):
+                write_json(
+                    path,
+                    {
+                        f"r{n}": {"params": f"{version} {n} " + "x" * 60}
+                        for n in range(2000)
+                    },
+                )
+                past = time.time() - 60 + version
+                os.utime(path, (past, past))
+
+            tracemalloc.start()
+            try:
+                change(0)
+                start = tracemalloc.get_traced_memory()[0]
+                self.assertEqual(process_view.queue(root)["r1"]["params"][:4], "0 1 ")
+                copy = tracemalloc.get_traced_memory()[0] - start
+                for version in range(1, 6):
+                    change(version)
+                    self.assertEqual(len(process_view.queue(root)), 2000)
+                grown = tracemalloc.get_traced_memory()[0] - start
+            finally:
+                tracemalloc.stop()
+            self.assertLess(grown, 2 * copy)
 
     def test_a_polls_file_view_answers_like_project_path_and_rereads_changed_files(
         self,

@@ -137,6 +137,18 @@ export function timer(now = Date.now) {
 
 const tail = (/** @type {string} */ text, lines = 40) =>
   text.trimEnd().split("\n").slice(-lines).join("\n");
+/**
+ * What a failed test run shows: from its first failure marker (a Python FAIL
+ * or ERROR header, or a Node test's cross), since the summary that ends the
+ * run sits below the Python failures and would hide them; else the tail.
+ */
+export function failureReport(/** @type {string} */ text, count = 40) {
+  const all = text.trimEnd().split("\n");
+  const first = all.findIndex((line) => /^(FAIL|ERROR): |^✖ /.test(line));
+  return first < 0
+    ? tail(text, count)
+    : all.slice(first, first + count).join("\n");
+}
 const lines = (/** @type {string} */ text) =>
   text
     .split("\n")
@@ -379,7 +391,7 @@ async function underLock(deps, { top, main, branch }, time, tell) {
   if (!tests.passed)
     return finish(
       1,
-      tail(lastRun),
+      failureReport(lastRun),
       `node scripts/test.mjs failed twice; fix it on ${branch} and land again.`,
     );
   if (tests.flaky)
