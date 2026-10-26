@@ -27,7 +27,7 @@ from util.rpgmaker_markers import (
     data_plugins,
 )
 from util.rpgmaker_qa_reach import MAY_SHOW, Reach
-from util.source_text import holds_source
+from util.source_text import holds_source, words_left
 
 _MAP_RE = re.compile(r"Map\d+\.json")
 # Plugin parameters that hold code or an asset path rather than text.
@@ -113,19 +113,22 @@ def visible_texts(
     name: str, document: Any, markers: frozenset[str] = SUPPORTED_CODE408_MARKERS
 ):
     """Each text players read in one data file: its pointer's parts, its
-    value, its kind and whether the engine translated it, keeping its
-    Japanese in `_original`. Map names keep no `_original`.
+    value, its kind, whether the engine translated it, keeping its
+    Japanese in `_original`, and that Japanese, or None where it keeps none.
+    Map names keep no `_original`.
 
     A message's or comment's rows count as translated where a translation
-    owns them (see rpgmaker_blocks.owned). Comment lines (408) count under
-    the *markers* the game's plugins show, such as a choice's help."""
+    owns them (see rpgmaker_blocks.owned), and their Japanese is the whole
+    part's. Comment lines (408) count under the *markers* the game's plugins
+    show, such as a choice's help."""
     for list_path, commands in blocks.command_lists(document):
-        translated_rows: set[int] = set()
+        translated_rows: dict[int, str | None] = {}
         comment_rows: set[int] = set()
         for block in blocks.blocks(commands):
             for part in block.parts:
                 if part.translated:
-                    translated_rows.update(part.commands)
+                    source = blocks.source(commands, part)
+                    translated_rows.update(dict.fromkeys(part.commands, source))
             if block.kind in (blocks.HELP, blocks.COMMENT) and block.shown(markers):
                 comment_rows.update(block.rows)
         for index, command in enumerate(commands):
@@ -136,43 +139,84 @@ def visible_texts(
             if code == 408:
                 if index in comment_rows and parameters:
                     base = list_path + (index, "parameters", 0)
-                    yield base, parameters[0], "comment text", index in translated_rows
+                    yield (
+                        base,
+                        parameters[0],
+                        "comment text",
+                        index in translated_rows,
+                        translated_rows.get(index),
+                    )
                 continue
             if code not in COMMAND_TEXT or not isinstance(parameters, list):
                 continue
-            translated = (
-                index in translated_rows if code in (401, 405) else "_original" in command
-            )
+            original = command.get("_original")
+            if code in (401, 405):
+                translated = index in translated_rows
+                original = translated_rows.get(index)
+            else:
+                translated = "_original" in command
             base = list_path + (index, "parameters")
             if code == 102 and parameters and isinstance(parameters[0], list):
                 for choice, value in enumerate(parameters[0]):
-                    yield base + (0, choice), value, "choice", translated
+                    source = (
+                        original[choice]
+                        if isinstance(original, list) and choice < len(original)
+                        else None
+                    )
+                    yield (
+                        base + (0, choice),
+                        value,
+                        "choice",
+                        translated,
+                        source if isinstance(source, str) else None,
+                    )
                 continue
             position = COMMAND_TEXT[code]
+            source = original if isinstance(original, str) else None
             for at, value in enumerate(parameters):
                 if position is None or at == position:
-                    yield base + (at,), value, "event text", translated
+                    yield base + (at,), value, "event text", translated, source
     if _MAP_RE.fullmatch(name) and isinstance(document, dict):
-        yield ("displayName",), document.get("displayName"), "map name", False
+        yield ("displayName",), document.get("displayName"), "map name", False, None
     for field in DATABASE_FIELDS.get(name, ()):
         for index, entry in enumerate(document if isinstance(document, list) else []):
             if isinstance(entry, dict):
                 original = entry.get("_original")
                 translated = isinstance(original, dict) and field in original
-                yield (index, field), entry.get(field), "database field", translated
+                source = original.get(field) if translated else None
+                yield (
+                    (index, field),
+                    entry.get(field),
+                    "database field",
+                    translated,
+                    source if isinstance(source, str) else None,
+                )
     if name == "System.json" and isinstance(document, dict):
         original = document.get("_original")
         for field in SYSTEM_FIELDS:
             translated = isinstance(original, dict) and field in original
             for path, value in _leaves(document.get(field), (field,)):
-                yield path, value, "system term", translated
+                source = _system_source(original, path) if translated else None
+                yield path, value, "system term", translated, source
+
+
+def _system_source(original: Any, path: tuple) -> str | None:
+    """A system term's Japanese in System.json's root `_original`, which keys
+    list positions as text."""
+    for part in path:
+        if not isinstance(original, dict):
+            return None
+        original = original.get(str(part) if isinstance(part, int) else part)
+    return original if isinstance(original, str) else None
 
 
 def _untranslated(
     name: str, document: Any, covered: set[str], markers: frozenset[str], rows: list
 ) -> None:
-    for path, value, kind, translated in visible_texts(name, document, markers):
-        if not translated and holds_source(value) and pointer(path) not in covered:
+    for path, value, kind, translated, _source in visible_texts(
+        name, document, markers
+    ):
+        if not translated and words_left(value) and pointer(path) not in covered:
             _entry(rows, name, path, value, kind)
 
 

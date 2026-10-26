@@ -353,6 +353,8 @@ class TextQA:
         }
 
     def status(self, project_id, native, report=False):
+        from dazedtl.compatibility.text import qa_capture_outdated
+
         qa = self.qa(project_id, native)
         stage = str(qa["status"].get("stage") or "")
         waiting = [row for row in qa["questions"] if "choice" not in row]
@@ -380,6 +382,15 @@ class TextQA:
             )
         elif not qa["current"]:
             following = qa["message"] + " Run qa --prepare."
+        elif stage not in {"", "complete"} and qa_capture_outdated(
+            qa["task"], native["data"]
+        ):
+            # The assistant's own fixes, such as the playtest's, change the
+            # game's plugins during review.
+            following = (
+                "The game's plugins changed since QA captured its screens; run "
+                "qa --prepare, which captures them again and keeps the review."
+            )
         elif stage == "complete" and waiting:
             following = (
                 "The user answers the open questions in DazedTL; run qa --apply "

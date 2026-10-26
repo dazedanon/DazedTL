@@ -548,9 +548,6 @@ class QaState(TypedDict):
     # An update changed QA's rules while this task was in review: it is
     # outdated and QA is prepared again. A finished task stays current.
     rules_changed: NotRequired[bool]
-    # Only the game's plugins changed since this task was prepared, as after
-    # a playtest fix: it is not current, and preparing again keeps its review.
-    plugins_changed: NotRequired[bool]
     # When this task was prepared; preparing again resumes a task, keeping it.
     prepared_at: NotRequired[str]
     # The prepared task can't be read or trusted, so QA is blocked; message

@@ -4,7 +4,7 @@ import json
 import os
 import re
 import util.dazedwrap as dazedwrap
-from util.languages import source_pattern
+from util.languages import ENGLISH, source_pattern
 from util import rpgmaker_blocks, rpgmaker_rewrap, rpgmaker_scope
 from util import rpgmaker_script_strings as script_strings
 import threading
@@ -806,11 +806,22 @@ def saveProgress(data, filename, *, force=False):
         return False
 
 
+class _Recorded(str):
+    """Source text the game keeps in `_original`, as the source helpers
+    return it. A helper falls back to the value itself for text never
+    translated, so the send check tells the two apart by this type: a
+    Chinese translation may keep its source's kanji letter for letter, such
+    as a name, while text never translated is all left (_has_japanese_text).
+    """
+
+    __slots__ = ()
+
+
 def _scalar_original(cmd) -> str | None:
     """Return scalar _original on an event command, or None if absent/empty."""
     orig = cmd.get("_original")
     if isinstance(orig, str) and orig.strip():
-        return str(orig)
+        return _Recorded(orig)
     return None
 
 
@@ -860,6 +871,8 @@ def _merge_original_tree(target: dict, source: dict) -> None:
 
 def _overlay_original_tree(current, original):
     """Overlay a sparse _original tree on a current list/dict value."""
+    if isinstance(original, str):
+        return _Recorded(original)
     if not isinstance(original, dict):
         return copy.deepcopy(original)
 
@@ -975,14 +988,15 @@ def _apply_event_parameter_originals(snapshots: list[tuple[dict, list]]) -> None
 
 # Text still to translate is what util/source_text reads as Japanese, the
 # rule Guided's line counts share, and labels and map names are sent only
-# while they hold it. Level 2 reads a value against the Japanese it was
-# translated from, where the game keeps it, so a lone kana or mark the source
-# holds, such as a kaomoji's ﾉ, reads translated; level 1 reads every Japanese
-# letter as left. A run frozen with an older sourceText request policy keeps
-# its level, and one frozen without it keeps reading Japanese by LANGREGEX and
-# sending labels and map names on every pass, so its requests keep their
-# identities.
-SOURCE_TEXT = 2
+# while they hold it. Level 3 reads it for the run's language pair, so a
+# Chinese translation's hanzi read translated and only its kana left; level 2
+# reads a value against the Japanese it was translated from, where the game
+# keeps it, so a lone kana or mark the source holds, such as a kaomoji's ﾉ,
+# reads translated; level 1 reads every Japanese letter as left. A run frozen
+# with an older sourceText request policy keeps its level, and one frozen
+# without it keeps reading Japanese by LANGREGEX and sending labels and map
+# names on every pass, so its requests keep their identities.
+SOURCE_TEXT = 3
 
 
 def _has_japanese_text(text, source=None) -> bool:
@@ -999,6 +1013,14 @@ def _has_japanese_text(text, source=None) -> bool:
         if text is None:
             return False
         if SOURCE_TEXT < 2 or source is None:
+            return holds_source(str(text))
+        if SOURCE_TEXT < 3:
+            # Every Japanese letter read as left in any target, as in a
+            # translation into English.
+            return bool(source_left(str(text), str(source), target=ENGLISH))
+        if not isinstance(source, _Recorded) and str(source) == str(text):
+            # A source the game doesn't keep is the value itself, never
+            # translated, which reads the same without one.
             return holds_source(str(text))
         return bool(source_left(str(text), str(source)))
     if text is None:
@@ -1084,7 +1106,9 @@ def _param_source(cmd, index: int) -> str:
         return orig
     params = _source_parameters(cmd)
     if index < len(params) and params[index] is not None:
-        return str(params[index])
+        # A path-mirrored original stays _Recorded.
+        value = params[index]
+        return value if isinstance(value, str) else str(value)
     return ""
 
 
@@ -1323,7 +1347,7 @@ def _choice_source(cmd, index: int) -> str:
     if isinstance(orig_list, list) and index < len(orig_list):
         slot = orig_list[index]
         if slot is not None and str(slot).strip():
-            return str(slot)
+            return _Recorded(slot)
     params = cmd.get("parameters") or [[]]
     choices = params[0] if params else []
     if isinstance(choices, list) and index < len(choices) and choices[index] is not None:
@@ -1716,7 +1740,7 @@ def _entry_field_source(entry, field: str) -> str:
     orig = _entry_orig(entry)
     slot = orig.get(field)
     if slot is not None and not isinstance(slot, (dict, list)) and str(slot).strip():
-        return str(slot)
+        return _Recorded(slot)
     val = entry.get(field)
     if val is not None:
         return str(val)
@@ -1766,7 +1790,7 @@ def _system_scalar_source(data, field: str) -> str:
     if isinstance(orig, dict):
         slot = orig.get(field)
         if slot is not None and not isinstance(slot, (dict, list)) and str(slot).strip():
-            return str(slot)
+            return _Recorded(slot)
     val = data.get(field)
     if val is not None:
         return str(val)
@@ -1796,7 +1820,7 @@ def _system_list_source(data, list_name: str, index: int) -> str:
         if isinstance(list_orig, dict):
             slot = list_orig.get(str(index))
             if slot is not None and str(slot).strip():
-                return str(slot)
+                return _Recorded(slot)
     lst = data.get(list_name) or []
     if index < len(lst) and lst[index] is not None:
         return str(lst[index])
@@ -1833,7 +1857,7 @@ def _system_terms_source(data, category: str, index: int) -> str:
             if isinstance(cat_orig, dict):
                 slot = cat_orig.get(str(index))
                 if slot is not None and str(slot).strip():
-                    return str(slot)
+                    return _Recorded(slot)
     term_list = (data.get("terms") or {}).get(category)
     if isinstance(term_list, list) and index < len(term_list) and term_list[index] is not None:
         return str(term_list[index])
@@ -1874,7 +1898,7 @@ def _system_terms_message_source(data, key: str) -> str:
             if isinstance(msg_orig, dict):
                 slot = msg_orig.get(key)
                 if slot is not None and str(slot).strip():
-                    return str(slot)
+                    return _Recorded(slot)
     messages = (data.get("terms") or {}).get("messages") or {}
     val = messages.get(key)
     if val is not None:
@@ -4952,6 +4976,8 @@ def _searchCodes(page, pbar, jobList, filename):
                 # Get Speaker
                 rawName = _101_name_source(codeList[i], isVar)
                 sourceName = _101_speaker_name(rawName)
+                if isinstance(rawName, _Recorded):
+                    sourceName = _Recorded(sourceName)
                 currentName = _101_speaker_name(_101_name_current(codeList[i], isVar))
                 if SPEAKER_CONTEXT:
                     # Retain the current display name even when skip-translated

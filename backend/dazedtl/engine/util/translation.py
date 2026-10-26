@@ -47,7 +47,6 @@ from util.languages import (
     LATIN_LETTERS,
     active_source,
     source_pattern,
-    target_uses_cjk,
 )
 from util.prompt_pair import (
     GLOSSARY_HEADING,
@@ -536,8 +535,6 @@ def validate_translation_content(
     
     invalid_indices = []
     reasons = []
-    normalized_target = str(target_language or "").strip().casefold()
-    cjk_target = target_uses_cjk(target_language)
 
     for i, (orig, trans) in enumerate(zip(original_items, translated_items)):
         orig_str = str(orig).strip()
@@ -608,21 +605,10 @@ def validate_translation_content(
             # Check 5: Japanese must not survive in player text, by the one
             # rule for what needs translating (util/source_text), which lets a
             # translation keep the source's punctuation, kaomoji and censor
-            # masks. Japanese inside protected runtime-code parameters is
-            # absent here and is restored only after validation.
-            # A Chinese target shares the kanji of a Japanese source, so only
-            # its kana read as left; any other pair's scripts differ.
-            left = source_left(trans_str, orig_str)
-            if active_source() == JAPANESE and cjk_target:
-                if normalized_target == "chinese" and any(
-                    re.search(r"[ぁ-ゖァ-ヺ\uFF66-\uFF9D]", run) for run in left
-                ):
-                    invalid_indices.append(i)
-                    reasons.append(
-                        f"Line{i+1}: Japanese kana remains in Chinese translation"
-                    )
-                    continue
-            elif left:
+            # masks, and a Chinese target the kanji it shares. Japanese
+            # inside protected runtime-code parameters is absent here and is
+            # restored only after validation.
+            if source_left(trans_str, orig_str, target=target_language):
                 invalid_indices.append(i)
                 reasons.append(f"Line{i+1}: Source-language text remains in translation")
                 continue

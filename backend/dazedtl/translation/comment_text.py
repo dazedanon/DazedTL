@@ -28,7 +28,7 @@ def _japanese_lines(name: str, document: Any, markers: frozenset[str]) -> list:
     try:
         return [
             value
-            for _path, value, kind, _translated in visible_texts(
+            for _path, value, kind, _translated, _source in visible_texts(
                 name, document, markers
             )
             if kind == "comment text" and holds_source(value)

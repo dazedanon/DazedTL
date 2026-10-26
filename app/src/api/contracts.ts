@@ -851,7 +851,6 @@ export type QaState = {
   coverage?: QaCoverage;
   activity?: QaActivity;
   rules_changed?: boolean;
-  plugins_changed?: boolean;
   prepared_at?: string;
   unreadable?: QaUnreadable;
 };

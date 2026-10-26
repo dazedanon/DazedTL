@@ -26,6 +26,7 @@ from util.paths import PROMPT_PATH, glossary_base_text
 from util.playtest.checks import reading as playtest_reading
 from util.prompt_pair import render, render_for_run
 from util.qa.selection import _number_defect
+from util.rpgmaker_qa_preflight import _untranslated as preflight_untranslated
 from util.source_text import holds_source, source_left
 from util.speakers import strip_echoed_speaker, translate_speaker
 from util.translation import (
@@ -268,6 +269,73 @@ class LanguageTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(UnwritableText, "line 2 holds 안"):
             writable(["はい\n", "안녕\n"], "cp932", "scene.ks")
+
+    def test_text_left_reads_for_the_language_pair(self):
+        # Read as Japanese, a Chinese translation's hanzi were all left, so
+        # nothing was fitted, and an English source's HP kept in Japanese
+        # was English left, so its row overflowed unfitted.
+        chinese = "测试：恢复50点生命值。这是一个很长的说明文字，一直延续下去。"
+        with reading("Japanese", "Chinese"):
+            self.assertEqual(source_left(chinese, "テスト：ＨＰを回復する。"), [])
+            self.assertEqual(source_left("测试ですね", "テストです"), ["测试ですね"])
+            # A name kept letter for letter is translated; text without a
+            # source may be text never translated.
+            self.assertEqual(source_left("魔王", "魔王"), [])
+            self.assertTrue(holds_source("魔王"))
+            # The playtest reads only kana on screen.
+            screen = re.compile(playtest_reading()["pattern"])
+            self.assertFalse(screen.search("魔王城"))
+            self.assertTrue(screen.search("魔王です"))
+            self.assertEqual(
+                validate_translation_content(
+                    ["テストです", "魔王"],
+                    ["测试です", "魔王"],
+                    source_pattern(),
+                    "Chinese",
+                )[1],
+                [0],
+            )
+        layout = {"width": 30, "listWidth": 30}
+        cases = (
+            ("Japanese", "Chinese", chinese, "テスト：ＨＰを５０回復する。"),
+            (
+                ENGLISH,
+                "Japanese",
+                "テストHPを50回復するッ。とても長い説明文がここに続いていて幅を超える。",
+                "Test: restores 50 HP. A long description.",
+            ),
+        )
+        for source, target, text, original in cases:
+            message = [
+                {"code": 101, "parameters": ["", 0, 0, 2]},
+                {"code": 401, "parameters": [text], "_original": original},
+                {"code": 0, "parameters": []},
+            ]
+            items = [
+                None,
+                {"description": text, "_original": {"description": original}},
+            ]
+            with reading(source, target):
+                for document, name in (
+                    ([{"list": message}], "Map001.json"),
+                    (items, "Items.json"),
+                ):
+                    report = rewrap.fit_document(
+                        document, name, rewrap.Layout.from_widths(layout, target)
+                    )
+                    self.assertEqual(len(report.changes), 1, (source, name))
+        # An English game's currency unit and abbreviations are no text
+        # left to translate in Text QA's never-translated report.
+        rows = []
+        with reading(ENGLISH):
+            preflight_untranslated(
+                "System.json",
+                {"currencyUnit": "G", "terms": {"basic": ["Level", "HP", "EXP"]}},
+                set(),
+                frozenset(),
+                rows,
+            )
+        self.assertEqual([row["text"] for row in rows], ["Level"])
 
     def test_a_guided_action_reads_its_games_source(self):
         # Read as Japanese, an English game's Apply took its Japanese

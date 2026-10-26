@@ -36,7 +36,7 @@ from util import rpgmaker_script_strings as script_strings
 from util.rpgmaker_blocks import PER_LINE as _PER_LINE
 from util.rpgmaker_blocks import spread
 from util.rpgmaker_script_strings import BREAK
-from util.source_text import holds_source
+from util.source_text import words_left
 
 
 LIST_FIELDS_BY_FILE = {
@@ -144,16 +144,24 @@ def over_width(text: str, width: int) -> bool:
     return widest_line(text) > int(width)
 
 
-def untranslated(text: str) -> bool:
-    """Whether *text* still holds source text (util/source_text), which
-    DazedTL never rewraps."""
-    return holds_source(text)
+def untranslated(
+    text: str, source: str | None = None, target: str | None = None
+) -> bool:
+    """Whether *text*, a value or a row of a message, still holds source
+    text, which DazedTL never rewraps: read as a player reads it, against
+    *source*, the whole value or message it was translated from, for a
+    translation into *target*, the run's by default (util/source_text
+    `words_left`), so a Latin source's abbreviation, such as HP, is no text
+    left. Without a source every Japanese letter is left."""
+    return bool(words_left(text, source, target=target))
 
 
-def _translated(text: str) -> str:
+def _translated(text: str, source: str | None = None, target: str | None = None) -> str:
     """A message's rows without the ones left untranslated, which keep their
-    rows (see wrap_message)."""
-    return "\n".join(row for row in _rendered_lines(text) if not untranslated(row))
+    rows (see wrap_message), read against its *source*."""
+    return "\n".join(
+        row for row in _rendered_lines(text) if not untranslated(row, source, target)
+    )
 
 
 _SPEAKER_LINE = re.compile(
@@ -208,22 +216,22 @@ class _Span:
     per_line: str = ""
 
 
-def _row_kind(row: str):
+def _row_kind(row: str, source: str | None = None, target: str | None = None):
     """How a row groups (see :func:`_spans`): None when blank, False when it
     is kept as it is, otherwise the code it repeats on each row and whether
-    it sets the font size."""
+    it sets the font size. A row is read against its message's *source*."""
     if not row.strip():
         return None
-    if untranslated(row) or _LABEL_ROW.match(row):
+    if untranslated(row, source, target) or _LABEL_ROW.match(row):
         return False
     match = _PER_LINE.match(row)
     return (match.group(0) if match else "", bool(_SIZE_START.match(row)))
 
 
-def _command_kind(text: str):
+def _command_kind(text: str, source: str | None = None, target: str | None = None):
     """How a command holding some of a message's rows groups: as its first
     row that flows, or kept as it is when none does."""
-    kinds = [_row_kind(row) for row in text.split("\n") if row.strip()]
+    kinds = [_row_kind(row, source, target) for row in text.split("\n") if row.strip()]
     if not kinds:
         return None
     return next((kind for kind in kinds if kind), False)
@@ -344,13 +352,15 @@ def _message(text: str, rows: int | None) -> tuple[str, list[str], int | None, b
     return prefix, lines, rows, uses_br
 
 
-def _unpaged(text: str, rows: int) -> str:
+def _unpaged(
+    text: str, rows: int, source: str | None = None, target: str | None = None
+) -> str:
     """A message :func:`wrap_message` paged into windows of *rows* as it read
     the message before, without the empty rows it fills a page with (see
     :func:`dazedwrap.unpaged`), and without blank rows at the end."""
     prefix, lines, page, uses_br = _message(text, rows)
     read: list[str] = []
-    for span in _spans([_row_kind(line) for line in lines]):
+    for span in _spans([_row_kind(line, source, target) for line in lines]):
         part = "\n".join(lines[span.start : span.end])
         read.append(dazedwrap.unpaged(part, page or rows) if span.flows else part)
     body = "\n".join(read)
@@ -365,6 +375,7 @@ def wrap_message(
     rows: int | None = None,
     every: bool = False,
     target: str | None = None,
+    original: str | None = None,
 ) -> str:
     """A message laid out for its window: the body wrapped to *width* like
     its *source* (see :func:`dazedwrap.wrapShaped`), paging after a sentence
@@ -378,11 +389,14 @@ def wrap_message(
     Rows that keep a layout of their own (see :func:`_spans`) split the
     message: then each part wraps on its own, only where a row is wider
     than *width* (or every part that flows, with *every*), and without the
-    source's layout, which no longer lines up with the rows."""
+    source's layout, which no longer lines up with the rows. Rows are read
+    against *original*, the source of the whole message when *text* is
+    part of it, else *source* (see :func:`untranslated`)."""
     if not text or not text.strip():
         return text
+    against = source if original is None else original
     prefix, lines, rows, uses_br = _message(text, rows)
-    spans = _spans([_row_kind(line) for line in lines])
+    spans = _spans([_row_kind(line, against, target) for line in lines])
     if len(spans) == 1 and spans[0].flows:
         wrapped = _flow(
             lines, spans[0].per_line, width, _source_body(source), rows, target
@@ -722,7 +736,9 @@ def _parted(message: str | None) -> bool:
     return bool(held) and "" in rows[held[0] : held[-1]]
 
 
-def _widened(text: str, box: Box, source: str | None) -> str:
+def _widened(
+    text: str, box: Box, source: str | None, original: str | None = None
+) -> str:
     """A message that fits *box* laid out again at its width when the fitter
     laid it out for a narrower window and the wider one takes it on fewer
     rows; otherwise *text*. A layout is the fitter's when wrapping it again
@@ -736,7 +752,8 @@ def _widened(text: str, box: Box, source: str | None) -> str:
     width the rows of a message without blank rows fill as few rows as they
     hold is tried: wrapping at one where they take fewer never gives them
     back. Blank rows at the end, such as a message's spare commands, are no
-    part of the layout (see :func:`wrap_message`)."""
+    part of the layout (see :func:`wrap_message`). Rows are read against
+    *original* (see :func:`fit_value`)."""
     rows = box.rows if box.paged else None
     laid = text.split("\n")
     while laid and not laid[-1].strip():
@@ -754,13 +771,19 @@ def _widened(text: str, box: Box, source: str | None) -> str:
     # Only a message of more rows than its window shows was paged.
     paged = rows is not None and rendered_rows(laid) > rows
     if rows is not None and paged and not _parted(source):
-        unpaged = _unpaged(laid, rows)
+        unpaged = _unpaged(laid, rows, original, box.target)
         if unpaged != laid:
             readings.insert(0, unpaged)
     wider: dict[str, str] = {}
     for read in readings:
         wider[read] = wrap_message(
-            read, box.width, source=source, rows=rows, every=True, target=box.target
+            read,
+            box.width,
+            source=source,
+            rows=rows,
+            every=True,
+            target=box.target,
+            original=original,
         )
         # Laid out for this width already, its blank rows read as paragraph
         # breaks or not.
@@ -776,7 +799,13 @@ def _widened(text: str, box: Box, source: str | None) -> str:
                 break
             if (
                 wrap_message(
-                    read, width, source=source, rows=rows, every=True, target=box.target
+                    read,
+                    width,
+                    source=source,
+                    rows=rows,
+                    every=True,
+                    target=box.target,
+                    original=original,
                 )
                 == laid
             ):
@@ -790,25 +819,34 @@ def fit_value(
     *,
     source: str | None = None,
     resized: bool = False,
+    original: str | None = None,
 ) -> str:
     """*text* as DazedTL writes it to *box*: unchanged when every line fits,
     otherwise wrapped again as translation wraps it there. *resized* says the
     text was fitted to other Line widths: a message the fitter laid out for a
-    narrower window is laid out again (see :func:`_widened`)."""
+    narrower window is laid out again (see :func:`_widened`). Its rows are
+    read against *original*, the source of the whole message when *text* is
+    part of it, else *source*, which it is laid out like (see
+    :func:`untranslated`)."""
     if not isinstance(text, str) or not text.strip():
         return text
     if box.kind == "note":
         return wrap_note(text, box.width, box.target)
     if box.kind == "variable":
         return wrap_variable(text, box.width, box.target)
+    against = source if original is None else original
     rows_apart = box.kind in ("message", "scroll")
-    if not over_width(_translated(text) if rows_apart else text, box.width):
+    if not over_width(
+        _translated(text, against, box.target) if rows_apart else text, box.width
+    ):
         if resized and box.kind == "message":
-            return _widened(text, box, source)
+            return _widened(text, box, source, against)
         return text
     if box.kind == "scroll":
         return "\n".join(
-            row if untranslated(row) else wrap_lines(row, box.width, target=box.target)
+            row
+            if untranslated(row, against, box.target)
+            else wrap_lines(row, box.width, target=box.target)
             for row in text.split("\n")
         )
     if box.kind == "lines":
@@ -819,14 +857,16 @@ def fit_value(
         source=source,
         rows=box.rows if box.paged else None,
         target=box.target,
+        original=against,
     )
 
 
-def misfit(text: str, box: Box) -> str | None:
-    """Why *text*, as written, still does not fit *box*, or None. Counts only
-    choose what to look at: text a fixed window cuts off even fitted goes to
-    Text QA as a ``text-fit`` check, and QA's captures and the playtest
-    confirm what the game shows."""
+def misfit(text: str, box: Box, source: str | None = None) -> str | None:
+    """Why *text*, as written, still does not fit *box*, or None, its rows
+    read against *source* (see :func:`untranslated`). Counts only choose
+    what to look at: text a fixed window cuts off even fitted goes to Text
+    QA as a ``text-fit`` check, and QA's captures and the playtest confirm
+    what the game shows."""
     if not isinstance(text, str) or not text.strip():
         return None
     if box.kind == "note":
@@ -838,7 +878,7 @@ def misfit(text: str, box: Box) -> str | None:
     elif box.kind == "variable":
         bodies = [_script_text(text) or ""]
     elif box.kind in ("message", "scroll"):
-        bodies = [_translated(text)]
+        bodies = [_translated(text, source, box.target)]
     else:
         bodies = [text]
     for body in bodies:
@@ -852,14 +892,14 @@ def misfit(text: str, box: Box) -> str | None:
     return None
 
 
-def rows_misfit(text: str, box: Box) -> str | None:
+def rows_misfit(text: str, box: Box, source: str | None = None) -> str | None:
     """Why *text* needs more rows than *box* shows, or None, whatever its
     lines' widths: the rows of a window showing several texts whose lines
     are measured where each is written, such as a choice's help in parts
     (see :func:`util.rpgmaker_blocks.shown`)."""
     if not isinstance(text, str) or not text.strip():
         return None
-    return misfit(text, replace(box, width=widest_line(text)))
+    return misfit(text, replace(box, width=widest_line(text)), source)
 
 
 # ------------------------------------------------------------ whole documents
@@ -874,34 +914,49 @@ class FitReport:
 
 
 def fit_run(
-    texts: list[str], box: Box, source: str | None = None, *, resized: bool = False
+    texts: list[str],
+    box: Box,
+    source: str | None = None,
+    *,
+    resized: bool = False,
+    original: str | None = None,
 ) -> list[str]:
     """A message whose rows are stored in several commands, one text per
     command as Assistant-led writes them, fitted to *box* over the same
     commands. Text between commands kept as they are, such as Japanese left
     untranslated (see :func:`_spans`), is laid out as one text over its own
     commands (see :func:`spread`); Scroll Text rows wrap in their own
-    command. *source* is the Japanese of the whole message; *resized* is
-    :func:`fit_value`'s.
+    command. *source* is the Japanese of the whole message, which it is laid
+    out like, and *original* what its rows are read against, *source* by
+    default; *resized* is :func:`fit_value`'s.
 
     Fitting each command on its own would have pushed 353 of Fuuma
     Chronicle's 3,307 overflowing messages past its four-row window, against
     23 when fitted as one text."""
+    against = source if original is None else original
     if box.kind == "scroll" or len(texts) == 1:
         return [
             fit_value(
-                text, box, source=source if len(texts) == 1 else None, resized=resized
+                text,
+                box,
+                source=source if len(texts) == 1 else None,
+                resized=resized,
+                original=against,
             )
             for text in texts
         ]
-    spans = _spans([_command_kind(text) for text in texts])
+    spans = _spans([_command_kind(text, against, box.target) for text in texts])
     fitted = list(texts)
     for span in spans:
         if not span.flows:
             continue
         joined = "\n".join(texts[span.start : span.end])
         text = fit_value(
-            joined, box, source=source if len(spans) == 1 else None, resized=resized
+            joined,
+            box,
+            source=source if len(spans) == 1 else None,
+            resized=resized,
+            original=against,
         )
         if text != joined:
             fitted[span.start : span.end] = spread(text, span.end - span.start)
@@ -915,7 +970,11 @@ class _Slot:
     commands that hold its rows) reads as one text and is fitted over the
     same commands (see :func:`fit_run`). A choice's help is written over its
     comment's *rows* in *commands* as translation writes it (see
-    :func:`util.rpgmaker_blocks.write_help`)."""
+    :func:`util.rpgmaker_blocks.write_help`). *source* is what it is laid
+    out like, and *original* what it was translated from, which it is read
+    against (see :func:`untranslated`): the whole help when the value is a
+    part of it. Both are what the game keeps in `_original`, None for a
+    value never translated."""
 
     pointer: str
     box: Box
@@ -928,6 +987,11 @@ class _Slot:
     # The rows a window shows with this text and the rest of its block,
     # checked as one once all are written (see :func:`fit_document`).
     together: tuple[int, ...] | None = None
+    original: str | None = None
+
+    @property
+    def against(self) -> str | None:
+        return self.source if self.original is None else self.original
 
     def read(self):
         if self.run:
@@ -943,9 +1007,16 @@ class _Slot:
                 self.box,
                 self.source,
                 resized=resized,
+                original=self.against,
             )
         return [
-            fit_value(self.owner[self.key], self.box, source=self.source, resized=resized)
+            fit_value(
+                self.owner[self.key],
+                self.box,
+                source=self.source,
+                resized=resized,
+                original=self.against,
+            )
         ]
 
     def written(self, texts: list[str]) -> str:
@@ -982,8 +1053,16 @@ def _slots(document, file_name: str, layout: Layout) -> Iterator[_Slot]:
                 continue
             for name in fields:
                 if isinstance(entry.get(name), str):
-                    source = _original(entry, name) or entry[name]
-                    yield _Slot(f"/{index}/{name}", help_box(layout, source), source, entry, name)
+                    # Without an `_original` it was never translated, and
+                    # its window's rows are its own.
+                    source = _original(entry, name)
+                    yield _Slot(
+                        f"/{index}/{name}",
+                        help_box(layout, source or entry[name]),
+                        source,
+                        entry,
+                        name,
+                    )
     for owner, pointer in _note_owners(document):
         yield _Slot(f"{pointer}/note", note_box(layout), None, owner, "note")
     for commands, pointer in _command_lists(document):
@@ -1051,7 +1130,8 @@ def _command_slots(commands: list, pointer: str, layout: Layout) -> Iterator[_Sl
                     for own, rows in groupby(part.rows, lambda at: at in kept)
                     if not own
                 ]
-            source = blocks.source(commands, part) if len(runs) == 1 else None
+            original = blocks.source(commands, part)
+            source = original if len(runs) == 1 else None
             for rows in runs:
                 first = rows[0]
                 params = commands[first]["parameters"]
@@ -1062,6 +1142,7 @@ def _command_slots(commands: list, pointer: str, layout: Layout) -> Iterator[_Sl
                 slots.append((first, _Slot(
                     f"{pointer}/{first}/parameters/0", shown, source, params, 0, run,
                     commands, rows if block.kind == blocks.HELP else (), together,
+                    original,
                 )))
     for index, command in enumerate(commands):
         if not isinstance(command, dict):
@@ -1079,13 +1160,23 @@ def _command_slots(commands: list, pointer: str, layout: Layout) -> Iterator[_Sl
             and _original(command) is not None
             and _script_string(params[4]) is not None
         ):
-            slots.append((index, _Slot(f"{at}/4", variable_box(layout), None, params, 4)))
-        elif code == 324 and len(params) > 1 and isinstance(params[1], str):
-            slots.append((index, _Slot(f"{at}/1", nickname_box(layout), None, params, 1)))
-        elif code == 325 and len(params) > 1 and isinstance(params[1], str):
-            source = _original(command) or params[1]
             slots.append((index, _Slot(
-                f"{at}/1", help_box(layout, source, dialogue=True), source, params, 1
+                f"{at}/4", variable_box(layout), None, params, 4,
+                original=_original(command),
+            )))
+        elif code == 324 and len(params) > 1 and isinstance(params[1], str):
+            slots.append((index, _Slot(
+                f"{at}/1", nickname_box(layout), None, params, 1,
+                original=_original(command),
+            )))
+        elif code == 325 and len(params) > 1 and isinstance(params[1], str):
+            source = _original(command)
+            slots.append((index, _Slot(
+                f"{at}/1",
+                help_box(layout, source or params[1], dialogue=True),
+                source,
+                params,
+                1,
             )))
         elif code == 357 and len(params) > 3 and isinstance(params[3], dict):
             for key in MESSAGE_PLUGIN_TEXT.get(params[0], ()):
@@ -1108,9 +1199,13 @@ def _fitted_slots(document, file_name: str, layout: Layout, areas):
         # A message keeps untranslated rows as they are (see wrap_message),
         # and a note its untranslated tags (see wrap_note).
         if slot.box.kind != "note" and (
-            all(untranslated(row) for row in value.split("\n") if row.strip())
+            all(
+                untranslated(row, slot.against, slot.box.target)
+                for row in value.split("\n")
+                if row.strip()
+            )
             if slot.box.kind in ("message", "scroll")
-            else untranslated(value)
+            else untranslated(value, slot.against, slot.box.target)
         ):
             continue
         if areas is not None and slot.box.area not in areas:
@@ -1151,15 +1246,19 @@ def fit_document(
                 {"file": file_name, "pointer": slot.pointer, "before": value, "after": written}
             )
         if slot.together is None:
-            reasons = [misfit(written, slot.box)]
+            reasons = [misfit(written, slot.box, slot.against)]
         else:
             # Each part's lines are measured where they are written, and the
             # window's rows once every part is: it shows them all, the game's
             # own rows too. Spare rows moved to the end show nothing.
-            reasons = [misfit(written, replace(slot.box, rows=None))]
+            reasons = [misfit(written, replace(slot.box, rows=None), slot.against)]
             if checks[slot.together] is slot:
                 reasons.append(
-                    rows_misfit(blocks.shown(slot.commands, slot.together), slot.box)
+                    rows_misfit(
+                        blocks.shown(slot.commands, slot.together),
+                        slot.box,
+                        slot.against,
+                    )
                 )
         for reason in filter(None, reasons):
             report.misfits.append({"file": file_name, "pointer": slot.pointer, "reason": reason})
