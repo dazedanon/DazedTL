@@ -38,7 +38,7 @@ from .documents import (
 WORK = ".dazedtl/plugin-work"
 # Bump when scanning finds different files, text or problems, so saved scans
 # are read again once.
-SCAN_RULES = 2
+SCAN_RULES = 3
 # What the assistant can settle for one occurrence. Reports saved before every
 # occurrence needed a decision may still say "unresolved"; that text stays
 # with the assistant.
@@ -1106,6 +1106,8 @@ class PluginService:
         }
 
     def scan(self, project_id, value):
+        from util.translation_update_check.installer import is_game_plugin
+
         project, root = self.record(project_id)
         prefix, rows, config = self.inventory(project_id)
         language = game_source(root)
@@ -1134,6 +1136,10 @@ class PluginService:
             originals = {}
             original_issue = str(exc)
         protected = set(originals.get("keys", []))
+        for path in [
+            path for path, row in rows.items() if not is_game_plugin(row.get("plugin", ""))
+        ]:
+            del rows[path]
         for path, row in rows.items():
             prior = value["files"].get(path, {})
             row["sourceHash"] = digest(raw_files[path]) if path in raw_files else ""
@@ -1187,6 +1193,11 @@ class PluginService:
                         )
                     else:
                         item["protected"] = True
+            row["occurrences"] = [
+                item
+                for item in row["occurrences"]
+                if is_game_plugin(item.get("plugin", row.get("plugin", "")))
+            ]
             for item in row["occurrences"]:
                 item.setdefault("plugin", row["plugin"])
                 item.setdefault("enabled", row["enabled"])

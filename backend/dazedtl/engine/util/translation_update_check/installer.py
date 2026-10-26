@@ -10,6 +10,14 @@ from util.game_settings import game_target_language
 from util.rpgmaker_plugin_registry import entry_texts, update_plugin_entry, with_entries
 
 PLUGIN_NAME = "TranslationUpdateCheck"
+
+
+def is_game_plugin(name: str) -> bool:
+    """Whether the plugin `name` is the game's, not DazedTL's own update
+    check, whose text is no game text for a scan or check to read."""
+    return name != PLUGIN_NAME
+
+
 PLUGIN_DESCRIPTION = "Translation update warning"
 DEFAULT_PLUGIN_SRC = (
     Path(__file__).resolve().parents[2]
