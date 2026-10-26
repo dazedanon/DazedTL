@@ -57,9 +57,13 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from typing import TYPE_CHECKING
 
 from dazedtl import system
 from dazedtl.storage import exclusive, hold
+
+if TYPE_CHECKING:
+    from util.version_update.git_workflow import Checkout
 
 ACTION_TRAILER = "DazedTL-Action"
 STAGE_TRAILER = "DazedTL-Stage"
@@ -310,33 +314,61 @@ def _git(root, *args, **options):
 def _pending(root):
     """The files Git sees changed in the patch: tracked files changed or
     deleted, and new files the ignore rules let in."""
+    return _status(root)[0]
+
+
+def _status(root):
+    """`_pending` and the commit HEAD is at, from one `git status`."""
     listing = _git(
         root,
         "status",
-        "--porcelain=v1",
+        "--porcelain=v2",
+        "--branch",
         "-z",
         "--no-renames",
         "--untracked-files=all",
         "--ignore-submodules=all",
     ).stdout
-    return {entry[3:] for entry in listing.split("\0") if len(entry) > 3}
+    paths, head = set(), None
+    for entry in listing.split("\0"):
+        # Each kind of entry has its own number of fields before the path.
+        kind, _, rest = entry.partition(" ")
+        if kind == "#" and rest.startswith("branch.oid "):
+            head = rest.removeprefix("branch.oid ")
+        elif kind in _PATH_FIELDS:
+            paths.add(entry.split(" ", _PATH_FIELDS[kind])[-1])
+    return paths, head
 
 
-def _commit(root, paths, change):
-    """Commits `paths` as they are in the game on top of HEAD, or None when
-    that changes nothing."""
+# The fields before the path in each kind of `git status --porcelain=v2`
+# entry: changed, unmerged and untracked.
+_PATH_FIELDS = {"1": 8, "u": 10, "?": 1}
+# The trees of the latest commits checkpoints made or started from, so the
+# next checkpoint compares its tree with its parent's without asking Git; a
+# commit's tree never changes.
+_trees: dict[str, str] = {}
+
+
+def _tree(root, commit, tree=None):
+    """The tree of `commit`, which is `tree` when given."""
+    if commit not in _trees:
+        if len(_trees) >= 64:
+            _trees.clear()
+        _trees[commit] = (
+            tree or _git(root, "rev-parse", f"{commit}^{{tree}}").stdout.strip()
+        )
+    return _trees[commit]
+
+
+def _commit(root, paths, change, head):
+    """Commits `paths` as they are in the game on top of `head`, the commit
+    HEAD is at, or None when that changes nothing."""
     from util.version_update.git_workflow import _commit_tree, _temporary_index
 
-    found = _git(
-        root,
-        "rev-parse",
-        "--path-format=absolute",
-        "--git-path",
-        "index",
-        "HEAD",
-        "HEAD^{tree}",
-    ).stdout.splitlines()
-    game_index, head, before = Path(found[0]), found[1], found[2]
+    if head is None or head == "(initial)":
+        # Git fails a branch with no commit here, as it did before.
+        head = _git(root, "rev-parse", "--verify", "HEAD").stdout.strip()
+    game_index, before = _index(root), _tree(root, head)
     listed = "".join(path + "\0" for path in sorted(paths))
     index, environment = _temporary_index()
     try:
@@ -359,6 +391,7 @@ def _commit(root, paths, change):
     text = message(change)
     commit = _commit_tree(Path(root), tree, text, (head,))
     _move(root, game_index, head, commit, text.splitlines()[0], listed)
+    _tree(root, commit, tree)
     return commit
 
 
@@ -460,7 +493,7 @@ def _save(root, change, named, claimed):
     from util.len_patch_scope import dazedtl_files, grow_scope
 
     named = set(_relative(named))
-    pending = _pending(root)
+    pending, head = _status(root)
     # DazedTL's own files are never edits made outside it.
     own = (
         set()
@@ -479,9 +512,9 @@ def _save(root, change, named, claimed):
         if rules:
             # New rules can let in files they hid, such as the portable
             # settings an old rule order kept out.
-            pending = _pending(root)
+            pending, head = _status(root)
     chosen = joined | (pending & named if claimed is None else pending - claimed)
-    return _commit(root, chosen, change) if chosen else None
+    return _commit(root, chosen, change, head) if chosen else None
 
 
 def save(root, change, named=()):
@@ -521,6 +554,11 @@ def outside_edits(root):
 
 def _index(root):
     """The game's index file."""
+    from util.version_update.git_workflow import _carried
+
+    carried = _carried.get()
+    if carried is not None and carried.selected_root == Path(root).resolve():
+        return carried.index
     git = Path(root) / ".git"
     if git.is_dir():
         return git / "index"
@@ -561,13 +599,28 @@ class Checkpoint:
     writes that ended without their checkpoint are then committed as their
     own, and the edits made outside DazedTL as theirs."""
 
-    def __init__(self, root, paths: Iterable[str] | None, change: Change):
-        from util.version_update.git_workflow import wait_for_index_lock
+    def __init__(
+        self,
+        root,
+        paths: Iterable[str] | None,
+        change: Change,
+        checkout: Checkout | None = None,
+    ):
+        from util.version_update.git_workflow import carrying
 
         self.root = Path(root)
         self.folder = _folder(root)
         self.paths = list(_relative(paths or ()))
         self.phase = _phase.get()
+        # The read of the repository the write checked, whose settings and
+        # index path its Git calls reuse.
+        self.checkout = checkout
+        with carrying(checkout):
+            self._open(change)
+
+    def _open(self, change):
+        from util.version_update.git_workflow import wait_for_index_lock
+
         wait_for_index_lock(_index(self.root).with_name("index.lock"))
         with exclusive(self.folder / "checkpoint.lock"):
             if self.phase is None:
@@ -588,7 +641,9 @@ class Checkpoint:
         """Commits the write's change once it succeeded, or adds it to the
         writes waiting for its phase; returns its commit, or None when it
         changed nothing or waits."""
-        with exclusive(self.folder / "checkpoint.lock"):
+        from util.version_update.git_workflow import carrying
+
+        with carrying(self.checkout), exclusive(self.folder / "checkpoint.lock"):
             if self.phase is not None:
                 return _wait(
                     self.root, self.folder, self.phase, [*self.paths, *touched]

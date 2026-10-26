@@ -343,6 +343,11 @@ assert sorted([changed(), changed("HEAD~1")]) == [
     ["data/Items.json"],
     ["data/Map001.json"],
 ], history()
+# Git lists a changed file by its whole name, spaces and all.
+for raw in (b"[]", b"[null]"):
+    write("data/Map 002.json", raw)
+    clean()
+    assert git(kept, "show", "HEAD:data/Map 002.json").encode() == raw
 # An assistant's older git-scope with a shorter manifest keeps the files
 # DazedTL's checkpoints let into the patch.
 from util.len_patch_scope import sync_patch_scope

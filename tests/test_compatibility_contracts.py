@@ -13,6 +13,7 @@ from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock, patch
 
 from dazedtl.actions import ROWS, handler
+from dazedtl.compatibility import game_write
 from dazedtl.compatibility.guided import (
     phased_workflows,
     run_ace,
@@ -212,6 +213,26 @@ def finished(background):
     if returncode:
         raise AssertionError(errors)
     return output
+
+
+def checkout(game, *pending):
+    """A read of a set-up game's repository with the Git operations `pending`
+    under way."""
+    from util.version_update.git_workflow import Checkout
+
+    return Checkout(
+        selected_root=game,
+        repo=game,
+        prefix="",
+        git_paths={"index": game / ".git/index"},
+        current_branch="translation",
+        translation_branch="translation",
+        original_commit="0" * 40,
+        translation_commit="1" * 40,
+        pending_operations=pending,
+        asset_sync_pending=False,
+        settings={},
+    )
 
 
 class CompatibilityContracts(unittest.TestCase):
@@ -1111,13 +1132,10 @@ def parse(codeList, i, headerString, jaString):
         with TemporaryDirectory() as temporary:
             game = Path(temporary)
             (game / ".git").mkdir()
-            status = {
-                "configured": True,
-                "pending_operations": ["CHERRY_PICK_HEAD"],
-                "current_branch": "translation",
-                "translation_branch": "translation",
-            }
-            with patch("util.len_git.git_status", return_value=status):
+            with patch(
+                "util.version_update.git_workflow.read_checkout",
+                return_value=checkout(game, "CHERRY_PICK_HEAD"),
+            ) as read:
                 with (
                     self.assertRaisesRegex(ValueError, "interrupted update"),
                     write_game(game),
@@ -1128,7 +1146,8 @@ def parse(codeList, i, headerString, jaString):
                 with self.assertRaisesRegex(ValueError, "interrupted update"):
                     actions.run(engine, install, print)
                 engine.assert_not_called()
-                status["pending_operations"] = []
+                read.return_value = checkout(game)
+                game_write._statuses.clear()
                 # A real repository's checkpoint is the checkpoint tests'.
                 with (
                     patch("dazedtl.compatibility.checkpoint_commits.Checkpoint"),
@@ -1271,12 +1290,6 @@ def parse(codeList, i, headerString, jaString):
             (game / "gameupdate/patch.ps1").write_text(
                 "# GameUpdate\n", encoding="utf-8"
             )
-            status = {
-                "configured": True,
-                "pending_operations": ["MERGE_HEAD"],
-                "current_branch": "translation",
-                "translation_branch": "translation",
-            }
             defaults = {
                 "forge": "gitlab",
                 "host": "gitgud.io",
@@ -1285,7 +1298,10 @@ def parse(codeList, i, headerString, jaString):
             }
             engine = TranslationEngine.__new__(TranslationEngine)
             with (
-                patch("util.len_git.git_status", return_value=status),
+                patch(
+                    "util.version_update.git_workflow.read_checkout",
+                    return_value=checkout(game, "MERGE_HEAD"),
+                ) as read,
                 patch("util.gameupdate_config.remote_urls", return_value={}),
                 patch("dazedtl.compatibility.checkpoint_commits.Checkpoint"),
             ):
@@ -1295,7 +1311,8 @@ def parse(codeList, i, headerString, jaString):
                     sorted(path.name for path in game.rglob("*")),
                     [".git", "data", "gameupdate", "patch.ps1"],
                 )
-                status["pending_operations"] = []
+                read.return_value = checkout(game)
+                game_write._statuses.clear()
                 saved = engine.game_update(game, defaults, "save", "fixture-patch")
             self.assertEqual(saved["state"], "ready")
             self.assertIn(

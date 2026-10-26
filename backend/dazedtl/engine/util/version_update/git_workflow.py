@@ -20,9 +20,11 @@ import subprocess
 import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
-from typing import Iterable, Mapping
+from typing import Iterable, Iterator, Mapping, NamedTuple
 
 import jsbeautifier
 
@@ -224,6 +226,59 @@ class RepositoryStatus:
             and not self.pending_cherry_pick
             and not self.asset_sync_pending
         )
+
+
+@dataclass(frozen=True)
+class Checkout:
+    """What a write to a game needs of its repository, from three Git calls
+    (`read_checkout`): where the repository is, the branch it is on, the
+    branches it registers, the operations under way and its settings. An
+    operation carries it (`carrying`) so its Git calls reuse it."""
+
+    selected_root: Path
+    repo: Path
+    prefix: str
+    # The PENDING_OPERATIONS' paths and the index's, by name.
+    git_paths: Mapping[str, Path]
+    current_branch: str | None
+    translation_branch: str | None
+    original_commit: str | None
+    translation_commit: str | None
+    # The PENDING_OPERATIONS under way.
+    pending_operations: tuple[str, ...]
+    asset_sync_pending: bool
+    # DazedTL's repository-local settings (`_settings`), None when Git could
+    # not read them.
+    settings: Mapping[str, str | None] | None
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.original_commit and self.translation_commit)
+
+    @property
+    def index(self) -> Path:
+        return self.git_paths["index"]
+
+    @functools.cached_property
+    def preserve_game_files(self) -> bool:
+        return _preserve_policy(self.repo, self.settings)
+
+
+# The repository read the Git calls of an operation reuse (`carrying`).
+_carried: ContextVar[Checkout | None] = ContextVar("carried_checkout", default=None)
+
+
+@contextmanager
+def carrying(checkout: Checkout | None) -> Iterator[None]:
+    """Runs an operation whose Git calls reuse `checkout`, a read of its
+    repository, for what the operation leaves as it is: the repository's
+    settings, such as whether it keeps game files as they are. Only for an
+    operation that changes no setting, which setup does."""
+    token = _carried.set(checkout)
+    try:
+        yield
+    finally:
+        _carried.reset(token)
 
 
 @dataclass(frozen=True)
@@ -484,13 +539,52 @@ def _configure_exact_tree_repo(repo: Path) -> None:
     _run_git(repo, "config", "core.eol", "lf")
 
 
+def _settings(repo: Path) -> dict[str, str | None] | None:
+    """DazedTL's repository-local settings by their lowercase names, from one
+    Git call: each one's last value, None for one set without a value; None
+    when Git can't read them."""
+    result = _run_git(
+        repo, "config", "--local", "-z", "--get-regexp", r"^dazedtl\.", check=False
+    )
+    if result.returncode not in {0, 1}:
+        return None
+    settings: dict[str, str | None] = {}
+    for entry in result.stdout.split("\0"):
+        if entry:
+            name, separator, value = entry.partition("\n")
+            settings[name] = value if separator else None
+    return settings
+
+
+def _config_bool(value: str | None) -> bool | None:
+    """A setting's value as Git reads a boolean, or None when it reads none."""
+    if value is None:
+        return True
+    word = value.strip().casefold()
+    if word in {"true", "yes", "on"}:
+        return True
+    if word in {"false", "no", "off", ""}:
+        return False
+    number = re.fullmatch(r"([-+]?\d+)[kmg]?", word)
+    return bool(int(number.group(1))) if number else None
+
+
 def _preserve_game_files(repo: Path) -> bool:
     """Len projects keep native encodings/layout and their reviewed ignore policy."""
-    result = _run_git(repo, "config", "--local", "--bool", "--get", _PRESERVE_GAME_FILES_CONFIG, check=False)
-    if result.returncode not in {0, 1}:
-        raise GitWorkflowError("Invalid repository setting: " + _PRESERVE_GAME_FILES_CONFIG)
-    if result.returncode == 0:
-        return result.stdout.strip() == "true"
+    carried = _carried.get()
+    if carried is not None and carried.repo == repo:
+        return carried.preserve_game_files
+    return _preserve_policy(repo, _settings(repo))
+
+
+def _preserve_policy(repo: Path, settings: Mapping[str, str | None] | None) -> bool:
+    """`_preserve_game_files` from the repository's `settings`."""
+    name = _PRESERVE_GAME_FILES_CONFIG.casefold()
+    if settings is None or name in settings:
+        value = None if settings is None else _config_bool(settings[name])
+        if value is None:
+            raise GitWorkflowError("Invalid repository setting: " + _PRESERVE_GAME_FILES_CONFIG)
+        return value
     # Repo-local settings do not travel with a clone. The original release
     # commit records this policy so later updates cannot silently normalize it.
     original = _run_git(repo, "log", "-1", "--format=%B", "refs/heads/original", check=False)
@@ -524,22 +618,33 @@ def _ref_commit(repo: Path, ref: str) -> str | None:
     return _ref_commits(repo, ref).get(ref)
 
 
-def _validate_branch_name(repo: Path, branch: str) -> str:
+def _validate_branch_name(repo: Path, branch: str, checked_out: str | None = None) -> str:
+    """`branch`, refusing a name Git can't give a branch or the original
+    branch's; `checked_out`, the branch HEAD is on, is one Git gave."""
     value = branch.strip()
-    valid = _run_git(repo, "check-ref-format", "--branch", value, check=False)
-    if not value or valid.returncode != 0:
+    valid = value and (
+        value == checked_out
+        or _run_git(repo, "check-ref-format", "--branch", value, check=False).returncode == 0
+    )
+    if not valid:
         raise GitWorkflowError(f"The configured translated branch is invalid: {branch!r}")
     if value == ORIGINAL_BRANCH:
         raise GitWorkflowError("The original branch cannot also be the translated branch")
     return value
 
 
-def _registered_translation_branch(repo: Path) -> str | None:
-    configured = _run_git(
-        repo, "config", "--local", "--get", _TRANSLATION_BRANCH_CONFIG, check=False
-    )
-    if configured.returncode == 0 and configured.stdout.strip():
-        return _validate_branch_name(repo, configured.stdout.strip())
+def _registered_translation_branch(
+    repo: Path,
+    settings: Mapping[str, str | None] | None = None,
+    checked_out: str | None = None,
+) -> str | None:
+    """The translated branch the repository's `settings` register, read
+    when not given; `checked_out` as for `_validate_branch_name`."""
+    if settings is None:
+        settings = _settings(repo) or {}
+    configured = (settings.get(_TRANSLATION_BRANCH_CONFIG.casefold()) or "").strip()
+    if configured:
+        return _validate_branch_name(repo, configured, checked_out)
     return None
 
 
@@ -659,19 +764,32 @@ def _applied_update_version(messages: list[str]) -> str | None:
     return None
 
 
-def _repository_for(
-    selected: Path, *names: str
-) -> tuple[Path, str, dict[str, Path]] | None:
-    """The repository holding `selected`, the folder's path in it, and the
-    repository-internal paths `names`, as _git_paths resolves them, from the
-    same Git call."""
+class _Repository(NamedTuple):
+    repo: Path
+    # The selected folder's path in the repository.
+    prefix: str
+    # Repository-internal paths, as _git_paths resolves them, by name.
+    paths: dict[str, Path]
+    # The branch HEAD is on, None when it is detached or not asked for.
+    branch: str | None = None
+
+
+def _repository_for(selected: Path, *names: str, head: bool = False) -> _Repository | None:
+    """The repository holding `selected` and the repository-internal paths
+    `names`, with `head` the branch HEAD is on, from the same Git call; a
+    branch with no commit yet takes a second."""
     arguments = [argument for name in names for argument in ("--git-path", name)]
+    if head:
+        # --verify -q fails a HEAD with no commit only once the rest is printed.
+        arguments += ["--symbolic-full-name", "--verify", "-q", "HEAD"]
     result = _run_git(
         selected, "rev-parse", "--show-toplevel", "--path-format=absolute", *arguments, check=False
     )
-    if result.returncode != 0:
+    top, *lines = result.stdout.splitlines() or [""]
+    unborn = head and result.returncode == 1 and len(lines) == len(names)
+    if result.returncode != 0 and not unborn:
         return None
-    top, *lines = result.stdout.splitlines()
+    symbolic = lines.pop() if head and not unborn else ""
     if len(lines) != len(names):
         raise GitWorkflowError("Git did not resolve every repository path")
     repo = Path(top.strip()).resolve()
@@ -680,7 +798,10 @@ def _repository_for(
     except ValueError as exc:
         raise GitWorkflowError("Selected game folder is outside its Git repository") from exc
     prefix = "" if relative == Path(".") else relative.as_posix()
-    return repo, prefix, dict(zip(names, map(Path, lines)))
+    if unborn:
+        symbolic = _run_git(repo, "symbolic-ref", "-q", "HEAD", check=False).stdout.strip()
+    branch = symbolic.removeprefix("refs/heads/") if symbolic.startswith("refs/heads/") else None
+    return _Repository(repo, prefix, dict(zip(names, map(Path, lines))), branch)
 
 
 def _git_paths(repo: Path, *names: str) -> dict[str, Path]:
@@ -704,30 +825,64 @@ def worktree_clean(repo: Path) -> bool:
     return not _run_git(repo, "status", "--porcelain=v1", "-z").stdout
 
 
+def read_checkout(game_root: str | Path) -> Checkout | None:
+    """What a write to the game at `game_root` needs of its repository, or
+    None outside one. Each Git launch is costly on Windows, and the app reads
+    this around every game write: it shares calls wherever one can answer
+    more."""
+    selected = Path(game_root).expanduser().resolve()
+    found = (
+        _repository_for(selected, *PENDING_OPERATIONS, "index", head=True)
+        if selected.is_dir()
+        else None
+    )
+    if found is None:
+        return None
+    repo, prefix, paths, current_branch = found
+    settings = _settings(repo)
+    registered = _registered_translation_branch(repo, settings or {}, current_branch)
+    commits = _ref_commits(
+        repo, ORIGINAL_BRANCH, registered or _LEGACY_TRANSLATION_BRANCH
+    )
+    translation_branch = _translation_branch(registered, commits)
+    return Checkout(
+        selected_root=selected,
+        repo=repo,
+        prefix=prefix,
+        git_paths=paths,
+        current_branch=current_branch,
+        translation_branch=translation_branch,
+        original_commit=commits.get(ORIGINAL_BRANCH),
+        translation_commit=commits.get(translation_branch) if translation_branch else None,
+        pending_operations=tuple(
+            name for name in PENDING_OPERATIONS if paths[name].exists()
+        ),
+        asset_sync_pending=_asset_state_path(repo, prefix, "pending-assets").exists(),
+        settings=settings,
+    )
+
+
 def inspect_repository(game_root: str | Path) -> RepositoryStatus:
-    # Each Git launch is costly on Windows, and the app reads this status
-    # around every game write: it shares calls wherever one can answer more.
+    return read_repository(game_root)[0]
+
+
+def read_repository(game_root: str | Path) -> tuple[RepositoryStatus, Checkout | None]:
+    """The game's repository status, and the read of its checkout it was
+    made from, which holds its settings too."""
     selected = Path(game_root).expanduser().resolve()
     if not selected.is_dir():
         return RepositoryStatus(
             selected, None, "", None, False, None, None, False, None, None, False, False
-        )
-    found = _repository_for(selected, *PENDING_OPERATIONS)
-    if found is None:
+        ), None
+    checkout = read_checkout(selected)
+    if checkout is None:
         return RepositoryStatus(
             selected, None, "", None, False, None, None, False, None, None, True, False
-        )
-    repo, prefix, operations = found
-    pending = tuple(name for name, path in operations.items() if path.exists())
-    branch_result = _run_git(repo, "symbolic-ref", "--short", "-q", "HEAD", check=False)
-    current_branch = branch_result.stdout.strip() or None
-    registered = _registered_translation_branch(repo)
-    commits = _ref_commits(
-        repo, ORIGINAL_BRANCH, registered or _LEGACY_TRANSLATION_BRANCH
-    )
-    original_commit = commits.get(ORIGINAL_BRANCH)
-    translation_branch = _translation_branch(registered, commits)
-    translation_commit = commits.get(translation_branch) if translation_branch else None
+        ), None
+    repo, prefix = checkout.repo, checkout.prefix
+    original_commit = checkout.original_commit
+    translation_branch = checkout.translation_branch
+    translation_commit = checkout.translation_commit
     original_version = _version_from_history(repo, ORIGINAL_BRANCH, original_commit)
     translation_ref = translation_branch or TRANSLATION_BRANCH
     translation_messages = (
@@ -736,12 +891,12 @@ def inspect_repository(game_root: str | Path) -> RepositoryStatus:
     translation_version = _version_from_history(
         repo, translation_ref, translation_commit, translation_messages
     )
-    asset_sync_pending = _asset_state_path(repo, prefix, "pending-assets").exists()
-    return RepositoryStatus(
+    asset_sync_pending = checkout.asset_sync_pending
+    status = RepositoryStatus(
         selected_root=selected,
         repo_root=repo,
         game_prefix=prefix,
-        current_branch=current_branch,
+        current_branch=checkout.current_branch,
         original_exists=original_commit is not None,
         original_commit=original_commit,
         original_version=original_version,
@@ -749,7 +904,7 @@ def inspect_repository(game_root: str | Path) -> RepositoryStatus:
         translation_commit=translation_commit,
         translation_version=translation_version,
         worktree_clean=worktree_clean(repo),
-        pending_cherry_pick="CHERRY_PICK_HEAD" in pending,
+        pending_cherry_pick="CHERRY_PICK_HEAD" in checkout.pending_operations,
         asset_sync_pending=asset_sync_pending,
         asset_manifest_available=_asset_state_path(
             repo, prefix, "official-assets"
@@ -759,8 +914,9 @@ def inspect_repository(game_root: str | Path) -> RepositoryStatus:
         applied_update_version=_applied_update_version(translation_messages),
         asset_update_applied=asset_sync_pending
         and translation_version == original_version,
-        pending_operations=pending,
+        pending_operations=checkout.pending_operations,
     )
+    return status, checkout
 
 
 def _validate_version(version: str) -> str:
@@ -1780,9 +1936,9 @@ def unfinished_bootstrap(game_root: str | Path) -> bool:
     can be someone's work, so that repository is not recognized.
     """
     found = _repository_for(Path(game_root).expanduser().resolve())
-    if found is None or found[1] or _configured_translation_branch(found[0]) is not None:
+    if found is None or found.prefix or _configured_translation_branch(found.repo) is not None:
         return False
-    repo = found[0]
+    repo = found.repo
     head = _run_git(repo, "symbolic-ref", "-q", "HEAD", check=False).stdout.strip()
     remotes = _run_git(repo, "config", "--local", "--get-regexp", r"^remote\.", check=False).stdout
     if head != f"refs/heads/{TRANSLATION_BRANCH}" or remotes.strip():
@@ -1843,7 +1999,7 @@ def bootstrap_repository(
     # the same repository; the earlier attempt's commits stay in the reflog.
     restart = found is not None and unfinished_bootstrap(translated)
     if found is not None:
-        preserve_game_files = preserve_game_files or _preserve_game_files(found[0])
+        preserve_game_files = preserve_game_files or _preserve_game_files(found.repo)
 
     if found is None or restart:
         if found is None and translated.joinpath(".git").exists():
@@ -1911,7 +2067,7 @@ def bootstrap_repository(
             translation_tree.ignored_paths,
         )
     else:
-        repo, prefix, _paths = found
+        repo, prefix = found.repo, found.prefix
         _configure_exact_tree_repo(repo)
         _ensure_local_excludes(repo)
         status = inspect_repository(translated)
@@ -2216,11 +2372,15 @@ def _validate_conflict_path(path: str, prefix: str) -> None:
 
 
 def conflict_paths(game_root: str | Path) -> tuple[str, ...]:
-    status = inspect_repository(game_root)
-    if not status.repo_root:
-        return ()
+    selected = Path(game_root).expanduser().resolve()
+    found = _repository_for(selected) if selected.is_dir() else None
+    return _unmerged_paths(found.repo) if found else ()
+
+
+def _unmerged_paths(repo: Path) -> tuple[str, ...]:
+    """The paths a stopped cherry-pick left unmerged in `repo`."""
     output = _run_git(
-        status.repo_root,
+        repo,
         "diff",
         "--name-only",
         "--diff-filter=U",
@@ -2231,7 +2391,7 @@ def conflict_paths(game_root: str | Path) -> tuple[str, ...]:
 
 
 def _resolve_conflicts_with_official(repo: Path, prefix: str) -> tuple[str, ...]:
-    paths = conflict_paths(repo)
+    paths = _unmerged_paths(repo)
     for path in paths:
         _validate_conflict_path(path, prefix)
         stage_records = _run_git(
@@ -2305,7 +2465,7 @@ def _resolve_conflicts_with_official(repo: Path, prefix: str) -> tuple[str, ...]
         # The official file wins as the explicit fallback for those cases.
         _run_git(repo, "checkout", "--theirs", "--", path)
         _run_git(repo, "add", "--", path)
-    remaining = conflict_paths(repo)
+    remaining = _unmerged_paths(repo)
     if remaining:
         raise GitWorkflowError(
             "Some conflicts could not be resolved with the official version: "
@@ -2404,13 +2564,14 @@ def _record_already_present_version(
 
 
 def _cherry_pick(
-    game_root: Path,
+    status: RepositoryStatus,
     original_commit: str,
     version: str,
     *,
     auto_resolve: bool,
 ) -> UpdateResult:
-    status = inspect_repository(game_root)
+    """Brings `original_commit` into the translation; `status` is the one
+    its entry point read, as only the original branch moved since."""
     if not status.repo_root:
         raise GitWorkflowError("The translated game is not in a Git repository")
     repo = status.repo_root
@@ -2449,7 +2610,7 @@ def _cherry_pick(
             repo, original_commit, _run_git(repo, "rev-parse", "HEAD").stdout.strip(), version
         )
 
-    conflicts = conflict_paths(game_root)
+    conflicts = _unmerged_paths(repo)
     if not conflicts:
         detail = picked.stderr.strip() or picked.stdout.strip()
         if "empty" in detail.lower():
@@ -2620,12 +2781,13 @@ def original_lacks(game_root: str | Path) -> tuple[str, ...]:
     after its baseline, such as a VX Ace game's ace_json, and files the
     translation added. Repository metadata and DazedTL's portable files are
     each branch's own."""
-    status = inspect_repository(Path(game_root).expanduser().resolve())
-    if not status.repo_root or not status.original_commit or not status.translation_commit:
+    checkout = read_checkout(game_root)
+    if checkout is None or not checkout.configured:
         return ()
-    original = _tree_files(status.repo_root, status.original_commit, status.game_prefix)
-    translated = _tree_files(status.repo_root, status.translation_commit, status.game_prefix)
-    lacking = (_display_path(path, status.game_prefix) for path in set(translated) - set(original))
+    repo, prefix = checkout.repo, checkout.prefix
+    original = _tree_files(repo, checkout.original_commit, prefix)
+    translated = _tree_files(repo, checkout.translation_commit, prefix)
+    lacking = (_display_path(path, prefix) for path in set(translated) - set(original))
     return tuple(
         sorted(
             path
@@ -3168,9 +3330,12 @@ def _rebuilt_pending_asset_plan(
 
 
 def _complete_pending_asset_plan(
-    game: Path, result: UpdateResult, release: str | Path | None = None
+    status: RepositoryStatus, result: UpdateResult, release: str | Path | None = None
 ) -> UpdateResult:
-    status = inspect_repository(game)
+    """Copies the assets of the update `result` brought into the
+    translation; `status` is the one its entry point read, as the update
+    moved only branches since."""
+    game = status.selected_root
     if not status.repo_root:
         raise GitWorkflowError("The translated game is not in a Git repository")
     try:
@@ -3456,7 +3621,7 @@ def apply_official_update(
         raise
     try:
         result = _cherry_pick(
-            game, original_commit, version, auto_resolve=auto_resolve
+            status, original_commit, version, auto_resolve=auto_resolve
         )
     except Exception:
         # A cherry-pick that failed without conflicts to resolve left the
@@ -3470,7 +3635,7 @@ def apply_official_update(
                 repo, status.game_prefix, original_commit, status.original_commit
             )
         raise
-    return _complete_pending_asset_plan(game, result) if result.complete else result
+    return _complete_pending_asset_plan(status, result) if result.complete else result
 
 
 def apply_registered_original(
@@ -3482,8 +3647,18 @@ def apply_registered_original(
     """Brings the original branch's release into the translation and copies
     its assets. `release`, the folder the update was applied from, rebuilds
     a pending asset record that can no longer be read."""
-    game = Path(translated_game).expanduser().resolve()
-    status = inspect_repository(game)
+    return _apply_registered(
+        inspect_repository(translated_game), auto_resolve=auto_resolve, release=release
+    )
+
+
+def _apply_registered(
+    status: RepositoryStatus,
+    *,
+    auto_resolve: bool = True,
+    release: str | Path | None = None,
+) -> UpdateResult:
+    """`apply_registered_original` on the status its entry point read."""
     if not status.repo_root or not status.original_commit or not status.original_version:
         raise GitWorkflowError("The original branch has no recorded version to apply")
     _configure_exact_tree_repo(status.repo_root)
@@ -3505,15 +3680,15 @@ def apply_registered_original(
             status.original_version,
             content_changed=False,
         )
-        return _complete_pending_asset_plan(game, result, release)
+        return _complete_pending_asset_plan(status, result, release)
     result = _cherry_pick(
-        game,
+        status,
         status.original_commit,
         status.original_version,
         auto_resolve=auto_resolve,
     )
     return (
-        _complete_pending_asset_plan(game, result, release)
+        _complete_pending_asset_plan(status, result, release)
         if result.complete
         else result
     )
@@ -3527,7 +3702,7 @@ def continue_with_official(
     status = inspect_repository(game)
     if status.repo_root and not status.pending_cherry_pick and status.asset_update_applied:
         # The update stopped once the translation had it; its assets remain.
-        return apply_registered_original(game, release=release)
+        return _apply_registered(status, release=release)
     if not status.repo_root or not status.pending_cherry_pick:
         raise GitWorkflowError("There is no pending cherry-pick to continue")
     _configure_exact_tree_repo(status.repo_root)
@@ -3540,7 +3715,7 @@ def continue_with_official(
     result = UpdateResult(
         status.repo_root, original_commit, translated_commit, version, won
     )
-    return _complete_pending_asset_plan(game, result, release)
+    return _complete_pending_asset_plan(status, result, release)
 
 
 def abort_update(translated_game: str | Path) -> RepositoryStatus:
