@@ -502,9 +502,12 @@ function ProjectAmounts({ amounts }: { amounts: Amounts }) {
           : amounts.done.toLocaleString(),
       label: "lines translated",
     },
-    amounts.outputs > 0 && {
+    (amounts.outputs > 0 || amounts.countingFiles) && {
       key: "applied",
-      value: `${amounts.applied} / ${amounts.outputs}`,
+      // Saved files the count may still find translated are not known yet.
+      value: amounts.countingFiles
+        ? "Counting…"
+        : `${amounts.applied} / ${amounts.outputs}`,
       label: "files applied",
     },
     amounts.cost > 0 && {
