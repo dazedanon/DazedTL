@@ -29,7 +29,11 @@ skills), runs inside `write_game`, which holds the rules such writes share:
 - Once the outermost write to a game whose Git is set up succeeds, its change
   is one checkpoint commit on the translation branch
   ([checkpoint_commits](checkpoint_commits.py)), so every change DazedTL
-  makes can be seen and undone in the game's history.
+  makes can be seen and undone in the game's history. It refuses before
+  writing while the game's index lock is held, which would fail the
+  checkpoint, and a write that wrote its files but made no checkpoint, as a
+  failed checkpoint or pack leaves it, is committed under its own name by
+  the next one.
 
 Writers change files through the `GameWrite` it yields, or run an engine tool
 inside it and name what the tool wrote with `wrote`, or have the write find
@@ -264,8 +268,9 @@ def write_game(
     )
     if packs and (blocked := ace_blocked(root)):
         raise ValueError(blocked)
+    change = checkpoint_commits.current(action, summary, stage)
     point = (
-        checkpoint_commits.Checkpoint(root, paths)
+        checkpoint_commits.Checkpoint(root, paths, change)
         if outermost and status is not None
         else None
     )
@@ -277,20 +282,23 @@ def write_game(
         if first and not keeps
         else unrecorded.get() - {str(root)}
     )
+    # Once the block wrote its files, a write that makes no checkpoint leaves
+    # its change for the next checkpoint to commit under its name.
+    pending = None
     try:
         yield game
+        pending = game.touched
         if ace:
             game._settle()
             _packed(native, folder, game, log, subject)
         if point is not None:
-            game.checkpoint = point.record(
-                checkpoint_commits.current(action, summary, stage), game.touched
-            )
+            game.checkpoint = point.record(change, game.touched)
+        pending = None
     finally:
         unrecorded.reset(left)
         writing.reset(token)
         if point is not None:
-            point.close()
+            point.close(pending)
 
 
 def _packed(native, folder, game, log, subject):

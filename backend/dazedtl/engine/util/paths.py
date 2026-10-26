@@ -564,28 +564,6 @@ def _remove_identical_legacy_glossary(preferred: Path, legacy: Path) -> None:
         ) from exc
 
 
-def guidance_root_files(game_root: str | Path) -> list[str]:
-    """The game's files outside .dazedtl that saving its guidance may change:
-    legacy guidance it moves into .dazedtl, and the .gitignore that keeps
-    DazedTL's rules once the game's Git is set up."""
-    root = Path(game_root)
-    legacy = [
-        LEGACY_GAME_GLOSSARY_RELATIVE,
-        Path(LEGACY_QUIRKS_FILENAME),
-        *(
-            path.relative_to(root)
-            for path in (root / LEGACY_GAME_SKILLS_RELATIVE).rglob("*")
-            if not path.is_dir()
-        ),
-    ]
-    files = [
-        path.as_posix()
-        for path in legacy
-        if (root / path).exists() or (root / path).is_symlink()
-    ]
-    return files + ([".gitignore"] if game_git_set_up(root) else [])
-
-
 def validate_game_glossary_migration(game_root: str | Path | None) -> None:
     """Validate a legacy glossary move without changing the selected game."""
     _game_glossary_paths(game_root)

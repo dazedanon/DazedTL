@@ -82,6 +82,11 @@ legacy = game("legacy-glossary")
 # nothing, and the background record it starts lets it through once done.
 answering = game_write.requesting.set(True)
 try:
+    # Saving the game notes moves no legacy root file, so it names none and
+    # records nothing; it once named every one and waited for the record.
+    with engine.context():
+        engine.document_save(legacy, "game", digest(b""), "Theme - test\n")
+    assert not original_files.recorded(legacy)
     for attempt in range(200):
         try:
             with engine.context():
@@ -229,45 +234,74 @@ for failure in (ValueError("Refused."), InterruptedError("Stopped.")):
         pass
     assert git(kept, "rev-parse", "HEAD") == head, failure
     git(kept, "checkout", "--", "data/Map001.json")
-# An index lock a crashed Git left fails the write before its checkpoint, never
-# after: the branch once moved and the write still failed, so its receipt never
-# named the checkpoint.
+# An index lock a crashed Git left refuses a write before it writes, and at
+# once, as the lock is older than a Git command ever holds it: a context save
+# over one wrote the glossary, then failed at its checkpoint after waiting in
+# each Git command, over a minute, its change then saved as edits made
+# outside DazedTL and its draft refused as changed on disk.
 from util.version_update import git_workflow
 
 stale = kept / ".git/index.lock"
-stale.write_bytes(b"")
-try:
-    with patch.object(git_workflow, "INDEX_LOCK_WAIT", 0.2):
-        write("data/Map001.json", b'{"by": "a write over a stale lock"}')
-except GitWorkflowError as error:
-    assert "index.lock" in str(error), error
-else:
-    raise AssertionError("A write committed over a stale index lock.")
-finally:
-    stale.unlink()
-assert git(kept, "rev-parse", "HEAD") == head
-git(kept, "checkout", "--", "data/Map001.json")
-clean()
-# A context save over that lock writes the glossary, then fails at its
-# checkpoint, leaving a draft that holds the revision from before the write.
-# Saving the draft again once the lock is gone must succeed: the file holds
-# its text, so it was refused as a conflict with the failed save's own write.
+
+
+def lock_left():
+    stale.write_bytes(b"")
+    os.utime(stale, (time.time() - 60,) * 2)
+
+
 draft = engine.documents(kept)["glossary"]
-stale.write_bytes(b"")
+for attempt in (
+    lambda: write("data/Map001.json", b'{"by": "a write over a stale lock"}'),
+    lambda: engine.document_save(kept, "glossary", draft["revision"], "水 (Water)\n"),
+):
+    lock_left()
+    started = time.monotonic()
+    try:
+        attempt()
+    except GitWorkflowError as error:
+        assert "index.lock" in str(error), error
+    else:
+        raise AssertionError("A write went ahead over a stale index lock.")
+    finally:
+        stale.unlink()
+    assert time.monotonic() - started < git_workflow.INDEX_LOCK_WAIT / 2
+    assert git(kept, "rev-parse", "HEAD") == head
+    clean()
+assert engine.documents(kept)["glossary"] == draft
+# A write that wrote its files and then failed at its checkpoint, here as a
+# Git process took the index lock meanwhile, is committed under its own name
+# by the next write, and a context draft still on the revision that save
+# replaced, edited again, saves over it.
+from util import vocab
+
+write_vocab = vocab.write_game_vocab
+
+
+def then_locked(*arguments, **options):
+    write_vocab(*arguments, **options)
+    lock_left()
+
+
 try:
-    with patch.object(git_workflow, "INDEX_LOCK_WAIT", 0.2):
+    with patch.object(vocab, "write_game_vocab", then_locked):
         engine.document_save(kept, "glossary", draft["revision"], "水 (Water)\n")
 except GitWorkflowError as error:
     assert "index.lock" in str(error), error
 else:
-    raise AssertionError("A guidance save committed over a stale index lock.")
+    raise AssertionError("A guidance save committed over a held index lock.")
 finally:
     stale.unlink()
+assert git(kept, "rev-parse", "HEAD") == head
 assert engine.documents(kept)["glossary"]["text"] == "水 (Water)"
-saved = engine.document_save(kept, "glossary", draft["revision"], "水 (Water)\n")
-assert saved["glossary"]["text"] == "水 (Water)", saved
+saved = engine.document_save(
+    kept, "glossary", draft["revision"], "水 (Water)\n火 (Fire)\n"
+)
+assert saved["glossary"]["text"] == "水 (Water)\n火 (Fire)", saved
 clean()
-assert ".dazedtl/glossary.txt" in git(kept, "ls-files").split()
+assert history()[:2] == ["Context: Save guidance||Context"] * 2, history()
+assert changed("HEAD~1") == changed() == [".dazedtl/glossary.txt"]
+recovered = trailers.format("DazedTL-Recovered")
+assert git(kept, "log", "-2", "--format=" + recovered).splitlines() == ["", "true"]
 # A real conflict, other text in the file, is still refused, and so is a
 # revision of a document the game has no file for.
 for name, revision, text in (

@@ -4,11 +4,16 @@ its translation, and Git does every save and restore.
 
 The game-write gateway ([game_write](game_write.py)) opens a checkpoint for
 the outermost write to a game whose Git is set up and records it once the
-write succeeds, after packing; a failed or stopped write records nothing.
-Opening one first records the changes made outside DazedTL since the last
-checkpoint as their own (`outside_edits`), so a checkpoint holds only its
-write's change and no flow waits for a clean worktree. Game updates keep
-their own commits and record outside edits before they start.
+write succeeds, after packing; a write that failed or stopped while writing
+records nothing. One that wrote its files and then made no
+checkpoint, as a failed checkpoint or pack or an ended process leaves it,
+keeps the record it registered before writing, which names its change, and
+the next checkpoint commits it under that name, marked with a
+`DazedTL-Recovered` trailer (`_recover`). Opening one first records those,
+then the changes made outside DazedTL since the last checkpoint as their own
+(`outside_edits`), so a checkpoint holds only its write's change and no flow
+waits for a clean worktree. Game updates keep their own commits and record
+outside edits before they start.
 
 A checkpoint commits every pending change Git sees in the patch, which is
 the files the translation branch tracks or its .gitignore allows, and lets
@@ -37,8 +42,9 @@ checkpoint, or the outside-edits step, leaves those to it, and takes only its
 own files while a write that said nothing runs. The commit is built in a
 temporary index, so the user's staged changes stay as they are, and Git
 commands that take the index lock wait for a leftover one as `_run_git` does.
-The game's index lock is taken before the branch moves (`_move`), so one a
-crashed Git left fails the write with nothing committed, never after.
+A write refuses before it writes while the index lock is held, and the
+game's index lock is taken before the branch moves (`_move`), so one a
+crashed Git left fails the write with nothing written or committed.
 """
 
 from __future__ import annotations
@@ -64,6 +70,14 @@ OUTSIDE_EDITS = "outside_edits"
 SUBJECT_LIMIT = 100
 
 
+# Marks the checkpoint of a write committed after its write ended without one.
+RECOVERED_TRAILER = "DazedTL-Recovered"
+# The version of a write's record, which names its change so a write that
+# ended without its checkpoint is committed under its own name; a record of
+# another version is a write in progress's only.
+WRITE_RECORD = 1
+
+
 @dataclass(frozen=True)
 class Change:
     """What one checkpoint records: a plain summary, the workflow stage it
@@ -73,6 +87,7 @@ class Change:
     stage: str | None = None
     action: str | None = None
     target: str | None = None
+    recovered: bool = False
 
 
 OUTSIDE = Change("Edits made outside DazedTL", None, OUTSIDE_EDITS)
@@ -139,6 +154,8 @@ def message(change):
         trailers.append(f"{STAGE_TRAILER}: {change.stage}")
     if change.target:
         trailers.append(f"{TARGET_TRAILER}: {change.target}")
+    if change.recovered:
+        trailers.append(f"{RECOVERED_TRAILER}: true")
     return subject + ("\n\n" + "\n".join(trailers) if trailers else "")
 
 
@@ -157,21 +174,46 @@ def _record(path, value):
     system.write_text(path, json.dumps(value))
 
 
-class _Write:
-    """A write in progress, registered with the files it said it would change;
-    its lock, held while it runs, tells a live write from one whose process
-    ended."""
+def _fields(change):
+    return {
+        "summary": change.summary,
+        "stage": change.stage,
+        "action": change.action,
+        "target": change.target,
+    }
 
-    def __init__(self, folder, paths):
+
+class _Write:
+    """A write in progress, registered before it writes with the files it
+    said it would change and the change its checkpoint records; its lock,
+    held while it runs, tells a live write from one whose process ended.
+
+    A write that wrote its files but made no checkpoint, as a failed
+    checkpoint or pack, a stop then or an ended process leaves it, keeps its
+    record for the next checkpoint to commit (`_recover`). A write of a phase
+    names no change, as the phase's checkpoint takes its files."""
+
+    def __init__(self, folder, paths, change):
         self.folder = folder
         self.name = uuid.uuid4().hex
         self.handle = hold(folder / (self.name + ".lock"))
-        _record(
-            folder / (self.name + ".json"),
-            {"paths": sorted(paths) if paths else None},
-        )
+        self.value = {
+            "version": WRITE_RECORD,
+            "change": None if change is None else _fields(change),
+            "paths": sorted(paths) if paths else None,
+            "touched": [],
+        }
+        _record(folder / (self.name + ".json"), self.value)
 
-    def close(self):
+    def close(self, touched=None):
+        """Ends the write; `touched`, the files of a write that wrote them but
+        made no checkpoint, keeps its record for the next checkpoint."""
+        if touched is not None and self.value["change"] is not None:
+            self.value["touched"] = sorted(set(_relative(touched)))
+            _record(self.folder / (self.name + ".json"), self.value)
+            if self.handle is not None:
+                self.handle.close()
+            return
         if self.handle is not None:
             self.handle.close()
         _forget(self.folder, self.name)
@@ -182,28 +224,69 @@ def _forget(folder, name):
         system.unlink(folder / (name + suffix), missing_ok=True, ignore_errors=True)
 
 
-def _others(folder, own=None):
-    """The files other writes in progress said they would change, or None
-    while one of them said nothing."""
-    claimed = set()
+def _writes(folder, own=None):
+    """The records of the other writes, each with whether it is live: its
+    process holds its lock."""
     for record in sorted(folder.glob("*.json")):
         name = record.stem
         if own is not None and name == own.name:
             continue
         handle = hold(folder / (name + ".lock"))
         if handle is not None:
-            # Its process ended without closing it.
             handle.close()
-            _forget(folder, name)
-            continue
         try:
-            paths = json.loads(record.read_text(encoding="utf-8"))["paths"]
-        except OSError, ValueError, KeyError, TypeError:
-            paths = None
+            value = json.loads(record.read_text(encoding="utf-8"))
+        except OSError, ValueError:
+            value = None
+        yield name, handle is None, value if isinstance(value, dict) else {}
+
+
+def _others(folder, own=None):
+    """The files other writes in progress said they would change, or None
+    while one of them said nothing."""
+    claimed = set()
+    for _name, live, value in _writes(folder, own):
+        if not live:
+            continue
+        paths = value.get("paths")
         if not isinstance(paths, list):
             return None
         claimed.update(paths)
     return claimed
+
+
+def _ended(value):
+    """The change and files of a write that ended without its checkpoint,
+    by its record, or None for a record that names none."""
+    try:
+        if value["version"] != WRITE_RECORD or value["change"] is None:
+            return None
+        change = Change(**value["change"], recovered=True)
+        named = [*(value["paths"] or ()), *value["touched"]]
+        return change, {str(path) for path in named}
+    except KeyError, TypeError:
+        return None
+
+
+def _recover(root, folder, keep=frozenset()):
+    """Commits each write that ended without its checkpoint as its own,
+    under its name: the files it named or said it wrote, never edits made
+    since. One that shares a file with `keep`, the files of the write
+    recording its checkpoint, is left for that write's checkpoint to take,
+    as the file now holds that write's change too. A record that names no
+    change, or whose commit fails, is forgotten, its files left to the next
+    checkpoint as pending changes, so no record stops every later write."""
+    for name, live, value in _writes(folder):
+        if live:
+            continue
+        ended = _ended(value)
+        if ended and ended[1] & keep:
+            continue
+        try:
+            if ended:
+                _save(root, ended[0], ended[1], None)
+        finally:
+            _forget(folder, name)
 
 
 def _relative(paths):
@@ -412,6 +495,7 @@ def save(root, change, named=()):
     token = writing.set(writing.get() | {str(Path(root).resolve())})
     try:
         with exclusive(folder / "checkpoint.lock"):
+            _recover(root, folder)
             waiting = _settle(root, folder, change)
             commit = _save(root, change, [*named, *waiting], _others(folder))
             system.unlink(folder / WAITING, missing_ok=True)
@@ -426,6 +510,7 @@ def outside_edits(root):
     of writes in progress to them."""
     folder = _folder(root)
     with exclusive(folder / "checkpoint.lock"):
+        _recover(root, folder)
         _settle(root, folder)
         claimed = _others(folder)
         if claimed is not None:
@@ -433,18 +518,61 @@ def outside_edits(root):
     return None
 
 
+def _index(root):
+    """The game's index file."""
+    git = Path(root) / ".git"
+    if git.is_dir():
+        return git / "index"
+    found = _git(root, "rev-parse", "--path-format=absolute", "--git-path", "index")
+    return Path(found.stdout.strip())
+
+
+def recovered_text(root, relative):
+    """The text of the file at `relative` before and after the latest
+    checkpoint that changed it, None where there was no file, when that
+    checkpoint is a write committed after it ended without one and the file
+    is as it left it; otherwise None."""
+    from util.paths import game_git_set_up
+
+    if not game_git_set_up(root):
+        return None
+    marker = f"%(trailers:key={RECOVERED_TRAILER},valueonly,separator=)"
+    found = _git(root, "log", "-1", f"--format=%H %x00{marker}", "--", relative)
+    commit, _, mark = found.stdout.strip().partition(" \0")
+    if not commit or mark.strip() != "true":
+        return None
+    if _git(root, "status", "--porcelain", "--", relative).stdout.strip():
+        return None
+
+    def text(revision):
+        shown = _git(root, "show", f"{revision}:{relative}", check=False)
+        return shown.stdout.removeprefix("﻿") if shown.returncode == 0 else None
+
+    return text(commit + "^"), text(commit)
+
+
 class Checkpoint:
     """The checkpoint of one write in progress, or, inside `in_phase`, its
-    place among the writes waiting for their phase's."""
+    place among the writes waiting for their phase's.
 
-    def __init__(self, root, paths: Iterable[str] | None):
+    It refuses before the write while the game's index lock is held, waiting
+    once as Git commands do, since the checkpoint would fail after it; the
+    writes that ended without their checkpoint are then committed as their
+    own, and the edits made outside DazedTL as theirs."""
+
+    def __init__(self, root, paths: Iterable[str] | None, change: Change):
+        from util.version_update.git_workflow import wait_for_index_lock
+
         self.root = Path(root)
         self.folder = _folder(root)
         self.paths = list(_relative(paths or ()))
         self.phase = _phase.get()
+        wait_for_index_lock(_index(self.root).with_name("index.lock"))
         with exclusive(self.folder / "checkpoint.lock"):
+            if self.phase is None:
+                _recover(self.root, self.folder)
             claimed = None if self.phase else _others(self.folder)
-            self.write = _Write(self.folder, self.paths)
+            self.write = _Write(self.folder, self.paths, None if self.phase else change)
             if self.phase is not None:
                 return
             try:
@@ -464,6 +592,10 @@ class Checkpoint:
                 return _wait(
                     self.root, self.folder, self.phase, [*self.paths, *touched]
                 )
+            # A write that named no files may have changed any, so the
+            # writes that ended before it are left to its checkpoint.
+            if mine := set(_relative([*self.paths, *touched])):
+                _recover(self.root, self.folder, mine)
             return _save(
                 self.root,
                 change,
@@ -471,5 +603,8 @@ class Checkpoint:
                 _others(self.folder, self.write),
             )
 
-    def close(self):
-        self.write.close()
+    def close(self, touched=None):
+        """Ends the write; `touched`, the files of a write that wrote them
+        but made no checkpoint, leaves it for the next checkpoint to commit
+        under its name."""
+        self.write.close(touched)
