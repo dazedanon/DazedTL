@@ -17,3 +17,4 @@
 - **Set up:** **Change…** under Languages says at once that a game with work keeps its languages, instead of only after **Save languages**.
 - **Project:** a recent game whose folder is gone, such as on a disconnected drive, now reads **Game folder unavailable** in the project menu and under Recent projects, not only once opened.
 - **Footers:** a result that wraps beside its button, such as a two-line error, now ends right at the button instead of leaving a gap before it.
+- **Menus:** a menu or help note no longer flashes in the window's top-left corner before it moves beside its button when the app is busy.
