@@ -1014,7 +1014,7 @@ export const scenarios = {
   },
   "batch-waiting": {
     description:
-      "The database submitted as a Batch the stand-in holds at the provider; provider '{}' releases it.",
+      "The database submitted as a Batch the stand-in holds at the provider; provider '{\"hold\":false}' releases it.",
     steps: () => [open, ...setup, ...batch],
   },
   upgraded: {
