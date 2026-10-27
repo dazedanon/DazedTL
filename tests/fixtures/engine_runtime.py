@@ -1193,10 +1193,18 @@ try:
                 (policy, "あら、釣りをするのね。\n頑張って釣ってね。"),
             ):
                 configure_states({"engine": "MVMZ"}, temporary, generation)
-                result = parse([name("ママ"), *(command(401, [line]) for line in message)])
+                result = parse(
+                    [name("ママ"), *(command(401, [line]) for line in message)]
+                )
                 assert calls == [([f"[Hana]: {body}"], "")], calls
             assert result[1]["parameters"] == [r"\m[2]\z[1454]Hello."], result
-            parse([name(""), command(401, [r"ママ\m[2]\z[1454]"]), command(401, [message[1]])])
+            parse(
+                [
+                    name(""),
+                    command(401, [r"ママ\m[2]\z[1454]"]),
+                    command(401, [message[1]]),
+                ]
+            )
             assert calls == [([f"[Hana]: {message[1]}"], "")], calls
             assert names and set(names) == {"ママ"}, names
             with patch.object(parser, "INLINE401SPEAKERS", True):
