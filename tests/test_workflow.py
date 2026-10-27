@@ -42,6 +42,7 @@ from dazedtl.translation.requests import (
 from dazedtl.translation.results import EXPORT, Results
 from dazedtl.translation.run_compiler import CENSUS_UNCOVERED, SCOPE_RULES
 from dazedtl.translation.service import IMAGE_UNITS, Translation
+from dazedtl.translation.skill_users import for_batch
 
 from tests.fixtures import old_backup
 
@@ -68,11 +69,7 @@ class Engine:
 
     def compile(self, _root, _options, plan, language, skill_users=None):
         def users(batch):
-            notes = {
-                identity: skill_users[identity][0]
-                for identity in batch["sources"]
-                if identity in (skill_users or {})
-            }
+            notes, _names = for_batch(skill_users or {}, batch["sources"])
             return {"skill_users": notes} if notes else {}
 
         return [

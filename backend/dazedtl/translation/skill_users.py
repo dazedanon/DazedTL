@@ -27,7 +27,10 @@ from . import census, originals
 
 # The configuration key of the frozen policy, Guided's plan key for it.
 BATTLE_USERS_KEY = "battleMessageUsers"
-_DATABASE = ("Actors", "Classes", "Enemies", "System", "CommonEvents", "Troops")
+_DATABASE = {
+    name + ".json"
+    for name in ("Actors", "Classes", "Enemies", "System", "CommonEvents", "Troops")
+}
 _MAP = re.compile(r"Map\d+\.json")
 _MESSAGE = re.compile(r"(\d+)/message[1-4]")
 _SKILLS_KIND = "rpgmaker:database:Skills"
@@ -47,56 +50,50 @@ def _read(folder, name):
         return None
 
 
+def _messages(snapshot, skills, language):
+    """The skills whose battle messages hold each tuple of runs in one
+    Skills.json of the original, as the census counts its occurrences."""
+    with snapshot.materialized([skills]) as root:
+        data = _read(root, skills)
+    # The census's own reader, so a message is the occurrence it counts.
+    rows = census.read_json(skills, json.dumps(data, ensure_ascii=False))
+    found = {}
+    for entry in census.entries(rows, skills, "tool", language):
+        match = _MESSAGE.fullmatch(entry["location"])
+        record = (
+            data[int(match[1])]
+            if match and isinstance(data, list) and int(match[1]) < len(data)
+            else None
+        )
+        if entry["kind"] == _SKILLS_KIND and isinstance(record, dict):
+            found.setdefault(tuple(entry["runs"]), []).append(record.get("id"))
+    return found
+
+
 def _table(snapshot, language):
     """Each skill's users and the skills whose battle messages hold each
-    tuple of runs, from every MV/MZ data folder the original holds."""
+    tuple of runs, by every MV/MZ data folder the original holds."""
     from util import battle_users
 
-    folders = sorted(
-        {
-            PurePosixPath(name).parent
-            for name in snapshot.files
-            if PurePosixPath(name).name == "Skills.json"
-        }
-    )
+    by_folder = {}
+    for name in snapshot.files:
+        path = PurePosixPath(name)
+        by_folder.setdefault(path.parent, []).append(path)
     users, messages = {}, {}
-    for folder in folders:
-        names = [
-            name
-            for name in snapshot.files
-            if PurePosixPath(name).parent == folder
-            and (
-                PurePosixPath(name).stem in (*_DATABASE, "Skills")
-                and PurePosixPath(name).suffix == ".json"
-                or _MAP.fullmatch(PurePosixPath(name).name)
-            )
-        ]
-        with snapshot.materialized(names) as root:
-            local = Path(root) / folder
-            skills_file = (folder / "Skills.json").as_posix()
-            data = _read(local, "Skills.json")
-            # The census's own reader, so a message is the occurrence it counts.
-            rows = census.read_json(skills_file, json.dumps(data, ensure_ascii=False))
-            found = {}
-            for entry in census.entries(rows, skills_file, "tool", language):
-                match = _MESSAGE.fullmatch(entry["location"])
-                record = (
-                    data[int(match[1])]
-                    if match and isinstance(data, list) and int(match[1]) < len(data)
-                    else None
-                )
-                if entry["kind"] == _SKILLS_KIND and isinstance(record, dict):
-                    found.setdefault(tuple(entry["runs"]), []).append(record.get("id"))
-            if not found:
-                continue
-            maps = sorted(
-                PurePosixPath(name).name
-                for name in names
-                if _MAP.fullmatch(PurePosixPath(name).name)
-            )
-            table = battle_users.battle_users(partial(_read, local), maps)
-            users[folder.as_posix()] = table
-            messages[folder.as_posix()] = found
+    for folder, paths in sorted(by_folder.items()):
+        if not any(path.name == "Skills.json" for path in paths):
+            continue
+        found = _messages(snapshot, (folder / "Skills.json").as_posix(), language)
+        if not found:
+            continue
+        maps = sorted(path.name for path in paths if _MAP.fullmatch(path.name))
+        database = [path.name for path in paths if path.name in _DATABASE]
+        with snapshot.materialized(
+            [(folder / name).as_posix() for name in (*database, *maps)]
+        ) as root:
+            table = battle_users.battle_users(partial(_read, Path(root) / folder), maps)
+        users[folder.as_posix()] = table
+        messages[folder.as_posix()] = found
     return users, messages
 
 
@@ -139,3 +136,14 @@ def notes(workspace, project_id, root, configuration, sources):
                 battle_users.glossary_names(actors, enemies),
             )
     return result
+
+
+def for_batch(skill_users, sources):
+    """The notes of a request's units, by unit ID, and the names whose
+    glossary entries join it, from what notes() gave its plan."""
+    noted = [identity for identity in sources if identity in skill_users]
+    names = [name for identity in noted for name in skill_users[identity][1]]
+    return (
+        {identity: skill_users[identity][0] for identity in noted},
+        list(dict.fromkeys(names)),
+    )

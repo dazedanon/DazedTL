@@ -15,6 +15,7 @@ from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest
 from dazedtl.translation.git_status_cache import RepositoryStatusCache, file_signature
 from dazedtl.translation.requests import output_schema, provider_view
+from dazedtl.translation.skill_users import for_batch
 
 from . import git_blobs, request_parameters
 from .git_blobs import git as _git
@@ -280,15 +281,11 @@ class TranslationEngine:
             }
             for batch in plan["batches"]
         ]
-        skill_users = skill_users or {}
-        for batch in batches:
-            names = [
-                name
-                for identity in batch["sources"]
-                for name in skill_users.get(identity, ("", ()))[1]
-            ]
+        noted = [for_batch(skill_users or {}, batch["sources"]) for batch in batches]
+        for batch, (_notes, names) in zip(batches, noted):
             if names:
-                batch["glossary_names"] = list(dict.fromkeys(names))
+                batch["glossary_names"] = names
+        for batch in batches:
             try:
                 if batch.get("instruction_key"):
                     ctx(
@@ -312,7 +309,7 @@ class TranslationEngine:
                 self.project(source, options), batches, language
             )
         reading = active_source()
-        for original, result in zip(plan["batches"], compiled):
+        for original, result, (users, _names) in zip(plan["batches"], compiled, noted):
             context = result["context"]
             context["target_language"] = language
             # A Japanese source, every request's before the source became a
@@ -320,11 +317,6 @@ class TranslationEngine:
             if reading != JAPANESE:
                 context["source_language"] = reading
             context["scene_context"] = original.get("scene_context", "")
-            users = {
-                identity: skill_users[identity][0]
-                for identity in original["sources"]
-                if identity in skill_users
-            }
             if users:
                 context["skill_users"] = users
             if original.get("instruction_key"):
