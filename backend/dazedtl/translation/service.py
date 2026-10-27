@@ -902,6 +902,8 @@ Additional project instructions:
             )
         frozen = {"configuration": cfg, "batch": bool(batch_provider)}
         if action == "organize":
+            from util.request_packing import SHARED_LINES
+
             frozen.update(
                 lines=organize.AGENT_LINES
                 if selected["mode"] == "agent"
@@ -909,7 +911,7 @@ Additional project instructions:
                 characters=organize.AGENT_CHARACTERS
                 if selected["mode"] == "agent"
                 else organize.MAX_CHARACTERS,
-                shared=None if selected["mode"] == "agent" else organize.SHARED_LINES,
+                shared=None if selected["mode"] == "agent" else SHARED_LINES,
             )
         job = self.jobs.store.create(
             project_id,

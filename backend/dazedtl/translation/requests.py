@@ -14,6 +14,9 @@ from .files import digest, unique_object
 # every list a request holds and in the reply. A run freezes the policy in
 # its configuration, so earlier runs keep resuming with their own payloads.
 LINE_KEYS = "line-keys-v1"
+# Unlike Guided's packed-page note, this one does not ask for each line's own
+# format: in a 2026-10-27 A/B on gpt-6-luna, neither wording drew [Name]:
+# labels, and both turned Name「...」 into Name: "..." about as often.
 SCENES = "These lines come from separate scenes; keep each scene's speakers and context to its own lines:"
 SPEAKERS = (
     "Speakers by line (context only: do not translate these labels, add them to dialogue, "

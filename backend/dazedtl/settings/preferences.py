@@ -46,11 +46,12 @@ SAME_LINE_SPEAKERS = "event-same-line-speakers-v1"
 # Small RPG Maker event pages of one file share a request, each page labelled,
 # because each request otherwise repeats the full system prompt: a 970-map
 # game's Maps & events estimate fell from 4,089 to 2,173 requests and from
-# 23.5 to 14.0 million input tokens. A page of more than SHARED_PAGE_ENTRIES
-# (10) message boxes and choices keeps a request of its own, so no other
-# scene's speakers or subjects bleed into it, and its choice menus join that
-# request in play order when the page fits one request. A packed reply of the
-# wrong length writes none of its pages, which stay untranslated for a retry.
+# 23.5 to 14.0 million input tokens. A page of more than SHARED_LINES
+# (util/request_packing.py) message boxes and choices keeps a request of its
+# own, so no other scene's speakers or subjects bleed into it, and its choice
+# menus join that request in play order when the page fits one request. A
+# packed reply of the wrong length writes none of its pages, which stay
+# untranslated for a retry.
 PAGE_PACKING = "event-pages-v1"
 # Stretches left between translations an earlier run saved share requests up to
 # the request size, each labelled with the lines before it and their earlier

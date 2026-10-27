@@ -43,6 +43,7 @@ from util.speakers import (
     strip_speaker_prefix,
 )
 from util import custom_patterns, extensions, rpgmaker_qa_lint
+from util.request_packing import SHARED_LINES
 from util.skills import ctx, load_system_prompt
 from util.paths import (
     GLOSSARY_OVERRIDE_ENV,
@@ -3923,11 +3924,10 @@ def _message_end(commands, start, allowed):
 CHOICE_COLLECTION = False
 _EVENT_PASS = threading.local()
 # Set from the run's frozen request policy (pagePacking): event pages of one
-# file with at most SHARED_PAGE_ENTRIES message boxes and choices share a
+# file with at most SHARED_LINES message boxes and choices share a
 # request, each page labelled, instead of each costing a request of its own.
 # Longer pages keep their own requests, so no other scene bleeds into them.
 PAGE_PACKING = False
-SHARED_PAGE_ENTRIES = 10
 # Both notes ask for each line's own format: told only to keep pages'
 # speakers apart, a model wrote a packed request's names as [Name]: labels,
 # which pass 2 strips as nameplates.
@@ -3987,7 +3987,7 @@ class _PagePacker:
 
     def __init__(self):
         self.limit = _request_size()
-        self.shared = min(SHARED_PAGE_ENTRIES, self.limit)
+        self.shared = min(SHARED_LINES, self.limit)
         self.label = ""
         self.jobs = []
 

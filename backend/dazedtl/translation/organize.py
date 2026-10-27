@@ -23,10 +23,6 @@ AGENT_LINES = 250
 AGENT_CHARACTERS = 12000
 # Earlier lines of a split scene that travel with each later part.
 CONTEXT_LINES = 8
-# In API requests only scenes this short share a request, such as signs,
-# one-line remarks and choice menus; a longer conversation gets its own, so
-# another scene's speakers and subjects can't bleed into it.
-SHARED_LINES = 10
 KINDS = {"dialogue", "narration", "ui", "unknown"}
 FIELDS = {
     "id",
