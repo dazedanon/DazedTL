@@ -30,7 +30,7 @@ from util.qa.mechanical import evidence
 from util.qa.selection import _number_defect
 from util.rpgmaker_qa_preflight import _untranslated as preflight_untranslated
 from util.source_text import holds_source, source_left
-from util.speakers import strip_echoed_speaker, translate_speaker
+from util.speakers import inline_speaker, strip_echoed_speaker, translate_speaker
 from util.translation import (
     CONTEXT_SOURCE,
     _context_block,
@@ -223,6 +223,30 @@ class LanguageTests(unittest.TestCase):
         asked.clear()
         translate_speaker("ファイン", [], "French", translate)
         self.assertEqual(len(asked), 1)
+
+    def test_an_inline_speaker_reads_the_same_for_every_caller(self):
+        # Format detection and the MV/MZ parser each kept a copy of the rule
+        # and read the same line differently. Detection reads the source
+        # form; the parser also the forms a re-export or English game holds.
+        for line, source, written_back in (
+            ("ミカ「やあ」", ("ミカ", "ミカ"), ("ミカ", "ミカ")),
+            ("ミカ：「やあ」", ("ミカ：", "ミカ："), ("ミカ：", "ミカ：")),
+            ("ミカ: 「やあ」", ("ミカ", "ミカ: "), ("ミカ", "ミカ: ")),
+            ("ミカ 「やあ」", ("ミカ", "ミカ "), ("ミカ", "ミカ ")),
+            ("ミカ(小声)「やあ」", None, ("ミカ", "ミカ")),
+            ('Mika: "Hi"', None, ("Mika", "Mika: ")),
+            ("Mika “Hi”", None, ("Mika", "Mika ")),
+            ("Mika (sighs)", None, ("Mika", "Mika ")),
+            ("[Mika] Hi", None, ("Mika", "[Mika] ")),
+            ("「やあ」", None, None),
+            (r"\C[2]ミカ「やあ」", None, None),
+            ("こんにちは", None, None),
+        ):
+            for form, expected in ((False, source), (True, written_back)):
+                found = inline_speaker(line, written_back=form)
+                self.assertEqual(found and found[:2], expected, (line, form))
+                if found:
+                    self.assertEqual(found.prefix + found.speech, line)
 
     def test_punctuation_only_text_keeps_each_writers_english_form(self):
         # One rule with each writer's form, so Japanese to English output
