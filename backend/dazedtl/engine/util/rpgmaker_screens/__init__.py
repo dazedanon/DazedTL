@@ -100,7 +100,7 @@ def choice_sets(data_root: str | Path) -> list[dict[str, Any]]:
             for index, command in enumerate(commands):
                 params = command.get("parameters") if isinstance(command, dict) else None
                 if (
-                    command.get("code") != 102
+                    blocks.code(command) != 102
                     or not isinstance(params, list)
                     or not params
                     or not isinstance(params[0], list)

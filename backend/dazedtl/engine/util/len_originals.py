@@ -101,7 +101,7 @@ def _remember(owner, original):
 
 
 def _command(before, after):
-    code = before["code"]
+    code = blocks.code(before)
     old, new = before["parameters"], after["parameters"]
     if old == new:
         return

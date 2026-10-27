@@ -8,6 +8,7 @@ import os
 import re
 from pathlib import Path
 
+from util import rpgmaker_blocks as blocks
 from util.freshness import Digests
 from util import system
 from util.paths import replace_with_retry
@@ -70,10 +71,11 @@ def extract_records(filename: str, document) -> list[dict]:
     def events(value, parts=()):
         if isinstance(value, dict):
             params = value.get("parameters")
+            code = blocks.code(value)
             if isinstance(params, list):
-                if value.get("code") in {401, 405} and params:
+                if code in {401, 405} and params:
                     add(parts + ("parameters", 0), params[0], "dialogue")
-                elif value.get("code") == 102 and params and isinstance(params[0], list):
+                elif code == 102 and params and isinstance(params[0], list):
                     for index, choice in enumerate(params[0]):
                         add(parts + ("parameters", 0, index), choice, "dialogue")
             for key, child in value.items():

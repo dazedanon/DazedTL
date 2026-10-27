@@ -22,7 +22,6 @@ from typing import Any, Iterable
 from util import languages
 from util.original_values import Originals
 from util import rpgmaker_blocks as blocks
-from util.rpgmaker_blocks import command_lists
 from util.rpgmaker_markers import PluginList, comment_markers, lists_mz
 from util.rpgmaker_plugin_registry import PluginRegistryError, loaded_entries
 from util.rpgmaker_qa_checks import BATTLE_MESSAGES, battler_name_note, runtime
@@ -280,7 +279,7 @@ class _Checks:
                 )
         for name, document in self.documents.items():
             if _EVENT_FILE_RE.fullmatch(name):
-                for path, commands in command_lists(document):
+                for path, commands in blocks.command_lists(document):
                     self._page(name, path, commands)
 
     def _code(self, name, parts, live, source, note, check) -> None:

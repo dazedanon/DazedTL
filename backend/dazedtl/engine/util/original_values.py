@@ -193,14 +193,15 @@ def _is_command_list(value: list) -> bool:
 
 
 def _key(command: Any) -> tuple:
-    """What translation leaves of a command: its code, indent and every
+    """What translation leaves of a command: its code as the command holds
+    it, so commands pair only where their codes match, its indent and every
     parameter but text."""
     if not isinstance(command, dict):
         return (None,)
     parameters = command.get("parameters")
     parameters = parameters if isinstance(parameters, list) else []
     return (
-        blocks.code(command),
+        command.get("code"),
         command.get("indent"),
         len(parameters),
         tuple(
@@ -248,7 +249,7 @@ def commands(current: list, original: list) -> list[tuple[int, int]]:
     left = right = 0
     while left < len(mine) and right < len(theirs):
         (start, end), (other, other_end) = mine[left], theirs[right]
-        code = _key(current[start])[0]
+        code = blocks.code(current[start])
         if _key(current[start]) == _key(original[other]):
             if code in _ROW_CODES:
                 # A row apart from its command, such as one a translation
@@ -262,7 +263,7 @@ def commands(current: list, original: list) -> list[tuple[int, int]]:
             right += 1
         elif code in _LOOSE:
             left += 1
-        elif _key(original[other])[0] in _LOOSE:
+        elif blocks.code(original[other]) in _LOOSE:
             right += 1
         else:
             break
