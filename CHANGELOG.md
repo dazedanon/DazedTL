@@ -3,6 +3,17 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.39.0] - 2026-10-27
+
+### Changed
+
+- **Assistant-led:** an RPG Maker MV/MZ skill's battle messages, such as "%1 casts Fire!", now tell the model which characters and enemies use the skill, as Guided does, so it picks the right pronouns for them; an estimate still waiting for approval asks to be estimated again once.
+- **Assistant-led:** when your assistant organizes the text again, such as after a glossary change or a game update, every line that already has a translation keeps it and the new estimate covers only the rest, as Guided does, and requests the provider would read word for word the same are sent once.
+
+### Fixed
+
+- **Assistant-led:** a line an API run left in Japanese because its translation failed counted as translated on **Progress** and was never sent again; it now reads as left, and your assistant's next estimate sends it on its own.
+
 ## [2.38.1] - 2026-10-27
 
 ### Fixed
@@ -1180,6 +1191,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.39.0]: https://github.com/dazedanon/DazedTL/compare/v2.38.1...v2.39.0
 [2.38.1]: https://github.com/dazedanon/DazedTL/compare/v2.38.0...v2.38.1
 [2.38.0]: https://github.com/dazedanon/DazedTL/compare/v2.37.0...v2.38.0
 [2.37.0]: https://github.com/dazedanon/DazedTL/compare/v2.36.4...v2.37.0
