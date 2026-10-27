@@ -57,9 +57,25 @@ function attempt(args, log) {
 }
 
 /**
+ * Copies the logs folders a failed first attempt left in `kept`, its own and
+ * an upgrade's previous release's, to `<work>/<name>.first`, so a flake's
+ * app logs stay readable after its files are cleared.
+ */
+function keepLogs(name, kept) {
+  for (const folder of ["logs", "previous/logs"]) {
+    const logs = path.join(kept, folder);
+    if (fs.existsSync(logs))
+      fs.cpSync(logs, path.join(work, `${slug(name)}.first`, folder), {
+        recursive: true,
+      });
+  }
+}
+
+/**
  * Runs `args` with Node, its output in `<work>/<name>.log` and its files in
  * `kept`. A failed run gets one more, its output in `<name>.retry.log` and
- * its files cleared first; one that passes then is a flake.
+ * its files cleared first but its logs folders kept in `<name>.first`; one
+ * that passes then is a flake.
  */
 async function run(name, args, kept = "") {
   const first = path.join(work, `${slug(name)}.log`);
@@ -82,7 +98,17 @@ async function run(name, args, kept = "") {
       }
       return attempt(args, result.log);
     },
-    () => kept && fs.rmSync(kept, { recursive: true, force: true }),
+    () => {
+      if (!kept) return;
+      try {
+        keepLogs(name, kept);
+      } catch (error) {
+        console.log(
+          `Could not keep ${name}'s first logs: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      fs.rmSync(kept, { recursive: true, force: true });
+    },
   );
   Object.assign(result, outcome, { seconds: (Date.now() - started) / 1000 });
   // A check that passed leaves only its log, since the live tests' installs
@@ -145,6 +171,6 @@ for (const result of results)
 const failed = results.filter((result) => !result.passed);
 const flaky = results.filter((result) => result.flaky);
 console.log(
-  `\n${failed.length ? `${failed.length} of ${results.length} failed; their folders stay beside the logs` : `All ${results.length} passed`}${flaky.length ? ` (flaky, passed on retry: ${flaky.map((result) => `${result.name}, first log ${result.first}`).join("; ")})` : ""} in ${((Date.now() - started) / 1000).toFixed(0)} s.`,
+  `\n${failed.length ? `${failed.length} of ${results.length} failed; their folders stay beside the logs` : `All ${results.length} passed`}${flaky.length ? ` (flaky, passed on retry: ${flaky.map((result) => `${result.name}, first log ${result.first}, its logs folders in ${path.join(work, `${slug(result.name)}.first`)}`).join("; ")})` : ""} in ${((Date.now() - started) / 1000).toFixed(0)} s.`,
 );
 process.exitCode = failed.length ? 1 : 0;

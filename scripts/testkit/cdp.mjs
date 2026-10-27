@@ -66,8 +66,8 @@ export class Page {
         const targets = await (
           await fetch(`http://127.0.0.1:${port}/json/list`)
         ).json();
-        // The main process's inspector lists no pages; its port was free
-        // when the app started.
+        // The main process's inspector lists no pages; its port is the one
+        // the app reported taking (see debugArgs in app.mjs).
         if (node) return targets.find((item) => item.type === "node");
         const pages = targets.filter((item) => item.type === "page");
         if (pages.length && !pages.some((item) => spelling(item.url) === own))

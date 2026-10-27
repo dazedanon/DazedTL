@@ -21,16 +21,32 @@ export async function freePort() {
   return port;
 }
 
-/** Whether something listens on `port`. */
-const listening = (port) =>
-  new Promise((resolve) => {
-    const socket = net.connect(port, "127.0.0.1");
-    socket.once("connect", () => {
-      socket.destroy();
-      resolve(true);
-    });
-    socket.once("error", () => resolve(false));
-  });
+/**
+ * The arguments that open a test app's window and main process to DevTools.
+ * The app takes free ports itself and reports them, read back with
+ * `reportedPorts`: a port chosen before it starts can be taken in between by
+ * any process's connection, and an inspector that cannot listen leaves the
+ * app running without one.
+ */
+export const debugArgs = ["--remote-debugging-port=0", "--inspect=0"];
+
+/**
+ * The DevTools and inspector ports an app started with `debugArgs` printed in
+ * `output`, which holds that one start's output.
+ * @param {string} output
+ */
+export function reportedPorts(output) {
+  const port = (pattern) => Number(pattern.exec(output)?.[1] || 0);
+  const ports = {
+    debug: port(/DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)\//),
+    inspect: port(/Debugger listening on ws:\/\/127\.0\.0\.1:(\d+)\//),
+  };
+  if (!ports.debug || !ports.inspect)
+    throw new Error(
+      `The app reported no DevTools or inspector port:\n${output.trim().split("\n").slice(-15).join("\n")}`,
+    );
+  return ports;
+}
 
 /** The Electron executable of the checkout at `root`. */
 export function electronOf(root) {
@@ -56,13 +72,6 @@ export async function ensureRenderer(root) {
 }
 
 /**
- * Starts the app of the checkout at `root` on `profile` and waits for its
- * window. `tag` marks its processes; `env` adds variables such as a display.
- * @param {{ root: string, profile: string, tag: string, log: string,
- *   debug: number, inspect: number, env?: Record<string, string>,
- *   args?: string[] }} options
- */
-/**
  * The variables of a scenario app: those of this process, plus `env`. Under a
  * test display on Linux the app also gets none of the desktop session it
  * could reach: its bus, audio and runtime folder, and a Wayland compositor
@@ -86,19 +95,21 @@ export function appEnvironment(base, env, platform = process.platform) {
   return { ...variables, ...env };
 }
 
+/**
+ * Starts the app of the checkout at `root` on `profile` and waits for its
+ * window. `tag` marks its processes; `env` adds variables such as a display.
+ * Resolves its process and the DevTools and inspector ports it took.
+ * @param {{ root: string, profile: string, tag: string, log: string,
+ *   env?: Record<string, string>, args?: string[] }} options
+ */
 export async function startApp({
   root,
   profile,
   tag,
   log,
-  debug,
-  inspect,
   env = {},
   args = [],
 }) {
-  for (const port of [debug, inspect])
-    if (await listening(port))
-      throw new Error(`Port ${port} is taken; choose free ports.`);
   if (running(tag).length)
     throw new Error(`The app of ${tag} is already running.`);
   await ensureRenderer(root);
@@ -118,13 +129,15 @@ export async function startApp({
   variables[key] = [path.dirname(process.execPath), variables[key]].join(
     path.delimiter,
   );
+  // The log keeps earlier starts' output; this start's follows it.
+  const from = fs.existsSync(log) ? fs.statSync(log).size : 0;
+  const started = () => fs.readFileSync(log).subarray(from).toString("utf8");
   const output = fs.openSync(log, "a");
   const isolated = env.DISPLAY && process.platform === "linux";
   const electron = [
     electronOf(root),
     path.join(root, "app"),
-    `--remote-debugging-port=${debug}`,
-    `--inspect=${inspect}`,
+    ...debugArgs,
     ...(isolated ? ["--ozone-platform=x11", "--mute-audio"] : []),
     ...args,
   ];
@@ -159,15 +172,21 @@ export async function startApp({
   child.unref();
   await until(
     "the app window",
-    () =>
-      exit !== null || fs.readFileSync(log, "utf8").includes("dazedtl:shown"),
+    () => exit !== null || started().includes("dazedtl:shown"),
     120_000,
   );
   if (exit !== null)
     throw new Error(
-      `The app exited while starting:\n${fs.readFileSync(log, "utf8").trim().split("\n").slice(-15).join("\n")}`,
+      `The app exited while starting:\n${started().trim().split("\n").slice(-15).join("\n")}`,
     );
-  return child.pid;
+  try {
+    return { pid: child.pid, ...reportedPorts(started()) };
+  } catch (error) {
+    // An app nothing can drive is stopped rather than left holding the
+    // profile.
+    await stopApp(tag, child.pid);
+    throw error;
+  }
 }
 
 /** The processes of the scenario app tagged `tag`, its children included
