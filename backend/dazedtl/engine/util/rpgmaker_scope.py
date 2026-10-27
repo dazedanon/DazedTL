@@ -12,7 +12,11 @@ The engine (modules/rpgmakermvmz.py) translates, and Guided's line counts
 - the labels a map's events show from their notes (:func:`labels`), such as
   EventLabel's ``<LB:...>``
 
-Each is translated while it holds Japanese (util/source_text).
+Each is translated while it holds Japanese (util/source_text). A map's
+name and its events' labels keep no `_original` as commands do, but where a
+translation keeps letters of its source, as a Chinese one keeps a name's
+kanji, the map or event keeps that source in its own `_original`, under the
+field holding it (:func:`kept`), so the translation reads translated.
 """
 
 import re
@@ -64,11 +68,30 @@ def changes(commands: Any) -> list[Change]:
 
 
 class Label(NamedTuple):
-    """A label an event shows: the field holding it ("name" or "note") and
-    its text as the field holds it."""
+    """A label an event shows: the field holding it ("name" or "note"), its
+    text as the field holds it, and the source the event keeps for it, or
+    None (:func:`kept`)."""
 
     field: str
     text: str
+    source: str | None = None
+
+
+def kept(owner: Any, field: str) -> str | None:
+    """The source a map or event keeps for its *field* in `_original`, as
+    the field held it before a translation that kept letters of it; None
+    where it keeps none."""
+    original = owner.get("_original") if isinstance(owner, dict) else None
+    value = original.get(field) if isinstance(original, dict) else None
+    return value if isinstance(value, str) else None
+
+
+def tag_source(event: Any, tag: re.Pattern[str]) -> str | None:
+    """The source of the label note *tag* finds in an event's note, as the
+    note the event keeps has it, or None."""
+    source = kept(event, "note")
+    match = tag.search(source) if source is not None else None
+    return match[1] if match else None
 
 
 def note(event: Any) -> str:
@@ -84,9 +107,9 @@ def labels(event: Any) -> list[Label]:
     text = note(event)
     name = event.get("name") if isinstance(event, dict) else None
     if NAME_TAG in text and isinstance(name, str) and name:
-        found.append(Label("name", name))
+        found.append(Label("name", name, kept(event, "name")))
     for tag in NOTE_TAGS:
         match = tag.search(text)
         if match:
-            found.append(Label("note", match[1]))
+            found.append(Label("note", match[1], tag_source(event, tag)))
     return found

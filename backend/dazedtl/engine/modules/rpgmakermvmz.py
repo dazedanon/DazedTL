@@ -1028,6 +1028,32 @@ def _has_japanese_text(text, source=None) -> bool:
     return bool(re.search(LANGREGEX, sample.replace("\u3000", " ")))
 
 
+def _keeps_source(text, source) -> bool:
+    """Whether a translation *text* of *source* reads as source text left
+    without it but translated against it, as a Chinese translation that
+    keeps its source's kanji does: only a kept source tells it from text
+    never translated."""
+    return _has_japanese_text(text) and not _has_japanese_text(text, source)
+
+
+def _keep_source(owner, field: str, source, text) -> None:
+    """Keeps *source* in the `_original` of a map or event, whose name and
+    labels keep none otherwise (util/rpgmaker_scope `kept`), under *field*
+    where its translation *text* keeps letters of it; the first source kept
+    stays."""
+    if (
+        not PRESERVEORIGINAL
+        or not isinstance(source, str)
+        or rpgmaker_scope.kept(owner, field) is not None
+        or not _keeps_source(text, source)
+    ):
+        return
+    original = owner.get("_original")
+    if not isinstance(original, dict):
+        original = owner["_original"] = {}
+    original[field] = source
+
+
 def _text_needs_translation(current, source=None) -> bool:
     """Return whether a live value should be translated under the skip
     setting, read against its *source* when known."""
@@ -2109,6 +2135,8 @@ def prepareBatchMapNames() -> list[int]:
     filename_sources: list[tuple[str, str]] = []
     # Each unique name, in first-seen order, with the maps that use it.
     source_files: dict[str, list[str]] = {}
+    # Names a map still needs translated, read against the source it keeps.
+    needed: set[str] = set()
     for filename in _BATCH_MAP_NAME_FILES:
         path = Path("files") / filename
         with path.open("r", encoding="utf-8-sig") as source_file:
@@ -2118,11 +2146,13 @@ def prepareBatchMapNames() -> list[int]:
             continue
         filename_sources.append((filename, display_name))
         source_files.setdefault(display_name, []).append(filename)
+        if _text_needs_translation(
+            display_name, rpgmaker_scope.kept(document, "displayName")
+        ):
+            needed.add(display_name)
     # Older runs send every name again, finished or not.
     unique_sources = [
-        source
-        for source in source_files
-        if not SOURCE_TEXT or _text_needs_translation(source)
+        source for source in source_files if not SOURCE_TEXT or source in needed
     ]
 
     translated_by_source = {source: source for source in source_files}
@@ -2224,7 +2254,7 @@ def parseMap(data, filename):
 
                 # Count note labels; older runs send each one again.
                 count += sum(
-                    not SOURCE_TEXT or _text_needs_translation(label.text)
+                    not SOURCE_TEXT or _text_needs_translation(label.text, label.source)
                     for label in rpgmaker_scope.labels(evt)
                 )
 
@@ -2269,12 +2299,16 @@ def parseMap(data, filename):
         # can never fall through to a full-price single-string API request.
         if "Map" in filename:
             prepared_name = _preparedBatchMapName(filename)
+            name_source = rpgmaker_scope.kept(data, "displayName")
             if prepared_name is not None:
+                _keep_source(data, "displayName", data["displayName"], prepared_name)
                 data["displayName"] = prepared_name
                 if filename in _BATCH_MAP_NAME_REJECTED and filename not in MISMATCH:
                     MISMATCH.append(filename)
                 pbar.update(1)
-            elif SOURCE_TEXT and not _text_needs_translation(data["displayName"]):
+            elif SOURCE_TEXT and not _text_needs_translation(
+                data["displayName"], name_source
+            ):
                 pbar.update(1)
             else:
                 batch_phase = (os.getenv("BATCH_PHASE") or "").strip().lower()
@@ -2293,7 +2327,9 @@ def parseMap(data, filename):
                 translated_name = response[0]
                 if isinstance(translated_name, list):
                     translated_name = translated_name[0]
-                data["displayName"] = str(translated_name).replace('"', "")
+                translated_name = str(translated_name).replace('"', "")
+                _keep_source(data, "displayName", data["displayName"], translated_name)
+                data["displayName"] = translated_name
         
         # Batch translate <LB> event names
         lbTokens = translateLBNames(events)
@@ -2322,7 +2358,12 @@ def _map_pages(events, totalTokens):
             # runs send each label again, finished or not.
             for tag in rpgmaker_scope.NOTE_TAGS:
                 match = tag.search(rpgmaker_scope.note(event))
-                if match and (not SOURCE_TEXT or _text_needs_translation(match[1])):
+                if match and (
+                    not SOURCE_TEXT
+                    or _text_needs_translation(
+                        match[1], rpgmaker_scope.tag_source(event, tag)
+                    )
+                ):
                     tok = translateNoteOmitSpace(event, match)
                     totalTokens[0] += tok[0]
                     totalTokens[1] += tok[1]
@@ -2443,6 +2484,8 @@ def translateNoteOmitSpace(event, match):
         # another note tag, such as <dn:井戸><Sound:井戸>.
         current_note = event.get("note")
         if current_note == match.string:
+            if _keeps_source(translatedText, oldJAString):
+                _keep_source(event, "note", current_note, translatedText)
             event["note"] = (
                 current_note[: match.start(1)] + translatedText + current_note[match.end(1) :]
             )
@@ -2462,8 +2505,10 @@ def translateLBNames(events):
     for idx, event in enumerate(events):
         for label in rpgmaker_scope.labels(event):
             if label.field == "name" and (
-                _text_needs_translation if SOURCE_TEXT else _has_japanese_text
-            )(label.text):
+                _text_needs_translation(label.text, label.source)
+                if SOURCE_TEXT
+                else _has_japanese_text(label.text)
+            ):
                 lb_events.append((idx, label.text))
     
     # Batch translate if we have any
@@ -2479,9 +2524,11 @@ def translateLBNames(events):
         totalTokens[1] += response[1][1]
         
         # Apply translations back to events
-        for i, (evt_idx, _) in enumerate(lb_events):
+        for i, (evt_idx, name) in enumerate(lb_events):
             if i < len(translated_names):
-                events[evt_idx]["name"] = translated_names[i].replace('"', "").replace(" ", "_")
+                translated = translated_names[i].replace('"', "").replace(" ", "_")
+                _keep_source(events[evt_idx], "name", name, translated)
+                events[evt_idx]["name"] = translated
     
     return totalTokens
 

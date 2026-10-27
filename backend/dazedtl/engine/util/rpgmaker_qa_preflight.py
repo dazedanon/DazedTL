@@ -27,6 +27,7 @@ from util.rpgmaker_markers import (
     data_plugins,
 )
 from util.rpgmaker_qa_reach import MAY_SHOW, Reach
+from util.rpgmaker_scope import kept
 from util.source_text import holds_source, words_left
 
 _MAP_RE = re.compile(r"Map\d+\.json")
@@ -115,7 +116,8 @@ def visible_texts(
     """Each text players read in one data file: its pointer's parts, its
     value, its kind, whether the engine translated it, keeping its
     Japanese in `_original`, and that Japanese, or None where it keeps none.
-    Map names keep no `_original`.
+    A map name keeps one in the map's `_original` only where its
+    translation keeps letters of it (util/rpgmaker_scope `kept`).
 
     A message's or comment's rows count as translated where a translation
     owns them (see rpgmaker_blocks.owned), and their Japanese is the whole
@@ -177,7 +179,14 @@ def visible_texts(
                 if position is None or at == position:
                     yield base + (at,), value, "event text", translated, source
     if _MAP_RE.fullmatch(name) and isinstance(document, dict):
-        yield ("displayName",), document.get("displayName"), "map name", False, None
+        source = kept(document, "displayName")
+        yield (
+            ("displayName",),
+            document.get("displayName"),
+            "map name",
+            source is not None,
+            source,
+        )
     for field in DATABASE_FIELDS.get(name, ()):
         for index, entry in enumerate(document if isinstance(document, list) else []):
             if isinstance(entry, dict):

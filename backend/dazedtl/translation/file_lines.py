@@ -125,7 +125,7 @@ def lines(
     comments a plugin shows, count under *markers*, the comment markers
     Comment text translates, none while it is off."""
     from util import rpgmaker_blocks as blocks
-    from util.rpgmaker_scope import changes
+    from util.rpgmaker_scope import changes, kept
 
     if phase == "database":
         return _database(name, document)
@@ -208,20 +208,27 @@ def lines(
     if _MAP.fullmatch(name) and isinstance(readable, dict):
         value = readable.get("displayName")
         if isinstance(value, str):
-            found.append(Line("map name", (("displayName",),), (value,), ()))
+            source = kept(document, "displayName")
+            found.append(Line("map name", (("displayName",),), (value,), _kept(source)))
         found.extend(_labels(document))
     return found
 
 
 def _labels(document: Any) -> Iterator[Line]:
     """A map's note labels (util/rpgmaker_scope), each at the field holding
-    it; they keep no `_original`."""
+    it, with the source its event keeps for it."""
     from util.rpgmaker_scope import labels
 
     events = document.get("events") if isinstance(document, dict) else None
     for index, event in enumerate(events if isinstance(events, list) else ()):
         for label in labels(event):
-            yield Line("label", (("events", index, label.field),), (label.text,), ())
+            path = (("events", index, label.field),)
+            yield Line("label", path, (label.text,), _kept(label.source))
+
+
+def _kept(source: str | None) -> tuple[str, ...]:
+    """A map name's or label's sources: the one its map or event keeps."""
+    return () if source is None else (source,)
 
 
 def _pages(owner: Any, key: str) -> Any:
