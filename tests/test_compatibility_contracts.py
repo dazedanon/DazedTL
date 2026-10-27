@@ -384,6 +384,28 @@ class CompatibilityContracts(unittest.TestCase):
         Task().run.layer("host", lambda call, task: "host " + call(task))
         self.assertEqual(Task().run(), "host native")
 
+    def test_stand_ins_keep_the_real_engine_package(self):
+        # A plain module standing in for util hid every engine module the
+        # test did not name, so Batch continuation's tests failed on their
+        # own and passed only after another test had imported util.languages.
+        import util
+        from util import languages
+
+        stand_in = ModuleType("util.languages")
+        with replaced_modules({"util.languages": stand_in}):
+            from util import languages as replaced
+
+            self.assertIs(replaced, stand_in)
+            self.assertIs(sys.modules["util"], util)
+        self.assertIs(util.languages, languages)
+        self.assertIs(sys.modules["util.languages"], languages)
+        with (
+            self.assertRaisesRegex(ValueError, "util is a package"),
+            replaced_modules({"util": ModuleType("util")}),
+        ):
+            pass
+        self.assertIs(sys.modules["util"], util)
+
     def test_frozen_worker_defaults_preserve_payloads_and_legacy_recovery(self):
         # Regression: the native builder injects unsupported temperature into a
         # new guided Batch. Normalize before collection and Live serialization,
@@ -392,19 +414,10 @@ class CompatibilityContracts(unittest.TestCase):
 
         from dazedtl.compatibility.worker_policy import install
 
-        desktop, backend, environment, util, translation = (
+        environment, translation = (
             ModuleType(name)
-            for name in (
-                "desktop",
-                "desktop.backend",
-                "desktop.backend.manual_environment",
-                "util",
-                "util.translation",
-            )
+            for name in ("desktop.backend.manual_environment", "util.translation")
         )
-        desktop.backend = backend
-        backend.manual_environment = environment
-        util.translation = translation
         baseline = {
             "messages": [
                 {"role": "system", "content": "Approved game guidance"},
@@ -467,10 +480,7 @@ class CompatibilityContracts(unittest.TestCase):
         translation.getPricingConfig = pricing
         native_prepare = Mock(return_value="prepared")
         environment.prepare = point(native_prepare)
-        modules = {
-            module.__name__: module
-            for module in (desktop, backend, environment, util, translation)
-        }
+        modules = {module.__name__: module for module in (environment, translation)}
         with TemporaryDirectory() as temporary, replaced_modules(modules):
             root = Path(temporary)
             policy = {
@@ -792,7 +802,7 @@ class CompatibilityContracts(unittest.TestCase):
         from dazedtl.compatibility.request_parameters import host_routing
         from dazedtl.settings.openrouter import TRANSPORT
 
-        package, providers = ModuleType("util"), ModuleType("util.batch_providers")
+        providers = ModuleType("util.batch_providers")
         providers._openai_batch_body = lambda _, params: {
             **{key: value for key, value in params.items() if key != "extra_body"},
             **params.get("extra_body", {}),
@@ -812,7 +822,7 @@ class CompatibilityContracts(unittest.TestCase):
             "model": "fixture-model",
             "messages": [{"role": "user", "content": "Translate this source."}],
         }
-        with replaced_modules({"util": package, "util.batch_providers": providers}):
+        with replaced_modules({"util.batch_providers": providers}):
             for host in ("", "deepinfra"):
                 rows = [
                     {"custom_id": key, "params": host_routing(base, host)}
@@ -1303,14 +1313,15 @@ def parse(codeList, i, headerString, jaString):
                     else None
                 )
 
-            converter = ModuleType("util.ace")
-            converter.actions = SimpleNamespace(
-                run=pack, archive_in_root=archive_in_root
-            )
+            converter = ModuleType("util.ace.actions")
+            converter.run, converter.archive_in_root = pack, archive_in_root
             workflow = ModuleType("desktop.backend.workflow_actions")
             workflow.validate_plan = lambda _plan: None
             with replaced_modules(
-                {"util.ace": converter, "desktop.backend.workflow_actions": workflow},
+                {
+                    "util.ace.actions": converter,
+                    "desktop.backend.workflow_actions": workflow,
+                },
             ):
                 # The game names its common events file in another case.
                 packed[:] = ["Commonevents.rvdata2", "Scripts.rvdata2"]
@@ -1785,14 +1796,8 @@ class ManualJobs:
     def test_line_metadata_reaches_both_provider_payloads_without_changing_the_legacy_batch_contract(
         self,
     ):
-        package, context_module, skill_module, provider_module = (
-            ModuleType(name)
-            for name in (
-                "util",
-                "util.len_translation",
-                "util.skills",
-                "util.translation",
-            )
+        context_module, provider_module = (
+            ModuleType(name) for name in ("util.len_translation", "util.translation")
         )
         note = "Check whether the visitor or guard left."
         source_context = "門に二人がいる。"
@@ -1821,7 +1826,6 @@ class ManualJobs:
             ]
 
         context_module.request_contexts = contexts
-        skill_module.ctx = lambda *_args, **_kwargs: "Field guidance"
         provider_module.buildClaudeRequest = lambda **kwargs: {
             "captured": kwargs,
             "max_tokens": 8192,
@@ -1836,8 +1840,7 @@ class ManualJobs:
             "extra_body": {"prompt_cache_key": "fixture-cache"},
         }
         modules = {
-            module.__name__: module
-            for module in (package, context_module, skill_module, provider_module)
+            module.__name__: module for module in (context_module, provider_module)
         }
         engine = TranslationEngine.__new__(TranslationEngine)
         engine.project = lambda *_args: None
@@ -1855,7 +1858,11 @@ class ManualJobs:
                 }
             ]
         }
-        with replaced_modules(modules), TemporaryDirectory() as folder:
+        with (
+            patch("util.skills.ctx", lambda *_args, **_kwargs: "Field guidance"),
+            replaced_modules(modules),
+            TemporaryDirectory() as folder,
+        ):
             # A release that only changes the engine's code keeps saved plans.
             engine.source = Path(folder)
             util = engine.source / "util"
@@ -2059,15 +2066,16 @@ class ManualJobs:
                     self.translation_commit is not None and not self.pending_conflicts
                 )
 
-        package = ModuleType("util")
-        module = ModuleType("util.version_update")
-        package.version_update = module
         engine = TranslationEngine.__new__(TranslationEngine)
         for result in (Update("saved"), Update(None, ("data/Items.json",))):
-            with self.subTest(result=result):
-                module.continue_with_official = lambda _source, _release: result
-                with replaced_modules({"util": package, "util.version_update": module}):
-                    value = engine.version(Path("unused"), "continue", {})
+            with (
+                self.subTest(result=result),
+                patch(
+                    "util.version_update.continue_with_official",
+                    lambda _source, _release: result,
+                ),
+            ):
+                value = engine.version(Path("unused"), "continue", {})
                 self.assertEqual(value["complete"], result.complete)
                 self.assertEqual(value["pending_conflicts"], result.pending_conflicts)
 

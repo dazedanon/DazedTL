@@ -36,10 +36,27 @@ def engine_package(relative):
 _MISSING = object()
 
 
+def _package(name):
+    """Whether the module `name`, whose packages are imported, is a package."""
+    if name in sys.modules:
+        spec = getattr(sys.modules[name], "__spec__", None)
+    else:
+        spec = importlib.util.find_spec(name)
+    return spec is not None and spec.submodule_search_locations is not None
+
+
 class replaced_modules:
-    """Puts `modules` in sys.modules in place of the ones of those names, for
-    a `with` block or from start() to stop(), as patch.dict(sys.modules, ...)
-    does. Afterwards every module is as before: one first imported meanwhile
+    """Stands in `modules`, by module name such as util.batch_providers, for
+    a `with` block or from start() to stop(). Only the named modules are
+    stood in: the packages above one are the real ones, imported for real,
+    and name the stand-in meanwhile, so any module a test did not name
+    imports for real whatever ran before it in the process. A package is
+    never stood in: a plain module in place of util hid every engine module
+    the test did not name, which then failed to import unless another test
+    had imported it first. Stand in the modules inside a package instead,
+    or patch what it names.
+
+    Afterwards every module is as before: one first imported meanwhile
     may hold a stand-in, so it leaves its parent package as well as
     sys.modules and imports afresh when next needed. patch.dict left the
     package naming it, so a later test that imported it saw two copies."""
@@ -48,13 +65,24 @@ class replaced_modules:
         self.modules = modules
 
     def start(self):
+        for name in self.modules:
+            parent = name.rpartition(".")[0]
+            if parent:
+                importlib.import_module(parent)
+            if _package(name):
+                raise ValueError(
+                    f"{name} is a package; stand in the modules inside it, or "
+                    "patch what it names."
+                )
         self.before = dict(sys.modules)
         # What each replaced module's parent package named it, if anything.
         self.named = {}
-        for name in self.modules:
+        for name, module in self.modules.items():
             parent, _, child = name.rpartition(".")
-            if parent in sys.modules:
-                self.named[name] = vars(sys.modules[parent]).get(child, _MISSING)
+            if parent:
+                package = sys.modules[parent]
+                self.named[name] = vars(package).get(child, _MISSING)
+                setattr(package, child, module)
         sys.modules.update(self.modules)
         return self
 

@@ -566,12 +566,9 @@ class PublicationTests(unittest.TestCase):
                 },
             },
         )
-        package = ModuleType("util")
-        package.rpgmaker_qa = engine
         return SimpleNamespace(
             task_dir=task_dir,
             engine=engine,
-            package=package,
             plan=plan,
             refreshed=refreshed,
         )
@@ -582,9 +579,6 @@ class PublicationTests(unittest.TestCase):
         # refused its later corrections. Its binding follows its corrections.
         from types import ModuleType
 
-        # Imported before the stand-in engine replaces util: QA's status reads
-        # what Plugin files keeps.
-        import dazedtl.plugins.service  # noqa: F401
         from dazedtl.compatibility import text
         from dazedtl.translation.files import digest
 
@@ -614,7 +608,6 @@ class PublicationTests(unittest.TestCase):
         actions.validate_plan = lambda plan: None
         actions.action_guard = lambda *_: {}
         modules = {
-            "util": qa.package,
             "util.rpgmaker_qa": engine,
             "desktop.backend.workflow_actions": actions,
         }
@@ -697,14 +690,13 @@ class PublicationTests(unittest.TestCase):
         from pydantic import TypeAdapter
 
         qa = self.qa_task()
-        task_dir, engine, package, plan, refreshed = (
+        task_dir, engine, plan, refreshed = (
             qa.task_dir,
             qa.engine,
-            qa.package,
             qa.plan,
             qa.refreshed,
         )
-        with replaced_modules({"util": package, "util.rpgmaker_qa": engine}):
+        with replaced_modules({"util.rpgmaker_qa": engine}):
             state = text.qa_state(plan)
         _close_contracts()
         TypeAdapter(QaState).validate_json(json.dumps(state), strict=True)
@@ -769,7 +761,7 @@ class PublicationTests(unittest.TestCase):
                     findings=["QA-0001", "QA-0002"] if task_path else None,
                 ),
             )
-            with replaced_modules({"util": package, "util.rpgmaker_qa": engine}):
+            with replaced_modules({"util.rpgmaker_qa": engine}):
                 applied.append(text.qa_state(plan)["applied"])
         self.assertEqual(applied, [False, True, True])
         # A follow-up round's finding, made after the apply, waits to be
@@ -777,7 +769,7 @@ class PublicationTests(unittest.TestCase):
         document = read_json(task_dir / "findings.json")
         document["findings"].append({**document["findings"][0], "id": "QA-0003"})
         write_json(task_dir / "findings.json", document)
-        with replaced_modules({"util": package, "util.rpgmaker_qa": engine}):
+        with replaced_modules({"util.rpgmaker_qa": engine}):
             state = text.qa_state(plan)
         self.assertFalse(state["applied"])
         self.assertEqual(
@@ -792,7 +784,7 @@ class PublicationTests(unittest.TestCase):
             raise PermissionError(13, "Permission denied", str(path))
 
         log = []
-        with replaced_modules({"util": package, "util.rpgmaker_qa": engine}):
+        with replaced_modules({"util.rpgmaker_qa": engine}):
             text._set_aside(plan, log.append)
             self.assertEqual((log, task_dir.is_dir()), ([], True))
             engine.read_task = denied

@@ -1287,17 +1287,14 @@ class SettingsTests(unittest.TestCase):
     ):
         # Guided and compiled plans must agree on the token allowance; ordinary
         # request/byte limits and other providers retain their own behavior.
-        util, translation, batches = (
-            ModuleType(name)
-            for name in ("util", "util.translation", "util.batch_providers")
+        translation, batches = (
+            ModuleType(name) for name in ("util.translation", "util.batch_providers")
         )
         translation._openai_batch_token_limit = lambda: 600_000
         batches.batch_limits = lambda _: (50_000, 200_000_000)
         engine = TranslationEngine.__new__(TranslationEngine)
         engine.batch_supported = lambda _: "openai"
-        with replaced_modules(
-            {item.__name__: item for item in (util, translation, batches)}
-        ):
+        with replaced_modules({item.__name__: item for item in (translation, batches)}):
             config = {
                 "protocol": "openai",
                 "endpoint": "https://api.openai.com/v1",

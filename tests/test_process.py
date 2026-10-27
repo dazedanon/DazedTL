@@ -7,7 +7,7 @@ import unittest
 from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from types import ModuleType, SimpleNamespace
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock, patch
 
@@ -2410,7 +2410,6 @@ class ProcessTests(unittest.TestCase):
             frozen = (root / "log/batch_history.json").read_bytes()
             client = Mock()
             client.with_options.return_value = client
-            package = ModuleType("util")
             connection = {
                 "runtime_name": "fixture-key",
                 "provider": "openai",
@@ -2442,7 +2441,7 @@ class ProcessTests(unittest.TestCase):
                 }
             }
             resolve = lambda batch: settings.batch_connection(batch, plan)
-            package.batch_providers = SimpleNamespace(
+            providers = SimpleNamespace(
                 retrieve_batch=Mock(
                     return_value={
                         "api_status": "completed",
@@ -2476,7 +2475,7 @@ class ProcessTests(unittest.TestCase):
                     )
                 ),
             )
-            with replaced_modules({"util": package}):
+            with replaced_modules({"util.batch_providers": providers}):
                 result = process_view.provider_details(root, resolve)
             error = result["batches"][0]["errors"][0]
             self.assertEqual(
@@ -2485,7 +2484,7 @@ class ProcessTests(unittest.TestCase):
             self.assertIn("Unsupported temperature 0.", error["message"])
             self.assertNotIn("fixture-private-value", json.dumps(result))
             self.assertNotIn("Unrelated private request", json.dumps(result))
-            package.batch_providers.get_client.assert_called_once_with(
+            providers.get_client.assert_called_once_with(
                 "openai",
                 api_key="fixture-private-value",
                 api_url=connection["endpoint"],
@@ -2506,14 +2505,14 @@ class ProcessTests(unittest.TestCase):
                 baseline = deepcopy(current)
                 change()
                 with (
-                    replaced_modules({"util": package}),
+                    replaced_modules({"util.batch_providers": providers}),
                     self.assertRaises(ValueError),
                 ):
                     process_view.provider_details(root, resolve)
                 current.clear()
                 current.update(baseline)
                 connection = current["connections"][0]
-            package.batch_providers.get_client.assert_called_once()
+            providers.get_client.assert_called_once()
             # A Kimi Batch names Kimi, while its connection speaks OpenAI's protocol.
             connection.update(
                 provider="kimi", endpoint="https://api.moonshot.ai/v1", organization=""

@@ -132,17 +132,15 @@ class BatchContinuationTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             job, plan, requests, _state = self.fixture(root)
-            util, translation, providers, task, history = [
+            translation, providers, task, history = [
                 ModuleType(name)
                 for name in (
-                    "util",
                     "util.translation",
                     "util.batch_providers",
                     "util.translation_task",
                     "util.batch_history",
                 )
             ]
-            util.translation, util.batch_providers = translation, providers
             translation._batch_submit_lock = nullcontext
             translation.submitTranslationBatches = point(lambda steps: steps())
             create = Mock(side_effect=[{"id": "first"}, {"id": "second"}])
@@ -166,7 +164,7 @@ class BatchContinuationTests(unittest.TestCase):
             history.record_submit = Mock(side_effect=record_submit)
             modules = {
                 module.__name__: module
-                for module in (util, translation, providers, task, history)
+                for module in (translation, providers, task, history)
             }
 
             def request(index):
@@ -230,17 +228,15 @@ class BatchContinuationTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             job, plan, requests, state = self.fixture(root)
-            util, translation, providers, task, history = [
+            translation, providers, task, history = [
                 ModuleType(name)
                 for name in (
-                    "util",
                     "util.translation",
                     "util.batch_providers",
                     "util.translation_task",
                     "util.batch_history",
                 )
             ]
-            util.translation, util.batch_providers = translation, providers
             translation._batch_submit_lock = nullcontext
             translation.submitTranslationBatches = point(lambda steps: steps())
             create = Mock(side_effect=[failure(402), failure(500)])
@@ -259,7 +255,7 @@ class BatchContinuationTests(unittest.TestCase):
             history.record_submit = Mock()
             modules = {
                 module.__name__: module
-                for module in (util, translation, providers, task, history)
+                for module in (translation, providers, task, history)
             }
             request = {
                 "custom_id": "req-000000",
@@ -331,17 +327,15 @@ class BatchContinuationTests(unittest.TestCase):
             job["plan_hash"] = digest((root / "plan.json").read_bytes())
             job[continuation.APPROVAL] = continuation.binding(root, job, plan)
             write_json(root / "job.json", job)
-            util, translation, providers, task, history = [
+            translation, providers, task, history = [
                 ModuleType(name)
                 for name in (
-                    "util",
                     "util.translation",
                     "util.batch_providers",
                     "util.translation_task",
                     "util.batch_history",
                 )
             ]
-            util.translation, util.batch_providers = translation, providers
             translation._batch_submit_lock = nullcontext
             translation.submitTranslationBatches = point(lambda steps: steps())
             create = Mock(return_value={"id": "paid"})
@@ -376,7 +370,7 @@ class BatchContinuationTests(unittest.TestCase):
             with replaced_modules(
                 {
                     item.__name__: item
-                    for item in (util, translation, providers, task, history)
+                    for item in (translation, providers, task, history)
                 },
             ):
                 continuation.install_worker(root, plan)
