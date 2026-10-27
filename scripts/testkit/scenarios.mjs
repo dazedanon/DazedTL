@@ -671,10 +671,9 @@ const stoppedUpdate = [
       const { jobs } = await page.call("translation_state", {
         project_id: project.id,
       });
-      const done = (action) =>
-        jobs.find((job) => job.action === action && job.status === "complete")
-          .result;
-      const stage = done("stage_update");
+      const preview = jobs.find(
+        (job) => job.action === "version_preview" && job.status === "complete",
+      );
       // The app's Apply resolves conflicts at once; stopping before that is
       // what an update interrupted mid-apply leaves for Checkpoints.
       execFileSync(
@@ -684,10 +683,8 @@ const stoppedUpdate = [
           "utf8",
           path.join(import.meta.dirname, "stopped_update.py"),
           state.root,
-          state.game,
-          stage.official,
-          stage.version,
-          JSON.stringify(done("version_preview")),
+          path.join(state.profile, "workspace"),
+          preview.id,
         ],
         { encoding: "utf8" },
       );
