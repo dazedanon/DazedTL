@@ -3231,8 +3231,20 @@ try:
         import anthropic
         from desktop.backend.manual import worker_environment
 
+        # It also keeps a test scenario's OpenAI preset address, so its
+        # Batches take OpenAI's own path there as they do in the app.
+        from util.batch_providers import PROVIDER_OPENAI, detect_batch_provider
+
+        preset = "http://127.0.0.1:9/v1"
         folders = {"HOME": str(temporary), "APPDATA": str(temporary)}
-        with patch.dict(os.environ, {**folders, "ANTHROPIC_API_KEY": "app-key"}):
+        with patch.dict(
+            os.environ,
+            {
+                **folders,
+                "ANTHROPIC_API_KEY": "app-key",
+                "DAZEDTL_TEST_OPENAI_ENDPOINT": preset,
+            },
+        ):
             environment = worker_environment(
                 temporary, {"mode": "estimate", "settings": {}}
             )
@@ -3242,6 +3254,7 @@ try:
         )
         with patch.dict(os.environ, environment, clear=True):
             anthropic.Anthropic(api_key="run-key")
+            assert detect_batch_provider("fixture", preset, "openai") == PROVIDER_OPENAI
     # Guided reads each file's lines from the file (translation/file_lines.py)
     # and must agree with what the engine sends: a line it counts that the
     # engine never sends would read unfinished forever, and text the engine

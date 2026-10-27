@@ -1,12 +1,13 @@
 """Use the available token pool, not a one-provider-job gate."""
 
+import os
 import threading
 import unittest
 from contextlib import nullcontext
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from dazedtl.compatibility.batch_window import (
     BatchWindow,
@@ -305,6 +306,34 @@ class BatchWindowTests(unittest.TestCase):
             self.assertEqual(task_type._run_batch_poll_fetch(task), (3, 0))
             window.translation.fetchTranslationBatches.assert_called_once()
             self.assertEqual(window.providers.submit_batch.call_count, 3)
+
+    def test_guided_worker_on_the_scenario_openai_preset_takes_the_window_path(self):
+        # Scenarios point the OpenAI preset at a local stand-in, which counts
+        # as OpenAI's own API only through DAZEDTL_TEST_OPENAI_ENDPOINT; a
+        # Guided worker that read the hostname instead polled natively.
+        stand_in = "http://127.0.0.1:9/v1"
+        with (
+            TemporaryDirectory() as directory,
+            patch.dict(os.environ, {"DAZEDTL_TEST_OPENAI_ENDPOINT": stand_in}),
+        ):
+            window, task = self.fixture(Path(directory), "guided", [4])
+            window.plan["settings"]["api"] = stand_in
+            task.should_stop = True
+            task_type = type(
+                "Task", (), {"_run_batch_poll_fetch": point(lambda _: "native")}
+            )
+            install_worker(
+                window.root,
+                window.plan,
+                window.translation,
+                window.providers,
+                task_type,
+                window.approve,
+                window.recover,
+                window.record,
+                nullcontext,
+            )
+            self.assertIsNone(task_type._run_batch_poll_fetch(task))
 
     def test_clarifications_wait_for_the_shared_budget_without_becoming_uncertain(self):
         with TemporaryDirectory() as directory:
