@@ -13,9 +13,10 @@ from pathlib import Path
 from dazedtl import system
 from dazedtl.compatibility.batch_window import RUN_POLICY as BATCH_WINDOW
 from dazedtl.settings.execution import worker_secret
+from dazedtl.settings.language_pair import run_source
 from dazedtl.storage import write_json
 
-from . import census, organize, progress_report, skill_users
+from . import census, organize, progress_report, skill_users, unit_results
 from .compilation import batch_sources, compile_requests
 from .files import evidence, project_path, read_json, verify_evidence
 from .jobs import RunStore, now
@@ -23,6 +24,7 @@ from .operations import census_path, census_stale, lifecycle, require_baseline
 from .project import WORK, ProjectWorkspace, scope
 from .requests import plan_input, quote
 from .results import Results
+from .runner import SHARED_PAYLOADS, askers
 
 # Operations the app starts with the settings a run freezes; the helper's
 # operation command can't start them.
@@ -196,13 +198,20 @@ def prepare(engine, workspace, job, plan, progress):
     if plan["action"] == "organize":
         return _organize(engine, workspace, job, plan, progress)
     input_path = plan["arguments"].get("input_path")
+    reused = None
     if plan.get("finishes"):
-        # A run of declined requests compiles the plan the assistant's run did.
+        # A run of declined requests compiles the plan the assistant's run
+        # did, with the lines that run's organize left out.
         _declined, declined_plan = RunStore(workspace).load(
             plan["finishes"], job["project_id"]
         )
         input_path = declined_plan["input_path"]
-    return {"run": compile_run(engine, workspace, job, plan, input_path, progress)}
+        reused = declined_plan.get("reused")
+    return {
+        "run": compile_run(
+            engine, workspace, job, plan, input_path, progress, reused=reused
+        )
+    }
 
 
 def _organize(engine, workspace, job, plan, progress):
@@ -230,9 +239,24 @@ def _organize(engine, workspace, job, plan, progress):
                 "units": len(units),
             },
         )
-    progress(f"Grouping {len(units):,} lines into requests")
+    reused = None
+    left = units
+    if frozen.get("reuse") == unit_results.POLICY:
+        # Lines an earlier request translated keep their translation, so only
+        # the others are packed and quoted.
+        progress("Finding the lines already translated")
+        cfg = frozen["configuration"]
+        listing = Results(root).listing()
+        found = unit_results.entries(RunStore(workspace), project_id, root, listing)
+        answered = unit_results.current(
+            root, units, run_source(cfg), cfg["language"], found, listing
+        )
+        left = [unit for unit in units if unit["id"] not in answered]
+        if answered:
+            reused = unit_results.record(units, answered, found)
+    progress(f"Grouping {len(left):,} lines into requests")
     value = organize.plan(
-        units,
+        left,
         input_path,
         complete,
         frozen["lines"],
@@ -244,17 +268,25 @@ def _organize(engine, workspace, job, plan, progress):
     if not path.exists() or read_json(path) != value:
         write_json(path, value)
     summary = organize.summary(units, value)
+    if reused:
+        summary["translated"] = len(reused["units"])
     if coverage is not None:
         summary["coverage"] = coverage
-    run = compile_run(engine, workspace, job, plan, relative, progress, read)
+    run = compile_run(
+        engine, workspace, job, plan, relative, progress, read, reused=reused
+    )
     return {"run": run, "summary": summary}
 
 
-def compile_run(engine, workspace, job, plan, input_path, progress, read=None):
+def compile_run(
+    engine, workspace, job, plan, input_path, progress, read=None, reused=None
+):
     """Compiles the source plan into a new run and returns its ID. A run that
     finishes another run's declined requests quotes only what has no saved
     translation yet. ``read`` holds the hashes of input files read earlier,
-    which must not have changed since."""
+    which must not have changed since, and ``reused`` the units organize
+    left out of the plan with an earlier translation (unit_results.record),
+    which the run's results and export read back."""
     project_id, root, selected = (
         job["project_id"],
         Path(plan["source"]),
@@ -264,7 +296,11 @@ def compile_run(engine, workspace, job, plan, input_path, progress, read=None):
     cfg = frozen["configuration"]
     finishes = plan.get("finishes")
     require_baseline(engine, root, selected, lifecycle(workspace, project_id))
-    raw = plan_input(read_json(ProjectWorkspace(root).artifact(input_path)))
+    # Every line a plan of organize's holds may have a translation already.
+    raw = plan_input(
+        read_json(ProjectWorkspace(root).artifact(input_path)),
+        allow_empty=bool(reused),
+    )
     if cfg["mode"] != "agent" and not raw["complete"] and not finishes:
         raise ValueError(
             "API cost review requires the complete independently audited request corpus."
@@ -315,8 +351,11 @@ def compile_run(engine, workspace, job, plan, input_path, progress, read=None):
             request["params"] = engine.payload(request, cfg)
     results = Results(root)
     pending = [row for row in requests if not results.get(row)]
-    estimate = None
+    estimate = shared = None
     if cfg["mode"] != "agent":
+        # A request whose payload an earlier one sends is answered by it.
+        shared = askers(pending)
+        pending = [row for row in pending if row["id"] not in shared]
         progress(f"Estimating the cost of {len(pending):,} requests")
         counted = claude_inputs(engine, workspace, cfg, pending)
         provider = engine.batch_supported(cfg)
@@ -348,6 +387,10 @@ def compile_run(engine, workspace, job, plan, input_path, progress, read=None):
     if limits:
         # Its chunks wait for room in the provider's Batch window.
         value["batch_window"] = BATCH_WINDOW
+    if shared is not None:
+        value.update(shared_payloads=SHARED_PAYLOADS, askers=shared)
+    if reused:
+        value["reused"] = reused
     if finishes:
         value.update(label="Declined requests", finishes=finishes)
     run = store.create(project_id, value, estimate)

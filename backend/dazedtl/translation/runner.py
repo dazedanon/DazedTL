@@ -29,6 +29,26 @@ from .results import Results, kept
 # acceptance from those files and the results, so an interrupted collection
 # loses nothing and its provider job is only collected again.
 SAVE_INTERVAL = 1.0
+# An API run under this policy sends a provider payload that several of its
+# requests share once, as Guided queues a scene two maps repeat once: their
+# lines are the same text in the same order under the same keys, so the
+# result the first of them saves answers the others line by line. The plan
+# freezes the policy and each other request's first (askers), so earlier
+# runs send every request.
+SHARED_PAYLOADS = "shared-payloads-v1"
+
+
+def askers(requests):
+    """Each of the requests whose provider payload an earlier one of them
+    also sends, by ID, with that earlier request's ID."""
+    first, found = {}, {}
+    for row in requests:
+        sender = first.setdefault(digest(row["params"]), row)
+        if sender is not row and list(sender["sources"].values()) == list(
+            row["sources"].values()
+        ):
+            found[row["id"]] = sender["id"]
+    return found
 
 
 def kept_message(failing):
@@ -55,6 +75,16 @@ class Runner:
         self.results = Results(self.plan["source"])
         self.folder = store.folder(identity)
         self.requests = {row["id"]: row for row in self.plan["requests"]}
+        # The request whose answer answers each request asking its payload
+        # (askers), which is never sent itself.
+        self.sender = (
+            self.plan["askers"]
+            if self.plan.get("shared_payloads") == SHARED_PAYLOADS
+            else {}
+        )
+        self.askers = {}
+        for asker, sender in self.sender.items():
+            self.askers.setdefault(sender, []).append(asker)
         self.saved = time.monotonic()
         # Sums of request_usage, kept as rows change; see record_usage.
         self.request_totals = None
@@ -64,6 +94,16 @@ class Runner:
             self.job["status"] = status
         if message is not None:
             self.job["message"] = message
+        # A request asking the payload of one that ended without a result is
+        # never sent in this run; the next organize sends it.
+        for asker, sender in self.sender.items():
+            if self.job["states"][asker]["state"] == "pending" and self.job["states"][
+                sender
+            ]["state"] in {"failed", "uncertain"}:
+                self.job["states"][asker] = {
+                    "state": "failed",
+                    "message": f"Not sent: it asks what {sender} asks, which got no translation.",
+                }
         self.store.save(self.job)
         self.saved = time.monotonic()
 
@@ -106,6 +146,7 @@ class Runner:
                 "state": "accepted",
                 "message": kept_message(failing),
             }
+            self.answer(identity, output, failing)
         except ValueError as exc:
             self.job["states"][identity] = {"state": "failed", "message": str(exc)}
         # Each Live request is a paid call of its own.
@@ -115,6 +156,48 @@ class Runner:
         ):
             self.save()
         self.checkpoint()
+
+    def answer(self, sender, output=None, failing=None):
+        """Saves sender's translations, output or else its saved result, for
+        each request asking its payload, line by line in order; failing names
+        the lines sender kept in their source text (kept), which the askers
+        keep too."""
+        waiting = [
+            asker
+            for asker in self.askers.get(sender, ())
+            if self.job["states"][asker]["state"] != "accepted"
+        ]
+        request = self.requests[sender]
+        if waiting and output is None:
+            output = (self.results.get(request) or {}).get("translations")
+        if not output:
+            return
+        lines = list(request["sources"])
+        for asker in waiting:
+            row = self.requests[asker]
+            try:
+                # The asker's line at each position of the sender's.
+                mapped = dict(zip(lines, row["sources"], strict=True))
+                self.results.accept(
+                    row,
+                    {mapped[identity]: output[identity] for identity in lines},
+                    {
+                        "run_id": self.job["id"],
+                        "mode": self.plan["configuration"]["mode"],
+                        "model": self.plan["configuration"]["model"],
+                    },
+                )
+                self.job["states"][asker] = {
+                    "state": "accepted",
+                    "message": kept_message(
+                        {
+                            mapped[identity]: reason
+                            for identity, reason in (failing or {}).items()
+                        }
+                    ),
+                }
+            except ValueError as exc:
+                self.job["states"][asker] = {"state": "failed", "message": str(exc)}
 
     def record_usage(self, identity, response):
         if identity in self.job.get("refusal_retries", {}):
@@ -182,6 +265,10 @@ class Runner:
                     "state": "uncertain",
                     "message": "The connection ended without a saved response. Check provider usage before explicitly retrying.",
                 }
+        # Requests asking a payload whose answer is saved, as an interruption
+        # right after saving it leaves them.
+        for sender in self.askers:
+            self.answer(sender)
         if self.plan["configuration"]["mode"] == "batch":
             self.record_batch_usage()
         self.save()
@@ -197,7 +284,8 @@ class Runner:
     def live(self):
         for identity, request in self.requests.items():
             state = self.job["states"][identity]["state"]
-            if state != "pending":
+            # A request asking another's payload waits for its answer.
+            if state != "pending" or identity in self.sender:
                 continue
             if self.store.stopped(self.job["id"]):
                 self.save("stopped", "Stopped at a saved request boundary.")
@@ -268,6 +356,7 @@ class Runner:
                 row
                 for row in self.plan["requests"]
                 if self.job["states"][row["id"]]["state"] == "pending"
+                and row["id"] not in self.sender
             ]
             limit = self.plan["batch_limits"]
             import json

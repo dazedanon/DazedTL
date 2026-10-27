@@ -36,10 +36,11 @@ Rules apply before units, so text a rule sets aside never takes the unit for the
 When organize names text that isn't extracted, fix the extractor using the locations in `.dazedtl/len-method/work/census-uncovered.json`; set aside text players never see only with scope rules in `.dazedtl/len-method/work/scope-rules.json`.
 The reply holds counts only, and errors name unit IDs, so fix the extractor and organize again.
 Organize packs whole scenes of one group into requests sized for the mode (the model's entries per request for API work, about 250 lines in Assistant only), names the scenes in a packed request, splits larger scenes with their earlier lines as context, and binds the run to the units file.
+A line an earlier request translated keeps that translation while its unit ID and source text stay the same, so organizing again after a guidance edit or an extractor fix packs only the lines without one, and the reply counts the rest as `translated`; a line saved in its own source text is not translated and is packed again.
 Record what runtime substitutions such as `\N[1]` or `\V[3]` stand for in game.md, which every request carries.
 Every request carries the full system, glossary, SFX, field instructions, preceding source context, speaker-bearing `user` payload and advisory reference translations.
 In Assistant only, read each request with the helper, translate it, and save its receipt with `accept`; decline a request you won't translate rather than softening or leaving out lines.
-`results --run ID` writes the accepted translations by unit ID for the injector.
+`results --run ID` writes the accepted translations by unit ID for the injector, those organize kept from earlier requests included, and lists each line still without one under `missing`.
 
 ## Save small results; validate at the right scale
 

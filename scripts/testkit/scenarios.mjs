@@ -763,6 +763,118 @@ const queuedBatch = [
   ],
 ];
 
+/** The project's newest Assistant-led run, as the helper reads it. */
+async function organizedRun(page, state) {
+  const remembered = JSON.parse(
+    fs.readFileSync(
+      path.join(state.game, ".dazedtl/len-method/work/scripted-assistant.json"),
+      "utf8",
+    ),
+  );
+  return helper(page, state, "run", "--run", remembered.run);
+}
+
+/** The units the scripted assistant organized whose source holds `text`. */
+function unitsHolding(state, text) {
+  const { units } = JSON.parse(
+    fs.readFileSync(
+      path.join(state.game, ".dazedtl/len-method/work/source-units.json"),
+      "utf8",
+    ),
+  );
+  return units.filter((unit) => unit.source.includes(text)).length;
+}
+
+// The collapsed-line game's stand-in collapses every line holding it, so a
+// Live run keeps each such line in Japanese.
+const collapsed = "魔法の杖";
+
+const reorganized = [
+  [
+    "Open the game Assistant-led for Live API, the stand-in connected",
+    async ({ page, state }) => {
+      await openGame(page, {
+        root: state.root,
+        inspect: state.app.inspect,
+        game: state.game,
+        method: "Assistant-led",
+      });
+      // The OpenAI preset asks for each line by key, as Assistant-led API
+      // requests do, which the stand-in answers.
+      await connect(page, "", "openai");
+      const project_id = (await page.call("workspace_snapshot")).application
+        .project.id;
+      const current = await page.call("translation_state", { project_id });
+      await page.call("translation_save", {
+        project_id,
+        revision: current.revision,
+        values: { ...current.options, mode: "live" },
+      });
+      await page.call("translation_prepare", { project_id });
+    },
+  ],
+  assistantLed[1],
+  [
+    "The assistant organizes all the text; approve its Live estimate on Progress and the run translates it",
+    async ({ page, state }) => {
+      await assistant(page, state, "organize", "--complete");
+      const estimate = await organizedRun(page, state);
+      await page.click("Translation");
+      await page.click("Approve and start Live");
+      const run = await until(
+        "the Live run to end",
+        async () => {
+          const job = await organizedRun(page, state);
+          return (
+            ["complete", "failed", "uncertain"].includes(job.status) && job
+          );
+        },
+        5 * 60_000,
+      );
+      if (run.status !== "complete")
+        throw new Error(`Run ${run.id}: ${run.status}, ${run.message}`);
+      // Progress reads the lines the run kept in Japanese left.
+      const project_id = (await page.call("workspace_snapshot")).application
+        .project.id;
+      const { text } = (await page.call("translation_state", { project_id }))
+        .progress.metrics;
+      const kept = unitsHolding(state, collapsed);
+      if (text.translated !== text.total - kept)
+        throw new Error(
+          `Progress counts ${text.translated} of ${text.total} lines translated, with ${kept} kept in Japanese.`,
+        );
+      console.log(
+        `\n  Run ${run.id}: ${estimate.quote.units} lines quoted, ${text.translated} of ${text.total} translated`,
+      );
+    },
+  ],
+  [
+    "Add a glossary entry and organize again; the estimate quotes only the lines the run kept in Japanese",
+    async ({ page, state }) => {
+      // The game's own entries come before the base glossary's.
+      const glossary = path.join(state.game, ".dazedtl/glossary.txt");
+      const text = fs.readFileSync(glossary, "utf8");
+      const base = text.indexOf("# ── Base Glossary");
+      fs.writeFileSync(
+        glossary,
+        base < 0
+          ? `${text}\nミカ (Mika)\n`
+          : `${text.slice(0, base)}ミカ (Mika)\n\n${text.slice(base)}`,
+      );
+      await assistant(page, state, "organize", "--complete");
+      const run = await organizedRun(page, state);
+      const kept = unitsHolding(state, collapsed);
+      console.log(
+        `\n  Run ${run.id}: ${run.quote.units} lines quoted again; the first run kept ${kept}`,
+      );
+      if (!kept || run.quote.units !== kept)
+        throw new Error(
+          `The estimate after the glossary edit quotes ${run.quote.units} lines, not the ${kept} kept in Japanese.`,
+        );
+    },
+  ],
+];
+
 const assistantUpdate = [
   "Apply the update and copy the post-update task, the starting prompt's steps from census in the project's mode and languages",
   async ({ page }) => {
@@ -1375,6 +1487,12 @@ export const scenarios = {
       ...updateGame(),
       assistantUpdate,
     ],
+  },
+  "assistant-reorganized": {
+    description:
+      "An Assistant-led Live API project on the collapsed-line game: all its text organized, approved and translated, then a glossary entry added and the text organized again, whose estimate quotes only the lines the run kept in Japanese.",
+    game: "collapsed-line",
+    steps: () => reorganized,
   },
   "batch-waiting": {
     description:

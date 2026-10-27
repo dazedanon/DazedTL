@@ -32,6 +32,7 @@ from . import (
     repricing,
     run_compiler,
     skill_users,
+    unit_results,
 )
 from .assistant_release import AssistantRelease, PackageRefusal
 from .census import HELP_SEGMENT
@@ -50,7 +51,7 @@ from .operations import (
 from .playtest import game_fixes
 from .project import ADDED, WORK, ProjectWorkspace, options, scope
 from .requests import LINE_KEYS, counted, price, repriceable, sent_text
-from .results import Results, exported, review_digest
+from .results import Results, exported, left_lines, review_digest
 
 # The lifecycle record's fields the renderer reads; a ZIP's file stamps stay
 # in the backend, which compares them.
@@ -914,6 +915,9 @@ Additional project instructions:
                 if selected["mode"] == "agent"
                 else organize.MAX_CHARACTERS,
                 shared=None if selected["mode"] == "agent" else SHARED_LINES,
+                # Lines with a current translation keep it; an organize
+                # frozen without the policy packs every line.
+                reuse=unit_results.POLICY,
             )
         job = self.jobs.store.create(
             project_id,
@@ -1120,7 +1124,11 @@ Additional project instructions:
         job, plan = self.jobs.store.load(run_id, project_id)
         if plan["kind"] != "translation":
             raise ValueError("Results belong to translation runs.")
-        identities = [key for request in plan["requests"] for key in request["sources"]]
+        reused = plan.get("reused") or {"units": {}}
+        identities = [
+            *(key for request in plan["requests"] for key in request["sources"]),
+            *reused["units"],
+        ]
         if len(set(identities)) != len(identities):
             raise ValueError(
                 "Line IDs repeat across this run's requests. Read each request's result instead."
@@ -1145,7 +1153,15 @@ Additional project instructions:
         for request in plan["requests"]:
             value = saved.get(request)
             if value:
-                translations.update(exported(request, value))
+                # A line saved in its source text is no translation; the
+                # next organize sends it again.
+                left = left_lines(request, value)
+                translations.update(
+                    (identity, text)
+                    for identity, text in exported(request, value).items()
+                    if identity not in left
+                )
+                missing.update(dict.fromkeys(left, "untranslated"))
                 continue
             row = job["states"][request["id"]]
             if row["state"] == "accepted":
@@ -1154,6 +1170,13 @@ Additional project instructions:
                 row = job["states"][request["id"]] = {"state": "pending", "message": ""}
                 reopened = True
             missing.update(dict.fromkeys(request["sources"], row["state"]))
+        # Lines an earlier request translated, which organize left out; one
+        # whose translation is gone waits for the next organize.
+        for row in saved.reused_units(reused, list(reused["units"]), saved.listing()):
+            if "translation" in row:
+                translations[row["source_id"]] = row["translation"]
+            else:
+                missing[row["source_id"]] = "pending"
         # An Assistant only run has no worker that owns its record; an API
         # run's next organize resends the request instead.
         if reopened and job["mode"] == "agent":

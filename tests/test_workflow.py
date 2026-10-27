@@ -77,7 +77,7 @@ class Engine:
                 "context": {
                     **users(batch),
                     "system": "Translate into " + language,
-                    "glossary": "Approved names",
+                    "glossary": getattr(self, "glossary_text", "Approved names"),
                     "sfx_reference": "Advisory SFX",
                     "request_instructions": batch.get("instruction_key", ""),
                     "preceding_japanese_source_context": batch.get(
@@ -556,6 +556,108 @@ class WorkflowTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "Organize them again"):
             self.service.results(self.identity, run)
+
+    def test_organizing_again_quotes_only_the_lines_without_a_translation(self):
+        # A saved result answered only a request compiled exactly as before,
+        # so a glossary edit quoted every line of each request it touched
+        # again, and a line a run kept in its source text read translated
+        # and was never sent again.
+        selected = self.project.read()
+        self.service.save(
+            self.identity, selected["revision"], {**selected["options"], "mode": "live"}
+        )
+        units = WORK + "/work/source-units.json"
+        write_json(
+            self.game / units,
+            {
+                "version": 1,
+                "units": [
+                    {"id": "a/1", "scene": "a", "source": "はい。"},
+                    {"id": "a/2", "scene": "a", "source": "いいえ。"},
+                    {"id": "b/1", "scene": "b", "source": "ありがとう。"},
+                    {"id": "c/1", "scene": "c", "source": "ありがとう。"},
+                ],
+            },
+        )
+        # The provider reads b's and c's requests the same, so one is sent.
+        self.engine.payload = lambda request, configuration: {
+            "model": configuration["model"],
+            "lines": list(request["sources"].values()),
+        }
+        results = Results(self.game)
+
+        def organized(policy=True):
+            operation = self.service.organize(self.identity, units, True)
+            job, plan = self.service.jobs.store.load(operation["id"], self.identity)
+            if not policy:
+                # As an organize prepared before the policy froze it.
+                del plan["compile"]["reuse"]
+            with patch("dazedtl.translation.run_compiler.require_coverage"):
+                result = execute(self.engine, self.profile, job, plan, lambda: False)
+            job.update(status="complete", result=result)
+            self.service.jobs.store.save(job)
+            run = self.service.run(self.identity, result["run"])
+            return run, self.service.jobs.store.load(run["id"])[1]
+
+        first, plan = organized()
+        self.assertEqual(plan["askers"], {"c/1": "b/1"})
+        quoted = first["quote"]
+        self.assertEqual((quoted["requests"], quoted["units"]), (2, 3))
+        # The run keeps a/2 in its source text, as after a failed check.
+        replies = {
+            "a/1": {"a/1": "Yes.", "a/2": "いいえ。"},
+            "b/1": {"b/1": "Thanks."},
+            "c/1": {"c/1": "Thanks."},
+        }
+        for request in plan["requests"]:
+            results.accept(request, replies[request["id"]], {"run_id": first["id"]})
+        self.engine.glossary_text = "Approved names\nリリ (Lili)"
+        second, plan = organized()
+        self.assertEqual([list(row["sources"]) for row in plan["requests"]], [["a/2"]])
+        self.assertEqual(second["quote"]["units"], 1)
+        # Progress reads the kept line left and the others translated.
+        index = read_json(self.game / EXPORT)
+        self.assertEqual(
+            {
+                row["source_id"]: row.get("translation")
+                for part in index["parts"]
+                for row in read_json(self.game / part)["units"]
+            },
+            {"a/2": None, "a/1": "Yes.", "b/1": "Thanks.", "c/1": "Thanks."},
+        )
+        written = self.service.results(self.identity, second["id"])
+        self.assertEqual(
+            read_json(self.game / written["path"])["translations"],
+            {"a/1": "Yes.", "b/1": "Thanks.", "c/1": "Thanks."},
+        )
+        self.assertEqual(written["missing"], {"pending": 1})
+        results.accept(plan["requests"][0], {"a/2": "No."}, {"run_id": second["id"]})
+        self.service.refresh_progress(self.identity, plan)
+        report = read_json(self.game / (WORK + "/progress-report.json"))
+        report.update(phase=None)
+        report["phases"].update(
+            translation="complete",
+            injection="complete",
+            qa="complete",
+            patch="complete",
+        )
+        write_json(self.game / (WORK + "/progress-report.json"), report)
+        # With every line translated, the next organize has nothing to send,
+        # and no translation changed, so finished phases stay finished.
+        third, plan = organized()
+        self.assertEqual(self.engine.reports[-1]["phases"]["qa"], "complete")
+        self.assertEqual(
+            (third["status"], third["requests"], third["quote"]["requests"]),
+            ("complete", 0, 0),
+        )
+        self.assertEqual(
+            self.service.results(self.identity, third["id"])["translated"], 4
+        )
+        self.service.validate_current(self.identity, plan)
+        # An organize prepared before the policy packs every line.
+        _older, plan = organized(policy=False)
+        self.assertNotIn("reused", plan)
+        self.assertEqual(sum(len(row["sources"]) for row in plan["requests"]), 4)
 
     def test_a_units_skill_message_names_the_skills_users_as_guided_does(self):
         # Guided notes each skill message with who uses the skill, so "%1"

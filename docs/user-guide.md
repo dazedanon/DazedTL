@@ -260,6 +260,7 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
    It fixes crashes and windows too small for English in a fixes plugin of DazedTL's own, which DazedTL puts into the game only after playing it with the fix breaks nothing new, as a checkpoint of its own.
    Approve your assistant's API estimate with the button on **Progress**; your assistant can't start a run you haven't approved there.
    A newer estimate replaces the one waiting.
+   Lines already translated keep their translations when your assistant organizes the text again, such as after a glossary change, so a new estimate covers only the rest, and a line a run left in Japanese because its translation failed is sent again on its own.
    Choosing another model of the same connection, or switching between **API Batch** and **Live API**, shows the waiting estimate at the new prices at once when its requests stay the same; approving then sends them with your new choice.
    Other changes, such as a Claude model or another connection, make it out of date; **Estimate again** prepares a new one without your assistant.
    After you approve, **Progress** reminds you to tell your assistant until it has checked in.
@@ -361,7 +362,7 @@ When the update stopped before it reached the translation, **Cancel update** goe
 Once the update is in the game, Guided steps list the tasks it changed, such as **Maps & events**; each opens with the changed files selected.
 Files you translated before read **Outdated** there, so **Reload from game…** brings in their new text, and translating them again only sends the Japanese lines.
 For Assistant-led, **Copy post-update task** gives your assistant the starting prompt's own steps for the new version, in the game's mode and languages.
-It counts the game's text again and organizes it, so lines and scenes the update left as they were keep their translations and only the rest is translated; in the API modes you approve its estimate on **Progress** first.
+It counts the game's text again and organizes it, so lines the update left as they were keep their translations and only the rest is translated; in the API modes you approve its estimate on **Progress** first.
 Then it puts the text in the game, runs QA and the playtest and packages the patch, as it did the first time.
 
 ### Backups from before checkpoints

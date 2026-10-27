@@ -26,7 +26,7 @@ from dazedtl.translation.requests import (
     result_value,
 )
 from dazedtl.translation.results import Results, review_digest
-from dazedtl.translation.runner import Runner
+from dazedtl.translation.runner import SHARED_PAYLOADS, Runner, askers
 from pydantic import TypeAdapter
 
 
@@ -220,7 +220,8 @@ class TranslationTests(unittest.TestCase):
             results.get(live)["translations"],
             {"line": sources["line"], "moan": "Mm♥Ah"},
         )
-        # A line given back as its source passes, as Guided keeps it.
+        # A line given back as its source is saved, as Guided keeps it, but
+        # is no translation: the export reads it left.
         accepted = {"line": sources["line"], "moan": "Mm♥Ah...h"}
         saved = results.accept(row, accepted, {})
         # The export gets Guided's automatic lint fixes; the receipt and a
@@ -235,7 +236,7 @@ class TranslationTests(unittest.TestCase):
             unit["source_id"]: unit for unit in results.units([row], results.listing())
         }
         self.assertEqual(units["moan"]["translation"], "Mm♥ Ah...")
-        self.assertEqual(units["line"]["translation"], sources["line"])
+        self.assertNotIn("translation", units["line"])
         self.assertEqual(
             units["moan"]["reviewed_sha256"],
             review_digest(sources["moan"], "Mm♥ Ah..."),
@@ -414,12 +415,17 @@ class TranslationTests(unittest.TestCase):
             old["translations"],
         )
 
-    def test_a_refusal_note_accepted_under_older_rules_reads_as_not_translated(self):
+    def test_a_receipt_of_refusal_notes_or_source_text_reads_as_not_translated(self):
         # Receipts from before 2.34.5 kept "Declined." as a translation; they
-        # were exported, counted translated and never resent.
-        refused, kept = request("refused"), request("kept")
+        # were exported, counted translated and never resent. So was one
+        # giving every line back in its source text, as a reply kept whole is.
+        refused, kept, echoed = request("refused"), request("kept"), request("echoed")
         results = Results(self.game)
-        for row, text in ((refused, "Declined. ⟦P0⟧"), (kept, "Yes. ⟦P0⟧")):
+        for row, text in (
+            (refused, "Declined. ⟦P0⟧"),
+            (kept, "Yes. ⟦P0⟧"),
+            (echoed, echoed["sources"]["line"]),
+        ):
             translations = {"line": text}
             write_json(
                 project_path(self.game, results.relative(row), exists=False),
@@ -433,20 +439,97 @@ class TranslationTests(unittest.TestCase):
                 },
             )
         self.assertIsNone(results.get(refused))
+        self.assertIsNone(results.get(echoed))
         self.assertEqual(results.get(kept)["translations"], {"line": "Yes. ⟦P0⟧"})
         # Translating it again replaces the note and archives its receipt.
         saved = results.accept(refused, {"line": "Yes. ⟦P0⟧"}, {})
         self.assertEqual(results.get(refused), saved)
-        history = list(
-            (self.game / ".dazedtl/len-method/work/accepted-history").rglob("*.json")
+        # Source text given back is refused now, as a refusal note is.
+        with self.assertRaisesRegex(ValueError, "every line is its source text"):
+            results.accept(echoed, echoed["sources"], {})
+        results.accept(echoed, {"line": "Yes. ⟦P0⟧"}, {})
+        history = (self.game / ".dazedtl/len-method/work/accepted-history").rglob(
+            "*.json"
         )
         self.assertEqual(
-            [
-                json.loads(path.read_text(encoding="utf-8"))["translations"]
+            sorted(
+                json.loads(path.read_text(encoding="utf-8"))["translations"]["line"]
                 for path in history
-            ],
-            [{"line": "Declined. ⟦P0⟧"}],
+            ),
+            ["Declined. ⟦P0⟧", "はい。⟦P0⟧"],
         )
+
+    def test_requests_sharing_a_payload_are_sent_once_and_answered_alike(self):
+        # A scene two maps repeat made two requests the provider reads the
+        # same, and both were paid; Guided queues it once for both files.
+        rule = {"tokens": ["⟦P0⟧"], "max_lines": 1}
+        copy = logical_request(
+            {
+                "id": "copy",
+                "sources": {"again": "はい。⟦P0⟧"},
+                "constraints": {"again": rule},
+            },
+            {"speakers": {"again": "Lili"}},
+        )
+        rows = [request(), copy]
+        for row in rows:
+            row["params"] = {"model": "fixture", "messages": []}
+        self.assertEqual(askers(rows), {"copy": "scene"})
+        rejection = ValueError("Provider rejected the request")
+        rejection.status_code = 400
+        for mode, policy, calls in (
+            ("live", SHARED_PAYLOADS, 1),
+            ("batch", SHARED_PAYLOADS, 1),
+            # A run frozen before the policy sends each.
+            ("older", None, 2),
+            # A request whose answer failed leaves its askers unsent.
+            ("rejected", SHARED_PAYLOADS, 1),
+        ):
+            with self.subTest(mode=mode):
+                game = self.game / mode
+                game.mkdir()
+                register(self.root / "profile", mode, game)
+                plan = {
+                    "version": 1,
+                    "kind": "translation",
+                    "source": str(game),
+                    "complete": True,
+                    "requests": rows,
+                    "configuration": {
+                        "mode": "batch" if mode == "batch" else "live",
+                        "model": "fixture",
+                    },
+                    "batch_limits": [50, 100000],
+                }
+                if policy:
+                    plan.update(shared_payloads=policy, askers={"copy": "scene"})
+                job = self.store.create(mode, plan, {"cost": 1})
+                self.store.authorize(job)
+                provider = (
+                    BatchProvider()
+                    if mode == "batch"
+                    else LiveProvider(rejection if mode == "rejected" else None)
+                )
+                provider.ended = True
+                Runner(self.store, job["id"], provider, lambda: None).step()
+                current, _plan = self.store.load(job["id"])
+                self.assertEqual(provider.calls, calls)
+                if mode == "rejected":
+                    self.assertEqual(current["states"]["copy"]["state"], "failed")
+                    self.assertIn("Not sent", current["states"]["copy"]["message"])
+                    continue
+                self.assertEqual(len(current["request_usage"]), calls)
+                if not policy:
+                    continue
+                self.assertEqual(current["status"], "complete")
+                self.assertEqual(
+                    Results(game).get(copy)["translations"], {"again": "Yes. ⟦P0⟧"}
+                )
+                if mode == "batch":
+                    self.assertEqual(
+                        [item["request"] for item in current["batches"][0]["items"]],
+                        ["scene"],
+                    )
 
     def test_worker_owner_loss_stops_before_another_paid_request(self):
         alive = [True]

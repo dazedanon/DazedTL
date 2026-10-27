@@ -2,13 +2,15 @@
 
 import os
 import stat
+from collections import Counter
+from functools import partial
 from pathlib import Path
 
 from dazedtl import system
 from dazedtl.freshness import Digests, signature, signature_settled
 from dazedtl.storage import write_json
 
-from .files import digest, project_path, read_json, write_project_json
+from .files import digest, encode, project_path, read_json, write_project_json
 from .project import WORK
 from .refusals import RULES_VERSION, line_refusal
 from .requests import (
@@ -20,13 +22,20 @@ from .requests import (
 
 ACCEPTED = WORK + "/work/accepted"
 # The progress export: an index of parts, each the units of PART_REQUESTS
-# requests, so saving one request's result rewrites one part instead of every
-# line of the run.
+# requests, then the units organize left out with an earlier translation, so
+# saving one request's result rewrites one part instead of every line of the
+# run.
 EXPORT = WORK + "/work/translation-units.json"
 EXPORT_PARTS = WORK + "/work/translation-units"
 PART_REQUESTS = 32
-# Each part this process wrote or checked, by path: the requests and result
-# file signatures it was built from, and its own file's signature then.
+# A part of units organize left out holds this many, about as many as a
+# part of requests.
+PART_UNITS = 1000
+# What a listing gives for a result file it doesn't hold.
+_NONE = (None, None)
+# Each part this process wrote or checked, by path: the inputs it was built
+# from, its requests or units with their result files' signatures, and its own
+# file's signature then.
 _PARTS = {}
 # Each request's export rows before its result joins them, by fingerprint,
 # which fixes everything they hold. A refresh after every accepted receipt
@@ -70,6 +79,25 @@ def _rows(request):
     return rows
 
 
+def _answer(row, request, value, output, identity, source_sha256):
+    """Gives an export row its line's saved translation, as the game gets it
+    (output), and its review."""
+    row.update(
+        translation=output[identity],
+        translated_from_sha256=source_sha256,
+        request_sha256=request["fingerprint"],
+    )
+    reviewed = value.get("reviewed", {}).get(identity)
+    if reviewed is not None:
+        accepted = value["translations"][identity]
+        # A review of the accepted text covers its lint fixes.
+        if output[identity] != accepted and reviewed == review_digest(
+            row["source"], accepted
+        ):
+            reviewed = review_digest(row["source"], output[identity])
+        row["reviewed_sha256"] = reviewed
+
+
 def _signature(path):
     try:
         return signature(path.stat())
@@ -78,9 +106,10 @@ def _signature(path):
 
 
 def _content(units):
-    """Units without their review hashes: a review alone reopens nothing."""
+    """Units without their review hashes, which a review alone changes, so it
+    reopens nothing, as canonical JSON text."""
     return [
-        {key: item for key, item in row.items() if key != "reviewed_sha256"}
+        encode({key: item for key, item in row.items() if key != "reviewed_sha256"})
         for row in units
     ]
 
@@ -142,9 +171,14 @@ def _checked(request, translations, keep):
             "Translate it, or decline the request so another model can finish it."
         )
     failures = _content_failures(request, output)
-    if not failures:
-        return output, {}
     sources = request["sources"]
+    if not failures:
+        if translates_nothing(request, {"translations": output}):
+            raise ValueError(
+                f"{next(iter(sources))} is no translation: every line is its source text. "
+                "Translate it, or decline the request so another model can finish it."
+            )
+        return output, {}
     if keep and any(
         text != sources[identity] and identity not in failures
         for identity, text in output.items()
@@ -174,6 +208,61 @@ def kept(request, translations):
     its Live run once its validation retries are spent. An API run's
     approval covers one call per request, so none is retried here."""
     return _checked(request, translations, keep=True)
+
+
+def untranslated(source, text, language, target):
+    """Whether a saved line is no translation: given back as its source text
+    while it still holds source text, as a line a run kept in its source
+    after it failed the content check (kept) is, or one the model gave back
+    unchanged. Guided reads such a line the same way, so its next run sends
+    it again (compatibility/run_evidence `kept`); this reads it for the
+    language pair, as Guided's line counts read a line (util/source_text
+    `source_left`), so a Chinese translation writing a name in the same
+    kanji as its source is one."""
+    if text != source:
+        return False
+    from util.source_text import source_left
+
+    return bool(source_left(text, source, language, target))
+
+
+def left_lines(request, value):
+    """The unit IDs of a saved receipt's lines that are no translation."""
+    context = request["context"]
+    language, target = source_language(context), target_language(context)
+    return {
+        identity
+        for identity, text in value["translations"].items()
+        if untranslated(request["sources"][identity], text, language, target)
+    }
+
+
+def translates_nothing(request, value):
+    """Whether no line of a saved receipt is a translation, so the request
+    has none to reuse and is sent again, as one holding a refusal note is."""
+    sources = request["sources"]
+    # Most receipts change their first line, which settles it.
+    if any(
+        text != sources[identity] for identity, text in value["translations"].items()
+    ):
+        return False
+    return len(left_lines(request, value)) == len(sources)
+
+
+def indexed(fingerprint, entry):
+    """The request an index entry (translation/unit_results) describes, as
+    far as reading its receipt needs: its fingerprint, lines and language
+    pair."""
+    return {
+        "id": entry["id"],
+        "fingerprint": fingerprint,
+        "sources": entry["sources"],
+        "constraints": {},
+        "context": {
+            "source_language": entry["language"],
+            "target_language": entry["target"],
+        },
+    }
 
 
 def review_digest(source, translation):
@@ -276,9 +365,12 @@ class Results:
 
     def get(self, request, path=None):
         """The request's accepted result, or None, as for a receipt that
-        holds a refusal note (`holds_refusal`), which every caller then resends."""
+        holds a refusal note (`holds_refusal`) or translates no line
+        (`translates_nothing`), which every caller then resends."""
         value = self._receipt(request, path)
-        return None if value is None or holds_refusal(request, value) else value
+        if value is None or holds_refusal(request, value):
+            return None
+        return None if translates_nothing(request, value) else value
 
     def accepted(self, fingerprint, request):
         """Whether the request with this fingerprint has an accepted result
@@ -308,9 +400,9 @@ class Results:
         output = translated(request, translations)
         path = project_path(self.source, self.relative(request), exists=False)
         old = self._receipt(request, path)
-        if old and holds_refusal(request, old):
-            # The refusal note it holds was never a translation; it is
-            # archived as a correction would archive it.
+        if old and (holds_refusal(request, old) or translates_nothing(request, old)):
+            # The refusal note or the source text it holds was never a
+            # translation; it is archived as a correction would archive it.
             return self._replace(request, old, output, provenance)
         if old:
             if old["translations"] != output:
@@ -371,34 +463,63 @@ class Results:
         write_project_json(self.source, self.relative(request), value)
         return value
 
+    def _saved(self, request, listing):
+        """The request's accepted result, read where listing found its file,
+        with its lines as the game gets them and those that are no
+        translation (`untranslated`)."""
+        key = request["fingerprint"]
+        value = None
+        if key in listing:
+            path = listing[key][0]
+            value = self.get(request, path) if path else self.get(request)
+        if not value:
+            return None, {}, set()
+        return value, exported(request, value), left_lines(request, value)
+
     def units(self, requests, listing):
-        """The export rows of requests, each with its saved result."""
+        """The export rows of requests, each with its saved result; a line
+        saved as no translation reads left."""
         units = []
         for request in requests:
-            key = request["fingerprint"]
-            value = None
-            if key in listing:
-                path = listing[key][0]
-                value = self.get(request, path) if path else self.get(request)
-            output = exported(request, value) if value else {}
+            value, output, left = self._saved(request, listing)
             for identity, base, source_sha256 in _rows(request):
                 row = dict(base)
-                if value:
-                    row.update(
-                        translation=output[identity],
-                        translated_from_sha256=source_sha256,
-                        request_sha256=request["fingerprint"],
-                    )
-                    reviewed = value.get("reviewed", {}).get(identity)
-                    if reviewed is not None:
-                        accepted = value["translations"][identity]
-                        # A review of the accepted text covers its lint fixes.
-                        if output[identity] != accepted and reviewed == review_digest(
-                            base["source"], accepted
-                        ):
-                            reviewed = review_digest(base["source"], output[identity])
-                        row["reviewed_sha256"] = reviewed
+                if value and identity not in left:
+                    _answer(row, request, value, output, identity, source_sha256)
                 units.append(row)
+        return units
+
+    def reused_units(self, reused, identities, listing):
+        """The export rows of a run's units its organize left out, which
+        earlier requests' receipts answer (translation/unit_results), by
+        unit ID; a unit whose receipt is gone reads left."""
+        units, read = [], {}
+        for identity in identities:
+            unit = reused["units"][identity]
+            key = unit["request"]
+            if key not in read:
+                request = indexed(key, reused["requests"][key])
+                read[key] = (request, *self._saved(request, listing))
+            request, value, output, left = read[key]
+            source = request["sources"][identity]
+            row = {
+                "id": digest([request["id"], identity]),
+                "batch": request["id"],
+                "source_id": identity,
+                "source": source,
+                "kind": unit["kind"],
+                "speaker": unit["speaker"],
+            }
+            if value and identity not in left:
+                _answer(
+                    row,
+                    request,
+                    value,
+                    output,
+                    identity,
+                    digest(source.encode("utf-8")),
+                )
+            units.append(row)
         return units
 
     def export(self, plan):
@@ -420,35 +541,78 @@ class Results:
             and isinstance(previous_index.get("units"), list)
             else None
         )
-        for start in range(0, len(requests), PART_REQUESTS):
-            group = requests[start : start + PART_REQUESTS]
-            name = f"part-{start // PART_REQUESTS + 1:04d}.json"
+        # Each part's inputs, which fix its rows, ending with the signature of
+        # a result file they read, and how its rows are built.
+        groups = [
+            (
+                tuple(
+                    (row["fingerprint"], listing.get(row["fingerprint"], _NONE)[1])
+                    for row in group
+                ),
+                partial(self.units, group, listing),
+            )
+            for group in (
+                requests[start : start + PART_REQUESTS]
+                for start in range(0, len(requests), PART_REQUESTS)
+            )
+        ]
+        # The units organize left out follow, by the receipts that answer them.
+        reused = plan.get("reused") or {"units": {}}
+        identities = list(reused["units"])
+        for start in range(0, len(identities), PART_UNITS):
+            group = identities[start : start + PART_UNITS]
+            inputs = tuple(
+                (
+                    identity,
+                    *(
+                        reused["units"][identity][key]
+                        for key in ("request", "kind", "speaker")
+                    ),
+                    listing.get(reused["units"][identity]["request"], _NONE)[1],
+                )
+                for identity in group
+            )
+            groups.append((inputs, partial(self.reused_units, reused, group, listing)))
+        # The rows of each part written or removed, before and after: a run
+        # holding the same rows in other parts, as one organize left every
+        # line out of does, changes no translation.
+        before, after = Counter(), Counter()
+        for number, (inputs, build) in enumerate(groups, 1):
+            name = f"part-{number:04d}.json"
             relative = EXPORT_PARTS + "/" + name
             parts.append(relative)
             path = folder / name
-            inputs = tuple(
-                (row["fingerprint"], listing.get(row["fingerprint"], (None, None))[1])
-                for row in group
-            )
             if _PARTS.get(str(path)) == (inputs, _signature(path)):
                 continue
-            document = {"units": self.units(group, listing)}
+            document = {"units": build()}
             previous = read_json(path) if path.exists() else None
             if previous != document:
-                changed = (
-                    changed
-                    or previous is None
-                    or (_content(previous["units"]) != _content(document["units"]))
-                )
+                if previous is not None:
+                    before.update(_content(previous["units"]))
+                after.update(_content(document["units"]))
                 write_project_json(self.source, relative, document)
             stamp = _signature(path)
             # A file younger than one clock tick may change without a new stamp.
             if all(
                 signature_settled(item)
-                for item in (stamp, *(item for _, item in inputs))
+                for item in (stamp, *(item[-1] for item in inputs))
             ):
                 _PARTS[str(path)] = (inputs, stamp)
         index = {"complete": plan["complete"], "parts": parts}
+        names = {part.rsplit("/", 1)[1] for part in parts}
+        with os.scandir(folder) as entries:
+            gone = [
+                entry.path
+                for entry in entries
+                if entry.name.startswith("part-")
+                and entry.name not in names
+                and entry.is_file(follow_symlinks=False)
+            ]
+        for path in gone:
+            try:
+                before.update(_content(read_json(path)["units"]))
+            except OSError, ValueError, KeyError, TypeError:
+                changed = True
         if legacy is not None:
             units = [
                 row
@@ -458,22 +622,19 @@ class Results:
             changed = legacy.get("complete") != index["complete"] or _content(
                 legacy["units"]
             ) != _content(units)
-        elif previous_index != index:
-            changed = True
+        else:
+            changed = (
+                changed
+                or before != after
+                or (previous_index or {}).get("complete") != index["complete"]
+            )
         if previous_index != index:
             write_project_json(self.source, EXPORT, index)
-        names = {part.rsplit("/", 1)[1] for part in parts}
-        with os.scandir(folder) as entries:
-            for entry in entries:
-                if (
-                    entry.name.startswith("part-")
-                    and entry.name not in names
-                    and entry.is_file(follow_symlinks=False)
-                ):
-                    try:
-                        system.unlink(entry.path)
-                    except OSError:
-                        # A reader holds it on Windows; the next export tries again.
-                        continue
-                    _PARTS.pop(entry.path, None)
+        for path in gone:
+            try:
+                system.unlink(path)
+            except OSError:
+                # A reader holds it on Windows; the next export tries again.
+                continue
+            _PARTS.pop(path, None)
         return EXPORT, changed

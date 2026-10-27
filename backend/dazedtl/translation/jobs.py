@@ -228,7 +228,10 @@ class RunStore:
             "result": None,
             "usage": {},
         }
-        if states and all(item["state"] == "accepted" for item in states.values()):
+        # A translation run of no request has every line translated already.
+        if (states or plan["kind"] == "translation") and all(
+            item["state"] == "accepted" for item in states.values()
+        ):
             job.update(
                 status="complete",
                 message="All requested translations are already saved.",
