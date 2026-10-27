@@ -16,7 +16,11 @@ rendering to replace. Text QA proposes each fix as its glossary lint family,
 which a reviewer checks, so a term used as an ordinary word stays as it is.
 
 The rules read Japanese terms and English words, so Text QA reads a glossary
-only for a game translated into English (rpgmaker_qa_lint `game`).
+for a game translated into English, or into a language written without spaces
+between words (util/languages `target_uses_cjk`), Chinese or Japanese, whose
+translation uses a term when it holds the term's text. Such a translation has
+no words to find a rendering among, so only a name that is the term alone
+gets a fix (rpgmaker_qa_lint `game`).
 """
 
 from __future__ import annotations
@@ -29,7 +33,7 @@ from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from typing import Any, Iterable
 
-from util.languages import active_target, target_uses_cjk
+from util.languages import KANA, KANJI, active_target, target_uses_cjk
 from util.source_text import source_left
 
 # Players never read MapInfos.json names; a map shows its own display name.
@@ -65,6 +69,8 @@ _KANJI = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff々〆ヶ]")
 # Katakana and its long vowel mark, without the middle dot that joins names.
 _KATAKANA = re.compile(r"[\u30a1-\u30fa\u30fc-\u30ff\uff66-\uff9f]")
 _KATAKANA_NAME = re.compile(r"[\u30a1-\u30fa\u30fc-\u30ff\uff66-\uff9f]+")
+# What joins the parts of a full name written without spaces.
+_NAME_PARTS = re.compile(r"\s*[·・•]\s*")
 # RPG Maker's control codes, which English words never include.
 _CODE = r"\\+[A-Za-z]+\[[^\]]*\]|\\+[A-Za-z{}|.!><^$]"
 _TOKEN = re.compile(rf"(?P<code>{_CODE})|(?P<word>[^\W_]+(?:['’][^\W_]+)*['’]?)")
@@ -83,6 +89,11 @@ _QUALIFIER = re.compile(r"\s*\([^()]*\)\s*$")
 _ALIASES = re.compile(r"\s*[,、/／]\s*")
 # What separates a glossary English's alternatives, as in "Lulu / Lulu-chan".
 _ALTERNATIVES = re.compile(r"\s*[/;]\s*")
+# The qualifier, alternatives and name and title parts of a rendering written
+# without spaces, in full-width forms too, as in 爱丽丝（女仆） or 雪莉，盗贼首领.
+_UNSPACED_QUALIFIER = re.compile(r"\s*[(（][^()（）]*[)）]\s*$")
+_UNSPACED_ALTERNATIVES = re.compile(r"\s*[/;／；]\s*")
+_UNSPACED_PARTS = re.compile(r"\s*[,，、]\s*")
 # A word of romanized Japanese, syllable by syllable, as "Wakachi" or
 # "Ishihiroi".
 _ROMAJI = re.compile(
@@ -123,6 +134,14 @@ class Term:
     replacement: str
     # Base glossary rows only claim their span; their English is a hint.
     checked: bool
+    # Whether the target writes words between spaces, which the forms are
+    # then made of; a form of one written without is its whole text.
+    spaced: bool = True
+    # Whether the term written as it is in a translation is Japanese left,
+    # kept on purpose, as a plugin key in a note is, rather than a rendering:
+    # a Chinese target writes a kanji term's hanzi as its own text, and only
+    # a term with kana reads as left there.
+    kept_is_left: bool = True
 
 
 def glossary_lines(
@@ -217,19 +236,35 @@ def _undecorated(text: str) -> str:
     return text[index:].strip()
 
 
-def _forms(english: str, source: str) -> list[tuple[str, ...]]:
+def _forms(english: str, source: str, spaced: bool = True) -> list[tuple[str, ...]]:
     """The word sequences that count as using a glossary English: each of
     its "/" alternatives and the parts of one that pairs a name with a
     title, as "Scissor, Bandit Leader", each also without a trailing "(…)"
     qualifier and a leading article. A katakana name the glossary gives a
     full English name, as ニーナ (Nena Evans), is also used by either name
-    alone, since the Japanese says only one of them."""
+    alone, since the Japanese says only one of them. A target written
+    without spaces has each such text as one form, a full name's parts
+    joined by a middle dot as in 妮娜·埃文斯."""
+    forms: list[tuple[str, ...]] = []
+    if not spaced:
+        for alternative in _UNSPACED_ALTERNATIVES.split(english):
+            for text in (alternative, *_UNSPACED_PARTS.split(alternative)):
+                for variant in (text, _UNSPACED_QUALIFIER.sub("", text)):
+                    variant = _fold(variant.strip())
+                    parts = _NAME_PARTS.split(variant)
+                    if not _KATAKANA_NAME.fullmatch(source) or len(parts) not in (2, 3):
+                        parts = []
+                    # A name's part of one letter is too often inside other
+                    # words, as 李 is in 行李.
+                    for found in (variant, *(p for p in parts if len(p) >= TERM_MIN)):
+                        if found and (found,) not in forms:
+                            forms.append((found,))
+        return forms
     texts = []
     for alternative in _ALTERNATIVES.split(english):
         texts.append(alternative)
         if "," in alternative:
             texts.extend(alternative.split(","))
-    forms: list[tuple[str, ...]] = []
     for text in texts:
         for variant in (text, _QUALIFIER.sub("", text)):
             words = [word for word, _start, _end in _words(variant)]
@@ -250,18 +285,23 @@ def _forms(english: str, source: str) -> list[tuple[str, ...]]:
     return forms
 
 
-def terms(rows: Iterable[tuple[str, str, str, bool]]) -> list[Term]:
+def terms(
+    rows: Iterable[tuple[str, str, str, bool]], target: str | None = None
+) -> list[Term]:
     """Every row's Japanese forms, longest first, so each claims its span
     before a shorter term inside it. A Japanese the game's glossary gives
-    two English accepts either and has no fix."""
-    # The check reads a translation's words between spaces, which a Chinese
-    # or Japanese target doesn't write, so a translation into one is checked
-    # by its reviewers alone.
-    spaced = not target_uses_cjk(active_target())
+    two English accepts either and has no fix. *target* is the language
+    the game is translated into, the active target by default."""
+    target = target or active_target()
+    spaced = not target_uses_cjk(target)
+    alternatives, qualifier = (
+        (_ALTERNATIVES, _QUALIFIER) if spaced
+        else (_UNSPACED_ALTERNATIVES, _UNSPACED_QUALIFIER)
+    )
     found: dict[str, Term] = {}
     for order, (source, english, section, is_base) in enumerate(rows):
         english = _undecorated(english)
-        first = _ALTERNATIVES.split(english)[0].strip()
+        first = alternatives.split(english)[0].strip()
         for alias in _ALIASES.split(source):
             alias = _undecorated(alias)
             if not alias:
@@ -273,12 +313,14 @@ def terms(rows: Iterable[tuple[str, str, str, bool]]) -> list[Term]:
                         earlier,
                         english=f"{earlier.english} / {english}",
                         forms=tuple(
-                            dict.fromkeys(earlier.forms + tuple(_forms(english, alias)))
+                            dict.fromkeys(
+                                earlier.forms + tuple(_forms(english, alias, spaced))
+                            )
                         ),
                         replacement="",
                     )
                 continue
-            forms = tuple(_forms(english, alias))
+            forms = tuple(_forms(english, alias, spaced))
             found[alias] = Term(
                 source=alias,
                 english=english,
@@ -287,7 +329,7 @@ def terms(rows: Iterable[tuple[str, str, str, bool]]) -> list[Term]:
                 forms=forms,
                 # A qualifier the Japanese lacks is a note, as in Thora (Event).
                 replacement=(
-                    first if _QUALIFIER.search(alias) else _QUALIFIER.sub("", first)
+                    first if qualifier.search(alias) else qualifier.sub("", first)
                 ),
                 checked=(
                     not is_base
@@ -299,9 +341,14 @@ def terms(rows: Iterable[tuple[str, str, str, bool]]) -> list[Term]:
                     # A target that still holds the Japanese it names, read
                     # in the game's pair, where a Chinese one's hanzi are its
                     # own, is no translation to check.
-                    and not source_left(english, alias)
-                    and spaced
+                    and not source_left(english, alias, target=target)
+                    # A target written without spaces is checked against a
+                    # rendering in its own letters, not one a glossary
+                    # written for English still gives, as アリス (Alice).
+                    and (spaced or bool(KANJI.search(english) or KANA.search(english)))
                 ),
+                spaced=spaced,
+                kept_is_left=spaced or bool(source_left(alias, alias, target=target)),
             )
     return sorted(found.values(), key=lambda term: (-len(term.source), term.order))
 
@@ -480,6 +527,9 @@ def _uses(words: list[str], form: tuple[str, ...]) -> bool:
 
 @lru_cache(maxsize=MEMORY)
 def uses_term(live: str, term: Term) -> bool:
+    if not term.spaced:
+        text = _fold(live)
+        return any(form[0] in text for form in term.forms)
     words = [word for word, _start, _end in _words(live)]
     return any(_uses(words, form) for form in term.forms)
 
@@ -802,7 +852,7 @@ def missing(source: str, text: str, glossary: Glossary) -> list[tuple[Term, int,
     kept on purpose, such as a plugin key in a note."""
     found: list[tuple[Term, int, int]] = []
     for term, start, end in _hits(source, glossary.index):
-        if text.count(term.source) >= source.count(term.source):
+        if term.kept_is_left and text.count(term.source) >= source.count(term.source):
             continue
         if not uses_term(text, term) and all(term != hit[0] for hit in found):
             found.append((term, start, end))
@@ -824,8 +874,10 @@ def _spans(
             continue
         span = (
             ((source, text) in glossary.names and _whole(source, text, words, term))
-            or _rendering(text, words, term, glossary.corpus)
-            or _romanized(text, words, term, glossary)
+            or term.spaced and (
+                _rendering(text, words, term, glossary.corpus)
+                or _romanized(text, words, term, glossary)
+            )
         )
         if span and not any(span[0] < end and start < span[1] for start, end, _t in spans):
             spans.append((*span, term))
@@ -839,12 +891,15 @@ def _spans(
     return spans
 
 
-def build(glossary_text: str, records: Iterable[dict[str, Any]]) -> Glossary:
+def build(
+    glossary_text: str, records: Iterable[dict[str, Any]], target: str | None = None
+) -> Glossary:
     """A game's glossary context from its glossary file and the inventory
     records Text QA reads: the game's English words, the Japanese of its
     names, and the renderings each term was found with, so a nameplate's
-    "Sonko" fixes dialogue too."""
-    ordered = terms(glossary_rows(glossary_text))
+    "Sonko" fixes dialogue too. *target* is the language the game is
+    translated into, the active target by default."""
+    ordered = terms(glossary_rows(glossary_text), target)
     if not any(term.checked for term in ordered):
         return Glossary()
     records = list(records)

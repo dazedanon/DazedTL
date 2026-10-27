@@ -11,6 +11,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 from util import dazedwrap, target_text
+from util import rpgmaker_qa_glossary as glossary_rules
 from util import rpgmaker_qa_lint as lint
 from util import rpgmaker_rewrap as rewrap
 from util.game_encoding import UnwritableText, writable
@@ -289,6 +290,41 @@ class LanguageTests(unittest.TestCase):
             residue = "source-language-residue"
             self.assertNotIn(residue, evidence("魔王が来た", "魔王来了", 401)["flags"])
             self.assertIn(residue, evidence("魔王が来た", "魔王が来了", 401)["flags"])
+            # Its glossary check reads a target written without spaces as
+            # text: a line holding the term uses it, and one that renders it
+            # another way or leaves it out misses it, as does one keeping
+            # kanji the glossary gives as other hanzi, its full-width
+            # qualifier left out; a row still giving English is not checked.
+            # Only a name that is the term alone gets a fix.
+            records = [
+                {
+                    "file": "Map001.json",
+                    "source": "アリス",
+                    "live": "艾莉丝",
+                    "event_code": 101,
+                }
+            ]
+            game = lint.game(
+                {"clusters": [], "records": records},
+                "アリス (爱丽丝)\n勇者 (勇士)\nニーナ (妮娜（女仆）)\nセルリア (Cerulia)\n",
+                "Simplified Chinese",
+            )
+            for source, live, missed in (
+                ("アリスが来た。", "爱丽丝来了。", []),
+                ("アリスが来た。", "艾莉丝来了。", ["アリス"]),
+                ("アリスはどこ？", "她在哪里？", ["アリス"]),
+                ("勇者が来た。", "勇士来了。", []),
+                ("勇者が来た。", "勇者来了。", ["勇者"]),
+                ("ニーナが来た。", "妮娜来了。", []),
+                ("セルリアが来た。", "塞露莉亚来了。", []),
+            ):
+                found = glossary_rules.missing(source, live, game.glossary)
+                self.assertEqual([term.source for term, *_span in found], missed)
+            family = "lint:glossary-term"
+            self.assertEqual(
+                lint.proposals("アリス", "艾莉丝", game), {family: "爱丽丝"}
+            )
+            self.assertEqual(lint.proposals("アリスが来た。", "艾莉丝来了。", game), {})
             # The playtest reads only kana on screen.
             screen = re.compile(playtest_reading()["pattern"])
             self.assertFalse(screen.search("魔王城"))

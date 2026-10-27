@@ -305,7 +305,7 @@ def tag(name) -> str | None:
 
 def target_uses_cjk(language) -> bool:
     """Whether a target language is Chinese or Japanese, which are written
-    with full-width punctuation."""
+    with full-width punctuation and without spaces between words."""
     return script(language) in {"chinese", "japanese"}
 
 
