@@ -149,7 +149,7 @@ jobs:
           - playtested released images-archived
           - fresh opened set-up translated qa-done paged moved-relabeled
           - assistant-led assistant-written assistant-released assistant-updated batch-waiting upgraded
-          - released-ace released-mv moved images
+          - released-ace released-mv moved images assistant-reorganized
           - update-stopped plugins-applied batch-queued qa-done --game ace
     steps:
       - run: git config --global core.autocrlf false
