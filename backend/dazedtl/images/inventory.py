@@ -110,9 +110,26 @@ def describe_png(image):
 
 
 class Index:
-    def __init__(self, path):
+    def __init__(self, path, folder=""):
         self.path = path
+        # The game-relative image folder the Image Manager reads; images
+        # outside it, indexed while it read another, keep their rows, so
+        # their findings and applied records return with the folder, but
+        # leave the list, its counts and its folders.
+        self.folder = folder
         self._prepare()
+
+    def within(self):
+        """The SQL condition that keeps the images under the folder."""
+        if not self.folder:
+            return "1", ()
+        return "instr(id,?)=1", (self.folder.rstrip("/") + "/",)
+
+    def holds(self, identity):
+        """Whether an image, or a list folder, is in the folder, as within()
+        reads it."""
+        folder = self.folder.rstrip("/")
+        return not folder or identity == folder or identity.startswith(folder + "/")
 
     def _prepare(self):
         """Create the parent folder, the sqlite file and the assets schema.
@@ -215,9 +232,9 @@ class Index:
             ),
         )
 
-    @staticmethod
-    def where(query="", folder="", filter="all", selected_only=False):
-        parts, parameters = [], []
+    def where(self, query="", folder="", filter="all", selected_only=False):
+        within, parameters = self.within()
+        parts, parameters = [within], list(parameters)
         if query:
             parts.append("instr(lower(id),?)>0")
             parameters.append(query.casefold())
@@ -235,7 +252,7 @@ class Index:
                 parts.append("state!='applied'")
         if selected_only:
             parts.append("selected=1")
-        return (" WHERE " + " AND ".join(parts) if parts else ""), parameters
+        return " WHERE " + " AND ".join(parts), parameters
 
     def rows(self, **filters):
         where, parameters = self.where(**filters)
@@ -262,11 +279,7 @@ class Index:
             ).fetchone()[0]
             # Ticked images already in the game have left the list's view, so
             # no view counts them as images in the list it hides.
-            selected_where = (
-                where
-                + (" AND " if where else " WHERE ")
-                + "selected=1 AND state!='applied'"
-            )
+            selected_where = where + " AND selected=1 AND state!='applied'"
             selected = db.execute(
                 "SELECT count(*) FROM assets" + selected_where, parameters
             ).fetchone()[0]
@@ -306,34 +319,52 @@ class Index:
             return result
 
     def counts(self):
+        within, values = self.within()
         with self.connection() as db:
             classifications = dict(
                 db.execute(
-                    "SELECT classification,count(*) FROM assets GROUP BY classification"
+                    "SELECT classification,count(*) FROM assets WHERE "
+                    + within
+                    + " GROUP BY classification",
+                    values,
                 )
             )
             states = dict(
-                db.execute("SELECT state,count(*) FROM assets GROUP BY state")
+                db.execute(
+                    "SELECT state,count(*) FROM assets WHERE "
+                    + within
+                    + " GROUP BY state",
+                    values,
+                )
             )
             selected = dict(
                 db.execute(
-                    "SELECT state,count(*) FROM assets WHERE selected=1 GROUP BY state"
+                    "SELECT state,count(*) FROM assets WHERE "
+                    + within
+                    + " AND selected=1 GROUP BY state",
+                    values,
                 )
             )
             indexed = sum(classifications.values())
             examined = db.execute(
-                "SELECT count(*) FROM assets WHERE examined=1"
+                "SELECT count(*) FROM assets WHERE " + within + " AND examined=1",
+                values,
             ).fetchone()[0]
             # An image in the game is no longer unsure.
             uncertain = db.execute(
-                "SELECT count(*) FROM assets WHERE classification='uncertain'"
-                " AND state!='applied'"
+                "SELECT count(*) FROM assets WHERE "
+                + within
+                + " AND classification='uncertain' AND state!='applied'",
+                values,
             ).fetchone()[0]
             # Images in the game and excluded ones are settled, so they are
             # not left for an investigation of the remaining images.
             remaining = db.execute(
-                "SELECT count(*) FROM assets WHERE examined=0 AND state!='applied'"
-                " AND classification!='excluded'"
+                "SELECT count(*) FROM assets WHERE "
+                + within
+                + " AND examined=0 AND state!='applied'"
+                " AND classification!='excluded'",
+                values,
             ).fetchone()[0]
             return {
                 "indexed": indexed,
@@ -355,8 +386,10 @@ class Index:
                 "selectedEditable": sum(selected.values())
                 - selected.get("not_prepared", 0),
                 "missing": db.execute(
-                    "SELECT count(*) FROM assets WHERE instr(data,?)>0",
-                    ('"runtime":""',),
+                    "SELECT count(*) FROM assets WHERE "
+                    + within
+                    + " AND instr(data,?)>0",
+                    (*values, '"runtime":""'),
                 ).fetchone()[0],
             }
 
@@ -479,11 +512,15 @@ class Index:
         return {**family, "members": members}
 
     def folders(self):
+        within, values = self.within()
         with self.connection() as db:
             return [
                 {"path": path, "count": count}
                 for path, count in db.execute(
-                    "SELECT folder,count(*) FROM assets GROUP BY folder ORDER BY folder COLLATE NOCASE"
+                    "SELECT folder,count(*) FROM assets WHERE "
+                    + within
+                    + " GROUP BY folder ORDER BY folder COLLATE NOCASE",
+                    values,
                 )
             ]
 

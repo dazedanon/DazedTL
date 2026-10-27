@@ -218,6 +218,12 @@ def main():
             const=step,
             help=text,
         )
+    images.add_argument(
+        "--root",
+        metavar="FOLDER",
+        help="With --scan: the game-relative folder you decoded the game's image archives into, "
+        "which the Images steps then read and write",
+    )
     qa = commands.add_parser(
         "qa",
         help="Text QA for RPG Maker games: where it stands, preparing its task, and "
@@ -529,9 +535,13 @@ def main():
             method = "translation_" + args.command.replace("-", "_")
             if args.command == "images":
                 method = "images_state"
+                if args.root and args.image_step != "scan":
+                    parser.error("--root goes with --scan")
                 if args.image_step:
                     method = "translation_images"
                     params["step"] = args.image_step
+                if args.root:
+                    params["root"] = args.root
             if args.command == "qa":
                 params["step"] = (
                     "undo"
@@ -655,7 +665,11 @@ def main():
             if getattr(args, "image_step", None) == "scan":
                 while result["scan"] == "running":
                     time.sleep(2)
-                    result = call(args.workspace, method, {**params, "step": "status"})
+                    result = call(
+                        args.workspace,
+                        method,
+                        {"project_id": args.project, "step": "status"},
+                    )
         rendered = json.dumps(result, ensure_ascii=False, indent=2)
         if getattr(args, "output", None):
             args.output.write_text(rendered + "\n", encoding="utf-8")

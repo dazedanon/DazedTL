@@ -31,6 +31,7 @@ class ImageCompatibility:
             normalize_generic_image_root,
         )
 
+        reason = ""
         if engine == "MVMZ":
             identity, image_root = "rpgmaker_mvmz", ""
         else:
@@ -39,21 +40,27 @@ class ImageCompatibility:
                 found = detect_image_engine(root)
                 image_root = str(found.suggested_image_root or "")
             if image_root:
-                image_root = (
-                    normalize_generic_image_root(root, image_root)
-                    .relative_to(root)
-                    .as_posix()
-                )
+                # A chosen folder that is gone, such as an assistant's
+                # decoded images it cleaned up, leaves Images unsupported
+                # rather than unreadable.
+                try:
+                    image_root = (
+                        normalize_generic_image_root(root, image_root)
+                        .relative_to(root)
+                        .as_posix()
+                    )
+                except (OSError, ValueError) as exc:
+                    reason = str(exc)
+            else:
+                reason = "Choose a folder containing loose PNGs."
         value = get_image_profile(identity)
         return {
             "id": identity,
             "label": value.label,
             "imageRoot": image_root,
             "context": value.translation_skill_context,
-            "supported": bool(identity == "rpgmaker_mvmz" or image_root),
-            "reason": "Choose a folder containing loose PNGs."
-            if not image_root and identity == "generic"
-            else "",
+            "supported": not reason,
+            "reason": reason,
         }
 
     @staticmethod

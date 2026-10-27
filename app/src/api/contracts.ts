@@ -2883,6 +2883,7 @@ export type TranslationIdentifyRequest = {
 export type TranslationImagesRequest = {
   project_id: string;
   step: "status" | "scan" | "investigate" | "translate" | "apply";
+  root?: string;
 };
 
 export type TranslationQaRequest = {

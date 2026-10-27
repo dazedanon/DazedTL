@@ -648,8 +648,8 @@ class Jobs:
                 "GIT_CONFIG_GLOBAL",
                 "GIT_CONFIG_NOSYSTEM",
                 "GIT_ATTR_NOSYSTEM",
-                # A test scenario's OpenAI preset, which names its stand-in
-                # (settings/providers.py), for the run's connection check.
+                # A test scenario's OpenAI preset names its stand-in, which
+                # counts as OpenAI's own API (settings/providers.native_openai).
                 "DAZEDTL_TEST_OPENAI_ENDPOINT",
                 FOLDER,
             }

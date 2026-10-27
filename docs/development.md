@@ -135,6 +135,7 @@ Run them outside a sandbox such as Claude Code's bwrap: KWin needs a writable `/
 - `assistant-led`: an Assistant-led project in agent mode, set up and organized, its first request translated.
 - `assistant-written`: the assistant translates every request and writes them into the game, failing if the write changes the choice labels (402) or help markers (108) the game finds by their Japanese.
 - `images`: an Assistant-led project on the `many-images` game, about 4,900 images with 3,400 CGs of about 1 MB, indexed and investigated by the scripted assistant, which recommended the 40 with lettering; for measuring Images on a big game.
+- `images-archived`: an Assistant-led project on the `wolf` game, whose pictures sit in `Data/Picture.wolf`; the scripted assistant decodes them with the bundled WolfDawn into a folder the game doesn't read, runs the Images steps on that folder with `images --scan --root`, packs the archive again and checkpoints it, then checks that the patch's archive holds the translated title.
 - `batch-waiting`: the database submitted as a Batch that the stand-in holds.
 - `batch-queued`: `batch-waiting` with a small Batch token allowance, then a copy of the game Assistant-led whose API Batch on the same OpenAI connection must wait for capacity unsent until the held Batch is released, then be sent and complete.
 - `upgraded`: translated by the previous release, then opened in this checkout.
@@ -143,7 +144,7 @@ Run them outside a sandbox such as Claude Code's bwrap: KWin needs a writable `/
 - `playtested`: translated, then played by the release playtest, which prints its problems.
 
 `--game` lays [game variants](../tests/fixtures/game-variants) over the MZ fixture game, joined with `+`, such as `--game choice-help+hud+playable`.
-`mv` first lays the MZ fixture out as a deployed MV game, its files in `www`; `ace` takes the VX Ace fixture instead, and `ace+encrypted` ships its Data in an encrypted `Game.rgss3a`.
+`mv` first lays the MZ fixture out as a deployed MV game, its files in `www`; `ace` takes the VX Ace fixture instead, and `ace+encrypted` ships its Data in an encrypted `Game.rgss3a`; `wolf` builds a WOLF RPG Editor game of three pictures in `Data/Picture.wolf`, which takes no variants.
 The stand-in's replies are not real translations: it answers any other line with `Tested <letters>` or, for a Japanese target, `テスト` and a run of katakana made from the line's hash, which is why such replies read oddly.
 `long-dialogue` adds a traveler whose message the stand-in translates into a long English one, so a scenario can page it at narrow Line widths.
 `playable` adds RPG Maker MV's open-source engine, downloaded once into `.runtime`, so the playtest and Text QA's screen captures can run the game.
@@ -156,7 +157,7 @@ The stand-in's replies are not real translations: it answers any other line with
 `node scripts/scenario.mjs clean --work <dir>` stops every process the scenario started and removes its folder.
 `node scripts/scenario.mjs live [--work <dir>] [--upgrade-from <tag>]` runs the [live test](#live-test) in a private KWin of its own.
 Scenario connections reach only the stand-in: the custom connection names it, and the OpenAI preset points at it through `DAZEDTL_TEST_OPENAI_ENDPOINT`, which run workers follow too.
-Assistant-led runs on that preset count it as OpenAI's own API, so their Batches wait in the Batch token allowance as on OpenAI.
+Guided and Assistant-led runs on that preset count it as OpenAI's own API ([`native_openai`](../backend/dazedtl/settings/providers.py)), so their Batches wait in the Batch token allowance as on OpenAI.
 Phone notifications go to its ntfy stand-in through `DAZEDTL_TEST_NTFY_SERVER`, which keeps them in `provider/phone.jsonl`.
 Other requests from the backend and window go to a proxy that is not there; run workers start without proxy settings, so a new provider path needs the run's own address.
 

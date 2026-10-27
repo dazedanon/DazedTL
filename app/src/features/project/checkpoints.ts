@@ -3,6 +3,7 @@ import type {
   GitStatus,
   TranslationJob,
 } from "../../api/contracts.ts";
+import { plural } from "../../ui/displayText.ts";
 
 /**
  * What the Checkpoints tab reads its timeline for: the project and the
@@ -48,8 +49,6 @@ export const day = (time: string) =>
     day: "numeric",
   });
 export const fileName = (path: string) => path.split("/").pop() || path;
-export const plural = (count: number, word: string) =>
-  `${count.toLocaleString()} ${word}${count === 1 ? "" : "s"}`;
 
 /** The files a checkpoint changed, as selectionNames words a selection. */
 export function changedFiles(row: Checkpoint) {

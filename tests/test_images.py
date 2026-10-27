@@ -2,6 +2,7 @@
 
 import os
 import shutil
+import subprocess
 import time
 import unittest
 from base64 import b64decode
@@ -222,11 +223,13 @@ class ImageTests(unittest.TestCase):
         }
         write_json(path, manifest)
 
-    def reviewed_candidate(self, identity="img/A.png", color=(2, 3, 4, 100)):
+    def reviewed_candidate(
+        self, identity="img/A.png", color=(2, 3, 4, 100), candidate=None
+    ):
         self.choose([identity])
         self.service.action(self.identity, "prepare")
         request, _ = self.request("edit_task")
-        candidate = png(color)
+        candidate = candidate or png(color)
         write_bytes(self.game / (".dazedtl/images/" + identity), candidate)
         self.recipe(request["assets"][0], candidate)
         self.report(
@@ -1162,3 +1165,172 @@ class ImageTests(unittest.TestCase):
         state = self.service.state(self.identity)
         self.assertEqual(state["counts"]["indexed"], 0)
         self.assertEqual(state["folders"], [])
+
+
+class ImageFolderTests(unittest.TestCase):
+    def test_a_chosen_folder_that_is_gone_leaves_images_unsupported(self):
+        # An assistant cleaning up the folder it decoded a game's images into
+        # made every Images read, Progress's included, fail.
+        with TemporaryDirectory() as folder:
+            profile = ImageCompatibility(None).profile(
+                Path(folder), "WOLF", "decoded/Picture"
+            )
+        self.assertFalse(profile["supported"])
+        self.assertIn("Image folder not found", profile["reason"])
+
+    def test_the_list_follows_a_changed_image_folder(self):
+        # An Ace game scanned at Graphics, then pointed at the folder an
+        # assistant decoded its archives into, kept counting Graphics' images.
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            game = root / "game"
+            write_bytes(game / "Graphics/Pictures/Title.png", png())
+            write_bytes(game / "decoded/Pictures/Menu.png", png((1, 2, 3, 100)))
+            projects = Projects(root / "profile")
+            identity = projects.open({"source": str(game), "engine": "ACE"})["id"]
+            backend = SimpleNamespace(
+                source=root / "engine", context=nullcontext, game_write=game_write
+            )
+            translation = SimpleNamespace(
+                workspace=root / "profile",
+                idle=lambda _: None,
+                clean_drafts=lambda _: None,
+                writable=lambda _: None,
+            )
+            service = ImageService(
+                projects,
+                translation,
+                SETTINGS,
+                backend,
+                adapter=ImageCompatibility(backend),
+            )
+
+            def scan(folder):
+                service.assistant(identity, "scan", folder)
+                deadline = time.monotonic() + SCAN_SECONDS
+                while service.state(identity)["job"]["status"] == "running":
+                    if time.monotonic() > deadline:
+                        self.fail("Fixture scan did not finish.")
+                    time.sleep(0.001)
+
+            scan("Graphics")
+            state = service.state(identity)
+            service.update(
+                identity,
+                state["revision"],
+                {
+                    "selection": ["Graphics/Pictures/Title.png"],
+                    "view": {"folder": "Graphics/Pictures"},
+                    "folders": ["Graphics/Pictures"],
+                },
+            )
+            scan("decoded")
+            state = service.state(identity)
+            self.assertEqual(state["selection"], [])
+            self.assertEqual(
+                (state["view"]["folder"], state["discovery"]["folders"]), ("", [])
+            )
+            self.assertEqual(
+                (state["counts"]["indexed"], state["counts"]["missing"]), (1, 0)
+            )
+            self.assertEqual(
+                state["folders"], [{"path": "decoded/Pictures", "count": 1}]
+            )
+            listed = service.list(identity)
+            self.assertEqual(
+                [row["id"] for row in listed["items"]], ["decoded/Pictures/Menu.png"]
+            )
+            self.assertEqual(
+                service.assistant(identity, "status")["counts"]["indexed"], 1
+            )
+            # The first folder's images come back, as they were, with it.
+            scan("Graphics")
+            self.assertEqual(
+                [row["id"] for row in service.list(identity)["items"]],
+                ["Graphics/Pictures/Title.png"],
+            )
+            self.assertEqual(service.state(identity)["counts"]["missing"], 0)
+
+
+class AppliedImagePatchTests(unittest.TestCase):
+    """The Image Manager's own engine adapter on an MZ game whose Git is set
+    up, its patch manifest naming one map alone."""
+
+    scan, choose, request, report, recipe, reviewed_candidate = (
+        ImageTests.scan,
+        ImageTests.choose,
+        ImageTests.request,
+        ImageTests.report,
+        ImageTests.recipe,
+        ImageTests.reviewed_candidate,
+    )
+
+    def setUp(self):
+        from dazedtl.compatibility.translation import TranslationEngine
+        from util.len_git import setup_git
+        from util.len_translation import LenProject
+
+        temporary = TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        self.game = root / "game"
+        shutil.copytree(Path(__file__).parent / "fixtures/mz-game", self.game)
+        TranslationEngine(root / "engine").audit_scope(
+            self.game, {"files": {"data/Map001.json": {}}}
+        )
+        setup_git(LenProject(self.game), version="1.0", current_is_untranslated=True)
+        projects = Projects(root / "profile")
+        self.identity = projects.open({"source": str(self.game), "engine": "MVMZ"})[
+            "id"
+        ]
+        backend = SimpleNamespace(
+            source=root / "engine",
+            workspace=root / "engine",
+            context=nullcontext,
+            game_write=game_write,
+        )
+        translation = SimpleNamespace(
+            workspace=root / "profile",
+            idle=lambda _: None,
+            clean_drafts=lambda _: None,
+            writable=lambda _: None,
+        )
+        self.service = ImageService(
+            projects,
+            translation,
+            SETTINGS,
+            backend,
+            adapter=ImageCompatibility(backend),
+        )
+        self.scan()
+
+    def git(self, *arguments):
+        return subprocess.run(
+            ["git", "-C", str(self.game), *arguments],
+            capture_output=True,
+            check=True,
+        ).stdout
+
+    def test_an_applied_image_joins_the_patch_without_the_assistants_manifest(self):
+        # The starting prompt had the assistant copy images --apply's files
+        # into its manifest; the apply's checkpoint takes them into the patch
+        # itself, past the Image Manager's own .gitignore rules.
+        from util.len_patch_scope import sync_patch_scope
+        from util.len_translation import LenProject
+
+        picture = "img/pictures/sign.png"
+        # Its lettering, the recipe's text region, painted over.
+        image = Image.open(self.game / picture)
+        image.paste((200, 10, 10), (0, 0, 8, 8))
+        stream = BytesIO()
+        image.save(stream, format="PNG")
+        candidate = self.reviewed_candidate(picture, candidate=stream.getvalue())
+        step = self.service.assistant(self.identity, "apply")
+        self.assertEqual((step["next"], step["applied"]), ("done", [picture]))
+        self.assertEqual(self.git("show", "HEAD:" + picture), candidate)
+        self.assertFalse(self.git("status", "--porcelain", "--", picture))
+        # A later git-scope with the assistant's own manifest keeps it.
+        scoped = sync_patch_scope(
+            LenProject(self.game), ["data/Map001.json"], dry_run=True
+        )
+        self.assertNotIn(picture, scoped["untrack"])

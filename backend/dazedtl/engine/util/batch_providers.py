@@ -66,8 +66,11 @@ class BatchProviderJobError(RuntimeError):
 def detect_batch_provider(model: str = "", api_url: str | None = None,
                           api_provider: str | None = None) -> str | None:
     """Return the supported batch backend for the current route."""
+    from dazedtl.settings.providers import native_openai
+
     model_l = str(model or "").lower()
-    url = (os.getenv("api", "") if api_url is None else str(api_url or "")).strip().lower()
+    address = (os.getenv("api", "") if api_url is None else str(api_url or "")).strip()
+    url = address.lower()
     provider = (os.getenv("API_PROVIDER", "openai") if api_provider is None
                 else str(api_provider or "openai")).strip().lower()
 
@@ -78,7 +81,7 @@ def detect_batch_provider(model: str = "", api_url: str | None = None,
         return PROVIDER_GEMINI
     if provider == "openai" and is_kimi_api(url):
         return PROVIDER_KIMI if model_l in KIMI_BATCH_MODELS else None
-    if provider == "openai" and (not url or "api.openai.com" in url):
+    if provider == "openai" and (not url or native_openai(address)):
         return PROVIDER_OPENAI
     return None
 

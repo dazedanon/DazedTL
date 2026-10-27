@@ -83,12 +83,16 @@ def address(connection):
 
 def native_openai(endpoint):
     """Whether `endpoint` is OpenAI's own API, whose Batches share one
-    enqueued-token window; in test scenarios the OpenAI preset's stand-in
-    counts as it."""
-    value = str(endpoint or "").rstrip("/")
-    return urlsplit(value).hostname == "api.openai.com" or value == PROVIDERS["openai"][
-        "endpoint"
-    ].rstrip("/")
+    enqueued-token window. The one rule the app and the engine ask; in test
+    scenarios the OpenAI preset's stand-in, which DAZEDTL_TEST_OPENAI_ENDPOINT
+    names, counts as it."""
+    value = str(endpoint or "").strip().rstrip("/")
+    stand_in = os.environ.get("DAZEDTL_TEST_OPENAI_ENDPOINT", "").strip().rstrip("/")
+    try:
+        hostname = urlsplit(value).hostname
+    except ValueError:
+        hostname = None
+    return hostname == "api.openai.com" or bool(stand_in) and value == stand_in
 
 
 def route(protocol, url):

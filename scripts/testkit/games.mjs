@@ -23,7 +23,15 @@ const bases = {
   mz: "The RPG Maker MZ fixture game (tests/fixtures/mz-game).",
   mv: "The MZ fixture game laid out as a deployed RPG Maker MV game: its data, js and img in www, NW.js's package.json beside it.",
   ace: "The RPG Maker VX Ace fixture game (tests/fixtures/ace).",
+  wolf: "A WOLF RPG Editor game whose pictures sit in Data/Picture.wolf, packed by the bundled WolfDawn: a title screen with lettering and two CGs.",
 };
+
+/** The WolfDawn build bundled for this system. */
+export const wolfTool = path.join(
+  root,
+  "backend/dazedtl/engine/util/wolfdawn/bin",
+  process.platform === "win32" ? "windows/wolf.exe" : "linux/wolf",
+);
 
 const described = (name) => {
   const file = path.join(overlays, name, "variant.json");
@@ -236,6 +244,35 @@ const aceGame = (command, game) =>
  */
 export async function makeGame(names, game, change) {
   const [base, ...rest] = names[0] in bases ? names : ["mz", ...names];
+  if (base === "wolf") {
+    if (rest.length) throw new Error("No variant applies to the WOLF game.");
+    if (change) throw new Error("The WOLF game has no database to edit.");
+    // Its pictures are packed from a folder beside the game, as the
+    // developer's editor packs them.
+    const pictures = `${game}.pictures`;
+    for (const [index, [name, width, height]] of [
+      ["text_title.png", 320, 240],
+      ["cg/cg_0000.png", 320, 240],
+      ["cg/cg_0001.png", 320, 240],
+    ].entries()) {
+      fs.mkdirSync(path.dirname(path.join(pictures, name)), {
+        recursive: true,
+      });
+      fs.writeFileSync(
+        path.join(pictures, name),
+        picture(width, height, index, 0),
+      );
+    }
+    fs.mkdirSync(path.join(game, "Data"), { recursive: true });
+    execFileSync(
+      wolfTool,
+      ["pack", pictures, "-o", path.join(game, "Data/Picture.wolf")],
+      { stdio: "ignore" },
+    );
+    fs.rmSync(pictures, { recursive: true });
+    fs.writeFileSync(path.join(game, "Game.exe"), "Game.exe stand-in");
+    return {};
+  }
   if (base === "ace") {
     if (rest.some((name) => name !== "encrypted"))
       throw new Error("Only the encrypted variant applies to the Ace game.");

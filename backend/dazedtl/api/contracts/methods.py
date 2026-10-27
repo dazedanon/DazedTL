@@ -243,6 +243,8 @@ class TranslationIdentifyRequest(TypedDict):
 class TranslationImagesRequest(TypedDict):
     project_id: str
     step: ImageAssistantStep
+    # With the scan, the folder the assistant decoded the image archives into.
+    root: NotRequired[str]
 
 
 class TranslationQaRequest(TypedDict):

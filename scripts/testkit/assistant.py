@@ -11,7 +11,10 @@ game's Japanese as source units and organize them into a run, with
 given), write (write every saved translation into the game, checking that
 the choice labels and help markers the game finds by their Japanese stay),
 images (index the game's images and investigate them, recommending each
-whose file name starts with text_) or checkpoint, the operation assistants
+whose file name starts with text_), archived-images (decode a WOLF game's
+Data/Picture.wolf into a folder, translate its text_ images through the
+Images steps on that folder, pack it again and checkpoint it) or
+checkpoint, the operation assistants
 started before the app checkpointed their work ran. Each step reports the
 phase it enters, as the starting prompt asks, and write reports QA once it
 is done.
@@ -23,7 +26,14 @@ import hashlib
 import json
 import re
 import subprocess
+import sys
+import tempfile
 from pathlib import Path
+
+from PIL import Image
+
+# The engine's helpers, for the WolfDawn build bundled for this system.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend/dazedtl/engine"))
 
 JAPANESE = re.compile(r"[぀-ヿ一-鿿]")
 LATIN = re.compile(r"[A-Za-z]")
@@ -31,6 +41,16 @@ LATIN = re.compile(r"[A-Za-z]")
 IDENTIFIER = re.compile(r"(?=[\w./-]*[\d_./])[\w./-]+")
 WORK = ".dazedtl/len-method/work"
 MANIFEST = f"{WORK}/manifest.json"
+# The folder a WOLF game's Data/Picture.wolf is decoded into, which the game
+# doesn't read.
+DECODED = "decoded/Picture"
+# Where an assistant keeps its image recipes and the scripts they run.
+RESOURCES = ".dazedtl/image_translation_resources"
+RENDERER = f"{RESOURCES}/scripts/render.py"
+
+
+def sha256(raw):
+    return hashlib.sha256(raw).hexdigest()
 
 
 class Assistant:
@@ -42,6 +62,8 @@ class Assistant:
         self.state = self.work / "scripted-assistant.json"
         # A VX Ace game's text is translated in its JSON exports.
         self.ace = any(game.glob("Data/*.rvdata2"))
+        # A WOLF RPG Editor game keeps its files in Data's archives.
+        self.wolf = any(game.glob("Data/*.wolf"))
         self.data = "ace_json" if self.ace else "data"
         # The game's language pair, which the game's own settings may name.
         settings = game / ".dazedtl/settings.json"
@@ -97,14 +119,36 @@ class Assistant:
         self.report("preparation")
         evidence = self.work / "engine.md"
         evidence.write_text(
-            "RPG Maker VX Ace: Data/*.rvdata2 and Game.ini.\n"
+            "WOLF RPG Editor: Game.exe and Data/*.wolf archives.\n"
+            if self.wolf
+            else "RPG Maker VX Ace: Data/*.rvdata2 and Game.ini.\n"
             if self.ace
             else "RPG Maker MV/MZ: data/System.json and js/plugins.js.\n",
             encoding="utf-8",
         )
-        engine = "RPG Maker VX Ace" if self.ace else "RPG Maker MZ"
+        engine = (
+            "WOLF RPG Editor"
+            if self.wolf
+            else "RPG Maker VX Ace"
+            if self.ace
+            else "RPG Maker MZ"
+        )
         self.helper("identify", "--engine", engine, "--evidence", f"{WORK}/engine.md")
         self.operation("record_original")
+        if self.wolf:
+            # The archives the translation packs again are its patch.
+            files = sorted(
+                path.relative_to(self.game).as_posix()
+                for path in self.game.glob("Data/*.wolf")
+            )
+            (self.game / MANIFEST).write_text(
+                json.dumps({"files": files}), encoding="utf-8"
+            )
+            self.operation(
+                "git_setup",
+                {"version": "1.0", "untranslated": True, "manifest": MANIFEST},
+            )
+            return
         self.operation("rpgmaker_prepare")
         files = sorted(
             f"{self.data}/{path.name}"
@@ -127,6 +171,13 @@ class Assistant:
         """Indexes the game's images and saves a complete investigation that
         recommends the ones a game variant names text_, as lettered."""
         self.helper("images", "--scan")
+        self.investigate()
+        status = self.helper("images", "--status")
+        print(json.dumps(status["counts"]))
+
+    def investigate(self):
+        """Saves a complete investigation that recommends each image named
+        text_."""
         step = self.helper("images", "--investigate")
         request = json.loads(
             Path(step["task"]).with_suffix(".json").read_text(encoding="utf-8")
@@ -155,8 +206,143 @@ class Assistant:
             ],
         }
         Path(step["report"]).write_text(json.dumps(report), encoding="utf-8")
-        status = self.helper("images", "--status")
-        print(json.dumps(status["counts"]))
+
+    def archived_images(self):
+        """Translates the images of a WOLF game's Data/Picture.wolf as the
+        starting prompt says for images in archives: decoded with WolfDawn
+        into a folder the game doesn't read, run through the Images steps on
+        that folder, packed into the archive again and checkpointed. Prints
+        what the steps and the patch's Git hold."""
+        self.report("images")
+        found = subprocess.run(
+            [*self.command, "images", "--status"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+        )
+        if not found.returncode:
+            raise SystemExit("images --status read images before they were decoded")
+        print("Before decoding:", found.stderr.strip())
+        from util.wolfdawn import ensure_wolf_binary
+
+        wolf = str(ensure_wolf_binary())
+        decoded = self.game / DECODED
+        subprocess.run(
+            [wolf, "unpack", str(self.game / "Data/Picture.wolf"), "-o", str(decoded)],
+            check=True,
+            capture_output=True,
+        )
+        self.helper("images", "--scan", "--root", DECODED)
+        self.investigate()
+        step = self.helper("images", "--translate")
+        request = json.loads(
+            Path(step["task"]).with_suffix(".json").read_text(encoding="utf-8")
+        )
+        renderer = self.game / RENDERER
+        renderer.parent.mkdir(parents=True, exist_ok=True)
+        renderer.write_bytes(b"# The scripted assistant's renderer\n")
+        manifest = {"version": 1, "recipes": {}}
+        rows = []
+        for asset in request["assets"]:
+            # The lettering's corner painted over, inside the recipe's text
+            # region.
+            editable = self.game / asset["editable"]
+            image = Image.open(editable)
+            image.load()
+            image.paste((200, 10, 10), (0, 0, 16, 16))
+            image.save(editable, format="PNG")
+            candidate = sha256(editable.read_bytes())
+            manifest["recipes"][asset["id"]] = {
+                "output": candidate,
+                "command": ["{python}", RENDERER, asset["id"], "{output}"],
+                "inputs": {
+                    RENDERER: sha256(renderer.read_bytes()),
+                    asset["frozen"]: asset["frozenHash"],
+                },
+                "check": {"text": [[0, 0, 16, 16]]},
+            }
+            rows.append(
+                {
+                    "id": asset["id"],
+                    "sourceHash": asset["sourceHash"],
+                    "candidateHash": candidate,
+                    "status": "edited",
+                    "reason": "",
+                    "review": {
+                        "version": 1,
+                        "visual": True,
+                        "alpha": True,
+                        "protectedPixels": True,
+                        "layout": True,
+                        "evidence": "Compared original and candidate at native size.",
+                    },
+                }
+            )
+        (self.game / RESOURCES / "manifest.json").write_text(
+            json.dumps(manifest), encoding="utf-8"
+        )
+        Path(step["report"]).write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "kind": "editing",
+                    "projectId": request["projectId"],
+                    "requestId": request["id"],
+                    "inventoryRevision": request["inventoryRevision"],
+                    "complete": True,
+                    "assets": rows,
+                }
+            ),
+            encoding="utf-8",
+        )
+        applied = self.helper("images", "--apply")
+        if applied["next"] != "done" or applied["problems"]:
+            raise SystemExit("images --apply: " + json.dumps(applied)[:2000])
+        print("Applied:", ", ".join(applied["applied"]))
+        print("Counts:", json.dumps(applied["counts"]))
+        archive = self.game / "Data/Picture.wolf"
+        subprocess.run(
+            [wolf, "pack", str(decoded), "-o", str(archive)],
+            check=True,
+            capture_output=True,
+        )
+        self.checkpoint("images: pack Picture.wolf again")
+        # The patch, the translation branch, holds the packed archive with
+        # the translated image and the CGs as they were.
+        with tempfile.TemporaryDirectory() as folder:
+            packed = Path(folder) / "Picture.wolf"
+            packed.write_bytes(
+                subprocess.run(
+                    ["git", "-C", str(self.game), "show", "HEAD:Data/Picture.wolf"],
+                    capture_output=True,
+                    check=True,
+                ).stdout
+            )
+            subprocess.run(
+                [wolf, "unpack", str(packed), "-o", str(Path(folder) / "out")],
+                check=True,
+                capture_output=True,
+            )
+            for name in ("text_title.png", "cg/cg_0000.png", "cg/cg_0001.png"):
+                if (Path(folder) / "out" / name).read_bytes() != (
+                    decoded / name
+                ).read_bytes():
+                    raise SystemExit(f"The patch's Picture.wolf differs at {name}")
+        tracked = subprocess.run(
+            ["git", "-C", str(self.game), "ls-files", "-z"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.split("\0")
+        print(
+            "Patch:",
+            ", ".join(name for name in tracked if name and not name.startswith(".")),
+        )
+        self.report("patch")
+
+    def checkpoint(self, message="translation: write English"):
+        self.operation("checkpoint", {"manifest": MANIFEST, "message": message})
 
     def help_markers(self):
         """The comment heads MPP_ChoiceEX shows as a choice's help, from its
@@ -323,12 +509,6 @@ class Assistant:
                 )
         self.report("qa")
 
-    def checkpoint(self):
-        self.operation(
-            "checkpoint",
-            {"manifest": MANIFEST, "message": "translation: write English"},
-        )
-
 
 def kept_parameters(node, markers):
     """The parameters of a command a structural extractor keeps: a choice
@@ -418,7 +598,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=str(__doc__).split("\n", 1)[0])
     parser.add_argument(
         "step",
-        choices=["setup", "organize", "translate", "write", "images", "checkpoint"],
+        choices=[
+            "setup",
+            "organize",
+            "translate",
+            "write",
+            "images",
+            "archived-images",
+            "checkpoint",
+        ],
     )
     parser.add_argument("--helper-json", required=True)
     parser.add_argument("--game", type=Path, required=True)
@@ -431,7 +619,7 @@ def main() -> None:
     elif args.step == "organize":
         assistant.organize(args.complete)
     else:
-        getattr(assistant, args.step)()
+        getattr(assistant, args.step.replace("-", "_"))()
 
 
 if __name__ == "__main__":
