@@ -156,7 +156,7 @@ export default function ModelOptionsEditor({
           <FieldRow
             id="batch-input-tokens"
             label="Batch token allowance"
-            help="Total estimated input tokens across active Guided Batches on this connection and model. Available capacity is filled automatically. Leave headroom for other jobs sharing the account. Used by new runs."
+            help="Total estimated input tokens across active Batches on this connection and model, Guided and Assistant-led. Available capacity is filled automatically. Leave headroom for other jobs sharing the account. Used by new runs."
           >
             {(control) => (
               <input

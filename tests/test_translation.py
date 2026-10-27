@@ -990,7 +990,11 @@ class TranslationTests(unittest.TestCase):
                 return {
                     "ended": ended,
                     "terminal_failure": identity != "original" and ended,
-                    "api_status": "cancelled" if self.stopped else "in_progress",
+                    "api_status": "cancelled"
+                    if self.stopped
+                    else "completed"
+                    if ended
+                    else "in_progress",
                     "counts": {},
                 }
 

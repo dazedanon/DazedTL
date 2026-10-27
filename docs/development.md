@@ -137,6 +137,7 @@ Run them outside a sandbox such as Claude Code's bwrap: KWin needs a writable `/
 - `images`: an Assistant-led project on the `many-images` game, about 4,900 images with 3,400 CGs of about 1 MB, indexed and investigated by the scripted assistant, which recommended the 40 with lettering; for measuring Images on a big game.
 - `images-archived`: an Assistant-led project on the `wolf` game, whose pictures sit in `Data/Picture.wolf`; the scripted assistant decodes them with the bundled WolfDawn into a folder the game doesn't read, runs the Images steps on that folder with `images --scan --root`, packs the archive again and checkpoints it, then checks that the patch's archive holds the translated title.
 - `batch-waiting`: the database submitted as a Batch that the stand-in holds.
+- `batch-queued`: `batch-waiting` with a small Batch token allowance, then a copy of the game Assistant-led whose API Batch on the same OpenAI connection must wait for capacity unsent until the held Batch is released, then be sent and complete.
 - `upgraded`: translated by the previous release, then opened in this checkout.
 - `paged`: the `long-dialogue` game, translated and applied, then the Line widths narrowed to 24 characters and two rows; fails unless the game shows the long message laid out for them with every word.
   With `--game english-source`, the long message is Japanese, laid out between characters.
@@ -156,6 +157,7 @@ The stand-in's replies are not real translations: it answers any other line with
 `node scripts/scenario.mjs clean --work <dir>` stops every process the scenario started and removes its folder.
 `node scripts/scenario.mjs live [--work <dir>] [--upgrade-from <tag>]` runs the [live test](#live-test) in a private KWin of its own.
 Scenario connections reach only the stand-in: the custom connection names it, and the OpenAI preset points at it through `DAZEDTL_TEST_OPENAI_ENDPOINT`, which run workers follow too.
+Assistant-led runs on that preset count it as OpenAI's own API, so their Batches wait in the Batch token allowance as on OpenAI.
 Phone notifications go to its ntfy stand-in through `DAZEDTL_TEST_NTFY_SERVER`, which keeps them in `provider/phone.jsonl`.
 Other requests from the backend and window go to a proxy that is not there; run workers start without proxy settings, so a new provider path needs the run's own address.
 

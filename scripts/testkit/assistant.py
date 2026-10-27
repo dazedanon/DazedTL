@@ -5,7 +5,8 @@ tells an assistant to, and game text moves only through DazedTL's operations.
     python scripts/testkit/assistant.py STEP --helper-json HELPER --game GAME
 
 STEP is setup (identify, record the original, prepare, set up Git), organize (list the
-game's Japanese as source units and organize them into a run), translate
+game's Japanese as source units and organize them into a run, with
+--complete saying they cover all of it, as an API run needs), translate
 [--requests N] (answer the run's requests in order, the first N only when
 given), write (write every saved translation into the game, checking that
 the choice labels and help markers the game finds by their Japanese stay),
@@ -381,14 +382,47 @@ class Assistant:
     def answer(self, identity, source):
         return reply(identity, source, self.target)
 
-    def organize(self):
+    def organize(self, complete=False):
         self.report("extraction")
         source = self.work / "source-units.json"
         source.write_text(
             json.dumps({"version": 1, "units": self.units()}, ensure_ascii=False),
             encoding="utf-8",
         )
-        organized = self.helper("organize", "--input", f"{WORK}/source-units.json")
+        command = ["organize", "--input", f"{WORK}/source-units.json"]
+        if not complete:
+            organized = self.helper(*command)
+        else:
+            # The tool's own count of the game's text, which --complete checks.
+            census = self.helper("census")
+            self.helper("run", "--run", census["id"], "--wait", "10")
+            report = self.work / "census-uncovered.json"
+            report.unlink(missing_ok=True)
+            try:
+                organized = self.helper(*command, "--complete")
+            except SystemExit:
+                # The units leave out the title and plugin text; add what
+                # organize names, which this extractor never writes back.
+                if not report.is_file():
+                    raise
+                uncovered = json.loads(report.read_text(encoding="utf-8"))["uncovered"]
+                units = self.units() + [
+                    {
+                        "id": f"{entry['file']}#{entry['location']}#{index}",
+                        "group": "Other",
+                        "scene": "Other",
+                        "source": text,
+                        "kind": "ui",
+                        "speaker": None,
+                    }
+                    for entry in uncovered
+                    for index, text in enumerate(entry["runs"])
+                ]
+                source.write_text(
+                    json.dumps({"version": 1, "units": units}, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                organized = self.helper(*command, "--complete")
         self.remember(run=organized.get("run", organized)["id"])
 
     def translate(self, requests=None):
@@ -577,10 +611,13 @@ def main() -> None:
     parser.add_argument("--helper-json", required=True)
     parser.add_argument("--game", type=Path, required=True)
     parser.add_argument("--requests", type=int)
+    parser.add_argument("--complete", action="store_true")
     args = parser.parse_args()
     assistant = Assistant(json.loads(args.helper_json), args.game)
     if args.step == "translate":
         print(json.dumps(assistant.translate(args.requests), ensure_ascii=False))
+    elif args.step == "organize":
+        assistant.organize(args.complete)
     else:
         getattr(assistant, args.step.replace("-", "_"))()
 

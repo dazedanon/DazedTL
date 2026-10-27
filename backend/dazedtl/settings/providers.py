@@ -81,6 +81,16 @@ def address(connection):
     )
 
 
+def native_openai(endpoint):
+    """Whether `endpoint` is OpenAI's own API, whose Batches share one
+    enqueued-token window; in test scenarios the OpenAI preset's stand-in
+    counts as it."""
+    value = str(endpoint or "").rstrip("/")
+    return urlsplit(value).hostname == "api.openai.com" or value == PROVIDERS["openai"][
+        "endpoint"
+    ].rstrip("/")
+
+
 def route(protocol, url):
     value = url.rstrip("/")
     if protocol == "anthropic" and value == "https://api.anthropic.com/v1":
