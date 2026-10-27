@@ -15,7 +15,9 @@ export function ciScenarios(
     "utf8",
   ),
 ) {
-  const block = /\n(\s+)scenarios:\n((?:\1\s+- .+\n)+)/.exec(workflow);
+  const block = /\n(\s+)scenarios:\n((?:\1\s+- .+\n)+)/.exec(
+    workflow.replaceAll("\r\n", "\n"),
+  );
   if (!block) throw new Error("CI's workflow lists no scenarios.");
   const runs = [];
   for (const line of block[2].trim().split("\n")) {
