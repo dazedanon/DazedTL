@@ -53,8 +53,10 @@ def cache_read_multiplier(provider: str, model: str) -> float:
     Anthropic reads cost 0.05 times regular input on Claude Opus 5.5 and
     Sonnet 5.5 and 0.025 times on Claude Fable 5.1 and Mythos 5.1. Kimi
     reads cost $0.16 of K2.6's $0.95 and $0.19 of K2.7 Code's $0.95
-    (https://platform.kimi.ai/docs/pricing/chat). Every other route here,
-    Kimi K3 included, prices them at 0.1 times.
+    (https://platform.kimi.ai/docs/pricing/chat). DeepSeek reads cost $0.006
+    of Flash's $0.30 and $0.044 of V4 Pro's $1.32, off-peak too
+    (https://api-docs.deepseek.com/quick_start/pricing). Every other route
+    here, Kimi K3 included, prices them at 0.1 times.
     """
     normalized_provider = str(provider or "").strip().lower()
     name = str(model or "").lower()
@@ -68,6 +70,11 @@ def cache_read_multiplier(provider: str, model: str) -> float:
             return 0.20
         if "kimi-k2.6" in name:
             return 0.16 / 0.95
+    if normalized_provider == "deepseek":
+        if "deepseek-v4-pro" in name:
+            return 0.044 / 1.32
+        if "flash" in name:
+            return 0.006 / 0.30
     return 0.10
 
 

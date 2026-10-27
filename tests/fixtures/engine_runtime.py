@@ -2105,6 +2105,32 @@ try:
             )
             assert legacy["response_format"] == {"type": "json_object"}
             assert "provider" not in legacy.get("extra_body", {})
+            # DeepSeek's own models think within max_tokens by default, so a
+            # long request gets the full ceiling there and the cap elsewhere.
+            for model, endpoint, ceiling in (
+                (
+                    "deepseek/fixture",
+                    None,
+                    translation.COMPAT_TRANSLATION_OUTPUT_TOKENS,
+                ),
+                (
+                    "deepseek-flash",
+                    "https://api.deepseek.com",
+                    translation.MAX_TRANSLATION_OUTPUT_TOKENS,
+                ),
+            ):
+                params = translation.buildOpenAIRequest(
+                    "Translate.",
+                    "薬" * 9000,
+                    [],
+                    0,
+                    "json",
+                    model,
+                    numLines=1,
+                    api_url=endpoint,
+                )
+                assert params["max_tokens"] == ceiling, (model, params["max_tokens"])
+                assert params["response_format"] == {"type": "json_object"}
         # Namespaced Claude/GPT IDs retain OpenRouter's transport identity;
         # Batch must never use native OpenAI/Anthropic upload endpoints.
         for model in ("anthropic/claude-sonnet-4.5", "openai/gpt-4.1"):

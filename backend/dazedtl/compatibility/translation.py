@@ -392,7 +392,9 @@ class TranslationEngine:
             )
             params["response_format"] = (
                 {"type": "json_object"}
-                if configuration["provider"] in {"custom", "mistral", "openrouter"}
+                # DeepSeek's JSON mode has no strict schemas.
+                if configuration["provider"]
+                in {"custom", "mistral", "openrouter", "deepseek"}
                 else {
                     "type": "json_schema",
                     "json_schema": {

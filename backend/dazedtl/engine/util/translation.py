@@ -12,6 +12,7 @@ import random
 import unicodedata
 import tiktoken
 import urllib.request
+from urllib.parse import urlsplit
 from importlib import import_module
 from types import SimpleNamespace
 import hashlib
@@ -325,7 +326,10 @@ _NO_SAMPLING_RE = re.compile(r"opus-4-(?:[7-9]\b|[1-9]\d)|fable", re.I)
 _DEFAULT_THINKING_RE = re.compile(
     r"claude-(?:(?:opus|sonnet)-(?:[5-9]|[1-9]\d)\b|fable|mythos)"
     # Kimi K3 always thinks; K2.6 and K2.7 Code think unless told not to.
-    r"|kimi-k(?:3|2\.[67])", re.I
+    r"|kimi-k(?:3|2\.[67])"
+    # DeepSeek's Flash and V4 models think unless told not to; its reasoner
+    # always does.
+    r"|deepseek-(?:flash|v4|reasoner)", re.I
 )
 
 # Tracks which distinct batch sizes have already been cache-written during this estimate run.
@@ -3667,7 +3671,11 @@ def _load_litellm_pricing() -> dict | None:
 
 # The catalog lists some first-party APIs' bare model IDs only under the
 # provider's namespace, beside resellers that may charge differently.
-_FIRST_PARTY_CATALOG = (("kimi-", "moonshot"), ("moonshot-", "moonshot"))
+_FIRST_PARTY_CATALOG = (
+    ("kimi-", "moonshot"),
+    ("moonshot-", "moonshot"),
+    ("deepseek-", "deepseek"),
+)
 
 
 def _lookup_model_price(model: str):
@@ -3813,8 +3821,12 @@ def getPricingConfig(model):
         cfg = {"inputAPICost": 2.00,  "outputAPICost": 8.00,  "batchSize": 30, "frequencyPenalty": 0.05}
     elif "gpt-5" in model:
         cfg = {"inputAPICost": 1.25,  "outputAPICost": 10.00, "batchSize": 30, "frequencyPenalty": 0.05}
+    # DeepSeek API standard rates; off-peak hours cost half.
+    # https://api-docs.deepseek.com/quick_start/pricing
+    elif "deepseek-v4-pro" in model:
+        cfg = {"inputAPICost": 1.32,  "outputAPICost": 3.96,  "batchSize": 30, "frequencyPenalty": 0.05}
     elif "deepseek" in model:
-        cfg = {"inputAPICost": 0.27,  "outputAPICost": 1.10,  "batchSize": 30, "frequencyPenalty": 0.05}
+        cfg = {"inputAPICost": 0.30,  "outputAPICost": 1.20,  "batchSize": 30, "frequencyPenalty": 0.05}
     # Mistral — system prompt is resent per request (no prompt caching), so
     # throughput/cost favor larger batches. Live LiteLLM pricing overrides these.
     elif "mistral-large" in model or "pixtral-large" in model:
@@ -4716,6 +4728,18 @@ def _is_official_openai_api(api_provider=None, api_url=None):
     return native_openai(endpoint)
 
 
+def _is_deepseek_api(api_url=None):
+    """Return whether a request targets DeepSeek's own API."""
+    endpoint = (
+        os.getenv("api", "") if api_url is None else str(api_url or "")
+    ).strip()
+    try:
+        hostname = urlsplit(endpoint).hostname
+    except ValueError:
+        hostname = None
+    return hostname == "api.deepseek.com"
+
+
 @extensions.point
 def _translation_completion_limit(
     user,
@@ -5007,9 +5031,13 @@ def buildOpenAIRequest(system, user, history, penalty, formatType, model,
         or provider == "kimi"
         or (provider == "openai" and is_kimi_api(api_url))
     )
-    if is_deepseek:
+    # DeepSeek's own API allows far longer replies than other DeepSeek hosts,
+    # and its models think by default within max_tokens.
+    # https://api-docs.deepseek.com/api/create-chat-completion
+    deepseek_api = _is_deepseek_api(api_url)
+    if is_deepseek and not deepseek_api:
         completion_ceiling = COMPAT_TRANSLATION_OUTPUT_TOKENS
-    elif completion_field or provider == "gemini":
+    elif completion_field or provider == "gemini" or deepseek_api:
         completion_ceiling = MAX_TRANSLATION_OUTPUT_TOKENS
     elif is_mistral:
         completion_ceiling = MISTRAL_TRANSLATION_OUTPUT_TOKENS

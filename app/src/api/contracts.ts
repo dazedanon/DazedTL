@@ -2009,6 +2009,7 @@ export type Provider =
   | "gemini"
   | "mistral"
   | "kimi"
+  | "deepseek"
   | "custom";
 
 export type ProviderProtocol = "openai" | "anthropic" | "gemini" | "mistral";

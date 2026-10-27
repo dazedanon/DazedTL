@@ -1887,9 +1887,10 @@ class ManualJobs:
                 ("openrouter", "openai", "live"),
                 ("gemini", "gemini", "batch"),
                 ("mistral", "mistral", "live"),
+                ("deepseek", "openai", "live"),
                 ("custom", "openai", "live"),
             ):
-                with self.subTest(protocol=protocol):
+                with self.subTest(provider=provider):
                     payload = engine.payload(
                         row,
                         {
@@ -1916,6 +1917,11 @@ class ManualJobs:
                     self.assertIn(
                         "Two people at the gate", sent["request_instructions"]
                     )
+                    if provider == "deepseek":
+                        # DeepSeek's JSON mode refuses strict schemas.
+                        self.assertEqual(
+                            payload["response_format"], {"type": "json_object"}
+                        )
                     if provider == "openrouter":
                         self.assertEqual(
                             payload["response_format"], {"type": "json_object"}

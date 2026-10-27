@@ -408,6 +408,13 @@ Create a key on [Kimi's platform](https://platform.kimi.ai/), then choose **Kimi
 Batch works with Kimi K2.6 and K2.7 Code, at 40% off the Live price; Kimi K3 translates Live only.
 These models think before they answer, which is billed as output and isn't in the estimate.
 
+### DeepSeek
+
+Create a key on [DeepSeek's platform](https://platform.deepseek.com/), then choose **DeepSeek** as the provider.
+DeepSeek has no Batch, so it translates Live.
+Its models think before they answer, which is billed as output and isn't in the estimate.
+Estimates use DeepSeek's standard price; outside its [peak hours](https://api-docs.deepseek.com/quick_start/pricing) it costs half.
+
 ## Notifications
 
 **Settings > Notifications** can call you back to DazedTL with a sound, a desktop notification, a notification on your phone, or any of them; all start off.

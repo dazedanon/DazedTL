@@ -9,11 +9,12 @@ from urllib.parse import quote, urlsplit
 
 import httpx
 
-# A preset declares its transport protocol independently of its identity. Kimi
-# and OpenRouter keep OpenAI's Live request formats under their own identity,
-# so Kimi's Batches carry its eligible models and price factor (engine
-# batch_providers and provider_costs) and OpenRouter has its own Batch
-# transport (compatibility/openrouter_batch.py).
+# A preset declares its transport protocol independently of its identity. Kimi,
+# DeepSeek and OpenRouter keep OpenAI's Live request formats under their own
+# identity, so Kimi's Batches carry its eligible models and price factor (engine
+# batch_providers and provider_costs), DeepSeek gets JSON mode instead of strict
+# schemas, and OpenRouter has its own Batch transport
+# (compatibility/openrouter_batch.py).
 PROVIDERS = {
     "openai": {
         "label": "OpenAI",
@@ -47,6 +48,11 @@ PROVIDERS = {
         "label": "Kimi",
         "protocol": "openai",
         "endpoint": "https://api.moonshot.ai/v1",
+    },
+    "deepseek": {
+        "label": "DeepSeek",
+        "protocol": "openai",
+        "endpoint": "https://api.deepseek.com",
     },
     "custom": {"label": "Custom / local", "protocol": "openai", "endpoint": ""},
 }
@@ -201,6 +207,7 @@ def check(connection):
     https://platform.claude.com/docs/en/api/models/list
     https://ai.google.dev/gemini-api/docs/openai#list-models
     https://docs.mistral.ai/api/endpoint/models
+    https://api-docs.deepseek.com/api/list-models
     https://openrouter.ai/docs/api/api-reference/models/list-models-filtered-by-user-provider-preferences-privacy-settings-and-guardrails
     """
     protocol = connection["protocol"]
