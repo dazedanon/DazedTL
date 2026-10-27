@@ -220,7 +220,8 @@ class TranslationTests(unittest.TestCase):
             results.get(live)["translations"],
             {"line": sources["line"], "moan": "Mm♥Ah"},
         )
-        # A line given back as its source passes, as Guided keeps it.
+        # A line given back as its source is saved, as Guided keeps it, but
+        # is no translation: the export reads it left.
         accepted = {"line": sources["line"], "moan": "Mm♥Ah...h"}
         saved = results.accept(row, accepted, {})
         # The export gets Guided's automatic lint fixes; the receipt and a
@@ -235,7 +236,7 @@ class TranslationTests(unittest.TestCase):
             unit["source_id"]: unit for unit in results.units([row], results.listing())
         }
         self.assertEqual(units["moan"]["translation"], "Mm♥ Ah...")
-        self.assertEqual(units["line"]["translation"], sources["line"])
+        self.assertNotIn("translation", units["line"])
         self.assertEqual(
             units["moan"]["reviewed_sha256"],
             review_digest(sources["moan"], "Mm♥ Ah..."),
@@ -414,12 +415,17 @@ class TranslationTests(unittest.TestCase):
             old["translations"],
         )
 
-    def test_a_refusal_note_accepted_under_older_rules_reads_as_not_translated(self):
+    def test_a_receipt_of_refusal_notes_or_source_text_reads_as_not_translated(self):
         # Receipts from before 2.34.5 kept "Declined." as a translation; they
-        # were exported, counted translated and never resent.
-        refused, kept = request("refused"), request("kept")
+        # were exported, counted translated and never resent. So was one
+        # giving every line back in its source text, as a reply kept whole is.
+        refused, kept, echoed = request("refused"), request("kept"), request("echoed")
         results = Results(self.game)
-        for row, text in ((refused, "Declined. ⟦P0⟧"), (kept, "Yes. ⟦P0⟧")):
+        for row, text in (
+            (refused, "Declined. ⟦P0⟧"),
+            (kept, "Yes. ⟦P0⟧"),
+            (echoed, echoed["sources"]["line"]),
+        ):
             translations = {"line": text}
             write_json(
                 project_path(self.game, results.relative(row), exists=False),
@@ -433,19 +439,26 @@ class TranslationTests(unittest.TestCase):
                 },
             )
         self.assertIsNone(results.get(refused))
+        self.assertIsNone(results.get(echoed))
         self.assertEqual(results.get(kept)["translations"], {"line": "Yes. ⟦P0⟧"})
         # Translating it again replaces the note and archives its receipt.
         saved = results.accept(refused, {"line": "Yes. ⟦P0⟧"}, {})
         self.assertEqual(results.get(refused), saved)
-        history = list(
-            (self.game / ".dazedtl/len-method/work/accepted-history").rglob("*.json")
+        # The source text given back again is no new result to save.
+        self.assertEqual(
+            results.accept(echoed, echoed["sources"], {})["translations"],
+            echoed["sources"],
+        )
+        results.accept(echoed, {"line": "Yes. ⟦P0⟧"}, {})
+        history = (self.game / ".dazedtl/len-method/work/accepted-history").rglob(
+            "*.json"
         )
         self.assertEqual(
-            [
-                json.loads(path.read_text(encoding="utf-8"))["translations"]
+            sorted(
+                json.loads(path.read_text(encoding="utf-8"))["translations"]["line"]
                 for path in history
-            ],
-            [{"line": "Declined. ⟦P0⟧"}],
+            ),
+            ["Declined. ⟦P0⟧", "はい。⟦P0⟧"],
         )
 
     def test_worker_owner_loss_stops_before_another_paid_request(self):

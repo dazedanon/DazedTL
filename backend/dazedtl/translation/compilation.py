@@ -15,6 +15,9 @@ COMPILER_VERSION = 1
 def compile_requests(engine, source, options, raw, language, skill_users=None):
     """The plan's requests. ``skill_users`` holds the notes on its units'
     skill users that the run's policy gives them (translation/skill_users)."""
+    if not raw["batches"]:
+        # Organize found every line translated; nothing reads the game.
+        return [], COMPILER_VERSION
     compiled = engine.compile(source, options, raw, language, skill_users or {})
     if len(compiled) != len(raw["batches"]):
         raise ValueError("The engine compiler did not return every source batch.")
@@ -60,7 +63,9 @@ def verify_compilation(engine, workspace, project_id, plan, index=None):
     # Unversioned source plans are accepted only when validating an existing,
     # immutable run. New compilation always requires the current input contract.
     raw = plan_input(
-        read_json(project_path(plan["source"], plan["input_path"])), allow_legacy=True
+        read_json(project_path(plan["source"], plan["input_path"])),
+        allow_legacy=True,
+        allow_empty=bool(plan.get("reused")),
     )
     saved = plan["requests"]
     if index is not None:

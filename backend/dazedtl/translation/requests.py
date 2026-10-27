@@ -242,7 +242,9 @@ def from_provider(request, configuration, result):
     return {identities[key]: text for key, text in value.items()}
 
 
-def plan_input(value, *, allow_legacy=False):
+def plan_input(value, *, allow_legacy=False, allow_empty=False):
+    """A validated source plan. With allow_empty it may hold no batch, as
+    organize's does when every line already has a translation."""
     if not isinstance(value, dict):
         raise ValueError("A source plan must be a JSON object.")
     legacy = allow_legacy and "version" not in value
@@ -260,7 +262,7 @@ def plan_input(value, *, allow_legacy=False):
     ):
         raise ValueError("Bind the plan to its source and guidance files.")
     batches = value["batches"]
-    if not isinstance(batches, list) or not batches:
+    if not isinstance(batches, list) or not (batches or allow_empty):
         raise ValueError("The plan must contain at least one source batch.")
     identities = set()
     for batch in batches:
