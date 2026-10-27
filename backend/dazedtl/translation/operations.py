@@ -435,9 +435,11 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
                 workspace, job["project_id"], source, state, stopped
             )
         if operation == "apply":
-            # Readers take the prepared record of the version the `original`
-            # branch is at, so this one counts once the update moves that
-            # branch, before it changes the game's files. A
+            # The release's record is made before the update changes the
+            # game's files, and counts only once the update's commit names it
+            # as it moves the `original` branch, so an update cancelled or
+            # failed before then leaves the current one read, even under the
+            # same version label. A
             # patch holds only some of the game's files, so it is laid over
             # the current version's record, or an older project's backup;
             # without either it records nothing, rather than a game missing
@@ -455,15 +457,17 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
                 else None
             )
             if over or not arguments.get("patch_overlay"):
-                original_files.record(
+                prepared = original_files.record(
                     source,
                     original_files.PREPARED,
                     arguments["version"],
                     folder=Path(arguments["official"]),
                     over=over,
+                    named=True,
                     stopped=stopped,
                     progress=progress,
                 )
+                arguments = {**arguments, "prepared_record": prepared}
             state["incoming_version"] = arguments["version"]
             # Finishing it, maybe after its conflicts, reads the release.
             state["incoming_release"] = arguments["official"]

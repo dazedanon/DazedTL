@@ -51,6 +51,11 @@ _PRESERVE_GAME_FILES_TRAILER = "DazedTL-Preserve-Game-Files: true"
 VERSION_TRAILER = "DazedTL-Version"
 # Whether an update commit came from a complete release or a patch copied over the game.
 RELEASE_TRAILER = "DazedTL-Release"
+# On an update commit, the commit of DazedTL's private record of the prepared
+# release it was made from (dazedtl/compatibility/original_files.py), which
+# counts as the game's original files only once this commit names it.
+PREPARED_TRAILER = "DazedTL-Prepared"
+_OBJECT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 _TOOL_NAME = "DazedMTLTool"
 _TOOL_EMAIL = "local@dazedmtl.invalid"
 _ZERO_OID = "0" * 40
@@ -3446,9 +3451,15 @@ def apply_official_update(
     previous_official_game: str | Path | None = None,
     expected_baseline_asset_manifest: str | None = None,
     patch_overlay: bool = False,
+    prepared_record: str | None = None,
 ) -> UpdateResult:
+    """Moves the original branch to the release and brings it into the
+    translation. `prepared_record` names the record of the prepared release
+    made before, which the update commit names in its trailer."""
     game = Path(translated_game).expanduser().resolve()
     version = _validate_version(version)
+    if prepared_record is not None and not _OBJECT_ID.fullmatch(prepared_record):
+        raise GitWorkflowError("The prepared release's record is not a commit ID")
     status = inspect_repository(game)
     if not status.repo_root or not status.original_commit or not status.translation_commit:
         raise GitWorkflowError("Register both branches before applying an update")
@@ -3602,7 +3613,8 @@ def apply_official_update(
         repo,
         new_tree.tree,
         _message(subject, version)
-        + f"\n{RELEASE_TRAILER}: {'patch' if patch_overlay else 'complete'}",
+        + f"\n{RELEASE_TRAILER}: {'patch' if patch_overlay else 'complete'}"
+        + (f"\n{PREPARED_TRAILER}: {prepared_record}" if prepared_record else ""),
         (baseline_parent,),
     )
     if baseline_was_missing:

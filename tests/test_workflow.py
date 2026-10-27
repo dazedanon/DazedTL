@@ -4,6 +4,7 @@ import json
 import shutil
 import unittest
 from copy import deepcopy
+from functools import partial
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -1213,9 +1214,12 @@ class WorkflowTests(unittest.TestCase):
         # undo deleted a file the patch added outside the translation's
         # patch and put back the old bytes of one it changed.
         import hashlib
+        from dataclasses import asdict
 
         from dazedtl.compatibility.checkpoint_history import Entry, _Game
+        from dazedtl.compatibility.translation import TranslationEngine
         from dazedtl.translation import originals
+        from util import version_update
         from util.len_git import setup_git
         from util.len_patch_scope import scope_ignore
         from util.len_translation import LenProject
@@ -1238,7 +1242,12 @@ class WorkflowTests(unittest.TestCase):
         (official / "movies").mkdir(parents=True)
         (official / "movies/old.webm").write_bytes(b"changed")
         (official / "movies/added.webm").write_bytes(b"added")
-        self.engine.version = lambda *_args: {"complete": True}
+        self.engine.version = TranslationEngine(self.profile).version
+        preview = asdict(
+            version_update.preview_official_update(
+                self.game, official, "1.1", patch_overlay=True
+            )
+        )
         execute(
             self.engine,
             self.profile,
@@ -1251,6 +1260,7 @@ class WorkflowTests(unittest.TestCase):
                     "official": str(official),
                     "version": "1.1",
                     "patch_overlay": True,
+                    "preview": preview,
                 },
             },
             lambda: False,
@@ -1266,6 +1276,110 @@ class WorkflowTests(unittest.TestCase):
         ):
             blob = hashlib.sha1(b"blob %d\0" % len(raw) + raw).hexdigest()
             self.assertEqual(game.wanted(name, {}), ("100644", blob))
+
+    def test_an_update_that_never_moved_the_original_branch_leaves_its_originals(
+        self,
+    ):
+        # An update recorded its prepared release before it moved the
+        # `original` branch, and readers took the newest record of the
+        # branch's version, so a release given the current version's label
+        # and cancelled at a conflict, or failing before the branch moved,
+        # became the game's original files: a Chinese target's values read
+        # translated, and the census and patch sources read the wrong files.
+        from dataclasses import asdict
+
+        from dazedtl.compatibility.checkpoint_commits import _git
+        from dazedtl.compatibility.checkpoint_history import Entry, _Game
+        from dazedtl.compatibility.translation import TranslationEngine
+        from dazedtl.translation import originals
+        from util import version_update
+        from util.len_git import setup_git
+        from util.len_translation import LenProject
+
+        def git(*arguments):
+            return _git(self.game, *arguments).stdout.strip()
+
+        def reads():
+            """The prepared original every reader takes, which must agree."""
+            recorded = originals.recorded_now(self.game)
+            self.assertEqual(
+                originals.prepared(self.profile, self.identity, self.game).id,
+                recorded,
+            )
+            game = _Game(self.game, Entry("", "", "", version="1.0"))
+            self.assertEqual(
+                game.recorded,
+                {
+                    path: row[:2]
+                    for path, row in original_files.files(self.game, recorded).items()
+                },
+            )
+            return recorded
+
+        original_files.record(self.game, original_files.PREPARED, "1.0")
+        setup_git(LenProject(self.game), version="1.0", current_is_untranslated=True)
+        # A game set up before records were named reads the newest record of
+        # its version, as it did, here one an update cancelled then left.
+        legacy = original_files.record(self.game, original_files.PREPARED, "1.0")
+        self.assertEqual(reads(), legacy)
+        write_json(self.game / "source.json", {"line": "Yes."})
+        git("add", "source.json")
+        git("-c", "user.name=T", "-c", "user.email=t@t", "commit", "-qm", "Apply")
+        official = self.root / "release"
+        official.mkdir()
+        write_json(official / "source.json", {"line": "いいえ。"})
+        engine = TranslationEngine(self.profile)
+        self.engine.version = engine.version
+
+        def apply(*, stop=False, change=None):
+            preview = asdict(
+                version_update.preview_official_update(self.game, official, "1.0")
+            )
+            if change:
+                change()
+            with patch.object(
+                version_update,
+                "apply_official_update",
+                partial(version_update.apply_official_update, auto_resolve=not stop),
+            ):
+                return operation("version_apply", preview=preview)
+
+        def operation(action, **arguments):
+            return execute(
+                self.engine,
+                self.profile,
+                {"project_id": self.identity},
+                {
+                    "source": str(self.game),
+                    "options": DEFAULTS,
+                    "action": action,
+                    "arguments": {
+                        "official": str(official),
+                        "version": "1.0",
+                        **arguments,
+                    },
+                },
+                lambda: False,
+            )
+
+        # The developer's new release under the same label, stopped at its
+        # conflict and cancelled.
+        self.assertFalse(apply(stop=True)["complete"])
+        operation("version_abort")
+        self.assertEqual(
+            git("show", "original:source.json"), '{\n  "line": "はい。"\n}'
+        )
+        self.assertEqual(reads(), legacy)
+        # One whose release changed after its preview fails before it moves
+        # the branch.
+        with self.assertRaisesRegex(Exception, "changed after preview"):
+            apply(change=lambda: write_json(official / "extra.json", {}))
+        self.assertEqual(reads(), legacy)
+        # Applied, its record is the original, under the same label.
+        self.assertTrue(apply()["complete"])
+        update = reads()
+        self.assertNotEqual(update, legacy)
+        self.assertIn("extra.json", original_files.files(self.game, update))
 
     def test_helper_checkpoints_save_through_git_with_dazedtls_own_files(self):
         # The helper's checkpoint once restored originals from the backup and

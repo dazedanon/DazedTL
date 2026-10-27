@@ -444,6 +444,8 @@ class _Game:
         tip = _git(root, "rev-parse", "--verify", "-q", ORIGINAL, check=False)
         self.original_tip = tip.stdout.strip() if tip.returncode == 0 else ""
         self.oldest = None
+        # The `original` commit the target's files are read against.
+        self.original_commit = ""
         self.original = self._original(target.version)
         self.recorded = self._recorded(target.version)
         # The original branch made from the patch alone, as every baseline
@@ -467,14 +469,14 @@ class _Game:
         )
 
     def _recorded(self, version):
-        """The recorded original game's files at `version`: its prepared
-        record, or for the first version the game as DazedTL found it; None
-        without either."""
+        """The recorded original game's files at `version`: the prepared
+        record of the `original` commit its files are read against, or for
+        the first version the game as DazedTL found it; None without either."""
         from . import original_files
 
-        row = original_files.chosen(self.root, original_files.PREPARED, version)
+        row = original_files.prepared_record(self.root, self.original_commit or None)
         if row is None and version is not None and version == self.oldest:
-            row = original_files.chosen(self.root, original_files.FOUND)
+            row = original_files.found_record(self.root)
         if row is None:
             return None
         return {
@@ -507,7 +509,8 @@ class _Game:
                 # Commits after the version's own, such as a completed
                 # original, belong to it while no newer version followed.
                 chosen = self.original_tip if recorded == newest else identity
-        return self.tree(chosen or commit)
+        self.original_commit = chosen or commit
+        return self.tree(self.original_commit)
 
     def wanted(self, path, tree):
         """The (mode, blob) the file has as of the target, (SAVED, path) when

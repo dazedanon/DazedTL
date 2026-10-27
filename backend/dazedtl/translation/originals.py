@@ -9,8 +9,9 @@ before that keeps reading the backups it saved then, through the records its
   file lists and Start over read: an old project's `source_backup` while it
   is readable, else the Git record.
 - `prepared`, the game as its current version's baseline was made, which
-  the census, checkpoint sources and packaging read: the Git record of that
-  version, else an old `prepared_source`, else `found`.
+  the census, checkpoint sources and packaging read: the Git record the
+  `original` branch's tip holds (`original_files.prepared_record`), else an
+  old `prepared_source`, else `found`.
 
 Each is an `Original` with the same reads, so no reader knows which kind it
 has.
@@ -163,8 +164,7 @@ def _lifecycle(workspace, project_id, state):
     return lifecycle(workspace, project_id)
 
 
-def _record(root, kind, version=None):
-    row = original_files.chosen(root, kind, version)
+def _record(root, row):
     return _Recorded(root, row.commit) if row else None
 
 
@@ -173,7 +173,7 @@ def found(workspace, project_id, root, state=None):
     root = Path(root)
     state = _lifecycle(workspace, project_id, state)
     return _saved(workspace, project_id, root, state.get("source_backup")) or (
-        _record(root, original_files.FOUND)
+        _record(root, original_files.found_record(root))
     )
 
 
@@ -193,9 +193,7 @@ def recorded_now(root):
     patch for the next version is laid over: its prepared record, else the
     game as found; None without either."""
     root = Path(root)
-    row = original_files.chosen(
-        root, original_files.PREPARED, _current_version(root)
-    ) or original_files.chosen(root, original_files.FOUND)
+    row = original_files.prepared_record(root) or original_files.found_record(root)
     return row.commit if row else None
 
 
@@ -323,8 +321,7 @@ def prepared(workspace, project_id, root, state=None, *, or_found=True):
     state = _lifecycle(workspace, project_id, state)
     recorded = None
     if original_files.recorded(root):
-        version = _current_version(root)
-        recorded = _record(root, original_files.PREPARED, version)
+        recorded = _record(root, original_files.prepared_record(root))
     return (
         recorded
         or _saved(workspace, project_id, root, state.get("prepared_source"))

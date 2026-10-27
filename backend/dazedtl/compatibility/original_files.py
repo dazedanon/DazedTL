@@ -15,6 +15,13 @@ and `.dazedtl`, in native bytes, and says which kind of record it is in a
 - `update`: a new official release as the user chose it, before it is laid
   out as the game.
 
+A game update records its prepared release before it moves the `original`
+branch, so that record says `DazedTL-Read: when-named`: it is the game's
+original only once the update's commit on that branch names it in a
+`DazedTL-Prepared` trailer. An update cancelled, failed or stopped before it
+moved the branch leaves the record read as it was, even for a release given
+the current version's label (`prepared_record`).
+
 Nothing is ever removed from the ref, so a game's records keep every version
 DazedTL saw; identical files are one Git object. Saved backups from before
 these records stay readable through [originals](../translation/originals.py),
@@ -43,6 +50,8 @@ from .checkpoint_commits import _git
 REF = "refs/dazedtl/originals"
 KIND_TRAILER = "DazedTL-Original"
 VERSION_TRAILER = "DazedTL-Version"
+# A record that counts only once an `original` commit names it.
+READ_TRAILER, WHEN_NAMED = "DazedTL-Read", "when-named"
 FOUND, PREPARED, UPDATE = "found", "prepared", "update"
 _SUBJECTS = {
     FOUND: "Original game files as DazedTL found them",
@@ -97,6 +106,8 @@ class Record:
     commit: str
     kind: str
     version: str
+    # Whether it counts only once an `original` commit names it.
+    named: bool = False
 
 
 def _folder(root):
@@ -167,21 +178,53 @@ def _records(root):
                 commit,
                 _trailer(message, KIND_TRAILER),
                 _trailer(message, VERSION_TRAILER),
+                _trailer(message, READ_TRAILER) == WHEN_NAMED,
             )
         )
     return rows[::-1]
 
 
-def chosen(root, kind, version=None):
-    """The record a reader of `kind` takes: the oldest `found`, the game as
-    DazedTL first found it, or the newest record of another kind, of
-    `version` when given; None without one."""
-    rows = [row for row in records(root) if row.kind == kind]
-    if version is not None:
-        rows = [row for row in rows if row.version == version]
+def found_record(root):
+    """The game as DazedTL first found it, its oldest `found` record; None
+    without one."""
+    return next((row for row in records(root) if row.kind == FOUND), None)
+
+
+def prepared_record(root, commit=None):
+    """The prepared record of the game as the `original` commit `commit`, the
+    branch's tip by default, holds it: the one that commit or an older one of
+    its version names, as a game update's commit names the record it was made
+    from. A version none of whose commits name one, set up or updated before
+    records were named, reads the newest record of its version label that
+    waits for no name; without the branch, the newest of any version. None
+    without one."""
+    from util.version_update.git_workflow import ORIGINAL_BRANCH, PREPARED_TRAILER
+
+    rows = [row for row in records(root) if row.kind == PREPARED]
     if not rows:
         return None
-    return rows[0] if kind == FOUND else rows[-1]
+    log = _git(
+        root,
+        "log",
+        "--first-parent",
+        "--format=%x1e%B",
+        commit or ORIGINAL_BRANCH,
+        "--",
+        check=False,
+    )
+    version = None
+    for message in log.stdout.split("\x1e")[1:] if not log.returncode else ():
+        label = _trailer(message, VERSION_TRAILER)
+        if version is None:
+            version = label
+        elif label != version:
+            break
+        if named := _trailer(message, PREPARED_TRAILER):
+            return next((row for row in rows if row.commit == named), None)
+    rows = [row for row in rows if not row.named]
+    if version is not None:
+        rows = [row for row in rows if row.version == version]
+    return rows[-1] if rows else None
 
 
 def recorded(root):
@@ -272,12 +315,14 @@ def record(
     *,
     folder=None,
     over=None,
+    named=False,
     stopped=lambda: False,
     progress=lambda _message: None,
 ):
     """Records every file of `folder`, the game itself by default, as the
     game's newest record of `kind`, and returns its commit; with `over`, a
-    record the folder's files are laid over, as a patch is over the game. A
+    record the folder's files are laid over, as a patch is over the game, and
+    with `named`, one that counts only once an `original` commit names it. A
     folder that changes while it is read records nothing."""
     from util.version_update.git_workflow import _temporary_index
 
@@ -330,6 +375,8 @@ def record(
     trailers = [f"{KIND_TRAILER}: {kind}"]
     if version:
         trailers.append(f"{VERSION_TRAILER}: {version}")
+    if named:
+        trailers.append(f"{READ_TRAILER}: {WHEN_NAMED}")
     text = (
         _SUBJECTS[kind]
         + (f" ({version})" if version else "")

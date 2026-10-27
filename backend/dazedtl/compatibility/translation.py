@@ -1236,6 +1236,7 @@ class TranslationEngine:
                     previous_official_game=options.get("baseline") or None,
                     expected_baseline_asset_manifest=preview["baseline_asset_manifest"],
                     patch_overlay=options.get("patch_overlay", False),
+                    prepared_record=options.get("prepared_record"),
                 )
             )
         if action == "continue":
