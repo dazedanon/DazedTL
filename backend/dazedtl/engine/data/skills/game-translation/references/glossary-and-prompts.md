@@ -356,19 +356,8 @@ pronouns in 44 and feminine in 29, so a player met "him" before the boss and
 **Japanese does not mark gender, so the model supplies one.** That corpus used
 彼/彼女 for the deity exactly zero times across all 46 distinct lines,
 and the plot turns on nobody ever having seen it. Every "he" and "she" was
-invented, and each one deflated the reveal. For any entity the source leaves
-unmarked - a god, a voice, an unseen villain, a narrator - put the rule in the
-bible explicitly:
-
-> おろち様 is "Great Orochi", and has NO GENDER. Do not write he, him, his, she
-> or her for it - rephrase ("that god's wrath", "we'd never be shown that
-> form"). Guessing invents information and deflates the reveal.
-
-Note what that costs: **every localized honorific in English is gendered**.
-Lord and Lady both assert something the source does not. If the patch localizes
-honorifics (エリス様 -> "Lady Eris") then a neutral one has to be found rather
-than defaulted to - "Great X" works for a deity - or the honorific is kept in
-romaji as the single documented exception. Decide it once, in the bible.
+invented, and each one deflated the reveal, as did every Lord or Lady.
+The rules for unknown gender and gendered honorifics are in the setup instructions, under Character identity and terminology safeguards.
 
 **Catch it before spending.** A pre-flight pass over the extracted source costs
 nothing and lists exactly what to pin: count the recurring proper nouns that no
@@ -592,18 +581,13 @@ Re-validate afterwards. Two units sharing a source can sit in differently-sized 
 
 This game tracks 淫乱度 (Lewdness), which you lose at. `淫乱度が5回復する` on a carrot means the carrot **helps** - Lewdness drops by 5. It came back as "Recovers 5 Lewdness" on 5 of the 6 lines that use the construction, which a player reads as the item making things worse. The same model got `魔力が10回復する` right everywhere, because Mana is a good stat and "Restores 10 Mana" is the literal reading.
 
-The family is wide: 汚染度, 堕落度, 淫乱度, 発情度, ストレス, 疲労度, 拘束度 - any gauge whose *bad* end is the high end. Lock the direction in the glossary as a phrase, not a word:
-
-```json
-"淫乱度が回復": "Lewdness goes DOWN - 'Lowers Lewdness by N', never 'Recovers N Lewdness'",
-"魔力が回復":   "Restores N Mana (Mana goes UP)"
-```
-
-and restate it in the bible, because the glossary slice is a one-liner and this needs the reason attached. No automated check catches it: the number is preserved, the English is fluent, and the meaning is inverted.
+No automated check catches it: the number is preserved, the English is fluent, and the meaning is inverted.
+The rule for such gauges is in the setup instructions, under Character identity and terminology safeguards.
 
 ### Creature nouns are proper only if the database says so
 
-A glossary that locks `スライム -> Slime` produces "burning through these **Vines**" mid-sentence. Check whether the term is ever a *database label* before capitalising it: if `Enemies.json` is empty and the word only ever occurs in prose - which is the case in any game where monsters are map events rather than battlers - lowercase is correct English and the model still capitalises it where a compound needs it (`オークの宝玉` to "Orc Orb").
+A glossary that capitalizes creature nouns produces "burning through these **Vines**" mid-sentence in a game whose monsters are map events and whose `Enemies.json` is empty.
+The rule is in the setup instructions, under Character identity and terminology safeguards.
 
 ### Publication-time consistency audit against the locked glossary
 
