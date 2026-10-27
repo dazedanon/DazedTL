@@ -15,9 +15,13 @@ whose file name starts with text_), archived-images (decode a WOLF game's
 Data/Picture.wolf into a folder, translate its text_ images through the
 Images steps on that folder, pack it again and checkpoint it),
 checkpoint, the operation assistants started before the app checkpointed
-their work ran, or package (report QA done and package the patch). Each step reports the
-phase it enters, as the starting prompt asks, and write reports QA once it
-is done.
+their work ran, play (run the release playtest and wait for it, printing
+where it stands), qa-applied (report the qa phase complete once Text QA's
+apply saved its work, as qa's next step says), final-check (play the game
+again after QA's apply, require the playtest to settle and report its
+problems and coverage) or package (report QA done and package the patch).
+Each step reports the phase it enters, as the starting prompt asks, and
+write reports QA once it is done.
 HELPER is a JSON list: the project helper's command without its subcommand.
 """
 
@@ -344,9 +348,10 @@ class Assistant:
     def checkpoint(self, message="translation: write English"):
         self.operation("checkpoint", {"manifest": MANIFEST, "message": message})
 
-    def package(self):
-        """Reports QA done, which records its evidence, and packages the
-        patch, as the starting prompt's last steps do."""
+    def finished(self, phase=None, next_action=""):
+        """Reports every phase through QA complete, which records QA's
+        evidence, with `phase` the one now worked in: patch, or none while
+        the assistant plays the game after QA."""
         done = dict.fromkeys(
             ("preparation", "extraction", "translation", "injection", "qa"),
             "complete",
@@ -355,14 +360,56 @@ class Assistant:
         path.write_text(
             json.dumps(
                 {
-                    "phase": "patch",
+                    "phase": phase,
                     "text": f"{WORK}/translation-units.json",
-                    "phases": {**done, "patch": "active"},
+                    "phases": {
+                        **done,
+                        "patch": "active" if phase == "patch" else "pending",
+                    },
+                    "next_action": next_action,
                 }
             ),
             encoding="utf-8",
         )
         self.helper("progress", "--input", path.relative_to(self.game).as_posix())
+
+    def play(self):
+        """Runs the release playtest and waits for it, as the QA step says
+        after injection and again after QA's apply; returns where it stands."""
+        status = self.helper("playtest", "--run", "--wait", "20")
+        if (status.get("operation") or {}).get("status") != "complete":
+            raise SystemExit(
+                "The playtest did not finish: "
+                + json.dumps(status.get("operation"), ensure_ascii=False)
+            )
+        return status
+
+    def qa_applied(self):
+        """Reports the qa phase complete once Text QA's apply saved its work,
+        as qa's next step then says; for MV/MZ, DazedTL keeps the phase open
+        until the playtest after the apply settles."""
+        qa = self.helper("qa", "--status")
+        if not qa["applied"]:
+            raise SystemExit(f"Text QA is not applied: {qa['next']}")
+        self.finished(next_action="Play the game again after QA's apply.")
+
+    def final_check(self):
+        """Plays the game again after QA's apply and, once the playtest
+        settles, reports its problems and coverage."""
+        status = self.play()
+        if not status["settled"]:
+            raise SystemExit(f"The final check did not settle: {status['next']}")
+        problems = sum(status["problems"].values())
+        self.finished(
+            next_action=f"Final check settled: {problems} playtest problem(s), "
+            f"{status['reached']} stops reached, {status['gaps']} coverage gap(s).",
+        )
+        return status
+
+    def package(self):
+        """Reports QA done, which records its evidence, and packages the
+        patch, as the starting prompt's last steps do."""
+        self.finished("patch")
         print("Packaged:", self.operation("package")["result"]["path"])
 
     def help_markers(self):
@@ -631,6 +678,9 @@ def main() -> None:
             "images",
             "archived-images",
             "checkpoint",
+            "play",
+            "qa-applied",
+            "final-check",
             "package",
         ],
     )
@@ -644,6 +694,9 @@ def main() -> None:
         print(json.dumps(assistant.translate(args.requests), ensure_ascii=False))
     elif args.step == "organize":
         assistant.organize(args.complete)
+    elif args.step in {"play", "final-check"}:
+        result = getattr(assistant, args.step.replace("-", "_"))()
+        print(json.dumps(result, ensure_ascii=False))
     else:
         getattr(assistant, args.step.replace("-", "_"))()
 

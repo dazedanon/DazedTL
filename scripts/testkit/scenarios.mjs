@@ -193,24 +193,28 @@ const playtest = [
   },
 ];
 
-const qa = [
-  "Review and apply Text QA as an assistant does",
-  async ({ page, state }) => {
-    const prepared = await helper(page, state, "qa", "--prepare");
-    // The reviewer of the checkout the app runs from, whose engine and QA
-    // rules prepared the task.
+/** Prepares Text QA through the project helper, reviews it with the
+ * scripted reviewer and applies it; returns what the reviewer reports. */
+async function reviewQa({ page, state }) {
+  const prepared = await helper(page, state, "qa", "--prepare");
+  // The reviewer of the checkout the app runs from, whose engine and QA
+  // rules prepared the task.
+  const reviewed = JSON.parse(
     run(
       state,
       "scripts/testkit/qa_reviewer.py",
       prepared.task,
       path.join(state.work, "qa-results"),
-    );
-    const applied = await helper(page, state, "qa", "--apply");
-    if (!applied.applied)
-      throw new Error(`Text QA did not apply: ${applied.message}`);
-    await page.idle();
-  },
-];
+    ),
+  );
+  const applied = await helper(page, state, "qa", "--apply");
+  if (!applied.applied)
+    throw new Error(`Text QA did not apply: ${applied.message}`);
+  await page.idle();
+  return reviewed;
+}
+
+const qa = ["Review and apply Text QA as an assistant does", reviewQa];
 
 const plugins = [
   "Translate and apply Plugin files as an assistant does",
@@ -618,6 +622,81 @@ const assistantWrite = [
       throw new Error(`Run ${run.id}: ${run.status}, ${run.message || ""}`);
     await assistant(page, state, "write");
   },
+];
+
+/** The QA bar of Progress's assistant phases: its state and detail line. */
+const progressQa = (page) =>
+  page.evaluate(`(() => {
+    const step = [
+      ...document.querySelectorAll("[aria-label='Assistant phases'] > li"),
+    ].find((item) => item.querySelector("span")?.firstChild?.textContent === "QA");
+    return step
+      ? { state: step.dataset.state, detail: step.querySelector("small")?.textContent || "" }
+      : null;
+  })()`);
+
+/** Waits until Progress's QA bar reads `state` with `detail`, then saves a
+ * screenshot of it as logs/`shot`. */
+async function progressShowsQa(page, state, want, shot) {
+  if (!(await progressQa(page))) await page.click("Progress");
+  await until(
+    `Progress's QA phase to read ${JSON.stringify(want)}`,
+    async () => {
+      const shown = await progressQa(page);
+      return (
+        shown?.state === want.state && shown.detail === (want.detail || "")
+      );
+    },
+  );
+  await page.shot(path.join(state.work, "logs", shot));
+}
+
+// What the scripted reviewer adds to the line it corrects (qa_reviewer.py);
+// fitting may break the line before it.
+const qaCorrection = "(checked)";
+
+/** The starting prompt's QA step for MV/MZ (TranslationService.prepare),
+ * after the assistant wrote the game: play it, review and apply Text QA,
+ * report the qa phase complete as qa's next step says, then play it again,
+ * Progress holding QA at Final check until that playtest settles. */
+const assistantQa = [
+  [
+    "The assistant plays the game, reviews and applies Text QA, and reports the qa phase complete",
+    async ({ page, state }) => {
+      const played = JSON.parse(await assistant(page, state, "play"));
+      console.log(`\n  Playtest: ${played.next}`);
+      const { corrected } = await reviewQa({ page, state });
+      const data = path.join(contentFolder(state.variants, state.game), "data");
+      if (
+        !corrected.length ||
+        !fs
+          .readdirSync(data)
+          .some((name) =>
+            fs
+              .readFileSync(path.join(data, name), "utf8")
+              .includes(qaCorrection),
+          )
+      )
+        throw new Error("Text QA's apply wrote no correction into the game.");
+      await assistant(page, state, "qa-applied");
+    },
+  ],
+  [
+    "Progress holds QA at Final check until the playtest after QA's apply settles, then shows it done",
+    async ({ page, state }) => {
+      await progressShowsQa(
+        page,
+        state,
+        { state: "current", detail: "Final check" },
+        "qa-final-check.png",
+      );
+      const checked = JSON.parse(await assistant(page, state, "final-check"));
+      console.log(`  Final check: ${checked.next}`);
+      // The assistant's report of the playtest, which settled it.
+      await page.waitText("Final check settled");
+      await progressShowsQa(page, state, { state: "done" }, "qa-done.png");
+    },
+  ],
 ];
 
 /** The project's API Batch run, as Progress reads it. */
@@ -1375,7 +1454,7 @@ export const scenarios = {
   },
   "assistant-released": {
     description:
-      "An Assistant-led project the assistant translated whole, wrote, checked and packaged; Progress's Patch phase shows the patch ZIP, and Release builds a clean game ZIP and saves the patch ZIP where it suggests.",
+      "An Assistant-led project the assistant translated whole and wrote, then played, reviewed with Text QA through the project helper, one correction applied, and played again before packaging; Progress holds QA at Final check until that playtest settles, its Patch phase shows the patch ZIP, and Release builds a clean game ZIP and saves the patch ZIP, with QA's correction, where it suggests.",
     steps: () => [
       [
         "Open the game Assistant-led, the assistant translating, without image text",
@@ -1394,7 +1473,7 @@ export const scenarios = {
       ],
       assistantLed[1],
       [
-        "The assistant translates all the text, writes it, reports QA done and packages the patch",
+        "The assistant translates all the text and writes it",
         async ({ page, state }) => {
           await assistant(page, state, "organize", "--complete");
           const run = JSON.parse(await assistant(page, state, "translate"));
@@ -1403,13 +1482,18 @@ export const scenarios = {
               `Run ${run.id}: ${run.status}, ${run.message || ""}`,
             );
           await assistant(page, state, "write");
-          console.log(
-            `\n  ${(await assistant(page, state, "package")).trim()}`,
-          );
         },
       ],
+      ...assistantQa,
       [
-        "Progress shows the patch; Release builds a clean game ZIP and the patch ZIP",
+        "The assistant packages the patch",
+        async ({ page, state }) =>
+          console.log(
+            `\n  ${(await assistant(page, state, "package")).trim()}`,
+          ),
+      ],
+      [
+        "Progress shows the patch; Release builds a clean game ZIP and the patch ZIP, which holds QA's correction",
         async ({ page, state }) => {
           await page.waitText("Patch ZIP\nDone");
           await page.locate("Open folder");
@@ -1464,6 +1548,18 @@ export const scenarios = {
           );
           if (!patch.get("data/Actors.json")?.equals(written))
             throw new Error("The patch ZIP lacks the translated Actors.json.");
+          const corrected = [...patch].filter(
+            ([entry, data]) =>
+              entry.endsWith(".json") && data.includes(qaCorrection),
+          );
+          if (
+            !corrected.length ||
+            corrected.some(
+              ([entry, data]) =>
+                !data.equals(fs.readFileSync(path.join(state.game, entry))),
+            )
+          )
+            throw new Error("The patch ZIP lacks Text QA's correction.");
           console.log(
             `\n  Clean game ZIP: ${game.size} entries; patch ZIP: ${patch.size}`,
           );
