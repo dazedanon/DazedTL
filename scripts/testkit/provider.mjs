@@ -13,7 +13,8 @@
 // - fail: requests holding the text get HTTP 400.
 // - failFirst: each request's first attempt keeps its Japanese, so the app's
 //   validation retries it.
-// - target: "Japanese" answers an English game's lines in Japanese.
+// - target: "Japanese" answers an English game's lines in Japanese, and
+//   "Chinese" a Japanese game's in Chinese.
 // - long: lines holding the text come back as a long English message, the
 //   same sentences for every line, so a game can page one at narrow widths.
 // - reply: lines holding a key come back as its reply on every attempt, such
@@ -80,13 +81,25 @@ const codes = /(__PROTECTED_\d+__|\\+[A-Za-z]+(?:\[[^\]]*\])?|%\d)/;
  * numbers stay. An English line, for a Japanese `target`, gets a Japanese
  * marker in place of its Latin words. The marker is a hash read as katakana,
  * so these replies are not sensible Japanese: they only have to be unique per
- * line and read as Japanese. A game variant's `reply` supplies readable ones.
+ * line and read as Japanese. A Japanese line, for a Chinese `target`, gets a
+ * marker of hanzi, which read as Japanese left unless read as Chinese. A game
+ * variant's `reply` supplies readable ones.
  */
 export function translate(value, target) {
   const text = String(value);
   const speaker = /^(\[[^\n]*?\]:\s*)([\s\S]*)$/.exec(text);
   const [prefix, body] = speaker ? [speaker[1], speaker[2]] : ["", text];
   const hash = crypto.createHash("sha256").update(text).digest("hex");
+  if (target === "Chinese") {
+    const kept = body.replace(japanese, " ").replace(/\s+/g, " ").trim();
+    const marker = hash
+      .slice(0, 8)
+      .replace(
+        /./g,
+        (digit) => "甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳"[parseInt(digit, 16)],
+      );
+    return `${prefix}测试${marker}${kept ? ` ${kept}` : ""}`;
+  }
   if (target === "Japanese") {
     const kept = body
       .split(codes)
@@ -118,7 +131,9 @@ export const longText =
 /** Whether a game value is one the stand-in translated. */
 export const translated = (value) =>
   typeof value === "string" &&
-  (value.startsWith("Tested ") || value.startsWith("テスト"));
+  (value.startsWith("Tested ") ||
+    value.startsWith("テスト") ||
+    value.startsWith("测试"));
 
 /** The request's text, all messages joined. */
 function requestText(params) {

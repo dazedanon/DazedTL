@@ -14,9 +14,12 @@ The engine (modules/rpgmakermvmz.py) translates, and Guided's line counts
 
 Each is translated while it holds Japanese (util/source_text). A map's
 name and its events' labels keep no `_original` as commands do, but where a
-translation keeps letters of its source, as a Chinese one keeps a name's
-kanji, the map or event keeps that source in its own `_original`, under the
-field holding it (:func:`kept`), so the translation reads translated.
+translation of a map's name or an event's <LB> name keeps letters of its
+source, as a Chinese one keeps a name's kanji, the map or event keeps that
+source in its own `_original`, under the field holding it (:func:`kept`), so
+the translation reads translated. A note label reads against the note an
+event keeps, such as an assistant's write keeps; the engine keeps none, since
+a note holds other tags too.
 """
 
 import re

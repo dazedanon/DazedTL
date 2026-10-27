@@ -1038,11 +1038,12 @@ def _keeps_source(text, source) -> bool:
 
 def _keep_source(owner, field: str, source, text) -> None:
     """Keeps *source* in the `_original` of a map or event, whose name and
-    labels keep none otherwise (util/rpgmaker_scope `kept`), under *field*
+    <LB> name keep none otherwise (util/rpgmaker_scope `kept`), under *field*
     where its translation *text* keeps letters of it; the first source kept
-    stays."""
+    stays. A collecting or estimating Batch pass gets no translations."""
     if (
         not PRESERVEORIGINAL
+        or _batch_phase() in {"collect", "estimate"}
         or not isinstance(source, str)
         or rpgmaker_scope.kept(owner, field) is not None
         or not _keeps_source(text, source)
@@ -1052,6 +1053,10 @@ def _keep_source(owner, field: str, source, text) -> None:
     if not isinstance(original, dict):
         original = owner["_original"] = {}
     original[field] = source
+
+
+def _batch_phase() -> str:
+    return (os.getenv("BATCH_PHASE") or "").strip().lower()
 
 
 def _text_needs_translation(current, source=None) -> bool:
@@ -2135,7 +2140,8 @@ def prepareBatchMapNames() -> list[int]:
     filename_sources: list[tuple[str, str]] = []
     # Each unique name, in first-seen order, with the maps that use it.
     source_files: dict[str, list[str]] = {}
-    # Names a map still needs translated, read against the source it keeps.
+    # The maps whose name still needs translating, read against the source
+    # each keeps; another map's name of the same text keeps its own.
     needed: set[str] = set()
     for filename in _BATCH_MAP_NAME_FILES:
         path = Path("files") / filename
@@ -2146,13 +2152,15 @@ def prepareBatchMapNames() -> list[int]:
             continue
         filename_sources.append((filename, display_name))
         source_files.setdefault(display_name, []).append(filename)
-        if _text_needs_translation(
+        if not SOURCE_TEXT or _text_needs_translation(
             display_name, rpgmaker_scope.kept(document, "displayName")
         ):
-            needed.add(display_name)
+            needed.add(filename)
     # Older runs send every name again, finished or not.
     unique_sources = [
-        source for source in source_files if not SOURCE_TEXT or source in needed
+        source
+        for source, files in source_files.items()
+        if any(filename in needed for filename in files)
     ]
 
     translated_by_source = {source: source for source in source_files}
@@ -2192,7 +2200,7 @@ def prepareBatchMapNames() -> list[int]:
             tokens = [int(token_info[0] or 0), int(token_info[1] or 0)]
 
     _BATCH_MAP_NAME_TRANSLATIONS = {
-        filename: translated_by_source[source]
+        filename: translated_by_source[source] if filename in needed else source
         for filename, source in filename_sources
     }
     return tokens
@@ -2301,7 +2309,10 @@ def parseMap(data, filename):
             prepared_name = _preparedBatchMapName(filename)
             name_source = rpgmaker_scope.kept(data, "displayName")
             if prepared_name is not None:
-                _keep_source(data, "displayName", data["displayName"], prepared_name)
+                if filename not in _BATCH_MAP_NAME_REJECTED:
+                    _keep_source(
+                        data, "displayName", data["displayName"], prepared_name
+                    )
                 data["displayName"] = prepared_name
                 if filename in _BATCH_MAP_NAME_REJECTED and filename not in MISMATCH:
                     MISMATCH.append(filename)
@@ -2317,6 +2328,7 @@ def parseMap(data, filename):
                     if batch_phase in {"collect", "estimate", "consume"}
                     else data["displayName"]
                 )
+                rejected = len(MISMATCH)
                 response = translateAI(
                     map_name_payload,
                     ctx("names.location"),
@@ -2328,7 +2340,11 @@ def parseMap(data, filename):
                 if isinstance(translated_name, list):
                     translated_name = translated_name[0]
                 translated_name = str(translated_name).replace('"', "")
-                _keep_source(data, "displayName", data["displayName"], translated_name)
+                # A rejected reply gives the name back, which is no translation.
+                if len(MISMATCH) == rejected:
+                    _keep_source(
+                        data, "displayName", data["displayName"], translated_name
+                    )
                 data["displayName"] = translated_name
         
         # Batch translate <LB> event names
@@ -2484,8 +2500,6 @@ def translateNoteOmitSpace(event, match):
         # another note tag, such as <dn:井戸><Sound:井戸>.
         current_note = event.get("note")
         if current_note == match.string:
-            if _keeps_source(translatedText, oldJAString):
-                _keep_source(event, "note", current_note, translatedText)
             event["note"] = (
                 current_note[: match.start(1)] + translatedText + current_note[match.end(1) :]
             )
@@ -2513,6 +2527,7 @@ def translateLBNames(events):
     
     # Batch translate if we have any
     if lb_events:
+        mismatched = len(MISMATCH)
         names_to_translate = [item[1] for item in lb_events]
         response = translateAI(
             names_to_translate,
@@ -2520,6 +2535,7 @@ def translateLBNames(events):
             True,
         )
         translated_names = response[0] if isinstance(response[0], list) else [response[0]]
+        rejected = len(MISMATCH) > mismatched
         totalTokens[0] += response[1][0]
         totalTokens[1] += response[1][1]
         
@@ -2527,7 +2543,8 @@ def translateLBNames(events):
         for i, (evt_idx, name) in enumerate(lb_events):
             if i < len(translated_names):
                 translated = translated_names[i].replace('"', "").replace(" ", "_")
-                _keep_source(events[evt_idx], "name", name, translated)
+                if not rejected:
+                    _keep_source(events[evt_idx], "name", name, translated)
                 events[evt_idx]["name"] = translated
     
     return totalTokens

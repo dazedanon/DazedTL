@@ -1,0 +1,110 @@
+{
+  "description": "A Japanese game to translate into Chinese: its .dazedtl/settings.json names Simplified Chinese as the target and the stand-in answers in hanzi. A traveler 旅人, whose name and the word 魔王 come back letter for letter as Chinese keeps them, welcomes the player to 魔王城 in an event labeled 旅人の家 (<LB>); none of it may read as Japanese left.",
+  "provider": {
+    "target": "Chinese",
+    "reply": {
+      "魔王城へようこそ": "欢迎来到魔王城。",
+      "旅人の家": "旅人之家",
+      "魔王": "魔王",
+      "旅人": "旅人"
+    }
+  },
+  "events": [
+    {
+      "name": "旅人の家",
+      "note": "<LB>",
+      "x": 4,
+      "y": 6,
+      "pages": [
+        {
+          "conditions": {
+            "actorId": 1,
+            "actorValid": false,
+            "itemId": 1,
+            "itemValid": false,
+            "selfSwitchCh": "A",
+            "selfSwitchValid": false,
+            "switch1Id": 1,
+            "switch1Valid": false,
+            "switch2Id": 1,
+            "switch2Valid": false,
+            "variableId": 1,
+            "variableValid": false,
+            "variableValue": 0
+          },
+          "directionFix": false,
+          "image": {
+            "characterIndex": 0,
+            "characterName": "",
+            "direction": 2,
+            "pattern": 0,
+            "tileId": 0
+          },
+          "list": [
+            {
+              "code": 101,
+              "indent": 0,
+              "parameters": [
+                "",
+                0,
+                0,
+                2,
+                "旅人"
+              ]
+            },
+            {
+              "code": 401,
+              "indent": 0,
+              "parameters": [
+                "魔王城へようこそ。"
+              ]
+            },
+            {
+              "code": 101,
+              "indent": 0,
+              "parameters": [
+                "",
+                0,
+                0,
+                2,
+                "旅人"
+              ]
+            },
+            {
+              "code": 401,
+              "indent": 0,
+              "parameters": [
+                "魔王"
+              ]
+            },
+            {
+              "code": 0,
+              "indent": 0,
+              "parameters": []
+            }
+          ],
+          "moveFrequency": 3,
+          "moveRoute": {
+            "list": [
+              {
+                "code": 0,
+                "indent": 0,
+                "parameters": []
+              }
+            ],
+            "repeat": true,
+            "skippable": false,
+            "wait": false
+          },
+          "moveSpeed": 3,
+          "moveType": 0,
+          "priorityType": 1,
+          "stepAnime": false,
+          "through": false,
+          "trigger": 0,
+          "walkAnime": true
+        }
+      ]
+    }
+  ]
+}

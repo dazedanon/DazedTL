@@ -3572,7 +3572,7 @@ try:
             variant_events = json.loads(
                 (fixtures / "game-variants/kaomoji/variant.json").read_text("utf-8")
             )["events"]
-            # So are the map's name and an event's note label, which kept no
+            # So are the map's name and an event's <LB> label, which kept no
             # source: read without one, they were sent again on every pass
             # and Lines counted them left.
             replies["魔王城"] = "魔王城"
@@ -3580,7 +3580,11 @@ try:
                 "displayName": "魔王城",
                 "events": [None, *({**event, "id": 1} for event in variant_events)],
             }
-            chinese["events"][1] = {**chinese["events"][1], "note": "<LB:旅人の家>"}
+            chinese["events"][1] = {
+                **chinese["events"][1],
+                "name": "旅人の家",
+                "note": "<LB>",
+            }
             configure_states(
                 {"engine": "MVMZ"}, temporary, {**policy, "sourceText": SOURCE_TEXT}
             )
