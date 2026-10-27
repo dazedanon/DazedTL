@@ -396,7 +396,7 @@ def one_hour_writes(usage: Any) -> int | None:
     return int(value) if isinstance(value, int) else None
 
 
-def _empty_usage() -> dict:
+def empty_usage() -> dict:
     return {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -404,6 +404,19 @@ def _empty_usage() -> dict:
         "cache_creation_input_tokens": 0,
         "thinking_tokens": 0,
     }
+
+
+def add_openai_usage(totals: dict, result: dict) -> None:
+    """Add one OpenAI-compatible Batch row's usage to ``totals``: its prompt
+    total holds its cache reads and writes, which are recorded apart so they
+    price at their own rates."""
+    reads = result["cache_read_input_tokens"]
+    writes = result["cache_creation_input_tokens"]
+    totals["input_tokens"] += max(0, result["prompt_tokens"] - reads - writes)
+    totals["output_tokens"] += result["completion_tokens"]
+    totals["cache_read_input_tokens"] += reads
+    totals["cache_creation_input_tokens"] += writes
+    totals["thinking_tokens"] += result.get("thinking_tokens", 0)
 
 
 @extensions.point
@@ -532,7 +545,7 @@ def download_results(provider: str, batch_id: str, custom_ids: dict,
             raw_status,
             [{"message": "The completed provider batch has no result files."}],
         )
-    results, errors, totals = {}, [], _empty_usage()
+    results, errors, totals = {}, [], empty_usage()
     for line in _download_file_text(
         provider, output_id, client=client, google_client=google_client
     ).splitlines():
@@ -548,18 +561,7 @@ def download_results(provider: str, batch_id: str, custom_ids: dict,
             errors.append((cid, error))
             continue
         results[key] = result
-        totals["input_tokens"] += max(
-            0,
-            result["prompt_tokens"]
-            - result["cache_read_input_tokens"]
-            - result["cache_creation_input_tokens"],
-        )
-        totals["output_tokens"] += result["completion_tokens"]
-        totals["cache_read_input_tokens"] += result["cache_read_input_tokens"]
-        totals["cache_creation_input_tokens"] += result[
-            "cache_creation_input_tokens"
-        ]
-        totals["thinking_tokens"] += result.get("thinking_tokens", 0)
+        add_openai_usage(totals, result)
     for line in _download_file_text(
         provider, error_id, client=client, google_client=google_client
     ).splitlines():
@@ -571,7 +573,7 @@ def download_results(provider: str, batch_id: str, custom_ids: dict,
 
 @extensions.point
 def _download_anthropic(client, batch_id: str, custom_ids: dict):
-    results, errors, totals = {}, [], _empty_usage()
+    results, errors, totals = {}, [], empty_usage()
     for row in client.messages.batches.results(batch_id):
         key = custom_ids.get(row.custom_id)
         if key is None:

@@ -1443,12 +1443,17 @@ class TranslationProvider:
     @provider_errors
     def collect_terminal(self, identity, mapping):
         """Keep successful paid rows from a canceled/expired compatible Batch job."""
-        from util.batch_providers import _download_file_text, _openai_result
+        from util.batch_providers import (
+            _download_file_text,
+            _openai_result,
+            add_openai_usage,
+            empty_usage,
+        )
 
         if self.provider in {"anthropic", "openrouter"}:
             return self.collect(identity, mapping)
         batch = self.client.batches.retrieve(identity)
-        results, errors, usage = {}, [], {"input_tokens": 0, "output_tokens": 0}
+        results, errors, usage = {}, [], empty_usage()
         for name in ("output_file_id", "error_file_id"):
             content = _download_file_text(
                 self.provider,
@@ -1466,8 +1471,7 @@ class TranslationProvider:
                 result, error = _openai_result(row, self.provider)
                 if result is not None and not error:
                     results[mapping[custom]] = result
-                    usage["input_tokens"] += result.get("prompt_tokens", 0)
-                    usage["output_tokens"] += result.get("completion_tokens", 0)
+                    add_openai_usage(usage, result)
                 else:
                     errors.append(custom)
         return results, errors, usage

@@ -742,6 +742,47 @@ class CompatibilityContracts(unittest.TestCase):
         requests[-1]["messages"][0]["content"] = "fail"
         self.assertIsNone(claude_tokens.input_tokens(client, requests, len))
 
+    def test_a_stopped_batch_records_its_cache_reads_as_a_completed_one_does(self):
+        # A canceled Batch's paid rows once added their whole prompt to
+        # uncached input, so its Spent priced cache reads at the full rate.
+        from dazedtl.compatibility.translation import TranslationProvider
+        from util.batch_providers import download_results
+
+        body = {
+            "choices": [{"message": {"content": "{}"}}],
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 4,
+                "prompt_tokens_details": {"cached_tokens": 2},
+            },
+        }
+        row = {"custom_id": "a", "response": {"status_code": 200, "body": body}}
+
+        def client(status):
+            return SimpleNamespace(
+                batches=SimpleNamespace(
+                    retrieve=lambda _: SimpleNamespace(
+                        status=status, output_file_id="out", error_file_id=""
+                    )
+                ),
+                files=SimpleNamespace(
+                    content=lambda _: SimpleNamespace(text=json.dumps(row))
+                ),
+            )
+
+        provider = TranslationProvider.__new__(TranslationProvider)
+        provider.provider, provider.client = "openai", client("cancelled")
+        provider.google = None
+        results, errors, usage = provider.collect_terminal("b", {"a": "key"})
+        self.assertEqual((list(results), errors), (["key"], []))
+        completed = download_results(
+            "openai", "b", {"a": "key"}, client=client("completed")
+        )[2]
+        self.assertEqual(usage, completed)
+        self.assertEqual(
+            (usage["input_tokens"], usage["cache_read_input_tokens"]), (8, 2)
+        )
+
     def test_openrouter_batch_lifts_the_frozen_host_and_rejects_mixed_routes_before_submission(
         self,
     ):
