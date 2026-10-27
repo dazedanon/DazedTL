@@ -467,7 +467,9 @@ class TextBlockTests(unittest.TestCase):
                 (game / "js").mkdir()
                 if mz:
                     (game / "js/rmmz_core.js").write_text("", encoding="utf-8")
-                entries = choice_ex(first, "ChoiceHelp") + ",\n" + choice_ex(repeat, "Unused")
+                entries = (
+                    choice_ex(first, "ChoiceHelp") + ",\n" + choice_ex(repeat, "Unused")
+                )
                 (game / "js/plugins.js").write_text(
                     f"var $plugins =\n[\n{entries}\n];\n", encoding="utf-8"
                 )
@@ -480,6 +482,8 @@ class TextBlockTests(unittest.TestCase):
                     self.assertNotIn("Unused", comment_markers(read), kind)
                 self.assertNotIn("Unused", comment_text.markers(game), kind)
                 self.assertFalse(
-                    comment_text.shows_comment_text(game / "data", game / "js/plugins.js"),
+                    comment_text.shows_comment_text(
+                        game / "data", game / "js/plugins.js"
+                    ),
                     kind,
                 )
