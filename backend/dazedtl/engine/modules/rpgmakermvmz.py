@@ -49,7 +49,7 @@ from util.paths import (
     active_glossary_path,
     read_active_glossary,
 )
-from util.rpgmaker_markers import comment_markers, game_plugins
+from util.rpgmaker_markers import PluginList, comment_markers, game_plugins
 from util.rpgmaker_files import mvmz_file_kind
 from util.id_ranges import id_in_ranges
 from util.source_text import furigana_base, holds_source, source_left
@@ -1373,7 +1373,7 @@ def _code408_markers() -> frozenset[str]:
     root = os.getenv("DAZED_GAME_ROOT", "").strip()
     with _ACTOR_MAP_CACHE_LOCK:
         if _CODE408_MARKERS_CACHE is None or _CODE408_MARKERS_CACHE[0] != root:
-            plugins = game_plugins(root) if root else ()
+            plugins = game_plugins(root) if root else PluginList()
             _CODE408_MARKERS_CACHE = (root, comment_markers(plugins))
         return _CODE408_MARKERS_CACHE[1]
 

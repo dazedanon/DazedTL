@@ -32,7 +32,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-from util.rpgmaker_markers import plugin_list
+from util.rpgmaker_markers import PluginList, plugin_list
 
 # A run's staged originals, beside its files folder.
 FOLDER = "originals"
@@ -71,7 +71,7 @@ class Originals:
         None."""
         return self._read("data/" + name)
 
-    def plugins(self) -> tuple[dict, ...] | None:
+    def plugins(self) -> PluginList | None:
         """The original plugin list (js/plugins.js), or None."""
         path = self.folder / "js" / "plugins.js"
         return plugin_list(path) if path.is_file() else None

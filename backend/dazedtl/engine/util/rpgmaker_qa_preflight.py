@@ -335,9 +335,10 @@ def preflight(
     covered: dict[str, set[str]] = {}
     for record in manifest["records"]:
         covered.setdefault(record["file"], set()).update(record["live_pointers"])
-    entries = list(data_plugins(data))
+    plugins = data_plugins(data)
+    entries = list(plugins)
     reach = Reach(data, entries)
-    markers = comment_markers(entries)
+    markers = comment_markers(plugins)
     rows: dict[str, list[dict[str, Any]]] = {"untranslated": [], "custom_data": []}
     for path in sorted(data.glob("*.json"), key=lambda item: item.name):
         try:
