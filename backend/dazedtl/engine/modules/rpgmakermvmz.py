@@ -4,7 +4,7 @@ import json
 import os
 import re
 import util.dazedwrap as dazedwrap
-from util.languages import ENGLISH, shares_kanji, source_pattern, tag
+from util.languages import ENGLISH, source_pattern, tag
 from util import rpgmaker_blocks, rpgmaker_rewrap, rpgmaker_scope
 from util import rpgmaker_script_strings as script_strings
 import threading
@@ -36,7 +36,12 @@ from util.translation import (
     translateAI as sharedtranslateAI,
 )
 from util.vocab import split_glossary_row, unverified_nameplate_row
-from util.speakers import NAMES_FILE, SPEAKER_BRACKET_INNER, strip_speaker_prefix
+from util.speakers import (
+    NAMES_FILE,
+    SPEAKER_BRACKET_INNER,
+    speaker_translated,
+    strip_speaker_prefix,
+)
 from util import custom_patterns, extensions, rpgmaker_qa_lint
 from util.skills import ctx, load_system_prompt
 from util.paths import (
@@ -6996,19 +7001,9 @@ def _vocab_category_priority(category) -> int:
 
 
 def _speaker_translation_valid(source: str, translated: str) -> bool:
-    normalized = str(translated or "").strip()
-    if not normalized:
-        return False
-    # A target that shares the source's kanji, such as Japanese into
-    # Simplified Chinese, writes the name in them: only kana is left.
-    if shares_kanji(target=LANGUAGE):
-        return re.search(r"[ぁ-ゖァ-ヺー\uFF66-\uFF9F]", normalized) is None
-    # Another target, Japanese included, has a source in another script,
-    # whose letters the name must have left.
-    return (
-        normalized.casefold() != str(source or "").strip().casefold()
-        and not _has_japanese_text(normalized)
-    )
+    """util/speakers `speaker_translated`, reading source text left as the
+    run does."""
+    return speaker_translated(source, translated, LANGUAGE, _has_japanese_text)
 
 
 def _speaker_vocab_indexes():

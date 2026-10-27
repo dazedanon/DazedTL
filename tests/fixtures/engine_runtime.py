@@ -416,6 +416,20 @@ try:
         with patch.object(parser, "LANGUAGE", "Simplified chinese"):
             assert parser._speaker_translation_valid("宿屋の主人", "旅店老板")
             assert not parser._speaker_translation_valid("ミカ", "ミカ")
+        # WOLF reads speaker names by the same rule, and keeps a name mixing
+        # Latin letters with kana, such as EN_セルリア, that MV/MZ reads left.
+        from modules import wolfdawn
+
+        with patch.object(wolfdawn, "LANGUAGE", "Simplified chinese"):
+            assert wolfdawn._speaker_translation_valid("宿屋の主人", "旅店老板")
+            assert not wolfdawn._speaker_translation_valid("ミカ", "ミカ")
+        with patch.object(wolfdawn, "LANGUAGE", "English"):
+            assert wolfdawn._speaker_translation_valid("セルリア", "EN_セルリア")
+            assert not wolfdawn._speaker_translation_valid("セルリア", "セルリア")
+            assert not wolfdawn._speaker_translation_valid("セルリア", "")
+        with patch.object(parser, "LANGUAGE", "English"):
+            assert not parser._speaker_translation_valid("セルリア", "EN_セルリア")
+            assert parser._speaker_translation_valid("セルリア", "Cerulia")
         # Setup read saved guesses such as a cameo's 存子 "Sonko" as approved
         # spellings; they now say they were translated without their story.
         assert "Unverified nameplate" in saved_names, saved_names
