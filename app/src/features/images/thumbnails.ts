@@ -20,6 +20,27 @@ type Entry = {
   /** Asked for ahead of scrolling, so it returns there when its tile leaves. */
   ahead: boolean;
 };
+/** Screens of images on each side of the visible ones that load ahead. */
+const AHEAD_SCREENS = 2;
+
+/**
+ * The images within a few screens of the visible `start` to `end`, nearest
+ * first, which load ahead so scrolling finds them ready; a big view's others
+ * wait until scrolling nears them instead of loading the whole view.
+ */
+export function aroundScreen(
+  listed: readonly { index: number; asset: ImageAsset }[],
+  start: number,
+  end: number,
+) {
+  const span = Math.max(end - start, 1) * AHEAD_SCREENS;
+  const middle = (start + end) / 2;
+  return listed
+    .filter(({ index }) => index >= start - span && index < end + span)
+    .sort((a, b) => Math.abs(a.index - middle) - Math.abs(b.index - middle))
+    .map(({ asset }) => asset);
+}
+
 const thumbnailKey = (asset: ImageAsset, size: number) =>
   asset.id + ":" + (asset.candidateHash || asset.sourceHash) + ":" + size;
 

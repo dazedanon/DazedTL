@@ -54,7 +54,7 @@ import {
 } from "./imageSelection";
 import { focusItem, selectItem, type Modifiers } from "../../ui/selection";
 import { useImageGrid } from "./useImageGrid";
-import { ThumbnailQueue, useThumbnail } from "./thumbnails";
+import { aroundScreen, ThumbnailQueue, useThumbnail } from "./thumbnails";
 import { ImageCompare } from "./ImageCompare";
 import { ImageViewer } from "./ImageViewer";
 import { ImageApply } from "./ImageApply";
@@ -502,18 +502,19 @@ function Manager({
     range.end,
   );
   useOnChange(grid.total, setTotal);
-  // The view's other thumbnails load while nothing on screen waits, nearest
+  // Thumbnails near the screen load while nothing on screen waits, nearest
   // first, so scrolling and the viewer find them ready.
-  const middle = useEffectEvent(() => (range.start + range.end) / 2);
-  useEffect(() => {
-    const from = middle();
-    queue.prefetch(
-      [...grid.listed]
-        .sort((a, b) => Math.abs(a.index - from) - Math.abs(b.index - from))
-        .map(({ asset }) => asset),
-      thumbnailSize,
-    );
-  }, [queue, grid.listed, thumbnailSize]);
+  // The plan moves a screen at a time rather than on every row scrolled.
+  const screen = Math.max(range.end - range.start, 1);
+  const planFrom = Math.floor(range.start / screen) * screen;
+  const planned = useMemo(
+    () => aroundScreen(grid.listed, planFrom, planFrom + screen),
+    [grid.listed, planFrom, screen],
+  );
+  useEffect(
+    () => queue.prefetch(planned, thumbnailSize),
+    [queue, planned, thumbnailSize],
+  );
   // Shift ranges start from the last image clicked without Shift in this view.
   const view = JSON.stringify([
     value.view.query,

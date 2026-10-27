@@ -10,7 +10,10 @@ import {
   sameImages,
   virtualRows,
 } from "../app/src/features/images/imageSelection.ts";
-import { ThumbnailQueue } from "../app/src/features/images/thumbnails.ts";
+import {
+  aroundScreen,
+  ThumbnailQueue,
+} from "../app/src/features/images/thumbnails.ts";
 import {
   begin,
   PageReader,
@@ -113,6 +116,16 @@ test("thumbnails on screen load ahead of the view's planned ones, one read each"
   queue.get(image(0), 64, (value) => shown.push(value));
   assert.equal(shown.length, 3);
   assert.equal(reads.filter((id) => id === "img/0.png").length, 1);
+  // A big view plans the thumbnails near the screen, not all of it: its
+  // first open once read 4,901 to show 21.
+  const listed = Array.from({ length: 5000 }, (_, index) => ({
+    index,
+    asset: image(index),
+  }));
+  const near = aroundScreen(listed, 1000, 1021).map((asset) => asset.id);
+  assert.equal(near.length, 21 * 5);
+  assert.deepEqual(near.slice(0, 2), ["img/1010.png", "img/1011.png"]);
+  assert.ok(!near.includes("img/4000.png"));
 });
 
 test("a view's pages read ahead show once, and a page on screen at once", async () => {
