@@ -377,14 +377,14 @@ def build_game(
         # changes, not the whole game. An applied image edited outside Images
         # still packages; that archive just cannot be compared later.
         try:
-            stamps = input_stamps(source, inputs())
+            built = basis(source, inputs())
         except ValueError:
-            stamps = None
+            built = {"inputs": None}
         saved = publish(staged, output, expected, stopped=stopped)
     return {
         **saved,
         "kind": "game",
-        "inputs": stamps,
+        **built,
         "files": len(scope["files"]) + bool(scope["updater_stamp"]),
         "excluded": len(scope["exclusions"]),
         "updater_stamp": bool(scope["updater_stamp"]),
@@ -656,24 +656,71 @@ def _unchanged(root, path, saved):
     )
 
 
+def basis(source, paths):
+    """What a later freshness check (`current`) compares an archive with:
+    the checkpoint the game was at and the stamps of `paths`, the runtime
+    files it was built from, and of the files changed since that checkpoint,
+    which a later one takes in as they are."""
+    from dazedtl.compatibility.checkpoint_commits import at
+
+    try:
+        checkpoint, pending = at(source)
+    except RuntimeError:
+        checkpoint, pending = None, frozenset()
+    pending = [
+        name
+        for name in pending
+        if _shipped(name) and project_path(source, name).is_file()
+    ]
+    return {
+        "inputs": input_stamps(source, sorted({*paths, *pending})),
+        "checkpoint": checkpoint,
+    }
+
+
+def _shipped(name):
+    """Whether a release may hold the file at `name`, as `inventory` reads
+    its folder."""
+    top = PurePosixPath(name).parts
+    return exclusion(name) is None and (
+        len(top) == 1 or exclusion(top[0], directory=True) is None
+    )
+
+
 def current(value, source):
     """Whether a saved archive still matches the game's runtime files.
 
     None means the archive predates recorded inputs, so it cannot be compared.
     Images applied after the build also make it outdated, as does a change
-    its record was marked outdated by (operations.outdate_patch).
+    its record was marked outdated by (operations.outdate_patch), and a
+    checkpoint since its build that added, changed or removed another file a
+    release may hold, as a game update adding maps does. A record without
+    its checkpoint, or one Git can no longer read, is compared by its inputs
+    alone.
     """
+    from dazedtl.compatibility.checkpoint_commits import changed_since
+
     if not available(value) or value.get("outdated"):
         return False
     inputs = value.get("inputs")
     if not isinstance(inputs, dict):
         return None
     try:
-        return all(
+        if not all(
             _unchanged(source, path, saved) for path, saved in inputs.items()
-        ) and set(applied_images(source)) <= set(inputs)
+        ) or not set(applied_images(source)) <= set(inputs):
+            return False
     except OSError, ValueError:
         return False
+    checkpoint = value.get("checkpoint")
+    try:
+        changed = changed_since(source, checkpoint) if checkpoint else None
+    except RuntimeError:
+        changed = None
+    built = {_known_key(name) for name in inputs}
+    return not any(
+        _known_key(name) not in built and _shipped(name) for name in changed or ()
+    )
 
 
 def publish(staged, output, expected, *, stopped=lambda: False):

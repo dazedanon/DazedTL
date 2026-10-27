@@ -61,6 +61,7 @@ from typing import TYPE_CHECKING
 
 from dazedtl import system
 from dazedtl.storage import exclusive, hold
+from dazedtl.translation.git_status_cache import RepositoryStatusCache
 
 if TYPE_CHECKING:
     from util.version_update.git_workflow import Checkout
@@ -299,6 +300,54 @@ def _relative(paths):
         path = PurePosixPath(str(value).replace("\\", "/"))
         if not path.is_absolute() and ".." not in path.parts and path.parts:
             yield path.as_posix()
+
+
+def at(root):
+    """The checkpoint the game is at and the tracked files changed since it,
+    which the next checkpoint takes; None and none until its Git is set up."""
+    from util.paths import game_git_set_up
+
+    if not game_git_set_up(root):
+        return None, frozenset()
+    paths, head, new = _status(root)
+    if not head or head == "(initial)":
+        return None, frozenset()
+    return head, frozenset(paths - new)
+
+
+# The files changed since a commit, which Git's metadata alone decides, for
+# the few records polls compare.
+_since = RepositoryStatusCache(stable=True)
+
+
+def changed_since(root, commit):
+    """The files the checkpoints since `commit` added, changed or removed,
+    from its tree and the one the game is at, so a file an undo put back as
+    it was is not among them. None when the game cannot tell, as without Git
+    or with `commit` no longer in its history."""
+    from util.paths import game_git_set_up
+
+    def compute():
+        if not game_git_set_up(root):
+            return None
+        found = _git(
+            root,
+            "diff-tree",
+            "-r",
+            "-z",
+            "--no-renames",
+            "--name-only",
+            commit,
+            "HEAD",
+            check=False,
+        )
+        if found.returncode != 0:
+            return None
+        return frozenset(path for path in found.stdout.split("\0") if path)
+
+    if len(_since.entries) >= 64:
+        _since.clear()
+    return _since.get((str(root), commit), root, compute)
 
 
 def _git(root, *args, **options):

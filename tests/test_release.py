@@ -30,10 +30,12 @@ from dazedtl.translation.release import (
     applied_assets,
     archive_stem,
     available,
+    build_game,
     current,
     destination,
     exclusion,
     game_folder,
+    game_scope,
     git_identity,
     inventory,
     output_hash,
@@ -675,6 +677,61 @@ class ReleaseTests(unittest.TestCase):
             # The renderer gets the patch's identity, not its file stamps.
             self.assertNotIn("inputs", lifecycle_view(state)["delivery"])
             self.assertNotIn("release", lifecycle_view(state))
+
+    def test_a_clean_game_zip_reads_outdated_once_a_checkpoint_adds_a_file(self):
+        # Its inputs are only the translation's files, so a game update that
+        # adds a map changes none of them; the checkpoint it made does.
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            game = root / "Game"
+            (game / "data").mkdir(parents=True)
+            write_json(game / "data/Map001.json", {"line": "translated"})
+            (game / "Game.exe").write_text("game", encoding="utf-8")
+
+            def git(*arguments):
+                subprocess.run(["git", "-C", str(game), *arguments], check=True)
+
+            def checkpoint():
+                git("add", "-A")
+                identity = ("-c", "user.name=T", "-c", "user.email=t@example.invalid")
+                git(*identity, "commit", "-qm", "checkpoint")
+
+            (game / "img").mkdir()
+            (game / "img/title.png").write_bytes(b"title")
+            git("init", "-q", "-b", "main")
+            checkpoint()
+            # An edit made outside DazedTL ships as it is, and the
+            # checkpoint that later takes it in changes nothing.
+            (game / "Game.exe").write_text("edited", encoding="utf-8")
+            output = root / "Game-game.zip"
+            release = build_game(
+                game,
+                output,
+                game_scope(game, None),
+                output_hash(output),
+                lambda *_: None,
+                engine="MVMZ",
+                inputs=lambda: ["data/Map001.json"],
+            )
+            checkpoint()
+            self.assertTrue(current(release, game))
+            write_json(game / "data/Map002.json", {"line": "new map"})
+            checkpoint()
+            self.assertFalse(current(release, game))
+            # Undoing it puts the game back as the ZIP holds it.
+            (game / "data/Map002.json").unlink()
+            checkpoint()
+            self.assertTrue(current(release, game))
+            # DazedTL's own records never ship, so committing them changes
+            # nothing; a record saved before checkpoints were kept reads by
+            # its inputs.
+            write_json(game / ".dazedtl/glossary.json", {})
+            checkpoint()
+            self.assertTrue(current(release, game))
+            (game / "img/title.png").write_bytes(b"updated title")
+            checkpoint()
+            self.assertFalse(current(release, game))
+            self.assertTrue(current({**release, "checkpoint": None}, game))
 
     def test_gameupdate_installs_only_where_it_updates_a_patch(self):
         # GameUpdate takes a WOLF game's Data.wolf out once it unpacks the

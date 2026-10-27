@@ -330,13 +330,13 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         result = {"commit": save(change, arguments.get("manifest"))}
     elif action == "release_patch":
         from .release import (
-            destination as release_destination,
-        )
-        from .release import (
+            basis,
             git_identity,
-            input_stamps,
             output_hash,
             publish,
+        )
+        from .release import (
+            destination as release_destination,
         )
 
         initial_git = require_baseline(engine, source, options, state)
@@ -384,7 +384,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             )
             packaged.pop("paths")
             verify_evidence(source, payload["evidence"])
-            inputs = input_stamps(source, payload["evidence"])
+            built = basis(source, payload["evidence"])
             if (
                 git_identity(engine.git_status(source, options)) != package_git
                 or digest(read_json(project_path(workspace, payload["source_inputs"])))
@@ -399,20 +399,20 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
                     packaged["path"], output, payload["output_hash"], stopped=stopped
                 ),
                 "kind": "patch",
-                "inputs": inputs,
+                **built,
             }
         state["guided_release"] = result
     elif action == "package":
         require_baseline(engine, source, options, state)
         from .delivery import require_patch
         from .release import (
-            destination as release_destination,
-        )
-        from .release import (
+            basis,
             git_identity,
-            input_stamps,
             output_hash,
             publish,
+        )
+        from .release import (
+            destination as release_destination,
         )
         from .release import (
             stamp as file_stamp,
@@ -478,10 +478,14 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             identity = file_stamp(result["path"])
             result.update(stamp=identity, size=identity[2], saved=now())
         # Release and Progress compare the game's files with the patch's.
-        result["inputs"] = input_stamps(source, result.pop("paths"))
+        result.update(basis(source, result.pop("paths")))
         state["delivery"] = {**result, "kind": "patch"}
         # The job keeps what the ZIP holds; the file stamps stay in the record.
-        result = {key: value for key, value in result.items() if key != "inputs"}
+        result = {
+            key: value
+            for key, value in result.items()
+            if key not in {"inputs", "checkpoint"}
+        }
     elif action == "release":
         from .release import build_game
         from .release import destination as release_destination
@@ -502,7 +506,11 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             stopped=stopped,
         )
         state["release"] = result
-        result = {key: value for key, value in result.items() if key != "inputs"}
+        result = {
+            key: value
+            for key, value in result.items()
+            if key not in {"inputs", "checkpoint"}
+        }
     elif action == "gameupdate":
         result = engine.install_gameupdate(source, log=progress)
     elif action == "stage_update":
