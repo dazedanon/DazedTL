@@ -3,6 +3,12 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.40.2] - 2026-10-27
+
+### Fixed
+
+- **Translate** and **Assistant-led:** a line written as `Name「...」` in the game, also with the name in color or as a name code, no longer comes out as `Village Chief: "Welcome, traveler."` now and then; translations keep the game's own format, `Village Chief "Welcome, traveler."`, and Text QA fixes lines translated before.
+
 ## [2.40.1] - 2026-10-27
 
 ### Changed
@@ -1208,6 +1214,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.40.2]: https://github.com/dazedanon/DazedTL/compare/v2.40.1...v2.40.2
 [2.40.1]: https://github.com/dazedanon/DazedTL/compare/v2.40.0...v2.40.1
 [2.40.0]: https://github.com/dazedanon/DazedTL/compare/v2.39.0...v2.40.0
 [2.39.0]: https://github.com/dazedanon/DazedTL/compare/v2.38.1...v2.39.0
