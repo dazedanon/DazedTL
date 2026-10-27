@@ -13,8 +13,8 @@ COMPILER_VERSION = 1
 
 
 def compile_requests(engine, source, options, raw, language, skill_users=None):
-    """The plan's requests; ``skill_users`` holds the skill_users notes of
-    its units under the run's policy."""
+    """The plan's requests. ``skill_users`` holds the notes on its units'
+    skill users that the run's policy gives them (translation/skill_users)."""
     compiled = engine.compile(source, options, raw, language, skill_users or {})
     if len(compiled) != len(raw["batches"]):
         raise ValueError("The engine compiler did not return every source batch.")
