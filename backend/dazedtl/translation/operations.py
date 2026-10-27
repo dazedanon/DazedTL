@@ -436,7 +436,8 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             )
         if operation == "apply":
             # Readers take the prepared record of the version the `original`
-            # branch is at, so this one counts once the update completes. A
+            # branch is at, so this one counts once the update moves that
+            # branch, before it changes the game's files. A
             # patch holds only some of the game's files, so it is laid over
             # the current version's record, or an older project's backup;
             # without either it records nothing, rather than a game missing
