@@ -164,7 +164,13 @@ def _inline_speaker(source: str, text: str, game: Game) -> str:
 
 
 def _speaker_name(text: str) -> bool:
-    """Whether *text* reads as a name: one to four words, each capitalized."""
+    """Whether *text* reads as a name: one to four words, each capitalized,
+    with the codes that color it or stand for it."""
+    from util.speakers import NAME_CODE_RE
+
+    text = NAME_CODE_RE.sub("", text)
+    if not text:
+        return True
     words = text.split(" ")
     return (
         len(words) <= 4

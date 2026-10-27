@@ -402,6 +402,17 @@ class QAEngineTests(unittest.TestCase):
             ("ニーナ「おっ…ごぉ…！」", 'Nena: "Oh...ghh...!"', 'Nena "Oh...ghh...!"'),
             # Guided sends the line with its 「 already an ASCII quote.
             ('老人"よく来た"', 'Old Man:"Welcome."', 'Old Man "Welcome."'),
+            # A name in color, or a code that stands for it.
+            (
+                r"\C[27]小町「ふー…っ♥」",
+                r'\C[27]Komachi: "Fuu…♥"',
+                r'\C[27]Komachi "Fuu…♥"',
+            ),
+            (
+                r"\N[2]「おっまかせ～」",
+                r'\N[2]: "Leave it to me~"',
+                r'\N[2] "Leave it to me~"',
+            ),
             # Speech going on to the message's next row.
             (
                 "村長「よく来たな、",
@@ -419,6 +430,14 @@ class QAEngineTests(unittest.TestCase):
             ("小説「願いを天にかざして」", 'Novel: "Hold Your Wish Up to the Heavens"'),
             # A row whose quote closes speech from the rows before.
             ('旅の者よ"', 'Traveler: "Welcome."'),
+            # A color code alone names no one.
+            (r"\C[2]「重要」", r'\C[2]: "Important!"'),
+            # Speech whose quotes were dropped too, in a notification that
+            # reads well as it is; quotes would widen it.
+            (
+                "エリカ「こんなところで服は脱げない」",
+                "Erica: I can't take my clothes off here.",
+            ),
             # A fix changes no row.
             ("リナ「こんにちは！」", 'Rina:\n"Hello!"'),
             ("リナ「こんにちは」", 'Then, Rina: "Hello!"'),

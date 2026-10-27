@@ -146,14 +146,21 @@ SOURCE = "source"
 _INLINE_NAME_EXCLUDES = r'\s「」。、！？…\\\n“”"(:\[\]'
 _INLINE_NAME = rf"[^{_INLINE_NAME_EXCLUDES}]{{1,20}}"
 _INLINE_SEPARATOR = r"[:：]?\s*"
+# A code with a number, such as \C[2] or \N[1], before, after or as a name.
+_NAME_CODE = r"\\+[A-Za-z]+\[\d+\]"
+NAME_CODE_RE = re.compile(_NAME_CODE)
 _INLINE_FORMS = {
     ANY: re.compile(
         rf"^(?:\[([^\]]{{1,30}})\]\s*"
         rf'|({_INLINE_NAME}){_INLINE_SEPARATOR}(?=[「“"(]))'
     ),
-    # An ASCII quote that ends its row closes speech from the rows before.
+    # Codes may color the name or stand for it, as in \C[2]ミカ\C[0]「 or
+    # \N[2]「. An ASCII quote that ends its row closes speech from the rows
+    # before.
     SOURCE: re.compile(
-        rf'^([^{_INLINE_NAME_EXCLUDES}：]{{1,20}})\s*(?=「|"(?!\s*(?:\n|$)))'
+        rf"^((?:{_NAME_CODE})*[^{_INLINE_NAME_EXCLUDES}：]{{1,20}}(?:{_NAME_CODE})*"
+        rf"|(?:{_NAME_CODE})*\\+[NnPp]\[\d+\](?:{_NAME_CODE})*)"
+        rf'\s*(?=「|"(?!\s*(?:\n|$)))'
     ),
 }
 
