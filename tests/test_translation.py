@@ -292,6 +292,40 @@ class TranslationTests(unittest.TestCase):
             old["translations"],
         )
 
+    def test_a_refusal_note_accepted_under_older_rules_reads_as_not_translated(self):
+        # Receipts from before 2.34.5 kept "Declined." as a translation; they
+        # were exported, counted translated and never resent.
+        refused, kept = request("refused"), request("kept")
+        results = Results(self.game)
+        for row, text in ((refused, "Declined. ⟦P0⟧"), (kept, "Yes. ⟦P0⟧")):
+            translations = {"line": text}
+            write_json(
+                project_path(self.game, results.relative(row), exists=False),
+                {
+                    "version": 1,
+                    "request_sha256": row["fingerprint"],
+                    "sources_sha256": digest(row["sources"]),
+                    "translations": translations,
+                    "result_sha256": digest(translations),
+                    "provenance": {},
+                },
+            )
+        self.assertIsNone(results.get(refused))
+        self.assertEqual(results.get(kept)["translations"], {"line": "Yes. ⟦P0⟧"})
+        # Translating it again replaces the note and archives its receipt.
+        saved = results.accept(refused, {"line": "Yes. ⟦P0⟧"}, {})
+        self.assertEqual(results.get(refused), saved)
+        history = list(
+            (self.game / ".dazedtl/len-method/work/accepted-history").rglob("*.json")
+        )
+        self.assertEqual(
+            [
+                json.loads(path.read_text(encoding="utf-8"))["translations"]
+                for path in history
+            ],
+            [{"line": "Declined. ⟦P0⟧"}],
+        )
+
     def test_worker_owner_loss_stops_before_another_paid_request(self):
         alive = [True]
         job, _plan = self.run_record(requests=[request("one"), request("two")])

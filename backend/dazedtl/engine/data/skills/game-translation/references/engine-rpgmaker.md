@@ -1313,52 +1313,42 @@ Where a pattern spans control codes, exclude structural characters from the capt
 
 ## Shared project preparation
 
-Len uses Workflow's RPG Maker preparation before translation: run operation
-`record_original` so DazedTL records the starting game itself, run
-operation `rpgmaker_prepare` (the script's `rpgmaker-prep --game-root <game>`),
-then run the same script's `git-setup --game-root <game> --version <release>`.
-The preparation command formats JSON with dazedformat, formats plugins.js, installs
-the bundled GameUpdate files, writes the game's GameUpdate configuration from the
-saved GameUpdate defaults and its repository, and installs the MV/MZ
-TranslationUpdateCheck. It preserves existing project configuration and excludes
-WOLF-only binaries and updater state. Checkpoints commit a complete
-`gameupdate/patch-config.txt` with the patch, so manifests need not list it;
-DazedTL keeps its values, so do not edit it. DazedTL's checkpoints and packages
-also carry the GameUpdate files and the TranslationUpdateCheck and Forge plugins
-this preparation installs, so manifests need not list those either.
+Len uses Workflow's RPG Maker preparation before translation: run operation `record_original` so DazedTL records the starting game itself, run operation `rpgmaker_prepare`, then run operation `git_setup` with the `version` release label and the runtime patch `manifest`.
+The preparation operation formats JSON with dazedformat, formats plugins.js, installs the bundled GameUpdate files, writes the game's GameUpdate configuration from the saved GameUpdate defaults and its repository, and installs the MV/MZ TranslationUpdateCheck.
+It preserves existing project configuration and excludes WOLF-only binaries and updater state.
+Checkpoints commit a complete `gameupdate/patch-config.txt` with the patch, so manifests need not list it; DazedTL keeps its values, so do not edit it.
+DazedTL's checkpoints and packages also carry the GameUpdate files and the TranslationUpdateCheck and Forge plugins this preparation installs, so manifests need not list those either.
 
-For Ace, perform the existing Workflow extraction/RV2JSON prerequisite first. The
-formatter targets its JSON export (`ace_json` or `--data-path <export>`), never the
-native Marshal payload, and MV/MZ plugin steps are skipped. Keep the prepared
-untranslated snapshot for Git/source alignment as well as the recorded originals.
-Use the generated `setup.md` for Workflow's speaker, glossary, wrapping and shared
-investigation procedure. Existing baselines remain authoritative on resume.
+For Ace, the operation first converts Data with RV2JSON.
+The formatter targets its JSON export (`ace_json` or a `data_path` export), never the native Marshal payload, and MV/MZ plugin steps are skipped.
+Keep the prepared untranslated snapshot for Git/source alignment as well as the recorded originals.
+Use the generated `setup.md` for Workflow's speaker, glossary, wrapping and shared investigation procedure.
+Existing baselines remain authoritative on resume.
 
 ## The `_original` source metadata
 
 **For Len's MV/MZ map and database JSON, keep Japanese in the same file under a Workflow-compatible `_original` key, including when using an external translation store.** This lets the existing QA and bug-fix tools recover the source from the injected game itself. Capture it before the first write and retain it through reruns, wrapping and corrections.
 
-The historical reference injectors do not add this metadata automatically. Adapt
-them to write into a staging directory, then finalize each changed file with:
+The historical reference injectors do not add this metadata automatically.
+Adapt them to write into a staging directory, then finalize each changed file with the project helper's `operation write_rpgmaker`, whose arguments are paths relative to the game:
 
-```bash
-python DAZEDTL_ROOT/scripts/len_translation.py write-rpgmaker-json \
-  --source /path/to/matching-source/Map001.json \
-  --translated /path/to/staged/Map001.json \
-  --output /path/to/game/data/Map001.json
+```json
+{"source": "data/Map001.json",
+ "translated": ".dazedtl/len-method/work/staged/Map001.json",
+ "output": "data/Map001.json"}
 ```
 
-`--source` is a matching untranslated baseline or the previous game JSON with its
-originals intact; it may be the output path, since the writer reads it before
-replacement. `--translated` must be a separate staged file. Existing destination
-originals survive clean-baseline reinjection. Do not manufacture source from live
-English, or run an unadapted injector against the game before taking the snapshot.
+`source` is a matching untranslated baseline or the previous game JSON with its originals intact; it may be the output path, since the writer reads it before replacement.
+With `backup_id`, a commit of `refs/dazedtl/originals` or a backup, `source` names the saved original file instead.
+`translated` must be a separate staged file.
+The operation also fits the text to the game's saved Line widths, laying each message out over its own commands, and lists under misfits what a window of fixed height cuts off; shorten those and write the file again.
+Outside DazedTL, the engine script's `write-rpgmaker-json --source --translated --output` writes the same way without fitting; in a game DazedTL manages it refuses.
+Existing destination originals survive clean-baseline reinjection.
+Do not manufacture source from live English, or run an unadapted injector against the game before taking the snapshot.
 
-The pure `util.len_originals.preserve_originals(source, translated, filename=...)`
-helper also supports in-process adapters: snapshot the actual document before
-editing and serialize the returned annotated copy. The CLI checks the existing
-destination too and replaces one file atomically only after validation. It preserves
-the staged BOM, newline convention and indentation/minified form.
+The pure `util.len_originals.preserve_originals(source, translated, filename=...)` helper also supports in-process adapters: snapshot the actual document before editing and serialize the returned annotated copy.
+The operation checks the existing destination too and replaces one file atomically only after validation.
+It preserves the staged BOM, newline convention and indentation/minified form.
 
 The helper handles stable command arrays, grouped 401/405 dialogue, 108/408 comments,
 355/655 scripts, 101 nameplates, 102 choices, supported scalar/structured parameters,

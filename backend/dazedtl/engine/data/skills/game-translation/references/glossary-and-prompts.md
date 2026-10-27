@@ -21,10 +21,8 @@ Reference examples on disk (copy the closest genre), all under `tools/Reference 
 | `.dazedtl/len-method/work/` notes | Longer synopsis, routes, research, extraction metadata, QA evidence | Another authoritative copy of the glossary or translation prompt |
 
 Use the shared Setup skill and its investigation phase before finalizing guidance.
-`DAZEDTL_ROOT/scripts/len_translation.py context` refreshes the current assembled
-instructions; `--sources` adds the same matched glossary, SFX and reference evidence
-used by DazedTL. These are the inputs to adapted drivers, so a sample pipeline's prompt
-builder must not silently override them.
+The project helper's `organize` compiles every request with the current assembled instructions and the matched glossary, SFX and reference evidence, so organize again after guidance changes.
+These are the inputs to adapted drivers, so a sample pipeline's prompt builder must not silently override them.
 
 ## Voice notes grounded in dialogue
 

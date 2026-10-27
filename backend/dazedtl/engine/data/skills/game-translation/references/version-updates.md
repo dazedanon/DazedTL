@@ -5,20 +5,14 @@ You are holding 40,000 translated lines against v1.02, hand-fixed wrap points, a
 Re-translating is unaffordable and throws away every manual fix.
 Carrying it forward by hand is worse, because the lines that changed are exactly the ones you cannot spot by eye.
 
-**Reference implementation:** `DAZEDTL_ROOT/util/version_update/git_workflow.py`
+**Reference implementation:** `DAZEDTL_ROOT/util/version_update/git_workflow.py` drives the flow, `gameupdate/` holds the in-game notice (`TranslationUpdateCheck.js`, `patch-config.txt`), and `data/skills/post_update_translation.md` is the reusable prompt for scoping a post-update pass by diff.
+Wolf does the same job in one command: `wolf translations-merge --old old/ --new new/ -o result/`.
 
-**DazedTL Len projects:** begin with `references/project-lifecycle.md` and the live
-`scripts/len_translation.py git-status` / `git-setup` commands. Newly created Len
-baselines preserve native game bytes and the reviewed project ignore policy.
-`dazedtl.preserveGameFiles` and the `DazedTL-Preserve-Game-Files` commit trailer carry
-that choice into later shared updates. The normalization advice below applies to
-projects whose engine and established baseline use normalized text; do not apply it
-over a native-byte baseline or force the RPG Maker file allowlist onto another engine.
-(3,014 lines) drives the flow, `gui/version_update_tab.py` (1,326 lines) is the operator
-view, `gameupdate/` holds the in-game notice (`TranslationUpdateCheck.js`,
-`patch-config.txt`), and `data/skills/post_update_translation.md` is the reusable prompt
-for scoping a post-update pass by diff. Wolf does the same job in one command:
-`wolf translations-merge --old old/ --new new/ -o result/`.
+**DazedTL Len projects:** begin with `references/project-lifecycle.md`.
+The project helper runs the update: `operation stage_update` records the new release's files in the game's Git and stages a working copy, `operation version_preview` compares it with the game, `operation version_apply` applies that preview, `operation version_continue` or `version_abort` finishes or cancels a stopped update, and `operation version_handoff` prepares the post-update task.
+Newly created Len baselines preserve native game bytes and the reviewed project ignore policy.
+`dazedtl.preserveGameFiles` and the `DazedTL-Preserve-Game-Files` commit trailer carry that choice into later shared updates.
+The normalization advice below applies to projects whose engine and established baseline use normalized text; do not apply it over a native-byte baseline or force the RPG Maker file allowlist onto another engine.
 
 **Both naive approaches fail, and they fail silently.**
 

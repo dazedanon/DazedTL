@@ -49,9 +49,7 @@ def main():
     sys.stdout = sys.stderr
     try:
         from desktop.backend.workflow_actions import run_action, json_value
-        if plan.get("kind") == "len":
-            from desktop.backend.len_method import run_action
-        elif plan.get("kind") == "batch":
+        if plan.get("kind") == "batch":
             from desktop.backend.batches import run_action
         elif plan.get("kind") == "evaluation":
             from desktop.backend.evaluations import run_action

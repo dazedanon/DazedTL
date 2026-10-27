@@ -1015,14 +1015,25 @@ Additional project instructions:
                 "The extracted lines changed since this run was organized. Organize them again; unchanged requests keep their translations."
             ) from None
         saved = Results(plan["source"])
-        translations, missing = {}, {}
+        translations, missing, reopened = {}, {}, False
         for request in plan["requests"]:
             value = saved.get(request)
             if value:
                 translations.update(value["translations"])
-            else:
-                state = job["states"][request["id"]]["state"]
-                missing.update(dict.fromkeys(request["sources"], state))
+                continue
+            row = job["states"][request["id"]]
+            if row["state"] == "accepted":
+                # Its saved result holds a refusal note (Results.get), so it
+                # waits to be translated again.
+                row = job["states"][request["id"]] = {"state": "pending", "message": ""}
+                reopened = True
+            missing.update(dict.fromkeys(request["sources"], row["state"]))
+        # An Assistant only run has no worker that owns its record; an API
+        # run's next organize resends the request instead.
+        if reopened and job["mode"] == "agent":
+            if job["status"] == "complete":
+                job.update(status="ready", message="Ready")
+            self.jobs.store.save(job)
         relative = WORK + "/work/results/" + run_id + ".json"
         write_json(
             project_path(plan["source"], relative, exists=False),
@@ -1224,9 +1235,8 @@ Additional project instructions:
         request = next((row for row in plan["requests"] if row["id"] == batch_id), None)
         if not request:
             raise ValueError("Unknown request ID.")
-        if job["states"][batch_id]["state"] == "accepted" or Results(
-            plan["source"]
-        ).get(request):
+        # A saved result that holds a refusal note is none (Results.get).
+        if Results(plan["source"]).get(request):
             raise ValueError("This request already has a saved translation.")
         job["states"][batch_id] = {"state": "declined", "message": reason.strip()}
         job["message"] = declined_message(job)

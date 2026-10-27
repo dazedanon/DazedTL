@@ -53,38 +53,29 @@ after the assistant session ends. Uploading and publishing remain separate reque
 
 ## DazedTL shared integration
 
-Read `references/project-lifecycle.md` for the required source preservation, local Git
-baseline, checkpoints, resumable artifacts and delivery phases. These are part of the
-same starting prompt, before and after the engine-specific translation work.
+Read `references/project-lifecycle.md` for the required source preservation, local Git baseline, checkpoints, resumable artifacts and delivery phases.
+These are part of the same starting prompt, before and after the engine-specific translation work.
 `main` contains only the reviewed runtime patch and minimal repository metadata.
-`original` retains matching untranslated runtime files for restores and version updates;
-translation-only additions have no fabricated original.
+`original` retains matching untranslated runtime files for restores and version updates; translation-only additions have no fabricated original.
 All `.dazedtl` working records, source copies and QA artifacts remain ignored on both.
 In DazedTL, the app commits your changes to the game as checkpoints itself; outside it, use the live `git-scope` helper the lifecycle describes before patch checkpoints.
-Read `references/progress-reporting.md` and maintain the compact progress panel after
-each saved batch or milestone, and at least every 10 minutes during active work. Export saved unit records and call the live
-`scripts/len_translation.py progress-update` helper; keep the narrative in `status.md`.
+Read `references/progress-reporting.md` and maintain the compact progress panel after each saved batch or milestone, and at least every 10 minutes during active work.
+Report it with the project helper's `progress --input <report>`; keep the narrative in `status.md`.
 The agent maintains this throughout the run without another user prompt.
 For a fresh task, use the selected untranslated game as the initial source baseline.
-Normal preparation such as `TranslationUpdateCheck` does not make it an existing
-translation. Run `record_original` on that folder; do not demand a separately
-downloaded pristine copy unless concrete evidence shows the selected source is unsuitable.
+Normal preparation such as `TranslationUpdateCheck` does not make it an existing translation.
+Run `record_original` on that folder; do not demand a separately downloaded pristine copy unless concrete evidence shows the selected source is unsuitable.
 
-For RPG Maker, use the same preparation steps as Workflow before translation:
-run `DAZEDTL_ROOT/scripts/len_translation.py rpgmaker-prep --game-root <game>` to
-format game JSON and plugin configuration and install GameUpdate with the MV/MZ
-startup check. Then use `git-setup` to record the prepared untranslated baseline.
-`setup.md` loads Workflow's RPG Maker speaker, glossary, wrapping and investigation
-instructions for these games. For Ace, complete the existing Workflow extraction/
-RV2JSON prerequisite and format its JSON export (`--data-path` if not in `ace_json`),
-leaving native Marshal files intact. Other engines keep their own preparation route.
+For RPG Maker, use the same preparation steps as Workflow before translation: run the project helper's `operation rpgmaker_prepare` to format game JSON and plugin configuration and install GameUpdate with the MV/MZ startup check.
+Then `operation git_setup` records the prepared untranslated baseline.
+`setup.md` loads Workflow's RPG Maker speaker, glossary, wrapping and investigation instructions for these games.
+For Ace, the operation first converts Data with RV2JSON and formats its JSON export (`data_path` if not in `ace_json`), leaving native Marshal files intact.
+Other engines keep their own preparation route.
 Existing updater configuration, README and ignore rules are preserved on reinstall.
 Len's **Install Forge** checkbox defaults on for MV/MZ and is saved as `install_forge`.
-The preparation command honors it through Workflow's bundled installer and saved
-playtest settings. For an already prepared game, use `forge-setup --game-root <game>`
-with the same script. An unchecked choice skips installation/updates and does not
-remove existing Forge. Forge does not apply to Ace or other engines; do not ask for
-another confirmation after the user has selected this option.
+`operation rpgmaker_prepare` honors it through Workflow's bundled installer and saved playtest settings, and running it again on a prepared game applies a changed choice.
+An unchecked choice skips installation/updates and does not remove existing Forge.
+Forge does not apply to Ace or other engines; do not ask for another confirmation after the user has selected this option.
 
 This copy lives at `DAZEDTL_ROOT/data/skills/game-translation`. Resolve DAZEDTL_ROOT
 as the bundled engine folder three levels above this skill folder, inside the DazedTL
@@ -101,23 +92,20 @@ workspace. The identity rules, evidence hierarchy, and ownership rules there als
 apply to this route. Preserve source-supported uncertainty and reveal-sensitive aliases.
 
 The handoff's `context.json` is generated by the live shared system-prompt loader.
-For a single batch, run `DAZEDTL_ROOT/scripts/len_translation.py context --game-root
-<game> --sources <JSON list of JP strings or ID-to-JP object> --output <request.json>`.
-Use its system prompt and matched glossary in direct translation or the adapted API
-driver. SFX and reference translations are advisory. Refresh after guidance changes;
-retain the request fingerprint with retries and review records. Add a suitable
-`--instruction-key section.key` for a field-specific shared instruction template.
-Under DazedTL's project helper, save the extracted lines as source units and run `organize` instead, as described in `references/direct-workflow.md`; it groups and compiles every request, so the game text never passes through the assistant's own writing.
+Save the extracted lines as source units and run the project helper's `organize`, as described in `references/direct-workflow.md`; it groups and compiles every request, so the game text never passes through the assistant's own writing.
+Each request carries the system prompt and matched glossary, for direct translation and API runs alike.
+SFX and reference translations are advisory.
+Organize again after guidance changes; retain the request fingerprint with retries and review records.
+The helper's `context` reads the verified context investigation results and the current guidance document revisions.
 The compiler itself makes no API calls and exports no credentials.
 
-For dialogue, also pass `--speakers <speaker JSON>` with the same IDs or list positions
-as the source batch. Use resolved source names and null for unidentified speakers.
-The compiler includes current speakers' glossary guidance and puts the line-to-speaker
-map in the returned `user` context, keeping the translatable source body unchanged.
-Send that complete `user` field to the model. Keep actual nameplate translation and
-injection separate from this metadata. Preserve speaker/scene associations in stores
-and use the request fingerprint for cache/retry decisions; text-only dialogue dedup
-can reuse the wrong character's voice. The agent extracts speaker metadata itself.
+For dialogue, give each unit the speaker the engine's own evidence names.
+Use resolved source names and null for unidentified speakers.
+The compiler includes current speakers' glossary guidance and puts the line-to-speaker map in the returned `user` context, keeping the translatable source body unchanged.
+Send that complete `user` field to the model.
+Keep actual nameplate translation and injection separate from this metadata.
+Preserve speaker/scene associations in stores and use the request fingerprint for cache/retry decisions; text-only dialogue dedup can reuse the wrong character's voice.
+The agent extracts speaker metadata itself.
 
 Apply the shared prompt's dialogue pass in both direct and API work: draft the exchange, read the
 English in order for reply continuity, rhythm and distinct voices, then check every revision
@@ -156,13 +144,11 @@ application's shipped tool directories. Existing project-local copies from the e
 ZIP integration may contain useful adaptations; preserve them and reconcile relevant
 work with this shared contract rather than replacing them.
 
-Before writing translated MV/MZ game JSON, follow the `_original` preservation
-procedure in `references/engine-rpgmaker.md`, including when an external store is
-used. Stage reference-injector output and finalize each file with the live
-`scripts/len_translation.py write-rpgmaker-json` command. Existing reference
-injectors do not call it automatically. Keep source metadata immutable on reruns
-and verify the final source/live QA mappings. For native/binary formats, retain
-equivalent source and injection sidecars in the separately backed-up workspace without changing engine schemas.
+Before writing translated MV/MZ game JSON, follow the `_original` preservation procedure in `references/engine-rpgmaker.md`, including when an external store is used.
+Stage reference-injector output and finalize each file with the project helper's `operation write_rpgmaker`, which also fits the text to the game's saved Line widths and lists the misfits to shorten.
+Existing reference injectors do not call it automatically.
+Keep source metadata immutable on reruns and verify the final source/live QA mappings.
+For native/binary formats, retain equivalent source and injection sidecars in the separately backed-up workspace without changing engine schemas.
 
 ## Select the work mode before translation
 

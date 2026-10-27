@@ -1,13 +1,12 @@
-"""Prepare Len's game-translation skill and an explicit, resumable AI handoff."""
+"""Len's project settings, shared context and local work rules for the game-translation skill."""
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 import hashlib
 import json
 import os
 from pathlib import Path
-import sys
 from types import SimpleNamespace
 
 from util import system
@@ -18,8 +17,8 @@ from util.paths import (
     prepare_game_translation_context, read_game_glossary, without_gitignore_section,
 )
 from util.languages import active_source
-from util.prompt_pair import pair_note, render as render_prompt, run_language
-from util.skills import load_generic_project_setup, load_project_setup, load_system_prompt
+from util.prompt_pair import render as render_prompt, run_language
+from util.skills import load_system_prompt
 from util.reference_games import load_registry, reference_context
 from util.project_preparation import rpgmaker_layout
 
@@ -385,68 +384,6 @@ def import_glossary(project: LenProject, document: dict) -> dict:
             "extraction_metadata": document.get("do_not_translate", [])}
 
 
-def build_handoff(project: LenProject, skill_root: Path = BUNDLED_SKILL, *, desktop_workspace=None) -> str:
-    _validate_project(project)
-    source, target = active_source(), run_language()
-    mode = (
-        "Translate with the coding assistant's existing access. No DazedTL translation API calls, "
-        "API-driver setup or hosted image generation are authorized. Delegation follows the user's instructions."
-        if project.mode == "local" else
-        "Use the app's saved API Settings and supported Batch backend. Prepare extraction, guidance and "
-        "the complete request plan yourself, then run api-estimate and present the cost in this conversation. "
-        "Follow references/api-batch.md: obtain any missing spending authorization before paid submission, "
-        "revalidate the exact requests and resume persisted jobs. Continue through collection, review and "
-        "delivery in this same run; do not send the user back to the app for another prompt. "
-        "Never silently switch to Live requests. Copying this prompt does not approve an unknown bill."
-    )
-    images = (
-        f"Translate all images containing player-facing {source} text, including archived assets, UI states "
-        "and animation frames; fit and validate their text in game. This opts into the skill's image scope."
-        if project.include_images else
-        f"Image translation is excluded. Report remaining baked {source} labels separately."
-    )
-    desktop_note = ""
-    if desktop_workspace is not None:
-        desktop_note = ("\nDesktop profile workspace (DAZEDTL_DESKTOP_WORKSPACE): "
-                        + json.dumps(str(Path(desktop_workspace).resolve()), ensure_ascii=False)
-                        + "\nSet DAZEDTL_DESKTOP_WORKSPACE to this path in every live DazedTL helper process. "
-                        "The Len CLI loads this profile's settings and active credential internally. "
-                        "For custom Python provider adapters, call desktop.backend.cli_environment.configure "
-                        "with this path before importing translation/provider modules. Do not copy credentials "
-                        "into scripts, command arguments, prompts or game files.\n")
-    return f"""{pair_note(source, target)}Use Len's game-translation skill to translate this {source} game into {target} and deliver a validated local patch.
-
-Game folder: {json.dumps(str(project.game_root), ensure_ascii=False)}
-Skill entrypoint: {json.dumps(str(skill_root / 'SKILL.md'), ensure_ascii=False)}
-Workspace: {json.dumps(str(project.workspace), ensure_ascii=False)}
-DazedTL application (DAZEDTL_ROOT): {json.dumps(str(DATA_DIR.parent), ensure_ascii=False)}
-Python executable: {json.dumps(sys.executable)}
-{desktop_note}
-
-Read the skill entrypoint first. Resolve references/ and tools/ relative to that file and use the live DazedTL application for its helpers. Run the skill's scripts/check_tools.py with the Python executable above. Follow references/project-lifecycle.md and references/progress-reporting.md throughout.
-
-Own the complete workflow: inspect existing artifacts and Git state, preserve the source, prepare the engine and guidance, extract, translate, fit text and images in scope, inject, run targeted QA, and package the local patch. Infer what remains from verified artifacts; start fresh work or resume existing work automatically. Preserve valid translations, curated guidance, local adaptations and checkpoints. Revalidate only work whose dependencies changed. Do not stop after setup, extraction, a batch or a phase to ask for another task selection or prompt. If delivery is already complete and current, report its paths and evidence without repeating translation.
-
-Translation mode: {MODES[project.mode]}
-{mode}
-
-Image scope: {images}
-Include DazedTL base glossary: {json.dumps(project.include_glossary_base)}
-Install Forge for MV/MZ: {json.dumps(project.install_forge)}. The preparation helper honors this choice; skip installation on other engines. Disabled means skip installation/updates, leaving existing copies in place.
-
-Use this game's shared .dazedtl/glossary.txt and .dazedtl/skills/*.md as authoritative guidance. Read setup.md in the workspace and complete its guidance phase yourself before continuing; its guidance-only boundary ends with that phase. Refresh context.json through the live context/context-many helpers after guidance changes. Extract speaker metadata and handle user-supplied reference games yourself. Keep authored tools, translations and QA records in the workspace's work/ folder and back up ignored work separately.
-
-Before creating a missing original baseline, verify the selected folder is still untranslated and pass --current-is-untranslated to git-setup, or supply --original with a verified matching source. This is an agent check, not a user task or a requirement for a second download. Normal tool preparation does not make a game translated. Never replace a known {source} baseline with current {target}. Preserve source metadata during injection, use the MV/MZ source-preserving writer where applicable, and synchronize the reviewed runtime patch with git-scope before local checkpoint commits.
-
-Maintain status.md and progress.json yourself using progress-update after saved batches and milestones, at least every 10 minutes during active work, and before long waits or handoff. Show completed/discovered units, coverage status, phase, estimated remaining active work, next checkpoint and any blocker. Keep translation, review, images, injection, runtime QA and packaging distinct. The user should be able to watch progress without maintaining files or issuing phase prompts.
-
-Continue until the local delivery is verified or a concrete blocker needs user input. Resolve routine implementation choices yourself. Ask only for missing information or authorization that materially blocks progress, complete independent work while waiting, and resume from the checkpoint after the answer. Full playthroughs and extra playtesters are optional unless requested. Mark unavailable runtime checks pending; never report them as passed. Creating remotes, pushing, uploading and publishing require a separate user request.
-
-Additional project instructions (including any explicitly narrower scope):
-{project.instructions.strip() or '(none)'}
-"""
-
-
 def _write_atomic(path: Path, text: str) -> None:
     if path.is_symlink():
         raise ValueError(f"Refusing to replace a symlink: {path}")
@@ -535,32 +472,3 @@ def setup_forge(project: LenProject) -> dict:
         # runtime-patch repositories keep all of that working material local.
         _prepare_local_work(project)
     return {"status": "installed", "message": message}
-
-
-def prepare_project(project: LenProject, skill_root: Path = BUNDLED_SKILL, *, desktop_workspace=None) -> Path:
-    """Prepare shared guidance and handoff; leave prior project tools and translations intact."""
-    prompt = build_handoff(project, skill_root, desktop_workspace=desktop_workspace or os.environ.get("DAZEDTL_DESKTOP_WORKSPACE"))
-    _validate_skill(skill_root)
-    context = shared_context(project)
-    project.workspace.mkdir(parents=True, exist_ok=True)
-    _prepare_local_work(project)
-    settings = asdict(project)
-    settings.pop("game_root")
-    _write_atomic(project.workspace / "project.json", json.dumps({"version": 3, **settings}, indent=2) + "\n")
-    _write_atomic(project.workspace / "context.json", json.dumps(context, ensure_ascii=False, indent=2) + "\n")
-    layout = rpgmaker_layout(project.game_root)
-    setup = (load_project_setup("rpgmaker", prepend=(
-        f"Selected game folder: {json.dumps(str(project.game_root), ensure_ascii=False)}\n"
-        f"RPG Maker JSON directory (default export location for Ace): {json.dumps(str(layout['data_path']), ensure_ascii=False)}\n"
-        "Use this selected game's sources and portable guidance files. If Ace JSON is not available, "
-        "complete the engine's extraction/conversion prerequisite first; use the actual reviewed "
-        "export if it lives elsewhere. Collect source speaker names "
-        "within the selected direct/API mode; do not introduce paid name collection in direct mode."
-    )) if layout else load_generic_project_setup(project.game_root))
-    _write_atomic(project.workspace / "setup.md", setup)
-    from util.len_progress import initialize_progress
-
-    initialize_progress(project)
-    handoff = project.workspace / "handoff.md"
-    _write_atomic(handoff, prompt)
-    return handoff

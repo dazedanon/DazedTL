@@ -872,6 +872,22 @@ try:
             ], fitted
             # Writing again lines up with the source and changes nothing.
             before = game.read_bytes()
+            # The engine CLI writes without fitting, so in a game DazedTL
+            # manages it refuses, naming the helper's write_rpgmaker.
+            from scripts.len_translation import main as len_cli
+
+            owned = temporary / "managed"
+            (owned / ".git/dazedtl").mkdir(parents=True)
+            (owned / ".git/dazedtl/project.json").write_text('{"projectId": "x"}')
+            (owned / "data").mkdir()
+            (owned / "data/Map001.json").write_bytes(before)
+            refused = [
+                "write-rpgmaker-json",
+                *("--source", str(files["source"]), "--translated"),
+                *(str(files["staged"]), "--output", str(owned / "data/Map001.json")),
+            ]
+            assert len_cli(refused) == 1
+            assert (owned / "data/Map001.json").read_bytes() == before
             assert (
                 write_rpgmaker_json(
                     files["source"], files["staged"], game, Layout.from_widths(tight)

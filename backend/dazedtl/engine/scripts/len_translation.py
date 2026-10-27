@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare Len's context and baselines, and write source-preserving game JSON. No API calls."""
+"""Len's context and baselines, and source-preserving game JSON outside DazedTL. No API calls."""
 
 from __future__ import annotations
 
@@ -19,8 +19,16 @@ from dazedtl.compatibility.runtime import activate
 activate()
 
 from util.len_translation import (  # noqa: E402
-    _write_atomic, import_glossary, load_project, prepare_project, request_context, shared_context,
+    _write_atomic, import_glossary, load_project, request_context, shared_context,
 )
+
+
+def managed(output: Path) -> bool:
+    """Whether the file is in a game DazedTL manages, whose writes go through
+    the app's own writer, which fits and records them."""
+    from dazedtl.projects.location import managed as names_project
+
+    return any(names_project(folder) for folder in output.resolve().parents)
 
 
 def main(argv=None) -> int:
@@ -31,8 +39,6 @@ def main(argv=None) -> int:
 
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    prepare = commands.add_parser("prepare", help="Prepare shared guidance, setup instructions and the skill handoff")
-    prepare.add_argument("--game-root", type=Path, required=True)
     rpg_prep = commands.add_parser("rpgmaker-prep", help="Run Workflow's RPG Maker formatting and GameUpdate preparation before Git setup")
     rpg_prep.add_argument("--game-root", type=Path, required=True)
     rpg_prep.add_argument("--data-path", type=Path, help="Existing Ace JSON export; defaults to the game's ace_json folder")
@@ -49,9 +55,6 @@ def main(argv=None) -> int:
     many.add_argument("--game-root", type=Path, required=True)
     many.add_argument("--input", type=Path, required=True, help="JSON object with complete, inputs and batches")
     many.add_argument("--output", type=Path)
-    estimate = commands.add_parser("api-estimate", help="Save an unapproved source-bound quote for cost review in the assistant conversation")
-    estimate.add_argument("--game-root", type=Path, required=True)
-    estimate.add_argument("--requests", default=".dazedtl/len-method/api-requests.json", help="Complete compiled request plan, relative to the game")
     importer = commands.add_parser("import-glossary", help="Merge reviewed names/terms; reject conflicting existing decisions")
     importer.add_argument("--game-root", type=Path, required=True)
     importer.add_argument("--input", type=Path, required=True)
@@ -72,7 +75,7 @@ def main(argv=None) -> int:
     progress_update = commands.add_parser("progress-update", help="Count saved unit records and replace the compact progress report")
     progress_update.add_argument("--game-root", type=Path, required=True)
     progress_update.add_argument("--input", type=Path, required=True, help="JSON report file, or - to read JSON from stdin")
-    writer = commands.add_parser("write-rpgmaker-json", help="Write staged MV/MZ data JSON with Workflow-compatible _original metadata")
+    writer = commands.add_parser("write-rpgmaker-json", help="Write staged MV/MZ data JSON with Workflow-compatible _original metadata, outside a game DazedTL manages")
     writer.add_argument("--source", type=Path, required=True, help="Matching untranslated baseline or previous game file with originals intact")
     writer.add_argument("--translated", type=Path, required=True, help="Separate staged translation with the same array order and structure")
     writer.add_argument("--output", type=Path, required=True, help="Destination game JSON file; existing originals are retained")
@@ -81,12 +84,15 @@ def main(argv=None) -> int:
         if args.command == "write-rpgmaker-json":
             from util.len_originals import write_rpgmaker_json
 
+            if managed(args.output):
+                raise ValueError(
+                    "DazedTL manages this game. Write it with the project helper's operation write_rpgmaker, "
+                    "which fits the text to the game's Line widths and lists misfits."
+                )
             print(write_rpgmaker_json(args.source, args.translated, args.output)["path"])
             return 0
         project = load_project(args.game_root)
-        if args.command == "prepare":
-            print(prepare_project(project))
-        elif args.command == "rpgmaker-prep":
+        if args.command == "rpgmaker-prep":
             from util.project_preparation import prepare_rpgmaker
             from util.len_translation import setup_forge
 
@@ -105,17 +111,6 @@ def main(argv=None) -> int:
             output.parent.mkdir(parents=True, exist_ok=True)
             _write_atomic(output, json.dumps(result, ensure_ascii=False, indent=2) + "\n")
             print(output)
-        elif args.command == "api-estimate":
-            from util.len_api import create_estimate, estimate_summary
-
-            if project.mode != "api":
-                raise ValueError("API estimates require API Batch Translation mode.")
-            result = create_estimate(project, args.requests)
-            output = project.workspace / "api-estimate.json"
-            output.parent.mkdir(parents=True, exist_ok=True)
-            _write_atomic(output, json.dumps(result, ensure_ascii=False, indent=2) + "\n")
-            print(json.dumps({"estimate_file": str(output), "summary": estimate_summary(result),
-                              "estimate": result}, ensure_ascii=False, indent=2))
         elif args.command in {"progress", "progress-update"}:
             from util.len_progress import read_progress, update_progress
 
