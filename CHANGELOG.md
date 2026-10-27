@@ -3,6 +3,19 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.36.0] - 2026-10-26
+
+### Changed
+
+- **Images:** investigating is optional: tick the images to translate yourself to skip it, or click **Choose images myself** while your assistant investigates to stop it and keep what it found; before an investigation the list's tab reads **To translate** instead of **Recommended**.
+- **Images:** big games open Images and switch between **Recommended**, **All images** and folders faster: thumbnails load near where you are looking instead of for the whole list, a thumbnail shown again isn't read from the game again, the grid no longer flashes empty and the tabs no longer shift.
+
+### Fixed
+
+- **Text QA:** in a Japanese game translated into Chinese, Text QA now checks glossary terms too, so a line that writes a character's or term's name another way than the glossary, or leaves it out, is marked for review.
+- **Images:** results your assistant saves while you browse All images or a folder no longer jump the grid back to **Recommended** at the top.
+- **Lines:** after the update, each game's line counts are read once more, so a Chinese or Japanese refusal note an earlier run left in place of a line counts as left to translate.
+
 ## [2.35.0] - 2026-10-26
 
 ### Changed
@@ -1091,6 +1104,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.36.0]: https://github.com/dazedanon/DazedTL/compare/v2.35.0...v2.36.0
 [2.35.0]: https://github.com/dazedanon/DazedTL/compare/v2.34.5...v2.35.0
 [2.34.5]: https://github.com/dazedanon/DazedTL/compare/v2.34.4...v2.34.5
 [2.34.4]: https://github.com/dazedanon/DazedTL/compare/v2.34.3...v2.34.4
