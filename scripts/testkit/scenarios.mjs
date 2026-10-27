@@ -6,8 +6,14 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { python } from "../dependencies.mjs";
 import { until } from "./cdp.mjs";
-import { contentFolder, gameName, makeRelease, release } from "./games.mjs";
-import { translated } from "./provider.mjs";
+import {
+  contentFolder,
+  gameName,
+  makeGame,
+  makeRelease,
+  release,
+} from "./games.mjs";
+import { model, translated } from "./provider.mjs";
 import {
   chooseFolder,
   connect,
@@ -613,6 +619,149 @@ const assistantWrite = [
   },
 ];
 
+/** The project's API Batch run, as Progress reads it. */
+async function batchRun(page) {
+  const project = (await page.call("workspace_snapshot")).application.project;
+  const { jobs } = await page.call("translation_state", {
+    project_id: project.id,
+  });
+  return jobs.find((job) => job.kind === "translation" && job.mode === "batch");
+}
+
+// A Batch token allowance just above the database Batch the stand-in holds,
+// about 116,000 tokens, so it leaves too little room for the Assistant-led
+// run beside it.
+const queuedAllowance = 150_000;
+
+/** Opens `game` from the project menu, choosing `method` for a new game. */
+async function openFolder(page, state, game, method) {
+  await chooseFolder({ root: state.root, inspect: state.app.inspect }, game);
+  const { project } = (await page.call("workspace_snapshot")).application;
+  await page.click(project.name);
+  await page.click("Open a game…");
+  if (method) {
+    await page.click(new RegExp(`^${method}`));
+    await page.click(`Start with ${method}`);
+  }
+  await until(
+    `${game} to open`,
+    async () =>
+      (await page.call("workspace_snapshot")).application.project?.source ===
+      game,
+  );
+}
+
+/** How many Batches the stand-in was asked to create. */
+const created = (state) =>
+  fs
+    .readFileSync(path.join(state.work, "provider/requests.jsonl"), "utf8")
+    .split("\n")
+    .filter((line) => line.includes('"method":"POST","route":"/batches"'))
+    .length;
+
+// Settings and Assistant-led preparation wait while a Guided run works, so
+// both come before the database Batch, and the estimate is approved after it.
+const queuedBatch = [
+  [
+    "Set the connection's Batch token allowance just above the database Batch",
+    async ({ page }) => {
+      const saved = await page.call("settings_get");
+      const options = saved.modelOptions[model];
+      if (!options)
+        throw new Error("The stand-in model's options were not saved.");
+      await page.call("settings_save", {
+        revision: saved.revision,
+        connection_id: saved.activeConnectionId,
+        values: saved.values,
+        model_options: {
+          ...saved.modelOptions,
+          [model]: { ...options, batchInputTokens: queuedAllowance },
+        },
+      });
+    },
+  ],
+  [
+    "Open a copy of the game Assistant-led, for an API Batch",
+    async ({ page, state }) => {
+      state.guidedGame = state.game;
+      state.game = path.join(path.dirname(state.game), "コピー");
+      await makeGame(state.variants, state.game);
+      await openFolder(page, state, state.game, "Assistant-led");
+      const { project } = (await page.call("workspace_snapshot")).application;
+      const current = await page.call("translation_state", {
+        project_id: project.id,
+      });
+      await page.call("translation_save", {
+        project_id: project.id,
+        revision: current.revision,
+        values: { ...current.options, mode: "batch" },
+      });
+      await page.call("translation_prepare", { project_id: project.id });
+    },
+  ],
+  [
+    "The assistant sets up the game",
+    ({ page, state }) => assistant(page, state, "setup"),
+  ],
+  [
+    "The assistant organizes all the text into an API Batch estimate",
+    ({ page, state }) => assistant(page, state, "organize", "--complete"),
+  ],
+  [
+    "Back in the Guided game, submit the database as a Batch the stand-in holds",
+    async (context) => {
+      await openFolder(context.page, context.state, context.state.guidedGame);
+      await context.page.click("Translation");
+      await batch[1][1](context);
+    },
+  ],
+  [
+    "Approve the Assistant-led estimate on Progress; its first chunk waits unsent",
+    async ({ page, state }) => {
+      await openFolder(page, state, state.game);
+      await page.click("Translation");
+      const before = created(state);
+      await page.click("Approve and submit Batch");
+      const run = await until("a chunk waiting for capacity", async () => {
+        const job = await batchRun(page);
+        return job?.batches?.[0]?.state === "queued" && job;
+      });
+      await page.waitText("Waiting for available Batch token capacity.");
+      // Several polls later it still has sent nothing.
+      await new Promise((resolve) => setTimeout(resolve, 12_000));
+      const still = await batchRun(page);
+      if (still.batches[0].state !== "queued" || created(state) !== before)
+        throw new Error(
+          `The chunk did not wait: ${JSON.stringify(still.batches[0])}`,
+        );
+      console.log(
+        `\n  Run ${run.id}: ${run.batches.length} chunks, ${run.message}`,
+      );
+    },
+  ],
+  [
+    "Release the held Batch; the queued chunk is sent and the run completes",
+    async ({ page, state }) => {
+      const modeFile = path.join(state.work, "provider/mode.json");
+      const mode = JSON.parse(fs.readFileSync(modeFile, "utf8"));
+      fs.writeFileSync(modeFile, JSON.stringify({ ...mode, hold: false }));
+      const run = await until(
+        "the Assistant-led run to complete",
+        async () => {
+          const job = await batchRun(page);
+          if (["failed", "uncertain", "stopped"].includes(job.status))
+            throw new Error(`Run ${job.id}: ${job.status}, ${job.message}`);
+          return job.status === "complete" && job;
+        },
+        5 * 60_000,
+      );
+      if (run.batches.some((chunk) => chunk.state !== "complete" || !chunk.id))
+        throw new Error(`Unsent chunks: ${JSON.stringify(run.batches)}`);
+      console.log(`\n  Run ${run.id}: ${run.batches.length} chunks sent`);
+    },
+  ],
+];
+
 /** Brings in version 1.1 under Checkpoints, up to its preview. */
 /**
  * Makes the developer's release (`makeRelease`) and brings it in from
@@ -1059,6 +1208,11 @@ export const scenarios = {
     description:
       "The database submitted as a Batch the stand-in holds at the provider; provider '{\"hold\":false}' releases it.",
     steps: () => [open, ...setup, ...batch],
+  },
+  "batch-queued": {
+    description:
+      "batch-waiting, then a copy of the game Assistant-led whose API Batch on the same OpenAI connection, with a small Batch token allowance, waits for capacity unsent until the held Batch is released, then is sent and completes.",
+    steps: () => [open, ...setup, batch[0], ...queuedBatch],
   },
   upgraded: {
     description:

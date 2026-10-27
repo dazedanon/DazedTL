@@ -150,7 +150,7 @@ jobs:
           - fresh opened set-up translated qa-done paged moved-relabeled
           - assistant-led assistant-written batch-waiting upgraded
           - released-ace released-mv moved images
-          - update-stopped plugins-applied qa-done --game ace
+          - update-stopped plugins-applied batch-queued qa-done --game ace
     steps:
       - run: git config --global core.autocrlf false
       - uses: actions/checkout@v7

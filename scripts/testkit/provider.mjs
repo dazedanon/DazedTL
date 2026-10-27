@@ -1,7 +1,8 @@
 // A local stand-in for an OpenAI-compatible provider, free and offline, for
 // the live test and test scenarios. It answers chat completions and OpenAI's
-// Batch file API like a model that translates every line, and its behavior
-// can change while it runs through <folder>/mode.json:
+// Batch file API like a model that translates every line, Guided's LineN
+// requests and Assistant-led's numbered ones, and its behavior can change
+// while it runs through <folder>/mode.json:
 //
 //   { "refuse": ["text"], "decline": ["text"], "fail": ["text"],
 //     "failFirst": false, "stall": false, "answer": null, "hold": false,
@@ -167,6 +168,29 @@ function sourceLines(params) {
 }
 
 /**
+ * The lines an Assistant-led API request carries under numbered keys, which
+ * its output schema asks for again, or null for a Guided request.
+ */
+function keyedLines(params) {
+  const keys = Object.keys(
+    params.response_format?.json_schema?.schema?.properties || {},
+  );
+  if (!keys.length || !keys.every((key) => /^\d+$/.test(key))) return null;
+  // The lines to translate come last, after any earlier lines as context.
+  return (
+    [...objects(requestText(params))]
+      .reverse()
+      .find(
+        (value) =>
+          value &&
+          typeof value === "object" &&
+          Object.keys(value).length === keys.length &&
+          keys.every((key) => typeof value[key] === "string"),
+      ) || null
+  );
+}
+
+/**
  * Starts the stand-in. `folder` holds its mode file and records.
  * @param {{ folder: string, port?: number }} options
  */
@@ -212,7 +236,8 @@ export async function startProvider({ folder, port = 0 }) {
 
   /** A chat completion for `params`, or an HTTP error. */
   function complete(params) {
-    const lines = sourceLines(params);
+    const keyed = keyedLines(params);
+    const lines = keyed || sourceLines(params);
     if (!lines)
       return {
         status: 400,
@@ -251,7 +276,13 @@ export async function startProvider({ folder, port = 0 }) {
         ? `${english} ${longText}`
         : english;
     });
-    const content = JSON.stringify({ translations });
+    const content = JSON.stringify(
+      keyed
+        ? Object.fromEntries(
+            Object.keys(keyed).map((key, index) => [key, translations[index]]),
+          )
+        : { translations },
+    );
     const body = JSON.stringify(params);
     return {
       status: 200,
