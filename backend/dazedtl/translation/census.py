@@ -182,10 +182,14 @@ def rpgmaker_kind(name, prefix):
     return None
 
 
+# The field segment of a comment line players read (see shown_comments).
+HELP_SEGMENT = "*[code=408:help]"
+
+
 def _segment(value, shown=frozenset()):
     """'*' for a list element; event commands keep their code, and plugin
     commands their plugin or keyword, which are identifiers. A comment line
-    players read (see shown_comments) is '*[code=408:help]'."""
+    players read (see shown_comments) is HELP_SEGMENT."""
     if isinstance(value, dict):
         code, parameters = value.get("code"), value.get("parameters")
         if type(code) is int and isinstance(parameters, list):
@@ -194,7 +198,7 @@ def _segment(value, shown=frozenset()):
             if code == 356 and parameters and isinstance(parameters[0], str):
                 return f"*[code=356:{parameters[0].split(' ', 1)[0]}]"
             if code == 408 and id(value) in shown:
-                return "*[code=408:help]"
+                return HELP_SEGMENT
             return f"*[code={code}]"
     return "*"
 
@@ -968,7 +972,7 @@ PROTECTED = [
             ("*", "**/*[code=102]/**"),
             ("*", "**/*[code=101]/parameters/4"),
             # Comment lines a plugin shows, such as choice help.
-            ("*", "**/*[code=408:help]/**"),
+            ("*", f"**/{HELP_SEGMENT}/**"),
             ("*", "**/*[code=320]/**"),
             ("*", "**/*[code=324]/**"),
             ("*", "**/*[code=325]/**"),

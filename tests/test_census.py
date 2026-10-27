@@ -339,6 +339,8 @@ class CensusTests(unittest.TestCase):
             command(404),
             command(108, "メモ"),
             command(408, "あとで直す。"),
+            # A malformed command stopped the whole census.
+            {"code": [408], "parameters": []},
         ]
         game = {
             "www/js/plugins.js": f"var $plugins =\n{json.dumps(plugins)};\n".encode(),
