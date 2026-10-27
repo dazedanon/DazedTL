@@ -4913,6 +4913,14 @@ def _provider_user_messages(user, history, context_kind,
     return messages
 
 
+def _require_request_text(system, user):
+    """Refuse a request whose system prompt or user text is empty. Both
+    builders run it, so a live request and a Batch row are checked alike."""
+    for role, text in (("system", system), ("user", user)):
+        if not text or not str(text).strip():
+            raise ValueError(f"The request's {role} text is empty")
+
+
 @extensions.point
 def buildClaudeRequest(system, user, history, formatType, model, numLines=None,
                        vocab_text="", context_kind=CONTEXT_SOURCE,
@@ -4925,6 +4933,7 @@ def buildClaudeRequest(system, user, history, formatType, model, numLines=None,
     the first, static system block is cached. Dynamic system guidance and user
     messages follow the explicit breakpoint and cannot bust that prefix.
     """
+    _require_request_text(system, user)
     ant_system = _provider_system_blocks(system, vocab_text)
     if not DISABLE_CACHE and cache_ttl is not None:
         ttl = "1h" if str(cache_ttl).lower() == "1h" else "5m"
@@ -4963,10 +4972,7 @@ def buildOpenAIRequest(system, user, history, penalty, formatType, model,
                        request_instructions=None, use_cache_routing=False,
                        api_url=None, delivered_context=None):
     """Build OpenAI-compatible kwargs shared by live and batch requests."""
-    if not system or not str(system).strip():
-        raise ValueError("System content cannot be empty")
-    if not user or not str(user).strip():
-        raise ValueError("User content cannot be empty")
+    _require_request_text(system, user)
 
     provider = (api_provider or os.getenv("API_PROVIDER", "openai")).lower()
     from dazedtl.settings.providers import own_api, response_format
@@ -5083,10 +5089,13 @@ def buildOpenAIRequest(system, user, history, penalty, formatType, model,
 
 def _check_message_content(messages):
     """Refuse a request with a message of no content before it is sent. The
-    builders never make one; an extension that replaces them might."""
+    builders never make one; an extension that replaces them might. The error
+    names the message, not its text, which logs and run evidence keep."""
     for i, message in enumerate(messages):
         if not message.get("content") or not str(message.get("content")).strip():
-            raise ValueError(f"Message {i} has empty content: {message}")
+            raise ValueError(
+                f"Message {i} ({message.get('role', 'no role')}) of the request is empty"
+            )
 
 
 @extensions.point
@@ -5099,10 +5108,9 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
     vocab_text: Per-batch vocabulary (dynamic, never cached to avoid cache busting).
     delivered_context: English already delivered for the source context lines.
     """
-    # Ensure system content is not empty
-    if not system or not str(system).strip():
-        raise ValueError("System content cannot be empty")
-    
+    # The builders check this too; an extension may replace them.
+    _require_request_text(system, user)
+
     _live_api_check = os.getenv("api", "").strip()
     # Only route to the native Anthropic SDK when the model looks like Claude AND
     # the configured API URL is either unset (implying default Anthropic usage) or
@@ -5114,8 +5122,6 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
         and (not _live_api_check or "anthropic" in _live_api_check.lower())
     )
     _is_mistral = not _is_claude and isMistralAPI()
-    if not user or not str(user).strip():
-        raise ValueError("User content cannot be empty")
 
     # --- API Call Logic ---
     # Re-apply env vars here so that GUI config changes (which update os.environ

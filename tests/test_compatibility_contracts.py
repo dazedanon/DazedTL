@@ -2100,6 +2100,37 @@ class ManualJobs:
         self.assertNotIn("private request body", str(raised.exception))
         self.assertIsNone(raised.exception.status_code)
 
+    def test_an_empty_request_is_refused_by_name_live_or_batch(self):
+        # translateAI builds a Claude Batch row with buildClaudeRequest, which
+        # did not check its text, so only OpenAI rows and Live requests were
+        # refused. The refusal names what was empty, never the prompt, which
+        # logs and run evidence keep.
+        from util import translation
+
+        for build, args in (
+            (translation.buildClaudeRequest, ("json", "claude-opus-5-5", 1)),
+            (translation.buildOpenAIRequest, (0, "json", "gpt-4.1", 1)),
+        ):
+            for system, user, role in (
+                ("Private prompt", " ", "user"),
+                ("", "Private prompt", "system"),
+            ):
+                with (
+                    self.subTest(build=build.__name__, role=role),
+                    self.assertRaisesRegex(ValueError, role) as raised,
+                ):
+                    build(system, user, [], *args)
+                self.assertNotIn("Private prompt", str(raised.exception))
+        with self.assertRaises(ValueError) as raised:
+            translation._check_message_content(
+                [
+                    {"role": "user", "content": "Private prompt"},
+                    {"role": "assistant", "content": "", "note": "Private prompt"},
+                ]
+            )
+        self.assertRegex(str(raised.exception), r"\b1\b.*assistant")
+        self.assertNotIn("Private prompt", str(raised.exception))
+
     def test_progress_reports_leave_a_checkpointed_gitignore_unchanged(self):
         # A checkpoint after an image apply leaves the image rules between
         # Len's work block and its patch block. Moving the work block again
