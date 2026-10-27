@@ -2,4 +2,5 @@
 
 ### Fixed
 
+- **Translate:** in a WOLF RPG game, a speaker name the model returned untranslated inside a colour code, such as `\c[2]セルリア`, is no longer kept as its translation, so the Japanese name no longer ships.
 - **Translate:** in a Japanese game translated into Chinese, Maps & events no longer counts a translated event label or map name as a line left, so the map reads finished.

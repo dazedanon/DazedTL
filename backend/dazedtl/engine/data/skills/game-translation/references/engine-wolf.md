@@ -273,7 +273,7 @@ Peel any leading window prefix (`@<option>\n`) off both sides first and prefer t
 3. No Japanese anywhere → done
 4. Otherwise test **only the BODY**
 
-Body test (`:311-331`): strip the `@<option>\n` window prefix, then drop line 1 when `speaker_src` is a known first-line format (`literal_line1`, `literal_line1_lowconf`, `ui`, `narration`) OR line 1 is 1-20 chars and contains Japanese (a nameplate the model echoed), and finally remove every inline control code with `_WOLF_CODE_RE` (`:124`).
+Body test (`:311-331`): strip the `@<option>\n` window prefix, then drop line 1 when `speaker_src` is a known first-line format (`literal_line1`, `literal_line1_lowconf`, `ui`, `narration`) OR line 1 is 1-20 chars and contains Japanese (a nameplate the model echoed), and finally remove every inline control code with `WOLF_INLINE_CODE_RE` (`util/wolfdawn/codes.py`).
 That last step is load-bearing: ruby like `\r[我,わ]` legitimately keeps Japanese in a fully translated English line.
 
 Because `source` stays Japanese forever, every resume decision must come from `text`. A line whose body is already English but whose nameplate is still Japanese gets the cheap `_maybe_fix_nameplate` pass (`:572-580`) instead of a full retranslation billed twice.

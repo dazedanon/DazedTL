@@ -14,7 +14,7 @@ import { root, requireNode } from "./dependencies.mjs";
 import { ensureRenderer } from "./testkit/app.mjs";
 import { checkout, previousRelease } from "./testkit/checkout.mjs";
 import { withRetry } from "./testkit/retry.mjs";
-import { scenarios } from "./testkit/scenarios.mjs";
+import { ciScenarios } from "./testkit/ci.mjs";
 
 requireNode();
 const option = (name) => {
@@ -33,38 +33,6 @@ const jobs = Number(
   option("--jobs") ||
     Math.max(2, Math.min(10, Math.floor(os.availableParallelism() / 2))),
 );
-
-/**
- * The scenario runs CI's matrix lists, each a name and the options after it,
- * so this check and CI run the same set.
- */
-function ciScenarios() {
-  const text = fs.readFileSync(
-    path.join(root, ".github/workflows/ci.yml"),
-    "utf8",
-  );
-  const block = /\n(\s+)scenarios:\n((?:\1\s+- .+\n)+)/.exec(text);
-  if (!block) throw new Error("CI's workflow lists no scenarios.");
-  const runs = [];
-  for (const line of block[2].trim().split("\n")) {
-    let previous = "";
-    for (const word of line
-      .replace(/^\s*- /, "")
-      .trim()
-      .split(/\s+/)) {
-      if (word.startsWith("--") || previous.startsWith("--"))
-        runs[runs.length - 1].push(word);
-      else runs.push([word]);
-      previous = word;
-    }
-  }
-  const missing = Object.keys(scenarios).filter(
-    (name) => !runs.some(([run]) => run === name),
-  );
-  if (missing.length)
-    throw new Error(`CI runs no ${missing.join(", ")} scenario; add it there.`);
-  return runs;
-}
 
 const results = [];
 /** A file or folder name for the check `name`. */
