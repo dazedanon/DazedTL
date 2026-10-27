@@ -23,32 +23,21 @@ Git setup, extraction and guidance, then stops before translation or injection.
   starting game's files in the game's Git repository (`refs/dazedtl/originals`), so make
   no copy of the game. A Git hash or ignored-asset inventory cannot restore
   uncommitted binaries by itself.
-- Run `DAZEDTL_ROOT/scripts/len_translation.py git-status --game-root <game>`.
-  Inspect existing branches, worktree state and pending operations. Preserve the
-  existing translated branch and remotes; do not initialize a nested repository,
-  rename branches or discard earlier work to simplify setup.
-- For a fresh RPG Maker project, preserve a recoverable copy before preparation,
-  then run `rpgmaker-prep --game-root <game>` through that same application script.
-  This uses Workflow's dazedformat JSON formatter, plugins.js formatter, bundled
-  GameUpdate copy rules, saved GameUpdate defaults and MV/MZ startup checker. Existing
-  per-game patch configuration, README and ignore rules survive reinstallation.
-  For MV/MZ, this command also honors the saved `install_forge` choice from Len's
-  GUI (on by default), using Workflow's bundled Forge installer and saved playtest
-  configuration. If preparation is already complete, `forge-setup --game-root
-  <game>` applies just that choice. Unchecked means skip installation/updates,
-  leaving any existing copy in place. Forge is unavailable for Ace/other engines.
-  Include its referenced runtime plugin in patch scope while enabled; keep local
-  Forge settings in the ignored workspace.
-  Resolve preparation errors before Git setup or translation. Missing Game Update
-  org/username defaults are reported; finish the per-game repository configuration
-  before delivery without inventing a publication destination.
-  For Ace, first complete Workflow's extraction/RV2JSON prerequisite; the command
-  formats `ace_json`, or an existing export selected with `--data-path`, and skips
-  MV/MZ-only plugin actions. Do not format native Marshal bytes as text.
-  Keep the prepared untranslated snapshot recoverable for the subsequent baseline
-  and `git-scope` source checks, separately from the recorded originals.
-  On resume, inspect completed preparation and repair only missing or requested
-  parts; never rebuild an existing Japanese baseline from current English.
+- Read the project helper's `state`, then inspect the game's existing branches, worktree state and pending operations.
+  Preserve the existing translated branch and remotes; do not initialize a nested repository, rename branches or discard earlier work to simplify setup.
+- For a fresh RPG Maker project, preserve a recoverable copy before preparation, then run the project helper's `operation rpgmaker_prepare`.
+  This uses Workflow's dazedformat JSON formatter, plugins.js formatter, bundled GameUpdate copy rules, saved GameUpdate defaults and MV/MZ startup checker.
+  Existing per-game patch configuration, README and ignore rules survive reinstallation.
+  For MV/MZ, this operation also honors the saved `install_forge` choice from Len's GUI (on by default), using Workflow's bundled Forge installer and saved playtest configuration; running it again on a prepared game applies a changed choice.
+  Unchecked means skip installation/updates, leaving any existing copy in place.
+  Forge is unavailable for Ace/other engines.
+  Include its referenced runtime plugin in patch scope while enabled; keep local Forge settings in the ignored workspace.
+  Resolve preparation errors before Git setup or translation.
+  Missing Game Update org/username defaults are reported; finish the per-game repository configuration before delivery without inventing a publication destination.
+  For Ace, the operation first converts Data into `ace_json` and formats it, or an existing export selected with `data_path`, and skips MV/MZ-only plugin actions.
+  Do not format native Marshal bytes as text.
+  Keep the prepared untranslated snapshot recoverable for the subsequent baseline and `git-scope` source checks, separately from the recorded originals.
+  On resume, inspect completed preparation and repair only missing or requested parts; never rebuild an existing Japanese baseline from current English.
 - Review `.gitignore` against the engine's actual files. The new Len Git mode keeps
   the project's rules instead of applying the RPG Maker/WOLF extension allowlist.
   Use exact paths for the intended runtime patch, plus `.gitignore`, `.gitattributes`
@@ -68,16 +57,15 @@ Git setup, extraction and guidance, then stops before translation or injection.
   exceptions and confirm that checked-out files contain real usable payloads.
   The helper supplies `* -text` when no attributes file exists and keeps existing
   attributes intact. Check those existing rules against the engine before proceeding.
-- Run `git-setup --game-root <game> --version <label>` through that same application
-  script. When creating a missing original baseline from the selected folder, the
-  agent must pass `--current-is-untranslated` after checking that fact. This is an
-  agent attestation, not another user confirmation. Existing baselines are reused
-  without this flag. Use `--original <source>` when a different untranslated source
-  is needed. An actual translated game without a
-  suitable baseline still needs an untranslated source. Never call a known
-  translation the original merely to bypass this requirement.
-  Use a verified release label; when none exists, `initial-unversioned` labels a
-  snapshot without inventing an official version number.
+- Run the project helper's `operation git_setup` with the `version` label and the reviewed runtime patch `manifest`.
+  When creating a missing original baseline from the selected folder, the agent must pass `untranslated: true` after checking that fact.
+  This is an agent attestation, not another user confirmation.
+  Existing baselines are reused without it.
+  Use `original` with a source folder when a different untranslated source is needed.
+  An actual translated game without a suitable baseline still needs an untranslated source.
+  Never call a known translation the original merely to bypass this requirement.
+  Use a verified release label; when none exists, `initial-unversioned` labels a snapshot without inventing an official version number.
+  Outside the app, `DAZEDTL_ROOT/scripts/len_translation.py` runs the same steps as `git-status`, `rpgmaker-prep` and `git-setup` (`--version`, `--current-is-untranslated`, `--original`).
 - The helper creates `original` and the translated branch using the shared
   version-update backend. New repositories use `main`; existing branch names are
   preserved. Existing complete baselines are reused. Native bytes and the chosen
@@ -167,28 +155,24 @@ Scope is the census of the original game; an older exclusion list is not a scope
 Do not suppress previously accepted work on resume.
 Propagate a scope correction through the scope rules, injection, QA, progress and delivery together.
 
-Follow `progress-reporting.md` from the first measured corpus onward. Export current
-saved units, including unfinished occurrences, and call the live `progress-update`
-helper after saved batches and milestones and before a pause/handoff. Report the
-current phase, short blocker and next action; keep detailed history in `status.md`.
-Revalidate source/output fingerprints and downstream phase checkpoints before
-refreshing stale progress. Resuming or copying another prompt must preserve the
-last report rather than resetting it or inventing an overall completion percentage.
+Follow `progress-reporting.md` from the first measured corpus onward.
+Report with the project helper's `progress --input <report>` after saved batches and milestones and before a pause/handoff.
+Report the current phase, short blocker and next action; keep detailed history in `status.md`.
+Revalidate source/output fingerprints and downstream phase checkpoints before refreshing stale progress.
+Resuming or copying another prompt must preserve the last report rather than resetting it or inventing an overall completion percentage.
 
-Consume per-batch context from the live compiler, retaining source/context fingerprints
-and stable IDs with results. Confirm provider/model/budget only when API mode needs
-information the user has not supplied. Keep credentials out of project artifacts.
-Revalidate saved results after guidance or source changes. Correct missing, malformed
-or stale outputs before injection; a populated cache does not prove valid translation.
+Consume per-request context from the helper's `organize`, retaining source/context fingerprints and stable IDs with results.
+Confirm provider/model/budget only when API mode needs information the user has not supplied.
+Keep credentials out of project artifacts.
+Revalidate saved results after guidance or source changes.
+Correct missing, malformed or stale outputs before injection; a populated cache does not prove valid translation.
 
-For dialogue, extract and retain a source speaker for each unit. Use the engine's
-nameplates/markup and resolved actor names; respect message-block and scene boundaries.
-Preserve source-visible aliases and anonymous labels instead of substituting an
-internal identity or a name revealed later in the story.
-Leave unidentified speakers null rather than assigning the last named character or
-guessing from gender/register. Supply `--speakers` alongside `--sources`, with exactly
-the same IDs or list positions, during every dialogue-context compilation. Both files
-must come from the same reviewed batch snapshot. The user need not build this mapping.
+For dialogue, extract and retain a source speaker for each unit.
+Use the engine's nameplates/markup and resolved actor names; respect message-block and scene boundaries.
+Preserve source-visible aliases and anonymous labels instead of substituting an internal identity or a name revealed later in the story.
+Leave unidentified speakers null rather than assigning the last named character or guessing from gender/register.
+Give each source unit its speaker, or null, in the units file `organize` reads, so every dialogue request compiles with the same reviewed snapshot of lines and speakers.
+The user need not build this mapping.
 
 The compiled `user` field includes the speaker map as context only; send it intact.
 The glossary includes current speakers' character notes even if their names never
@@ -201,21 +185,17 @@ reuse a translation solely because another speaker says the same Japanese text.
 
 ## 5. Inject, validate and deliver
 
-Capture exact source before the first live write. MV/MZ map and database JSON must
-carry Workflow-compatible `_original` metadata even when translations also live in
-a separate store. Follow `engine-rpgmaker.md`'s preservation procedure: stage the
-injector's output, then call `DAZEDTL_ROOT/scripts/len_translation.py
-write-rpgmaker-json --source <matching source> --translated <staged JSON> --output
-<game JSON>` for every changed file. The historical injectors need this adaptation.
-Retain existing originals through correction and rewrapping; validate the final
-source/live bindings with the shared QA manifest and independent verifier.
-Do not backfill missing Japanese from an already translated live value. Recover it
-from the matching baseline/store and verify IDs and source hashes first.
-For formats that cannot store `_original`, keep sidecars in the separately backed-up `work/` directory
-with file/unit IDs, exact source, final live text, source hashes and injection
-bindings. Validate these against the shipped payload without adding unsupported
-keys to native containers. A Git baseline or store alone does not establish that
-the final injected text still maps to the correct source.
+Capture exact source before the first live write.
+MV/MZ map and database JSON must carry Workflow-compatible `_original` metadata even when translations also live in a separate store.
+Follow `engine-rpgmaker.md`'s preservation procedure: stage the injector's output, then run the project helper's `operation write_rpgmaker` with the matching `source`, the staged `translated` JSON and the game JSON as `output` for every changed file.
+It also fits the text to the game's saved Line widths; shorten what its result lists under misfits and write that file again.
+The historical injectors need this adaptation.
+Retain existing originals through correction and rewrapping; validate the final source/live bindings with the shared QA manifest and independent verifier.
+Do not backfill missing Japanese from an already translated live value.
+Recover it from the matching baseline/store and verify IDs and source hashes first.
+For formats that cannot store `_original`, keep sidecars in the separately backed-up `work/` directory with file/unit IDs, exact source, final live text, source hashes and injection bindings.
+Validate these against the shipped payload without adding unsupported keys to native containers.
+A Git baseline or store alone does not establish that the final injected text still maps to the correct source.
 
 Apply reviewed output with the engine's appropriate injector or patcher. Check source
 coverage, placeholders, layout, fonts, runtime-generated labels and images in scope.

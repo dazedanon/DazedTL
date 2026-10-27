@@ -57,6 +57,15 @@ def marked(root, known):
     return _project_id(path, 64_000, known) if path and path.is_file() else None
 
 
+def managed(root):
+    """Whether the game folder names a DazedTL project, any profile's, by
+    its marker or, for a game from before it, by the progress it saved."""
+    path = _marker(root)
+    return bool(path and path.is_file()) or any(
+        (Path(root) / name).is_file() for name in CLAIMS
+    )
+
+
 def claimed(root, known, worked=lambda identity: True):
     """The project of `known` the game folder belongs to by its marker, or
     for a game from before it, by the progress it saved, which must agree.

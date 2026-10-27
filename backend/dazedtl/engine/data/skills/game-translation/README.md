@@ -10,19 +10,15 @@ There is no separate skill ZIP to install or refresh.
 references means the live application folder three levels above this skill folder.
 The frozen DazedTL extract from the supplied package is replaced by that live code.
 
-The project uses the same `.dazedtl/glossary.txt`, `.dazedtl/skills/game.md`,
-`.dazedtl/skills/quirks.md`, custom skills and reference registry as Workflow. The
-shared context compiler and import bridge are `DAZEDTL_ROOT/scripts/len_translation.py`.
-Longer research, pipeline adaptations, stores and QA evidence belong under the
-project’s `.dazedtl/len-method` workspace. Copy only the needed tools before adapting
-or running scripts that write beside themselves.
+The project uses the same `.dazedtl/glossary.txt`, `.dazedtl/skills/game.md`, `.dazedtl/skills/quirks.md`, custom skills and reference registry as Workflow.
+The starting prompt names DazedTL's project helper, which compiles requests, runs the game-writing operations and records progress.
+Longer research, pipeline adaptations, stores and QA evidence belong under the project’s `.dazedtl/len-method` workspace.
+Copy only the needed tools before adapting or running scripts that write beside themselves.
 
-The starting prompt also runs the lifecycle in `references/project-lifecycle.md`:
-preserve the source, set up or reuse Git through `git-status` / `git-setup`, and keep
-local checkpoints, which DazedTL makes itself in Assistant-led. New Len baselines retain native game bytes and their
-reviewed ignore rules. Authored tools, translated text records and QA notes belong in
-the project's versioned `.dazedtl/len-method/work/`; generated context and provider
-state remain local. Use the selected game's Version Update page for later releases.
+The starting prompt also runs the lifecycle in `references/project-lifecycle.md`: preserve the source, set up or reuse Git through the helper's `operation git_setup`, and keep local checkpoints, which DazedTL makes itself in Assistant-led.
+New Len baselines retain native game bytes and their reviewed ignore rules.
+Authored tools, translated text records and QA notes belong in the project's versioned `.dazedtl/len-method/work/`; generated context and provider state remain local.
+Use the selected game's Version Update page for later releases.
 
 Run the self-check from anywhere:
 

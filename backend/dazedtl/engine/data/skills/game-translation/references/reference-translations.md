@@ -40,12 +40,10 @@ the user to fill the reference dialog or manually transfer a glossary first.
    `.dazedtl/len-method/work/prequel-terminology.md`, outside runtime skill overlays.
    Record references checked, inherited decisions, unresolved variants and gaps.
    Lack of an exact old line is not proof that a term is absent from the prequels.
-6. Register supported aligned JP/EN data for each reference using the shared helpers
-   below. Compile each translation batch through `scripts/len_translation.py context
-   --sources ...` to obtain exact-source reference evidence alongside the glossary.
-   Validate inherited terminology across translated dialogue, database labels and
-   images in scope. Keep every supplied reference folder read-only; adapters, derived
-   indexes and decisions belong in the current project's workspace.
+6. Register supported aligned JP/EN data for each reference using the shared helpers below.
+   The project helper's `organize` compiles each request with its exact-source reference evidence alongside the glossary.
+   Validate inherited terminology across translated dialogue, database labels and images in scope.
+   Keep every supplied reference folder read-only; adapters, derived indexes and decisions belong in the current project's workspace.
 
 ### Existing corpus workspaces
 

@@ -24,7 +24,8 @@ Every engine follows the same route: `organize` compiles requests from the extra
    A cost approval is a decision within the run, not a request for a new translation prompt.
    Unsupported Batch routes must not silently fall back to full-price Live translation.
 
-The quote uses the same token/pricing helpers as the application, with a 2.5× source-token output allowance and no assumed cache savings.
+The quote uses the same token/pricing helpers as the application, with a 2.5× source-token output allowance.
+For a Claude Batch it is a range: the lower price has requests reuse their cached instructions, the higher has every request write them again; other providers assume no cache savings.
 It is a planning estimate, not a guaranteed bill or a spending cap.
 Inspect the displayed rates: the application's pricing table may use configured or built-in fallbacks.
 Output shape, provider tokenization, retries and billed reasoning can change the actual cost.

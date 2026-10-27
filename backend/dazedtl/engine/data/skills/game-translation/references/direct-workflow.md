@@ -55,7 +55,7 @@ Use incremental validation only when the validator can identify its affected dep
 Cache validation evidence by source/output, glossary/context, validator version, renderer/font and target-build fingerprints as applicable.
 Reuse an unchanged check's actual saved evidence; never manufacture a source/review fingerprint just to reuse an output.
 If any relevant dependency changes, invalidate the affected downstream checks and report them pending until rerun.
-For MV/MZ, all final writes still pass through `write-rpgmaker-json`; an external store or faster injector does not replace `_original` preservation.
+For MV/MZ, all final writes still pass through the project helper's `operation write_rpgmaker`; an external store or faster injector does not replace `_original` preservation or its fitting.
 Keep the same original command structure and save identity unless an explicitly validated adapter provides the required mapping.
 
 Update the GUI and the user using `progress-reporting.md` at every saved milestone and at least every 10 minutes.
