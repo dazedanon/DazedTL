@@ -318,7 +318,8 @@ def _pending(root):
 
 
 def _status(root):
-    """`_pending` and the commit HEAD is at, from one `git status`."""
+    """`_pending`, the commit HEAD is at and the new files among `_pending`,
+    from one `git status`."""
     listing = _git(
         root,
         "status",
@@ -330,15 +331,18 @@ def _status(root):
         "--untracked-files=all",
         "--ignore-submodules=all",
     ).stdout
-    paths, head = set(), None
+    paths, head, new = set(), None, set()
     for entry in listing.split("\0"):
         # Each kind of entry has its own number of fields before the path.
         kind, _, rest = entry.partition(" ")
         if kind == "#" and rest.startswith("branch.oid "):
             head = rest.removeprefix("branch.oid ")
         elif kind in _PATH_FIELDS:
-            paths.add(entry.split(" ", _PATH_FIELDS[kind])[-1])
-    return paths, head
+            path = entry.split(" ", _PATH_FIELDS[kind])[-1]
+            paths.add(path)
+            if kind == "?":
+                new.add(path)
+    return paths, head, new
 
 
 # The fields before the path in each kind of `git status --porcelain=v2`
@@ -494,7 +498,7 @@ def _save(root, change, named, claimed):
     from util.len_patch_scope import dazedtl_files, grow_scope
 
     named = set(_relative(named))
-    pending, head = _status(root)
+    pending, head, new = _status(root)
     # DazedTL's own files are never edits made outside it.
     own = (
         set()
@@ -502,7 +506,10 @@ def _save(root, change, named, claimed):
         else dazedtl_files(Path(root)).keys() - (claimed or set())
     )
     joined = set()
-    if outside := (named | own) - pending:
+    # A new file that another rule lets in, as the Image Manager's .gitignore
+    # section lets in an image it applied, still joins the patch's own rules,
+    # which drop it from the inventory of the original's files Git leaves out.
+    if outside := (named | own) - (pending - new):
         tracked = set(_git(root, "ls-files", "-z").stdout.split("\0")) - {""}
         added, rules = grow_scope(
             Path(root),
@@ -513,7 +520,7 @@ def _save(root, change, named, claimed):
         if rules:
             # New rules can let in files they hid, such as the portable
             # settings an old rule order kept out.
-            pending, head = _status(root)
+            pending, head, _new = _status(root)
     chosen = joined | (pending & named if claimed is None else pending - claimed)
     return _commit(root, chosen, change, head) if chosen else None
 
