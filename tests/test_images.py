@@ -907,6 +907,32 @@ class ImageTests(unittest.TestCase):
         )
         self.assertEqual(stray["failures"], ["confined", "clearance"])
 
+    def test_a_preview_shown_again_reads_nothing_until_its_file_changes(self):
+        # Protect against every thumbnail reading and hashing its whole
+        # source before the cache lookup, which a big game's CGs pay for on
+        # every grid switch.
+        settled = time.time() - 60
+        os.utime(self.game / "img/A.png", (settled, settled))
+        reads = []
+        source_bytes = self.adapter.source_bytes
+
+        def counted(root, row, key):
+            reads.append(row["id"])
+            return source_bytes(root, row, key)
+
+        self.adapter.source_bytes = counted
+        first = self.service.preview(self.identity, "img/A.png", "source", 4)
+        self.assertEqual(
+            self.service.preview(self.identity, "img/A.png", "source", 4), first
+        )
+        self.assertEqual(reads, ["img/A.png"])
+        write_bytes(self.game / "img/A.png", png((5, 5, 5, 255)))
+        self.assertNotEqual(
+            self.service.preview(self.identity, "img/A.png", "source", 4)["sha256"],
+            first["sha256"],
+        )
+        self.assertEqual(len(reads), 2)
+
     def test_structural_alpha_loss_and_source_changes_block_reviewed_outputs(self):
         self.reviewed_candidate(color=(2, 3, 4, 255))
         item = self.service.list(self.identity)["items"][0]

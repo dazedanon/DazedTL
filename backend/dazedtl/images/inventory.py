@@ -489,7 +489,8 @@ class Index:
 
 
 class PreviewCache:
-    """Recent previews as (metadata, bytes, media type), shared by threads."""
+    """Recent previews as (metadata, bytes, media type, source hash), shared
+    by threads."""
 
     def __init__(self, budget=24_000_000):
         self.values = OrderedDict()

@@ -16,7 +16,7 @@ from pathlib import Path
 from dazedtl import foreign_work, system
 from dazedtl.compatibility.images import ImageCompatibility
 from dazedtl.foreign_work import ForeignWorkError
-from dazedtl.freshness import Basis, Digests, compare
+from dazedtl.freshness import Basis, Digests, compare, signature, signature_settled
 from dazedtl.languages import ENGLISH, JAPANESE
 from dazedtl.settings import language_pair
 from dazedtl.storage import write_bytes, write_json
@@ -2806,7 +2806,7 @@ class ImageService:
                 "Choose an original/candidate preview and valid thumbnail size."
             )
         # Only the inventory lookup holds the lock, so previews run beside each
-        # other and beside other requests; each reads and hashes its own bytes.
+        # other and beside other requests.
         with self.lock:
             self._ids(project_id, [asset_id])
             root, index = self.record(project_id)[1], self._index(project_id)
@@ -2817,15 +2817,51 @@ class ImageService:
                 if variant == "candidate" or frozen
                 else self.adapter.key(root, self._profile(project_id))
             )
+        # A preview is kept by the file it shows and that file's stat
+        # signature, so showing it again reads nothing; a file that changed,
+        # changed while it was read or is too new to trust its signature is
+        # read and decoded again. An original is also kept by the hash its
+        # record expects, which reading it checks.
+        path = project_path(
+            root,
+            row["editable"]
+            if variant == "candidate"
+            else row["frozen"]
+            if frozen
+            else row["runtime"],
+        )
+        stamp = signature(path.stat())
+        cache_key = (
+            project_id,
+            asset_id,
+            variant,
+            stamp,
+            key if row.get("encrypted") and not frozen else None,
+            row.get("originalPngHash") if frozen else None,
+            size,
+        )
+        cached = self.cache.get(cache_key)
+        if cached is None:
+            cached = self._preview(root, row, variant, frozen, key, path, size)
+            if signature_settled(stamp) and signature(path.stat()) == stamp:
+                self.cache.put(cache_key, cached)
+        metadata, pixels, media, fingerprint = cached
+        return {
+            "url": f"data:{media};base64," + base64.b64encode(pixels).decode("ascii"),
+            "sha256": fingerprint,
+            **metadata,
+        }
+
+    def _preview(self, root, row, variant, frozen, key, path, size):
+        """Reads and decodes one preview: its metadata, pixels, media type and
+        the hash of the bytes it shows."""
         if variant == "candidate":
-            path = project_path(root, row["editable"])
             if path.stat().st_size > 128_000_000:
                 raise ValueError(
                     "Editable image exceeds the supported 128 MB size limit."
                 )
             raw = path.read_bytes()
         elif frozen:
-            path = project_path(root, row["frozen"])
             if path.stat().st_size > 128_000_000:
                 raise ValueError(
                     "Original image exceeds the supported 128 MB size limit."
@@ -2837,15 +2873,5 @@ class ImageService:
                 )
         else:
             raw = self.adapter.source_bytes(root, row, key)
-        fingerprint = digest(raw)
-        cache_key = (project_id, asset_id, variant, fingerprint, size)
-        cached = self.cache.get(cache_key)
-        if cached is None:
-            cached = png_preview(raw, size)
-            self.cache.put(cache_key, cached)
-        metadata, pixels, media = cached
-        return {
-            "url": f"data:{media};base64," + base64.b64encode(pixels).decode("ascii"),
-            "sha256": fingerprint,
-            **metadata,
-        }
+        metadata, pixels, media = png_preview(raw, size)
+        return metadata, pixels, media, digest(raw)
