@@ -211,9 +211,12 @@ export class Page {
       const label = (element) =>
         (element.getAttribute("aria-label") || element.textContent).replace(/\\s+/g, " ").trim();
       // :disabled also matches a control inside a disabled fieldset, which
-      // ignores clicks while its own disabled property stays false.
+      // ignores clicks while its own disabled property stays false; a label
+      // clicks its control, and an inert page ignores every click.
       const enabled = (element) =>
         !element.matches(":disabled") &&
+        !element.control?.matches(":disabled") &&
+        !element.closest("[inert]") &&
         element.getAttribute("aria-disabled") !== "true";
       const found = [
         ...document.querySelectorAll("button, a, label, [role=button], [role=tab], [role=radio], [role=option], [role=menuitem]"),
