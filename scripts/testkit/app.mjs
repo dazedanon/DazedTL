@@ -8,7 +8,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
-import { until } from "./cdp.mjs";
+import { Page, until } from "./cdp.mjs";
 
 /** The environment variable every process of a scenario app carries. */
 const marker = "DAZEDTL_SCENARIO";
@@ -180,12 +180,32 @@ export async function startApp({
       `The app exited while starting:\n${started().trim().split("\n").slice(-15).join("\n")}`,
     );
   try {
-    return { pid: child.pid, ...reportedPorts(started()) };
+    const ports = reportedPorts(started());
+    return {
+      pid: child.pid,
+      main: await mainProcess(root, ports.inspect),
+      ...ports,
+    };
   } catch (error) {
     // An app nothing can drive is stopped rather than left holding the
     // profile.
-    await stopApp(tag, child.pid);
+    await stopApp(tag, { pid: child.pid });
     throw error;
+  }
+}
+
+/**
+ * The ID of the Electron main process of the app at `root`, read from its
+ * inspector. On its own session bus that is not the process `startApp`
+ * started: dbus-run-session runs it, and ends at SIGTERM without passing it
+ * on.
+ */
+async function mainProcess(root, inspect) {
+  const main = await Page.connect(inspect, { root, node: true });
+  try {
+    return Number(await main.evaluate("process.pid"));
+  } finally {
+    main.close();
   }
 }
 
@@ -214,10 +234,11 @@ const kill = (pid, signal) => {
   }
 };
 
-/** Whether any process is left in process group `group`. */
-const groupAlive = (group) => {
+/** Whether process `pid`, or with a negative `pid` any process in that
+ * group, is left. */
+const alive = (pid) => {
   try {
-    process.kill(-group, 0);
+    process.kill(pid, 0);
     return true;
   } catch {
     return false;
@@ -225,13 +246,17 @@ const groupAlive = (group) => {
 };
 
 /**
- * Closes the scenario app started as `pid` the way its window's close button
- * does, then ends whatever is left of it, and returns only once every process
- * of the app has exited, so its folder can be removed at once. Electron and
- * Chromium's own processes carry no `tag` that can be read (they are not
- * dumpable), so the app's process group, which `startApp` makes, counts too.
+ * Closes the scenario app `startApp` started as `pid`, with its Electron main
+ * process `main`, the way its window's close button does, then ends whatever
+ * is left of it, and returns only once every process of the app has exited,
+ * so its folder can be removed at once. Electron and Chromium's own processes
+ * carry no `tag` that can be read (they are not dumpable), so the app's
+ * process group, which `startApp` makes, counts too.
+ * @param {string} tag
+ * @param {{ pid?: number, main?: number } | null} [app]
  */
-export async function stopApp(tag, pid, timeout = 30_000) {
+export async function stopApp(tag, app, timeout = 30_000) {
+  const { pid, main = pid } = app ?? {};
   if (process.platform === "win32") {
     if (pid)
       spawnSync("taskkill", ["/F", "/T", "/PID", String(pid)], {
@@ -239,14 +264,21 @@ export async function stopApp(tag, pid, timeout = 30_000) {
       });
     return;
   }
-  const gone = () => !running(tag).length && !(pid && groupAlive(pid));
+  const gone = () => !running(tag).length && !(pid && alive(-pid));
   if (gone()) return;
-  if (pid) kill(pid, "SIGTERM");
-  try {
-    await until("the app to close", gone, timeout);
-  } catch {
-    for (const left of running(tag)) kill(left, "SIGKILL");
-    if (pid) kill(-pid, "SIGKILL");
-    await until("the app to end", gone, 10_000);
+  if (main) {
+    kill(main, "SIGTERM");
+    try {
+      await until("the app to close", () => !alive(main), timeout);
+    } catch {
+      // Ended below.
+    }
   }
+  // The main process exits once it has stopped the backend, so what is left
+  // has no work to finish: Chromium's helpers on their way out, and what the
+  // app's session bus started, such as desktop portals, which outlive the
+  // bus.
+  for (const left of running(tag)) kill(left, "SIGKILL");
+  if (pid) kill(-pid, "SIGKILL");
+  await until("the app to end", gone, 10_000);
 }

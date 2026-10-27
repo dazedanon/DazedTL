@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 import test from "node:test";
 import { appEnvironment, stopApp } from "../scripts/testkit/app.mjs";
 import { ciScenarios } from "../scripts/testkit/ci.mjs";
@@ -82,20 +83,31 @@ test("two runs whose work folders share a last part get different displays", () 
 });
 
 test(
-  "stopApp returns only once the app's child processes have exited too",
+  "stopApp closes the app's main process and returns only once its child processes have exited too",
   {
     skip: process.platform === "win32",
   },
   async () => {
-    // The leader ends at SIGTERM and leaves a child behind, as Electron's main
-    // process does with Chromium's, none of which carry the scenario's marker.
-    const leader = spawn("sh", ["-c", "sleep 0.1 & trap 'exit 0' TERM; wait"], {
+    // The main process closes at SIGTERM and leaves a child behind, as
+    // Electron's does with Chromium's and its session bus with desktop
+    // portals, none of which carry the scenario's marker. What started it
+    // ends at SIGTERM without passing it on, as dbus-run-session does.
+    const main =
+      "trap 'echo closed; exit 0' TERM; sleep 30 >/dev/null & echo $$; wait";
+    const leader = spawn("sh", ["-c", 'sh -c "$0" & wait', main], {
       detached: true,
-      stdio: "ignore",
+      stdio: ["ignore", "pipe", "ignore"],
     });
+    leader.stdout.setEncoding("utf8");
+    const [pid] = await once(leader.stdout, "data");
+    let output = "";
+    leader.stdout.on("data", (text) => (output += text));
+    const ended = once(leader.stdout, "end");
     const group = leader.pid as number;
-    await stopApp("no-such-tag", group, 5_000);
+    await stopApp("no-such-tag", { pid: group, main: Number(pid) }, 5_000);
     assert.throws(() => process.kill(-group, 0), { code: "ESRCH" });
+    await ended;
+    assert.equal(output, "closed\n");
   },
 );
 

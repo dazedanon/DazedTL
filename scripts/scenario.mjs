@@ -141,7 +141,7 @@ async function openApp(state) {
 }
 
 async function stopAll(state) {
-  await stopApp(state.tag, state.app?.pid);
+  await stopApp(state.tag, state.app);
   if (state.provider.pid && alive(state.provider.pid))
     process.kill(state.provider.pid, "SIGTERM");
   state.provider.pid = 0;
@@ -254,7 +254,7 @@ async function build(name) {
     const restart = async (edit) => {
       page.close();
       page = undefined;
-      await stopApp(state.tag, state.app?.pid);
+      await stopApp(state.tag, state.app);
       await edit();
       page = await openApp(state);
       return page;
@@ -271,7 +271,7 @@ async function build(name) {
       // This version opens what the earlier one left, as after an update.
       page.close();
       page = undefined;
-      await stopApp(state.tag, state.app?.pid);
+      await stopApp(state.tag, state.app);
       Object.assign(state, { root, env: {} });
       const at = Date.now();
       process.stdout.write(`- Open it in this version … `);
