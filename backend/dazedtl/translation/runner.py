@@ -21,7 +21,7 @@ from .refusals import (
     refused,
 )
 from .requests import from_provider, provider_sources
-from .results import Results
+from .results import Results, kept
 
 # A Batch collection accepts thousands of responses in one pass, and each save
 # rewrites the whole record, so it saves at most this often and once at the
@@ -29,6 +29,16 @@ from .results import Results
 # acceptance from those files and the results, so an interrupted collection
 # loses nothing and its provider job is only collected again.
 SAVE_INTERVAL = 1.0
+
+
+def kept_message(failing):
+    """The note of an accepted request whose failing lines kept their source
+    text (results.kept), naming each and why; empty when none did."""
+    if not failing:
+        return ""
+    return "Kept in the original text, as no usable translation: " + "; ".join(
+        f"{identity} ({reason})" for identity, reason in failing.items()
+    )
 
 
 class Runner:
@@ -76,16 +86,26 @@ class Runner:
         try:
             if refused(response, self.sources(identity)):
                 raise ValueError(REFUSAL_MESSAGE)
-            self.results.accept(
+            # A line that fails the content check keeps its source text, as
+            # Guided's Batch keeps it, so no retry pays for the lines that
+            # passed.
+            output, failing = kept(
                 request,
                 from_provider(request, self.plan["configuration"], response["text"]),
+            )
+            self.results.accept(
+                request,
+                output,
                 {
                     "run_id": self.job["id"],
                     "mode": self.plan["configuration"]["mode"],
                     "model": self.plan["configuration"]["model"],
                 },
             )
-            self.job["states"][identity] = {"state": "accepted", "message": ""}
+            self.job["states"][identity] = {
+                "state": "accepted",
+                "message": kept_message(failing),
+            }
         except ValueError as exc:
             self.job["states"][identity] = {"state": "failed", "message": str(exc)}
         # Each Live request is a paid call of its own.
@@ -152,7 +172,9 @@ class Runner:
             if fingerprint in accepted and self.results.get(
                 request, accepted[fingerprint]
             ):
-                self.job["states"][identity] = {"state": "accepted", "message": ""}
+                # An accepted request keeps its note of the lines it kept.
+                if self.job["states"][identity]["state"] != "accepted":
+                    self.job["states"][identity] = {"state": "accepted", "message": ""}
             elif response is not None:
                 self.accept(identity, response)
             elif self.job["states"][identity]["state"] == "sending":

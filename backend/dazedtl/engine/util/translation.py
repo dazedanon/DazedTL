@@ -471,6 +471,7 @@ from util.runtime_text import (
     _escaped_orphan_backslash, _mask_mapped_control_codes, _format_scope_signature,
     extract_control_codes, validate_control_codes, protect_script_codes,
     restore_script_codes, _reprotect_cached_codes, split_protected_codes,
+    without_protected_codes,
 )
 
 
@@ -517,8 +518,21 @@ def validate_placeholders(original_text, translated_text, replacements):
     return is_valid, missing, extra
 
 
+def content_text(text, protected=()):
+    """*text* as the short-output checks measure it: without the codes
+    protect_script_codes protects, the placeholders a protected request holds
+    in their place, or the literal *protected* tokens a request names, such
+    as Assistant-led's ⟦P0⟧ masks. None of them is the line's text, so a
+    translation collapsed to its masks and a mark is as short as the mark."""
+    text = str(text)
+    for token in sorted(set(protected), key=len, reverse=True):
+        text = text.replace(token, "")
+    return without_protected_codes(text).strip()
+
+
 def validate_translation_content(
-    original_items, translated_items, langRegex, target_language=None
+    original_items, translated_items, langRegex, target_language=None,
+    protected=None,
 ):
     """
     Validate hard content failures that make a translation unsafe or unusable.
@@ -526,11 +540,14 @@ def validate_translation_content(
 
     Outputs that are too short to carry the source meaning or contain runaway
     character repetition are hard failures.  Accepting either result would
-    cache and write visibly corrupt player text.
+    cache and write visibly corrupt player text.  Short outputs are measured
+    without codes and masks (content_text); *protected* lists each item's
+    literal protected tokens when a request names any.
     """
     if not isinstance(original_items, list):
         original_items = [original_items]
         translated_items = [translated_items]
+        protected = None if protected is None else [protected]
     
     invalid_indices = []
     reasons = []
@@ -538,6 +555,7 @@ def validate_translation_content(
     for i, (orig, trans) in enumerate(zip(original_items, translated_items)):
         orig_str = str(orig).strip()
         trans_str = str(trans).strip()
+        tokens = protected[i] if protected else ()
         
         # Skip if original is empty or placeholder
         if not orig_str or orig_str == "Placeholder Text":
@@ -559,7 +577,9 @@ def validate_translation_content(
             # punctuation mark.  This used to be only a warning, which meant
             # the result was cached and written without entering the retry path.
             has_bracketed_control = bool(re.search(r'\\[A-Z]\[', trans_str))
-            if len(trans_str) <= 1 and len(orig_str) > 3 and not has_bracketed_control:
+            orig_text = content_text(orig_str, tokens)
+            trans_text = content_text(trans_str, tokens)
+            if len(trans_text) <= 1 and len(orig_text) > 3 and not has_bracketed_control:
                 invalid_indices.append(i)
                 reasons.append(
                     f"Line{i+1}: Translation unusually short ('{trans_str}') for "
@@ -567,10 +587,10 @@ def validate_translation_content(
                 )
                 continue
             if (
-                len(orig_str) > 10
-                and len(trans_str) <= 2
+                len(orig_text) > 10
+                and len(trans_text) <= 2
                 and not has_bracketed_control
-                and not trans_str.isalnum()
+                and not trans_text.isalnum()
             ):
                 invalid_indices.append(i)
                 reasons.append(
@@ -590,6 +610,7 @@ def validate_translation_content(
             
             # Check 4: Runaway translation - translation is excessively long relative to original
             # Catches cases where the model repeats words endlessly (e.g. "it hurts it hurts it hurts...")
+            # It measures codes too: a reply repeating one is runaway as well.
             ratio_limit = max(len(orig_str) * 8, 120)
             if len(orig_str) > 10 and len(trans_str) > ratio_limit:
                 invalid_indices.append(i)
@@ -651,16 +672,17 @@ def translation_content_warnings(original_items, translated_items, langRegex):
 
         line_warnings = []
         has_bracketed_control = bool(re.search(r'\\[A-Z]\[', trans_str))
-        if len(trans_str) <= 1 and len(orig_str) > 3 and not has_bracketed_control:
+        orig_text, trans_text = content_text(orig_str), content_text(trans_str)
+        if len(trans_text) <= 1 and len(orig_text) > 3 and not has_bracketed_control:
             line_warnings.append(
                 f"Line{i+1}: Translation unusually short ('{trans_str}') for "
                 f"'{orig_str[:50]}...'"
             )
         elif (
-            len(orig_str) > 10
-            and len(trans_str) <= 2
+            len(orig_text) > 10
+            and len(trans_text) <= 2
             and not has_bracketed_control
-            and not trans_str.isalnum()
+            and not trans_text.isalnum()
         ):
             line_warnings.append(
                 f"Line{i+1}: Translation suspiciously short ('{trans_str}') for "

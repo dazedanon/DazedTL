@@ -388,6 +388,20 @@ def _parsed(result):
     return result
 
 
+# The common masks an extractor puts in place of codes, such as ⟦P0⟧ and {W0}.
+MASKS = re.compile(r"⟦[^⟧\r\n]+⟧|\{W\d+\}")
+
+
+def protected_tokens(request, identity):
+    """The literal tokens a line's translation keeps as its source holds them:
+    those its constraints name and the common masks, which are always
+    protected, even when an adapter omits its contract."""
+    rule = request.get("constraints", {}).get(identity, {})
+    return set(rule.get("tokens", [])) | set(
+        MASKS.findall(request["sources"][identity])
+    )
+
+
 def result_value(request, result):
     result = _parsed(result)
     sources = request["sources"]
@@ -397,14 +411,12 @@ def result_value(request, result):
         if not isinstance(text, str) or not text.strip():
             raise ValueError("Every requested unit needs a nonempty translation.")
         rule = request.get("constraints", {}).get(identity, {})
-        tokens = set(rule.get("tokens", []))
-        # Common masks are always protected, even when an adapter omits its contract.
-        tokens.update(re.findall(r"⟦[^⟧\r\n]+⟧|\{W\d+\}", sources[identity]))
-        if any(text.count(token) != sources[identity].count(token) for token in tokens):
-            raise ValueError("The response changed a protected token.")
-        if Counter(re.findall(r"⟦[^⟧\r\n]+⟧|\{W\d+\}", text)) != Counter(
-            re.findall(r"⟦[^⟧\r\n]+⟧|\{W\d+\}", sources[identity])
+        if any(
+            text.count(token) != sources[identity].count(token)
+            for token in protected_tokens(request, identity)
         ):
+            raise ValueError("The response changed a protected token.")
+        if Counter(MASKS.findall(text)) != Counter(MASKS.findall(sources[identity])):
             raise ValueError("The response added or removed a protected mask.")
         if "max_lines" in rule and len(text.split("\n")) > rule["max_lines"]:
             raise ValueError("The response exceeds its declared line bound.")

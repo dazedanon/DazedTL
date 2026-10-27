@@ -187,18 +187,39 @@ class TranslationTests(unittest.TestCase):
         for invalid in (".", "a" * 50, "It hurts. " * 30):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 results.accept(row, {**sources, "line": invalid}, {})
+        # Masks are no text: a line collapsed to its masks and a mark is
+        # as short as the mark.
+        masked = logical_request(
+            {
+                "id": "masked",
+                "sources": {"line": "⟦P0⟧今日はとても良い天気ですね。⟦P1⟧"},
+            },
+            {"user": ""},
+        )
+        with self.assertRaisesRegex(ValueError, "unusually short"):
+            results.accept(masked, {"line": "⟦P0⟧.⟦P1⟧"}, {})
         self.assertIsNone(results.get(row))
-        # A Live reply that fails it fails its request, with no paid retry.
+        # A Live reply with one failing line keeps that line in its source
+        # text, as Guided keeps it, and the lines that passed, so no retry
+        # pays for them again; nothing is sent twice.
+        live = logical_request({"id": "scene", "sources": sources}, {"user": "Live"})
         reply = {"text": json.dumps({"line": ".", "moan": "Mm♥Ah"})}
         provider = LiveProvider()
         provider.live = lambda _params: (
             provider.__dict__.update(calls=provider.calls + 1) or deepcopy(reply)
         )
-        job, _plan = self.run_record(requests=[row])
+        job, _plan = self.run_record(requests=[live])
         Runner(self.store, job["id"], provider, lambda: None).step()
         current, _plan = self.store.load(job["id"])
-        self.assertEqual(current["states"]["scene"]["state"], "failed")
+        self.assertEqual(current["status"], "complete")
+        self.assertIn(
+            "line (Translation unusually short", current["states"]["scene"]["message"]
+        )
         self.assertEqual(provider.calls, 1)
+        self.assertEqual(
+            results.get(live)["translations"],
+            {"line": sources["line"], "moan": "Mm♥Ah"},
+        )
         # A line given back as its source passes, as Guided keeps it.
         accepted = {"line": sources["line"], "moan": "Mm♥Ah...h"}
         saved = results.accept(row, accepted, {})
@@ -218,6 +239,65 @@ class TranslationTests(unittest.TestCase):
         self.assertEqual(
             units["moan"]["reviewed_sha256"],
             review_digest(sources["moan"], "Mm♥ Ah..."),
+        )
+
+    def test_a_batch_keeps_the_passing_lines_of_a_reply_and_goes_on(self):
+        # One failing line failed its packed Batch request, which stopped the
+        # run before its later provider jobs, and the retry paid for every
+        # line of the request again.
+        sources = {"line": "今日はとても良い天気ですね。", "moan": "ん♥っ…"}
+        rows = [
+            logical_request({"id": name, "sources": sources}, {"user": name})
+            for name in ("partly", "later", "whole")
+        ]
+        replies = {
+            "partly": {"line": "a" * 50, "moan": "Mm♥Ah"},
+            # With no line that passes, the request fails, and a retry
+            # sends only lines that failed.
+            "whole": {"line": ".", "moan": "ん♥っ…"},
+            "later": {"line": "Lovely weather today.", "moan": "Mm♥Ah"},
+        }
+        job, plan = self.run_record("batch", rows)
+        # Two requests per provider job, so the last is sent only after the
+        # first two are collected.
+        plan["batch_limits"] = [2, 100000]
+        write_json(self.store.folder(job["id"]) / "plan.json", plan)
+        job["plan_sha256"] = digest(plan)
+        self.store.save(job)
+
+        class Provider(BatchProvider):
+            def collect(self, _identity, mapping):
+                return (
+                    {
+                        name: {"text": json.dumps(replies[name])}
+                        for name in mapping.values()
+                    },
+                    [],
+                    {"input_tokens": 10},
+                )
+
+        provider = Provider()
+        provider.ended = True
+        Runner(self.store, job["id"], provider, lambda: None).step()
+        current, _plan = self.store.load(job["id"])
+        self.assertEqual(provider.calls, 2)
+        self.assertEqual(
+            {name: row["state"] for name, row in current["states"].items()},
+            {"partly": "accepted", "later": "accepted", "whole": "failed"},
+        )
+        results = Results(self.game)
+        self.assertEqual(
+            results.get(rows[0])["translations"],
+            {"line": sources["line"], "moan": "Mm♥Ah"},
+        )
+        self.assertIn(
+            "Excessive character repetition", current["states"]["partly"]["message"]
+        )
+        # A later poll recovers the run and keeps that note.
+        Runner(self.store, job["id"], provider, lambda: None).step()
+        self.assertEqual(
+            self.store.load(job["id"])[0]["states"]["partly"],
+            current["states"]["partly"],
         )
 
     def test_api_requests_key_lines_by_position_and_save_replies_by_unit_id(self):
