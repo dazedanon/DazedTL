@@ -579,6 +579,11 @@ class WorkflowTests(unittest.TestCase):
                 ],
             },
         )
+        # The provider reads b's and c's requests the same, so one is sent.
+        self.engine.payload = lambda request, configuration: {
+            "model": configuration["model"],
+            "lines": list(request["sources"].values()),
+        }
         results = Results(self.game)
 
         def organized(policy=True):
@@ -595,8 +600,9 @@ class WorkflowTests(unittest.TestCase):
             return run, self.service.jobs.store.load(run["id"])[1]
 
         first, plan = organized()
+        self.assertEqual(plan["askers"], {"c/1": "b/1"})
         quoted = first["quote"]
-        self.assertEqual((quoted["requests"], quoted["units"]), (3, 4))
+        self.assertEqual((quoted["requests"], quoted["units"]), (2, 3))
         # The run keeps a/2 in its source text, as after a failed check.
         replies = {
             "a/1": {"a/1": "Yes.", "a/2": "いいえ。"},

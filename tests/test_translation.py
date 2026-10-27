@@ -26,7 +26,7 @@ from dazedtl.translation.requests import (
     result_value,
 )
 from dazedtl.translation.results import Results, review_digest
-from dazedtl.translation.runner import Runner
+from dazedtl.translation.runner import SHARED_PAYLOADS, Runner, askers
 from pydantic import TypeAdapter
 
 
@@ -460,6 +460,66 @@ class TranslationTests(unittest.TestCase):
             ),
             ["Declined. ⟦P0⟧", "はい。⟦P0⟧"],
         )
+
+    def test_requests_sharing_a_payload_are_sent_once_and_answered_alike(self):
+        # A scene two maps repeat made two requests the provider reads the
+        # same, and both were paid; Guided queues it once for both files.
+        rule = {"tokens": ["⟦P0⟧"], "max_lines": 1}
+        copy = logical_request(
+            {
+                "id": "copy",
+                "sources": {"again": "はい。⟦P0⟧"},
+                "constraints": {"again": rule},
+            },
+            {"speakers": {"again": "Lili"}},
+        )
+        rows = [request(), copy]
+        for row in rows:
+            row["params"] = {"model": "fixture", "messages": []}
+        self.assertEqual(askers(rows), {"copy": "scene"})
+        for mode, policy, calls in (
+            ("live", SHARED_PAYLOADS, 1),
+            ("batch", SHARED_PAYLOADS, 1),
+            # A run frozen before the policy sends each.
+            ("older", None, 2),
+        ):
+            with self.subTest(mode=mode):
+                game = self.game / mode
+                game.mkdir()
+                register(self.root / "profile", mode, game)
+                plan = {
+                    "version": 1,
+                    "kind": "translation",
+                    "source": str(game),
+                    "complete": True,
+                    "requests": rows,
+                    "configuration": {
+                        "mode": "batch" if mode == "batch" else "live",
+                        "model": "fixture",
+                    },
+                    "batch_limits": [50, 100000],
+                }
+                if policy:
+                    plan.update(shared_payloads=policy, askers={"copy": "scene"})
+                job = self.store.create(mode, plan, {"cost": 1})
+                self.store.authorize(job)
+                provider = BatchProvider() if mode == "batch" else LiveProvider()
+                provider.ended = True
+                Runner(self.store, job["id"], provider, lambda: None).step()
+                current, _plan = self.store.load(job["id"])
+                self.assertEqual(provider.calls, calls)
+                self.assertEqual(len(current["request_usage"]), calls)
+                if not policy:
+                    continue
+                self.assertEqual(current["status"], "complete")
+                self.assertEqual(
+                    Results(game).get(copy)["translations"], {"again": "Yes. ⟦P0⟧"}
+                )
+                if mode == "batch":
+                    self.assertEqual(
+                        [item["request"] for item in current["batches"][0]["items"]],
+                        ["scene"],
+                    )
 
     def test_worker_owner_loss_stops_before_another_paid_request(self):
         alive = [True]

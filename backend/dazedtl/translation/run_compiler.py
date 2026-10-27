@@ -25,6 +25,7 @@ from .operations import census_path, census_stale, lifecycle, require_baseline
 from .project import WORK, ProjectWorkspace, scope
 from .requests import plan_input, quote
 from .results import Results
+from .runner import SHARED_PAYLOADS, askers
 
 # Operations the app starts with the settings a run freezes; the helper's
 # operation command can't start them.
@@ -351,8 +352,11 @@ def compile_run(
             request["params"] = engine.payload(request, cfg)
     results = Results(root)
     pending = [row for row in requests if not results.get(row)]
-    estimate = None
+    estimate = shared = None
     if cfg["mode"] != "agent":
+        # A request whose payload an earlier one sends is answered by it.
+        shared = askers(pending)
+        pending = [row for row in pending if row["id"] not in shared]
         progress(f"Estimating the cost of {len(pending):,} requests")
         counted = claude_inputs(engine, workspace, cfg, pending)
         provider = engine.batch_supported(cfg)
@@ -384,6 +388,8 @@ def compile_run(
     if limits:
         # Its chunks wait for room in the provider's Batch window.
         value["batch_window"] = BATCH_WINDOW
+    if shared is not None:
+        value.update(shared_payloads=SHARED_PAYLOADS, askers=shared)
     if reused:
         value["reused"] = reused
     if finishes:
