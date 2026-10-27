@@ -12,13 +12,33 @@ SUPPORTED_CODE408_MARKERS = frozenset({"選択肢ヘルプ"})
 MARKER_SETTINGS = frozenset({"Choice Help Commands"})
 
 
-def plugin_markers(entries: Iterable[Any]) -> frozenset[str]:
-    """The comment markers turned-on plugins show the lines of, as their
-    settings list them."""
+class PluginList(tuple):
+    """A game's plugin list entries in list order, with whether the game is
+    MZ, whose loader tells plugins apart by file name. The plugin readers
+    below return one, so what reads markers from it can apply the loader
+    rule (rpgmaker_plugin_registry.loads)."""
+
+    mz: bool
+
+    def __new__(cls, entries: Iterable[Any] = (), mz: bool = False):
+        plugins = super().__new__(cls, entries)
+        plugins.mz = mz
+        return plugins
+
+    def loaded(self) -> tuple[dict, ...]:
+        """The entries the game loads, in order."""
+        from util.rpgmaker_plugin_registry import loads
+
+        return tuple(
+            entry for entry, load in zip(self, loads(self, self.mz), strict=True) if load
+        )
+
+
+def plugin_markers(plugins: PluginList) -> frozenset[str]:
+    """The comment markers the plugins the game loads show the lines of, as
+    their settings list them."""
     found = set()
-    for plugin in entries:
-        if not isinstance(plugin, dict) or plugin.get("status") is not True:
-            continue
+    for plugin in plugins.loaded():
         parameters = plugin.get("parameters")
         if not isinstance(parameters, dict):
             continue
@@ -37,10 +57,10 @@ def plugin_markers(entries: Iterable[Any]) -> frozenset[str]:
     return frozenset(found)
 
 
-def comment_markers(entries: Iterable[Any]) -> frozenset[str]:
+def comment_markers(plugins: PluginList) -> frozenset[str]:
     """The markers whose comment lines players read in a game with these
     plugins."""
-    return SUPPORTED_CODE408_MARKERS | plugin_markers(entries)
+    return SUPPORTED_CODE408_MARKERS | plugin_markers(plugins)
 
 
 PLUGIN_LIST = "js/plugins.js"
@@ -49,24 +69,31 @@ PLUGIN_LIST = "js/plugins.js"
 MZ_CORE = "js/rmmz_core.js"
 
 
-def read_plugin_list(text: str) -> tuple[dict, ...]:
+def lists_mz(script: str | Path) -> bool:
+    """Whether the plugin list (js/plugins.js) at *script* is an MZ game's:
+    its core script sits beside it."""
+    return (Path(script).parent / PurePath(MZ_CORE).name).is_file()
+
+
+def read_plugin_list(text: str, mz: bool) -> PluginList:
     """A plugin list's text as the game loads it, or none it can read. The
     one reader for what a game's plugins show."""
     from util.rpgmaker_plugin_registry import loaded_entries
 
     try:
-        return loaded_entries(text)
+        return PluginList(loaded_entries(text), mz)
     except ValueError:
-        return ()
+        return PluginList((), mz)
 
 
-def plugin_list(script: str | Path) -> tuple[dict, ...]:
+def plugin_list(script: str | Path) -> PluginList:
     """A plugin list (js/plugins.js) as the game loads it, or none it can
     read."""
+    mz = lists_mz(script)
     try:
-        return read_plugin_list(Path(script).read_text(encoding="utf-8-sig"))
+        return read_plugin_list(Path(script).read_text(encoding="utf-8-sig"), mz)
     except (OSError, UnicodeDecodeError):
-        return ()
+        return PluginList((), mz)
 
 
 def beside_data(data_folder: PurePath) -> PurePath:
@@ -75,12 +102,12 @@ def beside_data(data_folder: PurePath) -> PurePath:
     return data_folder.parent / PLUGIN_LIST
 
 
-def data_plugins(data_folder: str | Path) -> tuple[dict, ...]:
+def data_plugins(data_folder: str | Path) -> PluginList:
     """The plugin list of the game whose data folder this is."""
     return plugin_list(beside_data(Path(data_folder)))
 
 
-def game_plugins(game_root: str | Path) -> tuple[dict, ...]:
+def game_plugins(game_root: str | Path) -> PluginList:
     """A game's plugin list, or none it can read: beside its data folder,
     which a deployed MV game keeps in www."""
     root = Path(game_root)
@@ -90,4 +117,4 @@ def game_plugins(game_root: str | Path) -> tuple[dict, ...]:
     for base in (root, root / "www"):
         if (base / "js/plugins.js").is_file():
             return plugin_list(base / "js/plugins.js")
-    return ()
+    return PluginList()

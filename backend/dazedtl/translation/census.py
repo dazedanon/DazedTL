@@ -1363,7 +1363,6 @@ def scan(
         comment_markers,
         read_plugin_list,
     )
-    from util.rpgmaker_plugin_registry import loads
 
     own = {name.casefold() for name in own}
     own_plugins = frozenset(
@@ -1392,15 +1391,11 @@ def scan(
         if key not in games:
             data = plugin_lists.get(key)
             text = decode_text(data() if callable(data) else data) if data else None
-            entries = read_plugin_list(text) if text else ()
             mz = key.removesuffix(PLUGIN_LIST) + MZ_CORE in known
-            loaded = [
-                entry
-                for entry, load in zip(entries, loads(entries, mz), strict=True)
-                if load
-            ]
+            entries = read_plugin_list(text or "", mz)
+            loaded = entries.loaded()
             games[key] = (
-                comment_markers(loaded),
+                comment_markers(entries),
                 mz,
                 {
                     entry["name"].casefold()

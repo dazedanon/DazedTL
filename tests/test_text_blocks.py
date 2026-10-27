@@ -1,11 +1,12 @@
 """The one definition of RPG Maker text blocks (util/rpgmaker_blocks.py) that
 translation, fitting, Text QA, Assistant-led and the playtest read."""
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
-from dazedtl.translation import file_lines
+from dazedtl.translation import comment_text, file_lines
 from util import rpgmaker_blocks as blocks
 from util.rpgmaker_markers import comment_markers, data_plugins, game_plugins
 from util.rpgmaker_rewrap import Layout, fit_document, wrap_help
@@ -445,3 +446,44 @@ class TextBlockTests(unittest.TestCase):
                 "var $plugins = [];\n", encoding="utf-8"
             )
             self.assertIn("ChoiceHelp", comment_markers(game_plugins(game)))
+
+    def test_markers_come_only_from_the_plugin_entries_the_game_loads(self):
+        # A repeated enabled entry of a plugin never loads, nor on MZ one
+        # whose file name an earlier entry shares, so a marker only it lists
+        # marks no comment players read, where Guided's Comment text looks.
+        def choice_ex(name, marker):
+            parameters = {"Choice Help Commands": json.dumps([marker])}
+            return json.dumps({"name": name, "status": True, "parameters": parameters})
+
+        games = {
+            "mv": ("MPP_ChoiceEX", "MPP_ChoiceEX", False),
+            "mz": ("Mine/MPP_ChoiceEX", "Other/MPP_ChoiceEX", True),
+        }
+        unused = [command(108, ["Unused"]), command(408, ["使われない"])]
+        with tempfile.TemporaryDirectory() as folder:
+            for kind, (first, repeat, mz) in games.items():
+                game = Path(folder) / kind
+                (game / "data").mkdir(parents=True)
+                (game / "js").mkdir()
+                if mz:
+                    (game / "js/rmmz_core.js").write_text("", encoding="utf-8")
+                entries = (
+                    choice_ex(first, "ChoiceHelp") + ",\n" + choice_ex(repeat, "Unused")
+                )
+                (game / "js/plugins.js").write_text(
+                    f"var $plugins =\n[\n{entries}\n];\n", encoding="utf-8"
+                )
+                (game / "data/Map001.json").write_text(
+                    json.dumps({"events": [{"pages": [{"list": unused}]}]}),
+                    encoding="utf-8",
+                )
+                for read in (game_plugins(game), data_plugins(game / "data")):
+                    self.assertIn("ChoiceHelp", comment_markers(read), kind)
+                    self.assertNotIn("Unused", comment_markers(read), kind)
+                self.assertNotIn("Unused", comment_text.markers(game), kind)
+                self.assertFalse(
+                    comment_text.shows_comment_text(
+                        game / "data", game / "js/plugins.js"
+                    ),
+                    kind,
+                )
