@@ -2167,35 +2167,62 @@ try:
         from dazedtl.settings.preferences import GENERATION_PARAMETERS
 
         configure_builders(translation, GENERATION_PARAMETERS, max_output_tokens=32768)
-        for protocol, endpoint, model, field in (
+        from util.batch_providers import _openai_batch_body
+
+        # Guided's builder asks the format rule Assistant-led's payload asks
+        # (test_compatibility_contracts): JSON mode only for DeepSeek.
+        for protocol, endpoint, model, field, mode in (
             (
                 "openai",
                 "https://api.openai.com/v1",
                 "gpt-6-sol",
                 "max_completion_tokens",
+                "json_schema",
             ),
             (
                 "openai",
                 "https://openrouter.ai/api/v1",
                 "z-ai/glm-5.3-flash",
                 "max_tokens",
+                "json_schema",
             ),
             (
                 "gemini",
                 "https://generativelanguage.googleapis.com/v1beta/openai",
                 "gemini-3.8-flash",
                 "max_tokens",
+                "json_schema",
             ),
-            ("mistral", "https://api.mistral.ai/v1", "mistral-medium", "max_tokens"),
+            (
+                "mistral",
+                "https://api.mistral.ai/v1",
+                "mistral-medium",
+                "max_tokens",
+                "json_schema",
+            ),
             # Kimi deprecates max_tokens; its Batch requests name the provider.
             (
                 "openai",
                 "https://api.moonshot.ai/v1",
                 "kimi-k3",
                 "max_completion_tokens",
+                "json_schema",
             ),
-            ("kimi", "", "kimi-k2.6", "max_completion_tokens"),
-            ("openai", "https://fixture.invalid/v1", "local-model", "max_tokens"),
+            ("kimi", "", "kimi-k2.6", "max_completion_tokens", "json_schema"),
+            (
+                "openai",
+                "https://fixture.invalid/v1",
+                "local-model",
+                "max_tokens",
+                "json_schema",
+            ),
+            (
+                "openai",
+                "https://api.deepseek.com",
+                "deepseek-flash",
+                "max_tokens",
+                "json_object",
+            ),
         ):
             params = translation.buildOpenAIRequest(
                 "Translate.",
@@ -2211,6 +2238,16 @@ try:
             assert params[field] == 32768 and "薬" in json.dumps(
                 params, ensure_ascii=False
             ), params
+            assert params["response_format"]["type"] == mode, (model, params)
+            # Gemini's Batch files take JSON mode; Live and the others keep it.
+            batch_format = _openai_batch_body(protocol, params)["response_format"]
+            assert batch_format == (
+                {"type": "json_object"}
+                if protocol == "gemini"
+                else params["response_format"]
+            ), (model, batch_format)
+            live = _openai_batch_body(protocol, params, batch=False)
+            assert live["response_format"] == params["response_format"], model
         # Kimi Batches run only K2.6 and K2.7 Code, at 60% of the Live price.
         kimi = {"api_url": "https://api.moonshot.ai/v1", "api_provider": "openai"}
         assert [

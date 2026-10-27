@@ -10,7 +10,7 @@ from pathlib import Path
 from stat import S_ISREG
 
 from dazedtl.freshness import Digests
-from dazedtl.settings.providers import native_openai
+from dazedtl.settings.providers import own_api
 from dazedtl.storage import WorkspaceError, WorkspaceLock, write_json
 from dazedtl.translation.files import digest, live_path, project_path, read_json
 
@@ -391,7 +391,7 @@ def reserve_clarification(root, plan, items, count, limit):
     """reserve for a Guided run's clarification Batch."""
     if (
         plan.get("batch_link")
-        or not native_openai(plan.get("settings", {}).get("api", ""))
+        or not own_api("openai", plan.get("settings", {}).get("api", ""))
         or not limit
     ):
         yield True
@@ -598,7 +598,7 @@ class BatchWindow:
 def install_worker(
     root, plan, translation, providers, task_type, approve, recover, record, attempt
 ):
-    if not native_openai(plan.get("settings", {}).get("api", "")):
+    if not own_api("openai", plan.get("settings", {}).get("api", "")):
         return
     window = BatchWindow(root, plan, translation, providers, approve, recover, record)
 

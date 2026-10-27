@@ -87,18 +87,50 @@ def address(connection):
     )
 
 
-def native_openai(endpoint):
-    """Whether `endpoint` is OpenAI's own API, whose Batches share one
-    enqueued-token window. The one rule the app and the engine ask; in test
-    scenarios the OpenAI preset's stand-in, which DAZEDTL_TEST_OPENAI_ENDPOINT
-    names, counts as it."""
+# The host only a provider's own API serves, unlike others that serve its models.
+OWN_HOSTS = {
+    "openai": "api.openai.com",
+    "kimi": "api.moonshot.ai",
+    "deepseek": "api.deepseek.com",
+}
+
+
+def own_api(identity, endpoint):
+    """Whether `endpoint` is the provider `identity`'s own API: OpenAI's, whose
+    Batches share one enqueued-token window; Kimi's, with its own Batches; or
+    DeepSeek's, with its own output ceiling and JSON mode. The one rule the app
+    and the engine ask; in test scenarios the OpenAI preset's stand-in, which
+    DAZEDTL_TEST_OPENAI_ENDPOINT names, counts as OpenAI's."""
     value = str(endpoint or "").strip().rstrip("/")
     stand_in = os.environ.get("DAZEDTL_TEST_OPENAI_ENDPOINT", "").strip().rstrip("/")
     try:
         hostname = urlsplit(value).hostname
     except ValueError:
         hostname = None
-    return hostname == "api.openai.com" or bool(stand_in) and value == stand_in
+    return hostname == OWN_HOSTS[identity] or (
+        identity == "openai" and bool(stand_in) and value == stand_in
+    )
+
+
+def response_format(protocol, endpoint, model, schema, name, *, batch=False):
+    """The structured output an OpenAI-protocol request on this route asks
+    for: JSON mode where the route has no strict schemas, otherwise a strict
+    `schema`. The one rule Guided and Assistant-led request builders and the
+    Batch transport call. DeepSeek's JSON mode has no strict schemas on any
+    host, and Gemini's Batch files take JSON mode only; a server that rejects
+    a schema still gets JSON mode from the senders' fallbacks (engine
+    translateText and callMistral, batch_providers.execute_live_request)."""
+    json_mode = (
+        "deepseek" in str(model or "").lower()
+        or own_api("deepseek", endpoint)
+        or (batch and protocol == "gemini")
+    )
+    if json_mode:
+        return {"type": "json_object"}
+    return {
+        "type": "json_schema",
+        "json_schema": {"name": name, "strict": True, "schema": schema},
+    }
 
 
 def route(protocol, url):
