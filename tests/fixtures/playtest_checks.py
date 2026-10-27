@@ -18,6 +18,7 @@ sys.path.insert(0, str(root / "backend"))
 from util import rpgmaker_qa as qa
 from util.dazedwrap import text_cells
 from util.languages import ENGLISH, reading
+from util.original_values import Originals
 from util.playtest import fixes
 from util.playtest.checks import static_checks
 from util.playtest.run import (
@@ -909,4 +910,50 @@ assert (
     )
     == "English is left in this translated text."
 )
+
+# A Japanese game translated into Chinese: a plugin setting and a custom data
+# file keep no source, so their hanzi read as Japanese never translated until
+# read against the game's original files, as Text QA's list reads them.
+chinese = temporary / "chinese-game"
+
+
+def chinese_game(folder, greeting, quest):
+    (folder / "data").mkdir(parents=True)
+    (folder / "js" / "plugins").mkdir(parents=True)
+    write(folder / "js" / "rmmz_core.js", (game / "js" / "rmmz_core.js").read_text())
+    write(folder / "data" / "System.json", {"terms": {"messages": {}}})
+    write(folder / "data" / "Quests.json", {"quests": [{"title": quest}]})
+    write(
+        folder / "js" / "plugins.js",
+        "var $plugins =\n"
+        + json.dumps(
+            [{"name": "Greeting", "status": True, "parameters": {"Text": greeting}}],
+            ensure_ascii=False,
+        )
+        + ";\n",
+    )
+    write(
+        folder / "js" / "plugins" / "Greeting.js",
+        'const text = PluginManager.parameters("Greeting").Text;\n'
+        "Window_Base.prototype.refresh = function() { this.drawText(text, 0, 0); };\n"
+        'DataManager._databaseFiles.push({ name: "$dataQuests", src: "Quests.json" });\n',
+    )
+
+
+chinese_game(chinese, "欢迎来到魔法世界！", "寻找魔王")
+chinese_game(temporary / "chinese-original", "ようこそ、魔法の世界へ！", "魔王をさがせ")
+with reading("Japanese", "Simplified Chinese"):
+    unread = static_checks(chinese, chinese / "data")
+    against = static_checks(
+        chinese,
+        chinese / "data",
+        originals=Originals(temporary / "chinese-original"),
+    )
+never = [row for row in unread["problems"] if row["check"] == "untranslated"]
+assert sorted(text["text"] for row in never for text in row["texts"]) == [
+    "寻找魔王",
+    "欢迎来到魔法世界！",
+], never
+never = [row for row in against["problems"] if row["check"] == "untranslated"]
+assert never == [], never
 print("ok")

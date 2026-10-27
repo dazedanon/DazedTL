@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from util import languages
+from util.original_values import Originals
 from util.rpgmaker_blocks import command_lists
 from util.rpgmaker_markers import comment_markers
 from util.rpgmaker_plugin_registry import PluginRegistryError, loaded_entries
@@ -208,10 +209,14 @@ class _Checks:
                     identity=f"{name}#{location}",
                 )
 
-    def untranslated(self, kept: Iterable[dict[str, Any]]) -> None:
+    def untranslated(
+        self, kept: Iterable[dict[str, Any]], originals: Originals | None
+    ) -> None:
         """Text never translated, by file or plugin, with its reach, but for
-        plugin settings the plugin task keeps in Japanese on purpose."""
-        found = preflight(self.data, {"records": []}, kept)
+        plugin settings the plugin task keeps in Japanese on purpose; text
+        that keeps no source reads against the game's *originals*, as Text
+        QA's list does."""
+        found = preflight(self.data, {"records": []}, kept, originals)
         for source in read_sources(found):
             kind = source["kind"]
             file = (
@@ -516,11 +521,14 @@ def static_checks(
     data_root: str | Path,
     kept: Iterable[dict[str, Any]] = (),
     literals: Iterable[dict[str, Any]] = (),
+    originals: Originals | None = None,
 ) -> dict[str, Any]:
     """Every static problem in a game, with what the checks could not read.
     File paths are relative to the game folder; *kept* names the plugin
     settings and *literals* the strings in plugin code, each as its file,
-    line, kind and value, that the plugin task keeps in Japanese on purpose."""
+    line, kind and value, that the plugin task keeps in Japanese on purpose.
+    *originals*, the game's original files where the app recorded them, give
+    text that keeps no source its source (util/original_values)."""
     game = Path(game_root).expanduser().resolve()
     data = Path(data_root).expanduser().resolve()
     if game not in data.parents:
@@ -531,7 +539,7 @@ def static_checks(
     for name, document in checks.documents.items():
         reach.scan(name, document)
     checks.japanese(entries)
-    checks.untranslated(kept)
+    checks.untranslated(kept, originals)
     checks.codes()
     checks.descriptions()
     checks.plugin_code(

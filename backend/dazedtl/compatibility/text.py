@@ -4,7 +4,6 @@ import difflib
 import json
 import shutil
 import traceback
-from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -700,28 +699,12 @@ def qa_report(plan):
     }
 
 
-@contextmanager
-def _originals(plan, folder):
-    """The game's recorded original data and plugin files that differ from
-    the game's, staged beside the project's workflow for Text QA's
-    never-translated report (engine util/original_values), or None for a
-    game whose originals are not recorded."""
-    from util.original_values import Originals
-
-    from dazedtl.translation import originals
-
-    root, data = Path(plan["project"]["source"]), Path(plan["project"]["data"])
-    with system.staging_folder(folder, ".text-qa-originals-") as staged:
-        names = [path.name for path in data.glob("*.json")]
-        recorded = originals.stage(root, names, data, staged, data=data, plugins=True)
-        yield Originals(staged) if recorded else None
-
-
 def run_qa(plan, log):
     from desktop.backend.workflow_actions import validate_plan
     from util import rpgmaker_qa as qa
 
     from dazedtl.plugins.service import kept_settings
+    from dazedtl.translation import originals
 
     validate_plan(plan)
     folder = Path(plan["folder"])
@@ -735,7 +718,12 @@ def run_qa(plan, log):
 
         focus = plan["options"]["focus"]
         observations = pending(folder, plan["guard"])
-        with _originals(plan, folder) as originals:
+        with originals.staged(
+            plan["project"]["source"],
+            plan["project"]["data"],
+            folder,
+            ".text-qa-originals-",
+        ) as staged:
             task, _state = qa.prepare_task(
                 plan["project"]["source"],
                 plan["project"]["data"],
@@ -749,7 +737,7 @@ def run_qa(plan, log):
                 since=plan["options"].get("since") or None,
                 earlier=not plan["options"].get("everything"),
                 storage_key=_storage_key(plan),
-                originals=originals,
+                originals=staged,
             )
         if observations:
             log(f"QA reviews {len(observations)} line(s) the playtest found")

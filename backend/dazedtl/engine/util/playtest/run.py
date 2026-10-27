@@ -18,6 +18,7 @@ from typing import Any, Callable, Iterable
 
 from util import languages, rpgmaker_blocks, rpgmaker_fonts, rpgmaker_window
 from util.dazedwrap import breaks_characters, cells
+from util.original_values import Originals
 from util.game_settings import game_source_language, game_target_language
 from util.playtest.checks import GROUP_TEXT_LIMIT, HELP_ROWS, reading, static_checks
 from util.rpgmaker_markers import comment_markers, data_plugins
@@ -799,13 +800,16 @@ def run(
     kept: Iterable[dict[str, Any]] = (),
     overlay: dict[str, Path] | None = None,
     literals: Iterable[dict[str, Any]] = (),
+    originals: Originals | None = None,
 ) -> dict[str, Any]:
     """The full playtest of one game; writes report.json to `out`. With the
     previous report, it counts what was fixed since and marks what is new.
     *kept* names the plugin settings the plugin task keeps in Japanese on
     purpose, which it does not report as never translated, and *literals* the
     strings in plugin code, which it reports only once drawn. *overlay* plays
-    files in place of the game's, such as fixes not yet written into it."""
+    files in place of the game's, such as fixes not yet written into it.
+    *originals*, the game's original files where the app recorded them, give
+    text that keeps no source its source (util/original_values)."""
     game = Path(game_root).expanduser().resolve()
     data = Path(data_root).expanduser().resolve()
     target = Path(out).expanduser().resolve()
@@ -819,7 +823,7 @@ def run(
         else nullcontext()
     ):
         log("Checking the game's files")
-        static = static_checks(game, data, kept, literals)
+        static = static_checks(game, data, kept, literals, originals)
         runtime = tour(data, target, extra, minutes, log, stopped, overlay=overlay)
         merged = merge(static, runtime, data.relative_to(game).as_posix())
     report = {

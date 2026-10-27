@@ -14,6 +14,8 @@ POINTER = "playtest.json"
 STORAGE = "playtest"
 # Reports kept beside the latest, for comparing runs.
 KEEP = 3
+# The game's original files a playtest stages for its never-translated list.
+ORIGINALS = ".playtest-originals-"
 
 
 def binding(guard):
@@ -39,6 +41,7 @@ def run_playtest(plan, log):
     from util.playtest.run import run
 
     from dazedtl.plugins.service import kept_literals, kept_settings
+    from dazedtl.translation import originals
 
     validate_plan(plan)
     folder = Path(plan["folder"])
@@ -49,17 +52,20 @@ def run_playtest(plan, log):
     except ValueError, OSError, KeyError, TypeError:
         before = None
     name = datetime.now(UTC).strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
-    report = run(
-        plan["project"]["source"],
-        plan["project"]["data"],
-        storage / name,
-        stops=plan["options"]["stops"],
-        log=log,
-        stopped=getattr(log, "stopped", lambda: False),
-        previous=before[1] if before else None,
-        kept=kept_settings(plan["project"]["source"]),
-        literals=kept_literals(plan["project"]["source"]),
-    )
+    root, data = plan["project"]["source"], plan["project"]["data"]
+    with originals.staged(root, data, folder, ORIGINALS) as staged:
+        report = run(
+            root,
+            data,
+            storage / name,
+            stops=plan["options"]["stops"],
+            log=log,
+            stopped=getattr(log, "stopped", lambda: False),
+            previous=before[1] if before else None,
+            kept=kept_settings(root),
+            literals=kept_literals(root),
+            originals=staged,
+        )
     write_json(
         folder / POINTER,
         {
@@ -115,7 +121,7 @@ def run_fixes(plan, log):
     from util.playtest.run import run
 
     from dazedtl.plugins.service import kept_literals, kept_settings
-    from dazedtl.translation import publication
+    from dazedtl.translation import originals, publication
 
     validate_plan(plan)
     folder = Path(plan["folder"])
@@ -152,18 +158,20 @@ def run_fixes(plan, log):
     out = storage / name
     served = fixes.served(web, raw, out)
     log("Playing the game with the fixes in place")
-    report = run(
-        root,
-        data,
-        out,
-        stops=plan["options"]["stops"],
-        log=log,
-        stopped=getattr(log, "stopped", lambda: False),
-        previous=found[1],
-        kept=kept_settings(root),
-        literals=kept_literals(root),
-        overlay=served,
-    )
+    with originals.staged(root, data, folder, ORIGINALS) as staged:
+        report = run(
+            root,
+            data,
+            out,
+            stops=plan["options"]["stops"],
+            log=log,
+            stopped=getattr(log, "stopped", lambda: False),
+            previous=found[1],
+            kept=kept_settings(root),
+            literals=kept_literals(root),
+            overlay=served,
+            originals=staged,
+        )
     reason = fixes.refusal(found[1], report)
     record = {
         "report": name,

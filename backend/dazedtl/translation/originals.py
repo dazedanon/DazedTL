@@ -251,6 +251,22 @@ def stage(
     return True
 
 
+@contextmanager
+def staged(root, data, folder, prefix):
+    """The game's recorded original data and plugin files that differ from
+    the game's (:func:`stage`), staged in a folder under `folder` named from
+    `prefix` and removed afterwards, as engine util/original_values reads
+    them: the source of text that keeps none, for a never-translated list.
+    None for a game whose originals are not recorded."""
+    from util.original_values import Originals
+
+    root, data = Path(root), Path(data)
+    with system.staging_folder(folder, prefix) as target:
+        names = [path.name for path in data.glob("*.json")]
+        recorded = stage(root, names, data, target, data=data, plugins=True)
+        yield Originals(target) if recorded else None
+
+
 def _blob(path, length):
     """The Git blob ID of the file at `path` in a repository whose IDs are
     `length` hex digits long, or None without the file."""
