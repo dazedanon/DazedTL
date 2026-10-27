@@ -887,23 +887,10 @@ function Manager({
   const listDone =
     shown === "list" && !value.view.folder && !value.view.query.trim();
   // Before the assistant examined the images, an empty list waits for the
-  // investigation rather than having nothing left.
+  // investigation, and once the user stopped it, for their ticks, rather than
+  // having nothing left.
   const unexamined = listDone && flow.unexamined;
-  // The Investigate step's action, which an empty list waiting for it offers
-  // too.
-  const investigation = {
-    label: "Copy investigation task",
-    disabled: busy || !counts.indexed,
-    disabledReason: counts.indexed ? "" : "Index the images first.",
-    ...step("discovery_task", "Copying…"),
-    // While a task waits, copying it again hands out the same task.
-    onClick: () =>
-      void perform("discovery_task", {
-        scope: flow.waiting.investigation
-          ? state.discovery.scope || "remaining"
-          : "remaining",
-      }),
-  };
+  const unticked = listDone && flow.unticked;
   // Which views show follows the whole game, so the switch keeps its shape;
   // their numbers follow the folder and search, as the grid does.
   const scoped = grid.views;
@@ -1055,8 +1042,19 @@ function Manager({
       )}
       {flow.step === "investigate" && (
         <ActionControl
-          {...investigation}
+          label="Copy investigation task"
           variant={flow.waiting.investigation ? "default" : "primary"}
+          disabled={busy || !counts.indexed}
+          disabledReason={counts.indexed ? "" : "Index the images first."}
+          {...step("discovery_task", "Copying…")}
+          // While a task waits, copying it again hands out the same task.
+          onClick={() =>
+            void perform("discovery_task", {
+              scope: flow.waiting.investigation
+                ? state.discovery.scope || "remaining"
+                : "remaining",
+            })
+          }
         />
       )}
       {translating && (
@@ -1303,15 +1301,18 @@ function Manager({
                           ? counts.examined
                             ? "Some images not examined yet"
                             : "Not examined yet"
-                          : listDone
-                            ? "Nothing left to translate"
-                            : "No matching images"}
+                          : unticked
+                            ? "No images ticked yet"
+                            : listDone
+                              ? "Nothing left to translate"
+                              : "No matching images"}
                   </h3>
                   {/* A search inside a folder looks only there, which the grid
                   alone does not show. */}
                   {(!counts.indexed ||
                     folderSearch ||
                     unexamined ||
+                    unticked ||
                     hidden > 0) && (
                     <p>
                       {!counts.indexed
@@ -1322,15 +1323,13 @@ function Manager({
                             ? flow.waiting.investigation
                               ? "Your assistant's recommendations appear here as it saves them."
                               : "Your assistant recommends the images to translate once it examines them."
-                            : `${hidden.toLocaleString()} ${hidden === 1 ? "image in your list is" : "images in your list are"} outside this view.`}
+                            : unticked
+                              ? "Tick the images to translate in All images."
+                              : `${hidden.toLocaleString()} ${hidden === 1 ? "image in your list is" : "images in your list are"} outside this view.`}
                     </p>
                   )}
-                  {/* While the assistant examines them, the list fills here. */}
-                  {unexamined ? (
-                    !flow.waiting.investigation && (
-                      <ActionControl {...investigation} />
-                    )
-                  ) : (
+                  {/* The task's own step offers the investigation. */}
+                  {!unexamined && (
                     <Button
                       onClick={() =>
                         !counts.indexed

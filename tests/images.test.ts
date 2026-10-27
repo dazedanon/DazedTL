@@ -251,6 +251,10 @@ test("Images leads with the step its saved work reaches", () => {
   // One the user stopped leaves them to choose, ticked or not yet.
   assert.equal(at({ examined: 1 }, "stopped"), "choose");
   assert.equal(at({ examined: 1, selected: 2 }, "stopped"), "choose");
+  // An empty list then waits for their ticks, not finished.
+  assert.equal(flow({ examined: 1 }, "stopped").unticked, true);
+  assert.equal(flow({ examined: 1, selected: 2 }, "stopped").unticked, false);
+  assert.equal(flow({ examined: 2, uncertain: 1 }, "complete").unticked, false);
 });
 
 const draft = (selection: string[], scroll = 0): ImageDraft => ({
