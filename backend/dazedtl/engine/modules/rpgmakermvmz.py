@@ -4182,7 +4182,7 @@ def _searchCodes(page, pbar, jobList, filename):
                 # Inline speakers in any form (util/speakers.inline_speaker)
                 inlineSpeakerMatch = None
                 if len(speakerList) == 0 and INLINE401SPEAKERS:
-                    inlineSpeakerMatch = inline_speaker(speakerWork, written_back=True)
+                    inlineSpeakerMatch = inline_speaker(speakerWork)
                     if inlineSpeakerMatch:
                         speakerList = [inlineSpeakerMatch.name]
 

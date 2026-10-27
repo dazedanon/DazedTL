@@ -224,29 +224,28 @@ class LanguageTests(unittest.TestCase):
         translate_speaker("ファイン", [], "French", translate)
         self.assertEqual(len(asked), 1)
 
-    def test_an_inline_speaker_reads_the_same_for_every_caller(self):
-        # Format detection and the MV/MZ parser each kept a copy of the rule
-        # and read the same line differently. Detection reads the source
-        # form; the parser also the forms a re-export or English game holds.
-        for line, source, written_back in (
-            ("ミカ「やあ」", ("ミカ", "ミカ"), ("ミカ", "ミカ")),
-            ("ミカ：「やあ」", ("ミカ：", "ミカ："), ("ミカ：", "ミカ：")),
-            ("ミカ: 「やあ」", ("ミカ", "ミカ: "), ("ミカ", "ミカ: ")),
-            ("ミカ 「やあ」", ("ミカ", "ミカ "), ("ミカ", "ミカ ")),
-            ("ミカ(小声)「やあ」", None, ("ミカ", "ミカ")),
-            ('Mika: "Hi"', None, ("Mika", "Mika: ")),
-            ("Mika “Hi”", None, ("Mika", "Mika ")),
-            ("Mika (sighs)", None, ("Mika", "Mika ")),
-            ("[Mika] Hi", None, ("Mika", "[Mika] ")),
-            ("「やあ」", None, None),
-            (r"\C[2]ミカ「やあ」", None, None),
-            ("こんにちは", None, None),
+    def test_an_inline_speaker_reads_every_form(self):
+        # The MV/MZ parser reads the source form a Japanese game writes and
+        # the forms a re-export or English game holds, and keeps the line
+        # whole between prefix and speech.
+        for line, expected in (
+            ("ミカ「やあ」", ("ミカ", "ミカ")),
+            ("ミカ：「やあ」", ("ミカ：", "ミカ：")),
+            ("ミカ: 「やあ」", ("ミカ", "ミカ: ")),
+            ("ミカ 「やあ」", ("ミカ", "ミカ ")),
+            ("ミカ(小声)「やあ」", ("ミカ", "ミカ")),
+            ('Mika: "Hi"', ("Mika", "Mika: ")),
+            ("Mika “Hi”", ("Mika", "Mika ")),
+            ("Mika (sighs)", ("Mika", "Mika ")),
+            ("[Mika] Hi", ("Mika", "[Mika] ")),
+            ("「やあ」", None),
+            (r"\C[2]ミカ「やあ」", None),
+            ("こんにちは", None),
         ):
-            for form, expected in ((False, source), (True, written_back)):
-                found = inline_speaker(line, written_back=form)
-                self.assertEqual(found and found[:2], expected, (line, form))
-                if found:
-                    self.assertEqual(found.prefix + found.speech, line)
+            found = inline_speaker(line)
+            self.assertEqual(found and found[:2], expected, line)
+            if found:
+                self.assertEqual(found.prefix + found.speech, line)
 
     def test_punctuation_only_text_keeps_each_writers_english_form(self):
         # One rule with each writer's form, so Japanese to English output
