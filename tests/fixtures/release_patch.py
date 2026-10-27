@@ -482,8 +482,8 @@ checkpoints = "".join(
 )
 subprocess.run(
     ["git", "-C", str(game), "fast-import", "--quiet"],
-    input=checkpoints,
-    text=True,
+    # Bytes: a Windows text pipe would end each line, and so the ref name, in "\r".
+    input=checkpoints.encode("utf-8"),
     check=True,
 )
 status = inspect_repository(game)
