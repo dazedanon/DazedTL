@@ -62,7 +62,7 @@ AFTER_SENTENCE = "sentence"
 AFTER_ELLIPSIS = "ellipsis"
 _FULL_STOPS_AFTER_ELLIPSIS = re.compile(r"\.\.\.(。)+")
 # Marks that already end a sentence, so a full stop after one adds nothing.
-_SENTENCE_ENDS = frozenset(".…‥!?♪♡♥～〜~")
+SENTENCE_ENDS = frozenset(".…‥!?♪♡♥～〜~")
 
 
 def full_stops(text, language, rule):
@@ -102,7 +102,7 @@ def english_punctuation(text, quotes=True):
         written = []
         for char in run:
             if char == "。":
-                if last in _SENTENCE_ENDS:
+                if last in SENTENCE_ENDS:
                     continue
                 char = "."
             written.append(char)

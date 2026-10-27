@@ -394,6 +394,37 @@ class QAEngineTests(unittest.TestCase):
             {"lint:dakuten-apostrophe": "Why… Stop it…"},
         )
 
+    def test_new_translations_keep_an_inline_speaker_without_a_colon(self):
+        # A paid probe saw about 1 line in 10 of Name「...」 come back as
+        # Name: "...", which both methods wrote into the game unflagged;
+        # Dazed's released games write Name "...".
+        for source, text, fixed in (
+            ("ニーナ「おっ…ごぉ…！」", 'Nena: "Oh...ghh...!"', 'Nena "Oh...ghh...!"'),
+            # Guided sends the line with its 「 already an ASCII quote.
+            ('老人"よく来た"', 'Old Man:"Welcome."', 'Old Man "Welcome."'),
+            # Speech going on to the message's next row.
+            (
+                "村長「よく来たな、",
+                'Village Chief: "Welcome,',
+                'Village Chief "Welcome,',
+            ),
+        ):
+            self.assertEqual(lint.normalize(source, text), fixed, source)
+        for source, text in (
+            ("リナ：「こんにちは」", 'Rina: "Hello!"'),
+            ("こんにちは", 'Note: "Hello."'),
+            # A label before a title or a word, which ends no sentence.
+            ("その名も「エクスカリバー」", 'Its name: "Excalibur"'),
+            ("戦闘BGM変更「森」", 'Change Battle BGM: "Forest"'),
+            ("小説「願いを天にかざして」", 'Novel: "Hold Your Wish Up to the Heavens"'),
+            # A row whose quote closes speech from the rows before.
+            ('旅の者よ"', 'Traveler: "Welcome."'),
+            # A fix changes no row.
+            ("リナ「こんにちは！」", 'Rina:\n"Hello!"'),
+            ("リナ「こんにちは」", 'Then, Rina: "Hello!"'),
+        ):
+            self.assertEqual(lint.normalize(source, text), text, source)
+
     def test_merged_list_fix_adds_no_blank_row(self):
         # A Fuuma banner whose head already ends its row: the fix put a blank
         # row between the head and its items.

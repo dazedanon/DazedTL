@@ -25,6 +25,11 @@ from collections.abc import Collection, Mapping
 from typing import Any, NamedTuple
 
 FAMILIES: dict[str, dict[str, str]] = {
+    "lint:inline-speaker": {
+        "category": "formatting",
+        "description": "A colon follows the speaker name a line starts with, where the source has none.",
+        "targets": "latin",
+    },
     "lint:heart-spacing": {
         "category": "formatting",
         "description": "A new sentence starts right after ♥ with no space.",
@@ -72,8 +77,12 @@ DEFAULT_TARGET = "English"
 # Families whose fix was right on every line it matched in released games and
 # keeps the line's breaks and codes. The rest need a reviewer, the whole game,
 # or a change of line structure; see docs/architecture.md.
-AUTOMATIC = ("lint:heart-spacing", "lint:stray-sokuon")
+AUTOMATIC = ("lint:inline-speaker", "lint:heart-spacing", "lint:stray-sokuon")
 
+# A name a line starts with, a colon, and the quote that opens what follows,
+# all on its first row.
+_SPEAKER_COLON_RE = re.compile(r'^([^\s:："“][^:："“\n]{0,29}?)[ \t]*[:：][ \t]*(?=["“])')
+_CLOSING_QUOTES = {'"': '"', "“": "”"}
 _HEART_RE = re.compile(r"♥(?=[A-Za-z(])")
 _SOKUON_SOURCE_RE = re.compile(r"[っッ]")
 _STRAY_SOKUON_RE = re.compile(r"((?:…|\.\.\.)+)h+(?=[♥)\s!?…]|$)")
@@ -134,6 +143,47 @@ def applies(family: str, target: str) -> bool:
         "any": lambda: True,
     }
     return any(reads[kind]() for kind in FAMILIES[family]["targets"].split())
+
+
+def _inline_speaker(source: str, text: str, game: Game) -> str:
+    # A model writes Name「...」 as the script format Name: "..."; the game
+    # shows the line as written, and Dazed's English keeps the source's
+    # format, Name "...". A label before a title, as in Novel: "Royal Tomb"
+    # or Its name: "Excalibur", keeps its colon.
+    from util.speakers import SOURCE, inline_speaker
+
+    match = _SPEAKER_COLON_RE.match(text)
+    if (
+        match is None
+        or inline_speaker(source, SOURCE) is None
+        or not _speaker_name(match.group(1))
+        or not _opens_speech(text[match.end():])
+    ):
+        return text
+    return f"{match.group(1)} {text[match.end():]}"
+
+
+def _speaker_name(text: str) -> bool:
+    """Whether *text* reads as a name: one to four words, each capitalized."""
+    words = text.split(" ")
+    return (
+        len(words) <= 4
+        and not any(mark in text for mark in ",;!?")
+        and all(word and (word[0].isupper() or word[0].isdigit()) for word in words)
+    )
+
+
+def _opens_speech(text: str) -> bool:
+    """Whether the quotation *text* opens is speech: it runs past the text,
+    as a message's speech goes on to its next row, or ends a sentence, which
+    a title does not."""
+    from util.target_text import SENTENCE_ENDS
+
+    end = text.find(_CLOSING_QUOTES[text[0]], 1)
+    if end == -1:
+        return True
+    quoted = text[1:end].rstrip()
+    return bool(quoted) and quoted[-1] in SENTENCE_ENDS
 
 
 def _heart_spacing(source: str, text: str, game: Game) -> str:
@@ -283,6 +333,7 @@ def _glossary_term(source: str, text: str, game: Game) -> str:
 
 
 FIXERS = {
+    "lint:inline-speaker": _inline_speaker,
     "lint:heart-spacing": _heart_spacing,
     "lint:stray-sokuon": _stray_sokuon,
     "lint:dakuten-apostrophe": _dakuten_apostrophe,

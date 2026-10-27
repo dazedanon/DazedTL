@@ -132,18 +132,30 @@ def extract_dialogue_after_speaker(text: str) -> str | None:
 # or a space before the quote. A line an inline re-export wrote back, or a
 # game already in English, holds a written-back form: Name: "dialogue" (or “),
 # Name (dialogue, or [Name] dialogue. The MV/MZ parser (INLINE401SPEAKERS)
-# reads every form.
+# reads every form (ANY). Lint reads the source form with no colon (SOURCE),
+# Name「dialogue or Name"dialogue as a Latin-script target's requests send it
+# (util/target_text.corner_quotes), to keep a translation in that format.
 # ============================================================================
+
+ANY = "any"
+SOURCE = "source"
 
 # The name: up to 20 characters with no space, quote, sentence mark, code
 # backslash, ASCII colon or bracket. A full-width colon stays in the name, as
 # ミカ：「 has always read ミカ：.
-_INLINE_NAME = r'[^\s「」。、！？…\\\n“”"(:\[\]]{1,20}'
+_INLINE_NAME_EXCLUDES = r'\s「」。、！？…\\\n“”"(:\[\]'
+_INLINE_NAME = rf"[^{_INLINE_NAME_EXCLUDES}]{{1,20}}"
 _INLINE_SEPARATOR = r"[:：]?\s*"
-_INLINE_RE = re.compile(
-    rf"^(?:\[([^\]]{{1,30}})\]\s*"
-    rf'|({_INLINE_NAME}){_INLINE_SEPARATOR}(?=[「“"(]))'
-)
+_INLINE_FORMS = {
+    ANY: re.compile(
+        rf"^(?:\[([^\]]{{1,30}})\]\s*"
+        rf'|({_INLINE_NAME}){_INLINE_SEPARATOR}(?=[「“"(]))'
+    ),
+    # An ASCII quote that ends its row closes speech from the rows before.
+    SOURCE: re.compile(
+        rf'^([^{_INLINE_NAME_EXCLUDES}：]{{1,20}})\s*(?=「|"(?!\s*(?:\n|$)))'
+    ),
+}
 
 
 class InlineSpeaker(NamedTuple):
@@ -153,9 +165,10 @@ class InlineSpeaker(NamedTuple):
     speech: str
 
 
-def inline_speaker(text: str) -> InlineSpeaker | None:
-    """The speaker *text* starts with in any inline form, or None."""
-    match = _INLINE_RE.match(text)
+def inline_speaker(text: str, form: str = ANY) -> InlineSpeaker | None:
+    """The speaker *text* starts with in the inline *form*, ANY or SOURCE,
+    or None."""
+    match = _INLINE_FORMS[form].match(text)
     if not match:
         return None
     name = next(group for group in match.groups() if group is not None)
