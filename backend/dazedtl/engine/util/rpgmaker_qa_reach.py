@@ -14,6 +14,8 @@ import re
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from util.rpgmaker_markers import PluginList
+
 # Something runs the plugin, or its file could not be read, so players may
 # see its text.
 MAY_SHOW = frozenset({"called", "runs", "unknown"})
@@ -136,7 +138,9 @@ def _core(js: Path) -> _Core:
 class _Plugin:
     def __init__(self, name: str, enabled: bool) -> None:
         self.name = name
+        # Whether the game loads it, and why not.
         self.enabled = enabled
+        self.unloaded = "It is turned off in js/plugins.js."
         self.readable = False
         self.commands: list[str] = []
         # Words MV-style plugin commands may start with.
@@ -160,8 +164,10 @@ class _Plugin:
         }
 
 
-def _plugin(js: Path, entry: dict[str, Any], core: _Core) -> _Plugin:
-    plugin = _Plugin(entry["name"], entry.get("status") is True)
+def _plugin(js: Path, entry: dict[str, Any], loaded: bool, core: _Core) -> _Plugin:
+    plugin = _Plugin(entry["name"], loaded)
+    if not loaded and entry.get("status") is True:
+        plugin.unloaded = "Another entry of it in js/plugins.js loads instead."
     plugin.settings = list(_leaves(entry.get("parameters") or {}))
     plugin.strings = list(plugin.settings)
     for value in plugin.settings:
@@ -258,12 +264,16 @@ class Reach:
     """Each plugin's and custom data file's reach in one game. Scan its event
     files, then ask; the answer is a state and the evidence for it."""
 
-    def __init__(self, data_root: str | Path, entries: list[Any]):
+    def __init__(self, data_root: str | Path, plugins: PluginList):
         self._js = Path(data_root).parent / "js"
-        self._entries = [
-            entry for entry in entries
-            if isinstance(entry, dict) and isinstance(entry.get("name"), str)
-        ]
+        # Each plugin by name: the entry the game loads, or else its first
+        # entry, which the game does not load.
+        self._entries: dict[str, tuple[dict[str, Any], bool]] = {
+            entry["name"]: (entry, True) for entry in plugins.loaded()
+        }
+        for entry in plugins:
+            if isinstance(entry, dict) and isinstance(entry.get("name"), str):
+                self._entries.setdefault(entry["name"], (entry, False))
         # MZ plugin commands by plugin: the count and the first one's
         # command and file.
         self._calls: dict[str, list] = {}
@@ -341,7 +351,8 @@ class Reach:
             return self._states
         core = _core(self._js)
         self._plugins = {
-            entry["name"]: _plugin(self._js, entry, core) for entry in self._entries
+            name: _plugin(self._js, entry, loaded, core)
+            for name, (entry, loaded) in self._entries.items()
         }
         running = [
             plugin for plugin in self._plugins.values()
@@ -357,7 +368,7 @@ class Reach:
         states: dict[str, tuple[str, str]] = {}
         for plugin in self._plugins.values():
             if not plugin.enabled:
-                states[plugin.name] = ("off", "It is turned off in js/plugins.js.")
+                states[plugin.name] = ("off", plugin.unloaded)
             elif not plugin.readable:
                 states[plugin.name] = (
                     "unknown", f"Its file js/plugins/{plugin.name}.js could not be read."

@@ -25,13 +25,15 @@ class PluginList(tuple):
         plugins.mz = mz
         return plugins
 
-    def loaded(self) -> tuple[dict, ...]:
-        """The entries the game loads, in order."""
+    def loads(self) -> tuple[bool, ...]:
+        """Whether the game loads each entry, in order."""
         from util.rpgmaker_plugin_registry import loads
 
-        return tuple(
-            entry for entry, load in zip(self, loads(self, self.mz), strict=True) if load
-        )
+        return loads(self, self.mz)
+
+    def loaded(self) -> tuple[dict, ...]:
+        """The entries the game loads, in order."""
+        return tuple(entry for entry, load in zip(self, self.loads(), strict=True) if load)
 
 
 def plugin_markers(plugins: PluginList) -> frozenset[str]:

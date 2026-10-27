@@ -287,6 +287,36 @@ class QAEngineTests(unittest.TestCase):
                 ["はじめに"],
             )
 
+    def test_plugin_settings_follow_what_the_game_loads(self):
+        # The game loads only the first enabled entry of a plugin, so a
+        # repeated entry's settings show nothing: the report listed its
+        # Japanese, and a later turned-off entry made the plugin read off.
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "data").mkdir()
+            (root / "js/plugins").mkdir(parents=True)
+            (root / "js/plugins/Hud.js").write_text(
+                "Window_Base.prototype.drawText = function() {};", encoding="utf-8"
+            )
+            plugins = [
+                {"name": "Message", "status": True, "parameters": {"Text": "Hello"}},
+                {"name": "Message", "status": True, "parameters": {"Text": "未使用"}},
+                {"name": "Hud", "status": True, "parameters": {"Label": "所持金"}},
+                {"name": "Hud", "status": False, "parameters": {}},
+            ]
+            (root / "js/plugins.js").write_text(
+                f"var $plugins =\n{json.dumps(plugins, ensure_ascii=False)};\n",
+                encoding="utf-8",
+            )
+            report = preflight.preflight(root / "data", {"records": []})
+        found = {
+            text["text"]: item["reach"]
+            for item in report["sources"]
+            for text in item["texts"]
+        }
+        self.assertEqual(list(found), ["所持金"], report["sources"])
+        self.assertEqual(found["所持金"], "runs", report["sources"])
+
     def test_wrapped_rows_may_repeat_their_row_start_codes(self):
         # Fuuma's banner: fitting the second row to its window repeats its \>,
         # which refused every correction that wrapped it.
