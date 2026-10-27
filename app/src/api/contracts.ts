@@ -950,6 +950,12 @@ export type PlaytestState = {
   coverage?: PlaytestCoverage;
   since?: PlaytestSince;
   unreadable?: string;
+  /** Nothing plays the game, the latest report is of the game as it is, and no text problem waits for QA; a report that could not play settles it once it names no crash to fix. MV/MZ's QA task finishes then. */
+  settled: boolean;
+  /** Crashes the assistant fixes, which stop the game. */
+  stopping: number;
+  /** Text problems in a current report that wait for QA's next round. */
+  waiting: number;
 };
 
 export type PlaytestOperation = {
@@ -1046,6 +1052,8 @@ export type PlaytestStatus = {
   problems: Record<string, number>;
   /** Problems in translated text a complete QA task does not hold, for QA's next round. */
   waiting: number;
+  /** The final check's playtest is done; QA's task finishes then. */
+  settled: boolean;
   /** Problems the tour saw on screen. */
   seen: number;
   gaps: number;

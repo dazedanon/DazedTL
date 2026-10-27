@@ -24,7 +24,6 @@ import {
   playtestGroups,
   playtestPhase,
   playtestReach,
-  playtestStopping,
   playtestSummary,
   playtestTitle,
   playtestWhere,
@@ -72,9 +71,7 @@ export function PlaytestWork({
   // A report the game outgrew, or one stopped by a crash the assistant
   // fixes, waits for its next play.
   const stopped =
-    phase === "blocked" &&
-    !playtest.unreadable &&
-    playtestStopping(playtest).length > 0;
+    phase === "blocked" && !playtest.unreadable && playtest.stopping > 0;
   const state: DisplayState =
     waiting && (phase === "outdated" || stopped)
       ? "waiting"

@@ -59,6 +59,7 @@ export function ProgressPanel({
   showOptions,
   resume,
   qa,
+  finalCheck,
   openQa,
 }: {
   state: TranslationState;
@@ -70,6 +71,8 @@ export function ProgressPanel({
   resume: ReactNode;
   /** The text QA task the assistant prepared, if any. */
   qa: QaState | null;
+  /** For MV/MZ, the final check's playtest has yet to settle after QA. */
+  finalCheck: boolean;
   openQa: () => void;
 }) {
   const now = useMinute();
@@ -82,7 +85,7 @@ export function ProgressPanel({
   // the report's time stands in only for projects from before DazedTL noted
   // helper use.
   const activity = state.assistantSeenAt || progress?.updated_at || undefined;
-  const status = assistantRunState(progress, !!activity);
+  const status = assistantRunState(progress, !!activity, finalCheck);
   const text = progress?.metrics.text;
   const images = progress?.metrics.images;
   const attempt = attemptJobs(state);
@@ -170,7 +173,13 @@ export function ProgressPanel({
         )}
         <StepProgress
           label="Assistant phases"
-          steps={phaseStates(progress, !!activity, options.include_images, qa)}
+          steps={phaseStates(
+            progress,
+            !!activity,
+            options.include_images,
+            qa,
+            finalCheck,
+          )}
         />
         {!!(
           state.coverage ||

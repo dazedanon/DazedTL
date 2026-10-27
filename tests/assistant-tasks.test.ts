@@ -126,7 +126,14 @@ test("copied tasks wait for a newer result, and dismissed ones read Not started"
           prepared_at: "2026-10-07T09:00:00.000000+00:00",
           ...task,
         },
-        playtest: { current: false, problems: [], gaps: [] },
+        playtest: {
+          current: false,
+          problems: [],
+          gaps: [],
+          settled: false,
+          stopping: 0,
+          waiting: 0,
+        },
         publications: [],
       },
     } as unknown as GuidedState,
@@ -140,41 +147,14 @@ test("copied tasks wait for a newer result, and dismissed ones read Not started"
   const stale = { current: false, message: "Changed." };
   assert.deepEqual(states(qa("new", stale)), [["outdated", "Changed."]]);
   // A copy for MV/MZ names the playtest's report: after QA's apply its
-  // assistant plays the game again, so the task waits until a playtest of the
-  // game as it is settles, fixing a crash that stops the game first. A game
-  // the playtest can't play for want of its engine's scripts settles it too.
-  // A copy made before the playtest joined the task finishes with QA.
+  // assistant plays the game again, so the task waits until the playtest
+  // settles (backend playtest.settled). A copy made before the playtest
+  // joined the task finishes with QA.
   const applied = { applied: true, status: { stage: "complete" } };
   const copy = qa("new", applied, null);
   assert.deepEqual(states(copy), [["waiting", ""]]);
   assert.deepEqual(states(qa("new", applied)), []);
-  const crash = {
-    kind: "crash",
-    check: "runtime-crash",
-    file: "js/plugins/Menu.js",
-    note: "The game stopped at its error screen.",
-    fix: "game",
-  } as const;
-  copy.guided.readiness.playtest = {
-    report: "r",
-    current: true,
-    played: false,
-    problems: [crash],
-    gaps: ["Title screen: The game stopped."],
-  };
-  assert.deepEqual(states(copy), [["waiting", ""]]);
-  copy.guided.readiness.playtest.problems = [];
-  copy.guided.readiness.playtest.gaps = [
-    "The game folder has no RPG Maker engine scripts to play.",
-  ];
-  assert.deepEqual(states(copy), []);
-  // A play running, such as a check of the assistant's fixes, is still work.
-  copy.guided.readiness.playtest.played = true;
-  copy.guided.operations = [
-    { id: "p", action: "playtest_fix", status: "running", log: [] },
-  ];
-  assert.deepEqual(states(copy), [["waiting", ""]]);
-  copy.guided.operations = [];
+  copy.guided.readiness.playtest.settled = true;
   assert.deepEqual(states(copy), []);
 
   // A finished plugin task reads Outdated once a plugin changes, and Blocked

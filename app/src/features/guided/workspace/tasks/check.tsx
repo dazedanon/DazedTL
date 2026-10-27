@@ -11,7 +11,7 @@ import { TextQaWork } from "../../TextQa";
 import { runQaStep, type QaStepDetails, type QaStepName } from "../../qaSteps";
 import { qaPhase, qaTaskDone } from "../../qaView";
 import { PlaytestWork } from "../../Playtest";
-import { playtestFailure, playtestWaiting } from "../../playtestView";
+import { playtestFailure } from "../../playtestView";
 
 export function qaView(w: GuidedWorkspace): TaskView {
   const {
@@ -38,7 +38,7 @@ export function qaView(w: GuidedWorkspace): TaskView {
   const playtest = state.engine === "MVMZ" ? state.readiness.playtest : null;
   // Problems the playtest found in translated text after QA finished, which
   // QA reviews when it runs again.
-  const found = playtest ? playtestWaiting(playtest) : 0;
+  const found = playtest?.waiting || 0;
   // QA's corrections are in the game, or it found none.
   const done = ["applied", "clean"].includes(phase);
   const again = found > 0 && done;

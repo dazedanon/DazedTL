@@ -122,6 +122,7 @@ Its behavior is in the [playtest modules](../backend/dazedtl/engine/util/playtes
   Text problems the play after QA's apply finds need QA's next round, which the assistant prepares and reviews itself, so the user still copies once; the task is finished only once a play of the game as it is leaves nothing for QA.
   A game the playtest can't play at all, such as one without its engine's scripts, finishes the task without a play once its report names no crash, since nothing the assistant writes would change it; a crash that stops the game is the assistant's to fix, so the task waits on it rather than reading Blocked.
 - In Assistant-led the starting prompt runs it through the project helper's `playtest` before text QA and again after QA's apply, and a Playtest tab shows its report once one exists.
+  The play after QA's apply sends its text problems to QA's next round and keeps the QA phase open until the playtest settles, as in Guided: both methods read one rule, `settled` in the [playtest helper](../backend/dazedtl/translation/playtest.py), from the snapshot.
   Its assistant fixes the game's own code through the same fixes plugin and play as Guided's, never by editing the game's files, and the fixes go in as a checkpoint of their own, since Assistant-led has no History restore and its Git history is how it takes changes out.
 
 ### Decisions

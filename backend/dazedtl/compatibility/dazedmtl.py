@@ -503,6 +503,7 @@ class ExistingBackend:
 
     def guided_text_state(self, native, focus="release"):
         from dazedtl.translation.checkpoint_records import undoes
+        from dazedtl.translation.playtest import PLAYS, described
         from dazedtl.translation.publication import history
 
         from .playtest import POINTER, playtest_state
@@ -549,10 +550,18 @@ class ExistingBackend:
                     qa = qa_unreadable(plan, exc)
             if played:
                 playtest = playtest_state(folder, guard, focus)
+        # A play that reported its end has saved its report, though its
+        # worker may not have exited yet.
+        playing = any(
+            job.get("project_id") == native["id"]
+            and job.get("action") in PLAYS
+            and job.get("status") == "running"
+            for job in list(self.operations.jobs.values())
+        )
         shown = recent[:10]
         return {
             "qa": qa,
-            "playtest": playtest,
+            "playtest": described(playtest, playing),
             "publications": [
                 {
                     "id": row["id"],

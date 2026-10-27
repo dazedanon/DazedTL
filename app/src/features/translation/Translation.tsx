@@ -51,6 +51,7 @@ import { TextQaTab } from "./TextQaTab";
 import { PlaytestTab } from "./PlaytestTab";
 import { jobTime } from "../guided/workspace/model";
 import { playtestActions } from "../guided/playtestView";
+import { finalCheckOpen } from "../guided/qaView";
 import { assistantRunState } from "./assistantPhases";
 
 export type TranslationView =
@@ -128,6 +129,7 @@ function Workspace({
       ? own.readiness.qa
       : null;
   const questions = qa?.questions.filter((row) => !row.choice).length || 0;
+  const finalCheck = !!own && finalCheckOpen(own);
   // The plays, oldest first: a playtest, or one with the assistant's fixes in
   // place. The release playtest shows once the assistant has run one.
   const plays = (own?.operations || [])
@@ -336,6 +338,7 @@ function Workspace({
                 showOptions={() => void show("options")}
                 resume={copyControl("default", "resume")}
                 qa={qa}
+                finalCheck={finalCheck}
                 openQa={() => void show("qa")}
               />
             </PageBody>
@@ -415,7 +418,9 @@ function Workspace({
               .at(-1)}
             action={action}
             disabled={disabled}
-            waiting={assistantRunState(state.progress, started) !== "done"}
+            waiting={
+              assistantRunState(state.progress, started, finalCheck) !== "done"
+            }
             copy={copyControl()}
           />
         )}

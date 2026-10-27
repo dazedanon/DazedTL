@@ -1,7 +1,6 @@
 /** How the release playtest's report reads on the page. */
 
 import type {
-  Job,
   PlaytestProblem,
   PlaytestState,
   PlaytestFix,
@@ -44,35 +43,6 @@ export function playtestPhase(
 /** The operations that play the game: a playtest, and a check of the
  * assistant's fixes. */
 export const playtestActions = ["release_playtest", "playtest_fix"];
-
-/** Whether a playtest plays the game now, from the project's operations. */
-export const playtestRunning = (operations: Job[]) =>
-  operations.some(
-    (job) =>
-      playtestActions.includes(job.action || "") && job.status === "running",
-  );
-
-/** Crashes, which stop the game and which the assistant fixes. */
-export const playtestStopping = (playtest: PlaytestState) =>
-  playtest.problems.filter(
-    (problem) => problem.kind === "crash" && problem.fix === "game",
-  );
-
-/**
- * The playtest's half of an MV/MZ final check is done: nothing plays the
- * game now, the latest report is of the game as it is, and no problem in
- * translated text waits for QA's next round. QA's apply changes the game's
- * data, so a current report played it with QA's corrections. A report that
- * could not play the game settles it too once it names no crash for the
- * assistant to fix, as for a game without its engine's scripts.
- */
-export const playtestSettled = (playtest: PlaytestState, operations: Job[]) =>
-  !playtestRunning(operations) &&
-  !!playtest.report &&
-  playtest.current &&
-  !playtest.unreadable &&
-  !playtestWaiting(playtest) &&
-  (!!playtest.played || !playtestStopping(playtest).length);
 
 export const playtestDisplay: Record<PlaytestPhase, DisplayState> = {
   not_started: "not_started",
@@ -163,12 +133,6 @@ export const playtestFix = (problem: PlaytestProblem, focus = "release") =>
       : problem.check === "untranslated-comment"
         ? "Maps & events, with Comment text on in Speaker detection"
         : fixes[problem.fix];
-
-/** Problems text QA has yet to take, which running QA again reviews. */
-export const playtestWaiting = (playtest: PlaytestState) =>
-  playtest.current
-    ? playtest.problems.filter((problem) => problem.review === "waiting").length
-    : 0;
 
 const fileName = (path: string) => path.split("/").pop() || path;
 

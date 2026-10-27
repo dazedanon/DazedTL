@@ -664,6 +664,16 @@ class PlaytestState(TypedDict):
     coverage: NotRequired[PlaytestCoverage]
     since: NotRequired[PlaytestSince]
     unreadable: NotRequired[str]
+    settled: Annotated[
+        bool,
+        "Nothing plays the game, the latest report is of the game as it is, and "
+        "no text problem waits for QA; a report that could not play settles it "
+        "once it names no crash to fix. MV/MZ's QA task finishes then.",
+    ]
+    stopping: Annotated[int, "Crashes the assistant fixes, which stop the game."]
+    waiting: Annotated[
+        int, "Text problems in a current report that wait for QA's next round."
+    ]
 
 
 class PlaytestOperation(TypedDict):
@@ -762,6 +772,9 @@ class PlaytestStatus(TypedDict):
     waiting: Annotated[
         int,
         "Problems in translated text a complete QA task does not hold, for QA's next round.",
+    ]
+    settled: Annotated[
+        bool, "The final check's playtest is done; QA's task finishes then."
     ]
     seen: Annotated[int, "Problems the tour saw on screen."]
     gaps: int

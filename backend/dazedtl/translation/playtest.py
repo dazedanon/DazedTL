@@ -73,6 +73,11 @@ Below, PLAYTEST stands for `{playtest}`, PLUGINS for `{plugins}` and QA for `{qa
 """
 
 
+# The operations that play the game: a playtest, and a check of the
+# assistant's fixes.
+PLAYS = ("release_playtest", "playtest_fix")
+
+
 def stopping(problems):
     """The report's crashes, which the assistant fixes, so a game the
     playtest could not play is not done with until they are."""
@@ -81,6 +86,42 @@ def stopping(problems):
         for problem in problems
         if problem["kind"] == "crash" and problem["fix"] == "game"
     ]
+
+
+def waiting(state):
+    """Problems in translated text a complete QA task does not hold, which
+    QA's next round reviews; a report the game outgrew holds none."""
+    if not state["current"]:
+        return 0
+    return sum(problem.get("review") == "waiting" for problem in state["problems"])
+
+
+def settled(state, running):
+    """The playtest's half of an MV/MZ final check is done: nothing plays the
+    game now, the latest report is of the game as it is, and no problem in
+    translated text waits for QA's next round. QA's apply changes the game's
+    data, so a current report played it with QA's corrections. A report that
+    could not play the game settles it too once it names no crash for the
+    assistant to fix, as for a game without its engine's scripts."""
+    return (
+        not running
+        and bool(state.get("report"))
+        and state["current"]
+        and not state.get("unreadable")
+        and not waiting(state)
+        and (bool(state.get("played")) or not stopping(state["problems"]))
+    )
+
+
+def described(state, running):
+    """The playtest's state with what both methods' QA tasks and the helper
+    read from it: whether it settled, and its crash and waiting counts."""
+    return {
+        **state,
+        "settled": settled(state, running),
+        "stopping": len(stopping(state["problems"])),
+        "waiting": waiting(state),
+    }
 
 
 class Playtest:
@@ -311,8 +352,7 @@ class Playtest:
         state = text["playtest"]
         operation = self.operation(project_id)
         problems = state["problems"]
-        # Text problems a complete QA task does not hold, for its next round.
-        waiting = sum(problem.get("review") == "waiting" for problem in problems)
+        held = state["waiting"]
         stops = (state.get("coverage") or {}).get("stops", [])
         assistant = self.guided.projects.get(project_id).get("method") == "len"
         fixes = self.fixes(native)
@@ -336,18 +376,17 @@ class Playtest:
             following = "Run playtest --run."
         elif not state["current"]:
             following = "The game changed after the last playtest; run playtest --run."
-        elif waiting and not assistant:
+        elif held:
             following = (
                 (
-                    f"QA is complete, so {waiting} text problem(s) wait for its "
-                    "next round"
+                    f"QA is complete, so {held} text problem(s) wait for its next round"
                     if text["qa"]["status"]
-                    else f"{waiting} text problem(s) wait for text QA"
+                    else f"{held} text problem(s) wait for text QA"
                 )
                 + ": run qa --prepare, review it and run qa --apply, then run "
                 "playtest --run again."
             )
-        elif not state.get("played") and stopping(problems):
+        elif not state.get("played") and state["stopping"]:
             following = (
                 "The game stops before the playtest can play it: fix that crash in "
                 "the fixes file and run playtest --fix."
@@ -381,7 +420,8 @@ class Playtest:
             "current": state["current"],
             "finished_at": state.get("finished_at", ""),
             "problems": dict(Counter(problem["fix"] for problem in problems)),
-            "waiting": waiting,
+            "waiting": held,
+            "settled": state["settled"],
             "seen": sum(bool(problem.get("seen")) for problem in problems),
             "gaps": len(state["gaps"]),
             "reached": f"{sum(stop['status'] == 'done' for stop in stops)} of {len(stops)}",

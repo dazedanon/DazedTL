@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { phaseStates } from "../app/src/features/translation/assistantPhases.ts";
+import {
+  assistantRunState,
+  phaseStates,
+} from "../app/src/features/translation/assistantPhases.ts";
 
 test("only the assistant's reported phase reads as current, and Images shows only in scope", () => {
   const report = (phase: string | null, phases: Record<string, string>) =>
@@ -98,4 +101,32 @@ test("only the assistant's reported phase reads as current, and Images shows onl
   );
   assert.equal(qaStep(unreadable)?.state, "blocked");
   assert.equal(qaStep(unreadable, "patch", "complete")?.state, "done");
+  // For MV/MZ QA reported done stays open, as in Guided, until the final
+  // check's playtest settles, and so does the run.
+  const applied = qa({ stage: "complete" }, { applied: true });
+  const finished = report("qa", { qa: "complete" });
+  const checking = (open: boolean, value = finished) =>
+    phaseStates(value, true, false, applied, open).find(
+      (step) => step.id === "qa",
+    );
+  assert.deepEqual(checking(true), {
+    id: "qa",
+    label: "QA",
+    state: "current",
+    detail: "Final check",
+  });
+  assert.equal(checking(false)?.state, "done");
+  // QA's next round still shows its questions for the user first.
+  assert.equal(
+    phaseStates(finished, true, false, asking, true).find(
+      (step) => step.id === "qa",
+    )?.detail,
+    "1 question for you",
+  );
+  assert.equal(
+    checking(true, report("patch", { qa: "complete", patch: "active" }))?.state,
+    "started",
+  );
+  assert.equal(assistantRunState(finished, true, true), "waiting");
+  assert.equal(assistantRunState(finished, true, false), "done");
 });

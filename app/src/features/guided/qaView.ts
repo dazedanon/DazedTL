@@ -8,7 +8,6 @@ import type {
 } from "../../api/contracts";
 import type { StepState } from "../../ui/StepProgress";
 import { sentence } from "../../ui/displayText.ts";
-import { playtestSettled } from "./playtestView.ts";
 
 /** Where text QA stands on the page. */
 export type QaPhase =
@@ -36,15 +35,20 @@ export function qaPhase(qa: QaState): QaPhase {
 }
 
 /**
+ * For MV/MZ, whose QA task is also the final check, the assistant's
+ * playtest has yet to settle after QA, whichever method runs it.
+ */
+export const finalCheckOpen = (state: GuidedState) =>
+  state.engine === "MVMZ" && !state.readiness.playtest.settled;
+
+/**
  * Guided's Text QA task is done: QA's corrections are in the game or it
- * found none, and for MV/MZ, whose task is also the final check, the
- * assistant's playtest settled after them.
+ * found none, and the final check settled after them.
  */
 export function qaTaskDone(state: GuidedState) {
-  const { qa, playtest } = state.readiness;
   return (
-    ["applied", "clean"].includes(qaPhase(qa)) &&
-    (state.engine !== "MVMZ" || playtestSettled(playtest, state.operations))
+    ["applied", "clean"].includes(qaPhase(state.readiness.qa)) &&
+    !finalCheckOpen(state)
   );
 }
 

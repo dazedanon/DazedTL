@@ -19,6 +19,7 @@ import {
   awaitingQuote,
   estimateOutdated,
 } from "../features/translation/apiRun.ts";
+import { finalCheckOpen } from "../features/guided/qaView.ts";
 import { assistantRunState } from "../features/translation/assistantPhases.ts";
 import { displayLabels } from "../ui/displayStatus.ts";
 import { sentence } from "../ui/displayText.ts";
@@ -142,7 +143,13 @@ function needs(snapshot: WorkspaceSnapshot, projectId: string) {
     snapshot.translation?.projectId === projectId ? snapshot.translation : null;
   if (snapshot.application.project?.method === "len" && translation) {
     const progress = translation.progress;
-    const state = assistantRunState(progress, true);
+    const guided =
+      snapshot.guided?.projectId === projectId ? snapshot.guided : null;
+    const state = assistantRunState(
+      progress,
+      true,
+      !!guided && finalCheckOpen(guided),
+    );
     if (state === "blocked")
       found.set(
         `blocked:${progress!.blocker}`,

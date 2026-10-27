@@ -213,7 +213,14 @@ test("the Project page continues with the next step and keeps a later saved posi
       applied: [],
       text_fit: { pending: false, waiting: "", job: null },
       qa: { current: false, applied: false, findings: [], questions: [] },
-      playtest: { current: false, problems: [], gaps: [] },
+      playtest: {
+        current: false,
+        problems: [],
+        gaps: [],
+        settled: false,
+        stopping: 0,
+        waiting: 0,
+      },
     },
     comparisons: { status: "not_needed" },
     eventText: {
@@ -330,8 +337,8 @@ test("the Project page continues with the next step and keeps a later saved posi
     "images",
     "package",
   ]);
-  // Text QA is done once its corrections are in the game and, for MV/MZ, a
-  // playtest of the game as it is settled after them, with none running.
+  // Text QA is done once its corrections are in the game and, for MV/MZ,
+  // the playtest settled after them (backend playtest.settled).
   const done = () => finished().includes("qa");
   state.readiness.qa = {
     ...state.readiness.qa,
@@ -346,13 +353,11 @@ test("the Project page continues with the next step and keeps a later saved posi
     played: true,
     problems: [],
     gaps: [],
+    settled: true,
+    stopping: 0,
+    waiting: 0,
   };
   assert.equal(done(), true);
-  state.operations = [
-    { id: "p", action: "release_playtest", status: "running", log: [] },
-  ] as GuidedState["operations"];
-  assert.equal(done(), false);
-  state.operations = [];
-  state.readiness.playtest.current = false;
+  state.readiness.playtest.settled = false;
   assert.equal(done(), false);
 });
