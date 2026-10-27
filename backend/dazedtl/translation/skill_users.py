@@ -16,6 +16,7 @@ compiled before it keep the requests they were approved with.
 
 import json
 import re
+from functools import partial
 from pathlib import Path, PurePosixPath
 
 from dazedtl.freshness import Digests
@@ -75,9 +76,7 @@ def _table(snapshot, language):
             skills_file = (folder / "Skills.json").as_posix()
             data = _read(local, "Skills.json")
             # The census's own reader, so a message is the occurrence it counts.
-            rows = census.read_json(
-                skills_file, json.dumps(data, ensure_ascii=False)
-            )
+            rows = census.read_json(skills_file, json.dumps(data, ensure_ascii=False))
             found = {}
             for entry in census.entries(rows, skills_file, "tool", language):
                 match = _MESSAGE.fullmatch(entry["location"])
@@ -95,7 +94,7 @@ def _table(snapshot, language):
                 for name in names
                 if _MAP.fullmatch(PurePosixPath(name).name)
             )
-            table = battle_users.battle_users(lambda name: _read(local, name), maps)
+            table = battle_users.battle_users(partial(_read, local), maps)
             users[folder.as_posix()] = table
             messages[folder.as_posix()] = found
     return users, messages

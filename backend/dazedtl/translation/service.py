@@ -14,12 +14,12 @@ from dazedtl.compatibility.estimate_prices import usage_cost
 from dazedtl.freshness import Basis, compare
 from dazedtl.languages import pair_note
 from dazedtl.settings import language_pair
-from dazedtl.settings.preferences import BATTLE_MESSAGE_USERS
 from dazedtl.settings.execution import (
     configuration,
     connection_summary,
     entries_per_request,
 )
+from dazedtl.settings.preferences import BATTLE_MESSAGE_USERS
 from dazedtl.storage import write_bytes, write_json
 
 from . import (

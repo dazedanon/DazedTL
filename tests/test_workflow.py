@@ -574,7 +574,11 @@ class WorkflowTests(unittest.TestCase):
             "Classes.json": [None, {"id": 1, "learnings": [{"skillId": 1}]}],
             "Enemies.json": [
                 None,
-                {"id": 1, "name": "スライム", "actions": [{"skillId": 2}, {"skillId": 3}]},
+                {
+                    "id": 1,
+                    "name": "スライム",
+                    "actions": [{"skillId": 2}, {"skillId": 3}],
+                },
             ],
             "System.json": {"partyMembers": [1]},
             "Skills.json": [
