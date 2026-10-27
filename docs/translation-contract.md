@@ -127,7 +127,8 @@ Content is never a reason to leave text out; the assistant declines a request it
 
 ## Source plan
 
-Organize writes this plan; a plan written by hand compiles the same way, and plan-format shows a minimal one.
+Organize writes this plan and compiles it; a plan written by hand compiles the same way, and plan-format shows a minimal one.
+compile refuses a plan organize wrote, which leaves out the lines organize kept from earlier requests, so only organize compiles it ([organize](../backend/dazedtl/translation/organize.py) `owns`).
 The authoritative validator is [requests.py](../backend/dazedtl/translation/requests.py).
 The JSON object has these fields:
 
