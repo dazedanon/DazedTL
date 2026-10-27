@@ -22,12 +22,11 @@ def main() -> None:
         str(Path(root) / "backend/dazedtl/engine"),
         str(Path(root) / "backend"),
     ]
-    from util import version_update
-
     from dazedtl.compatibility.translation import TranslationEngine
     from dazedtl.projects import location
     from dazedtl.translation.jobs import RunStore
     from dazedtl.translation.operations import execute
+    from util import version_update
 
     workspace = Path(workspace).resolve()
     location.use(workspace)
