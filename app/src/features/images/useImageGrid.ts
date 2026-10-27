@@ -2,6 +2,7 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { imagesApi } from "../../api/images";
 import { messageOf } from "../../api/errors";
 import { idsBetween } from "./imageSelection";
+import { bounded, PAGE_SIZE, PageReader, type Pages } from "./imagePages";
 import type {
   ImageAsset,
   ImageList,
@@ -9,10 +10,6 @@ import type {
   ImageViewCounts,
 } from "../../api/contracts";
 
-const PAGE_SIZE = 100;
-/** Pages kept per view; a view up to this many pages lists all of its images. */
-const MAX_PAGES = 50;
-type Pages = Map<number, ImageAsset[]>;
 type Filters = {
   projectId: string;
   query: string;
@@ -28,10 +25,6 @@ type Loaded = {
   stale: Pages;
   total: number;
   error: string;
-};
-const bounded = (pages: Pages) => {
-  while (pages.size > MAX_PAGES) pages.delete(pages.keys().next().value!);
-  return pages;
 };
 /**
  * Where a scope's results start. A refresh of the same filters keeps showing
@@ -49,16 +42,6 @@ const begin = (previous: Loaded, scope: Scope): Loaded => ({
     : { stale: new Map(), total: 0 }),
   error: "",
 });
-
-/** The view's pages, nearest to `from` first, as many as are kept. */
-const nearestPages = (from: number, total: number) =>
-  Array.from({ length: Math.ceil(total / PAGE_SIZE) }, (_, page) => ({
-    offset: page * PAGE_SIZE,
-    distance: Math.abs(page * PAGE_SIZE - from),
-  }))
-    .sort((a, b) => a.distance - b.distance)
-    .slice(0, MAX_PAGES)
-    .map(({ offset }) => offset);
 
 /**
  * The page of images `start` to `end` of the view's matches, with the rest of
@@ -105,73 +88,33 @@ export function useImageGrid(
     () => (loaded.scope === scope ? loaded : begin(loaded, scope)),
     [loaded, scope],
   );
-  const cache = useRef(new Map<number, ImageAsset[]>());
-  const pending = useRef(new Set<number>());
-  const demand = useRef<number[]>([]);
-  const ahead = useRef<number[]>([]);
-  const active = useRef(0);
-  const pump = useRef<() => void>(() => {});
+  const reader = useRef<PageReader>(null);
   const shownFrom = useEffectEvent(() => start);
   useEffect(() => {
+    const { projectId, ...options } = scope.filters;
     let current = true;
-    let planned = false;
-    cache.current = new Map();
-    pending.current = new Set();
-    demand.current = [0];
-    ahead.current = [];
-    pump.current = () => {
-      while (active.current < 2) {
-        // Pages on screen come first; the rest of the view follows,
-        // nearest first, once the first reply gives its size.
-        const offset = demand.current.shift() ?? ahead.current.shift();
-        if (offset === undefined) break;
-        if (pending.current.has(offset) || cache.current.has(offset)) continue;
-        pending.current.add(offset);
-        active.current++;
-        const { projectId, ...options } = scope.filters;
-        void imagesApi
-          .list(
-            projectId,
-            { ...options, offset, limit: PAGE_SIZE },
-            () => current,
-          )
-          .then((reply: ImageList) => {
-            if (!current) return;
-            if (!planned) {
-              planned = true;
-              ahead.current = nearestPages(shownFrom(), reply.total);
-            }
-            cache.current.delete(offset);
-            cache.current.set(offset, reply.items);
-            bounded(cache.current);
-            setLoaded((previous) => ({
-              ...(previous.scope === scope ? previous : begin(previous, scope)),
-              pages: new Map(cache.current),
-              total: reply.total,
-              error: "",
-            }));
-          })
-          .catch((error: unknown) => {
-            if (current)
-              setLoaded((previous) => ({
-                ...(previous.scope === scope
-                  ? previous
-                  : begin(previous, scope)),
-                error: messageOf(error),
-              }));
-          })
-          .finally(() => {
-            active.current--;
-            if (current) pending.current.delete(offset);
-            pump.current();
-          });
-      }
-    };
-    pump.current();
+    const pages = new PageReader({
+      read: (offset, limit) =>
+        imagesApi.list(projectId, { ...options, offset, limit }, () => current),
+      show: (pages, total) =>
+        setLoaded((previous) => ({
+          ...(previous.scope === scope ? previous : begin(previous, scope)),
+          pages,
+          total,
+          error: "",
+        })),
+      fail: (error) =>
+        setLoaded((previous) => ({
+          ...(previous.scope === scope ? previous : begin(previous, scope)),
+          error: messageOf(error),
+        })),
+      from: () => shownFrom(),
+    });
+    reader.current = pages;
     return () => {
       current = false;
-      demand.current = [];
-      ahead.current = [];
+      pages.close();
+      if (reader.current === pages) reader.current = null;
     };
   }, [scope]);
   const needed: number[] = [];
@@ -182,17 +125,18 @@ export function useImageGrid(
   )
     needed.push(offset);
   const missing = needed.filter((offset) => !grid.pages.has(offset));
-  const missingKey = missing.join(",");
+  // The pages beside the screen show as soon as they are read too, so the
+  // thumbnails near the screen can load ahead of scrolling.
+  const beside = [needed[0] - PAGE_SIZE, needed.at(-1)! + PAGE_SIZE].filter(
+    (offset) =>
+      offset >= 0 &&
+      offset < Math.max(grid.total, 1) &&
+      !grid.pages.has(offset),
+  );
+  const wantedKey = [...missing, ...beside].join(",");
   useEffect(() => {
-    demand.current = missingKey
-      .split(",")
-      .filter(Boolean)
-      .map(Number)
-      .filter(
-        (offset) => !cache.current.has(offset) && !pending.current.has(offset),
-      );
-    if (demand.current.length) pump.current();
-  }, [missingKey, scope]);
+    reader.current?.want(wantedKey.split(",").filter(Boolean).map(Number));
+  }, [wantedKey, scope]);
   const shown = (index: number) => {
     const offset = Math.floor(index / PAGE_SIZE) * PAGE_SIZE;
     return (grid.pages.get(offset) ?? grid.stale.get(offset))?.[

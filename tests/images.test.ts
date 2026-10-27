@@ -11,11 +11,13 @@ import {
   virtualRows,
 } from "../app/src/features/images/imageSelection.ts";
 import { ThumbnailQueue } from "../app/src/features/images/thumbnails.ts";
+import { PageReader } from "../app/src/features/images/imagePages.ts";
 import { imageFlow } from "../app/src/features/images/imageFlow.ts";
 import type {
   ImageAsset,
   ImageCounts,
   ImageDraft,
+  ImageList,
   ImagePixels,
 } from "../app/src/api/contracts.ts";
 
@@ -107,6 +109,43 @@ test("thumbnails on screen load ahead of the view's planned ones, one read each"
   queue.get(image(0), 64, (value) => shown.push(value));
   assert.equal(shown.length, 3);
   assert.equal(reads.filter((id) => id === "img/0.png").length, 1);
+});
+
+test("a view's pages read ahead show once, and a page on screen at once", async () => {
+  // Protect against the grid rendering once per page read ahead, about 50
+  // renders per switch to a big view, and against a page on screen waiting
+  // for the rest of the view.
+  const replies = new Map<number, () => void>();
+  const shown: number[][] = [];
+  const pages = new PageReader({
+    read: (offset) =>
+      new Promise((resolve) => {
+        replies.set(offset, () =>
+          resolve({
+            items: [{ id: `img/${offset}.png` } as ImageAsset],
+            total: 450,
+          } as ImageList),
+        );
+      }),
+    show: (loaded) => shown.push([...loaded.keys()].sort((a, b) => a - b)),
+    fail: () => assert.fail(),
+    from: () => 0,
+  });
+  const settle = async (offset: number) => {
+    replies.get(offset)!();
+    await new Promise((resolve) => setImmediate(resolve));
+  };
+  await settle(0);
+  assert.deepEqual(shown, [[0]]);
+  await settle(100);
+  await settle(200);
+  assert.equal(shown.length, 1);
+  // Scrolling to a page read ahead shows it without waiting for the rest.
+  pages.want([200]);
+  assert.deepEqual(shown.at(-1), [0, 100, 200]);
+  await settle(300);
+  await settle(400);
+  assert.deepEqual(shown, [[0], [0, 100, 200], [0, 100, 200, 300, 400]]);
 });
 
 test("Images leads with the step its saved work reaches", () => {
