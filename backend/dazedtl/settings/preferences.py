@@ -75,7 +75,9 @@ MAP_NAME_IDENTITIES = "map-name-identities-v1"
 # the enemies whose actions use it, and those names bring their glossary
 # entries, so the model can choose pronouns for the battler. A skill granted
 # any other way, such as by a plugin, has no users and its battler stays
-# gender neutral, as does a state message's (_battle_users in the parser).
+# gender neutral, as does a state message's (engine util/battle_users).
+# Assistant-led runs freeze it too, for their units holding a skill's battle
+# message (translation/skill_users).
 BATTLE_MESSAGE_USERS = "battle-message-users-v2"
 # RPG Maker MV/MZ text still to translate is what engine util/source_text
 # reads as Japanese, the rule Guided's line counts share, and finished labels

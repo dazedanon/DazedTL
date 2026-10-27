@@ -1797,9 +1797,12 @@ class ManualJobs:
         note = "Check whether the visitor or guard left."
         source_context = "門に二人がいる。"
 
+        compiled = []
+
         def contexts(_project, batches, _language):
+            compiled.append(batches)
             self.assertEqual(
-                set(batches[0]),
+                set(batches[0]) - {"glossary_names"},
                 {"id", "sources", "speakers", "source_context", "instruction_key"},
             )
             self.assertEqual(batches[0]["speakers"], {"line": None})
@@ -1957,6 +1960,24 @@ class ManualJobs:
             self.assertIn("- gate: line 1", payload["captured"]["request_instructions"])
             self.assertEqual(
                 payload["response_format"]["json_schema"]["schema"]["required"], ["1"]
+            )
+            # A battle message's skill users join its request, and their names
+            # bring their glossary entries (translation/skill_users).
+            from dazedtl.translation.requests import SKILL_USERS
+
+            noted, _compiler = compile_requests(
+                engine,
+                "unused",
+                {},
+                organized,
+                "English",
+                {"line": ("actor リリ; enemy スライム", ["リリ", "スライム"])},
+            )
+            self.assertEqual(compiled[-1][0]["glossary_names"], ["リリ", "スライム"])
+            self.assertNotIn("glossary_names", compiled[-2][0])
+            self.assertIn(
+                SKILL_USERS + "\n1: actor リリ; enemy スライム\n",
+                engine.payload(noted[0], keyed_settings)["captured"]["user"],
             )
 
             # New OpenRouter plans require the exact source-ID schema on both

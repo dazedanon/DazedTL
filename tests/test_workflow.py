@@ -33,7 +33,12 @@ from dazedtl.translation.operations import (
 )
 from dazedtl.translation.project import DEFAULTS, WORK, ProjectWorkspace, scope
 from dazedtl.translation.release import current
-from dazedtl.translation.requests import plan_input
+from dazedtl.translation.requests import (
+    LINE_KEYS,
+    SKILL_USERS,
+    plan_input,
+    provider_view,
+)
 from dazedtl.translation.results import EXPORT, Results
 from dazedtl.translation.run_compiler import CENSUS_UNCOVERED, SCOPE_RULES
 from dazedtl.translation.service import IMAGE_UNITS, Translation
@@ -61,10 +66,19 @@ class Engine:
             "asset_sync_pending": False,
         }
 
-    def compile(self, _root, _options, plan, language, _skill_users=None):
+    def compile(self, _root, _options, plan, language, skill_users=None):
+        def users(batch):
+            notes = {
+                identity: skill_users[identity][0]
+                for identity in batch["sources"]
+                if identity in (skill_users or {})
+            }
+            return {"skill_users": notes} if notes else {}
+
         return [
             {
                 "context": {
+                    **users(batch),
                     "system": "Translate into " + language,
                     "glossary": "Approved names",
                     "sfx_reference": "Advisory SFX",
@@ -545,6 +559,84 @@ class WorkflowTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "Organize them again"):
             self.service.results(self.identity, run)
+
+    def test_a_units_skill_message_names_the_skills_users_as_guided_does(self):
+        # Guided notes each skill message with who uses the skill, so "%1"
+        # gets the right pronouns (engine util/battle_users). A unit holding
+        # that message, found by its text in the original game's Skills data
+        # and never by its ID, carries the same note: one covering two
+        # skills' message names both skills' users, and a party that can only
+        # hold アリナ makes a skill nobody else uses hers.
+        data = self.game / "data"
+        data.mkdir()
+        for name, value in {
+            "Actors.json": [None, {"id": 1, "name": "アリナ", "classId": 1}],
+            "Classes.json": [None, {"id": 1, "learnings": [{"skillId": 1}]}],
+            "Enemies.json": [
+                None,
+                {"id": 1, "name": "スライム", "actions": [{"skillId": 2}, {"skillId": 3}]},
+            ],
+            "System.json": {"partyMembers": [1]},
+            "Skills.json": [
+                None,
+                *(
+                    {"id": skill, "name": "", "message1": message}
+                    for skill, message in enumerate(
+                        ["%1は斬りかかった！", "%1は体当たりした！"]
+                        + ["%1は斬りかかった！", "%1は祈った！"],
+                        1,
+                    )
+                ),
+            ],
+        }.items():
+            write_json(data / name, value)
+        original_files.record(self.game, original_files.PREPARED)
+        # The working copy's names are translated; the original's are read.
+        write_json(data / "Actors.json", [None, {"id": 1, "name": "Arina"}])
+        selected = self.project.read()
+        self.service.save(
+            self.identity,
+            selected["revision"],
+            {**selected["options"], "mode": "agent"},
+        )
+        units = WORK + "/work/source-units.json"
+        sources = ["%1は斬りかかった！", "%1は体当たりした！", "%1は祈った！", "はい。"]
+        write_json(
+            self.game / units,
+            {
+                "version": 1,
+                "units": [
+                    {"id": f"u{index}", "scene": "battle", "source": text}
+                    for index, text in enumerate(sources, 1)
+                ],
+            },
+        )
+        run = self.prepared(self.service.organize(self.identity, units))["run"]
+        _job, plan = self.service.jobs.store.load(run["id"])
+        (request,) = plan["requests"]
+        notes = {
+            "u1": "actor アリナ; enemy スライム",
+            "u2": "enemy スライム",
+            "u3": "actor アリナ",
+        }
+        self.assertEqual(request["context"]["skill_users"], notes)
+        self.assertIn(
+            SKILL_USERS + "\n" + json.dumps(notes, ensure_ascii=False),
+            request["context"]["user"],
+        )
+        keyed = provider_view(request, {"lineKeys": LINE_KEYS})["user"]
+        self.assertIn(
+            SKILL_USERS
+            + "\n1: actor アリナ; enemy スライム\n2: enemy スライム\n3: actor アリナ\n",
+            keyed,
+        )
+        self.service.validate_current(self.identity, plan)
+        # A run frozen before the policy keeps its requests.
+        with patch("dazedtl.translation.service.BATTLE_MESSAGE_USERS", None):
+            older = self.prepared(self.service.organize(self.identity, units))["run"]
+        _job, older = self.service.jobs.store.load(older["id"])
+        self.assertNotIn("skill_users", older["requests"][0]["context"])
+        self.service.validate_current(self.identity, older)
 
     def test_complete_needs_the_tools_census_covered_not_the_assistants_word(self):
         def line(code, *parameters):
