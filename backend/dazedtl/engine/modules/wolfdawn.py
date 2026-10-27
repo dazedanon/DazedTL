@@ -121,12 +121,6 @@ LANGREGEX = source_pattern()
 # Set False for a forced full retranslate.
 IGNORETLTEXT = True
 
-# Control codes that can embed Japanese inside an otherwise-translated line
-# (ruby ``\r[kanji,kana]``, colour / font indexes, ``\cself[n]``, etc.).
-_WOLF_CODE_RE = re.compile(
-    r"\\(?:r\[[^\]]*\]|c(?:self)?\[[^\]]*\]|[A-Za-z]+\[[^\]]*\]|[A-Za-z])"
-)
-
 # Speaker handling: for first-line-speaker formats, resolve the nameplate to
 # English (vocab / cached short-string translation), reshape into the shared
 # "[Speaker]: line" transport, then restore WOLF's native "Speaker\nline"
@@ -330,7 +324,7 @@ def _text_check_body(text: str, speaker_src: str = "") -> str:
             or (0 < len(first.strip()) <= 20 and re.search(LANGREGEX, first))
         ):
             rest = body
-    return _WOLF_CODE_RE.sub("", rest)
+    return wolf_codes.WOLF_INLINE_CODE_RE.sub("", rest)
 
 
 def _text_still_needs_translation(entry) -> bool:
@@ -355,9 +349,14 @@ def _holds_source(text: str) -> bool:
 
 def _speaker_translation_valid(source: str, translated: str) -> bool:
     """util/speakers `speaker_translated`, keeping WOLF's long-standing
-    mixed-script localized names such as ``EN_セルリア``."""
+    mixed-script localized names such as ``EN_セルリア``. Both names are
+    read without their control codes, whose letters are not a translation."""
     return wolf_speakers.speaker_translated(
-        source, translated, LANGUAGE, _holds_source, mixed=True
+        wolf_codes.WOLF_INLINE_CODE_RE.sub("", str(source or "")),
+        wolf_codes.WOLF_INLINE_CODE_RE.sub("", str(translated or "")),
+        LANGUAGE,
+        _holds_source,
+        mixed=True,
     )
 
 
