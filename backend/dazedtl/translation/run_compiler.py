@@ -10,6 +10,7 @@ import hashlib
 from pathlib import Path
 
 from dazedtl import system
+from dazedtl.compatibility.batch_window import RUN_POLICY as BATCH_WINDOW
 from dazedtl.settings.execution import worker_secret
 from dazedtl.storage import write_json
 
@@ -313,6 +314,9 @@ def compile_run(engine, workspace, job, plan, input_path, progress, read=None):
         "input_path": input_path,
         "batch_limits": limits,
     }
+    if limits:
+        # Its chunks wait for room in the provider's Batch window.
+        value["batch_window"] = BATCH_WINDOW
     if finishes:
         value.update(label="Declined requests", finishes=finishes)
     run = store.create(project_id, value, estimate)

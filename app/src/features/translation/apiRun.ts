@@ -142,6 +142,7 @@ export const runMode = (job: TranslationJob) =>
 // The run's own Batch states that say more than the provider's status.
 const batchStates: Record<string, string> = {
   pending: "Not sent",
+  queued: "Waiting for capacity",
   submitting: "Not confirmed",
   unmatched: "Not matched",
   rejected: "Rejected",

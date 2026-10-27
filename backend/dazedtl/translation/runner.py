@@ -2,8 +2,10 @@
 
 import os
 import time
+from contextlib import nullcontext
 from functools import partial
 
+from dazedtl.compatibility.batch_window import RUN_POLICY, chunk_tokens, reserve_run
 from dazedtl.storage import write_json
 
 from .batch_refusals import advance, outline, started
@@ -248,7 +250,7 @@ class Runner:
             limit = self.plan["batch_limits"]
             import json
 
-            chunks, chunk, size, tokens = [], [], 0, 0
+            chunks, chunk, size, tokens, counted = [], [], 0, 0, []
             schema = None
             same_schema = self.plan["configuration"].get(
                 "openrouterStructuredOutputs"
@@ -285,6 +287,7 @@ class Runner:
                     and schema != row["params"].get("response_format")
                 ):
                     chunks.append({"state": "pending", "id": "", "items": chunk})
+                    counted.append(tokens)
                     chunk, size, tokens = [], 0, 0
                 chunk.append(item)
                 schema = row["params"].get("response_format")
@@ -292,6 +295,11 @@ class Runner:
                 tokens += request_tokens
             if chunk:
                 chunks.append({"state": "pending", "id": "", "items": chunk})
+                counted.append(tokens)
+            if token_limit:
+                # The window asks each chunk's tokens again; spare it counting.
+                for row, known in zip(chunks, counted, strict=True):
+                    chunk_tokens(self.job, row, None, None, known)
             self.job["batches"] = chunks
             self.save()
         for chunk in self.job["batches"]:
@@ -324,49 +332,8 @@ class Runner:
                     }
                 self.save()
                 continue
-            if not chunk["id"]:
-                self.validate_current()
-                # Durable intent comes before the call, including each exact correlation ID.
-                chunk["state"] = "submitting"
-                for item in chunk["items"]:
-                    self.job["states"][item["request"]] = {
-                        "state": "queued",
-                        "message": "Submitting provider job.",
-                    }
-                self.save("running", "Submitting a provider batch.")
-                try:
-                    value = self.provider.submit(
-                        [
-                            {
-                                "custom_id": item["custom_id"],
-                                "params": self.requests[item["request"]]["params"],
-                            }
-                            for item in chunk["items"]
-                        ]
-                    )
-                    chunk.update(id=value["id"], state="submitted")
-                    self.save()
-                except Exception as exc:  # noqa: BLE001
-                    code = getattr(exc, "status_code", None)
-                    certain = type(code) is int and 400 <= code < 500
-                    for item in chunk["items"]:
-                        self.job["states"][item["request"]] = {
-                            "state": "failed" if certain else "uncertain",
-                            "message": "Provider rejected submission (HTTP "
-                            + str(code)
-                            + ")."
-                            if certain
-                            else "Submission outcome is uncertain; inspect the provider job list.",
-                        }
-                    if certain:
-                        chunk["state"] = "rejected"
-                    self.save(
-                        "failed" if certain else "uncertain",
-                        "Review the rejected submission."
-                        if certain
-                        else "The provider submission must be reconciled before retrying.",
-                    )
-                    return
+            if not chunk["id"] and not self.submit(chunk):
+                return
             policy = self.plan["configuration"].get("refusalRetry") == REFUSAL_POLICY
             # A clarification journal starts only after this job ended, so a
             # cancellation then belongs to the clarification Batches.
@@ -505,6 +472,83 @@ class Runner:
                 )
                 return
         self.finish()
+
+    def room(self, chunk):
+        """Whether the provider's Batch window has room for the chunk now,
+        held while it is sent; runs frozen before RUN_POLICY never wait."""
+        limits = self.plan["batch_limits"]
+        limit = limits[2] if len(limits) > 2 else None
+        if self.plan.get("batch_window") != RUN_POLICY or not limit:
+            return nullcontext(True)
+        count = self.provider.input_tokens
+        return reserve_run(
+            self.store.workspace,
+            self.plan["configuration"],
+            chunk_tokens(self.job, chunk, lambda: self.requests, count),
+            count,
+            limit,
+        )
+
+    def submit(self, chunk):
+        """Sends the unsent chunk once the window has room, and whether the
+        pass goes on; a chunk without room stays queued, sending nothing."""
+        with self.room(chunk) as available:
+            pass
+        if available:
+            # Checking the game takes a while on a big one, so it runs
+            # outside the window's lock, which other runs wait on.
+            self.validate_current()
+            with self.room(chunk) as available:
+                if available:
+                    return self.send(chunk)
+        chunk["state"] = "queued"
+        self.save("waiting", "Waiting for available Batch token capacity.")
+        return False
+
+    def send(self, chunk):
+        """Submits the chunk the window holds room for, and whether the pass
+        goes on."""
+        # Durable intent comes before the call, including each exact
+        # correlation ID, and before the window's room is released.
+        chunk["state"] = "submitting"
+        for item in chunk["items"]:
+            self.job["states"][item["request"]] = {
+                "state": "queued",
+                "message": "Submitting provider job.",
+            }
+        self.save("running", "Submitting a provider batch.")
+        try:
+            value = self.provider.submit(
+                [
+                    {
+                        "custom_id": item["custom_id"],
+                        "params": self.requests[item["request"]]["params"],
+                    }
+                    for item in chunk["items"]
+                ]
+            )
+        except Exception as exc:  # noqa: BLE001
+            code = getattr(exc, "status_code", None)
+            certain = type(code) is int and 400 <= code < 500
+            for item in chunk["items"]:
+                self.job["states"][item["request"]] = {
+                    "state": "failed" if certain else "uncertain",
+                    "message": "Provider rejected submission (HTTP " + str(code) + ")."
+                    if certain
+                    else "Submission outcome is uncertain; inspect the provider job list.",
+                }
+            if certain:
+                chunk["state"] = "rejected"
+            self.save(
+                "failed" if certain else "uncertain",
+                "Review the rejected submission."
+                if certain
+                else "The provider submission must be reconciled before retrying.",
+            )
+            return False
+        chunk.update(id=value["id"], state="submitted")
+        self.save()
+        return True
 
     def collect(self, chunk, cancel):
         """The ended provider job's responses and usage, or None when this

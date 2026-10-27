@@ -5,11 +5,14 @@ import os
 import time
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from pathlib import Path
+from stat import S_ISREG
 from urllib.parse import urlsplit
 
+from dazedtl.freshness import Digests
 from dazedtl.storage import WorkspaceError, WorkspaceLock, write_json
-from dazedtl.translation.files import digest, live_path, project_path
+from dazedtl.translation.files import digest, live_path, project_path, read_json
 
 from .batch_continuation import (
     JOURNAL,
@@ -250,18 +253,84 @@ def clarification_tokens(folder, originals, count, seen):
 # record every pass, so one unsaved for longer has no job left at the provider.
 COMPLETION_WINDOW = timedelta(hours=25)
 
-# Each sent chunk's input tokens by its run's plan and custom ID: the plans of
-# large games are slow to read, and an approved plan never changes.
+# Each chunk's input tokens by its run's plan and first custom ID: the plans
+# of large games are slow to read, and an approved plan never changes.
 _chunk_tokens = {}
+
+# Assistant-led Batch runs frozen with this policy send each chunk only once
+# the window has room for it (Runner.batch); runs frozen before it send each
+# chunk as soon as the one before it finished.
+RUN_POLICY = "enqueued-tokens-v1"
+
+
+def chunk_tokens(job, chunk, requests, count, known=None):
+    """The input tokens of an Assistant-led run's chunk: `known` when its
+    packing counted them, else counted from `requests()`, the run's plan
+    requests by ID, read only when this process has not counted it yet."""
+    key = (job.get("plan_sha256"), chunk["items"][0]["custom_id"])
+    if known is not None:
+        _chunk_tokens[key] = known
+    if key not in _chunk_tokens:
+        rows = requests()
+        # Counted as Runner.batch packs them: a plan's own counts first.
+        _chunk_tokens[key] = sum(
+            row["input_tokens"] if "input_tokens" in row else count(row["params"])
+            for row in (rows[item["request"]] for item in chunk["items"])
+        )
+    return _chunk_tokens[key]
+
+
+# What the window read of each Assistant-led run record, by path: a long
+# history holds many large records, and only a running run's changes.
+_records = Digests()
+
+
+def run_record(path, info):
+    """What the window counts of the Assistant-led run record at `path`,
+    whose stat result is `info`: when it was saved, the connection its
+    configuration names, its plan's digest, its chunks sent and not yet
+    ended, and every provider job ID it holds; or () for a record that sends
+    no Batch or that no run can read, since no worker can send from it."""
+
+    def read():
+        try:
+            job = read_json(path)
+            updated = datetime.fromisoformat(job["updated"])
+            configuration = job.get("configuration") or {}
+            if configuration.get("mode") != "batch":
+                return ()
+            chunks = job.get("batches") or []
+            return (
+                updated,
+                {
+                    key: configuration.get(key)
+                    for key in ("connection_id", "endpoint", "model")
+                },
+                {"plan_sha256": job.get("plan_sha256")},
+                [
+                    chunk
+                    for chunk in chunks
+                    if chunk.get("state") in {"submitting", "submitted"}
+                    and chunk.get("api_status") not in TERMINAL
+                ],
+                {chunk["id"] for chunk in chunks if chunk.get("id")},
+            )
+        except AttributeError, KeyError, TypeError, ValueError:
+            return ()
+
+    return _records.remember(str(path), info, read)
+
+
+def requests_of(store, folder, job):
+    """The requests of the run's frozen plan, by ID."""
+    return {row["id"]: row for row in store.plan(folder, job)["requests"]}
 
 
 def run_tokens(workspace, identity, count, allowance, seen):
     """active_tokens of the Assistant-led runs: their provider jobs sent and
     not yet ended, including a create whose returned ID was not recorded,
-    and their clarification Batches. A record no run can read is skipped,
-    since no worker can send from it."""
+    and their clarification Batches."""
     from dazedtl.settings.execution import connection_names
-    from dazedtl.translation.files import read_json
     from dazedtl.translation.jobs import RunStore
 
     runs = Path(workspace) / "translation/runs"
@@ -272,48 +341,33 @@ def run_tokens(workspace, identity, count, allowance, seen):
     oldest = datetime.now(UTC) - COMPLETION_WINDOW
     for folder in runs.iterdir():
         path = folder / "job.json"
-        if folder.is_symlink() or not path.is_file():
-            continue
         try:
-            job = read_json(path)
-            updated = datetime.fromisoformat(job["updated"])
-        except KeyError, TypeError, ValueError:
+            info = path.stat()
+        except OSError:
             continue
-        configuration = job.get("configuration") or {}
-        if (
-            configuration.get("mode") != "batch"
-            or updated < oldest
-            or run_scope(workspace, configuration, names) != identity
-        ):
+        if folder.is_symlink() or not S_ISREG(info.st_mode):
             continue
-        chunks = job.get("batches") or []
+        record = run_record(path, info)
+        if not record:
+            continue
+        updated, configuration, job, chunks, ids = record
+        if updated < oldest or run_scope(workspace, configuration, names) != identity:
+            continue
         for chunk in chunks:
-            if (
-                chunk.get("state") not in {"submitting", "submitted"}
-                or chunk.get("api_status") in TERMINAL
-                or chunk.get("id")
-                and chunk["id"] in seen
-            ):
+            if chunk.get("id") and chunk["id"] in seen:
                 continue
-            key = (job.get("plan_sha256"), chunk["items"][0]["custom_id"])
-            if key not in _chunk_tokens:
-                try:
-                    requests = {
-                        row["id"]: row for row in store.plan(folder, job)["requests"]
-                    }
-                    _chunk_tokens[key] = sum(
-                        requests[item["request"]].get("input_tokens")
-                        or count(requests[item["request"]]["params"])
-                        for item in chunk["items"]
-                    )
-                except KeyError, ValueError:
-                    return allowance  # Unknown paid work never becomes free capacity.
-            used += _chunk_tokens[key]
+            try:
+                used += chunk_tokens(
+                    job,
+                    chunk,
+                    partial(requests_of, store, folder, job),
+                    count,
+                )
+            except KeyError, ValueError:
+                return allowance  # Unknown paid work never becomes free capacity.
             if chunk.get("id"):
                 seen.add(chunk["id"])
-        pending = clarification_tokens(
-            folder, {chunk["id"] for chunk in chunks if chunk.get("id")}, count, seen
-        )
+        pending = clarification_tokens(folder, ids, count, seen)
         if pending is None:
             return allowance
         used += pending
@@ -321,15 +375,15 @@ def run_tokens(workspace, identity, count, allowance, seen):
 
 
 @contextmanager
-def reserve(workspace, identity, items, count, limit):
-    """Whether the clarification `items` fit the connection's window now,
+def reserve(workspace, identity, needed, count, limit):
+    """Whether `needed` more input tokens fit the connection's window now,
     held while they are sent so another worker cannot take the same room."""
     with capacity_lock(workspace, identity) as acquired:
         if not acquired:
             yield False
             return
         used = active_tokens(workspace, identity, count, limit)
-        yield sum(count(item["params"]) for item in items) <= max(0, limit - used)
+        yield needed <= max(0, limit - used)
 
 
 @contextmanager
@@ -343,24 +397,39 @@ def reserve_clarification(root, plan, items, count, limit):
     ):
         yield True
         return
-    with reserve(workspace_of(root), scope(plan), items, count, limit) as available:
+    with reserve(
+        workspace_of(root),
+        scope(plan),
+        sum(count(item["params"]) for item in items),
+        count,
+        limit,
+    ) as available:
         yield available
 
 
 @contextmanager
-def reserve_run_clarification(workspace, configuration, items, count, limit):
-    """reserve for an Assistant-led run's clarification Batch; `limit` is
-    its frozen plan's Batch token allowance."""
-    if (
-        urlsplit(configuration.get("endpoint", "")).hostname != "api.openai.com"
-        or not limit
-    ):
+def reserve_run(workspace, configuration, needed, count, limit):
+    """reserve for `needed` input tokens of an Assistant-led run; `limit` is
+    its frozen plan's Batch token allowance, which the plan holds only for
+    OpenAI's own API (TranslationEngine.batch_limits)."""
+    if not limit:
         yield True
         return
     with reserve(
-        workspace, run_scope(workspace, configuration), items, count, limit
+        workspace, run_scope(workspace, configuration), needed, count, limit
     ) as available:
         yield available
+
+
+def reserve_run_clarification(workspace, configuration, items, count, limit):
+    """reserve_run for an Assistant-led run's clarification Batch."""
+    return reserve_run(
+        workspace,
+        configuration,
+        sum(count(item["params"]) for item in items) if limit else 0,
+        count,
+        limit,
+    )
 
 
 class BatchWindow:

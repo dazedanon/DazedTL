@@ -464,3 +464,127 @@ class BatchWindowTests(unittest.TestCase):
             self.assertEqual(
                 active_tokens(base, scope(guided.plan), guided.count, 10), 3
             )
+
+    def test_assistant_led_chunks_wait_for_room_beside_a_guided_batch(self):
+        # An Assistant-led OpenAI Batch run sends each chunk only once the
+        # window it shares with a Guided Batch on the same connection has
+        # room; the chunk waits queued, and Cancel settles it unsent. A run
+        # frozen before this policy still sends each chunk at once.
+        from dazedtl.compatibility.batch_window import RUN_POLICY
+        from dazedtl.translation.jobs import RunStore
+        from dazedtl.translation.runner import Runner
+
+        from tests.test_translation import BatchProvider, register, request
+
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            game = base / "game"
+            game.mkdir()
+            register(base, "project", game)
+            write_json(
+                base / "settings/settings.json",
+                {
+                    "version": 3,
+                    "connections": [
+                        {"id": "connection", "runtime_name": "same-connection"}
+                    ],
+                },
+            )
+            guided, task = self.fixture(base, "guided", [8])
+            guided.fill(task)
+            store = RunStore(base)
+
+            def run(prefix, **policy):
+                job = store.create(
+                    "project",
+                    {
+                        "version": 1,
+                        "kind": "translation",
+                        "source": str(game),
+                        "complete": True,
+                        "requests": [
+                            {
+                                **request(name),
+                                "params": {"model": "fixture", "messages": []},
+                                "input_tokens": 3,
+                            }
+                            for name in (prefix + "-first", prefix + "-second")
+                        ],
+                        "configuration": {
+                            "mode": "batch",
+                            "model": "fixture",
+                            "connection_id": "connection",
+                            "endpoint": "https://api.openai.com/v1",
+                        },
+                        # One request per provider job.
+                        "batch_limits": [1, 100000, 10],
+                        **policy,
+                    },
+                    {"cost": 1},
+                )
+                store.authorize(job)
+                return job["id"], Provider()
+
+            class Provider(BatchProvider):
+                def input_tokens(self, _params):
+                    return 3
+
+                def submit(self, items):
+                    super().submit(items)
+                    return {"id": f"provider-{self.calls}"}
+
+                def status(self, identity):
+                    return {
+                        **super().status(identity),
+                        "api_status": "completed" if self.ended else "in_progress",
+                    }
+
+            def step(identity, provider):
+                Runner(store, identity, provider, lambda: None).step()
+                return store.load(identity)[0]
+
+            earlier, provider = run("earlier")
+            step(earlier, provider)
+            self.assertEqual(provider.calls, 1)
+            provider.ended = True
+            self.assertEqual(step(earlier, provider)["status"], "complete")
+            self.assertEqual(provider.calls, 2)
+
+            canceled, provider = run("canceled", batch_window=RUN_POLICY)
+            self.assertEqual(step(canceled, provider)["batches"][0]["state"], "queued")
+            write_json(store.folder(canceled) / "cancel.json", {"requested": True})
+            settled = step(canceled, provider)
+            self.assertEqual(
+                [chunk["state"] for chunk in settled["batches"]],
+                ["canceled", "canceled"],
+            )
+            self.assertEqual(provider.calls, 0)
+
+            identity, provider = run("queued", batch_window=RUN_POLICY)
+            for _ in range(2):
+                queued = step(identity, provider)
+                self.assertEqual(queued["status"], "waiting")
+                self.assertEqual(
+                    queued["message"], "Waiting for available Batch token capacity."
+                )
+                self.assertEqual(
+                    [chunk["state"] for chunk in queued["batches"]],
+                    ["queued", "pending"],
+                )
+                self.assertEqual(
+                    {row["state"] for row in queued["states"].values()}, {"pending"}
+                )
+            self.assertEqual(provider.calls, 0)
+            self.finish(guided, 0)
+            sent = step(identity, provider)
+            self.assertEqual(
+                [chunk["state"] for chunk in sent["batches"]], ["submitted", "pending"]
+            )
+            self.assertEqual(provider.calls, 1)
+            self.assertEqual(
+                active_tokens(base, scope(guided.plan), guided.count, 10), 3
+            )
+            # Its own ended chunk frees the room the next one takes.
+            provider.ended = True
+            step(identity, provider)
+            self.assertEqual(provider.calls, 2)

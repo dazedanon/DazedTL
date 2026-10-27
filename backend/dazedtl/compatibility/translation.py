@@ -457,21 +457,22 @@ class TranslationEngine:
                 configuration.get("openrouterBatch"), configuration["model"]
             )
             return [policy["max_requests"], policy["max_bytes"] - 4096, None]
-        from urllib.parse import urlsplit
-
         from util.batch_providers import batch_limits
         from util.translation import _openai_batch_token_limit
 
-        native_openai = (
-            configuration["protocol"] == "openai"
-            and urlsplit(configuration["endpoint"]).hostname == "api.openai.com"
-        )
         from dazedtl.settings.preferences import batch_input_tokens
+        from dazedtl.settings.providers import native_openai
+
+        # The OpenAI window applies to this plan's chunks and clarifications
+        # (batch_window.reserve_run) only when it holds this allowance.
+        native = configuration["protocol"] == "openai" and native_openai(
+            configuration["endpoint"]
+        )
 
         allowance = batch_input_tokens(configuration.get("batchInputTokens"))
         return [
             *batch_limits(self.batch_supported(configuration) or ""),
-            (allowance or _openai_batch_token_limit()) if native_openai else None,
+            (allowance or _openai_batch_token_limit()) if native else None,
         ]
 
     def input_tokens(self, parameters):
