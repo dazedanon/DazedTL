@@ -171,9 +171,14 @@ def _checked(request, translations, keep):
             "Translate it, or decline the request so another model can finish it."
         )
     failures = _content_failures(request, output)
-    if not failures:
-        return output, {}
     sources = request["sources"]
+    if not failures:
+        if translates_nothing(request, {"translations": output}):
+            raise ValueError(
+                f"{next(iter(sources))} is no translation: every line is its source text. "
+                "Translate it, or decline the request so another model can finish it."
+            )
+        return output, {}
     if keep and any(
         text != sources[identity] and identity not in failures
         for identity, text in output.items()
@@ -395,11 +400,7 @@ class Results:
         output = translated(request, translations)
         path = project_path(self.source, self.relative(request), exists=False)
         old = self._receipt(request, path)
-        if (
-            old
-            and old["translations"] != output
-            and (holds_refusal(request, old) or translates_nothing(request, old))
-        ):
+        if old and (holds_refusal(request, old) or translates_nothing(request, old)):
             # The refusal note or the source text it holds was never a
             # translation; it is archived as a correction would archive it.
             return self._replace(request, old, output, provenance)

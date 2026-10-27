@@ -444,11 +444,9 @@ class TranslationTests(unittest.TestCase):
         # Translating it again replaces the note and archives its receipt.
         saved = results.accept(refused, {"line": "Yes. ⟦P0⟧"}, {})
         self.assertEqual(results.get(refused), saved)
-        # The source text given back again is no new result to save.
-        self.assertEqual(
-            results.accept(echoed, echoed["sources"], {})["translations"],
-            echoed["sources"],
-        )
+        # Source text given back is refused now, as a refusal note is.
+        with self.assertRaisesRegex(ValueError, "every line is its source text"):
+            results.accept(echoed, echoed["sources"], {})
         results.accept(echoed, {"line": "Yes. ⟦P0⟧"}, {})
         history = (self.game / ".dazedtl/len-method/work/accepted-history").rglob(
             "*.json"
@@ -477,11 +475,15 @@ class TranslationTests(unittest.TestCase):
         for row in rows:
             row["params"] = {"model": "fixture", "messages": []}
         self.assertEqual(askers(rows), {"copy": "scene"})
+        rejection = ValueError("Provider rejected the request")
+        rejection.status_code = 400
         for mode, policy, calls in (
             ("live", SHARED_PAYLOADS, 1),
             ("batch", SHARED_PAYLOADS, 1),
             # A run frozen before the policy sends each.
             ("older", None, 2),
+            # A request whose answer failed leaves its askers unsent.
+            ("rejected", SHARED_PAYLOADS, 1),
         ):
             with self.subTest(mode=mode):
                 game = self.game / mode
@@ -503,11 +505,19 @@ class TranslationTests(unittest.TestCase):
                     plan.update(shared_payloads=policy, askers={"copy": "scene"})
                 job = self.store.create(mode, plan, {"cost": 1})
                 self.store.authorize(job)
-                provider = BatchProvider() if mode == "batch" else LiveProvider()
+                provider = (
+                    BatchProvider()
+                    if mode == "batch"
+                    else LiveProvider(rejection if mode == "rejected" else None)
+                )
                 provider.ended = True
                 Runner(self.store, job["id"], provider, lambda: None).step()
                 current, _plan = self.store.load(job["id"])
                 self.assertEqual(provider.calls, calls)
+                if mode == "rejected":
+                    self.assertEqual(current["states"]["copy"]["state"], "failed")
+                    self.assertIn("Not sent", current["states"]["copy"]["message"])
+                    continue
                 self.assertEqual(len(current["request_usage"]), calls)
                 if not policy:
                     continue

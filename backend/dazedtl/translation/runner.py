@@ -94,6 +94,16 @@ class Runner:
             self.job["status"] = status
         if message is not None:
             self.job["message"] = message
+        # A request asking the payload of one that ended without a result is
+        # never sent in this run; the next organize sends it.
+        for asker, sender in self.sender.items():
+            if self.job["states"][asker]["state"] == "pending" and self.job["states"][
+                sender
+            ]["state"] in {"failed", "uncertain"}:
+                self.job["states"][asker] = {
+                    "state": "failed",
+                    "message": f"Not sent: it asks what {sender} asks, which got no translation.",
+                }
         self.store.save(self.job)
         self.saved = time.monotonic()
 
@@ -165,9 +175,9 @@ class Runner:
         lines = list(request["sources"])
         for asker in waiting:
             row = self.requests[asker]
-            # The asker's line at each position of the sender's.
-            mapped = dict(zip(lines, row["sources"], strict=True))
             try:
+                # The asker's line at each position of the sender's.
+                mapped = dict(zip(lines, row["sources"], strict=True))
                 self.results.accept(
                     row,
                     {mapped[identity]: output[identity] for identity in lines},
