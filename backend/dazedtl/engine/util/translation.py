@@ -5081,6 +5081,14 @@ def buildOpenAIRequest(system, user, history, penalty, formatType, model,
     return params
 
 
+def _check_message_content(messages):
+    """Refuse a request with a message of no content before it is sent. The
+    builders never make one; an extension that replaces them might."""
+    for i, message in enumerate(messages):
+        if not message.get("content") or not str(message.get("content")).strip():
+            raise ValueError(f"Message {i} has empty content: {message}")
+
+
 @extensions.point
 def translateText(system, user, history, penalty, formatType, model, numLines=None,
                   vocab_text="", context_kind=CONTEXT_SOURCE,
@@ -5106,43 +5114,8 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
         and (not _live_api_check or "anthropic" in _live_api_check.lower())
     )
     _is_mistral = not _is_claude and isMistralAPI()
-
-    # Build message list.
-    # Claude: static prompt gets cache_control; vocab appended uncached so it
-    # never busts the cache. Requires ≥2048 tokens for Sonnet 4.6 to qualify.
-    # Other providers: combine into one plain string.
-    if _is_claude or getattr(_thread_local, 'file_cost_ready', False):
-        if DISABLE_CACHE:
-            # No cache_control — sends as a plain content block for a real uncached run.
-            combined_system = system + vocab_text
-            content_blocks = [{"type": "text", "text": f"```\n{combined_system}\n```"}]
-        else:
-            # Only the static prompt goes in the system content blocks.
-            # Vocab and history are moved to messages so they don't bust the
-            # Anthropic prefix cache (the entire system parameter is part of
-            # the cache key, not just blocks up to cache_control).
-            content_blocks = [{"type": "text", "text": f"```\n{system}\n```", "cache_control": {"type": "ephemeral", "ttl": "5m"}}]
-        msg = [{"role": "system", "content": content_blocks}]
-    else:
-        combined_system = system + vocab_text
-        msg = [{"role": "system", "content": f"```\n{combined_system}\n```"}]
-
-    # Typed request context. The canonical builders below replace this list,
-    # but keeping the preliminary shape correct protects provider fallbacks.
-    for context_block in _request_context_blocks(
-        history, context_kind, request_instructions, delivered_context
-    ):
-        msg.append({"role": "user", "content": context_block})
-
-    # Content to TL - ensure user content is not empty
     if not user or not str(user).strip():
         raise ValueError("User content cannot be empty")
-    msg.append({"role": "user", "content": f"```\n{user}\n```"})
-
-    # Debug: Check for any empty messages before API call
-    for i, message in enumerate(msg):
-        if not message.get("content") or not str(message.get("content")).strip():
-            raise ValueError(f"Message {i} has empty content: {message}")
 
     # --- API Call Logic ---
     # Re-apply env vars here so that GUI config changes (which update os.environ
@@ -5174,6 +5147,7 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
             delivered_context=delivered_context,
         )
         responseFormat = params.get("response_format", {"type": "text"})
+        _check_message_content(params.get("messages", ()))
 
     # Use native Anthropic SDK — the OpenAI compat endpoint strips cache_control
     # and never returns cache_read/creation_input_tokens.
@@ -5186,6 +5160,7 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
             request_instructions=request_instructions,
             delivered_context=delivered_context,
         )
+        _check_message_content(ant_kwargs.get("messages", ()))
 
         from util.batch_providers import create_anthropic_message
 
