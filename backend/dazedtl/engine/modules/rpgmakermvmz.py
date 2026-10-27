@@ -2256,9 +2256,22 @@ def prepareBatchMapNames() -> list[int]:
             continue
         filename_sources.append((filename, display_name))
         source_files.setdefault(display_name, []).append(filename)
-        original = _originals().data(filename) if SOURCE_TEXT >= 4 else None
-        if not SOURCE_TEXT or _text_needs_translation(
-            display_name, rpgmaker_scope.kept(document, "displayName", original)
+        kept = rpgmaker_scope.kept(document, "displayName")
+        if (
+            not SOURCE_TEXT
+            or _text_needs_translation(display_name, kept)
+            # The original map is read only for a name that reads left
+            # without it.
+            and (
+                kept is not None
+                or SOURCE_TEXT < 4
+                or _text_needs_translation(
+                    display_name,
+                    rpgmaker_scope.kept(
+                        document, "displayName", _originals().data(filename)
+                    ),
+                )
+            )
         ):
             needed.add(filename)
     # Older runs send every name again, finished or not.
