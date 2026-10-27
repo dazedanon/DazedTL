@@ -387,7 +387,9 @@ class CensusTests(unittest.TestCase):
                 for name in sorted(game)
             ],
         )
-        self.assertEqual(census.coverage(dumped, sources[:3], [], [])[0]["uncovered"], 1)
+        self.assertEqual(
+            census.coverage(dumped, sources[:3], [], [])[0]["uncovered"], 1
+        )
         # A marker the game's plugins don't list is no help.
         del game["www/js/plugins.js"]
         _report, uncovered = census.coverage(scan(game), sources[:3], [], [])
