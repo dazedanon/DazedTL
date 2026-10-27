@@ -1,6 +1,7 @@
 """Runs the release playtest on a game folder headless, as the app's playtest
-operation does, and prints what it found: each problem with its check, fix and
-identity, then the tour's stops. The report stays in OUT/report.json.
+operation does, with the game's recorded original files where it has them,
+and prints what it found: each problem with its check, fix and identity, then
+the tour's stops. The report stays in OUT/report.json.
 
     python scripts/testkit/playtest.py GAME OUT [--minutes N] [--stops FILE]
 
@@ -17,7 +18,9 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "backend/dazedtl/engine"))
 sys.path.insert(0, str(ROOT / "backend"))
 
+from dazedtl.compatibility.playtest import ORIGINALS
 from dazedtl.plugins import service
+from dazedtl.translation import originals
 from util.playtest.run import run
 
 
@@ -30,16 +33,19 @@ def main() -> None:
     args = parser.parse_args()
     game = args.game.resolve()
     stops = json.loads(args.stops.read_text(encoding="utf-8")) if args.stops else None
-    report = run(
-        game,
-        game / "data",
-        args.out,
-        stops=stops,
-        minutes=args.minutes,
-        log=lambda message: print(f"  {message}", file=sys.stderr),
-        kept=service.kept_settings(game),
-        literals=service.kept_literals(game),
-    )
+    args.out.mkdir(parents=True, exist_ok=True)
+    with originals.staged(game, game / "data", args.out, ORIGINALS) as staged:
+        report = run(
+            game,
+            game / "data",
+            args.out,
+            stops=stops,
+            minutes=args.minutes,
+            log=lambda message: print(f"  {message}", file=sys.stderr),
+            kept=service.kept_settings(game),
+            literals=service.kept_literals(game),
+            originals=staged,
+        )
     for problem in report["problems"]:
         texts = [
             item.get("pointer", item.get("line")) for item in problem.get("texts", [])
