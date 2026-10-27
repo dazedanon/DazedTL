@@ -61,7 +61,7 @@ class Engine:
             "asset_sync_pending": False,
         }
 
-    def compile(self, _root, _options, plan, language):
+    def compile(self, _root, _options, plan, language, _skill_users=None):
         return [
             {
                 "context": {

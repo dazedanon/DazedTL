@@ -24,6 +24,14 @@ SPEAKERS = (
     "and preserve any speaker tags actually present in the source."
 )
 
+# Who uses the skill whose battle message a line holds (translation/
+# skill_users), by line, as Guided notes its skill messages.
+SKILL_USERS = (
+    "Skill users by line (context only; do not include them in the output). "
+    "A battle message's subject, its %1 or the battler named before it, is the battler "
+    "using the skill: where a line's skill users are listed, use pronouns that fit them."
+)
+
 
 def source_language(context):
     """The source language of a request, whose context names it when it is
@@ -183,6 +191,15 @@ def provider_view(request, configuration):
                     for identity, note in context["qa_notes"].items()
                 },
                 ensure_ascii=False,
+            )
+        )
+    if context.get("skill_users"):
+        parts.append(
+            SKILL_USERS
+            + "\n"
+            + "\n".join(
+                f"{keys[identity]}: {note}"
+                for identity, note in context["skill_users"].items()
             )
         )
     parts.append(
@@ -450,6 +467,13 @@ def logical_request(batch, context):
             context["user"] += (
                 "\nSource ambiguities for targeted review; these are uncertainties, not established facts:\n"
                 + json.dumps(context["qa_notes"], ensure_ascii=False)
+            )
+        if context.get("skill_users"):
+            context["user"] += (
+                "\n"
+                + SKILL_USERS
+                + "\n"
+                + json.dumps(context["skill_users"], ensure_ascii=False)
             )
         context.pop("request_sha256", None)
         context["request_sha256"] = digest(context)

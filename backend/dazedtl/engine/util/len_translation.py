@@ -176,9 +176,12 @@ def _line_speakers(sources, speakers):
 def request_context(project: LenProject, sources: list[str] | dict[str, str], *,
                     instruction_key: str | None = None, source_context: str = "",
                     speakers: list[str | None] | dict[str, str | None] | None = None,
+                    glossary_names: list[str] | tuple[str, ...] = (),
                     language: str | None = None, _shared=None, _reference_pack=None) -> dict:
     """Compile one batch with DazedTL's actual glossary/SFX matching and current instructions.
 
+    ``glossary_names`` are names a request's notes mention, such as who uses a
+    skill, whose glossary entries join its matched glossary as speakers' do.
     No provider calls. Pipelines consume these fields directly instead of rebuilding prompts.
     """
     from util.skills import ctx
@@ -196,7 +199,8 @@ def request_context(project: LenProject, sources: list[str] | dict[str, str], *,
     payload = json.dumps(sources, ensure_ascii=False)
     config = SimpleNamespace(prompt=shared["system"], vocab=shared["glossary"], language=language, useSfxReference=True)
     system, glossary, sfx, user = createContextParts(
-        config, payload, "json", speaker_names=tuple(dict.fromkeys(name for name in speaker_names if name)),
+        config, payload, "json",
+        speaker_names=tuple(dict.fromkeys(name for name in [*speaker_names, *glossary_names] if name)),
     )
     if line_speakers is not None:
         metadata = json.dumps(line_speakers, ensure_ascii=False)
@@ -254,8 +258,8 @@ def request_contexts(project: LenProject, batches: list[dict], language: str | N
     identities = set()
     sources = []
     for batch in batches:
-        if not isinstance(batch, dict) or batch.keys() - {"id", "sources", "speakers", "instruction_key", "source_context"}:
-            raise ValueError("Context batches accept id, sources, speakers, instruction_key and source_context.")
+        if not isinstance(batch, dict) or batch.keys() - {"id", "sources", "speakers", "instruction_key", "source_context", "glossary_names"}:
+            raise ValueError("Context batches accept id, sources, speakers, instruction_key, source_context and glossary_names.")
         identity = batch.get("id")
         if not isinstance(identity, str) or not identity or identity in identities:
             raise ValueError("Each context batch needs a unique nonempty id.")

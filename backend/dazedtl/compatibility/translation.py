@@ -259,7 +259,11 @@ class TranslationEngine:
             else read_progress(project, check_hashes=verify)
         )
 
-    def compile(self, source, options, plan, language):
+    def compile(self, source, options, plan, language, skill_users=None):
+        """The context of each batch's request. ``skill_users`` holds the
+        note on who uses the skill of each unit holding a battle message, with
+        the names whose glossary entries join its request
+        (translation/skill_users)."""
         from util.len_translation import request_contexts
         from util.skills import ctx
 
@@ -276,7 +280,15 @@ class TranslationEngine:
             }
             for batch in plan["batches"]
         ]
+        skill_users = skill_users or {}
         for batch in batches:
+            names = [
+                name
+                for identity in batch["sources"]
+                for name in skill_users.get(identity, ("", ()))[1]
+            ]
+            if names:
+                batch["glossary_names"] = list(dict.fromkeys(names))
             try:
                 if batch.get("instruction_key"):
                     ctx(
@@ -308,6 +320,13 @@ class TranslationEngine:
             if reading != JAPANESE:
                 context["source_language"] = reading
             context["scene_context"] = original.get("scene_context", "")
+            users = {
+                identity: skill_users[identity][0]
+                for identity in original["sources"]
+                if identity in skill_users
+            }
+            if users:
+                context["skill_users"] = users
             if original.get("instruction_key"):
                 context["request_instructions"] = ctx(
                     original["instruction_key"],

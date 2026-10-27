@@ -14,6 +14,7 @@ from dazedtl.compatibility.estimate_prices import usage_cost
 from dazedtl.freshness import Basis, compare
 from dazedtl.languages import pair_note
 from dazedtl.settings import language_pair
+from dazedtl.settings.preferences import BATTLE_MESSAGE_USERS
 from dazedtl.settings.execution import (
     configuration,
     connection_summary,
@@ -30,6 +31,7 @@ from . import (
     progress_report,
     repricing,
     run_compiler,
+    skill_users,
 )
 from .assistant_release import AssistantRelease, PackageRefusal
 from .census import HELP_SEGMENT
@@ -941,6 +943,9 @@ Additional project instructions:
             unpriced=unpriced,
             pair=language_pair.pair(self.settings, root),
         )
+        # A skill's battle messages name its users; earlier runs keep their
+        # requests without (translation/skill_users).
+        cfg[skill_users.BATTLE_USERS_KEY] = BATTLE_MESSAGE_USERS
         batch_provider = None
         if cfg["mode"] != "agent":
             # Earlier runs froze no policy and keep sending unit IDs.
@@ -1050,7 +1055,7 @@ Additional project instructions:
             lifecycle(self.workspace, project_id),
         )
         if compiled:
-            verify_compilation(self.engine, plan, index)
+            verify_compilation(self.engine, self.workspace, project_id, plan, index)
 
     def run(self, project_id, run_id):
         self.jobs.reconcile()

@@ -2,6 +2,7 @@
 
 from dazedtl.freshness import Basis, compare
 
+from . import skill_users
 from .files import project_path, read_json
 from .requests import logical_request, plan_input
 
@@ -11,14 +12,25 @@ from .requests import logical_request, plan_input
 COMPILER_VERSION = 1
 
 
-def compile_requests(engine, source, options, raw, language):
-    compiled = engine.compile(source, options, raw, language)
+def compile_requests(engine, source, options, raw, language, skill_users=None):
+    """The plan's requests; ``skill_users`` holds the skill_users notes of
+    its units under the run's policy."""
+    compiled = engine.compile(source, options, raw, language, skill_users or {})
     if len(compiled) != len(raw["batches"]):
         raise ValueError("The engine compiler did not return every source batch.")
     return [
         logical_request(batch, row["context"])
         for batch, row in zip(raw["batches"], compiled)
     ], COMPILER_VERSION
+
+
+def batch_sources(raw):
+    """Every unit's source text in a source plan, by unit ID."""
+    return {
+        identity: text
+        for batch in raw["batches"]
+        for identity, text in batch["sources"].items()
+    }
 
 
 CHANGED = "Shared guidance, source metadata or references changed. Compile and review a new plan."
@@ -39,11 +51,12 @@ def portable(row):
     }
 
 
-def verify_compilation(engine, plan, index=None):
+def verify_compilation(engine, workspace, project_id, plan, index=None):
     """Compiles the plan's requests again and refuses any that changed. With
-    index, only that request: its context depends on its own batch and the
-    shared guidance alone, so compiling that batch gives the request the
-    whole plan would, and an import need not wait for every other one."""
+    index, only that request: its context depends on its own batch, the
+    shared guidance and the original game alone, so compiling that batch
+    gives the request the whole plan would, and an import need not wait for
+    every other one."""
     # Unversioned source plans are accepted only when validating an existing,
     # immutable run. New compilation always requires the current input contract.
     raw = plan_input(
@@ -56,7 +69,18 @@ def verify_compilation(engine, plan, index=None):
         raw = {**raw, "batches": [raw["batches"][index]]}
         saved = [saved[index]]
     current, compiler = compile_requests(
-        engine, plan["source"], plan["options"], raw, plan["configuration"]["language"]
+        engine,
+        plan["source"],
+        plan["options"],
+        raw,
+        plan["configuration"]["language"],
+        skill_users.notes(
+            workspace,
+            project_id,
+            plan["source"],
+            plan["configuration"],
+            batch_sources(raw),
+        ),
     )
     if len(current) != len(saved) or any(
         portable(row) != portable({key: request.get(key) for key in row})

@@ -161,7 +161,7 @@ def run_locked(workspace, identity, store):
                     lifecycle(workspace, job["project_id"]),
                 )
                 if not compiled:
-                    verify_compilation(engine, plan)
+                    verify_compilation(engine, workspace, job["project_id"], plan)
                     compiled = True
 
             last_report = 0.0

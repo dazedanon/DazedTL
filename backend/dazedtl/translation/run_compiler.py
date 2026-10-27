@@ -15,8 +15,8 @@ from dazedtl.compatibility.batch_window import RUN_POLICY as BATCH_WINDOW
 from dazedtl.settings.execution import worker_secret
 from dazedtl.storage import write_json
 
-from . import census, organize, progress_report
-from .compilation import compile_requests
+from . import census, organize, progress_report, skill_users
+from .compilation import batch_sources, compile_requests
 from .files import evidence, project_path, read_json, verify_evidence
 from .jobs import RunStore, now
 from .operations import census_path, census_stale, lifecycle, require_baseline
@@ -294,7 +294,14 @@ def compile_run(engine, workspace, job, plan, input_path, progress, read=None):
             "The units file changed while DazedTL organized it. Organize it again."
         )
     progress(f"Compiling {len(raw['batches']):,} requests")
-    requests, compiler = compile_requests(engine, root, selected, raw, cfg["language"])
+    requests, compiler = compile_requests(
+        engine,
+        root,
+        selected,
+        raw,
+        cfg["language"],
+        skill_users.notes(workspace, project_id, root, cfg, batch_sources(raw)),
+    )
     verify_evidence(root, before)
     engine.verify_bindings(root, bindings)
     store = RunStore(workspace)
