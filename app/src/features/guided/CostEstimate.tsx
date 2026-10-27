@@ -12,7 +12,10 @@ import {
   formatDuration,
   formatRemaining,
 } from "../../ui/workTime";
-import { approximateClaudeInput } from "./TranslationReview";
+import {
+  approximateClaudeInput,
+  unestimatedThinking,
+} from "./TranslationReview";
 
 const taskTitles: Record<FullEstimateTask["phase"], string> = {
   database: "Database files",
@@ -118,8 +121,7 @@ export function CostEstimate({
       batchHigh > batchLow &&
       "The provider charges less for instructions it reuses, but a Batch sends its requests together, so it may reuse few of them. The higher figure reuses none.",
     tasks.some((task) => task.approximateInput) && approximateClaudeInput,
-    tasks.some((task) => task.unestimatedThinking) &&
-      "This model's thinking tokens are billed as output and are not included.",
+    tasks.some((task) => task.unestimatedThinking) && unestimatedThinking,
     "Not included: speaker names the glossary lacks, Comparisons and retries of refused requests.",
   ].filter(Boolean);
   return (

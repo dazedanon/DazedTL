@@ -1,0 +1,8 @@
+{
+  "description": "Replies that fail their content check: the stand-in collapses every line with 魔法の杖, the village chief's line and the heroine's profile, to a lone mark, as a broken model reply does, while the other lines of their requests translate.",
+  "provider": {
+    "reply": {
+      "魔法の杖": "."
+    }
+  }
+}

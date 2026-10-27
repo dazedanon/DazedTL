@@ -2932,6 +2932,14 @@ try:
             parser.LANGREGEX,
             "English",
         )[1] == [1, 4, 5]
+        # Placeholders are no text: a reply collapsed to them and a mark was
+        # long enough to pass as a translation.
+        assert translation.validate_translation_content(
+            ["__PROTECTED_0__今日はとても良い天気ですね。__PROTECTED_1__"],
+            ["__PROTECTED_0__.__PROTECTED_1__"],
+            parser.LANGREGEX,
+            "English",
+        )[1] == [0]
         # Half-width kana words reach the model full-width, but a kaomoji's
         # lone kana and marks stay as the game wrote them: NFKC turned a lone
         # ﾟ into a combining mark, which the model echoed into the game.

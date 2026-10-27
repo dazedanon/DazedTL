@@ -449,6 +449,23 @@ class TranslationEngine:
             params, prefixes, "anthropic", configuration["model"]
         )
 
+    @staticmethod
+    def openai_cache(requests):
+        """The OpenAI automatic cache counts of these requests in plan
+        order (requests.CACHE_COUNTS), as Guided's estimate counts them, and
+        their input tokens (requests.sent_tokens), counted on the way so a
+        big game's text is encoded once."""
+        from util.translation import openai_prompt_cache
+
+        reads, cacheable, tokens = openai_prompt_cache(
+            [item["params"] for item in requests]
+        )
+        return {
+            "cache_read_tokens": reads,
+            "cacheable_tokens": cacheable,
+            "input_tokens": tokens + 8 * len(requests),
+        }
+
     def batch_supported(self, configuration):
         if configuration.get("provider") == "openrouter":
             from dazedtl.settings.openrouter import validate_policy

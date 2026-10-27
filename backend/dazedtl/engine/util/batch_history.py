@@ -40,11 +40,7 @@ from util.batch_providers import (
     one_hour_writes,
     retrieve_batch as provider_retrieve_batch,
 )
-from util.provider_costs import (
-    batch_price_factor,
-    batch_write_weight,
-    cache_read_multiplier,
-)
+from util.provider_costs import batch_price_factor, usage_cost
 from util import extensions
 
 BATCH_HISTORY_FILE = Path("log/batch_history.json")
@@ -572,23 +568,14 @@ def _usage_from_message(u) -> dict:
 def _price_usage(usage: dict, model: str, provider: str = "anthropic") -> float:
     """Price real batch usage with cache multipliers and the Batch discount."""
     pricing = getPricingConfig(model)
-    br = pricing["inputAPICost"] / 1_000_000
-    orr = pricing["outputAPICost"] / 1_000_000
-    cr = usage.get("cache_read_input_tokens", 0) or 0
-    cw = usage.get("cache_creation_input_tokens", 0) or 0
-    inp = usage.get("input_tokens", 0) or 0
-    out = usage.get("output_tokens", 0) or 0
-    thinking = usage.get("thinking_tokens", 0) or 0
-    # Thinking tokens are billed as output on Anthropic.
-    raw = (
-        cr * br * cache_read_multiplier(provider, model)
-        + batch_write_weight(
-            provider, model, cw, usage.get("cache_creation_1h_input_tokens")
-        ) * br
-        + inp * br
-        + (out + thinking) * orr
+    return usage_cost(
+        usage,
+        provider,
+        model,
+        pricing["inputAPICost"] / 1_000_000,
+        pricing["outputAPICost"] / 1_000_000,
+        batch_price_factor(provider),
     )
-    return raw * batch_price_factor(provider)
 
 
 def _sum_usage_from_results(client, batch_id: str, custom_ids: dict) -> tuple[dict, int, int]:

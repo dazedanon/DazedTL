@@ -420,7 +420,12 @@ class OpenRouterBatchTests(unittest.TestCase):
             "rates": {"input": 2, "output": 8, "batch_factor": None},
         }
         # Each request also counts 8 tokens of message framing.
-        quoted = quote([{"params": {}, "sources": {"line": "薬"}}], cfg, lambda _: 100)
+        quoted = quote(
+            [{"params": {}, "sources": {"line": "薬"}}],
+            cfg,
+            "openrouter",
+            lambda _: 100,
+        )
         self.assertEqual(quoted["cost"], (108 * 0.8 + 250 * 3) / 1_000_000)
         native_value = {
             "model": MODEL,

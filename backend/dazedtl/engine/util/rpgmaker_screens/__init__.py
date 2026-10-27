@@ -17,6 +17,7 @@ import re
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+from util import rpgmaker_blocks as blocks
 from util import rpgmaker_window
 from util.rpgmaker_window import WindowUnavailable, web_root
 
@@ -69,7 +70,7 @@ def _command_lists(node: Any, pointer: str = ""):
     if isinstance(node, dict):
         commands = node.get("list")
         if isinstance(commands, list) and any(
-            isinstance(item, dict) and isinstance(item.get("code"), int) for item in commands
+            blocks.code(item) is not None for item in commands
         ):
             yield commands, pointer + "/list"
         for key, value in node.items():
@@ -99,7 +100,7 @@ def choice_sets(data_root: str | Path) -> list[dict[str, Any]]:
             for index, command in enumerate(commands):
                 params = command.get("parameters") if isinstance(command, dict) else None
                 if (
-                    command.get("code") != 102
+                    blocks.code(command) != 102
                     or not isinstance(params, list)
                     or not params
                     or not isinstance(params[0], list)

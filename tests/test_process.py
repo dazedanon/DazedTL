@@ -1198,6 +1198,68 @@ class ProcessTests(unittest.TestCase):
             module.translateAI(values[:2])
             self.assertTrue(module.THREAD_CTX.last_translation_had_mismatch)
 
+    def test_a_run_approved_before_the_short_output_measure_reuses_what_its_estimate_counted(
+        self,
+    ):
+        # The short-output check began measuring lines without their codes,
+        # so a saved line of codes and a mark failed it: a Live run approved
+        # under an estimate that counted the line as reused sent it again,
+        # paid work beyond the approval.
+        from dazedtl.compatibility.worker_policy import configure_short_outputs
+        from dazedtl.settings.preferences import SHORT_OUTPUTS
+        from util import translation
+
+        source = "\\c[2]今日はとても良い天気ですね。\\c[0]"
+        locations = request_scope.source_locations([source])
+        (key,) = request_scope.identities("Items.json", "database", [source], locations)
+        plan = {
+            "workflow": {"phase": "database"},
+            "dazedtl_continuation": {
+                key: {"source": source, "response": "\\c[2].\\c[0]"}
+            },
+        }
+        config = SimpleNamespace(langRegex="[぀-ヿ一-鿿]", language="English")
+        with (
+            TemporaryDirectory() as temporary,
+            patch.object(translation, "CONTENT_TEXT", True),
+        ):
+
+            def sends(mode, policy):
+                root = Path(temporary) / f"{mode}-{len(policy)}"
+                write_json(root / "files/Items.json", [source])
+                sent = []
+                fake = SimpleNamespace(
+                    queue_batch_request=point(lambda *_: "unused"),
+                    _join_queued_request=point(lambda kept, _entry: kept),
+                    BATCH_LOCK=threading.RLock(),
+                    _batch_queue_pending={},
+                    _write_request_debug_log=point(lambda *_: None),
+                    translateText=point(lambda *_: None),
+                    translateAI=point(
+                        lambda text, history, config, filename: (
+                            sent.append(text) or [["Lovely weather."], [3, 4]]
+                        )
+                    ),
+                    validate_translation_content=translation.validate_translation_content,
+                    _thread_local=threading.local(),
+                    last_translation_had_mismatch=lambda: False,
+                    get_batch_phase=lambda: None,
+                )
+                # The worker applies the run's frozen policy before it reads.
+                configure_short_outputs(translation, {"version": 1, **policy})
+                Evidence(root, mode, plan, source_aware=True).install(fake)
+                fake.translateAI([source], [], config, "Items.json")
+                return sent
+
+            # Frozen before the policy, the estimate counted the line as
+            # reused, and the run it approved reuses it.
+            self.assertEqual(sends("estimate", {}), [])
+            self.assertEqual(sends("translate", {}), [])
+            # A new estimate prices the line, and its run sends it.
+            current = {"shortOutputs": SHORT_OUTPUTS}
+            self.assertEqual(sends("estimate", current), [[source]])
+            self.assertEqual(sends("translate", current), [[source]])
+
     def test_finished_batch_receipts_are_settled_only_with_verified_unmodified_output(
         self,
     ):

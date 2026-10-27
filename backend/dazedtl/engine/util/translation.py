@@ -215,6 +215,11 @@ DISABLE_CACHE = False
 # Runs whose frozen policy requires strict structured outputs never fall back to
 # weaker JSON or text formats. Older runs keep the native fallbacks.
 STRICT_STRUCTURED_OUTPUTS = False
+# Whether the short-output checks measure a line without its codes and masks
+# (content_text). Workers of runs frozen before the short-outputs policy
+# (settings/preferences SHORT_OUTPUTS) measure the whole line, so a run
+# approved before reuses every saved line its estimate counted.
+CONTENT_TEXT = True
 
 # Thread-local per-file token breakdown; read by calculateCost() for Claude.
 _thread_local = threading.local()
@@ -471,6 +476,7 @@ from util.runtime_text import (
     _escaped_orphan_backslash, _mask_mapped_control_codes, _format_scope_signature,
     extract_control_codes, validate_control_codes, protect_script_codes,
     restore_script_codes, _reprotect_cached_codes, split_protected_codes,
+    without_protected_codes,
 )
 
 
@@ -517,8 +523,24 @@ def validate_placeholders(original_text, translated_text, replacements):
     return is_valid, missing, extra
 
 
+def content_text(text, protected=()):
+    """*text* as the short-output checks measure it: without the codes
+    protect_script_codes protects, the placeholders a protected request holds
+    in their place, or the literal *protected* tokens a request names, such
+    as Assistant-led's ⟦P0⟧ masks. None of them is the line's text, so a
+    translation collapsed to its masks and a mark is as short as the mark.
+    Runs frozen before that measure the whole line (CONTENT_TEXT)."""
+    text = str(text)
+    if not CONTENT_TEXT:
+        return text.strip()
+    for token in sorted(set(protected), key=len, reverse=True):
+        text = text.replace(token, "")
+    return without_protected_codes(text).strip()
+
+
 def validate_translation_content(
-    original_items, translated_items, langRegex, target_language=None
+    original_items, translated_items, langRegex, target_language=None,
+    protected=None,
 ):
     """
     Validate hard content failures that make a translation unsafe or unusable.
@@ -526,11 +548,14 @@ def validate_translation_content(
 
     Outputs that are too short to carry the source meaning or contain runaway
     character repetition are hard failures.  Accepting either result would
-    cache and write visibly corrupt player text.
+    cache and write visibly corrupt player text.  Short outputs are measured
+    without codes and masks (content_text); *protected* lists each item's
+    literal protected tokens when a request names any.
     """
     if not isinstance(original_items, list):
         original_items = [original_items]
         translated_items = [translated_items]
+        protected = None if protected is None else [protected]
     
     invalid_indices = []
     reasons = []
@@ -538,6 +563,7 @@ def validate_translation_content(
     for i, (orig, trans) in enumerate(zip(original_items, translated_items)):
         orig_str = str(orig).strip()
         trans_str = str(trans).strip()
+        tokens = protected[i] if protected else ()
         
         # Skip if original is empty or placeholder
         if not orig_str or orig_str == "Placeholder Text":
@@ -559,7 +585,9 @@ def validate_translation_content(
             # punctuation mark.  This used to be only a warning, which meant
             # the result was cached and written without entering the retry path.
             has_bracketed_control = bool(re.search(r'\\[A-Z]\[', trans_str))
-            if len(trans_str) <= 1 and len(orig_str) > 3 and not has_bracketed_control:
+            orig_text = content_text(orig_str, tokens)
+            trans_text = content_text(trans_str, tokens)
+            if len(trans_text) <= 1 and len(orig_text) > 3 and not has_bracketed_control:
                 invalid_indices.append(i)
                 reasons.append(
                     f"Line{i+1}: Translation unusually short ('{trans_str}') for "
@@ -567,10 +595,10 @@ def validate_translation_content(
                 )
                 continue
             if (
-                len(orig_str) > 10
-                and len(trans_str) <= 2
+                len(orig_text) > 10
+                and len(trans_text) <= 2
                 and not has_bracketed_control
-                and not trans_str.isalnum()
+                and not trans_text.isalnum()
             ):
                 invalid_indices.append(i)
                 reasons.append(
@@ -590,6 +618,7 @@ def validate_translation_content(
             
             # Check 4: Runaway translation - translation is excessively long relative to original
             # Catches cases where the model repeats words endlessly (e.g. "it hurts it hurts it hurts...")
+            # It measures codes too: a reply repeating one is runaway as well.
             ratio_limit = max(len(orig_str) * 8, 120)
             if len(orig_str) > 10 and len(trans_str) > ratio_limit:
                 invalid_indices.append(i)
@@ -632,50 +661,6 @@ def _is_map_name_batch(request_instructions) -> bool:
     lowered = str(request_instructions).casefold()
     return "rpg location name" in lowered
 
-
-def translation_content_warnings(original_items, translated_items, langRegex):
-    """Return non-blocking content concerns that should remain reviewable."""
-    if not isinstance(original_items, list):
-        original_items = [original_items]
-        translated_items = [translated_items]
-
-    warning_indices = []
-    warnings = []
-    for i, (orig, trans) in enumerate(zip(original_items, translated_items)):
-        orig_str = str(orig).strip()
-        trans_str = str(trans).strip()
-        if not orig_str or orig_str == "Placeholder Text":
-            continue
-        if not re.search(langRegex, orig_str):
-            continue
-
-        line_warnings = []
-        has_bracketed_control = bool(re.search(r'\\[A-Z]\[', trans_str))
-        if len(trans_str) <= 1 and len(orig_str) > 3 and not has_bracketed_control:
-            line_warnings.append(
-                f"Line{i+1}: Translation unusually short ('{trans_str}') for "
-                f"'{orig_str[:50]}...'"
-            )
-        elif (
-            len(orig_str) > 10
-            and len(trans_str) <= 2
-            and not has_bracketed_control
-            and not trans_str.isalnum()
-        ):
-            line_warnings.append(
-                f"Line{i+1}: Translation suspiciously short ('{trans_str}') for "
-                f"'{orig_str[:50]}...'"
-            )
-        if re.search(r"(.)\1{44,}", trans_str):
-            line_warnings.append(
-                f"Line{i+1}: Excessive character repetition (possible model glitch)"
-            )
-
-        if line_warnings:
-            warning_indices.append(i)
-            warnings.extend(line_warnings)
-
-    return warning_indices, warnings
 
 # Load .env, strip accidental whitespace, set base URL / org / API key.
 # Gemini/Mistral use their endpoints only when no custom API URL is set.
@@ -2339,6 +2324,65 @@ def _estimate_openai_cache_reads(prompt_token_sequences):
     return cached_tokens
 
 
+def output_allowance(source_tokens):
+    """The output tokens an estimate allows a request whose source text
+    counts ``source_tokens``: 2.5 times covers the echoed JSON scaffold plus
+    the translation's expansion."""
+    return round(source_tokens * 2.5)
+
+
+def prompt_text(params):
+    """A request's messages as the OpenAI cache estimate encodes them."""
+    return "\n".join(str(m.get("content", "")) for m in params.get("messages", []))
+
+
+def openai_cache_counts(prompt_token_sequences):
+    """The input tokens OpenAI's automatic cache may read in an ordered
+    request set, those in prompts long enough to cache (1,024 tokens), then
+    every prompt token. The prompts' tokens are read once, so they may come
+    from a generator."""
+    cacheable = total = 0
+
+    def prompts():
+        nonlocal cacheable, total
+        for tokens in prompt_token_sequences:
+            total += len(tokens)
+            if len(tokens) >= 1024:
+                cacheable += len(tokens)
+            yield tokens
+
+    return _estimate_openai_cache_reads(prompts()), cacheable, total
+
+
+def openai_prompt_cache(params):
+    """openai_cache_counts of requests with these parameters, encoded a few
+    hundred at a time as estimateBatchCost encodes them, so a big game's
+    tokens are never all held at once."""
+    enc = tiktoken.encoding_for_model("gpt-4")
+
+    def prompts():
+        for start in range(0, len(params), 512):
+            yield from enc.encode_batch(
+                [prompt_text(value) for value in params[start : start + 512]],
+                disallowed_special=(),
+            )
+
+    return openai_cache_counts(prompts())
+
+
+def claude_cache_prices(cache, dynamic, outputs, in_rate, out_rate):
+    """A Claude Batch's prices with its cached instructions
+    (claude_tokens.Cache), from per-token rates: each cache key written once
+    and read by every later request that shares it, then every request
+    writing its own, with ``dynamic`` input tokens after them."""
+    factor = batch_price_factor("anthropic")
+
+    def priced(cached):
+        return ((cached + dynamic) * in_rate + outputs * out_rate) * factor
+
+    return priced(cache.reused), priced(cache.unreused)
+
+
 @extensions.point
 def estimateCostComparison(
     input_tokens,
@@ -2468,12 +2512,7 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
         chunk_params = [entry.get("params", {}) for entry in chunk]
         # Split system blocks at the cache breakpoint ("" = nothing cached).
         splits = [claude_tokens.split(params) for params in chunk_params]
-        messages = enc.encode_batch(
-            [
-                "\n".join(str(m.get("content", "")) for m in params.get("messages", []))
-                for params in chunk_params
-            ]
-        )
+        messages = enc.encode_batch([prompt_text(params) for params in chunk_params])
         dynamic = enc.encode_batch([dyn for _prefix, dyn in splits])
         payloads = enc.encode_batch([str(entry.get("payload", "")) for entry in chunk])
         for entry, params, (prefix, _dyn), message_tokens, dyn_tokens, payload_tokens in zip(
@@ -2489,9 +2528,7 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
             request_params.append(params)
             request_dynamic.append(len(dyn_tokens) + len(message_tokens) + 8)
             dynamic_tokens += request_dynamic[-1]
-            # Output heuristic mirrors countTokens(): payload tokens x 2.5
-            # covers the echoed JSON scaffold plus EN expansion.
-            output_tokens += round(len(payload_tokens) * 2.5)
+            output_tokens += output_allowance(len(payload_tokens))
 
     est_model = model or next(iter(models), None) or os.getenv("model", "")
     est_provider = next(iter(providers), getBatchProvider(est_model))
@@ -2531,23 +2568,15 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
     batch_max = batch_nocache
     cache_kind = None
     if est_provider == "anthropic" and cache_write_tok > 0:
-        # Claude's explicit cache: from each cache key written once and read
-        # by every later request that shares it, to every request writing
-        # its own. Batch pricing halves every charge.
-        batch_cached = ((cache.reused + dynamic_tokens) * in_rate
-                        + output_tokens * out_rate) * 0.50
-        batch_max = ((cache.unreused + dynamic_tokens) * in_rate
-                     + output_tokens * out_rate) * 0.50
+        batch_cached, batch_max = claude_cache_prices(
+            cache, dynamic_tokens, output_tokens, in_rate, out_rate
+        )
         cache_kind = "explicit"
     elif est_provider == "openai":
-        cache_read_tok = min(
-            raw_input_tok,
-            _estimate_openai_cache_reads(prompt_token_sequences),
+        cache_read_tok, cacheable_tokens, _ = openai_cache_counts(
+            prompt_token_sequences
         )
-        cacheable_tokens = sum(
-            len(tokens) for tokens in prompt_token_sequences
-            if len(tokens) >= 1024
-        )
+        cache_read_tok = min(raw_input_tok, cache_read_tok)
         cache_write_tok, max_writes, batch_cached, most = openai_cache_prices(
             raw_input_tok,
             output_tokens,
@@ -5618,7 +5647,7 @@ def countTokens(system, user, history):
     inputTotalTokens += len(enc.encode(user))
 
     # Output
-    outputTotalTokens += round(len(enc.encode(user)) * 2.5)
+    outputTotalTokens += output_allowance(len(enc.encode(user)))
 
     return [inputTotalTokens, outputTotalTokens]
 
@@ -6441,13 +6470,6 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                                                 f"  ... and {len(content_reasons) - 5} more issues"
                                             )
                                 else:
-                                    _, content_warnings = translation_content_warnings(
-                                        clean_tItem, extracted, config.langRegex
-                                    )
-                                    if content_warnings and pbar:
-                                        pbar.write("Translation content warning:")
-                                        for warning in content_warnings[:5]:
-                                            pbar.write(f"  - {warning}")
                                     # Set translations (line count matches, placeholders valid, and content is good)
                                     final_translations = [
                                         _clean_extracted_line(line) for line in extracted
@@ -6506,13 +6528,6 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                                         for reason in content_reasons:
                                             pbar.write(f"  - {reason}")
                                 else:
-                                    _, content_warnings = translation_content_warnings(
-                                        tItem, final_cleaned, config.langRegex
-                                    )
-                                    if content_warnings and pbar:
-                                        pbar.write("Translation content warning:")
-                                        for warning in content_warnings:
-                                            pbar.write(f"  - {warning}")
                                     # Accept output - all validations passed
                                     final_cleaned = corner_quotes(
                                         final_cleaned,

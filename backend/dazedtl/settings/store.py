@@ -504,6 +504,7 @@ class Settings:
             "mapNameIdentities": preferences.MAP_NAME_IDENTITIES,
             "battleMessageUsers": preferences.BATTLE_MESSAGE_USERS,
             "sourceText": preferences.SOURCE_TEXT,
+            "shortOutputs": preferences.SHORT_OUTPUTS,
         }
 
     def connection_summary(self):
@@ -1157,6 +1158,7 @@ class Settings:
                 "mapNameIdentities": preferences.MAP_NAME_IDENTITIES,
                 "battleMessageUsers": preferences.BATTLE_MESSAGE_USERS,
                 "sourceText": preferences.SOURCE_TEXT,
+                "shortOutputs": preferences.SHORT_OUTPUTS,
                 "entriesPerRequest": entries,
                 "inputRate": input_rate,
                 "outputRate": output_rate,

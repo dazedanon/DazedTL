@@ -58,10 +58,10 @@ class ReachTests(unittest.TestCase):
             (game / "js/rmmz_scenes.js").write_text(CORE, encoding="utf-8")
             for name, source in PLUGINS.items():
                 (game / f"js/plugins/{name}.js").write_text(source, encoding="utf-8")
-            entries = [
+            entries = reach_module.PluginList(
                 {"name": name, "status": name != "Retired", "parameters": {}}
                 for name in PLUGINS
-            ]
+            )
             reach = reach_module.Reach(game / "data", entries)
             reach.scan(
                 "CommonEvents.json",

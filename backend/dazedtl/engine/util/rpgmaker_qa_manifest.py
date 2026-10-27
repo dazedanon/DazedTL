@@ -363,7 +363,7 @@ def file_inventory(
         command_index: int | None = None,
     ) -> None:
         if isinstance(value, dict):
-            code = value.get("code") if isinstance(value.get("code"), int) else None
+            code = blocks.code(value)
             original = value.get("_original")
             if original is not None:
                 classification = _classification(path.name, code)
@@ -496,7 +496,7 @@ def file_inventory(
                     walk(value[key], path_parts + (key,))
         elif isinstance(value, list):
             is_commands = any(
-                isinstance(item, dict) and isinstance(item.get("code"), int)
+                blocks.code(item) is not None
                 for item in value
             )
             for index, child in enumerate(value):

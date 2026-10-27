@@ -177,6 +177,8 @@ The response includes its fingerprint and any accepted result.
 An Agent or reviewed-import receipt contains request_sha256 and translations, where translations is an object with exactly the requested IDs and string values.
 Save it in the game workspace and use accept with its relative path.
 Missing, duplicate, unexpected or empty outputs and broken declared controls are rejected before acceptance.
+So is a translation that fails Guided's content check ([validate_translation_content](../backend/dazedtl/engine/util/translation.py)), such as one collapsed to a mark or its masks, repeating without end or still holding source text, unless it gives the source back unchanged.
+An API run keeps such a line in its source text and accepts the rest of its request, as Guided's Batch keeps it, with the lines it kept named in the request's state ([results.kept](../backend/dazedtl/translation/results.py)); a request with no line that passes is set to failed, as for any rejected result, and nothing is sent again by itself.
 
 For an intentional correction, also supply replaces_sha256 equal to the current result_sha256.
 The previous result is archived, the replacement is validated, and affected review/injection/QA is made pending.
@@ -189,6 +191,7 @@ A result saved by accept records the refusal rules (`refusals.RULES_VERSION`) it
 A record from other or unrecorded rules is read again under the current ones, and if a line holds a refusal note the request counts as not accepted: results lists its lines as missing and sets an Assistant only run's request back to pending, Progress counts them left, decline accepts it and the next organize sends it again.
 Reading never changes the record; the new translation replaces it through accept, which archives it in the correction history.
 results --run ID writes the run's accepted translations by line ID to .dazedtl/len-method/work/results/ID.json, with each missing line's request state, and replies with counts only.
+It and the progress export give each translation the automatic lint fixes Guided gives a new line ([rpgmaker_qa_lint](../backend/dazedtl/engine/util/rpgmaker_qa_lint.py) `normalize`), on every engine, while the accepted record keeps the translation as accepted; a review of it covers the fixed text.
 It counts translations any run accepted for the same requests, and refuses once the extracted lines it was organized from have changed.
 The engine's injector reads that file and keeps its own source-location mappings.
 The app's progress export is a derived view, not a replacement for an engine's extraction or injection data.

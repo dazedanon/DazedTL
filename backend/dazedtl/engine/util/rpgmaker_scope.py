@@ -27,6 +27,7 @@ as its *original*.
 import re
 from typing import Any, NamedTuple
 
+from util import rpgmaker_blocks as blocks
 from util.original_values import source as differing
 
 # Note tags whose text a plugin shows over the event, in the order the
@@ -58,7 +59,7 @@ def changes(commands: Any) -> list[Change]:
     a name holding what :data:`FILE_NAME` matches stays as it is."""
     found = []
     for index, command in enumerate(commands if isinstance(commands, list) else ()):
-        code = command.get("code") if isinstance(command, dict) else None
+        code = blocks.code(command)
         parameters = command.get("parameters") if code in CHANGES else None
         if not isinstance(parameters, list) or len(parameters) < 2:
             continue

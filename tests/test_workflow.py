@@ -125,6 +125,10 @@ class Engine:
     def batch_supported(self, _configuration):
         return "openai"
 
+    @staticmethod
+    def openai_cache(_requests):
+        return {"cache_read_tokens": 0, "cacheable_tokens": 0}
+
     def batch_factor(self, provider):
         return 0.5 if provider else None
 

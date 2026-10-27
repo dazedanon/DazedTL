@@ -10,6 +10,8 @@ from .process_view import _read_cached, _verified_digest, file_stamp
 
 
 def choice_locations(data):
+    from util import rpgmaker_blocks as blocks
+
     entries = data.get("events") if isinstance(data, dict) else data
     if not isinstance(entries, list):
         raise ValueError("Choice evidence requires an MV/MZ event list.")
@@ -25,7 +27,7 @@ def choice_locations(data):
         for page_index, page in enumerate(pages):
             ordinal = 0
             for command in page.get("list", []):
-                if command.get("code") != 102:
+                if blocks.code(command) != 102:
                     continue
                 values = command.get("parameters", [None])[0]
                 if (

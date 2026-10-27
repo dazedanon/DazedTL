@@ -90,9 +90,10 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
             </p>
             {!!Object.keys(job.usage).length && (
               <p className="muted">
-                Recorded usage: {(job.usage.input_tokens || 0).toLocaleString()}{" "}
-                uncached input ·{" "}
-                {(job.usage.output_tokens || 0).toLocaleString()} output ·{" "}
+                Recorded usage:{" "}
+                {job.usage_cost != null && `${money(job.usage_cost)} · `}
+                {(job.usage.input_tokens || 0).toLocaleString()} uncached input
+                · {(job.usage.output_tokens || 0).toLocaleString()} output ·{" "}
                 {(job.usage.cache_read_input_tokens || 0).toLocaleString()}{" "}
                 cached input tokens
               </p>

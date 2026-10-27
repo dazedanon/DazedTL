@@ -21,7 +21,7 @@ from typing import Any, Iterable
 
 from util import languages
 from util.original_values import Originals
-from util.rpgmaker_blocks import command_lists
+from util import rpgmaker_blocks as blocks
 from util.rpgmaker_markers import PluginList, comment_markers, lists_mz
 from util.rpgmaker_plugin_registry import PluginRegistryError, loaded_entries
 from util.rpgmaker_qa_checks import BATTLE_MESSAGES, battler_name_note, runtime
@@ -279,7 +279,7 @@ class _Checks:
                 )
         for name, document in self.documents.items():
             if _EVENT_FILE_RE.fullmatch(name):
-                for path, commands in command_lists(document):
+                for path, commands in blocks.command_lists(document):
                     self._page(name, path, commands)
 
     def _code(self, name, parts, live, source, note, check) -> None:
@@ -312,7 +312,7 @@ class _Checks:
         for index, command in enumerate(commands):
             if not isinstance(command, dict):
                 continue
-            code, parameters = command.get("code"), command.get("parameters")
+            code, parameters = blocks.code(command), command.get("parameters")
             if not isinstance(parameters, list):
                 continue
             if code == 102 and parameters and isinstance(parameters[0], list):
@@ -483,7 +483,7 @@ class _Checks:
 
 def _page_text(command: dict[str, Any]) -> str:
     parameters = command.get("parameters") or []
-    code = command.get("code")
+    code = blocks.code(command)
     if code == 102 and parameters and isinstance(parameters[0], list):
         return " / ".join(str(value) for value in parameters[0])
     position = _PAGE_TEXT.get(code, 0)
@@ -545,9 +545,7 @@ def static_checks(
     checks.untranslated(kept, originals)
     checks.codes()
     checks.descriptions()
-    checks.plugin_code(
-        [entry for entry in entries if entry.get("status") is True], reach, literals
-    )
+    checks.plugin_code(list(entries.loaded()), reach, literals)
     return {
         "schema": SCHEMA,
         "engine": checks.engine,

@@ -11,7 +11,12 @@ from dazedtl.storage import write_json
 from .files import digest, project_path, read_json, write_project_json
 from .project import WORK
 from .refusals import RULES_VERSION, line_refusal
-from .requests import result_value
+from .requests import (
+    protected_tokens,
+    result_value,
+    source_language,
+    target_language,
+)
 
 ACCEPTED = WORK + "/work/accepted"
 # The progress export: an index of parts, each the units of PART_REQUESTS
@@ -90,9 +95,45 @@ def _refusal(request, translations):
     return None
 
 
-def translated(request, translations):
-    """The result's translations, refusing any line that holds a refusal note
-    in place of game text, whoever wrote it."""
+def _content_failures(request, translations):
+    """Each line of translations that fails Guided's content check
+    (util/translation `validate_translation_content`), such as one collapsed
+    to a mark or repeating without end, with why. A line given back as its
+    source is left alone, as Guided keeps a line it could not translate in
+    its original text."""
+    from util.translation import validate_translation_content
+
+    from dazedtl.languages import reading, source_pattern
+
+    identities = [
+        identity
+        for identity, text in translations.items()
+        if text != request["sources"][identity]
+    ]
+    if not identities:
+        return {}
+    context = request["context"]
+    language, target = source_language(context), target_language(context)
+    with reading(language, target):
+        _valid, invalid, reasons = validate_translation_content(
+            [request["sources"][identity] for identity in identities],
+            [translations[identity] for identity in identities],
+            source_pattern(language=language),
+            target,
+            protected=[protected_tokens(request, identity) for identity in identities],
+        )
+    return {
+        identities[index]: reason.split(": ", 1)[-1]
+        for index, reason in zip(invalid, reasons, strict=True)
+    }
+
+
+def _checked(request, translations, keep):
+    """The result's translations and the lines kept in their source text,
+    refusing any line that holds a refusal note in place of game text,
+    whoever wrote it. A line that fails the content check refuses the
+    result, unless keep: then, while another line of it passes, the line
+    keeps its source text, as Guided keeps such a line of a response."""
     output = result_value(request, translations)
     identity = _refusal(request, output)
     if identity is not None:
@@ -100,7 +141,60 @@ def translated(request, translations):
             f"{identity} holds a refusal note instead of its translation. "
             "Translate it, or decline the request so another model can finish it."
         )
-    return output
+    failures = _content_failures(request, output)
+    if not failures:
+        return output, {}
+    sources = request["sources"]
+    if keep and any(
+        text != sources[identity] and identity not in failures
+        for identity, text in output.items()
+    ):
+        return {**output, **{identity: sources[identity] for identity in failures}}, (
+            failures
+        )
+    identity, reason = next(iter(failures.items()))
+    raise ValueError(
+        f"{identity} is no usable translation: {reason}. "
+        "Translate it again, or decline the request so another model can finish it."
+    )
+
+
+def translated(request, translations):
+    """The result's translations, refusing any line that holds a refusal note
+    in place of game text, whoever wrote it, or that fails the content
+    check, so the assistant who wrote it translates it again."""
+    return _checked(request, translations, keep=False)[0]
+
+
+def kept(request, translations):
+    """A paid result's translations, as translated() gives them but with each
+    line that fails the content check kept in its source text while another
+    line passes, and those lines with why, so the lines that passed are never
+    paid for again. Guided keeps such a line the same way: its Batch at once,
+    its Live run once its validation retries are spent. An API run's
+    approval covers one call per request, so none is retried here."""
+    return _checked(request, translations, keep=True)
+
+
+def review_digest(source, translation):
+    """The hash a source-checked review records for a line's translation,
+    which Len's progress (util/len_progress) checks against the export."""
+    from util.len_progress import review_fingerprint
+
+    return review_fingerprint(source.encode("utf-8"), translation.encode("utf-8"))
+
+
+def exported(request, value):
+    """A saved result's translations as the game gets them: each with the
+    automatic lint fixes Guided gives a new translation
+    (rpgmaker_qa_lint `normalize`). The receipt keeps what was accepted."""
+    from util.rpgmaker_qa_lint import normalize
+
+    target = target_language(request["context"])
+    return {
+        identity: normalize(request["sources"][identity], text, target)
+        for identity, text in value["translations"].items()
+    }
 
 
 def holds_refusal(request, value):
@@ -286,16 +380,24 @@ class Results:
             if key in listing:
                 path = listing[key][0]
                 value = self.get(request, path) if path else self.get(request)
+            output = exported(request, value) if value else {}
             for identity, base, source_sha256 in _rows(request):
                 row = dict(base)
                 if value:
                     row.update(
-                        translation=value["translations"][identity],
+                        translation=output[identity],
                         translated_from_sha256=source_sha256,
                         request_sha256=request["fingerprint"],
                     )
-                    if identity in value.get("reviewed", {}):
-                        row["reviewed_sha256"] = value["reviewed"][identity]
+                    reviewed = value.get("reviewed", {}).get(identity)
+                    if reviewed is not None:
+                        accepted = value["translations"][identity]
+                        # A review of the accepted text covers its lint fixes.
+                        if output[identity] != accepted and reviewed == review_digest(
+                            base["source"], accepted
+                        ):
+                            reviewed = review_digest(base["source"], output[identity])
+                        row["reviewed_sha256"] = reviewed
                 units.append(row)
         return units
 
