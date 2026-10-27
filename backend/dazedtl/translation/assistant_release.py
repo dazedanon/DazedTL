@@ -11,6 +11,7 @@ archive's contents and the destination as the review read them.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -34,6 +35,25 @@ KINDS = ("game", "patch")
 # and the review each is, as Guided names it.
 ACTIONS = {"game": "release", "patch": "package"}
 REVIEWS = {"game": "release", "patch": "release_patch"}
+
+
+class PackageRefusal(ValueError):
+    """Why a patch can't be packaged yet: the message is the assistant's next
+    step, which the helper shows; `reason` says it in the user's terms, with
+    the next step the assistant's, which Release shows."""
+
+    def __init__(self, message, reason):
+        super().__init__(message)
+        self.reason = reason
+
+
+@contextmanager
+def users_terms():
+    """Refuses with the user's reason where the user asked for the patch."""
+    try:
+        yield
+    except PackageRefusal as refusal:
+        raise ValueError(refusal.reason) from refusal
 
 
 class AssistantRelease:
@@ -137,7 +157,7 @@ class AssistantRelease:
             if not isinstance(value, dict) or not isinstance(value.get("path"), str):
                 continue
             # A patch packaged before its ZIP's identity was recorded can be
-            # found, not compared.
+            # found, not compared, unless a later change outdated it.
             stamped = "stamp" in value
             artifacts.append(
                 {
@@ -150,7 +170,9 @@ class AssistantRelease:
                     "available": available(value)
                     if stamped
                     else Path(value["path"]).is_file(),
-                    "current": current(value, root) if stamped else None,
+                    "current": current(value, root)
+                    if stamped or value.get("outdated")
+                    else None,
                 }
             )
         return {"form": self.form(project_id), "artifacts": artifacts}
@@ -203,7 +225,8 @@ class AssistantRelease:
             package = summary(files, scope["exclusions"], scope["updater_stamp"])
             extra = {"scope": scope}
         else:
-            self.translation.package_ready(project_id)
+            with users_terms():
+                self.translation.package_ready(project_id)
             status = engine.git_status(root, options)
             manifest = runtime_manifest(root, state["runtime_manifest"])
             contents = engine.patch_files(root, manifest)
@@ -246,6 +269,7 @@ class AssistantRelease:
         self._project(project_id)
         if kind not in KINDS:
             raise ValueError("Choose a clean game ZIP or a patch ZIP.")
-        return self.translation.user_operation(
-            project_id, ACTIONS[kind], {"plan": plan, "sha256": sha256}
-        )
+        with users_terms():
+            return self.translation.user_operation(
+                project_id, ACTIONS[kind], {"plan": plan, "sha256": sha256}
+            )

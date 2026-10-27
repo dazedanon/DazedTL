@@ -32,6 +32,7 @@ from dazedtl.translation.operations import (
     take_census,
 )
 from dazedtl.translation.project import DEFAULTS, WORK, ProjectWorkspace, scope
+from dazedtl.translation.release import current
 from dazedtl.translation.requests import plan_input
 from dazedtl.translation.results import EXPORT, Results
 from dazedtl.translation.run_compiler import CENSUS_UNCOVERED, SCOPE_RULES
@@ -636,8 +637,13 @@ class WorkflowTests(unittest.TestCase):
         )
         self.assertEqual(self.service.state(self.identity)["coverage"]["extracted"], 3)
         # A patch needs every accepted unit exported, against the same census.
-        with self.assertRaisesRegex(ValueError, "fewer than the 2"):
+        with self.assertRaisesRegex(ValueError, "fewer than the 2") as refused:
             self.service.require_inventory(self.identity, 1)
+        # Release tells the user why in their terms, not the assistant's.
+        self.assertEqual(
+            refused.exception.reason,
+            "Your assistant saves every translated line first.",
+        )
         self.service.require_inventory(self.identity, 2)
         # A census an earlier DazedTL counted by other rules, before it
         # counted choice help, asks for a new census before organize or a
@@ -1180,7 +1186,10 @@ class WorkflowTests(unittest.TestCase):
             (reopened["blocker"], reopened["next_action"]),
             ("", progress_report.REOPENED.format("injection")),
         )
-        self.assertNotIn("delivery", lifecycle(self.profile, self.identity))
+        # The last patch stays on Release and Progress, read Outdated.
+        kept = lifecycle(self.profile, self.identity)["delivery"]
+        self.assertEqual(kept["path"], "p.zip")
+        self.assertIs(current(kept, self.game), False)
 
     def test_start_over_restores_the_original_and_sets_the_attempt_aside(self):
         # Starting over must put every original file back as one checkpoint,

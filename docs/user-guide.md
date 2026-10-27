@@ -269,7 +269,9 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
    In **Assistant only**, lines your assistant won't translate appear under **Declined lines** while it carries on.
    Estimate them with your API connection and approve, or copy a prompt that has another coding assistant translate only those lines; your assistant picks up the translations once they're saved.
 5. Once your assistant has packaged the patch, the **Patch** phase on **Progress** shows its ZIP with **Open folder**.
-   **Release** builds a clean game ZIP, or saves the patch ZIP under a name and folder you choose, as Guided's [Release](#5-release) does; the patch waits for your assistant's QA.
+   An undo, a game update or a new write into the game marks it **Outdated** until the patch is packaged again.
+   **Release** builds a clean game ZIP, or saves the patch ZIP under a name and folder you choose, as Guided's [Release](#5-release) does.
+   Until the patch is ready, **Release** says what your assistant still has to finish.
 6. To try again from scratch, stop your assistant and choose **Start over…** on **Progress**.
    It puts back the original game files as a new checkpoint, so the attempt stays under **Checkpoints**, and moves your assistant's work and the playtest's fixes to `.dazedtl/archived`; save games, Image Manager work, older backups and your options stay, and so do the glossary and notes unless you clear **Keep glossary and notes**.
 

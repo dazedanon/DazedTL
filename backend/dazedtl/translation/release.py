@@ -660,9 +660,10 @@ def current(value, source):
     """Whether a saved archive still matches the game's runtime files.
 
     None means the archive predates recorded inputs, so it cannot be compared.
-    Images applied after the build also make it outdated.
+    Images applied after the build also make it outdated, as does a change
+    its record was marked outdated by (operations.outdate_patch).
     """
-    if not available(value):
+    if not available(value) or value.get("outdated"):
         return False
     inputs = value.get("inputs")
     if not isinstance(inputs, dict):

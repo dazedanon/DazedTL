@@ -88,6 +88,14 @@ def now():
     return datetime.now(UTC).isoformat()
 
 
+def outdate_patch(state):
+    """The last patch no longer stands for the game, as after a write, an
+    undo or a game update: Release and Progress keep showing it, Outdated,
+    until the next package replaces it."""
+    if isinstance(state.get("delivery"), dict):
+        state["delivery"]["outdated"] = True
+
+
 def census_path(workspace, project_id):
     return Path(workspace) / "translation/projects" / project_id / "census.json"
 
@@ -310,7 +318,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             )
         else:
             result = engine.write_rpgmaker(source, original, staged, output)
-        state.pop("delivery", None)
+        outdate_patch(state)
     elif action == "checkpoint":
         # Every write DazedTL makes is its own checkpoint; an assistant saves
         # its own edits with this, naming files its patch should take in a
@@ -396,7 +404,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         state["guided_release"] = result
     elif action == "package":
         require_baseline(engine, source, options, state)
-        from .delivery import verify
+        from .delivery import require_patch
         from .release import (
             destination as release_destination,
         )
@@ -415,10 +423,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             raise ValueError(
                 "Register the patch's runtime manifest with Git setup first."
             )
-        if manifest_path not in verify(source, full=True)["files"]:
-            raise ValueError(
-                "Record QA for the patch's runtime manifest before packaging with Assistant-led."
-            )
+        require_patch(source, manifest_path)
         # Release saves the patch where the user chose, as its review read it.
         planned = (
             release_plan(workspace, job["project_id"], arguments, "patch")
@@ -640,7 +645,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             arguments = {**arguments, "release": state.get("incoming_release")}
         result = engine.version(source, operation, arguments)
         if operation in {"apply", "continue"}:
-            state.pop("delivery", None)
+            outdate_patch(state)
             if result.get("complete"):
                 from dazedtl.compatibility.guided import finish_ace_update
 
@@ -712,7 +717,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         # Plugin files' records name their runtime manifest there; the last
         # package no longer matches the game.
         state = lifecycle(workspace, job["project_id"])
-        state.pop("delivery", None)
+        outdate_patch(state)
     elif action == "checkpoint_copy":
         from dazedtl.compatibility import checkpoint_history
 

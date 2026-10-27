@@ -31,7 +31,7 @@ from . import (
     repricing,
     run_compiler,
 )
-from .assistant_release import AssistantRelease
+from .assistant_release import AssistantRelease, PackageRefusal
 from .census import HELP_SEGMENT
 from .compilation import verify_compilation
 from .files import digest, evidence, project_path, read_json, verify_evidence
@@ -968,8 +968,9 @@ Additional project instructions:
         text export counts them all."""
         _record, project = self.project(project_id)
         if census_stale(self.workspace, project_id, project.root):
-            raise ValueError(
-                "The census no longer counts the game as it is: the game was updated, or this DazedTL counts more of its text. Run census again, then organize --complete with your units, before packaging."
+            raise PackageRefusal(
+                "The census no longer counts the game as it is: the game was updated, or this DazedTL counts more of its text. Run census again, then organize --complete with your units, before packaging.",
+                "The game changed since your assistant counted its text; it counts it again first.",
             )
         try:
             inventory = read_json(
@@ -980,38 +981,54 @@ Additional project instructions:
         if not inventory or inventory["census_sha256"] != run_compiler.census_sha256(
             self.workspace, project_id
         ):
-            raise ValueError(
-                "Package needs the whole census extracted: run organize --complete with your units after the latest census."
+            raise PackageRefusal(
+                "Package needs the whole census extracted: run organize --complete with your units after the latest census.",
+                "Your assistant finishes extracting the game's text first.",
             )
         if translated < inventory["units"]:
-            raise ValueError(
-                f"The text export counts {translated:,} lines, fewer than the {inventory['units']:,} organize --complete accepted. Export every unit before packaging."
+            raise PackageRefusal(
+                f"The text export counts {translated:,} lines, fewer than the {inventory['units']:,} organize --complete accepted. Export every unit before packaging.",
+                "Your assistant saves every translated line first.",
             )
 
     def package_ready(self, project_id):
         """Refuses a patch of a translation that isn't finished and checked:
         QA complete with current evidence, the audited scope translated and
-        the whole census extracted."""
+        the whole census extracted. Each refusal also says why in the user's
+        terms, which Release shows."""
         _record, project = self.project(project_id)
         selected = project.read()["options"]
-        if not lifecycle(self.workspace, project_id).get("runtime_manifest"):
-            raise ValueError(
-                "Register the patch's runtime manifest with Git setup first."
+        manifest = lifecycle(self.workspace, project_id).get("runtime_manifest")
+        if not manifest:
+            raise PackageRefusal(
+                "Register the patch's runtime manifest with Git setup first.",
+                "Your assistant sets up the game's version tracking first.",
             )
         self.sync_images(project_id)
         progress = self.engine.progress(project.root, selected, verify=True)
         if progress.get("warnings") or progress["phases"].get("qa") != "complete":
-            raise ValueError(
-                "Complete and record current QA evidence before packaging the translation."
+            raise PackageRefusal(
+                "Complete and record current QA evidence before packaging the translation.",
+                "The patch waits for your assistant's QA.",
             )
-        for metric in ("text", "images") if selected["include_images"] else ("text",):
+        images = selected["include_images"]
+        for metric in ("text", "images") if images else ("text",):
             counts = progress["metrics"][metric]
             if counts["total"] is None or counts["translated"] != counts["total"]:
-                raise ValueError(
-                    "Finish the audited translation scope before packaging; unknown totals are not complete."
+                raise PackageRefusal(
+                    "Finish the audited translation scope before packaging; unknown totals are not complete.",
+                    "Your assistant finishes translating the game's text and images first."
+                    if images
+                    else "Your assistant finishes translating the game first.",
                 )
         self.require_inventory(project_id, progress["metrics"]["text"]["total"])
-        delivery.verify(project.root, full=True)
+        try:
+            delivery.require_patch(project.root, manifest)
+        except ValueError as error:
+            # Missing, older or stale QA evidence: QA is to record again.
+            raise PackageRefusal(
+                str(error), "The patch waits for your assistant's QA."
+            ) from error
 
     def validate_current(self, project_id, plan, *, compiled=True, index=None):
         """Refuses a plan its project, sources or baseline no longer match.

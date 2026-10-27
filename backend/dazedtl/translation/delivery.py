@@ -24,6 +24,15 @@ def record(source, manifest_path, runtime_paths):
     return RELATIVE
 
 
+def require_patch(source, manifest_path):
+    """Refuses a patch whose runtime manifest QA did not record, or whose
+    recorded files changed since."""
+    if manifest_path not in verify(source, full=True)["files"]:
+        raise ValueError(
+            "Record QA for the patch's runtime manifest before packaging with Assistant-led."
+        )
+
+
 def verify(source, *, full=False):
     path = project_path(source, RELATIVE, exists=False)
     if not path.exists():

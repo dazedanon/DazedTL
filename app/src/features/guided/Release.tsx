@@ -38,6 +38,7 @@ export function ReleaseContent({
   artifact,
   build,
   open,
+  outdatedNote,
   packing,
   extras,
   unapplied = [],
@@ -58,6 +59,8 @@ export function ReleaseContent({
   /** The build action's key; the archive's heading reports its outcome. */
   build: string;
   open: ReactNode;
+  /** Replaces the saved archive's note on building it again. */
+  outdatedNote?: ReactNode;
   packing?: ReactNode;
   /** Further rows for the archive list, such as optional player documents. */
   extras?: ReactNode;
@@ -233,6 +236,7 @@ export function ReleaseContent({
               artifact={artifact}
               build={build}
               open={open}
+              outdatedNote={outdatedNote}
             />
           </ActionList>
         </section>
@@ -244,18 +248,21 @@ export function ReleaseContent({
 /**
  * A saved release ZIP: whether it is still on disk and matches the game, its
  * size, when it was saved and where, with `open` to show its folder. `build`
- * is the action key whose outcome its heading reports.
+ * is the action key whose outcome its heading reports; `outdatedNote`
+ * replaces the note on building it again, where the user can't yet.
  */
 export function ReleaseArtifactRow({
   title,
   artifact,
   build,
   open,
+  outdatedNote,
 }: {
   title: string;
   artifact: ReleaseArtifact;
   build?: string;
   open: ReactNode;
+  outdatedNote?: ReactNode;
 }) {
   return (
     <ActionRow
@@ -286,13 +293,17 @@ export function ReleaseArtifactRow({
           <small>
             <PathText path={artifact.path} />
           </small>
-          {artifact.available && !artifact.current && (
-            <small>
-              {artifact.current === false
-                ? "Build again to include the changes."
-                : "Later game edits are included only when you build again."}
-            </small>
-          )}
+          {artifact.available &&
+            !artifact.current &&
+            (outdatedNote === undefined ? (
+              <small>
+                {artifact.current === false
+                  ? "Build again to include the changes."
+                  : "Later game edits are included only when you build again."}
+              </small>
+            ) : (
+              outdatedNote && <small>{outdatedNote}</small>
+            ))}
         </>
       }
     >

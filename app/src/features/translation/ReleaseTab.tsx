@@ -29,6 +29,15 @@ import { ReleaseContent, ReleaseReview } from "../guided/Release";
 
 const builds = { game: "release-build:game", patch: "release-build:patch" };
 
+/** Why the patch can't be built yet, as far as the state tells, or "". The
+ * patch's own checks say the rest when the build is reviewed. */
+export const patchWaiting = (state: TranslationState) =>
+  !state.git?.configured
+    ? "Your assistant sets up the game's version tracking first."
+    : state.progress?.phases.qa !== "complete"
+      ? "The patch waits for your assistant's QA."
+      : "";
+
 /** Opens the folder a saved release ZIP is in. */
 export function OpenReleaseFolder({
   artifact,
@@ -130,11 +139,9 @@ export function ReleaseTab({
           ? "Choose the archive's name and folder."
           : state.gameUpdate.state === "needs_repo"
             ? "Enter this game's GameUpdate repository in Options first."
-            : kind === "patch" && !state.git?.configured
-              ? "Your assistant sets up the game's version tracking first."
-              : kind === "patch" && state.progress?.phases.qa !== "complete"
-                ? "The patch waits for your assistant's QA."
-                : "";
+            : kind === "patch"
+              ? patchWaiting(state)
+              : "";
   const startBuild = async (preview: ReleasePreview) => {
     const built = await api.translation.releaseBuild(
       projectId,
@@ -176,6 +183,10 @@ export function ReleaseTab({
           chooseFolder={chooseFolder}
           artifact={artifact}
           build={builds[kind]}
+          // Why it can't be built yet shows once, beside the build.
+          outdatedNote={
+            kind === "patch" && patchWaiting(state) ? null : undefined
+          }
           inspect={
             <ActionControl
               label="View files & exclusions"

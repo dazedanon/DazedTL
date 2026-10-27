@@ -15,11 +15,16 @@ from unittest.mock import Mock, patch
 from dazedtl.compatibility import original_files
 from dazedtl.compatibility.translation import TranslationEngine, gameupdate_refusal
 from dazedtl.storage import write_json
-from dazedtl.translation.assistant_release import AssistantRelease
+from dazedtl.translation.assistant_release import AssistantRelease, PackageRefusal
 from dazedtl.translation.files import digest, evidence, read_json
 from dazedtl.translation.game_update import ABSENT, GameUpdate
 from dazedtl.translation.git_status_cache import RepositoryStatusCache
-from dazedtl.translation.operations import execute, lifecycle, lifecycle_path
+from dazedtl.translation.operations import (
+    execute,
+    lifecycle,
+    lifecycle_path,
+    outdate_patch,
+)
 from dazedtl.translation.originals import game_names
 from dazedtl.translation.release import (
     applied_assets,
@@ -635,8 +640,16 @@ class ReleaseTests(unittest.TestCase):
             # where the user chose; a file that appeared there after the
             # review is not replaced.
             patch_output = str(root / "Game-patch.zip")
+            # A patch that isn't ready says why in the user's terms; the
+            # helper keeps the assistant's.
+            ready.side_effect = PackageRefusal(
+                "Run organize --complete first.", "Your assistant finishes first."
+            )
+            with self.assertRaisesRegex(ValueError, "^Your assistant finishes first.$"):
+                releases.preview("owner", "patch", patch_output)
+            ready.side_effect = None
             preview = releases.preview("owner", "patch", patch_output)
-            ready.assert_called_once_with("owner")
+            self.assertEqual(ready.call_count, 2)
             self.assertEqual(preview["paths"], [name, image])
             Path(patch_output).write_bytes(b"someone else's file")
             with self.assertRaisesRegex(ValueError, "destination changed"):
@@ -651,6 +664,11 @@ class ReleaseTests(unittest.TestCase):
                 [(row["kind"], row["path"], row["current"]) for row in rows],
                 [("game", output, True), ("patch", patch_output, True)],
             )
+            # An undo, a game update or a new write outdates the patch,
+            # which stays listed.
+            outdate_patch(state)
+            rows = releases.view("owner", game, state)["artifacts"]
+            self.assertEqual([row["current"] for row in rows], [True, False])
             plugin.write_text("translated again", encoding="utf-8")
             rows = releases.view("owner", game, state)["artifacts"]
             self.assertEqual([row["current"] for row in rows], [False, False])

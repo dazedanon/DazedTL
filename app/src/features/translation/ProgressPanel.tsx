@@ -42,7 +42,7 @@ import {
 import { assistantRunState, phaseStates } from "./assistantPhases";
 import { DeclinedLines } from "./DeclinedLines";
 import { modeLabels } from "./OptionsPanel";
-import { OpenReleaseFolder } from "./ReleaseTab";
+import { OpenReleaseFolder, patchWaiting } from "./ReleaseTab";
 import { ReleaseArtifactRow } from "../guided/Release";
 import { StartOver } from "./StartOver";
 
@@ -226,6 +226,12 @@ export function ProgressPanel({
             <ReleaseArtifactRow
               title="Patch ZIP"
               artifact={patch}
+              // A patch that can't be compared keeps the row's own note.
+              outdatedNote={
+                patch.current === false
+                  ? patchWaiting(state) || "Build it again on Release."
+                  : undefined
+              }
               open={
                 <OpenReleaseFolder
                   artifact={patch}
