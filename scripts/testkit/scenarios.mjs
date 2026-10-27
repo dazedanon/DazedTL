@@ -190,17 +190,13 @@ const qa = [
   "Review and apply Text QA as an assistant does",
   async ({ page, state }) => {
     const prepared = await helper(page, state, "qa", "--prepare");
-    // This checkout's reviewer, since the task names the engine that runs it.
-    execFileSync(
-      state.env?.DAZEDTL_PYTHON || python,
-      [
-        "-X",
-        "utf8",
-        path.join(import.meta.dirname, "qa_reviewer.py"),
-        prepared.task,
-        path.join(state.work, "qa-results"),
-      ],
-      { encoding: "utf8" },
+    // The reviewer of the checkout the app runs from, whose engine and QA
+    // rules prepared the task.
+    run(
+      state,
+      "scripts/testkit/qa_reviewer.py",
+      prepared.task,
+      path.join(state.work, "qa-results"),
     );
     const applied = await helper(page, state, "qa", "--apply");
     if (!applied.applied)
