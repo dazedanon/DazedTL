@@ -106,6 +106,19 @@ BATTLE_MESSAGE_USERS_LEVELS = {
     "battle-message-users-v1": 1,
     BATTLE_MESSAGE_USERS: 2,
 }
+# The policies above that every new run freezes, by plan key, in its Guided
+# settings and its request policy alike (settings/store).
+FROZEN_POLICIES = {
+    "choiceCollection": CHOICE_COLLECTION,
+    "speakerContext": SPEAKER_CONTEXT,
+    "sameLineSpeakers": SAME_LINE_SPEAKERS,
+    "pagePacking": PAGE_PACKING,
+    "reuseStretches": REUSE_STRETCHES,
+    "mapNameIdentities": MAP_NAME_IDENTITIES,
+    "battleMessageUsers": BATTLE_MESSAGE_USERS,
+    "sourceText": SOURCE_TEXT,
+    "shortOutputs": SHORT_OUTPUTS,
+}
 
 DEFAULT_OPTIONS = {
     "entriesPerRequest": None,
