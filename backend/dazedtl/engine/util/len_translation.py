@@ -13,7 +13,7 @@ from util import system
 from util.paths import (
     DATA_DIR, GAME_TOOL_GITIGNORE_BEGIN, GLOSSARY_BASE_SEPARATOR, LEN_PATCH_GITIGNORE_BEGIN, LEN_WORK_GITIGNORE_BEGIN,
     LEN_WORK_GITIGNORE_END, SKILLS_DIR, game_git_set_up, game_glossary_path, glossary_base_text,
-    runtime_data_file, runtime_data_files_pinned,
+    runtime_data_files_pinned,
     prepare_game_translation_context, read_game_glossary, without_gitignore_section,
 )
 from util.languages import active_source

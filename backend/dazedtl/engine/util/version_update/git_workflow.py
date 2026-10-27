@@ -694,18 +694,22 @@ def _set_translation_branch(repo: Path, branch: str) -> str:
     return value
 
 
-def _recent_messages(repo: Path, ref: str) -> list[str]:
-    """The messages of the last 100 commits on `ref`, newest first."""
-    return _run_git(repo, "log", "-n", "100", "--format=%B%x00", ref).stdout.split("\x00")
+def _version_messages(repo: Path, ref: str) -> list[str]:
+    """The messages of every commit on `ref` that records a version, newest
+    first, from one Git call. Checkpoints record none, and a long run makes
+    hundreds of them after the commit that does."""
+    return _run_git(
+        repo, "log", f"--grep=^{VERSION_TRAILER}:", "--format=%B%x00", ref
+    ).stdout.split("\x00")
 
 
 def _version_from_history(
     repo: Path, ref: str, commit: str | None, messages: list[str] | None = None
 ) -> str | None:
-    """`messages` are _recent_messages of `ref` when the caller has them."""
+    """`messages` are _version_messages of `ref` when the caller has them."""
     if not commit:
         return None
-    for message in _recent_messages(repo, ref) if messages is None else messages:
+    for message in _version_messages(repo, ref) if messages is None else messages:
         match = _VERSION_LINE.search(message)
         if match:
             return match.group(1).strip()
@@ -778,7 +782,7 @@ def version_history(game_root: str | Path) -> tuple[VersionRecord, ...]:
 
 def _applied_update_version(messages: list[str]) -> str | None:
     """Return the newest DazedTL patch version among a translated branch's
-    _recent_messages."""
+    _version_messages."""
     for message in messages:
         lines = message.strip().splitlines()
         if not lines or not lines[0].casefold().startswith("patch:"):
@@ -918,7 +922,7 @@ def read_repository(game_root: str | Path) -> tuple[RepositoryStatus, Checkout |
     original_version = _version_from_history(repo, ORIGINAL_BRANCH, original_commit)
     translation_ref = translation_branch or TRANSLATION_BRANCH
     translation_messages = (
-        _recent_messages(repo, translation_ref) if translation_commit else []
+        _version_messages(repo, translation_ref) if translation_commit else []
     )
     translation_version = _version_from_history(
         repo, translation_ref, translation_commit, translation_messages

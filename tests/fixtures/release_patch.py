@@ -468,4 +468,27 @@ script = title_message.read_text(encoding="utf-8")
 assert 'parameters("TitleMessage")' in script and "The adventure begins" in script, (
     script
 )
+# A long Assistant-led run checkpoints each report and operation: once more
+# than 100 followed the update, the translation read no version, and every
+# Guided step refused to start without a baseline.
+status = inspect_repository(game)
+checkpoints = "".join(
+    f"commit refs/heads/{status.translation_branch}\n"
+    f"committer DazedTL <dazedtl@localhost> {1_800_000_000 + number} +0000\n"
+    f"data <<END\ncheckpoint: report {number}\nEND\n"
+    + (f"from {status.translation_commit}\n" if number == 0 else "")
+    + "\n"
+    for number in range(150)
+)
+subprocess.run(
+    ["git", "-C", str(game), "fast-import", "--quiet"],
+    input=checkpoints,
+    text=True,
+    check=True,
+)
+status = inspect_repository(game)
+assert (
+    status.translation_version,
+    status.applied_update_version,
+) == ("1.03", "1.03"), status
 print("ok")

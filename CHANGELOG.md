@@ -3,6 +3,16 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.36.4] - 2026-10-27
+
+### Fixed
+
+- **Assistant-led:** on OpenAI Batch, a clarification sent after a refusal now waits for room in the account's Batch token allowance, shared with Guided runs, instead of failing at OpenAI when the allowance is full.
+- **Assistant-led:** lines saved by older versions as a refusal note such as "Declined." no longer count as translated; Progress shows them left and the next run translates them again.
+- **Assistant-led:** the assistant writes RPG Maker MV/MZ text with DazedTL's own writer, which fits it to the game's windows, instead of an older tool that could leave long lines cut off.
+- **Assistant-led:** text problems the final playtest finds after QA now go to another round of QA, as in Guided, and **Progress** keeps QA at **Final check** until the playtest settles instead of marking it done.
+- **Assistant-led:** undoing the assistant's work under **Checkpoints**, or updating the game, reopens the steps on **Progress** that work no longer covers instead of leaving them done, and after a game update **Progress** says the text count is out of date and the patch waits until your assistant counts the game again.
+
 ## [2.36.3] - 2026-10-27
 
 ### Fixed
@@ -1126,6 +1136,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.36.4]: https://github.com/dazedanon/DazedTL/compare/v2.36.3...v2.36.4
 [2.36.3]: https://github.com/dazedanon/DazedTL/compare/v2.36.2...v2.36.3
 [2.36.2]: https://github.com/dazedanon/DazedTL/compare/v2.36.1...v2.36.2
 [2.36.1]: https://github.com/dazedanon/DazedTL/compare/v2.36.0...v2.36.1

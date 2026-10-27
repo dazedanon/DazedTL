@@ -1244,11 +1244,31 @@ class TranslationEngine:
             return value(git.continue_with_official(source, options.get("release")))
         if action == "abort":
             return value(git.abort_update(source))
-        if action == "handoff":
-            from util.version_update.handoff import post_update_handoff
-
-            return post_update_handoff(source)
         raise ValueError("Unknown version-update action.")
+
+    def applied_update(self, source):
+        """The version an official update applied, once it is finished on the
+        translated branch, for the task that translates its text. The
+        original branch records each update once it is applied, whatever the
+        translated branch's later checkpoints."""
+        from util.version_update import inspect_repository, version_history
+
+        root = Path(source).expanduser().resolve()
+        status = inspect_repository(root)
+        latest = next(iter(version_history(root)), None)
+        if not (
+            status.repo_root
+            and status.translation_exists
+            and status.current_branch == status.translation_branch
+            and not status.pending_cherry_pick
+            and not status.asset_sync_pending
+            and latest
+            and latest.kind == "update"
+        ):
+            raise ValueError(
+                "Finish the official update on the registered translated branch before copying this task."
+            )
+        return latest.version
 
 
 def google_batch_client(secret):

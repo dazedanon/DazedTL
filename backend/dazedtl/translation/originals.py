@@ -23,10 +23,12 @@ import hashlib
 import stat
 import uuid
 from contextlib import contextmanager
+from functools import cached_property
 from pathlib import Path, PurePosixPath
 
 from dazedtl import system
 from dazedtl.compatibility import original_files
+from dazedtl.freshness import Digests
 
 from . import backups
 
@@ -84,8 +86,16 @@ class _Recorded(Original):
     def __init__(self, root, commit):
         self.root = Path(root)
         self.id = commit
-        self.entries = original_files.files(root, commit)
-        self.files = {name: row[1] for name, row in self.entries.items()}
+
+    # Its files are listed by Git once read, so a reader of its `id` alone
+    # launches no Git.
+    @cached_property
+    def entries(self):
+        return original_files.files(self.root, self.id)
+
+    @cached_property
+    def files(self):  # type: ignore[override]
+        return {name: row[1] for name, row in self.entries.items()}
 
     def peek(self, name, size):
         return original_files.peek(self.root, self.entries[name][1], size)
@@ -327,6 +337,28 @@ def prepared(workspace, project_id, root, state=None, *, or_found=True):
         or _saved(workspace, project_id, root, state.get("prepared_source"))
         or (found(workspace, project_id, root, state) if or_found else None)
     )
+
+
+# `prepared`'s ID by what can change it, so polls read it without Git.
+_PREPARED = Digests(limit=64)
+
+
+def prepared_id(workspace, project_id, root, state=None):
+    """The `id` of `prepared`, or None, read again only once the game's
+    records or its `original` branch move or an old project's backup records
+    change, so a poll after the first launches no Git."""
+    root = Path(root)
+    state = _lifecycle(workspace, project_id, state)
+    stamp = (
+        original_files.revision(root),
+        repr([state.get(key) for key in ("prepared_source", "source_backup")]),
+    )
+    key = str(root)
+    if (cached := _PREPARED.get(key, stamp)) is not None:
+        return cached or None
+    snapshot = prepared(workspace, project_id, root, state)
+    _PREPARED.put(key, stamp, snapshot.id if snapshot else "")
+    return snapshot.id if snapshot else None
 
 
 def hold_in_original(workspace, project_id, root, state=None, stopped=lambda: False):

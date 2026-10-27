@@ -286,48 +286,56 @@ const reasons: Record<string, string> = {
 };
 
 /**
- * Whether the assistant extracted all the Japanese text DazedTL counted in
- * the game itself, and what rules set aside as never shown to players.
+ * Whether the assistant extracted all the source text DazedTL counted in
+ * the game itself, and what rules set aside as never shown to players; a
+ * count that is out of date claims nothing. Each fact is its own
+ * item of the metrics row, so the row wraps between facts, not inside one.
  */
 function CoverageNote({ coverage }: { coverage: Coverage }) {
   const { source } = useLanguages();
+  if (coverage.stale)
+    return (
+      <span>
+        The text count is out of date; your assistant counts again when it
+        continues
+      </span>
+    );
   const pieces = (count: number) =>
     `${count.toLocaleString()} ${count === 1 ? "piece" : "pieces"}`;
   return (
-    <span>
-      {coverage.uncovered ? (
-        <>
-          <strong>{pieces(coverage.uncovered)}</strong> of the game&apos;s{" "}
-          {source} text not extracted
-        </>
-      ) : (
-        `All of the game's ${source} text is extracted`
-      )}
-      {coverage.source === "assistant_dump" && (
-        <span className="muted">
-          {" "}
-          (counted from your assistant&apos;s decoded files)
-        </span>
-      )}
-      {coverage.stale && (
-        <span className="muted"> (the game changed since this count)</span>
-      )}
-      {coverage.needs_dump.length > 0 && (
-        <span className="muted">
-          {" "}
-          ({coverage.needs_dump.length.toLocaleString()} archives not read yet)
-        </span>
-      )}
+    <>
+      <span>
+        {coverage.uncovered ? (
+          <>
+            <strong>{pieces(coverage.uncovered)}</strong> of the game&apos;s{" "}
+            {source} text not extracted
+          </>
+        ) : (
+          `All of the game's ${source} text is extracted`
+        )}
+        {coverage.source === "assistant_dump" && (
+          <span className="muted">
+            {" "}
+            (counted from your assistant&apos;s decoded files)
+          </span>
+        )}
+        {coverage.needs_dump.length > 0 && (
+          <span className="muted">
+            {" "}
+            ({coverage.needs_dump.length.toLocaleString()} archives not read
+            yet)
+          </span>
+        )}
+      </span>
       {coverage.set_aside > 0 && (
-        <>
-          {" · "}
+        <span>
           {pieces(coverage.set_aside)} set aside{" "}
           <HelpPopover label="Text set aside">
             <SetAside rules={coverage.rules} pieces={pieces} />
           </HelpPopover>
-        </>
+        </span>
       )}
-    </span>
+    </>
   );
 }
 

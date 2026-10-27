@@ -762,6 +762,42 @@ const queuedBatch = [
   ],
 ];
 
+const assistantUpdate = [
+  "Apply the update and copy the post-update task, the starting prompt's steps from census in the project's mode and languages",
+  async ({ page }) => {
+    await page.click(`Apply update to ${release.version}`);
+    await page.waitText("Translate the new text", 5 * 60_000);
+    await page.idle();
+    await page.click("Copy post-update task");
+    await page.waitText("Task copied.");
+    const project_id = (await page.call("workspace_snapshot")).application
+      .project.id;
+    const { prompt } = await page.call("translation_update_task", {
+      project_id,
+    });
+    const start = (await page.call("translation_prepare", { project_id }))
+      .handoff;
+    // The language pair's note and the numbered steps come from the
+    // starting prompt itself.
+    const pair = start.slice(0, start.indexOf("Translate this game"));
+    const steps = start.split("\n").filter((line) => /^\d+\. /.test(line));
+    const missing = [
+      `${pair}Official update "${release.version}" is applied`,
+      "Selected execution mode: Assistant only",
+      "with extraction active",
+      "continue from step 4",
+      "organize --complete",
+      "Translate those yourself as step 6 says.",
+      ...steps,
+    ].filter((text) => !prompt.includes(text));
+    if (missing.length)
+      throw new Error(
+        `The post-update task lacks: ${missing.map((text) => text.slice(0, 80)).join(" | ")}`,
+      );
+    console.log(`\n  ${prompt.split("\n").slice(0, 12).join("\n  ")}`);
+  },
+];
+
 /** Brings in version 1.1 under Checkpoints, up to its preview. */
 /**
  * Makes the developer's release (`makeRelease`) and brings it in from
@@ -1203,6 +1239,17 @@ export const scenarios = {
       "An Assistant-led project the assistant translated whole and wrote into the game, its choice labels and help markers kept in Japanese.",
     game: "choice-help",
     steps: () => [...assistantLed.slice(0, 2), assistantWrite],
+  },
+  "assistant-updated": {
+    description:
+      "assistant-written, then version 1.1 brought in and applied under Checkpoints and its post-update task copied, which continues the starting prompt's steps from census in the project's mode and language pair.",
+    game: "choice-help",
+    steps: () => [
+      ...assistantLed.slice(0, 2),
+      assistantWrite,
+      ...updateGame(),
+      assistantUpdate,
+    ],
   },
   "batch-waiting": {
     description:

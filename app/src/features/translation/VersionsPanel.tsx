@@ -192,9 +192,7 @@ export function VersionsPanel({
       : pending || assetsPending
         ? 2
         : active
-          ? ({ stage_update: 0, version_preview: 1, version_handoff: 3 }[
-              active.action || ""
-            ] ?? 2)
+          ? ({ stage_update: 0, version_preview: 1 }[active.action || ""] ?? 2)
           : done
             ? 3
             : preview && !session.stale
