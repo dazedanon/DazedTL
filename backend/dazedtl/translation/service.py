@@ -46,7 +46,7 @@ from .operations import (
 from .playtest import game_fixes
 from .project import ADDED, WORK, ProjectWorkspace, options, scope
 from .requests import COUNTS, LINE_KEYS, price, sent_text
-from .results import Results
+from .results import Results, exported, review_digest
 
 
 def priced_mode(finishes, run_mode, project_mode):
@@ -1061,7 +1061,7 @@ Additional project instructions:
         for request in plan["requests"]:
             value = saved.get(request)
             if value:
-                translations.update(value["translations"])
+                translations.update(exported(request, value))
                 continue
             row = job["states"][request["id"]]
             if row["state"] == "accepted":
@@ -1364,13 +1364,7 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
                 "Save accepted translations before recording their source-checked review."
             )
         value["reviewed"] = {
-            identity: digest(
-                (
-                    digest(source.encode("utf-8"))
-                    + ":"
-                    + digest(value["translations"][identity].encode("utf-8"))
-                ).encode("ascii")
-            )
+            identity: review_digest(source, value["translations"][identity])
             for identity, source in request["sources"].items()
         }
         write_json(project_path(plan["source"], results.relative(request)), value)

@@ -25,7 +25,7 @@ from dazedtl.translation.requests import (
     provider_view,
     result_value,
 )
-from dazedtl.translation.results import Results
+from dazedtl.translation.results import Results, review_digest
 from dazedtl.translation.runner import Runner
 from pydantic import TypeAdapter
 
@@ -177,6 +177,48 @@ class TranslationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             results.accept(second, {"line": "[Not translated] ⟦P0⟧"}, {})
         self.assertIsNone(results.get(second))
+
+    def test_results_pass_guided_content_check_and_export_its_cleanup(self):
+        # Assistant-led accepted any nonempty text with its tokens kept, so a
+        # reply collapsed to a mark or repeating without end reached the game.
+        sources = {"line": "今日はとても良い天気ですね。", "moan": "ん♥っ…"}
+        row = logical_request({"id": "scene", "sources": sources}, {"user": ""})
+        results = Results(self.game)
+        for invalid in (".", "a" * 50, "It hurts. " * 30):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                results.accept(row, {**sources, "line": invalid}, {})
+        self.assertIsNone(results.get(row))
+        # A Live reply that fails it fails its request, with no paid retry.
+        reply = {"text": json.dumps({"line": ".", "moan": "Mm♥Ah"})}
+        provider = LiveProvider()
+        provider.live = lambda _params: (
+            provider.__dict__.update(calls=provider.calls + 1) or deepcopy(reply)
+        )
+        job, _plan = self.run_record(requests=[row])
+        Runner(self.store, job["id"], provider, lambda: None).step()
+        current, _plan = self.store.load(job["id"])
+        self.assertEqual(current["states"]["scene"]["state"], "failed")
+        self.assertEqual(provider.calls, 1)
+        # A line given back as its source passes, as Guided keeps it.
+        accepted = {"line": sources["line"], "moan": "Mm♥Ah...h"}
+        saved = results.accept(row, accepted, {})
+        # The export gets Guided's automatic lint fixes; the receipt and a
+        # review of it stay as accepted.
+        saved["reviewed"] = {
+            identity: review_digest(sources[identity], text)
+            for identity, text in accepted.items()
+        }
+        write_json(project_path(self.game, results.relative(row)), saved)
+        self.assertEqual(results.get(row)["translations"], accepted)
+        units = {
+            unit["source_id"]: unit for unit in results.units([row], results.listing())
+        }
+        self.assertEqual(units["moan"]["translation"], "Mm♥ Ah...")
+        self.assertEqual(units["line"]["translation"], sources["line"])
+        self.assertEqual(
+            units["moan"]["reviewed_sha256"],
+            review_digest(sources["moan"], "Mm♥ Ah..."),
+        )
 
     def test_api_requests_key_lines_by_position_and_save_replies_by_unit_id(self):
         # Unit IDs can be long paths, and a request repeated each in every
