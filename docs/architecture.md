@@ -456,6 +456,10 @@ Agent operations use the same locked dispatch and project/run ownership checks a
 The app controls its workers; external assistant activity is reported from saved artifacts and must not be represented as an app-owned process.
 On Windows every copied task opens with a [note](../backend/dazedtl/translation/helper_command.py) naming DazedTL's own Python with `-X utf8` and its bundled Git, because a fresh Windows has neither on `PATH`, and Python writes pipes in the ANSI code page, which cannot hold the Japanese an assistant's scripts print.
 
+Guided and Assistant-led differ in who extracts, drives and reviews the work, never in the quality of the text they produce.
+A rule that shapes translated text, such as the prompt and its context, output checks and lint, fitting, word spacing in commands and Text QA, has one definition both methods call, and an improvement to either method reaches the other in the same change or as a queued follow-up.
+Assistant-led brings every such rule that does not need one engine's parser to its other engines too.
+
 A compiled plan freezes sources, full context, field constraints, provider parameters, rates and connection identity, and the run's record and approval bind the plan file's exact bytes ([plan_file](../backend/dazedtl/translation/plan_file.py)).
 Tracked game sources bind to their original-branch blobs; untracked exports, guidance and the plan file bind to their exact bytes.
 Organize derives plans from engine-neutral source units that Len's extractor saves, so parsing and injection stay in Len's per-engine tools and the assistant never rewrites the game's text; a census from the recorded prepared game decides scope, so the extractor cannot narrow it.
