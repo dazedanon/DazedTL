@@ -59,7 +59,7 @@ import traceback
 from colorama import Fore
 from tqdm import tqdm
 from util.target_text import title_case
-from util.languages import shares_kanji, source_pattern
+from util.languages import source_pattern
 from util.paths import read_active_glossary
 from util.skills import ctx, load_system_prompt
 from util.translation import (
@@ -349,22 +349,15 @@ def _text_still_needs_translation(entry) -> bool:
     return bool(re.search(LANGREGEX, _text_check_body(txt, entry.get("speaker_src", ""))))
 
 
+def _holds_source(text: str) -> bool:
+    return re.search(LANGREGEX, text) is not None
+
+
 def _speaker_translation_valid(source: str, translated: str) -> bool:
-    normalized = str(translated or "").strip()
-    if not normalized:
-        return False
-    # A target that shares the source's kanji, such as Japanese into
-    # Simplified Chinese, writes the name in them: only kana is left.
-    if shares_kanji(target=LANGUAGE):
-        return re.search(r"[ぁ-ゖァ-ヺー\uFF66-\uFF9F]", normalized) is None
-    # Another target, Japanese included, has a source in another script.
-    if normalized.casefold() == str(source or "").strip().casefold():
-        return False
-    # Preserve WOLF's long-standing support for mixed-script localized names
-    # such as ``EN_セルリア`` while still rejecting an untranslated JP echo.
-    return (
-        re.search(LANGREGEX, normalized) is None
-        or re.search(r"[A-Za-z]", normalized) is not None
+    """util/speakers `speaker_translated`, keeping WOLF's long-standing
+    mixed-script localized names such as ``EN_セルリア``."""
+    return wolf_speakers.speaker_translated(
+        source, translated, LANGUAGE, _holds_source, mixed=True
     )
 
 

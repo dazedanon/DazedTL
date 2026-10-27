@@ -15,6 +15,10 @@ CLARIFICATION = (
     "formatting; do not invent or change ages, relationships, or consent. "
 )
 MESSAGE = "The provider declined this translation. No refusal text was accepted as game dialogue."
+# Raise when refused() reads a saved response differently, such as after a
+# change to what counts as a refusal: the verdicts a run's ledger keeps
+# (compatibility/process_view) are then read again.
+RULES_VERSION = 1
 
 
 def _words(english, cjk=None):
