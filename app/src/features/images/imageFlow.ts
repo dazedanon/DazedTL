@@ -27,12 +27,19 @@ const withAssistant = (status: string) =>
 
 export function imageFlow(
   state: Pick<ImageManagerState, "counts" | "discovery" | "editing">,
-  waiting: ImageWaiting = {
+  waits: ImageWaiting = {
     investigation: withAssistant(state.discovery.status),
     translation: withAssistant(state.editing.status),
   },
 ) {
   const counts = state.counts;
+  // The user stopped the investigation to choose the images themselves,
+  // which the copied task's record may not show yet.
+  const stopped = state.discovery.status === "stopped";
+  const waiting = {
+    ...waits,
+    investigation: waits.investigation && !stopped,
+  };
   const listed = counts.selected || 0;
   const applied = counts.selectedApplied || 0;
   const ready = counts.selectedReady || 0;
@@ -49,9 +56,11 @@ export function imageFlow(
     : waiting.translation
       ? "translate"
       : !listed
-        ? investigated || counts.applied
-          ? "done"
-          : "investigate"
+        ? stopped && !counts.applied
+          ? "choose"
+          : investigated || counts.applied
+            ? "done"
+            : "investigate"
         : ready || review
           ? "apply"
           : !toTranslate || applied
@@ -62,6 +71,9 @@ export function imageFlow(
   return {
     step,
     investigated,
+    stopped,
+    /** A waiting investigation the user can stop to choose the images. */
+    stoppable: waiting.investigation && withAssistant(state.discovery.status),
     listed,
     toTranslate,
     /** Images in the list the assistant has not translated yet. */

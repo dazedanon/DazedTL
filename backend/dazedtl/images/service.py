@@ -63,6 +63,13 @@ VIEW = {
     "viewedImage": "",
     "workflowMode": "discovery",
 }
+# What an assistant hears when it saves or continues an investigation the
+# user stopped to choose the images themselves.
+USER_CHOSE = (
+    "The user stopped this image investigation to choose the images to translate "
+    "themselves, so DazedTL no longer reads its report. Don't investigate the images "
+    "again; images --status names the next step."
+)
 # The view of the list to translate, without the images already in the game.
 LIST_VIEW = {"showSelected": True, "status": "not_applied"}
 
@@ -113,6 +120,11 @@ def receipt_view(receipt):
     if receipt.get("message"):
         view["message"] = receipt["message"]
     return view
+
+
+def _stopped(value):
+    """Whether the user stopped the investigation to choose the images."""
+    return value["discovery"].get("status") == "stopped"
 
 
 def _set_aside(row):
@@ -905,7 +917,6 @@ class ImageService:
         the assistant saves it again, as it does for the user's redo requests.
         A rejected report is remembered by its hash, so it is reported once and
         not retried until the file changes."""
-        root = self.record(project_id)[1]
         for kind in ("discovery", "editing"):
             value = self._load(project_id)
             task = value[kind]
@@ -915,9 +926,7 @@ class ImageService:
             # Another project's task reports only after it is copied again here.
             if not entry or entry.get("carried"):
                 continue
-            path = project_path(
-                root, WORK + "/reports/" + task["requestId"] + ".json", exists=False
-            )
+            path = self._report_path(project_id, task["requestId"])
             if not path.is_file():
                 continue
             saved = sha_file(path)
@@ -1262,6 +1271,8 @@ class ImageService:
             self._idle(project_id)
             if action in {"discovery_task", "edit_task", "revision_task"}:
                 return self._task(project_id, action, options)
+            elif action == "stop_investigation":
+                return self._stop_investigation(project_id)
             elif action in {"refresh_findings", "refresh_results"}:
                 return self._refresh_report(
                     project_id,
@@ -1295,12 +1306,14 @@ class ImageService:
         if not profile["supported"]:
             raise ValueError(profile["reason"])
         task, result = None, None
+        # An investigation the user stopped to choose the images stays stopped.
+        stopped = _stopped(self._load(project_id))
         if step == "scan":
             if (self.state(project_id)["job"] or {}).get("status") != "running":
                 self.action(project_id, "scan")
         else:
             self.action(project_id, "pickup")
-            if step == "investigate":
+            if step == "investigate" and not stopped:
                 task = self.action(
                     project_id,
                     "discovery_task",
@@ -1316,6 +1329,7 @@ class ImageService:
                     "result"
                 ]
         state = self.state(project_id)
+        value = self._load(project_id)
         counts = state["counts"]
         listed = counts["selected"]
         waiting = {
@@ -1328,7 +1342,7 @@ class ImageService:
             if (state["job"] or {}).get("status") == "running"
             or not state["inventoryRevision"]
             else "investigate"
-            if waiting["discovery"] or not self._investigated(project_id)
+            if waiting["discovery"] or not self._settled(project_id, value)
             else "apply"
             if counts["selectedReady"]
             else "translate"
@@ -1341,6 +1355,12 @@ class ImageService:
             "investigation": state["discovery"].get("status", "idle"),
             "translation": state["editing"].get("status", "idle"),
             "problems": [
+                *(
+                    [USER_CHOSE]
+                    if (stopped and step == "investigate")
+                    or self._stopped_save(project_id, value)
+                    else []
+                ),
                 *state["discovery"].get("errors", []),
                 *state["editing"].get("errors", []),
                 *[
@@ -1384,6 +1404,62 @@ class ImageService:
             view["applied"] = list(result.get("patch_files", []))
             view["problems"].extend(result.get("errors", []))
         return view
+
+    def _stop_investigation(self, project_id):
+        """The user chooses the images to translate instead of waiting for the
+        investigation. What its report saved so far is read once more and
+        kept; then the request is closed, as an adopted project's are: a later
+        save is not read, refreshing it is refused, and copying the
+        investigation again starts a new one instead of resuming it."""
+        value = self._load(project_id)
+        if value["discovery"].get("status") not in {"awaiting_results", "partial"}:
+            raise ValueError("No image investigation is waiting.")
+        self._pickup(project_id)
+        value = self._load(project_id)
+        task = value["discovery"]
+        # A report that answered everything finished the investigation.
+        if task["status"] == "complete":
+            return {
+                "state": self.state(project_id),
+                "message": "Your assistant had finished; its recommendations are ticked.",
+            }
+        # The report as it was last read, accepted or not; a save after it is
+        # one the assistant made after the stop.
+        task.update(
+            status="stopped",
+            stoppedAt=now(),
+            stoppedHash=task.get("rejectedHash") or task.get("reportHash") or "",
+            errors=[],
+        )
+        task.pop("rejected", None)
+        task.pop("rejectedHash", None)
+        self._save(project_id, value)
+        return {
+            "state": self.state(project_id),
+            "message": "Investigation stopped. What it found is kept.",
+        }
+
+    def _report_path(self, project_id, request_id):
+        return project_path(
+            self.record(project_id)[1],
+            WORK + "/reports/" + request_id + ".json",
+            exists=False,
+        )
+
+    def _stopped_save(self, project_id, value):
+        """Whether the assistant saved its report again after the user stopped
+        its investigation, which is then not read."""
+        task = value["discovery"]
+        if not _stopped(value):
+            return False
+        report = self._report_path(project_id, task["requestId"])
+        return report.is_file() and sha_file(report) != task.get("stoppedHash")
+
+    def _settled(self, project_id, value):
+        """Whether the list to translate is settled: every image is
+        investigated, or the user stopped the investigation to choose the
+        images themselves."""
+        return _stopped(value) or self._investigated(project_id)
 
     def _investigated(self, project_id):
         """Whether every image has a finding or is settled, which is when an
@@ -1438,7 +1514,7 @@ class ImageService:
                 units.append(unit)
             return {
                 "complete": bool(value["inventoryRevision"])
-                and self._investigated(project_id),
+                and self._settled(project_id, value),
                 "units": units,
             }
 
@@ -1564,9 +1640,9 @@ class ImageService:
         )
         guidance = self._guidance(project_id)
         previous_id = value[kind].get("requestId", "")
-        # An investigation asked for again starts over: a finished one is
-        # neither handed out again nor resumed.
-        if kind == "discovery" and value[kind].get("status") == "complete":
+        # An investigation asked for again starts over: a finished one, or one
+        # the user stopped, is neither handed out again nor resumed.
+        if kind == "discovery" and value[kind].get("status") in {"complete", "stopped"}:
             previous_id = ""
         previous_entry = value["requests"].get(previous_id)
         # A task taken over from another project is resumed, never handed out again.
@@ -1920,6 +1996,10 @@ class ImageService:
         if not entry or entry.get("carried"):
             raise ValueError(
                 "Copy a scoped " + kind + " task before refreshing its report."
+            )
+        if value[kind].get("status") == "stopped":
+            raise ValueError(
+                "This investigation was stopped to choose the images yourself, so its report is no longer read. Copy the investigation again to start a new one."
             )
         root = self.record(project_id)[1]
         request = read_json(project_path(root, entry["path"]), limit=48_000_000)
