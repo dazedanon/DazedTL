@@ -39,6 +39,7 @@ from dazedtl import system  # noqa: E402
 activate()
 
 INVENTORY = ".dazedtl/image_manager/guided/inventory.sqlite3"
+STATE = ".dazedtl/image_manager/guided/state.json"
 EDITABLE = ".dazedtl/images"
 
 
@@ -63,14 +64,26 @@ def _inventory(root: Path):
         raise ValueError(
             "This game has no image inventory yet. Scan its images in DazedTL first, or pass --image files."
         )
+    # Families group only the images in the folder the Image Manager reads.
+    from dazedtl.images import inventory
+    try:
+        state = json.loads((root / STATE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        state = {}
+    folder = inventory.image_folder(state if isinstance(state, dict) else {})
     with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as db:
-        rows = {row["id"]: row for row in (json.loads(data) for (data,) in db.execute("SELECT data FROM assets"))}
+        rows = {
+            row["id"]: row
+            for row in (json.loads(data) for (data,) in db.execute("SELECT data FROM assets"))
+            if inventory.holds(folder, row["id"])
+        }
         try:
             stored = {
                 identity: (width, height, mode, data)
                 for identity, width, height, mode, data in db.execute(
                     "SELECT id, width, height, mode, data FROM family_tiles"
                 )
+                if identity in rows
             }
         except sqlite3.OperationalError:
             stored = {}

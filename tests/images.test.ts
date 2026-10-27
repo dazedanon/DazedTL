@@ -195,6 +195,7 @@ test("Images leads with the step its saved work reaches", () => {
     counts: Partial<ImageCounts>,
     discovery = "idle",
     editing = "idle",
+    investigated = discovery === "complete",
   ) =>
     imageFlow({
       counts: {
@@ -203,6 +204,7 @@ test("Images leads with the step its saved work reaches", () => {
         selected: 0,
         ...counts,
       } as ImageCounts,
+      investigated,
       discovery: { status: discovery },
       editing: { status: editing },
     }).step;
@@ -231,6 +233,9 @@ test("Images leads with the step its saved work reaches", () => {
   );
   // An investigation that leaves nothing ticked finishes Images.
   assert.equal(at({ examined: 2, uncertain: 1 }, "complete"), "done");
+  // Images an investigation left unexamined, such as a new image folder's,
+  // still need investigating, as images --status says.
+  assert.equal(at({ examined: 2 }, "complete", "idle", false), "investigate");
   // One the user stopped leaves them to choose, ticked or not yet.
   assert.equal(at({ examined: 1 }, "stopped"), "choose");
   assert.equal(at({ examined: 1, selected: 2 }, "stopped"), "choose");

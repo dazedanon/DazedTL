@@ -13,7 +13,10 @@ import numpy as np
 from dazedtl.compatibility.images import ImageCompatibility
 from dazedtl.images import background, families
 from dazedtl.images.inventory import Index, inspect_row
+from dazedtl.storage import write_json
 from PIL import Image
+
+from tests.engine import engine_module
 
 # Strokes of five name cards. The first two share one at x=60, so pure white
 # fill there matches across cards and must not pass for the backdrop, and each
@@ -173,7 +176,7 @@ class FamilyTests(unittest.TestCase):
         with TemporaryDirectory() as folder:
             root = Path(folder)
             adapter = ImageCompatibility(None)
-            index = Index(root / "inventory.sqlite3")
+            index = Index(root / ".dazedtl/image_manager/guided/inventory.sqlite3")
             entries, rows = [], []
             for number, strokes in enumerate(TEXTS):
                 name = f"img/pictures/Card{number}.png"
@@ -237,3 +240,17 @@ class FamilyTests(unittest.TestCase):
                 Index.put(db, again)
             with patch.object(families, "group_size", side_effect=AssertionError):
                 self.assertEqual(len(index.refresh_families()), 1)
+            # Families group only the images in the folder Images reads, here
+            # and in the assistant's family helper, and return with it.
+            index.folder = "img/other"
+            self.assertEqual(index.refresh_families(), [])
+            self.assertIsNone(index.family("img/pictures/Card1.png"))
+            write_json(
+                root / ".dazedtl/image_manager/guided/state.json",
+                {"profile": {"imageRoot": "img/other"}},
+            )
+            helper = engine_module("scripts/image_family.py")
+            self.assertEqual(helper._inventory(root), ({}, {}))
+            index.folder = "img/pictures"
+            self.assertEqual(len(index.refresh_families()), 1)
+            self.assertIsNotNone(index.family("img/pictures/Card1.png"))
