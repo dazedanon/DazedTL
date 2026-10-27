@@ -2,8 +2,17 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import test from "node:test";
 import { appEnvironment, stopApp } from "../scripts/testkit/app.mjs";
+import { ciScenarios } from "../scripts/testkit/ci.mjs";
 import { displayName } from "../scripts/testkit/display.mjs";
 import { testsWithRetry, withRetry } from "../scripts/testkit/retry.mjs";
+
+test("CI runs every test scenario, so a new one cannot land unchecked", () => {
+  assert.ok(ciScenarios().some(([name]) => name === "fresh"));
+  assert.throws(
+    () => ciScenarios("jobs:\n  matrix:\n    scenarios:\n      - fresh\n"),
+    /CI runs no opened, .* scenario/,
+  );
+});
 
 test("a check that fails once and then passes is a flake, and two failures still fail", async () => {
   const runs: number[] = [];

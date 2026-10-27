@@ -21,10 +21,8 @@ from dazedtl.translation import (
     context_setup,
     derived,
     event_text,
-    file_lines,
     header_review,
     preparation,
-    refusals,
     speaker_setup,
 )
 from dazedtl.translation.file_preview import text_fields
@@ -4141,15 +4139,16 @@ class GuidedTests(unittest.TestCase):
                 inputs.line_counts(phases, frozenset(), counting), expected
             )
             self.assertEqual(counting, [])
-            # A change to what counts as a line, or as a refusal note,
-            # counts again.
-            for rule, attribute in (
-                (file_lines, "COUNT_VERSION"),
-                (refusals, "RULES_VERSION"),
+            # A change to what counts as a line, as a refusal note or as
+            # Japanese left counts again.
+            for rule in (
+                "dazedtl.translation.file_lines.COUNT_VERSION",
+                "dazedtl.translation.refusals.RULES_VERSION",
+                "util.source_text.RULES_VERSION",
             ):
                 counting = []
                 with (
-                    patch.object(rule, attribute, 2),
+                    patch(rule, "raised"),
                     patch.object(derived.Store, "read") as read,
                 ):
                     inputs.line_counts(phases, frozenset(), counting)

@@ -427,6 +427,10 @@ try:
             assert wolfdawn._speaker_translation_valid("セルリア", "EN_セルリア")
             assert not wolfdawn._speaker_translation_valid("セルリア", "セルリア")
             assert not wolfdawn._speaker_translation_valid("セルリア", "")
+            # A colour code's letter read as Latin, so an echoed name kept
+            # its Japanese nameplate.
+            assert not wolfdawn._speaker_translation_valid("セルリア", "\\c[2]セルリア")
+            assert wolfdawn._speaker_translation_valid("セルリア", "\\c[2]EN_セルリア")
         with patch.object(parser, "LANGUAGE", "English"):
             assert not parser._speaker_translation_valid("セルリア", "EN_セルリア")
             assert parser._speaker_translation_valid("セルリア", "Cerulia")
@@ -3669,6 +3673,16 @@ try:
             )
             with reading("Japanese", "Chinese"):
                 older = deepcopy(chinese)
+                # Lines read them against the original as well: read without
+                # it, the map name and both labels counted left.
+                original = json.loads((staged / "Map007.json").read_text("utf-8"))
+                counts = file_lines.count(
+                    "Map007.json", older, "dialogue", markers, lambda: original
+                )
+                assert counts == {"lines": 3, "translated": 3}, counts
+                assert not file_lines.left(
+                    "Map007.json", older, "dialogue", markers, lambda: original
+                )
                 assert engine_pass("Map007.json", chinese, False, CODE357=True) == []
                 assert chinese["_original"] == {"displayName": "はじまりの村"}
                 assert chinese["events"][1]["_original"] == {"name": "旅人の家"}
