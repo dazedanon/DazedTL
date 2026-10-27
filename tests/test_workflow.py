@@ -529,7 +529,10 @@ class WorkflowTests(unittest.TestCase):
             self.service.results(self.identity, run)["missing"], {"pending": 1}
         )
         self.assertEqual(self.service.run(self.identity, run)["status"], "ready")
-        self.service.decline(self.identity, run, "a/1", "Not here")
+        # The run counts it declined, though its refusal note stays saved.
+        declined = self.service.decline(self.identity, run, "a/1", "Not here")
+        self.assertEqual((declined["status"], declined["declined_units"]), ("ready", 1))
+        self.assertEqual(self.service.finish(self.identity, run)["finishes"], run)
         write_json(
             self.game / units,
             {"version": 1, "units": [{"id": "a/1", "scene": "a", "source": "うん。"}]},

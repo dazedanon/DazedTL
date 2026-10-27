@@ -336,8 +336,10 @@ class RunStore:
 
     def settled(self, job):
         """The run with any declined request another run has since translated
-        read as accepted. It checks only that the saved result exists, so
-        state polls stay cheap; the result itself is validated when read."""
+        read as accepted, by the one acceptance rule (`Results.accepted`), so
+        a saved result that holds a refusal note keeps it declined. Only a
+        declined request's result file is read, and its plan only while that
+        verdict is unknown, so state polls stay cheap."""
         declined = [
             identity
             for identity, row in job["states"].items()
@@ -346,15 +348,24 @@ class RunStore:
         if not declined:
             return job
         source = self.source(job["project_id"])
+        results = Results(source)
+        plan = {}
+
+        def request(identity):
+            if not plan:
+                plan.update(
+                    (row["id"], row)
+                    for row in self.plan(self.folder(job["id"]), job)["requests"]
+                )
+            return plan[identity]
+
         done = [
             identity
             for identity in declined
-            if (
-                Path(source)
-                / Results(source).relative(
-                    {"fingerprint": job["fingerprints"][identity]}
-                )
-            ).is_file()
+            if results.accepted(
+                job["fingerprints"][identity],
+                lambda identity=identity: request(identity),
+            )
         ]
         if not done:
             return job

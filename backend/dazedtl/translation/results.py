@@ -1,10 +1,11 @@
 """Accepted results are bound to source plus context, shared across all transports."""
 
 import os
+import stat
 from pathlib import Path
 
 from dazedtl import system
-from dazedtl.freshness import signature, signature_settled
+from dazedtl.freshness import Digests, signature, signature_settled
 from dazedtl.storage import write_json
 
 from .files import digest, project_path, read_json, write_project_json
@@ -33,6 +34,9 @@ ROWS_KEPT = 20_000
 # read it, so each saved receipt is screened once per process.
 _SCREENED = {}
 SCREENED_KEPT = 50_000
+# Whether each result file holds an accepted result (Results.accepted), by
+# its path, reused while the file is unchanged.
+_ACCEPTED_FILES = Digests()
 
 
 def _rows(request):
@@ -181,6 +185,30 @@ class Results:
         holds a refusal note (`holds_refusal`), which every caller then resends."""
         value = self._receipt(request, path)
         return None if value is None or holds_refusal(request, value) else value
+
+    def accepted(self, fingerprint, request):
+        """Whether the request with this fingerprint has an accepted result
+        (get), for a reader that holds only the fingerprint, such as a state
+        poll. request() gives the request; it is called only for a saved
+        result file whose verdict this process does not know yet, and the
+        verdict is reused while the file is unchanged. A result or request
+        that cannot be read is no result, read again next time."""
+        path = self.source / self.relative({"fingerprint": fingerprint})
+        try:
+            info = path.lstat()
+        except FileNotFoundError, NotADirectoryError:
+            return False
+        if not stat.S_ISREG(info.st_mode):
+            return False
+
+        def read():
+            try:
+                return self.get(request(), path) is not None
+            except OSError, ValueError, KeyError:
+                # None is never kept, so it is read again.
+                return None
+
+        return bool(_ACCEPTED_FILES.remember(os.fspath(path), info, read))
 
     def accept(self, request, translations, provenance):
         output = translated(request, translations)
