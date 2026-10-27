@@ -1085,7 +1085,7 @@ def _command_lists(node, pointer: str = ""):
     if isinstance(node, dict):
         commands = node.get("list")
         if isinstance(commands, list) and any(
-            isinstance(item, dict) and isinstance(item.get("code"), int) for item in commands
+            blocks.code(item) is not None for item in commands
         ):
             yield commands, f"{pointer}/list"
         for key, value in node.items():
@@ -1147,7 +1147,7 @@ def _command_slots(commands: list, pointer: str, layout: Layout) -> Iterator[_Sl
     for index, command in enumerate(commands):
         if not isinstance(command, dict):
             continue
-        code = command.get("code")
+        code = blocks.code(command)
         params = command.get("parameters")
         if not isinstance(params, list) or not params:
             continue

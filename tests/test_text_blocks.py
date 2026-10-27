@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 from dazedtl.translation import comment_text, file_lines
+from util import original_values
 from util import rpgmaker_blocks as blocks
 from util.rpgmaker_markers import comment_markers, data_plugins, game_plugins
 from util.rpgmaker_rewrap import Layout, fit_document, wrap_help
@@ -47,6 +48,35 @@ class TextBlockTests(unittest.TestCase):
         )
         self.assertEqual(
             [row["source"] for row in rows], ["旅人\nまだ訳せない。", "え？"]
+        )
+
+    def test_guided_lines_read_past_a_malformed_command(self):
+        # A command whose code is no number, or that is no command at all,
+        # stopped Guided's Lines and file status with a TypeError.
+        def listing(*malformed):
+            return [
+                command(101, ["", 0, 0, 2, ""]),
+                command(401, ["まだ訳せない。"]),
+                *malformed,
+                command(0, []),
+            ]
+
+        def game(commands):
+            return {"events": [None, {"pages": [{"list": commands}]}]}
+
+        current = listing({"code": [408], "parameters": []}, "?", None)
+        # A translation that added a window pairs commands by their codes.
+        original = listing(command(101, ["", 0, 0, 2, ""]), {"code": [408]})
+        rows = file_lines.left(
+            "Map001.json",
+            game(current),
+            "dialogue",
+            frozenset(),
+            lambda: game(original),
+        )
+        self.assertEqual([row["text"] for row in rows], ["まだ訳せない。"])
+        self.assertEqual(
+            original_values.commands(current, original)[:2], [(0, 0), (1, 1)]
         )
 
     def test_help_translated_before_rows_were_recorded_leaves_the_games_rows(self):

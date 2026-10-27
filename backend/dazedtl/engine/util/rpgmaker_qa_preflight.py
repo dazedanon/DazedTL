@@ -139,7 +139,7 @@ def visible_texts(
         for index, command in enumerate(commands):
             if not isinstance(command, dict):
                 continue
-            code = command.get("code")
+            code = blocks.code(command)
             parameters = command.get("parameters")
             if code == 408:
                 if index in comment_rows and parameters:

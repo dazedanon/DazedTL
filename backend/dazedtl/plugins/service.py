@@ -105,6 +105,13 @@ def nested_keys(value, keys):
             nested_keys(inner, keys)
 
 
+def _code(command):
+    """An event command's code, or None where it is unreadable."""
+    from util import rpgmaker_blocks as blocks
+
+    return blocks.code(command)
+
+
 def data_keys(value, database, keys):
     """Text the game's data looks up: note tag names, the names of a
     `database` file's entries and MV/MZ plugin command words."""
@@ -117,11 +124,10 @@ def data_keys(value, database, keys):
             )
         if database and isinstance(value.get("name"), str):
             keys.add(value["name"])
-        if value.get("code") in {356, 357} and isinstance(
-            value.get("parameters"), list
-        ):
+        code = _code(value) if "code" in value else None
+        if code in {356, 357} and isinstance(value.get("parameters"), list):
             for item in value["parameters"]:
-                if isinstance(item, str) and value["code"] == 356:
+                if isinstance(item, str) and code == 356:
                     keys.update(item.split())
                 nested_keys(item, keys)
         for item in value.values():
@@ -144,7 +150,7 @@ def event_script_keys(value, keys):
         return
     scripts, lines = [], None
     for item in value:
-        code = item.get("code") if isinstance(item, dict) else None
+        code = _code(item) if isinstance(item, dict) else None
         parameters = item.get("parameters") if isinstance(item, dict) else None
         text = parameters[0] if isinstance(parameters, list) and parameters else None
         if code == 655 and lines is not None and isinstance(text, str):
