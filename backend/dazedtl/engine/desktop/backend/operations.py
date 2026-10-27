@@ -75,7 +75,7 @@ class Operations:
                 # Electron.
                 "DAZEDTL_ELECTRON",
                 # A test scenario's OpenAI preset names its stand-in, which
-                # counts as OpenAI's own API (settings/providers.native_openai).
+                # counts as OpenAI's own API (settings/providers.own_api).
                 "DAZEDTL_TEST_OPENAI_ENDPOINT",
             )
             environment.update(DAZEDTL_DESKTOP_WORKSPACE=str(self.root.parent), PYTHONUTF8="1", PYTHONIOENCODING="utf-8", PYTHONNOUSERSITE="1", PYTHON_DOTENV_DISABLED="1")

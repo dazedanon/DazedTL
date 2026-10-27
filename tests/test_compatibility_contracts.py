@@ -31,6 +31,7 @@ from dazedtl.compatibility.translation import (
     provider_errors,
 )
 from dazedtl.settings.preferences import GENERATION_PARAMETERS
+from dazedtl.settings.providers import PROVIDERS
 from dazedtl.storage import write_json
 from dazedtl.translation.compilation import compile_requests
 from dazedtl.translation.files import digest
@@ -1881,14 +1882,17 @@ class ManualJobs:
             row = rows[0]
             self.assertEqual(row["context"]["line_kinds"], {"line": "dialogue"})
             self.assertEqual(row["context"]["qa_notes"], {"line": note})
-            for provider, protocol, mode in (
-                ("openai", "openai", "live"),
-                ("anthropic", "anthropic", "batch"),
-                ("openrouter", "openai", "live"),
-                ("gemini", "gemini", "batch"),
-                ("mistral", "mistral", "live"),
-                ("deepseek", "openai", "live"),
-                ("custom", "openai", "live"),
+            # The response format follows the one rule Guided's builder asks
+            # (engine_runtime): JSON mode only for DeepSeek, which has no strict
+            # schemas, so a route never gets a schema in only one method.
+            for provider, protocol, mode, response_format in (
+                ("openai", "openai", "live", "json_schema"),
+                ("anthropic", "anthropic", "batch", None),
+                ("openrouter", "openai", "live", "json_schema"),
+                ("gemini", "gemini", "batch", "json_schema"),
+                ("mistral", "mistral", "live", "json_schema"),
+                ("deepseek", "openai", "live", "json_object"),
+                ("custom", "openai", "live", "json_schema"),
             ):
                 with self.subTest(provider=provider):
                     payload = engine.payload(
@@ -1898,7 +1902,8 @@ class ManualJobs:
                             "provider": provider,
                             "mode": mode,
                             "model": "fixture",
-                            "endpoint": "https://provider.invalid/v1",
+                            "endpoint": PROVIDERS[provider]["endpoint"]
+                            or "https://provider.invalid/v1",
                             "openrouterHost": "deepinfra",
                             "maxOutputTokens": 32768,
                             "generationParameters": GENERATION_PARAMETERS,
@@ -1917,15 +1922,11 @@ class ManualJobs:
                     self.assertIn(
                         "Two people at the gate", sent["request_instructions"]
                     )
-                    if provider == "deepseek":
-                        # DeepSeek's JSON mode refuses strict schemas.
-                        self.assertEqual(
-                            payload["response_format"], {"type": "json_object"}
-                        )
+                    self.assertEqual(
+                        payload.get("response_format", {}).get("type"),
+                        response_format,
+                    )
                     if provider == "openrouter":
-                        self.assertEqual(
-                            payload["response_format"], {"type": "json_object"}
-                        )
                         self.assertEqual(
                             payload["extra_body"],
                             {
@@ -1994,7 +1995,8 @@ class ManualJobs:
             )
 
             # New OpenRouter plans require the exact source-ID schema on both
-            # transports; the legacy branch above retains its saved JSON mode.
+            # transports; a legacy plan without the policy sends its saved
+            # requests as they were.
             from dazedtl.settings.openrouter import STRUCTURED_OUTPUTS, TRANSPORT
             from dazedtl.translation.requests import output_schema
 

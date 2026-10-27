@@ -333,6 +333,7 @@ class TranslationEngine:
         from util.translation import buildClaudeRequest, buildOpenAIRequest
 
         from dazedtl.settings.openrouter import STRUCTURED_OUTPUTS
+        from dazedtl.settings.providers import response_format
 
         strict_router = configuration.get("openrouterStructuredOutputs")
         if strict_router is not None and (
@@ -390,19 +391,12 @@ class TranslationEngine:
                 api_provider=configuration["protocol"],
                 api_url=configuration["endpoint"],
             )
-            params["response_format"] = (
-                {"type": "json_object"}
-                # DeepSeek's JSON mode has no strict schemas.
-                if configuration["provider"]
-                in {"custom", "mistral", "openrouter", "deepseek"}
-                else {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "translation",
-                        "strict": True,
-                        "schema": output_schema(view["sources"]),
-                    },
-                }
+            params["response_format"] = response_format(
+                configuration["protocol"],
+                configuration["endpoint"],
+                configuration["model"],
+                output_schema(view["sources"]),
+                "translation",
             )
         if configuration["provider"] == "openrouter":
             if strict_router:
@@ -523,12 +517,12 @@ class TranslationEngine:
         from util.translation import _openai_batch_token_limit
 
         from dazedtl.settings.preferences import batch_input_tokens
-        from dazedtl.settings.providers import native_openai
+        from dazedtl.settings.providers import own_api
 
         # The OpenAI window applies to this plan's chunks and clarifications
         # (batch_window.reserve_run) only when it holds this allowance.
-        native = configuration["protocol"] == "openai" and native_openai(
-            configuration["endpoint"]
+        native = configuration["protocol"] == "openai" and own_api(
+            "openai", configuration["endpoint"]
         )
 
         allowance = batch_input_tokens(configuration.get("batchInputTokens"))
