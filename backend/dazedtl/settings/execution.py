@@ -133,14 +133,20 @@ def configuration(settings, mode, *, cached_only=False, unpriced=False, pair=Non
     return value
 
 
-def worker_secret(workspace, frozen):
+def saved_connections(workspace):
+    """The connections Settings saved, read without the app's settings store
+    by a worker or a reader outside it."""
     value = read_json(workspace / "settings/settings.json", limit=8_000_000)
     if value.get("version") != 3:
         raise ValueError("Open this workspace in DazedTL before resuming the run.")
+    return [item for item in value.get("connections", []) if isinstance(item, dict)]
+
+
+def worker_secret(workspace, frozen):
     connection = next(
         (
             item
-            for item in value.get("connections", [])
+            for item in saved_connections(workspace)
             if item.get("id") == frozen["connection_id"]
         ),
         None,
@@ -171,3 +177,14 @@ def worker_secret(workspace, frozen):
             "The saved run's connection changed. Restore its provider and endpoint before resuming."
         )
     return connection["secret"]
+
+
+def connection_names(workspace):
+    """Each saved connection's runtime name by its ID, none when Settings
+    cannot be read: Guided plans name a connection by runtime name,
+    Assistant-led configurations by ID."""
+    try:
+        connections = saved_connections(workspace)
+    except OSError, ValueError:
+        return {}
+    return {item.get("id"): item.get("runtime_name") for item in connections}

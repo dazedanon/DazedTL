@@ -2,6 +2,7 @@
 
 import os
 import time
+from functools import partial
 
 from dazedtl.storage import write_json
 
@@ -404,6 +405,16 @@ class Runner:
                     self.validate_current()
                     yield
 
+                from dazedtl.compatibility.batch_window import (
+                    reserve_run_clarification,
+                )
+
+                limits = self.plan["batch_limits"]
+                count = getattr(self.provider, "input_tokens", lambda _: 0)
+                if not journaled:
+                    # The window reads this record, which must show its
+                    # ended job before a clarification asks for room.
+                    self.save()
                 retried = advance(
                     self.folder,
                     chunk["id"],
@@ -414,10 +425,17 @@ class Runner:
                     responses,
                     usage,
                     self.provider,
-                    limits=self.plan["batch_limits"],
-                    input_tokens=getattr(self.provider, "input_tokens", lambda _: 0),
+                    limits=limits,
+                    input_tokens=count,
                     commit=retry_commit,
                     cancel=cancel,
+                    reserve=partial(
+                        reserve_run_clarification,
+                        self.store.workspace,
+                        self.plan["configuration"],
+                        count=count,
+                        limit=limits[2] if len(limits) > 2 else None,
+                    ),
                     sources={
                         item["request"]: self.sources(item["request"])
                         for item in chunk["items"]
@@ -457,6 +475,8 @@ class Runner:
                         if retried.get("uncertain")
                         else "Cancellation requested. Waiting for the provider's final status and any completed results."
                         if cancel
+                        else "Waiting for available Batch token capacity."
+                        if retried.get("waiting_capacity")
                         else "Waiting for the Batch clarification of refused requests.",
                     )
                     return
