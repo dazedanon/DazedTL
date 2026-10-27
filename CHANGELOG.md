@@ -3,6 +3,15 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.36.2] - 2026-10-27
+
+### Fixed
+
+- **Translate:** in a WOLF RPG game, a speaker name the model returned untranslated inside a colour code, such as `\c[2]セルリア`, is no longer kept as its translation, so the Japanese name no longer ships.
+- **Translate:** in a Japanese game translated into Chinese, Maps & events no longer counts a translated event label or map name as a line left, so the map reads finished.
+- **Translate:** Apply counts only the files it has left to apply, instead of keeping a count beside "Nothing new to apply." or "Saved translations applied.".
+- **Check:** in a Japanese game translated into Chinese, the playtest no longer lists translated plugin settings and custom data as text never translated.
+
 ## [2.36.1] - 2026-10-27
 
 ### Fixed
@@ -1111,6 +1120,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.36.2]: https://github.com/dazedanon/DazedTL/compare/v2.36.1...v2.36.2
 [2.36.1]: https://github.com/dazedanon/DazedTL/compare/v2.36.0...v2.36.1
 [2.36.0]: https://github.com/dazedanon/DazedTL/compare/v2.35.0...v2.36.0
 [2.35.0]: https://github.com/dazedanon/DazedTL/compare/v2.34.5...v2.35.0
