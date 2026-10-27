@@ -99,6 +99,11 @@ export function phaseView(w: GuidedWorkspace): TaskView {
         current?.files?.includes(name)
       ),
   );
+  // Apply rewrites every saved file, but only those not yet read as Applied
+  // change the game, so they are what its count and reason name.
+  const unappliedFiles = applyFiles.filter(
+    (name) => !appliedOutputs.includes(name),
+  );
   const noRemainingWork = estimateEmpty(quote);
   // Other event text whose chosen sources leave nothing has no run to start.
   const nothingLeft =
@@ -251,8 +256,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
     reloadBeforeApply(applyFiles, changed) ||
     (applyCounting && "Counting lines…") ||
     // The files' rows read Applied, so Apply has nothing to do.
-    (applyFiles.every((name) => appliedOutputs.includes(name)) &&
-      "Nothing new to apply.");
+    (!unappliedFiles.length && "Nothing new to apply.");
   const guidance = !selectedNames.length
     ? "Select files to translate."
     : !baseline
@@ -286,7 +290,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
     guidance;
   actionContext = (
     <div className="translation-action-scope">
-      {/* Apply's label counts the saved files. */}
+      {/* Apply's label counts the saved files left to apply. */}
       <strong>{selectedNames.length} selected</strong>
       {/* One line of the guidance fits beside the count; a longer one keeps an
           explicit Show more instead of being cut off at narrow widths. */}
@@ -330,7 +334,9 @@ export function phaseView(w: GuidedWorkspace): TaskView {
       {(!!applyFiles.length || applyCounting) &&
         task(
           "export_selected",
-          applyCounting ? "Apply" : `Apply (${applyFiles.length})`,
+          applyCounting || !unappliedFiles.length
+            ? "Apply"
+            : `Apply (${unappliedFiles.length})`,
           {},
           applyBlocked,
           "default",
