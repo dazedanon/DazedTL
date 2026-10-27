@@ -886,6 +886,11 @@ function Manager({
   // nothing left to translate.
   const listDone =
     shown === "list" && !value.view.folder && !value.view.query.trim();
+  // Before the assistant examined the images, an empty list waits for the
+  // investigation, and once the user stopped it, for their ticks, rather than
+  // having nothing left.
+  const unexamined = listDone && flow.unexamined;
+  const unticked = listDone && flow.unticked;
   // Which views show follows the whole game, so the switch keeps its shape;
   // their numbers follow the folder and search, as the grid does.
   const scoped = grid.views;
@@ -1292,46 +1297,65 @@ function Manager({
                       ? "No images indexed"
                       : folderSearch
                         ? "No matches in this folder"
-                        : listDone
-                          ? "Nothing left to translate"
-                          : "No matching images"}
+                        : unexamined
+                          ? counts.examined
+                            ? "Some images not examined yet"
+                            : "Not examined yet"
+                          : unticked
+                            ? "No images ticked yet"
+                            : listDone
+                              ? "Nothing left to translate"
+                              : "No matching images"}
                   </h3>
                   {/* A search inside a folder looks only there, which the grid
                   alone does not show. */}
-                  {(!counts.indexed || folderSearch || hidden > 0) && (
+                  {(!counts.indexed ||
+                    folderSearch ||
+                    unexamined ||
+                    unticked ||
+                    hidden > 0) && (
                     <p>
                       {!counts.indexed
                         ? "Index the image library to begin discovery or choose images yourself."
                         : folderSearch
                           ? `The search looks only in ${value.view.folder}.`
-                          : `${hidden.toLocaleString()} ${hidden === 1 ? "image in your list is" : "images in your list are"} outside this view.`}
+                          : unexamined
+                            ? flow.waiting.investigation
+                              ? "Your assistant's recommendations appear here as it saves them."
+                              : "Your assistant recommends the images to translate once it examines them."
+                            : unticked
+                              ? "Tick the images to translate in All images."
+                              : `${hidden.toLocaleString()} ${hidden === 1 ? "image in your list is" : "images in your list are"} outside this view.`}
                     </p>
                   )}
-                  <Button
-                    onClick={() =>
-                      !counts.indexed
-                        ? perform("scan")
+                  {/* The task's own step offers the investigation. */}
+                  {!unexamined && (
+                    <Button
+                      onClick={() =>
+                        !counts.indexed
+                          ? perform("scan")
+                          : folderSearch
+                            ? changeView({ folder: "" }, true)
+                            : changeView(
+                                {
+                                  query: "",
+                                  status: "all",
+                                  folder: "",
+                                  showSelected: false,
+                                },
+                                true,
+                              )
+                      }
+                    >
+                      {!counts.indexed
+                        ? "Index images"
                         : folderSearch
-                          ? changeView({ folder: "" }, true)
-                          : changeView(
-                              {
-                                query: "",
-                                status: "all",
-                                folder: "",
-                                showSelected: false,
-                              },
-                              true,
-                            )
-                    }
-                  >
-                    {!counts.indexed
-                      ? "Index images"
-                      : folderSearch
-                        ? "Search all folders"
-                        : listDone
-                          ? "Show all images"
-                          : "Clear filters"}
-                  </Button>
+                          ? "Search all folders"
+                          : listDone
+                            ? "Show all images"
+                            : "Clear filters"}
+                    </Button>
+                  )}
                 </div>
               ) : (
                 <div

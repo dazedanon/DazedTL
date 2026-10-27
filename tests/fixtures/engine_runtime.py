@@ -3269,7 +3269,7 @@ try:
         from modules import rpgmakermvmz as parser
         from util import extensions
         from util import rpgmaker_blocks as blocks
-        from util.rpgmaker_markers import comment_markers
+        from util.rpgmaker_markers import PluginList, comment_markers
         from util.rpgmaker_profiles import DB_FILES, PHASE0_CONFIG, PHASE1_CONFIG
         from util.runtime_text import _CONTROL_CODE_RE
         from util.source_text import LETTERS, holds_source
@@ -3448,7 +3448,7 @@ try:
             ),
             encoding="utf-8",
         )
-        markers = comment_markers(())
+        markers = comment_markers(PluginList())
         policy = {
             "choiceCollection": CHOICE_COLLECTION,
             "speakerContext": SPEAKER_CONTEXT,

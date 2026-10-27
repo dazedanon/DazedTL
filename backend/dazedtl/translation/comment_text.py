@@ -59,16 +59,11 @@ def markers(source: str | Path) -> frozenset[str]:
 
 
 def shows_comment_text(data: str | Path, plugins: str | Path) -> bool:
-    """Whether a game's turned-on plugins show comment lines that hold
+    """Whether the plugins a game loads show comment lines that hold
     Japanese, from its data folder and plugin list."""
-    from util.rpgmaker_markers import plugin_markers
-    from util.rpgmaker_plugin_registry import plugin_entries
+    from util.rpgmaker_markers import plugin_list, plugin_markers
 
-    try:
-        entries = plugin_entries(Path(plugins).read_text(encoding="utf-8-sig"))
-    except OSError, UnicodeDecodeError, ValueError:
-        return False
-    markers = plugin_markers(entries)
+    markers = plugin_markers(plugin_list(plugins))
     if not markers:
         return False
     for path in sorted(Path(data).glob("*.json")):

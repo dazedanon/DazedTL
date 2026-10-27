@@ -191,7 +191,7 @@ test("Images leads with the step its saved work reaches", () => {
   // Protect the one leading button: an answered investigation moves on to
   // choosing, partial translations still offer Apply, and applying finishes
   // Images even while the list holds an image to translate in a later round.
-  const at = (
+  const flow = (
     counts: Partial<ImageCounts>,
     discovery = "idle",
     editing = "idle",
@@ -207,7 +207,8 @@ test("Images leads with the step its saved work reaches", () => {
       investigated,
       discovery: { status: discovery },
       editing: { status: editing },
-    }).step;
+    });
+  const at = (...args: Parameters<typeof flow>) => flow(...args).step;
   assert.equal(at({}), "investigate");
   assert.equal(at({ examined: 1 }, "partial"), "investigate");
   assert.equal(at({ examined: 2, selected: 1 }, "complete"), "choose");
@@ -236,9 +237,24 @@ test("Images leads with the step its saved work reaches", () => {
   // Images an investigation left unexamined, such as a new image folder's,
   // still need investigating, as images --status says.
   assert.equal(at({ examined: 2 }, "complete", "idle", false), "investigate");
+  // An empty list then waits for the investigation, not finished; one with
+  // every image examined has nothing left.
+  assert.equal(flow({}).unexamined, true);
+  assert.equal(
+    flow({ examined: 2 }, "complete", "idle", false).unexamined,
+    true,
+  );
+  assert.equal(
+    flow({ examined: 2, uncertain: 1 }, "complete").unexamined,
+    false,
+  );
   // One the user stopped leaves them to choose, ticked or not yet.
   assert.equal(at({ examined: 1 }, "stopped"), "choose");
   assert.equal(at({ examined: 1, selected: 2 }, "stopped"), "choose");
+  // An empty list then waits for their ticks, not finished.
+  assert.equal(flow({ examined: 1 }, "stopped").unticked, true);
+  assert.equal(flow({ examined: 1, selected: 2 }, "stopped").unticked, false);
+  assert.equal(flow({ examined: 2, uncertain: 1 }, "complete").unticked, false);
 });
 
 const draft = (selection: string[], scroll = 0): ImageDraft => ({

@@ -22,7 +22,7 @@ from typing import Any, Iterable
 from util import languages
 from util.original_values import Originals
 from util.rpgmaker_blocks import command_lists
-from util.rpgmaker_markers import comment_markers
+from util.rpgmaker_markers import PluginList, comment_markers, lists_mz
 from util.rpgmaker_plugin_registry import PluginRegistryError, loaded_entries
 from util.rpgmaker_qa_checks import BATTLE_MESSAGES, battler_name_note, runtime
 from util.rpgmaker_qa_preflight import (
@@ -132,7 +132,7 @@ class _Checks:
     def add(self, *args, **detail) -> None:
         self.problems.append(_problem(*args, **detail))
 
-    def starts(self) -> list[dict[str, Any]]:
+    def starts(self) -> PluginList:
         """Data files that parse, and every plugin js/plugins.js lists."""
         for path in sorted(self.data.glob("*.json"), key=lambda item: item.name):
             try:
@@ -153,7 +153,7 @@ class _Checks:
                 self.gaps.append(f"{self.path(path.name)} could not be read: {exc.strerror}.")
         registry = self.data.parent / "js" / "plugins.js"
         if not registry.is_file():
-            return []
+            return PluginList()
         try:
             entries = loaded_entries(registry.read_text(encoding="utf-8-sig"))
         except (PluginRegistryError, ValueError, UnicodeDecodeError) as exc:
@@ -161,17 +161,20 @@ class _Checks:
                 "crash", "plugin-list", self._js("plugins.js"),
                 f"The game can't read its plugin list: {exc}", "game",
             )
-            return []
-        return [
-            entry for entry in entries
-            if isinstance(entry, dict) and isinstance(entry.get("name"), str)
-        ]
+            return PluginList()
+        return PluginList(
+            (
+                entry for entry in entries
+                if isinstance(entry, dict) and isinstance(entry.get("name"), str)
+            ),
+            lists_mz(registry),
+        )
 
     def _js(self, name: str) -> str:
         js = (self.data.parent / "js").relative_to(self.game).as_posix()
         return f"{js}/{name}" if js != "." else name
 
-    def japanese(self, entries: list[dict[str, Any]]) -> None:
+    def japanese(self, entries: PluginList) -> None:
         """Source text left in translated text players read, and placeholder
         glyphs; text never translated comes from preflight. The problem kind
         keeps its saved name, japanese, for every source."""

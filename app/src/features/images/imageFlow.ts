@@ -75,6 +75,10 @@ export function imageFlow(
   return {
     step,
     investigated,
+    /** Images still wait to be examined before the list to translate fills. */
+    unexamined: step === "investigate" && !investigated,
+    /** The user chooses the images and has ticked none yet. */
+    unticked: step === "choose" && !listed,
     stopped,
     /** A waiting investigation the user can stop to choose the images. */
     stoppable: waiting.investigation && withAssistant(state.discovery.status),
