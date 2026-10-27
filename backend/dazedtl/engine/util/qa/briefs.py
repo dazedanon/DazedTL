@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from util import rpgmaker_blocks as blocks
 from util import rpgmaker_qa_glossary as glossary_rules
 from util import system
 from util.game_settings import load_language_pair
@@ -292,7 +293,9 @@ def context_view(
     lines = [f"{scene} commands {start}-{end - 1} of {len(commands)}"]
     for index in range(start, end):
         command = commands[index]
-        code = command.get("code")
+        if not isinstance(command, dict):
+            continue
+        code = blocks.code(command)
         if code in _CONTEXT_QUIET_CODES:
             continue
         mark = ">>" if index == center else "  "
@@ -323,7 +326,9 @@ _RENDERED_TEXT_CODES = frozenset({
 def _render_commands(commands: list[dict] | None, indent: str) -> list[str]:
     out = []
     for command in commands or []:
-        code = command.get("code")
+        if not isinstance(command, dict):
+            continue
+        code = blocks.code(command)
         if code in _CONTEXT_QUIET_CODES:
             continue
         parameters = command.get("parameters")

@@ -336,7 +336,10 @@ def _score_command_list(cmd_list: list, scores: dict) -> None:
     i = 0
     while i < len(cmd_list):
         cmd    = cmd_list[i]
-        code   = cmd.get("code")
+        if not isinstance(cmd, dict):
+            i += 1
+            continue
+        code   = blocks.code(cmd)
         params = cmd.get("parameters") or []
 
         # ── 101: Show Text / face name ────────────────────────────────────────

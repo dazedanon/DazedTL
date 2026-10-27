@@ -108,7 +108,7 @@ def _leaves(value: Any, parts: tuple[object, ...] = ()):
 
 
 def _classify(filename: str, value: dict[str, Any]) -> str:
-    code = value.get("code") if isinstance(value.get("code"), int) else None
+    code = blocks.code(value)
     event_file = filename in {"CommonEvents.json", "Troops.json"} or bool(
         re.fullmatch(r"Map\d+\.json", filename)
     )
@@ -181,7 +181,7 @@ def _expected_live_pointers(document: Any, record: dict[str, Any]) -> list[str]:
     relative = source_parts[original_at + 1 :]
     owner = _resolve(document, _pointer(tuple(owner_parts)))
     original = owner.get("_original")
-    code = owner.get("code") if isinstance(owner.get("code"), int) else None
+    code = blocks.code(owner)
 
     if isinstance(original, (dict, list)):
         if code == 102:
@@ -395,7 +395,7 @@ def verify_manifest(data_root: str | Path, manifest: dict[str, Any]) -> dict[str
             source_parts = _decode_pointer(record["source_pointer"])
             owner_parts = source_parts[: source_parts.index("_original")]
             owner = _resolve(document, _pointer(tuple(owner_parts)))
-            actual_code = owner.get("code") if isinstance(owner.get("code"), int) else None
+            actual_code = blocks.code(owner)
             if record.get("event_code") != actual_code:
                 raise ValueError("event code mismatch")
             if record.get("live_pointers") != _expected_live_pointers(document, record):

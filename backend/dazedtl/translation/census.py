@@ -190,9 +190,11 @@ def _segment(value, shown=frozenset()):
     """'*' for a list element; event commands keep their code, and plugin
     commands their plugin or keyword, which are identifiers. A comment line
     players read (see shown_comments) is HELP_SEGMENT."""
+    from util import rpgmaker_blocks as blocks
+
     if isinstance(value, dict):
-        code, parameters = value.get("code"), value.get("parameters")
-        if type(code) is int and isinstance(parameters, list):
+        code, parameters = blocks.code(value), value.get("parameters")
+        if code is not None and isinstance(parameters, list):
             if code == 357 and parameters:
                 return f"*[code=357:{parameters[0]}]"
             if code == 356 and parameters and isinstance(parameters[0], str):

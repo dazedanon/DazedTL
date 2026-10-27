@@ -93,6 +93,13 @@ SOURCE_TEXT_LEVELS = {
     "source-letters-v3": 3,
     SOURCE_TEXT: 4,
 }
+# A translation's short-output check measures its text without the codes,
+# placeholders and protected tokens around it (engine util/translation
+# content_text), so a reply or saved line collapsed to its codes and a mark,
+# such as \c[2].\c[0], fails and is sent again. A run frozen without it
+# measures the whole line, codes included, so a run approved before reuses
+# every saved line its estimate counted.
+SHORT_OUTPUTS = "short-outputs-v1"
 # Each battle-message-users policy a saved run may hold, by the parser level it
 # enables: v2 also treats a party of one actor as that actor.
 BATTLE_MESSAGE_USERS_LEVELS = {

@@ -215,6 +215,11 @@ DISABLE_CACHE = False
 # Runs whose frozen policy requires strict structured outputs never fall back to
 # weaker JSON or text formats. Older runs keep the native fallbacks.
 STRICT_STRUCTURED_OUTPUTS = False
+# Whether the short-output checks measure a line without its codes and masks
+# (content_text). Workers of runs frozen before the short-outputs policy
+# (settings/preferences SHORT_OUTPUTS) measure the whole line, so a run
+# approved before reuses every saved line its estimate counted.
+CONTENT_TEXT = True
 
 # Thread-local per-file token breakdown; read by calculateCost() for Claude.
 _thread_local = threading.local()
@@ -523,8 +528,11 @@ def content_text(text, protected=()):
     protect_script_codes protects, the placeholders a protected request holds
     in their place, or the literal *protected* tokens a request names, such
     as Assistant-led's ⟦P0⟧ masks. None of them is the line's text, so a
-    translation collapsed to its masks and a mark is as short as the mark."""
+    translation collapsed to its masks and a mark is as short as the mark.
+    Runs frozen before that measure the whole line (CONTENT_TEXT)."""
     text = str(text)
+    if not CONTENT_TEXT:
+        return text.strip()
     for token in sorted(set(protected), key=len, reverse=True):
         text = text.replace(token, "")
     return without_protected_codes(text).strip()
@@ -653,51 +661,6 @@ def _is_map_name_batch(request_instructions) -> bool:
     lowered = str(request_instructions).casefold()
     return "rpg location name" in lowered
 
-
-def translation_content_warnings(original_items, translated_items, langRegex):
-    """Return non-blocking content concerns that should remain reviewable."""
-    if not isinstance(original_items, list):
-        original_items = [original_items]
-        translated_items = [translated_items]
-
-    warning_indices = []
-    warnings = []
-    for i, (orig, trans) in enumerate(zip(original_items, translated_items)):
-        orig_str = str(orig).strip()
-        trans_str = str(trans).strip()
-        if not orig_str or orig_str == "Placeholder Text":
-            continue
-        if not re.search(langRegex, orig_str):
-            continue
-
-        line_warnings = []
-        has_bracketed_control = bool(re.search(r'\\[A-Z]\[', trans_str))
-        orig_text, trans_text = content_text(orig_str), content_text(trans_str)
-        if len(trans_text) <= 1 and len(orig_text) > 3 and not has_bracketed_control:
-            line_warnings.append(
-                f"Line{i+1}: Translation unusually short ('{trans_str}') for "
-                f"'{orig_str[:50]}...'"
-            )
-        elif (
-            len(orig_text) > 10
-            and len(trans_text) <= 2
-            and not has_bracketed_control
-            and not trans_text.isalnum()
-        ):
-            line_warnings.append(
-                f"Line{i+1}: Translation suspiciously short ('{trans_str}') for "
-                f"'{orig_str[:50]}...'"
-            )
-        if re.search(r"(.)\1{44,}", trans_str):
-            line_warnings.append(
-                f"Line{i+1}: Excessive character repetition (possible model glitch)"
-            )
-
-        if line_warnings:
-            warning_indices.append(i)
-            warnings.extend(line_warnings)
-
-    return warning_indices, warnings
 
 # Load .env, strip accidental whitespace, set base URL / org / API key.
 # Gemini/Mistral use their endpoints only when no custom API URL is set.
@@ -6507,13 +6470,6 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                                                 f"  ... and {len(content_reasons) - 5} more issues"
                                             )
                                 else:
-                                    _, content_warnings = translation_content_warnings(
-                                        clean_tItem, extracted, config.langRegex
-                                    )
-                                    if content_warnings and pbar:
-                                        pbar.write("Translation content warning:")
-                                        for warning in content_warnings[:5]:
-                                            pbar.write(f"  - {warning}")
                                     # Set translations (line count matches, placeholders valid, and content is good)
                                     final_translations = [
                                         _clean_extracted_line(line) for line in extracted
@@ -6572,13 +6528,6 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                                         for reason in content_reasons:
                                             pbar.write(f"  - {reason}")
                                 else:
-                                    _, content_warnings = translation_content_warnings(
-                                        tItem, final_cleaned, config.langRegex
-                                    )
-                                    if content_warnings and pbar:
-                                        pbar.write("Translation content warning:")
-                                        for warning in content_warnings:
-                                            pbar.write(f"  - {warning}")
                                     # Accept output - all validations passed
                                     final_cleaned = corner_quotes(
                                         final_cleaned,
