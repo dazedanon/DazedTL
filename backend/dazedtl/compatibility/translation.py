@@ -1443,38 +1443,20 @@ class TranslationProvider:
     @provider_errors
     def collect_terminal(self, identity, mapping):
         """Keep successful paid rows from a canceled/expired compatible Batch job."""
-        from util.batch_providers import (
-            _download_file_text,
-            _openai_result,
-            add_openai_usage,
-            empty_usage,
-        )
+        from util.batch_providers import read_openai_results
 
         if self.provider in {"anthropic", "openrouter"}:
             return self.collect(identity, mapping)
         batch = self.client.batches.retrieve(identity)
-        results, errors, usage = {}, [], empty_usage()
-        for name in ("output_file_id", "error_file_id"):
-            content = _download_file_text(
-                self.provider,
-                getattr(batch, name, None) or "",
-                client=self.client,
-                google_client=self.google,
-            )
-            for line in content.splitlines():
-                if not line.strip():
-                    continue
-                row = json.loads(line)
-                custom = row.get("custom_id")
-                if custom not in mapping:
-                    continue
-                result, error = _openai_result(row, self.provider)
-                if result is not None and not error:
-                    results[mapping[custom]] = result
-                    add_openai_usage(usage, result)
-                else:
-                    errors.append(custom)
-        return results, errors, usage
+        results, errors, usage = read_openai_results(
+            self.provider,
+            getattr(batch, "output_file_id", None),
+            getattr(batch, "error_file_id", None),
+            mapping,
+            client=self.client,
+            google_client=self.google,
+        )
+        return results, [str(item[0]) for item in errors], usage
 
 
 def _wolf_documents(wolfdawn, root, workdir, names):
