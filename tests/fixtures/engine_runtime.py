@@ -411,6 +411,11 @@ try:
                 parser._vocab_speaker_lookup("農夫の魂（夫）")
                 == "Farmer's Soul (Husband)"
             ), saved_names
+        # A Japanese to Simplified Chinese run judged a speaker's hanzi name
+        # Japanese left, so every dialogue line kept the kana nameplate.
+        with patch.object(parser, "LANGUAGE", "Simplified chinese"):
+            assert parser._speaker_translation_valid("宿屋の主人", "旅店老板")
+            assert not parser._speaker_translation_valid("ミカ", "ミカ")
         # Setup read saved guesses such as a cameo's 存子 "Sonko" as approved
         # spellings; they now say they were translated without their story.
         assert "Unverified nameplate" in saved_names, saved_names

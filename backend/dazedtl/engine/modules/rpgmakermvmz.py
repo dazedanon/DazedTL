@@ -4,7 +4,7 @@ import json
 import os
 import re
 import util.dazedwrap as dazedwrap
-from util.languages import ENGLISH, source_pattern
+from util.languages import ENGLISH, shares_kanji, source_pattern, tag
 from util import rpgmaker_blocks, rpgmaker_rewrap, rpgmaker_scope
 from util import rpgmaker_script_strings as script_strings
 import threading
@@ -2044,8 +2044,7 @@ def _apply_system_terms_message_original(data, key: str, raw: str) -> None:
 def _normalize_system_message_translation(key: str, translated: str) -> str:
     """Repair narrowly known English RPG Maker system-message failures."""
     text = str(translated or "").strip()
-    target = str(LANGUAGE or "").strip().casefold().replace("_", "-")
-    is_english = target in {"en", "eng", "english"} or target.startswith("en-")
+    is_english = tag(LANGUAGE) == "en"
     if key == "escapeFailure" and is_english and re.fullmatch(
         r"but\s+couldn['’]t\s+escape!?", text, flags=re.IGNORECASE
     ):
@@ -7000,8 +6999,9 @@ def _speaker_translation_valid(source: str, translated: str) -> bool:
     normalized = str(translated or "").strip()
     if not normalized:
         return False
-    target = str(LANGUAGE or "").strip().casefold()
-    if target == "chinese":
+    # A target that shares the source's kanji, such as Japanese into
+    # Simplified Chinese, writes the name in them: only kana is left.
+    if shares_kanji(target=LANGUAGE):
         return re.search(r"[ぁ-ゖァ-ヺー\uFF66-\uFF9F]", normalized) is None
     # Another target, Japanese included, has a source in another script,
     # whose letters the name must have left.

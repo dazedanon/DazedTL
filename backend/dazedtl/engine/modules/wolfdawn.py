@@ -59,7 +59,7 @@ import traceback
 from colorama import Fore
 from tqdm import tqdm
 from util.target_text import title_case
-from util.languages import source_pattern
+from util.languages import shares_kanji, source_pattern
 from util.paths import read_active_glossary
 from util.skills import ctx, load_system_prompt
 from util.translation import (
@@ -353,8 +353,9 @@ def _speaker_translation_valid(source: str, translated: str) -> bool:
     normalized = str(translated or "").strip()
     if not normalized:
         return False
-    target = str(LANGUAGE or "").strip().casefold()
-    if target == "chinese":
+    # A target that shares the source's kanji, such as Japanese into
+    # Simplified Chinese, writes the name in them: only kana is left.
+    if shares_kanji(target=LANGUAGE):
         return re.search(r"[ぁ-ゖァ-ヺー\uFF66-\uFF9F]", normalized) is None
     # Another target, Japanese included, has a source in another script.
     if normalized.casefold() == str(source or "").strip().casefold():

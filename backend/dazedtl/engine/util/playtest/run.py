@@ -626,7 +626,7 @@ def layout_lines(characters: int, count: int, target: str = "English") -> list[s
 
 
 def _full_width_lines(characters: int, count: int, target: str) -> list[str]:
-    sample = LAYOUT_SAMPLES.get(str(target).strip().casefold(), LAYOUT_SAMPLES["japanese"])
+    sample = LAYOUT_SAMPLES.get(languages.script(target), LAYOUT_SAMPLES["japanese"])
     lines = []
     for number in range(count):
         start = number * 11 % len(sample)
