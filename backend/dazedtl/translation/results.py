@@ -11,7 +11,7 @@ from dazedtl.storage import write_json
 from .files import digest, project_path, read_json, write_project_json
 from .project import WORK
 from .refusals import RULES_VERSION, line_refusal
-from .requests import result_value, source_language
+from .requests import result_value, source_language, target_language
 
 ACCEPTED = WORK + "/work/accepted"
 # The progress export: an index of parts, each the units of PART_REQUESTS
@@ -90,14 +90,6 @@ def _refusal(request, translations):
     return None
 
 
-def target_language(request):
-    """The language a request translates into, which its context names; a
-    request compiled without it translates into English."""
-    from dazedtl.languages import ENGLISH
-
-    return request["context"].get("target_language") or ENGLISH
-
-
 def _content_failure(request, translations):
     """The first line of translations that fails Guided's content check
     (util/translation `validate_translation_content`), such as one collapsed
@@ -115,7 +107,8 @@ def _content_failure(request, translations):
     ]
     if not identities:
         return None
-    language, target = source_language(request["context"]), target_language(request)
+    context = request["context"]
+    language, target = source_language(context), target_language(context)
     with reading(language, target):
         _valid, invalid, reasons = validate_translation_content(
             [request["sources"][identity] for identity in identities],
@@ -162,7 +155,7 @@ def exported(request, value):
     (rpgmaker_qa_lint `normalize`). The receipt keeps what was accepted."""
     from util.rpgmaker_qa_lint import normalize
 
-    target = target_language(request)
+    target = target_language(request["context"])
     return {
         identity: normalize(request["sources"][identity], text, target)
         for identity, text in value["translations"].items()

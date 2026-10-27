@@ -30,6 +30,14 @@ def source_language(context):
     return context.get("source_language", JAPANESE)
 
 
+def target_language(context):
+    """The target language of a request, which its context names; one
+    compiled without it translates into English."""
+    from dazedtl.languages import ENGLISH
+
+    return context.get("target_language") or ENGLISH
+
+
 def voice(context):
     """The note on speakers and voice for a request."""
     return (
