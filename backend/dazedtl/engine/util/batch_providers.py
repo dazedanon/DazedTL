@@ -532,9 +532,25 @@ def download_results(provider: str, batch_id: str, custom_ids: dict,
             raw_status,
             [{"message": "The completed provider batch has no result files."}],
         )
+    return read_openai_results(
+        provider,
+        output_id,
+        error_id,
+        custom_ids,
+        client=client,
+        google_client=google_client,
+    )
+
+
+def read_openai_results(provider: str, output_id: str | None,
+                        error_id: str | None, custom_ids: dict, *, client=None,
+                        google_client=None) -> tuple[dict, list, dict]:
+    """An OpenAI-compatible Batch's result files as ``(cache-key results,
+    errors, aggregate usage)``, whether it completed or was stopped and kept
+    its paid rows."""
     results, errors, totals = {}, [], _empty_usage()
     for line in _download_file_text(
-        provider, output_id, client=client, google_client=google_client
+        provider, output_id or "", client=client, google_client=google_client
     ).splitlines():
         if not line.strip():
             continue
@@ -561,7 +577,7 @@ def download_results(provider: str, batch_id: str, custom_ids: dict,
         ]
         totals["thinking_tokens"] += result.get("thinking_tokens", 0)
     for line in _download_file_text(
-        provider, error_id, client=client, google_client=google_client
+        provider, error_id or "", client=client, google_client=google_client
     ).splitlines():
         if line.strip():
             row = json.loads(line)
