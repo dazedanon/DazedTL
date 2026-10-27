@@ -3,7 +3,6 @@ import type { ReactNode } from "react";
 import { api } from "../../../../api/client";
 import { Button } from "../../../../ui/Button";
 import { ExpandableText } from "../../../../ui/ExpandableText";
-import { Message } from "../../../../ui/Feedback";
 import { RunFailure } from "../../RunFailure";
 import { TranslateWorkspace } from "../../TranslateWorkspace";
 import { nothingToTranslate } from "../../eventTextSelection";
@@ -44,7 +43,6 @@ export function phaseView(w: GuidedWorkspace): TaskView {
     enabledCodes,
     advancedReady,
     mode,
-    paidModeReady,
     phase,
     phaseFiles,
     currentEstimate,
@@ -166,6 +164,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
       state={state}
       phase={phase}
       values={values}
+      mode={mode}
       run={current}
       estimate={localEstimate}
       currentEstimate={!!quote}
@@ -197,9 +196,6 @@ export function phaseView(w: GuidedWorkspace): TaskView {
           Provider execution is disabled for this launch. Local estimates are
           available.
         </p>
-      )}
-      {!paidModeReady && (
-        <Message message="This connection does not support Batch. Choose Live or a supported connection." />
       )}
       {failure && <RunFailure {...failure} />}
       {phase === "advanced" && (
@@ -352,11 +348,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
         variant="primary"
         pending={preparing}
         disabled={
-          disabled ||
-          prerequisites ||
-          liveRunning ||
-          !state.provider.ready ||
-          !paidModeReady
+          disabled || prerequisites || liveRunning || !state.provider.ready
         }
         onClick={translateSelected}
       >

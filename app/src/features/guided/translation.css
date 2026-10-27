@@ -641,7 +641,7 @@
 }
 @media (max-height: 720px) {
   @container translation-workspace (max-width: 900px) {
-    .translation-method-hint {
+    .translation-method-hint:not([data-reason]) {
       display: none;
     }
   }

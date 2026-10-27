@@ -466,7 +466,7 @@ export function layoutView(w: GuidedWorkspace): TaskView {
 export function estimateView(w: GuidedWorkspace): TaskView {
   const {
     state,
-    values,
+    mode,
     context,
     settings,
     disabled,
@@ -509,7 +509,7 @@ export function estimateView(w: GuidedWorkspace): TaskView {
     />
   );
   return {
-    content: <CostEstimate value={estimate} mode={values.mode} />,
+    content: <CostEstimate value={estimate} mode={mode} />,
     heading: {
       // The estimate prices the model chosen here; another model needs a new one.
       actions: (

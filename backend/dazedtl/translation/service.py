@@ -15,9 +15,11 @@ from dazedtl.freshness import Basis, compare
 from dazedtl.languages import pair_note
 from dazedtl.settings import language_pair
 from dazedtl.settings.execution import (
+    batch_unavailable,
     configuration,
     connection_summary,
     entries_per_request,
+    runnable_mode,
 )
 from dazedtl.settings.preferences import BATTLE_MESSAGE_USERS
 from dazedtl.storage import write_bytes, write_json
@@ -226,17 +228,17 @@ class Translation:
     def default_mode(self):
         """New projects start on Batch, or on Live when the active connection
         cannot run Batch, as Guided does."""
-        connection = connection_summary(self.settings)
-        return (
-            "live"
-            if connection
-            and connection["model"]
-            and not self.settings.translation_defaults().get("batch_supported")
-            else "batch"
-        )
+        return runnable_mode(self.settings, "batch", "live")
 
     def options(self, project):
         return project.read(self.default_mode())
+
+    def run_mode(self, project):
+        """The mode the project runs in: a saved Batch the connection cannot
+        run is Live, which the page shows from the same rule."""
+        return runnable_mode(
+            self.settings, self.options(project)["options"]["mode"], "live"
+        )
 
     def idle(self, identity, kind=None):
         if self.jobs.running(identity, kind):
@@ -447,9 +449,7 @@ class Translation:
             "originalsRecorded": originals.available(
                 self.workspace, project_id, project.root, saved_lifecycle
             ),
-            "jobs": self.job_views(
-                saved_jobs, selected["options"]["mode"], project.root
-            ),
+            "jobs": self.job_views(saved_jobs, self.run_mode(project), project.root),
             "active": self.jobs.running(project_id),
             "warnings": warnings,
             "checkoutIssue": refused,
@@ -458,9 +458,7 @@ class Translation:
             else "",
             "providerEnabled": self.settings.adapter.allow_providers,
             "connection": connection_summary(self.settings),
-            "batchSupported": bool(
-                self.settings.translation_defaults().get("batch_supported")
-            ),
+            "batchUnavailable": batch_unavailable(self.settings),
             "legacyRun": (
                 {
                     key: value
@@ -517,15 +515,17 @@ class Translation:
         selected = project.read(mode)
         if not selected["initialized"]:
             self.idle(project_id)
-            selected = project.save(selected["revision"], selected["options"], mode)
+            project.save(selected["revision"], selected["options"], mode)
+        # The prompt names the mode the run takes.
+        selected = {**project.read()["options"], "mode": self.run_mode(project)}
         setup = self.engine.prepare(
             project.root,
-            selected["options"],
+            selected,
             language=languages["target"],
             refresh=not frozen,
         )
         handoff = windows_note() + self.starting_prompt(
-            project_id, project, selected["options"], setup, languages, update
+            project_id, project, selected, setup, languages, update
         )
         write_bytes(
             handoff_path := project_path(
@@ -764,7 +764,7 @@ Additional project instructions:
         ):
             raise ValueError("Only an estimate waiting for approval can be redone.")
         _record, project = self.project(project_id)
-        mode = project.read()["options"]["mode"]
+        mode = self.run_mode(project)
         if mode == "agent":
             raise ValueError(
                 "Choose API Batch or Live API in Options to estimate this run again."
@@ -903,7 +903,7 @@ Additional project instructions:
                 )
         selected = project.read()["options"]
         cfg, batch_provider = self.api_configuration(
-            mode or selected["mode"], project.root
+            mode or self.run_mode(project), project.root
         )
         if cfg["mode"] == "batch" and not batch_provider:
             raise ValueError(
@@ -1232,7 +1232,7 @@ Additional project instructions:
                 priced_mode(
                     plan.get("finishes"),
                     plan["configuration"]["mode"],
-                    project.read()["options"]["mode"],
+                    self.run_mode(project),
                 ),
                 project.root,
             )

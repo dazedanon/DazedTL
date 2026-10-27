@@ -273,11 +273,9 @@ class GuidedActions:
                 "Choose Batch, Live API, a cost estimate, or speaker collection."
             )
         mode = options["mode"]
-        if (
-            options.get("preparation_mode")
-            and options["preparation_mode"]
-            != self.guided.preferences(native)["values"]["mode"]
-        ):
+        if options.get("preparation_mode") and options[
+            "preparation_mode"
+        ] != self.guided.run_mode(native):
             raise ValueError(
                 "Save the intended translation mode before preparing its estimate."
             )
@@ -328,11 +326,7 @@ class GuidedActions:
         run_inputs = None
         quote = None
         if mode != "speakers":
-            target_mode = (
-                self.guided.preferences(native)["values"]["mode"]
-                if mode == "estimate"
-                else mode
-            )
+            target_mode = self.guided.run_mode(native) if mode == "estimate" else mode
             matched, run_inputs = self.guided.runs.quote(
                 project_id, native, phase, target_mode
             )

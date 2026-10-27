@@ -75,6 +75,7 @@ import {
 } from "./model";
 import { selectionNames } from "../../../ui/displayText";
 import { childPath } from "../../../ui/displayPath";
+import { runnableMode } from "../../translation/runnableMode";
 
 /** How the footer names a run that ended without failing. */
 const endings = {
@@ -267,8 +268,13 @@ export function useGuidedWorkspace({
   const advancedReady =
     enabledCodes.length > 0 &&
     !sourceErrors(state.eventText, values.engine_options).length;
-  const mode = values.mode;
-  const paidModeReady = mode !== "batch" || state.provider.batchSupported;
+  // The method Translate shows and runs: a Batch the connection cannot run
+  // reads as Live, and the toolbar says why.
+  const mode = runnableMode(
+    values.mode,
+    state.provider.batchUnavailable,
+    "translate",
+  );
   const pickerFiles = state.files.filter(
     (file) => !fileScope || file.group === fileScope,
   );
@@ -1616,7 +1622,6 @@ export function useGuidedWorkspace({
     enabledCodes,
     advancedReady,
     mode,
-    paidModeReady,
     pickerFiles,
     pickerSelected,
     phase,

@@ -323,8 +323,11 @@ export default function App() {
       <div className="app-body">
         <aside className="sidebar">
           <nav aria-label="Main navigation">
+            {/* Pages open once the workspace is observed; until then the
+                top bar says it is starting. */}
             <Button
               aria-current={state?.screen === "project" ? "page" : undefined}
+              disabled={!state}
               onClick={() => navigate("project")}
             >
               <Gamepad2 size={18} />
@@ -349,6 +352,7 @@ export default function App() {
             <DiagnosticsAction />
             <Button
               aria-current={state?.screen === "settings" ? "page" : undefined}
+              disabled={!state}
               onClick={() => navigate("settings")}
             >
               <Settings2 size={18} />
