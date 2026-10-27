@@ -275,5 +275,5 @@ For an official update, stage_update records the new release's files in the game
 A folder holding fewer than half of the game's files is staged as a patch unless `patch` says otherwise, and version_preview then compares a staged release only as what it was staged as.
 Complete the relevant engine preparation there, then use version_preview and version_apply with its saved preview ID.
 Continue/abort operate on the preserved Git recovery state.
-After a completed update, version_handoff supplies the shared follow-up instructions.
+After a completed update, version_handoff returns the task **Copy post-update task** copies: the starting prompt's own steps from census on, in the project's mode and language pair.
 Reuse unchanged translations with their source/context evidence; never rely on array positions alone across versions.

@@ -64,7 +64,6 @@ export const versionActions = new Set([
   "version_apply",
   "version_continue",
   "version_abort",
-  "version_handoff",
 ]);
 
 export function updateCounts(value: Record<string, unknown>) {

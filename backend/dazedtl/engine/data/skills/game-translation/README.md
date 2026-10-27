@@ -1,8 +1,8 @@
 # Len’s game-translation skill for DazedTL
 
-This maintained copy ships as ordinary source files with DazedTL. Open **Len’s Method**,
-choose a game and scope, click **Copy starting prompt**, and paste it into your coding
-assistant. This prepares the workspace and includes setup in the same starting prompt.
+This maintained copy ships as ordinary source files with DazedTL.
+Choose a game, translate it **Assistant-led**, click **Copy starting prompt** and paste it into your coding assistant.
+This prepares the workspace and includes setup in the same starting prompt.
 There is no separate skill ZIP to install or refresh.
 
 `SKILL.md` is the playbook; `references/` contains engine and topic guidance, and
@@ -18,7 +18,7 @@ Copy only the needed tools before adapting or running scripts that write beside 
 The starting prompt also runs the lifecycle in `references/project-lifecycle.md`: preserve the source, set up or reuse Git through the helper's `operation git_setup`, and keep local checkpoints, which DazedTL makes itself in Assistant-led.
 New Len baselines retain native game bytes and their reviewed ignore rules.
 Authored tools, translated text records and QA notes belong in the project's versioned `.dazedtl/len-method/work/`; generated context and provider state remain local.
-Use the selected game's Version Update page for later releases.
+For a later release, use **Start game update** on the project's **Checkpoints** tab, then **Copy post-update task**.
 
 Run the self-check from anywhere:
 

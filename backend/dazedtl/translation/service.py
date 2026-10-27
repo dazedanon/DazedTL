@@ -455,6 +455,21 @@ class Translation:
         }
 
     def prepare(self, project_id):
+        return self.handoff(project_id)
+
+    def update_task(self, project_id):
+        """The starting prompt again for an applied official update, its
+        steps from census on, prepared as copying the starting prompt is."""
+        _record, project = self.project(project_id)
+        version = self.engine.applied_update(project.root)
+        return {
+            "version": version,
+            "prompt": self.handoff(project_id, version)["handoff"],
+        }
+
+    def handoff(self, project_id, update=None):
+        """Prepares the game and saves its prompt; `update` is the version an
+        applied official update brought, whose task it then is."""
         # An API run can wait hours at the provider, and its frozen requests
         # depend on the guidance preparing rewrites. Meanwhile the prompt is
         # built on the inputs already prepared, so the assistant can resume.
@@ -468,27 +483,49 @@ class Translation:
         # Set up starts: the game keeps the language pair Settings name.
         language_pair.record(self.settings, project.root)
         languages = language_pair.pair(self.settings, project.root)
-        source, target = languages["source"], languages["target"]
         mode = self.default_mode()
         selected = project.read(mode)
         if not selected["initialized"]:
             self.idle(project_id)
             selected = project.save(selected["revision"], selected["options"], mode)
         setup = self.engine.prepare(
-            project.root, selected["options"], language=target, refresh=not frozen
+            project.root,
+            selected["options"],
+            language=languages["target"],
+            refresh=not frozen,
         )
+        handoff = windows_note() + self.starting_prompt(
+            project_id, project, selected["options"], setup, languages, update
+        )
+        write_bytes(
+            handoff_path := project_path(
+                project.root, WORK + "/handoff.md", exists=False
+            ),
+            handoff.encode("utf-8"),
+        )
+        return {"handoff": handoff, "path": str(handoff_path)}
+
+    def starting_prompt(
+        self, project_id, project, selected, setup, languages, update=None
+    ):
+        """Len's pipeline as numbered steps, which the starting prompt and
+        the task after an official update share; `update` is the version that
+        update applied."""
+        source, target = languages["source"], languages["target"]
         command = helper_command(self.workspace, project_id)
         mode = {
             "agent": "Assistant only (you translate every line in this session; DazedTL makes no translation API calls)",
             "live": "Live API (DazedTL sends one request at a time through the user's API connection)",
             "batch": "API Batch (DazedTL submits provider Batch jobs through the user's API connection)",
-        }[selected["options"]["mode"]]
+        }[selected["mode"]]
         investigation = (
-            "Investigation: thorough. Run setup.md's Three-pass discovery as written."
-            if selected["options"]["thorough_investigation"]
+            "Investigation: done before this update. Add to the glossary and game.md only what the new text needs."
+            if update is not None
+            else "Investigation: thorough. Run setup.md's Three-pass discovery as written."
+            if selected["thorough_investigation"]
             else "Investigation: standard. setup.md describes One-pass discovery; follow it, and don't run the three blind passes some skill references describe."
         )
-        instructions = selected["options"]["instructions"].strip() or "(none)"
+        instructions = selected["instructions"].strip() or "(none)"
         images = (
             "\n9. Images: translate them through DazedTL's Images steps rather than Len's manual image pipeline; "
             "images --status says which step comes next, and the steps resume where they stopped. "
@@ -501,7 +538,7 @@ class Translation:
             "add them to the runtime patch manifest before QA. "
             "Repeat until images --status reports done. The app records image progress from these steps, so leave image records out of your progress reports; images is a phase of its own. "
             "If images --status reports that DazedTL can't read this engine's images, follow Len's image reference and report images in your progress records."
-            if selected["options"]["include_images"]
+            if selected["include_images"]
             else ""
         )
         injection, qa = ("10", "11") if images else ("9", "10")
@@ -516,20 +553,34 @@ class Translation:
             "DazedTL then saves the fixes in a checkpoint; every later checkpoint "
             "and the patch carry them.",
         )
-        handoff = f"""{pair_note(source, target)}Translate this game and deliver a verified local patch using Len's maintained game-translation skills.
+        if update is None:
+            opening = "Translate this game and deliver a verified local patch using Len's maintained game-translation skills."
+            resume, first = "", "preparation"
+        else:
+            approval = (
+                "Translate those yourself as step 6 says."
+                if selected["mode"] == "agent"
+                else "DazedTL prices those in the selected mode, and only the user approves the estimate, with the button on DazedTL's Progress tab, as step 7 says."
+            )
+            opening = f"Official update {json.dumps(update, ensure_ascii=False)} is applied to this game. Translate the text it added or changed and deliver a verified local patch again using Len's maintained game-translation skills."
+            resume = f"""
+
+Game update: preparation is done and the update keeps it, so after step 1's state read continue from step 4, without recording the original, setting up Git, running the canary or investigating again. Run census again, since the scope is now the new version's text. Reuse your extractor and injector in .dazedtl/len-method/work, adapting them to anything the update changed, extract the updated game's units with current source mappings and run organize --complete: requests whose lines and context are unchanged keep their translations, so only new and changed requests are left. {approval} Then {"translate its images as step 9 says, " if images else ""}inject, run QA and the playtest, and package the patch, as steps {injection} and {qa} say."""
+            first = "extraction"
+        return f"""{pair_note(source, target)}{opening}
 
 Game: {json.dumps(str(project.root), ensure_ascii=False)}
 Skill: {json.dumps(setup["skill"], ensure_ascii=False)}
 Setup instructions: {json.dumps(setup["setup"], ensure_ascii=False)}
 Selected execution mode: {mode}
-Image translation: {"included" if selected["options"]["include_images"] else "excluded; report remaining baked text separately"}
-{investigation}
+Image translation: {"included" if selected["include_images"] else "excluded; report remaining baked text separately"}
+{investigation}{resume}
 
 Work autonomously from start to finish. Ask the user only when the work cannot continue without them: approving API spending, a missing or failing API connection in an API mode, access that is denied, or a decision only the user can make that no source evidence settles. Never ask for routine confirmations, permission to continue, or checks you could make or record yourself. When a check needs something you cannot do, such as capturing the game window, use the mechanical alternative, record the remaining check as pending in status.md and continue. Finish all independent work before asking, and report only such a question as the progress blocker, with the exact answer you need as next_action.
 
 The user's assistant plan pays for this session, so keep it economical. Read the skill and the detected engine's reference first; read each other reference when its phase begins, and only the sections the current step needs: project-lifecycle before backup and Git, glossary-and-prompts before guidance, text-fitting before injection, playtesting-and-release before the canary and QA, and version-updates only for an official game update. Prefer scripts and the helper over reading or pasting large files, and don't reread files already in context.
 
-Work in the numbered order below. Send your first progress report, with preparation active, right after the first state read and before any other work; then report each phase when you enter it: preparation is steps 1-3 and the delivery canary, extraction is steps 4-5, translation is steps 6-8, {"images is step 9, " if images else ""}injection is step {injection}, qa is step {qa}'s checks, and patch is packaging. Mark a phase complete once its work is saved.
+Work in the numbered order below. Send your first progress report, with {first} active, right after the first state read and before any other work; then report each phase when you enter it: preparation is steps 1-3 and the delivery canary, extraction is steps 4-5, translation is steps 6-8, {"images is step 9, " if images else ""}injection is step {injection}, qa is step {qa}'s checks, and patch is packaging. Mark a phase complete once its work is saved.
 
 Retain engine-specific methodology and existing valid work. Use the shared glossary, game.md, quirks.md, custom skills, and registered reference games. Preserve uncertainty, speaker identities, scene boundaries, protected controls, and source-supported character voice.
 
@@ -553,7 +604,7 @@ After a connection failure, inspect state and the relevant run before retrying a
 {injection}. Get the translations with results --run <id>, which writes them by line ID to a file, and inject from that file with scripts. For RPG Maker, first measure the game's message and help windows as text-fitting describes and write the widths you find as JSON (width, faceWidth, listWidth, noteWidth, messageRows). Confirm them on screen: for MV/MZ with playtest --layout FILE --wait 10, and for VX Ace, which that check can't play, by running the game yourself, since its scripts often change the stock windows' {ace_widths}. Then save that file's project-relative path as widths with operation line_widths, which also fits text you wrote earlier to them, and put each message's lines in the commands that held its {source}, stage translated JSON and use operation write_rpgmaker with matching source, translated and output paths (or with backup_id, a commit of refs/dazedtl/originals or a backup from backups, naming the saved original the source path is read from). This preserves _original, refuses unsafe structural remapping and fits the text to the saved Line widths, laying each message out over its own commands, so don't wrap it yourself; shorten the text its result lists under misfits, which a window of fixed height cuts off, and write that file again. After an official source update, use rebase_rpgmaker with the current expected_original_commit when old metadata needs rebasing; it requires source bytes matching that exact original-branch file. Ordinary corrections keep their existing {source}. Other engines retain native source/injection sidecars, fit using the actual engine/renderer and use their own verified reconstruction tools. Record unresolved extraction explicitly.
 {qa}. Inject and verify the actual installed game. Keep the runtime manifest complete: every file the patch changes or adds, which checkpoints take into the patch. Complete targeted structural, source/live and runtime QA; unavailable checks remain pending. For RPG Maker MV/MZ, the release playtest is DazedTL's too: after injection, run playtest --run --wait 20, which checks the game's files and plays it in a hidden window without writing to it, and read the report playtest --report names. Each problem names its fix: translate `plugin-files` and `translate` problems, {source} a plugin or the game's data still holds, through your extraction and injection steps; leave `text-qa` problems, its findings in translated text, to text QA, which reviews them; and a `game` problem is {fixes} Run it again with --stops FILE for places its report lists as not reached when you know the event or map that leads there. Report anything still out of reach as a coverage gap; never ask the user to play. For RPG Maker MV/MZ and VX Ace, text QA is DazedTL's own: after injection and any playtest, run qa --prepare and follow the README of the task it names until qa reports the task complete, shortening the plugin labels qa lists as squeezed on the game's screens as its next step says, then run qa --apply --wait 60, which applies the findings through DazedTL as their own checkpoint. The user answers QA's open questions in DazedTL while apply waits. For MV/MZ, run playtest --run --wait 20 again after QA's apply and fix what it finds the same way; text problems it counts as waiting go to QA's next round, which qa --prepare starts, so review and apply that round and play again, as playtest's next step says. DazedTL keeps the qa phase open until the playtest settles; then report its problems and coverage. DazedTL shows QA's stage and counts on Progress from its task, so report the qa phase without QA counts. Use operation package for a local Git patch after QA is complete; it needs organize --complete after the latest census, with every unit it accepted in your text export. Public publishing, uploads, remotes and pushes remain separate requests.
 
-For official updates, use stage_update with the new official folder/version to record its files in the game's Git and create a working copy. A folder holding fewer than half of the game's files is staged as a patch, whose files are copied over the game while every file it leaves out stays; pass patch true or false to override that, and check the returned layout for the folder that lined up with the game. It applies shared preparation to MV/MZ; complete the relevant skill's decryption, conversion or other prerequisites for other engines in the returned copy. Preview that prepared original with version_preview, inspect its saved result, then version_apply with that preview_id. Preserve conflict recovery and continue/abort through the helper. Use version_handoff after a completed update. Extract the updated game's units with current source mappings and organize them again; requests whose lines and context are unchanged keep their translations, and positional offsets alone are not stable across releases.
+For official updates, use stage_update with the new official folder/version to record its files in the game's Git and create a working copy. A folder holding fewer than half of the game's files is staged as a patch, whose files are copied over the game while every file it leaves out stays; pass patch true or false to override that, and check the returned layout for the folder that lined up with the game. It applies shared preparation to MV/MZ; complete the relevant skill's decryption, conversion or other prerequisites for other engines in the returned copy. Preview that prepared original with version_preview, inspect its saved result, then version_apply with that preview_id. Preserve conflict recovery and continue/abort through the helper. After a completed update, version_handoff returns the task that finishes it. Extract the updated game's units with current source mappings and organize them again; requests whose lines and context are unchanged keep their translations, and positional offsets alone are not stable across releases.
 
 Use backups to list backups saved before the original game's files were kept in Git, including older profile backups. operation restore_backup accepts backup_id and an absolute destination for a new folder outside the game; it verifies all restored bytes and never overwrites an existing folder.
 
@@ -562,14 +613,6 @@ Finish the local delivery. Stop early only for a question from the list above, r
 Additional project instructions:
 {instructions}
 """
-        handoff = windows_note() + handoff
-        write_bytes(
-            handoff_path := project_path(
-                project.root, WORK + "/handoff.md", exists=False
-            ),
-            handoff.encode("utf-8"),
-        )
-        return {"handoff": handoff, "path": str(handoff_path)}
 
     def job_views(self, jobs, mode, root):
         """Saved runs as pages show them. An estimate waiting for approval
@@ -709,12 +752,6 @@ Additional project instructions:
     def backups(self, project_id):
         _record, project = self.project(project_id)
         return backups.catalog(project.root, self.workspace / "backups" / project_id)
-
-    def update_task(self, project_id):
-        """The assistant's task for an applied update's new and changed text."""
-        _record, project = self.project(project_id)
-        task = self.engine.version(project.root, "handoff", {})
-        return {**task, "prompt": windows_note() + task["prompt"]}
 
     def checkpoints(self, project_id):
         """The Checkpoints tab's timeline; read when the tab opens and after
@@ -1418,6 +1455,12 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
     def operation(self, project_id, action, arguments):
         if action not in OPERATIONS:
             raise ValueError("Choose an operation exposed by the project helper.")
+        if action == "version_handoff":
+            # The task Checkpoints copies after an update, prepared as the
+            # starting prompt is rather than as a saved job.
+            if arguments != {}:
+                raise ValueError("Unknown operation or operation fields.")
+            return self.update_task(project_id)
         return self._operation(project_id, action, arguments, OPERATIONS[action])
 
     def guided_operation(self, project_id, action, arguments):

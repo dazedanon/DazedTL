@@ -148,7 +148,7 @@ jobs:
         scenarios:
           - playtested released
           - fresh opened set-up translated qa-done paged moved-relabeled
-          - assistant-led assistant-written batch-waiting upgraded
+          - assistant-led assistant-written assistant-updated batch-waiting upgraded
           - released-ace released-mv moved images
           - update-stopped plugins-applied qa-done --game ace
     steps:

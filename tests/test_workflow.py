@@ -1378,6 +1378,24 @@ class WorkflowTests(unittest.TestCase):
                 "patch": "pending",
             },
         )
+        # The task after it continued Len's pipeline in no mode of its own:
+        # its assistant hand-edited files and translated everything itself.
+        # This update's files were all outside the translation, which still
+        # counts as applied.
+        self.engine.applied_update = TranslationEngine(self.profile).applied_update
+        task = self.service.update_task(self.identity)
+        self.assertEqual(task["version"], "1.1")
+        for step in (
+            "with extraction active",
+            "continue from step 4",
+            "organize --complete",
+            "Progress tab, as step 7 says",
+            "API Batch",
+        ):
+            self.assertIn(step, task["prompt"])
+        self.assertEqual(
+            self.service.operation(self.identity, "version_handoff", {}), task
+        )
         game = _Game(
             self.game,
             Entry("", "", "", version="1.1"),

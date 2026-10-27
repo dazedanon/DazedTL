@@ -354,7 +354,9 @@ When the update stopped before it reached the translation, **Cancel update** goe
 
 Once the update is in the game, Guided steps list the tasks it changed, such as **Maps & events**; each opens with the changed files selected.
 Files you translated before read **Outdated** there, so **Reload from game…** brings in their new text, and translating them again only sends the Japanese lines.
-For Assistant-led, **Copy post-update task** gives your assistant the update to translate.
+For Assistant-led, **Copy post-update task** gives your assistant the starting prompt's own steps for the new version, in the game's mode and languages.
+It counts the game's text again and organizes it, so lines and scenes the update left as they were keep their translations and only the rest is translated; in the API modes you approve its estimate on **Progress** first.
+Then it puts the text in the game, runs QA and the playtest and packages the patch, as it did the first time.
 
 ### Backups from before checkpoints
 
