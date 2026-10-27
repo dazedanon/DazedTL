@@ -244,6 +244,15 @@ def _named(root, commit):
     return "", version
 
 
+def revision(root):
+    """What moves whenever `prepared_record` could read another record: the
+    tips of the records and of the `original` branch, read without a Git
+    process, for polls."""
+    from util.version_update.git_workflow import ORIGINAL_BRANCH
+
+    return _tip(root), _tip(root, "refs/heads/" + ORIGINAL_BRANCH)
+
+
 def recorded(root):
     """Whether the game has its original files recorded, from one look at
     its Git folder, for polls."""

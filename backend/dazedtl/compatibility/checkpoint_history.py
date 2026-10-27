@@ -185,6 +185,27 @@ def _log(root):
     return entries
 
 
+def entries(root, commits):
+    """The checkpoints `commits` names, in that order, without the files each
+    changed, from one `git log`: what a record that follows an undo reads
+    of the checkpoints taken out."""
+    if not commits:
+        return []
+    output = _git(
+        root,
+        "log",
+        "--no-walk=unsorted",
+        "--stdin",
+        "--format=%x1e%H%x1f%cI%x1f%B",
+        input_text="".join(commit + "\n" for commit in commits),
+    ).stdout
+    found = []
+    for record in output.split("\x1e")[1:]:
+        commit, time, message = record.split("\x1f", 2)
+        found.append(Entry(commit, time, message))
+    return found
+
+
 def _annotate(entries):
     version = None
     for entry in reversed(entries):

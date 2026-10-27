@@ -7,17 +7,18 @@ project helper, which share its one dispatch, keep their answers meanwhile.
 """
 
 import hashlib
+import os
 from pathlib import Path
 
 from dazedtl import system
 from dazedtl.settings.execution import worker_secret
 from dazedtl.storage import write_json
 
-from . import census, organize, originals, progress_report
+from . import census, organize, progress_report
 from .compilation import compile_requests
 from .files import evidence, project_path, read_json, verify_evidence
 from .jobs import RunStore, now
-from .operations import census_path, lifecycle, require_baseline
+from .operations import census_path, census_stale, lifecycle, require_baseline
 from .project import WORK, ProjectWorkspace, scope
 from .requests import plan_input, quote
 from .results import Results
@@ -98,7 +99,6 @@ def scope_coverage(engine, workspace, project_id, root, units):
         system.unlink(coverage_path(workspace, project_id), missing_ok=True)
         return None, None
     value = read_json(path)
-    snapshot = originals.prepared(workspace, project_id, root)
     rules_file = project_path(root, SCOPE_RULES, exists=False)
     rules = census.rules_input(
         read_json(rules_file) if rules_file.exists() else None,
@@ -113,7 +113,7 @@ def scope_coverage(engine, workspace, project_id, root, units):
         rules,
     )
     report.update(
-        stale=not snapshot or value.get("snapshot") != snapshot.id,
+        stale=bool(census_stale(workspace, project_id, root)),
         source="assistant_dump" if value["decoded"] else "tool",
         needs_dump=[] if value["decoded"] else value["needs_dump"],
         unreadable=len(value["unreadable"]),
@@ -125,6 +125,27 @@ def scope_coverage(engine, workspace, project_id, root, units):
     )
     write_json(coverage_path(workspace, project_id), {**report, "checked_at": now()})
     return report, census.split_messages(value, [unit["source"] for unit in units])
+
+
+def saved_coverage(workspace, project_id, root, state=None):
+    """The last coverage organize found, for Progress: stale once a later
+    census replaced the one it was counted against, or the census no longer
+    counts the game's current version, as after a game update."""
+    path = coverage_path(workspace, project_id)
+    try:
+        value = read_json(path)
+        counted = os.stat(path).st_mtime_ns
+    except ValueError, OSError:
+        return None
+    if not value.get("stale"):
+        try:
+            replaced = os.stat(census_path(workspace, project_id)).st_mtime_ns > counted
+        except FileNotFoundError:
+            replaced = True
+        value["stale"] = replaced or bool(
+            census_stale(workspace, project_id, root, state)
+        )
+    return value
 
 
 def guidance_inputs(source):

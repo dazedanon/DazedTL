@@ -117,6 +117,7 @@ The assistant can add rules in .dazedtl/len-method/work/scope-rules.json, as ver
 Rules work on every kind, including decoded dumps, generic JSON and plain text, and never set aside dialogue, choices, names or other text the player reads in formats DazedTL reads itself.
 organize --complete is refused without a current census, while archives still need a decoded dump, or while anything is uncovered; .dazedtl/len-method/work/census-uncovered.json lists each uncovered location.
 Rules apply before extraction, so an identifier a rule sets aside never uses up the unit for the same words where the player reads them.
+Once a game update records a new prepared game, packaging is refused until census runs again, and Progress reads the coverage as stale until organize runs after that census ([run_compiler](../backend/dazedtl/translation/run_compiler.py)).
 Packaging requires organize --complete against the latest census, and a progress text export counting at least the units it accepted.
 Content is never a reason to leave text out; the assistant declines a request it won't translate, which keeps its lines in scope.
 
@@ -249,6 +250,7 @@ Native formats use their existing source/injection sidecars and verified native 
 Every change DazedTL makes to the game, through these operations or the app, is its own checkpoint: one commit on the translation branch whose subject names its stage and what it did ([architecture](architecture.md#checkpoints)).
 The app also checkpoints the assistant's work itself: each progress report saves what waits in the patch, the assistant's own edits included, as a checkpoint of the phase the last report named, such as `Assistant-led: Injection`, and so does the end of each translation run, when it finishes, stops or fails.
 write_rpgmaker and rebase_rpgmaker, which an assistant runs once per file, wait for that phase checkpoint instead of each being one; any other change DazedTL makes first saves them as their phase's.
+Undoing a phase's checkpoint under Checkpoints, or going back past it, reopens that phase and every later one in the last report, and a game update reopens extraction and every later phase, since the new version's text is counted and extracted again ([progress_report](../backend/dazedtl/translation/progress_report.py)).
 These checkpoints let the files the runtime manifest Git setup registered lists into the patch.
 Changes made to the game outside DazedTL are saved as a checkpoint of their own before the next other change DazedTL makes, a package or a game update's preview.
 The checkpoint operation is kept for assistants started before then: it saves what waits in the patch as one checkpoint, with its `message` as the summary when given, and files its optional runtime `manifest` lists that the patch lacks join the patch.

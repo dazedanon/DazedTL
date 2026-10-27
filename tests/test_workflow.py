@@ -637,11 +637,19 @@ class WorkflowTests(unittest.TestCase):
             {"events": [None, {"name": "", "pages": [{"list": page}]}]},
         )
         back_up()
-        with self.assertRaisesRegex(ValueError, "Run census again"):
-            self.prepared(self.service.organize(self.identity, units, True))
+        # A game update records a new prepared original: Progress reads the
+        # count as stale and packaging refuses before any organize runs.
+        self.assertTrue(self.service.state(self.identity)["coverage"]["stale"])
+        with self.assertRaisesRegex(ValueError, "updated after the last census"):
+            self.service.require_inventory(self.identity, 2)
         census()
+        # The new census is current, but the coverage counted the old one.
+        self.assertTrue(self.service.state(self.identity)["coverage"]["stale"])
         with self.assertRaisesRegex(ValueError, "after the latest census"):
             self.service.require_inventory(self.identity, 2)
+        back_up()
+        with self.assertRaisesRegex(ValueError, "Run census again"):
+            self.prepared(self.service.organize(self.identity, units, True))
 
     def test_unversioned_saved_run_keeps_results_and_approval_through_compatible_compiler_update(
         self,
@@ -1090,6 +1098,66 @@ class WorkflowTests(unittest.TestCase):
                 (staged / "data/Map001.json").read_text("utf-8"), "はじまりの村"
             )
 
+    def test_undoing_a_phase_checkpoint_reopens_it_and_every_later_phase(self):
+        # Checkpoints' undo put the game back before the injection, yet
+        # Progress still read injection, QA and the patch done.
+        from dazedtl.compatibility.checkpoint_commits import Change, _git, save
+        from util.len_git import setup_git
+        from util.len_translation import LenProject
+
+        setup_git(LenProject(self.game), version="1.0", current_is_untranslated=True)
+        done = dict.fromkeys(
+            ("preparation", "extraction", "translation", "injection", "qa"),
+            "complete",
+        )
+        report = {
+            "phase": "patch",
+            "phases": {**done, "images": "out_of_scope", "patch": "blocked"},
+            "blocker": "Choose where the patch goes.",
+        }
+        progress_report.publish(
+            self.profile, self.identity, self.engine, self.game, DEFAULTS, report
+        )
+        write_json(self.game / "source.json", {"line": "Yes."})
+        save(self.game, Change("Injection", "Assistant-led", "assistant_phase"))
+        injected = _git(self.game, "rev-parse", "HEAD").stdout.strip()
+        (self.game / "notes.txt").write_text("QA\n", encoding="utf-8")
+        save(self.game, progress_report.phase(self.game), ["notes.txt"])
+        write_json(
+            lifecycle_path(self.profile, self.identity),
+            {**lifecycle(self.profile, self.identity), "delivery": {"path": "p.zip"}},
+        )
+        execute(
+            self.engine,
+            self.profile,
+            {"project_id": self.identity},
+            {
+                "source": str(self.game),
+                "options": DEFAULTS,
+                "action": "checkpoint_undo",
+                "arguments": {"commit": injected},
+            },
+            lambda: False,
+        )
+        reopened = self.engine.reports[-1]
+        self.assertEqual(reopened["phase"], "injection")
+        self.assertEqual(
+            reopened["phases"],
+            {
+                **done,
+                "images": "out_of_scope",
+                "injection": "active",
+                "qa": "pending",
+                "patch": "pending",
+            },
+        )
+        # The question it asked at the patch no longer stands.
+        self.assertEqual(
+            (reopened["blocker"], reopened["next_action"]),
+            ("", progress_report.REOPENED.format("injection")),
+        )
+        self.assertNotIn("delivery", lifecycle(self.profile, self.identity))
+
     def test_start_over_restores_the_original_and_sets_the_attempt_aside(self):
         # Starting over must put every original file back as one checkpoint,
         # keeping the attempt in the game's Git history and the record of its
@@ -1262,6 +1330,20 @@ class WorkflowTests(unittest.TestCase):
                 self.game, official, "1.1", patch_overlay=True
             )
         )
+        # Assistant-led had delivered the old version; Progress kept reading
+        # done after the update brought new text.
+        finished = dict.fromkeys(
+            ("preparation", "extraction", "translation", "injection", "qa", "patch"),
+            "complete",
+        )
+        progress_report.publish(
+            self.profile,
+            self.identity,
+            self.engine,
+            self.game,
+            DEFAULTS,
+            {"phases": {**finished, "images": "out_of_scope"}},
+        )
         execute(
             self.engine,
             self.profile,
@@ -1278,6 +1360,20 @@ class WorkflowTests(unittest.TestCase):
                 },
             },
             lambda: False,
+        )
+        reopened = self.engine.reports[-1]
+        self.assertEqual(reopened["phase"], "extraction")
+        self.assertEqual(
+            reopened["phases"],
+            {
+                "preparation": "complete",
+                "extraction": "active",
+                "translation": "pending",
+                "images": "out_of_scope",
+                "injection": "pending",
+                "qa": "pending",
+                "patch": "pending",
+            },
         )
         game = _Game(
             self.game,

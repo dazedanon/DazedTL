@@ -36,6 +36,7 @@ from .game_update import GameUpdate
 from .helper_command import LOOPBACK_NOTE, helper_command, windows_note
 from .jobs import Jobs, declined_message, now
 from .operations import (
+    census_stale,
     checkout_issue,
     lifecycle,
     require_baseline,
@@ -407,7 +408,9 @@ class Translation:
             "documents": self.documents(project_id),
             "progress": progress,
             "assistantSeenAt": self.seen(project_id),
-            "coverage": self.saved_coverage(project_id),
+            "coverage": run_compiler.saved_coverage(
+                self.workspace, project_id, project.root, saved_lifecycle
+            ),
             "git": git,
             "gameUpdate": self.game_update.state(project_id),
             "lifecycle": saved_lifecycle,
@@ -884,16 +887,15 @@ Additional project instructions:
             project_id, "organize", {"input_path": input_path, "complete": complete}
         )
 
-    def saved_coverage(self, project_id):
-        """The last coverage organize found, for Progress."""
-        try:
-            return read_json(run_compiler.coverage_path(self.workspace, project_id))
-        except ValueError, OSError:
-            return None
-
     def require_inventory(self, project_id, translated):
-        """A patch holds the whole census: organize --complete accepted the
-        units against the latest census, and the text export counts them all."""
+        """A patch holds the whole census: it counted the game's current
+        version, organize --complete accepted the units against it, and the
+        text export counts them all."""
+        _record, project = self.project(project_id)
+        if census_stale(self.workspace, project_id, project.root):
+            raise ValueError(
+                "The game was updated after the last census. Run census again, then organize --complete with your units, before packaging."
+            )
         try:
             inventory = read_json(
                 run_compiler.inventory_path(self.workspace, project_id)

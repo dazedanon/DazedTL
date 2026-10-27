@@ -1,6 +1,7 @@
 """Preparation and delivery compose preserved engine operations with the
 game's recorded original files."""
 
+import os
 import tempfile
 from contextlib import ExitStack
 from dataclasses import replace
@@ -11,6 +12,7 @@ from dazedtl import system
 from dazedtl.actions import stopped_note
 from dazedtl.compatibility import original_files
 from dazedtl.compatibility.checkpoint_commits import for_action, in_phase, running
+from dazedtl.freshness import Digests
 from dazedtl.languages import game_source
 from dazedtl.storage import staging_folder, write_json
 
@@ -42,6 +44,26 @@ def runtime_manifest(source, relative):
 
 def census_path(workspace, project_id):
     return Path(workspace) / "translation/projects" / project_id / "census.json"
+
+
+# The prepared record each census counted, by the census file's signature.
+_COUNTED = Digests(limit=64)
+
+
+def census_stale(workspace, project_id, source, state=None):
+    """Whether the saved census counted another game than its current
+    version's prepared original, as after a game update; None without a
+    census. Polls read neither the census nor Git again while both stay."""
+    path = census_path(workspace, project_id)
+    try:
+        info = os.stat(path)
+    except FileNotFoundError:
+        return None
+    counted = _COUNTED.remember(
+        str(path), info, lambda: read_json(path).get("snapshot") or ""
+    )
+    current = originals.prepared_id(workspace, project_id, source, state)
+    return not current or counted != current
 
 
 def take_census(
@@ -499,6 +521,10 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
                     Path(plan["publications"]) if plan.get("publications") else None,
                     progress,
                 )
+                # The new version's text is extracted again, from a new census.
+                progress_report.reopen(
+                    workspace, job["project_id"], engine, source, options, "extraction"
+                )
         elif operation == "abort":
             state.pop("incoming_source", None)
             state.pop("incoming_version", None)
@@ -538,14 +564,17 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
                 Path(workspace),
                 job["project_id"],
                 Path(plan["publications"]) if plan.get("publications") else None,
+                engine,
             ),
             arguments["commit"],
             stopped=stopped,
             log=progress,
             original=originals.saved(workspace, job["project_id"], source, state),
         )
-        # Plugin files' records name their runtime manifest there.
+        # Plugin files' records name their runtime manifest there; the last
+        # package no longer matches the game.
         state = lifecycle(workspace, job["project_id"])
+        state.pop("delivery", None)
     elif action == "checkpoint_copy":
         from dazedtl.compatibility import checkpoint_history
 

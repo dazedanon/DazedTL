@@ -5,8 +5,10 @@ Each feature's apply names, in its record, the checkpoint its write made.
 Undoing a checkpoint, or going back past it, hands the checkpoints taken
 out, newest first, to each feature, which takes out what it applied there
 as made by the new checkpoint: text batches' receipts, which History, Text
-QA and `applied-outputs.json` read ([publication](publication.py)), and
-Plugin files' applications ([plugins](../plugins/service.py)). A restore is
+QA and `applied-outputs.json` read ([publication](publication.py)), Plugin
+files' applications ([plugins](../plugins/service.py)), and an Assistant-led
+report's phases, whose checkpoints reopen their phase and every one after it
+([progress_report](progress_report.py)). A restore is
 a record too, so taking one out brings back what it restored. Images reads
 whether an image is applied from its file, which it checks again once the
 game's checkpoints move ([images](../images/service.py)). A Guided
@@ -22,6 +24,7 @@ Start over, which takes out every checkpoint, calls `follow` itself.
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from dazedtl.compatibility import checkpoint_history
 from dazedtl.storage import write_json
@@ -42,6 +45,9 @@ class Records:
     # The Guided project's folder of text publications, when it has one,
     # which also keeps a VX Ace game's packing receipt.
     publications: Path | None = None
+    # The translation engine, which republishes an Assistant-led report; an
+    # undo of one feature's own checkpoint, never a phase's, passes none.
+    engine: Any = None
 
 
 def undoes(record):
@@ -78,7 +84,7 @@ def follow(records, undone, commit, widths=None):
     widths the game used before."""
     from dazedtl.plugins.service import follow as plugins
 
-    from . import publication
+    from . import progress_report, publication
 
     if records.publications is not None and records.publications.is_dir():
         publication.follow(records.publications, records.root, undone, commit)
@@ -90,6 +96,14 @@ def follow(records, undone, commit, widths=None):
             )
     if records.workspace is not None and records.project_id:
         plugins(records.workspace, records.project_id, records.root, undone, commit)
+        if records.engine is not None:
+            progress_report.follow(
+                records.workspace,
+                records.project_id,
+                records.engine,
+                records.root,
+                undone,
+            )
 
 
 def restored_widths(folder):
