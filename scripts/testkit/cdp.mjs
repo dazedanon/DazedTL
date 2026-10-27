@@ -196,8 +196,9 @@ export class Page {
 
   /**
    * The center of the enabled control whose accessible name matches, when it
-   * shows uncovered and stays put for two frames, after scrolling it into
-   * view; otherwise null. A menu draws before it moves beside its button.
+   * shows uncovered, stays put and stays enabled for two frames, after
+   * scrolling it into view; otherwise null. A menu draws before it moves
+   * beside its button.
    * @param {string | RegExp} name
    */
   locate(name) {
@@ -209,14 +210,18 @@ export class Page {
       const pattern = new RegExp(${JSON.stringify(pattern)});
       const label = (element) =>
         (element.getAttribute("aria-label") || element.textContent).replace(/\\s+/g, " ").trim();
+      // :disabled also matches a control inside a disabled fieldset, which
+      // ignores clicks while its own disabled property stays false.
+      const enabled = (element) =>
+        !element.matches(":disabled") &&
+        element.getAttribute("aria-disabled") !== "true";
       const found = [
         ...document.querySelectorAll("button, a, label, [role=button], [role=tab], [role=radio], [role=option], [role=menuitem]"),
       ].find(
         (element) =>
           element.getClientRects().length &&
           pattern.test(label(element)) &&
-          !element.disabled &&
-          element.getAttribute("aria-disabled") !== "true",
+          enabled(element),
       );
       if (!found) return null;
       found.scrollIntoView({ block: "center" });
@@ -234,7 +239,7 @@ export class Page {
       await frame();
       await frame();
       const now = center();
-      if (now.x !== x || now.y !== y) return null;
+      if (now.x !== x || now.y !== y || !enabled(found)) return null;
       const top = document.elementFromPoint(x, y);
       return top && (top === found || found.contains(top)) ? { x, y } : null;
     })()`);
