@@ -327,9 +327,9 @@ class GuidedInputs:
         from util.source_text import holds_source
 
         from . import derived
-        from .file_lines import COUNT_VERSION, read_counts
+        from .file_lines import counts_section, read_counts
 
-        section = f"lines/{COUNT_VERSION}"
+        section = counts_section()
         store = derived.store(self.folder)
         identities = self.identities(list(phases))
         found, missing, used = {}, {}, set()

@@ -15,9 +15,11 @@ CLARIFICATION = (
     "formatting; do not invent or change ages, relationships, or consent. "
 )
 MESSAGE = "The provider declined this translation. No refusal text was accepted as game dialogue."
-# Raise when refused() reads a saved response differently, such as after a
-# change to what counts as a refusal: the verdicts a run's ledger keeps
-# (compatibility/process_view) are then read again.
+# Raise when refused() or line_refusal() reads saved text differently, such
+# as after a change to what counts as a refusal: what the profile keeps from
+# them is then read again, the verdicts beside a run's ledger
+# (compatibility/process_view) and the line counts, which count saved refusal
+# notes as left (file_lines counts_section).
 RULES_VERSION = 1
 
 
