@@ -18,11 +18,12 @@ source the engine keeps in `_original`, else the text itself. The engine
 sends a value while it holds Japanese read against that source, so a line is
 translated when no part of it holds Japanese left (of a name box, the name the
 engine translates), unless it holds a refusal note an earlier run saved in
-place of a translation (`saved_refusals`). A translated map display name or
-note label keeps no `_original`, so whether it had Japanese takes the
-original game file, and any Japanese it holds is left. The engine probe
-(tests/fixtures/engine_runtime.py) checks that the engine sends only the
-lines left.
+place of a translation (`saved_refusals`). A map display name or note label
+may keep no `_original`: its source is then the original game file's, read
+as the engine reads it (util/rpgmaker_scope `kept`, util/original_values),
+and only for a name or label that reads left without one or, a label, may be
+a translation. The engine probe (tests/fixtures/engine_runtime.py) checks
+that the engine sends only the lines left.
 """
 
 import re
@@ -127,7 +128,7 @@ def lines(
     comments a plugin shows, count under *markers*, the comment markers
     Comment text translates, none while it is off."""
     from util import rpgmaker_blocks as blocks
-    from util.rpgmaker_scope import changes, kept
+    from util.rpgmaker_scope import changes
 
     if phase == "database":
         return _database(name, document)
@@ -208,22 +209,27 @@ def lines(
         listing.sort(key=lambda line: line.paths[0][len(listed)])
         found.extend(listing)
     if _MAP.fullmatch(name) and isinstance(readable, dict):
-        value = readable.get("displayName")
-        if isinstance(value, str):
-            source = kept(document, "displayName")
-            found.append(Line("map name", (("displayName",),), (value,), _kept(source)))
-        found.extend(_labels(document))
+        found.extend(_unkept(document))
     return found
 
 
-def _labels(document: Any) -> Iterator[Line]:
-    """A map's note labels (util/rpgmaker_scope), each at the field holding
-    it, with the source its event keeps for it."""
-    from util.rpgmaker_scope import labels
+def _unkept(document: dict, original: Any = None) -> Iterator[Line]:
+    """A map's display name and its events' note labels (util/rpgmaker_scope),
+    each at the field holding it, with the source its map or event keeps,
+    else the one the game's *original* map gives where it differs."""
+    from util.original_values import Mirror
+    from util.rpgmaker_scope import kept, labels
 
-    events = document.get("events") if isinstance(document, dict) else None
+    value = document.get("displayName")
+    if isinstance(value, str):
+        source = kept(document, "displayName", original)
+        yield Line("map name", (("displayName",),), (value,), _kept(source))
+    events = document.get("events")
+    theirs = original.get("events") if isinstance(original, dict) else None
+    mirror = Mirror(events, theirs) if theirs is not None else None
     for index, event in enumerate(events if isinstance(events, list) else ()):
-        for label in labels(event):
+        counterpart = mirror.of(event) if mirror is not None else None
+        for label in labels(event, counterpart):
             path = (("events", index, label.field),)
             yield Line("label", path, (label.text,), _kept(label.source))
 
@@ -330,14 +336,43 @@ def _database(name: str, document: Any) -> list[Line]:
     return found
 
 
-# Lines whose source no `_original` keeps.
+# Lines whose source no `_original` may keep.
 _UNKEPT = frozenset({"map name", "label"})
+
+
+def _read(
+    name: str,
+    document: Any,
+    phase: str,
+    markers: frozenset[str],
+    original: Callable[[], Any],
+) -> list[Line]:
+    """lines() of a file, where a map name or note label keeps no source
+    and the original game file decides it, read against `original()`'s
+    map: read only then, once."""
+    from util.source_text import source_left
+
+    found = lines(name, document, phase, markers)
+    if not any(
+        line.kind in _UNKEPT
+        and not line.sources
+        and line.texts[0].strip()
+        and (line.kind == "label" or source_left(line.texts[0]))
+        for line in found
+    ):
+        return found
+    theirs = original()
+    if not isinstance(theirs, dict):
+        return found
+    sourced = _unkept(document, theirs)
+    return [next(sourced) if line.kind in _UNKEPT else line for line in found]
 
 
 def state(line: Line, notes: frozenset[str]) -> str | None:
     """Whether a line is "translated", "untranslated" or holds a refusal
-    "note"; None when it is out of scope, and "unknown" for a translated map
-    name or note label, whose source only the original game file has."""
+    "note"; None when it is out of scope, and "unknown" for a map name or
+    note label without a source that reads finished, whose scope only the
+    original game file's text decides."""
     from util.source_text import holds_source, source_left
 
     # Notes are rare: only then do the lines' paths become pointers.
@@ -350,14 +385,6 @@ def state(line: Line, notes: frozenset[str]) -> str | None:
     if line.kind in _UNKEPT and any(text.strip() for text in line.texts):
         return "unknown"
     return None
-
-
-def _original_labels(original: Any) -> dict[tuple, list[str]]:
-    """The original game file's note labels, by the field holding them."""
-    found: dict[tuple, list[str]] = {}
-    for line in _labels(original):
-        found.setdefault(line.paths[0], []).append(line.texts[0])
-    return found
 
 
 def _pointer(path: tuple) -> str:
@@ -386,29 +413,35 @@ def may_hold_notes(raw: bytes, original_blob: str | None) -> bool:
     # An escaped key could spell `_original` too.
     if b'"_original"' in raw or b"\\u" in raw:
         return True
-    if original_blob is None:
+    return original_blob is not None and not _is_blob(raw, original_blob)
+
+
+def _is_blob(raw: bytes, blob: str | None) -> bool:
+    """Whether *raw* is byte for byte the Git blob *blob*."""
+    if not isinstance(blob, str) or len(blob) not in (40, 64):
         return False
-    if not isinstance(original_blob, str) or len(original_blob) not in (40, 64):
-        return True
     import hashlib
 
-    blob = hashlib.new("sha1" if len(original_blob) == 40 else "sha256")
-    blob.update(b"blob %d\0" % len(raw))
-    blob.update(raw)
-    return blob.hexdigest() != original_blob
+    found = hashlib.new("sha1" if len(blob) == 40 else "sha256")
+    found.update(b"blob %d\0" % len(raw))
+    found.update(raw)
+    return found.hexdigest() == blob
 
 
 # Raise when count() or read_counts() return other counts for the same bytes
 # and inputs, such as after a change to what counts as a line or as
 # translated: the counts the profile keeps (translation/derived) are then read
-# again. What counts as a refusal note is refusals.RULES_VERSION, which their
+# again. What counts as a refusal note is refusals.RULES_VERSION, and what
+# reads as Japanese left engine util/source_text RULES_VERSION, which their
 # section names too (`counts_section`).
-COUNT_VERSION = 1
+COUNT_VERSION = 2
 
 
 def counts_section() -> str:
     """The derived store section of the counts read_counts() gives."""
-    return f"lines/{COUNT_VERSION}.{refusals.RULES_VERSION}"
+    from util import source_text
+
+    return f"lines/{COUNT_VERSION}.{refusals.RULES_VERSION}.{source_text.RULES_VERSION}"
 
 
 def read_counts(
@@ -421,7 +454,8 @@ def read_counts(
 ) -> dict[str, Any] | None:
     """count() of a file's bytes, None when they hold no game data it reads;
     `original_blob` is the original game file's Git blob, when known, and
-    `original` reads its document."""
+    `original` reads its document, which a file still its original's needs
+    not."""
     from .files import decode_json
 
     try:
@@ -430,7 +464,7 @@ def read_counts(
             decode_json(raw),
             phase,
             markers,
-            original,
+            (lambda: None) if _is_blob(raw, original_blob) else original,
             look_for_notes=may_hold_notes(raw, original_blob),
         )
     except ValueError:
@@ -457,33 +491,17 @@ def count(
     is a translated map display name whose source decides its scope.
     `look_for_notes` false skips looking for notes in a file that holds
     none (may_hold_notes())."""
-    from util.source_text import holds_source
-
     notes = note_pointers(document, original) if look_for_notes else frozenset()
     counted: set[str] = set()
     result: dict[str, Any] = {"lines": 0, "translated": 0}
-    sources: dict[tuple, list[str]] | None = None
-    taken: dict[tuple, int] = {}
-    for line in lines(name, document, phase, markers):
+    for line in _read(name, document, phase, markers, original):
         if notes:
             counted.update(map(_pointer, line.paths))
         found = state(line, notes)
         if found == "unknown" and line.kind == "map name":
             result["mapName"] = line.texts[0]
             continue
-        at = 0
-        if line.kind == "label":
-            at = taken[line.paths[0]] = taken.get(line.paths[0], -1) + 1
-        if found == "unknown":
-            # A finished label is a line when the original's label in the
-            # same place held Japanese.
-            if sources is None:
-                sources = _original_labels(original())
-            theirs = sources.get(line.paths[0], [])
-            found = (
-                "translated" if at < len(theirs) and holds_source(theirs[at]) else None
-            )
-        if found is None:
+        if found is None or found == "unknown":
             continue
         result["lines"] += 1
         if found == "translated":
@@ -513,7 +531,7 @@ def left(
     """The lines still left in a file, with their location, text and why."""
     notes = note_pointers(document, original)
     rows = []
-    for line in lines(name, document, phase, markers):
+    for line in _read(name, document, phase, markers, original):
         found = state(line, notes)
         if found not in {"untranslated", "note"}:
             continue

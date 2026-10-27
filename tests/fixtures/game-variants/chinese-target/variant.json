@@ -1,10 +1,11 @@
 {
-  "description": "A Japanese game to translate into Chinese: its .dazedtl/settings.json names Simplified Chinese as the target and the stand-in answers in hanzi. A traveler 旅人, whose name and the word 魔王 come back letter for letter as Chinese keeps them, welcomes the player to 魔王城 in an event labeled 旅人の家 (<LB>); none of it may read as Japanese left.",
+  "description": "A Japanese game to translate into Chinese: its .dazedtl/settings.json names Simplified Chinese as the target and the stand-in answers in hanzi. A traveler 旅人, whose name and the word 魔王 come back letter for letter as Chinese keeps them, welcomes the player to 魔王城 in an event labeled 旅人の家 (<LB>) over a sign 古い井戸 (<dn:...>), which keeps no source of its own; none of it may read as Japanese left.",
   "provider": {
     "target": "Chinese",
     "reply": {
       "魔王城へようこそ": "欢迎来到魔王城。",
       "旅人の家": "旅人之家",
+      "古い井戸": "古井",
       "魔王": "魔王",
       "旅人": "旅人"
     }
@@ -12,7 +13,7 @@
   "events": [
     {
       "name": "旅人の家",
-      "note": "<LB>",
+      "note": "<LB><dn:古い井戸>",
       "x": 4,
       "y": 6,
       "pages": [

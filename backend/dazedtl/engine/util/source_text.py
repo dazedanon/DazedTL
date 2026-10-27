@@ -46,6 +46,13 @@ _WORDS = {
     language: re.compile(letters.pattern + "+") for language, letters in _LETTERS.items()
 }
 _MARKUP = re.compile(languages.MARKUP)
+# Raise when holds_source(), source_left() or words_left() read the same text
+# in the same language pair differently, such as after a change to what a
+# letter of a language is (util/languages): what the app keeps from them, such
+# as Guided's line counts (translation/file_lines counts_section), is then
+# read again. Which rule a run sends by is its frozen policy instead
+# (settings/preferences SOURCE_TEXT).
+RULES_VERSION = 1
 
 
 def letters(language=None) -> re.Pattern[str]:
