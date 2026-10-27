@@ -18,8 +18,9 @@ MESSAGE = "The provider declined this translation. No refusal text was accepted 
 # Raise when refused() or line_refusal() reads saved text differently, such
 # as after a change to what counts as a refusal: what the profile keeps from
 # them is then read again, the verdicts beside a run's ledger
-# (compatibility/process_view) and the line counts, which count saved refusal
-# notes as left (file_lines counts_section).
+# (compatibility/process_view), the line counts, which count saved refusal
+# notes as left (file_lines counts_section), and the Assistant-led results
+# accepted under another version (translation/results holds_refusal).
 RULES_VERSION = 1
 
 

@@ -180,6 +180,9 @@ Record source-checked review with review only after performing that review.
 Do not regenerate source/review hashes to make stale work count as current.
 
 Accepted records live under .dazedtl/len-method/work/accepted, with correction history beside them.
+A result saved by accept records the refusal rules (`refusals.RULES_VERSION`) it was checked under.
+A record from other or unrecorded rules is read again under the current ones, and if a line holds a refusal note the request counts as not accepted: results lists its lines as missing and sets an Assistant only run's request back to pending, Progress counts them left, decline accepts it and the next organize sends it again.
+Reading never changes the record; the new translation replaces it through accept, which archives it in the correction history.
 results --run ID writes the run's accepted translations by line ID to .dazedtl/len-method/work/results/ID.json, with each missing line's request state, and replies with counts only.
 It counts translations any run accepted for the same requests, and refuses once the extracted lines it was organized from have changed.
 The engine's injector reads that file and keeps its own source-location mappings.

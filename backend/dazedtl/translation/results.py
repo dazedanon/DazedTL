@@ -9,7 +9,7 @@ from dazedtl.storage import write_json
 
 from .files import digest, project_path, read_json, write_project_json
 from .project import WORK
-from .refusals import line_refusal
+from .refusals import RULES_VERSION, line_refusal
 from .requests import result_value
 
 ACCEPTED = WORK + "/work/accepted"
@@ -28,6 +28,11 @@ _PARTS = {}
 # IDs again took most of its time.
 _ROWS = {}
 ROWS_KEPT = 20_000
+# Whether a receipt saved under other refusal rules than RULES_VERSION holds
+# a refusal note, by its translations' and sources' hashes and the rules that
+# read it, so each saved receipt is screened once per process.
+_SCREENED = {}
+SCREENED_KEPT = 50_000
 
 
 def _rows(request):
@@ -71,18 +76,44 @@ def _content(units):
     ]
 
 
+def _refusal(request, translations):
+    """The first line of translations that holds a refusal note in place of
+    game text, or None."""
+    for identity, text in translations.items():
+        source = request["sources"][identity]
+        if text != source and line_refusal(text, source):
+            return identity
+    return None
+
+
 def translated(request, translations):
     """The result's translations, refusing any line that holds a refusal note
     in place of game text, whoever wrote it."""
     output = result_value(request, translations)
-    for identity, text in output.items():
-        source = request["sources"][identity]
-        if text != source and line_refusal(text, source):
-            raise ValueError(
-                f"{identity} holds a refusal note instead of its translation. "
-                "Translate it, or decline the request so another model can finish it."
-            )
+    identity = _refusal(request, output)
+    if identity is not None:
+        raise ValueError(
+            f"{identity} holds a refusal note instead of its translation. "
+            "Translate it, or decline the request so another model can finish it."
+        )
     return output
+
+
+def holds_refusal(request, value):
+    """Whether a saved receipt holds a refusal note under the current rules.
+    accept() screened it under the rules it records, so only a receipt from
+    other or unrecorded rules is read again: what counts as a refusal note
+    has grown since, and one accepted before then is no translation."""
+    if value.get("refusal_rules") == RULES_VERSION:
+        return False
+    key = (value["result_sha256"], value["sources_sha256"], RULES_VERSION)
+    verdict = _SCREENED.get(key)
+    if verdict is None:
+        verdict = _refusal(request, value["translations"]) is not None
+        if len(_SCREENED) >= SCREENED_KEPT:
+            _SCREENED.clear()
+        _SCREENED[key] = verdict
+    return verdict
 
 
 class Results:
@@ -124,9 +155,10 @@ class Results:
         """The accepted result files by fingerprint, for get()."""
         return {name: path for name, (path, _signature) in self.listing().items()}
 
-    def get(self, request, path=None):
-        """The request's accepted result, or None; path is its file when
-        saved() or the caller has already checked it."""
+    def _receipt(self, request, path=None):
+        """The request's saved receipt, or None, whether or not it holds a
+        refusal note; path is its file when saved() or the caller has
+        already checked it."""
         path = path or project_path(self.source, self.relative(request), exists=False)
         if not path.exists():
             return None
@@ -144,10 +176,20 @@ class Results:
         value["result_sha256"] = fingerprint
         return value
 
+    def get(self, request, path=None):
+        """The request's accepted result, or None, as for a receipt that
+        holds a refusal note (`holds_refusal`), which every caller then resends."""
+        value = self._receipt(request, path)
+        return None if value is None or holds_refusal(request, value) else value
+
     def accept(self, request, translations, provenance):
         output = translated(request, translations)
         path = project_path(self.source, self.relative(request), exists=False)
-        old = self.get(request, path)
+        old = self._receipt(request, path)
+        if old and holds_refusal(request, old):
+            # The refusal note it holds was never a translation; it is
+            # archived as a correction would archive it.
+            return self._replace(request, old, output, provenance)
         if old:
             if old["translations"] != output:
                 raise ValueError(
@@ -160,13 +202,14 @@ class Results:
             "sources_sha256": digest(request["sources"]),
             "translations": output,
             "result_sha256": digest(output),
+            "refusal_rules": RULES_VERSION,
             "provenance": provenance,
         }
         write_json(path, value)
         return value
 
     def correct(self, request, translations, replaces_sha256, provenance):
-        previous = self.get(request)
+        previous = self._receipt(request)
         if previous is None or replaces_sha256 != previous["result_sha256"]:
             raise ValueError(
                 "The accepted translation changed. Review its current result hash before applying a correction."
@@ -174,6 +217,10 @@ class Results:
         output = translated(request, translations)
         if output == previous["translations"]:
             return previous
+        return self._replace(request, previous, output, provenance)
+
+    def _replace(self, request, previous, output, provenance):
+        """Saves output in place of the previous receipt, which it archives."""
         history = (
             WORK
             + "/work/accepted-history/"
@@ -195,7 +242,8 @@ class Results:
             "sources_sha256": digest(request["sources"]),
             "translations": output,
             "result_sha256": digest(output),
-            "previous_result_sha256": replaces_sha256,
+            "previous_result_sha256": previous["result_sha256"],
+            "refusal_rules": RULES_VERSION,
             "provenance": provenance,
         }
         write_project_json(self.source, self.relative(request), value)

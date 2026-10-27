@@ -19,7 +19,7 @@ from dazedtl.settings.store import Settings
 from dazedtl.storage import WorkspaceLock, write_json
 from dazedtl.translation import delivery, progress_report, publication
 from dazedtl.translation.compilation import compile_requests
-from dazedtl.translation.files import evidence, read_json
+from dazedtl.translation.files import digest, evidence, read_json
 from dazedtl.translation.game_update import ABSENT
 from dazedtl.translation.helper_command import helper_command
 from dazedtl.translation.jobs import REPLACED
@@ -516,6 +516,20 @@ class WorkflowTests(unittest.TestCase):
             (settled["status"], settled["declined_units"]), ("complete", 0)
         )
         self.assertEqual(self.service.results(self.identity, run)["missing"], {})
+        # A result saved before "Declined." read as a refusal note is no
+        # translation: the run waits on its request again, which the
+        # assistant may now decline.
+        path = self.game / Results(self.game).relative(preview["request"])
+        legacy = read_json(path)
+        del legacy["refusal_rules"]
+        legacy["translations"] = {"a/1": "Declined."}
+        legacy["result_sha256"] = digest(legacy["translations"])
+        write_json(path, legacy)
+        self.assertEqual(
+            self.service.results(self.identity, run)["missing"], {"pending": 1}
+        )
+        self.assertEqual(self.service.run(self.identity, run)["status"], "ready")
+        self.service.decline(self.identity, run, "a/1", "Not here")
         write_json(
             self.game / units,
             {"version": 1, "units": [{"id": "a/1", "scene": "a", "source": "うん。"}]},
