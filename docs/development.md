@@ -134,6 +134,7 @@ Run them outside a sandbox such as Claude Code's bwrap: KWin needs a writable `/
 - `moved-relabeled`: `moved`, with the project's engine saved as `Investigation pending` before each step, as versions before 2.33.2 saved it once the old folder was opened again, and the `Game` folder first opened as an empty project; the old project must offer **Find game folder**.
 - `assistant-led`: an Assistant-led project in agent mode, set up and organized, its first request translated.
 - `assistant-written`: the assistant translates every request and writes them into the game, failing if the write changes the choice labels (402) or help markers (108) the game finds by their Japanese.
+- `images`: an Assistant-led project on the `many-images` game, about 4,900 images with 3,400 CGs of about 1 MB, indexed and investigated by the scripted assistant, which recommended the 40 with lettering; for measuring Images on a big game.
 - `batch-waiting`: the database submitted as a Batch that the stand-in holds.
 - `upgraded`: translated by the previous release, then opened in this checkout.
 - `paged`: the `long-dialogue` game, translated and applied, then the Line widths narrowed to 24 characters and two rows; fails unless the game shows the long message laid out for them with every word.

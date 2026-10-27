@@ -4,12 +4,13 @@
 // files are copied over the game; its variant.json may add plugins to
 // js/plugins.js, values to System.json, maps to MapInfos.json, events to
 // Map001 and commands to the village chief's event there, add random
-// pictures, start an empty Git repository, and set the stand-in provider's
+// pictures or PNG images, start an empty Git repository, and set the stand-in provider's
 // mode, such as lines it refuses. makeRelease builds the developer's next
 // version of a game.
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import zlib from "node:zlib";
 import { execFileSync } from "node:child_process";
 import { root, python } from "../dependencies.mjs";
 import { makePlayable } from "./playable.mjs";
@@ -58,6 +59,48 @@ function addPlugins(game, entries) {
       .map((entry) => JSON.stringify(entry))
       .join(",\n")}\n];\n`,
   );
+}
+
+/** A PNG chunk: its length, type, data and the CRC of type and data. */
+function pngChunk(type, data) {
+  const head = Buffer.alloc(8);
+  head.writeUInt32BE(data.length, 0);
+  head.write(type, 4, "latin1");
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(zlib.crc32(Buffer.concat([head.subarray(4), data])));
+  return Buffer.concat([head, data, crc]);
+}
+
+/**
+ * An RGB PNG with pixels of its own: a gradient keyed on `index` under
+ * `noise` rows of random pixels, which no compression shrinks, as a CG's
+ * detail does not.
+ */
+function picture(width, height, index, noise) {
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header[8] = 8; // bits per channel
+  header[9] = 2; // RGB
+  const stride = width * 3 + 1;
+  const raw = Buffer.alloc(stride * height);
+  if (noise) crypto.randomFillSync(raw, 0, stride * Math.min(noise, height));
+  for (let y = 0; y < height; y++) {
+    raw[y * stride] = 0; // no filter
+    if (y < noise) continue;
+    for (let x = 0; x < width; x++) {
+      const at = y * stride + 1 + x * 3;
+      raw[at] = (x + index * 7) & 255;
+      raw[at + 1] = (y + index * 13) & 255;
+      raw[at + 2] = (index * 31) & 255;
+    }
+  }
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    pngChunk("IHDR", header),
+    pngChunk("IDAT", zlib.deflateSync(raw, { level: 1 })),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]);
 }
 
 /** Lays the variant `name` over the MZ game at `game`, returning what it
@@ -130,6 +173,27 @@ export function addVariant(game, name) {
         path.join(folder, `picture${String(index).padStart(5, "0")}.png`),
         crypto.randomBytes(size),
       );
+  }
+  if (variant.images) {
+    // Real PNGs at a game's sizes, each its own pixels, so the Image
+    // Manager indexes, previews and groups them as a game's images.
+    let index = 0;
+    for (const {
+      folder,
+      name,
+      count,
+      width,
+      height,
+      noise = 0,
+    } of variant.images) {
+      const target = path.join(game, folder);
+      fs.mkdirSync(target, { recursive: true });
+      for (let number = 0; number < count; number += 1, index += 1)
+        fs.writeFileSync(
+          path.join(target, `${name}_${String(number).padStart(4, "0")}.png`),
+          picture(width, height, index, noise),
+        );
+    }
   }
   if (variant.emptyRepository)
     // As DazedTL makes it for a record, on its translation branch.

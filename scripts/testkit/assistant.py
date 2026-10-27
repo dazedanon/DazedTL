@@ -8,10 +8,12 @@ STEP is setup (identify, record the original, prepare, set up Git), organize (li
 game's Japanese as source units and organize them into a run), translate
 [--requests N] (answer the run's requests in order, the first N only when
 given), write (write every saved translation into the game, checking that
-the choice labels and help markers the game finds by their Japanese stay) or
-checkpoint, the operation assistants started before the app checkpointed
-their work ran. Each step reports the phase it enters, as the starting
-prompt asks, and write reports QA once it is done.
+the choice labels and help markers the game finds by their Japanese stay),
+images (index the game's images and investigate them, recommending each
+whose file name starts with text_) or checkpoint, the operation assistants
+started before the app checkpointed their work ran. Each step reports the
+phase it enters, as the starting prompt asks, and write reports QA once it
+is done.
 HELPER is a JSON list: the project helper's command without its subcommand.
 """
 
@@ -119,6 +121,41 @@ class Assistant:
         self.operation(
             "git_setup", {"version": "1.0", "untranslated": True, "manifest": MANIFEST}
         )
+
+    def images(self):
+        """Indexes the game's images and saves a complete investigation that
+        recommends the ones a game variant names text_, as lettered."""
+        self.helper("images", "--scan")
+        step = self.helper("images", "--investigate")
+        request = json.loads(
+            Path(step["task"]).with_suffix(".json").read_text(encoding="utf-8")
+        )
+        report = {
+            "version": 1,
+            "kind": "discovery",
+            "projectId": request["projectId"],
+            "requestId": request["id"],
+            "inventoryRevision": request["inventoryRevision"],
+            "complete": True,
+            "assets": [
+                {
+                    "id": asset["id"],
+                    "sourceHash": asset["sourceHash"],
+                    "classification": "recommended"
+                    if Path(asset["path"]).name.startswith("text_")
+                    else "no_text",
+                    "method": "visual",
+                    "examined": True,
+                    "reason": "",
+                    "evidence": "contact sheet",
+                    "variants": [],
+                }
+                for asset in request["assets"]
+            ],
+        }
+        Path(step["report"]).write_text(json.dumps(report), encoding="utf-8")
+        status = self.helper("images", "--status")
+        print(json.dumps(status["counts"]))
 
     def help_markers(self):
         """The comment heads MPP_ChoiceEX shows as a choice's help, from its
@@ -346,7 +383,8 @@ def reply(identity, source, target="English"):
 def main() -> None:
     parser = argparse.ArgumentParser(description=str(__doc__).split("\n", 1)[0])
     parser.add_argument(
-        "step", choices=["setup", "organize", "translate", "write", "checkpoint"]
+        "step",
+        choices=["setup", "organize", "translate", "write", "images", "checkpoint"],
     )
     parser.add_argument("--helper-json", required=True)
     parser.add_argument("--game", type=Path, required=True)

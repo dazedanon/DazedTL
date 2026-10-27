@@ -1,0 +1,42 @@
+{
+  "description": "About 4,900 images, as a big CG game ships: 3,400 event CGs at 1280x720 and about 1 MB each in img/pictures, and 1,500 small menu, face and enemy images in other folders. The 40 named text_ hold lettering; the images scenario's assistant recommends them.",
+  "images": [
+    {
+      "folder": "img/pictures",
+      "name": "cg",
+      "count": 3360,
+      "width": 1280,
+      "height": 720,
+      "noise": 160
+    },
+    {
+      "folder": "img/pictures",
+      "name": "text",
+      "count": 40,
+      "width": 1280,
+      "height": 720,
+      "noise": 160
+    },
+    {
+      "folder": "img/system",
+      "name": "menu",
+      "count": 600,
+      "width": 192,
+      "height": 64
+    },
+    {
+      "folder": "img/faces",
+      "name": "face",
+      "count": 500,
+      "width": 144,
+      "height": 144
+    },
+    {
+      "folder": "img/enemies",
+      "name": "enemy",
+      "count": 400,
+      "width": 240,
+      "height": 240
+    }
+  ]
+}

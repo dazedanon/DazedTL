@@ -1042,6 +1042,20 @@ export const scenarios = {
       "An Assistant-led project, the assistant translating itself: set up, text organized, the first request translated and the rest waiting.",
     steps: () => assistantLed,
   },
+  images: {
+    description:
+      "An Assistant-led project on the many-images game, its images indexed and investigated by the assistant, which recommended the 40 with lettering.",
+    game: "many-images",
+    steps: () => [
+      assistantLed[0],
+      [
+        "The assistant indexes and investigates the images",
+        async ({ page, state }) => {
+          console.log(`\n  ${(await assistant(page, state, "images")).trim()}`);
+        },
+      ],
+    ],
+  },
   "assistant-written": {
     description:
       "An Assistant-led project the assistant translated whole and wrote into the game, its choice labels and help markers kept in Japanese.",
