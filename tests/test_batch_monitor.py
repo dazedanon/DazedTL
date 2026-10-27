@@ -321,10 +321,9 @@ class BatchMonitorTests(unittest.TestCase):
                 ("native", batch_phase)
             )
         )
-        engine = ModuleType("util")
-        engine.translation = SimpleNamespace(
-            require_batch_result=point(lambda *args: None), _batch_results={}
-        )
+        translation = ModuleType("util.translation")
+        translation.require_batch_result = point(lambda *args: None)
+        translation._batch_results = {}
         tasks = ModuleType("util.translation_task")
         tasks.TranslationTask = type("Task", (), {"_run_files": native})
         history = ModuleType("util.batch_history")
@@ -338,7 +337,7 @@ class BatchMonitorTests(unittest.TestCase):
         with (
             replaced_modules(
                 {
-                    "util": engine,
+                    "util.translation": translation,
                     "util.translation_task": tasks,
                     "util.batch_history": history,
                 },

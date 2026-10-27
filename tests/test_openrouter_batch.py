@@ -14,7 +14,7 @@ from dazedtl.settings import openrouter
 from dazedtl.translation.files import digest, read_json
 from dazedtl.translation.requests import quote
 
-from tests.engine import EXTENSIONS, engine_module, point, replaced_modules
+from tests.engine import engine_module, point, replaced_modules
 
 MODEL = "author/model"
 POLICY = {
@@ -67,7 +67,8 @@ QUOTED = (108 * 0.8 + 250 * 3) / 1_000_000
 
 
 class OpenRouterQuoteTests(unittest.TestCase):
-    """A quote reads the real engine, outside the stand-in util package."""
+    """A quote reads the real engine and needs none of the Batch tests'
+    stand-ins."""
 
     def test_quotes_use_absolute_batch_rates_once(self):
         # Input/output discounts can differ. An estimate may not halve
@@ -92,31 +93,12 @@ class OpenRouterQuoteTests(unittest.TestCase):
 class OpenRouterBatchTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # Exercise the preserved serializer/normalizer without loading SDKs or
-        # tokenizers in the unit-test process; the existing engine probe tests
-        # real runtime installation in its already-budgeted isolated process.
-        cls.package = ModuleType("util")
-        cls.package.extensions = EXTENSIONS
-        with replaced_modules(
-            {
-                "anthropic": ModuleType("anthropic"),
-                "openai": ModuleType("openai"),
-                "util": cls.package,
-                "util.extensions": cls.package.extensions,
-            },
-        ):
-            cls.native = cls.package.batch_providers = engine_module(
-                "util/batch_providers.py"
-            )
+        # The layers these tests add go onto a private copy of the engine's
+        # Batch providers, never onto the one later tests import.
+        cls.native = engine_module("util/batch_providers.py")
 
     def setUp(self):
-        self.modules = replaced_modules(
-            {
-                "util": self.package,
-                "util.batch_providers": self.native,
-                "util.extensions": self.package.extensions,
-            },
-        )
+        self.modules = replaced_modules({"util.batch_providers": self.native})
         self.modules.start()
         self.addCleanup(self.modules.stop)
 
