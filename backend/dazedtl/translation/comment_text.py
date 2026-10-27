@@ -59,7 +59,7 @@ def markers(source: str | Path) -> frozenset[str]:
 
 
 def shows_comment_text(data: str | Path, plugins: str | Path) -> bool:
-    """Whether a game's turned-on plugins show comment lines that hold
+    """Whether the plugins a game loads show comment lines that hold
     Japanese, from its data folder and plugin list."""
     from util.rpgmaker_markers import plugin_list, plugin_markers
 
