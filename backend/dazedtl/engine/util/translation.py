@@ -215,6 +215,11 @@ DISABLE_CACHE = False
 # Runs whose frozen policy requires strict structured outputs never fall back to
 # weaker JSON or text formats. Older runs keep the native fallbacks.
 STRICT_STRUCTURED_OUTPUTS = False
+# Whether the short-output checks measure a line without its codes and masks
+# (content_text). Workers of runs frozen before the short-outputs policy
+# (settings/preferences SHORT_OUTPUTS) measure the whole line, so a run
+# approved before reuses every saved line its estimate counted.
+CONTENT_TEXT = True
 
 # Thread-local per-file token breakdown; read by calculateCost() for Claude.
 _thread_local = threading.local()
@@ -523,8 +528,11 @@ def content_text(text, protected=()):
     protect_script_codes protects, the placeholders a protected request holds
     in their place, or the literal *protected* tokens a request names, such
     as Assistant-led's ⟦P0⟧ masks. None of them is the line's text, so a
-    translation collapsed to its masks and a mark is as short as the mark."""
+    translation collapsed to its masks and a mark is as short as the mark.
+    Runs frozen before that measure the whole line (CONTENT_TEXT)."""
     text = str(text)
+    if not CONTENT_TEXT:
+        return text.strip()
     for token in sorted(set(protected), key=len, reverse=True):
         text = text.replace(token, "")
     return without_protected_codes(text).strip()

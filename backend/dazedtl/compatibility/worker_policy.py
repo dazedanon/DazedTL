@@ -16,6 +16,7 @@ from dazedtl.settings.preferences import (
     PAGE_PACKING,
     REUSE_STRETCHES,
     SAME_LINE_SPEAKERS,
+    SHORT_OUTPUTS,
     SOURCE_TEXT_LEVELS,
     SPEAKER_CONTEXT,
     batch_input_tokens,
@@ -49,6 +50,14 @@ def configure_prices(translation, prices):
         translation._load_litellm_pricing.remove("frozen-prices")
     else:
         translation._load_litellm_pricing.layer("frozen-prices", lambda _native: prices)
+
+
+def configure_short_outputs(translation, policy):
+    """Runs frozen before the short-outputs policy measure short outputs
+    with their codes, as their estimate did, so they reuse what it counted."""
+    translation.CONTENT_TEXT = bool(
+        policy and policy.get("shortOutputs") == SHORT_OUTPUTS
+    )
 
 
 def configure_states(plan, root, policy):
@@ -148,6 +157,7 @@ def install(*, coordinator=False):
             batch_pricing.configure(translation, False)
             configure_builders(translation, None)
             translation.STRICT_STRUCTURED_OUTPUTS = False
+            configure_short_outputs(translation, None)
             configure_states(plan, grouping_root, None)
             checkpoint_reader()
             return result
@@ -165,6 +175,7 @@ def install(*, coordinator=False):
             or policy.get("reuseStretches") not in (None, REUSE_STRETCHES)
             or policy.get("mapNameIdentities") not in (None, MAP_NAME_IDENTITIES)
             or policy.get("sourceText") not in (None, *SOURCE_TEXT_LEVELS)
+            or policy.get("shortOutputs") not in (None, SHORT_OUTPUTS)
             or policy.get("battleMessageUsers")
             not in (None, *BATTLE_MESSAGE_USERS_LEVELS)
             or policy.get("openrouterStructuredOutputs")
@@ -215,6 +226,7 @@ def install(*, coordinator=False):
         configure_prices(translation, prices)
         batch_pricing.configure(translation, True)
         translation.STRICT_STRUCTURED_OUTPUTS = bool(strict_router)
+        configure_short_outputs(translation, policy)
         record = None
         if policy.get("generationParameters") and plan.get("mode") in {
             "estimate",
