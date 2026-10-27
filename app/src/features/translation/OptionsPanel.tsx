@@ -41,16 +41,19 @@ export function OptionsPanel({
   disabled: boolean;
   settings: (section?: SettingsSection) => void;
 }) {
-  const connected = !!state.connection?.model;
   // Batch unless the connection cannot run it, the default new projects get.
-  const recommended: Mode =
-    connected && !state.batchSupported ? "live" : "batch";
+  // `options` reads such a Batch as Live already (runnableMode), so the
+  // card says why beside the choice instead.
+  const unavailable = state.batchUnavailable;
+  const recommended: Mode = unavailable ? "live" : "batch";
   const cards: OptionCard<Mode>[] = [
     {
       value: "batch",
       title: modeLabels.batch,
       badge: recommended === "batch" ? "Recommended" : undefined,
+      disabled: !!unavailable,
       description:
+        unavailable ||
         "Your API key translates in one provider job, usually at half the Live price where the provider offers it. The job finishes on the provider's schedule, sometimes within minutes and at most within a day.",
     },
     {
@@ -121,12 +124,6 @@ export function OptionsPanel({
                 </Button>
               </Notice>
             ))}
-          {options.mode === "batch" && connected && !state.batchSupported && (
-            <Notice tone="warning">
-              This connection or model can't run Batch. Choose Live API, or a
-              model that offers Batch.
-            </Notice>
-          )}
         </div>
       </div>
       <FieldRow

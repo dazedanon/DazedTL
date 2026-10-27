@@ -147,7 +147,7 @@ Code `101` opens the text window. Code `401` is a dialogue line. Multiple `401`s
 **Critical:** `\\N[X]` / `\\n[X]` (square brackets + number) are actor variable codes, NOT speaker formats. Do not count them as always-on speaker hits.
 
 **Flags (only when some speakers lack an always-on format):**
-- `INLINE401SPEAKERS` — name immediately before `「` on a `401` line (e.g. `エレナ「今日は…`)
+- `INLINE401SPEAKERS` — name before `「` on a `401` line, at most a colon or space between (e.g. `エレナ「今日は…`)
 - `FIRSTLINESPEAKERS` — first `401` is a short plain name (< 40 chars, has Japanese); next line starts with `「` `"`` `（` `*` `[`; often empty face on `101`
 - `FACENAME101` — last resort only when no always-on and neither flag above. It maps the face
   **filename alone** from `101` param[0] to a speaker when param[4] is empty; the tool does not use

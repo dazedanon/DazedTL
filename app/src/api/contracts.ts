@@ -1133,8 +1133,7 @@ export type GuidedProvider = {
   connection: string;
   model: string;
   defaultMode: RunMode;
-  batchSupported: boolean;
-  batchReason?: string;
+  batchUnavailable: string;
   ready: boolean;
   enabled: boolean;
 };
@@ -1768,7 +1767,7 @@ export type TranslationState = ProjectOptions & {
   statusText: string;
   providerEnabled: boolean;
   connection: ConnectionSummary | null;
-  batchSupported: boolean;
+  batchUnavailable: string;
   legacyAvailable: boolean;
 };
 

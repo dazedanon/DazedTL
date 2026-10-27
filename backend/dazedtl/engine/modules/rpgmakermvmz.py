@@ -39,6 +39,7 @@ from util.vocab import split_glossary_row, unverified_nameplate_row
 from util.speakers import (
     NAMES_FILE,
     SPEAKER_BRACKET_INNER,
+    inline_speaker,
     speaker_translated,
     strip_speaker_prefix,
 )
@@ -4178,16 +4179,12 @@ def _searchCodes(page, pbar, jobList, filename):
                     ):
                         speakerList = [inlineFmtMatch.group(1).strip()]
 
-                # Inline speaker detection — Name「/Name: "/Name: (/[Name] "/[Name] (
+                # Inline speakers in any form (util/speakers.inline_speaker)
+                inlineSpeakerMatch = None
                 if len(speakerList) == 0 and INLINE401SPEAKERS:
-                    inlineSpeakerMatch = re.match(
-                        r'^(?:\[([^\]]{1,30})\]\s*|([^\s「」。、！？…\\\n“”"(:\[\]]{1,20})(?:[::：]?\s*)(?=[「“"(]))(.*)',
-                        speakerWork, re.DOTALL
-                    )
+                    inlineSpeakerMatch = inline_speaker(speakerWork, written_back=True)
                     if inlineSpeakerMatch:
-                        speakerList = [(inlineSpeakerMatch.group(1) or inlineSpeakerMatch.group(2)).strip()]
-                else:
-                    inlineSpeakerMatch = None
+                        speakerList = [inlineSpeakerMatch.name]
 
                 # First Line Speakers
                 if len(speakerList) == 0 and FIRSTLINESPEAKERS is True:
@@ -4251,8 +4248,8 @@ def _searchCodes(page, pbar, jobList, filename):
                         speaker = response[0]
                         totalTokens[0] += response[1][0]
                         totalTokens[1] += response[1][1]
-                        jaString = inlineSpeakerMatch.group(3)
-                        speakerPrefix = speakerWork[: inlineSpeakerMatch.start(3)]
+                        jaString = inlineSpeakerMatch.speech
+                        speakerPrefix = inlineSpeakerMatch.prefix
                         if not setData:
                             nametag = f"[{speaker}]\n" + nametag
                     elif sameLineMatch and len(speakerList) == 1:

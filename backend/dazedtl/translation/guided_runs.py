@@ -792,7 +792,7 @@ class GuidedRuns:
         estimates, phases = {}, {}
         run_view = run_view or self.guided.run_view
         guard = self.poll_guard(native)
-        mode = self.guided.preferences(native)["values"]["mode"]
+        mode = self.guided.run_mode(native)
         owned = self.guided.owned_runs(native)
         records = self.records(project_id)
         retired = set(source_status.get("retired", []))

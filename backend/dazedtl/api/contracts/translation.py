@@ -398,7 +398,9 @@ class TranslationState(ProjectOptions):
     statusText: str
     providerEnabled: bool
     connection: ConnectionSummary | None
-    batchSupported: bool
+    # Why the connection cannot run Batch, "" when it can or none is ready;
+    # the mode then reads and runs as Live.
+    batchUnavailable: str
     legacyAvailable: bool
 
 

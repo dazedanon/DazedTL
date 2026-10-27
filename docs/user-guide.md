@@ -116,6 +116,7 @@ Translate has five tasks.
 1. Pick the files; all of them start selected.
    Translate the database first, and try a small early scene before the rest.
 2. Choose **Batch** (often half the price, but can take hours) or **Live** (results arrive as you watch), and the model.
+   While your connection can't run Batch, the game translates Live and the reason shows beside the choice.
 3. Click **Translate**, check the estimate and approve it.
    A Batch estimate is often a range: the provider charges less for instructions it reuses, but a Batch sends its requests together, so it may reuse few of them and cost up to the higher figure.
    Until the estimate is ready, its window shows each step, how far it has got and about how long is left.
@@ -237,7 +238,7 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
 
 1. In **Options**, choose who translates:
    - **API Batch** is recommended: your API key translates in one provider job, usually at half the Live price where the provider offers it.
-   - **Live API** sends one request at a time at the full price; new games start on it when your connection can't run Batch.
+   - **Live API** sends one request at a time at the full price; the game runs on it while your connection can't run Batch, and the **API Batch** card says why.
    - **Assistant only** needs no API key, but your assistant translates every line itself, which uses far more of its plan.
 
    The API modes need a connection in Settings, and nothing is sent until you approve your assistant's estimate on **Progress**.

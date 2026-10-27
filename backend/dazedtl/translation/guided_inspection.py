@@ -285,7 +285,7 @@ class RunInspection:
             project_id,
             native,
             record["phase"],
-            self.guided.preferences(native)["values"]["mode"],
+            self.guided.run_mode(native),
         )
         if (quote["job"] or {}).get("id") != run_id or not quote["current"]:
             raise ValueError(

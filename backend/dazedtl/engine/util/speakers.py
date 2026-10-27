@@ -17,6 +17,7 @@ import json
 import re
 from collections.abc import Callable
 from pathlib import Path
+from typing import NamedTuple
 
 from util import rpgmaker_blocks as blocks
 from util.languages import ENGLISH, shares_kanji, source_pattern
@@ -126,6 +127,51 @@ def extract_dialogue_after_speaker(text: str) -> str | None:
 
 
 # ============================================================================
+# Inline speakers
+# ----------------------------------------------------------------------------
+# A dialogue line that starts with its speaker's name, then the speech. A
+# Japanese game writes the source form, Name「dialogue, at times with a colon
+# or a space before the quote. A line an inline re-export wrote back, or a
+# game already in English, holds a written-back form: Name: "dialogue" (or “),
+# Name (dialogue, or [Name] dialogue. The MV/MZ parser (INLINE401SPEAKERS)
+# reads every form; format detection counts the source form alone.
+# ============================================================================
+
+# The name: up to 20 characters with no space, quote, sentence mark, code
+# backslash, ASCII colon or bracket. A full-width colon stays in the name, as
+# ミカ：「 has always read ミカ：.
+_INLINE_NAME = r'[^\s「」。、！？…\\\n“”"(:\[\]]{1,20}'
+_INLINE_SEPARATOR = r"[:：]?\s*"
+_INLINE_SOURCE_QUOTE = "「"
+_INLINE_WRITTEN_BACK_QUOTES = '“"('
+_INLINE_SOURCE_RE = re.compile(
+    rf"^({_INLINE_NAME}){_INLINE_SEPARATOR}(?={_INLINE_SOURCE_QUOTE})"
+)
+_INLINE_ANY_RE = re.compile(
+    rf"^(?:\[([^\]]{{1,30}})\]\s*"
+    rf"|({_INLINE_NAME}){_INLINE_SEPARATOR}"
+    rf"(?=[{_INLINE_SOURCE_QUOTE}{_INLINE_WRITTEN_BACK_QUOTES}]))"
+)
+
+
+class InlineSpeaker(NamedTuple):
+    name: str
+    # The name and what separates it from the speech, as the line has them.
+    prefix: str
+    speech: str
+
+
+def inline_speaker(text: str, written_back: bool = False) -> InlineSpeaker | None:
+    """The speaker *text* starts with in the source form, Name「dialogue, or
+    with *written_back* in any form, or None."""
+    match = (_INLINE_ANY_RE if written_back else _INLINE_SOURCE_RE).match(text)
+    if not match:
+        return None
+    name = next(group for group in match.groups() if group is not None)
+    return InlineSpeaker(name.strip(), text[: match.end()], text[match.end():])
+
+
+# ============================================================================
 # RPG Maker MV/MZ speaker format detection
 # ----------------------------------------------------------------------------
 # Mirrors the detection priority of rpgmakermvmz.py searchCodes() exactly:
@@ -154,9 +200,6 @@ _BRACKET_ALONE_RE = re.compile(
 
 # 【Name】dialogue on the same line
 _BRACKET_INLINE_RE = re.compile(r"^\s*【([^】]+)】(.+)", re.DOTALL)
-
-# Inline quote: Name「dialogue…
-_INLINE_QUOTE_RE = re.compile(r"^([^\s「」。、！？…\\\n]{1,20})「")
 
 # Dialogue starters that follow a FIRSTLINESPEAKERS name line
 _DIALOGUE_STARTERS = ("「", '"', "(", "（", "*", "[")
@@ -368,7 +411,7 @@ def _score_command_list(cmd_list: list, scores: dict) -> None:
                 continue
 
             # 4. INLINE401SPEAKERS: Name「dialogue
-            if _INLINE_QUOTE_RE.match(text):
+            if inline_speaker(text):
                 scores["INLINE401SPEAKERS"] += 1
                 i += 1
                 continue

@@ -7,6 +7,7 @@ export interface OptionCard<T extends string> {
   description: ReactNode;
   /** A short mark beside the title, such as "Recommended". */
   badge?: string;
+  /** Unavailable here; the description then says why. */
   disabled?: boolean;
 }
 
@@ -41,6 +42,7 @@ export function OptionCards<T extends string>({
           aria-pressed={value === option.value}
           data-autofocus={autoFocus && value === option.value ? "" : undefined}
           disabled={disabled || option.disabled}
+          data-unavailable={option.disabled && !disabled ? "" : undefined}
           onClick={() => onChange(option.value)}
         >
           <strong>
