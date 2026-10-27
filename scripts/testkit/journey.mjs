@@ -96,10 +96,13 @@ export async function connect(page, url, provider = "custom") {
     throw new Error(`Connection check: ${check.message}`);
 }
 
+const nothingToSend = "No new translation requests";
+
 /**
  * Runs one Guided translation task live: estimate, approve, wait for the run.
  * With `failed`, a run that fails, as one with lines the provider refuses
- * does, ends the step too. Returns how the run ended.
+ * does, ends the step too. Returns how the run ended, or "No new translation
+ * requests" when the estimate found nothing to send and was closed.
  * @param {Page} page
  * @param {string} task
  */
@@ -111,7 +114,23 @@ export async function translateTask(page, task, { failed = false } = {}) {
     await page.click("Select all");
   await page.click("Live");
   await page.click("Translate");
-  await page.click("Start Live translation", 5 * 60_000);
+  const estimate = await until(
+    `${task}'s estimate`,
+    async () =>
+      (await page.text()).includes(nothingToSend)
+        ? nothingToSend
+        : (await page.locate("Start Live translation")) && "requests",
+    5 * 60_000,
+  );
+  if (estimate === nothingToSend) {
+    await page.click("Close");
+    await until(
+      `${task}'s estimate to close`,
+      async () => !(await page.text()).includes(nothingToSend),
+    );
+    return nothingToSend;
+  }
+  await page.click("Start Live translation");
   // "Run finished." alone, or with what it saved and what failed.
   const ending = failed
     ? /Run finished\b|The last run failed/
