@@ -317,6 +317,82 @@ class CensusTests(unittest.TestCase):
             report["rules"],
         )
 
+    def test_comments_a_plugin_shows_players_count_as_their_text(self):
+        # MPP_ChoiceEX shows the lines under a choice help marker; a census
+        # that set every comment aside read full coverage with them Japanese.
+        plugins = [
+            {
+                "name": "MPP_ChoiceEX",
+                "status": True,
+                "parameters": {"Choice Help Commands": '["<Help>"]'},
+            }
+        ]
+        page = [
+            command(102, ["森", "村"], -1, 0, 2, 0),
+            command(402, 0, "森"),
+            command(108, "選択肢ヘルプ"),
+            command(408, "森へ向かいます。"),
+            command(408, "(1/2)"),
+            command(402, 1, "村"),
+            command(108, "<Help>"),
+            command(408, "村に残ります。"),
+            command(404),
+            command(108, "メモ"),
+            command(408, "あとで直す。"),
+        ]
+        game = {
+            "www/js/plugins.js": f"var $plugins =\n{json.dumps(plugins)};\n".encode(),
+            "www/data/Map001.json": {
+                "events": [None, {"name": "", "pages": [{"list": page}]}]
+            },
+        }
+        result = scan(game)
+        help_field = "events/*/pages/*/list/*[code=408:help]/parameters/0"
+        self.assertTrue(census.protected("rpgmaker:map", help_field))
+        sources = ["森", "村"]
+        _report, uncovered = census.coverage(result, sources, [], [])
+        self.assertEqual(
+            census.summary(uncovered),
+            [{"kind": "rpgmaker:map", "field": help_field, "runs": 2}],
+        )
+        with self.assertRaisesRegex(ValueError, "player reads"):
+            census.rules_input(
+                {
+                    "version": 1,
+                    "rules": [
+                        {
+                            "kind": "rpgmaker:map",
+                            "field": "**/*[code=408:help]/**",
+                            "reason": "comment",
+                        }
+                    ],
+                },
+                census.fields(result),
+            )
+        # The markers and other comments stay aside; the help lines, joined
+        # as one unit, cover it.
+        sources.append("森へ向かいます。\n(1/2)")
+        sources.append("村に残ります。")
+        report, uncovered = census.coverage(result, sources, [], [])
+        self.assertEqual((uncovered, report["set_aside"]), ([], 5))
+        # A decoded dump may hold the data before the plugin list it shows.
+        dumped = census.scan(
+            [],
+            {}.get,
+            Decoders(),
+            [
+                (name, json.dumps(game[name], ensure_ascii=True).encode())
+                if name.endswith(".json")
+                else (name, game[name])
+                for name in sorted(game)
+            ],
+        )
+        self.assertEqual(census.coverage(dumped, sources[:3], [], [])[0]["uncovered"], 1)
+        # A marker the game's plugins don't list is no help.
+        del game["www/js/plugins.js"]
+        _report, uncovered = census.coverage(scan(game), sources[:3], [], [])
+        self.assertEqual(uncovered, [])
+
     def test_an_english_game_counts_its_english_and_units_cover_it(self):
         # An English game's text is Latin letters: none of it may read as
         # finished, and codes, tags and Japanese are no English runs.

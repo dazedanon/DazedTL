@@ -53,7 +53,7 @@ def require_coverage(scope):
         )
     if scope["stale"]:
         raise ValueError(
-            "The game's source changed after the census. Run census again."
+            "The census no longer counts the game as it is: the game was updated, or this DazedTL counts more of its text. Run census again."
         )
     if scope["needs_dump"]:
         raise ValueError(

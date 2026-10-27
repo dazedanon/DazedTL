@@ -24,6 +24,7 @@ from dazedtl.translation.game_update import ABSENT
 from dazedtl.translation.helper_command import helper_command
 from dazedtl.translation.jobs import REPLACED
 from dazedtl.translation.operations import (
+    census_path,
     execute,
     lifecycle,
     lifecycle_path,
@@ -634,6 +635,22 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "fewer than the 2"):
             self.service.require_inventory(self.identity, 1)
         self.service.require_inventory(self.identity, 2)
+        # A census an earlier DazedTL counted by other rules, before it
+        # counted choice help, asks for a new census before organize or a
+        # patch accepts it.
+        counted = read_json(census_path(self.profile, self.identity))
+        write_json(
+            census_path(self.profile, self.identity),
+            {**counted, "version": counted["version"] - 1},
+        )
+        self.assertTrue(self.service.state(self.identity)["coverage"]["stale"])
+        with self.assertRaisesRegex(ValueError, "no longer counts the game"):
+            self.service.require_inventory(self.identity, 2)
+        with self.assertRaisesRegex(ValueError, "Run census again"):
+            self.prepared(self.service.organize(self.identity, units, True))
+        census()
+        self.prepared(self.service.organize(self.identity, units, True))
+        self.service.require_inventory(self.identity, 2)
         page.append(line(401, "追加の台詞。"))
         write_json(
             self.game / "data/Map001.json",
@@ -643,7 +660,7 @@ class WorkflowTests(unittest.TestCase):
         # A game update records a new prepared original: Progress reads the
         # count as stale and packaging refuses before any organize runs.
         self.assertTrue(self.service.state(self.identity)["coverage"]["stale"])
-        with self.assertRaisesRegex(ValueError, "updated after the last census"):
+        with self.assertRaisesRegex(ValueError, "no longer counts the game"):
             self.service.require_inventory(self.identity, 2)
         census()
         # The new census is current, but the coverage counted the old one.

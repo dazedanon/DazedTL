@@ -46,24 +46,32 @@ def census_path(workspace, project_id):
     return Path(workspace) / "translation/projects" / project_id / "census.json"
 
 
-# The prepared record each census counted, by the census file's signature.
+# The prepared record each census counted and the census version it counted
+# by, by the census file's signature.
 _COUNTED = Digests(limit=64)
 
 
 def census_stale(workspace, project_id, source, state=None):
-    """Whether the saved census counted another game than its current
-    version's prepared original, as after a game update; None without a
-    census. Polls read neither the census nor Git again while both stay."""
+    """Whether the saved census no longer counts the game: it counted another
+    game than its current version's prepared original, as after a game
+    update, or an earlier DazedTL counted it by other rules (census.VERSION);
+    None without a census. Polls read neither the census nor Git again while
+    both stay."""
+    from .census import VERSION
+
     path = census_path(workspace, project_id)
     try:
         info = os.stat(path)
     except FileNotFoundError:
         return None
-    counted = _COUNTED.remember(
-        str(path), info, lambda: read_json(path).get("snapshot") or ""
-    )
+
+    def counted_by():
+        value = read_json(path)
+        return value.get("snapshot") or "", value.get("version")
+
+    counted, version = _COUNTED.remember(str(path), info, counted_by)
     current = originals.prepared_id(workspace, project_id, source, state)
-    return not current or counted != current
+    return not current or counted != current or version != VERSION
 
 
 def take_census(

@@ -28,7 +28,10 @@ from dazedtl.languages import (
     source_pattern,
 )
 
-VERSION = 1
+# Raised whenever the census counts text it did not before, so a saved
+# census reads out of date and is counted again (operations.census_stale).
+# 2: comment lines a game's plugins show players, such as choice help.
+VERSION = 2
 
 _RUN = re.compile(source_pattern("census_run", JAPANESE))
 _WORD = re.compile(source_pattern("census_word", JAPANESE))
@@ -177,9 +180,10 @@ def rpgmaker_kind(name, prefix):
     return None
 
 
-def _segment(value):
+def _segment(value, shown=frozenset()):
     """'*' for a list element; event commands keep their code, and plugin
-    commands their plugin or keyword, which are identifiers."""
+    commands their plugin or keyword, which are identifiers. A comment line
+    players read (see shown_comments) is '*[code=408:help]'."""
     if isinstance(value, dict):
         code, parameters = value.get("code"), value.get("parameters")
         if type(code) is int and isinstance(parameters, list):
@@ -187,24 +191,44 @@ def _segment(value):
                 return f"*[code=357:{parameters[0]}]"
             if code == 356 and parameters and isinstance(parameters[0], str):
                 return f"*[code=356:{parameters[0].split(' ', 1)[0]}]"
+            if code == 408 and id(value) in shown:
+                return "*[code=408:help]"
             return f"*[code={code}]"
     return "*"
+
+
+def shown_comments(document, markers):
+    """The comment lines (408) of an MV/MZ data file that players read: those
+    of a comment under a marker the game's plugins show, such as
+    MPP_ChoiceEX's choice help, as util/rpgmaker_blocks reads its blocks.
+    Their identities, which walk gives a field of their own."""
+    from util import rpgmaker_blocks as blocks
+
+    shown = set()
+    for _path, commands in blocks.command_lists(document):
+        for block in blocks.blocks(commands):
+            if block.kind in (blocks.HELP, blocks.COMMENT) and block.shown(markers):
+                shown.update(id(commands[row]) for row in block.rows)
+    return frozenset(shown)
 
 
 _KEY = re.compile(r"[A-Za-z_@$][A-Za-z0-9_@$.-]{0,63}")
 
 
-def walk(value, location=(), field=(), positional=False):
+def walk(value, location=(), field=(), positional=False, shown=frozenset()):
     """String leaves of a JSON-like tree as (location, field, text). Lists and
     objects keyed by data (numbers, non-ASCII names) become '*' in the field;
     an event command's parameters keep their positions, which mean different
-    things (MZ's speaker name is parameter 4, the face file parameter 0)."""
+    things (MZ's speaker name is parameter 4, the face file parameter 0).
+    *shown* names the comment lines players read (see shown_comments)."""
     if isinstance(value, str):
         yield "/".join(location), "/".join(field), value
     elif isinstance(value, list):
         for index, child in enumerate(value):
-            segment = str(index) if positional else _segment(child)
-            yield from walk(child, (*location, str(index)), (*field, segment))
+            segment = str(index) if positional else _segment(child, shown)
+            yield from walk(
+                child, (*location, str(index)), (*field, segment), shown=shown
+            )
     elif isinstance(value, dict):
         command = _segment(value) != "*"
         data = any(not _KEY.fullmatch(str(key)) for key in value)
@@ -215,6 +239,7 @@ def walk(value, location=(), field=(), positional=False):
                 (*location, str(key)),
                 (*field, segment),
                 positional=command and key == "parameters",
+                shown=shown,
             )
 
 
@@ -228,15 +253,32 @@ def _json(text):
         return None
 
 
-def read_json(name, text):
+def _rpgmaker_data(name):
+    """Whether read_json reads this file as MV/MZ data."""
+    path = PurePosixPath(name)
+    return (
+        path.suffix.casefold() == ".json"
+        and "data" in (part.casefold() for part in path.parts[:-1])
+        and rpgmaker_kind(name, "rpgmaker") is not None
+    )
+
+
+def read_json(name, text, markers=frozenset()):
+    """A JSON file's rows; in MV/MZ data, the comment lines players read
+    under the game's comment *markers* (rpgmaker_markers.comment_markers)
+    have a field of their own."""
     document = _json(text)
     if document is None:
         return None
-    folders = [part.casefold() for part in PurePosixPath(name).parts[:-1]]
-    kind = rpgmaker_kind(name, "rpgmaker") if "data" in folders else None
+    kind = rpgmaker_kind(name, "rpgmaker") if _rpgmaker_data(name) else None
+    shown = frozenset()
     if kind is None:
         kind = "json:package" if PurePosixPath(name).name == "package.json" else "json"
-    return [(kind, *row) for row in walk(document)]
+    # Only a file holding comment lines is read as blocks; their code is a
+    # number, which JSON never escapes as it may escape a marker.
+    elif markers and "408" in text:
+        shown = shown_comments(document, markers)
+    return [(kind, *row) for row in walk(document, shown=shown)]
 
 
 def read_plugins(text):
@@ -649,9 +691,10 @@ def read_wolf(document):
     return rows
 
 
-def read(name, data, beside_game=True):
+def read(name, data, beside_game=True, markers=frozenset()):
     """The rows of one readable game file, or None when it cannot be read;
-    beside_game is False for a decoded dump, whose top files aren't readmes."""
+    beside_game is False for a decoded dump, whose top files aren't readmes.
+    markers are the comment markers of the game's plugins (plugin_markers)."""
     suffix = PurePosixPath(name).suffix.casefold()
     text = decode_text(data)
     if text is None:
@@ -660,7 +703,7 @@ def read(name, data, beside_game=True):
     if lowered.endswith("/js/plugins.js"):
         return read_plugins(text)
     if suffix == ".json":
-        return read_json(name, text)
+        return read_json(name, text, markers)
     if suffix == ".js":
         return read_code("js:plugin" if "/plugins/" in lowered else "js", text)
     if suffix == ".tjs":
@@ -902,6 +945,8 @@ PROTECTED = [
             ("*", "**/*[code=405]/**"),
             ("*", "**/*[code=102]/**"),
             ("*", "**/*[code=101]/parameters/4"),
+            # Comment lines a plugin shows, such as choice help.
+            ("*", "**/*[code=408:help]/**"),
             ("*", "**/*[code=320]/**"),
             ("*", "**/*[code=324]/**"),
             ("*", "**/*[code=325]/**"),
@@ -1282,6 +1327,35 @@ def scan(
     """
     found, unreadable, opened, needs_dump, wolf = [], [], [], [], []
     head = peek or (lambda name, size: load(name)[:size])
+    from util.rpgmaker_markers import (
+        PLUGIN_LIST,
+        beside_data,
+        comment_markers,
+        read_plugin_list,
+    )
+
+    # Each MV/MZ plugin list by its name, and the comment markers it shows.
+    plugin_lists, markers = {}, {}
+
+    def plugin_list(name, data):
+        if ("/" + name.casefold()).endswith("/" + PLUGIN_LIST):
+            plugin_lists[name.casefold()] = data
+            markers.pop(name.casefold(), None)
+
+    def markers_for(name):
+        """The comment markers of the game an MV/MZ data file is in, from
+        the plugin list beside its data folder."""
+        if not _rpgmaker_data(name):
+            return frozenset()
+        key = beside_data(PurePosixPath(name).parent).as_posix().casefold()
+        if key not in markers:
+            data = plugin_lists.get(key)
+            text = decode_text(data() if callable(data) else data) if data else None
+            markers[key] = comment_markers(read_plugin_list(text) if text else ())
+        return markers[key]
+
+    for name in names:
+        plugin_list(name, lambda name=name: load(name))
 
     def take(name, data, source):
         if PurePosixPath(name).suffix.casefold() in {".rxdata", ".rvdata", ".rvdata2"}:
@@ -1290,7 +1364,7 @@ def scan(
             except ValueError:
                 rows = None
         else:
-            rows = read(name, data, source == "tool")
+            rows = read(name, data, source == "tool", markers_for(name))
         if rows is None:
             unreadable.append(name)
         else:
@@ -1345,6 +1419,8 @@ def scan(
                 continue
             opened.append(name)
             for member, body in members:
+                plugin_list(member, body)
+            for member, body in members:
                 if candidate(member) == "read":
                     take(member, body, "tool")
     if wolf:
@@ -1367,9 +1443,18 @@ def scan(
                 unreadable.append(name)
             else:
                 found.extend(entries(rows, name, "tool", language))
+    # A dump's MV/MZ data waits for its plugin list, which may come later.
+    waiting = []
     for name, data in decoded or []:
-        if candidate(name) == "read":
+        plugin_list(name, data)
+        if candidate(name) != "read":
+            continue
+        if _rpgmaker_data(name):
+            waiting.append((name, data))
+        else:
             take(name, data, "assistant_dump")
+    for name, data in waiting:
+        take(name, data, "assistant_dump")
     result = {
         "version": VERSION,
         "entries": found,
