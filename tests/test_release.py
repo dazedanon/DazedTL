@@ -13,8 +13,9 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from dazedtl.compatibility import original_files
-from dazedtl.compatibility.translation import TranslationEngine
+from dazedtl.compatibility.translation import TranslationEngine, gameupdate_refusal
 from dazedtl.storage import write_json
+from dazedtl.translation.assistant_release import AssistantRelease
 from dazedtl.translation.files import digest, evidence, read_json
 from dazedtl.translation.game_update import ABSENT, GameUpdate
 from dazedtl.translation.git_status_cache import RepositoryStatusCache
@@ -37,6 +38,7 @@ from dazedtl.translation.release import (
     runtime_asset,
     write_archive,
 )
+from dazedtl.translation.service import lifecycle_view
 
 
 class ReleaseTests(unittest.TestCase):
@@ -381,16 +383,11 @@ class ReleaseTests(unittest.TestCase):
                     engine.checkpoint.assert_not_called()
             write_json(game / "data.json", {"line": "translated"})
 
-            def package(
-                _source, _options, _manifest, target, updater=True, original_names=()
-            ):
-                # The translation version keeps GameUpdate's config; the
-                # local patch leaves it out.
-                self.assertFalse(updater)
+            def package(_source, _options, _manifest, target, original_names=()):
                 path = target / "patch.zip"
                 with zipfile.ZipFile(path, "w") as archive:
                     archive.write(game / "data.json", "data.json")
-                return {"path": str(path), "commit": "after"}
+                return {"path": str(path), "commit": "after", "paths": ["data.json"]}
 
             engine.package = package
             result = run()
@@ -510,3 +507,184 @@ class ReleaseTests(unittest.TestCase):
             self.assertFalse(available(result))
             output.unlink()
             self.assertFalse(available(result))
+
+    def test_assistant_led_release_builds_what_its_review_read(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            game, workspace = root / "Game", root / "profile"
+            for name in ("Game.exe", "Game_Data/resources.assets"):
+                (game / name).parent.mkdir(parents=True, exist_ok=True)
+                (game / name).write_text("original", encoding="utf-8")
+            original_files.record(game, original_files.FOUND)
+            # The translation's files ship beside the game's; notes added to
+            # the folder while working stay out, whatever the engine.
+            name = "BepInEx/plugins/GameTL.dll"
+            plugin = game / name
+            plugin.parent.mkdir(parents=True)
+            plugin.write_text("plugin", encoding="utf-8")
+            (game / "notes.txt").write_text("my notes", encoding="utf-8")
+            # An image applied into a folder the assistant decoded, which
+            # Guided's image folders don't hold, keeps the ZIPs current.
+            image = "decoded/title.png"
+            (game / "decoded").mkdir()
+            (game / image).write_bytes(b"translated title")
+            index = game / ".dazedtl/image_manager/guided/inventory.sqlite3"
+            index.parent.mkdir(parents=True)
+            applied = {"runtimeHash": digest((game / image).read_bytes())}
+            row = {"runtime": image, "applied": applied}
+            with closing(sqlite3.connect(index)) as db:
+                db.execute("CREATE TABLE assets (data TEXT)")
+                db.execute("INSERT INTO assets VALUES (?)", (json.dumps(row),))
+                db.commit()
+            write_json(
+                lifecycle_path(workspace, "owner"),
+                {"version": 1, "runtime_manifest": "patch-files.json"},
+            )
+            write_json(game / "patch-files.json", {"files": {}})
+            status = {
+                "repo_root": str(game.resolve()),
+                "configured": True,
+                "original_version": "1.0",
+                "translation_version": "1.0",
+                "current_branch": "main",
+                "translation_branch": "main",
+                "original_commit": "original",
+                "translation_commit": "after",
+            }
+
+            def package(_source, _options, _manifest, target, original_names=()):
+                path = Path(target) / "after.zip"
+                with zipfile.ZipFile(path, "w") as archive:
+                    archive.write(plugin, name)
+                    archive.write(game / image, image)
+                return {"path": str(path), "commit": "after", "paths": [name, image]}
+
+            engine = SimpleNamespace(
+                source=root / "engine",
+                detect=lambda _root: "Unity",
+                git_status=lambda *_: dict(status),
+                patch_files=lambda *_args, **_kwargs: {
+                    "files": [name, image],
+                    "omitted": [],
+                    "updater_stamp": None,
+                },
+                runtime_paths=lambda manifest: list(manifest["files"]),
+                outside_edits=Mock(),
+                checkpoint=Mock(return_value="after"),
+                package=package,
+            )
+            ready = Mock()
+            releases = AssistantRelease(
+                SimpleNamespace(
+                    workspace=workspace,
+                    engine=engine,
+                    project=lambda _id: (
+                        {"method": "len"},
+                        SimpleNamespace(root=game, read=lambda: {"options": {}}),
+                    ),
+                    game_update=SimpleNamespace(require_ready=Mock()),
+                    idle=Mock(),
+                    package_ready=ready,
+                )
+            )
+            self.assertEqual(releases.form("owner")["directory"], str(root))
+
+            def build(kind, preview):
+                job = {"id": "job-" + kind, "project_id": "owner"}
+                plan = {
+                    "source": str(game),
+                    "options": {},
+                    "action": "release" if kind == "game" else "package",
+                    "arguments": {"plan": preview["plan"], "sha256": preview["sha256"]},
+                }
+                # The runtime manifest's QA is recorded.
+                with patch(
+                    "dazedtl.translation.delivery.verify",
+                    return_value={"files": ["patch-files.json"]},
+                ):
+                    return execute(engine, workspace, job, plan, lambda: False)
+
+            output = str(root / "Game-game.zip")
+            preview = releases.preview("owner", "game", output)
+            self.assertEqual(
+                preview["paths"],
+                [name, "Game.exe", "Game_Data/resources.assets", image],
+            )
+            self.assertIn(
+                "notes.txt", [row["path"] for row in preview["package"]["exclusions"]]
+            )
+            # A build refuses a plan its review didn't save, and contents that
+            # changed after the review.
+            with self.assertRaisesRegex(ValueError, "plan changed"):
+                build("game", {**preview, "sha256": "0" * 64})
+            plugin.write_text("plugin, edited", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "contents"):
+                build("game", preview)
+            build("game", releases.preview("owner", "game", output))
+            with zipfile.ZipFile(output) as archive:
+                self.assertEqual(
+                    sorted(archive.namelist()),
+                    [
+                        "Game-game/" + name,
+                        "Game-game/Game.exe",
+                        "Game-game/Game_Data/resources.assets",
+                        "Game-game/" + image,
+                    ],
+                )
+            # The patch is the assistant's package, with its checks, saved
+            # where the user chose; a file that appeared there after the
+            # review is not replaced.
+            patch_output = str(root / "Game-patch.zip")
+            preview = releases.preview("owner", "patch", patch_output)
+            ready.assert_called_once_with("owner")
+            self.assertEqual(preview["paths"], [name, image])
+            Path(patch_output).write_bytes(b"someone else's file")
+            with self.assertRaisesRegex(ValueError, "destination changed"):
+                build("patch", preview)
+            Path(patch_output).unlink()
+            build("patch", releases.preview("owner", "patch", patch_output))
+            with zipfile.ZipFile(patch_output) as archive:
+                self.assertEqual(archive.namelist(), [name, image])
+            state = lifecycle(workspace, "owner")
+            rows = releases.view("owner", game, state)["artifacts"]
+            self.assertEqual(
+                [(row["kind"], row["path"], row["current"]) for row in rows],
+                [("game", output, True), ("patch", patch_output, True)],
+            )
+            plugin.write_text("translated again", encoding="utf-8")
+            rows = releases.view("owner", game, state)["artifacts"]
+            self.assertEqual([row["current"] for row in rows], [False, False])
+            # The renderer gets the patch's identity, not its file stamps.
+            self.assertNotIn("inputs", lifecycle_view(state)["delivery"])
+            self.assertNotIn("release", lifecycle_view(state))
+
+    def test_gameupdate_installs_only_where_it_updates_a_patch(self):
+        # GameUpdate takes a WOLF game's Data.wolf out once it unpacks the
+        # loose Data folder, a patch's repacked one too.
+        self.assertIsNotNone(gameupdate_refusal("WOLF", ["Data.wolf", "Game.exe"]))
+        self.assertIsNone(gameupdate_refusal("WOLF", ["Data/Picture.wolf"]))
+        self.assertIsNone(gameupdate_refusal("Unity", ["Data.wolf"]))
+        engine = TranslationEngine.__new__(TranslationEngine)
+        with TemporaryDirectory() as folder:
+            game = Path(folder)
+            for detected, refusal in (
+                ("MVMZ", "rpgmaker_prepare"),
+                ("Investigation pending", "recognizes"),
+            ):
+                engine.detect = lambda _root, name=detected: name
+                with self.assertRaisesRegex(ValueError, refusal):
+                    engine.install_gameupdate(game)
+            engine.detect = lambda _root: "Unity"
+            written = []
+            with patch("dazedtl.compatibility.game_write.write_game") as write_game:
+                write_game.return_value.__enter__.return_value.wrote = lambda *names: (
+                    written.extend(names)
+                )
+                engine.install_gameupdate(game)
+            self.assertTrue((game / "gameupdate/patch.sh").is_file())
+            self.assertFalse((game / "UberWolfCli.exe").exists())
+            # The write names what it installed, so its checkpoint takes the
+            # files into the patch.
+            self.assertLessEqual(
+                {"GameUpdate.bat", "gameupdate/patch.sh", "README.md"}, set(written)
+            )

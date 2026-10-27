@@ -30,6 +30,8 @@ Git setup, extraction and guidance, then stops before translation or injection.
   Existing per-game patch configuration, README and ignore rules survive reinstallation.
   For MV/MZ, this operation also honors the saved `install_forge` choice from Len's GUI (on by default), using Workflow's bundled Forge installer and saved playtest configuration; running it again on a prepared game applies a changed choice.
   Unchecked means skip installation/updates, leaving any existing copy in place.
+- For a WOLF, Unity or TyranoScript game, run the project helper's `operation gameupdate` during preparation instead, which installs GameUpdate's files so players can update the patch; DazedTL writes the game's GameUpdate configuration once they are there.
+  GameUpdate copies the patch's files over the game, so ship a patch laid out as the game; other engines have no GameUpdate.
   Forge is unavailable for Ace/other engines.
   Include its referenced runtime plugin in patch scope while enabled; keep local Forge settings in the ignored workspace.
   Resolve preparation errors before Git setup or translation.

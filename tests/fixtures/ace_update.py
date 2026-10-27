@@ -115,9 +115,7 @@ assert "/ace_json export-ignore" in (game / ".gitattributes").read_text(
 (game / ".gitattributes").write_text("/.dazedtl export-ignore\n", encoding="utf-8")
 with write_game(game, pack=False):
     pass
-built = engine.package(
-    game, options, {"files": {}}, temporary / "deliveries", updater=False
-)
+built = engine.package(game, options, {"files": {}}, temporary / "deliveries")
 names = zipfile.ZipFile(built["path"]).namelist()
 assert "Data/Actors.rvdata2" in names and not [
     name for name in names if name.startswith("ace_json/")

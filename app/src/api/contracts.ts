@@ -1715,6 +1715,34 @@ export type GameUpdateStatus = {
   remote: string;
 };
 
+/** The Assistant-led Release options the user last chose. */
+export type AssistantReleaseForm = {
+  kind: "game" | "patch";
+  name: string;
+  names: ReleaseNames;
+  directory: string;
+};
+
+export type AssistantRelease = {
+  form: AssistantReleaseForm;
+  artifacts: ReleaseArtifact[];
+};
+
+/** The review of an Assistant-led release ZIP, and the plan its build
+runs. */
+export type ReleasePreview = {
+  action: "release" | "release_patch";
+  label: string;
+  destination: string;
+  files: number;
+  paths: string[];
+  package: PackageSummary;
+  overwrite: boolean;
+  game_version: string | null;
+  plan: string;
+  sha256: string;
+};
+
 export type TranslationState = ProjectOptions & {
   engine: string;
   legacyRun: LegacyRun | null;
@@ -1727,6 +1755,7 @@ export type TranslationState = ProjectOptions & {
   git: GitStatus | null;
   gameUpdate: GameUpdateStatus;
   lifecycle: Lifecycle;
+  release: AssistantRelease | null;
   originalsRecorded: boolean;
   jobs: TranslationJob[];
   active: boolean;
@@ -3037,6 +3066,30 @@ export type CheckpointChangesRequest = {
   commit: string;
 };
 
+export type ReleaseFormRequest = {
+  project_id: string;
+  value: AssistantReleaseForm;
+};
+
+export type ReleaseDestinationRequest = {
+  project_id: string;
+  output: string;
+  kind: "game" | "patch";
+};
+
+export type ReleasePreviewRequest = {
+  project_id: string;
+  kind: "game" | "patch";
+  output: string;
+};
+
+export type ReleaseBuildRequest = {
+  project_id: string;
+  kind: "game" | "patch";
+  plan: string;
+  sha256: string;
+};
+
 export type StartOverRequest = {
   project_id: string;
   keep_context: boolean;
@@ -3490,6 +3543,19 @@ export type RpcContract = {
     response: CheckpointChanges;
   };
   project_checkpoint: { request: CheckpointRequest; response: TranslationJob };
+  project_release_form: { request: ReleaseFormRequest; response: Saved };
+  project_release_destination: {
+    request: ReleaseDestinationRequest;
+    response: ReleaseDestination;
+  };
+  project_release_preview: {
+    request: ReleasePreviewRequest;
+    response: ReleasePreview;
+  };
+  project_release_build: {
+    request: ReleaseBuildRequest;
+    response: TranslationJob;
+  };
   project_game_update: {
     request: ProjectGameUpdateRequest;
     response: GameUpdateStatus;

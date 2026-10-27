@@ -75,6 +75,7 @@ from dazedtl.api.contracts.settings import (
     SourceLanguage,
 )
 from dazedtl.api.contracts.translation import (
+    AssistantReleaseForm,
     BackupCatalog,
     CheckpointChanges,
     CheckpointTimeline,
@@ -82,6 +83,7 @@ from dazedtl.api.contracts.translation import (
     PreparedHandoff,
     ProjectOptions,
     ReleaseInspection,
+    ReleasePreview,
     RequestPreview,
     RunRequestState,
     TranslationJob,
@@ -404,6 +406,30 @@ class CheckpointRequest(TypedDict):
 class CheckpointChangesRequest(TypedDict):
     project_id: str
     commit: str
+
+
+class ReleaseFormRequest(TypedDict):
+    project_id: str
+    value: AssistantReleaseForm
+
+
+class ReleaseDestinationRequest(TypedDict):
+    project_id: str
+    output: str
+    kind: Literal["game", "patch"]
+
+
+class ReleasePreviewRequest(TypedDict):
+    project_id: str
+    kind: Literal["game", "patch"]
+    output: str
+
+
+class ReleaseBuildRequest(TypedDict):
+    project_id: str
+    kind: Literal["game", "patch"]
+    plan: str
+    sha256: str
 
 
 class StartOverRequest(TypedDict):
@@ -802,6 +828,13 @@ METHODS: dict[str, Method] = {
         CheckpointChangesRequest, CheckpointChanges, refresh=False
     ),
     "project_checkpoint": Method(CheckpointRequest, TranslationJob),
+    # Assistant-led Release; the user's controls only.
+    "project_release_form": Method(ReleaseFormRequest, Saved, during_close=True),
+    "project_release_destination": Method(
+        ReleaseDestinationRequest, ReleaseDestination, refresh=False
+    ),
+    "project_release_preview": Method(ReleasePreviewRequest, ReleasePreview),
+    "project_release_build": Method(ReleaseBuildRequest, TranslationJob),
     # The game's GameUpdate repository and config; the user's choice only.
     "project_game_update": Method(ProjectGameUpdateRequest, GameUpdateStatus),
     "translation_attach_batch": Method(TranslationAttachBatchRequest, TranslationJob),

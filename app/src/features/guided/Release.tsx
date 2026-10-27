@@ -15,7 +15,11 @@ import { VirtualList } from "../../ui/VirtualList";
 import { OptionCards } from "../../ui/OptionCards";
 import { HelpPopover } from "../../ui/HelpPopover";
 
-type Options = GuidedForm["release"];
+/** The release options both workflows' forms hold. */
+type Options = Pick<
+  GuidedForm["release"],
+  "kind" | "name" | "names" | "directory"
+>;
 const pathKey = (path: string) => path;
 const size = (bytes: number) =>
   bytes < 1024 * 1024
@@ -36,7 +40,7 @@ export function ReleaseContent({
   open,
   packing,
   extras,
-  unapplied,
+  unapplied = [],
   apply,
 }: {
   value: Options;
@@ -48,7 +52,8 @@ export function ReleaseContent({
   disabled: boolean;
   chooseFolder: () => void;
   inspect: ReactNode;
-  assets: () => void;
+  /** Opens the patch's runtime asset editor, where the workflow has one. */
+  assets?: () => void;
   artifact?: ReleaseArtifact;
   /** The build action's key; the archive's heading reports its outcome. */
   build: string;
@@ -56,8 +61,9 @@ export function ReleaseContent({
   packing?: ReactNode;
   /** Further rows for the archive list, such as optional player documents. */
   extras?: ReactNode;
-  unapplied: string[];
-  apply: ReactNode;
+  /** Saved outputs not in the game yet, which Apply puts there. */
+  unapplied?: string[];
+  apply?: ReactNode;
 }) {
   const kind = value.kind;
   return (
@@ -200,7 +206,7 @@ export function ReleaseContent({
         >
           {inspect}
         </ActionRow>
-        {kind === "patch" && (
+        {kind === "patch" && assets && (
           <ActionRow
             label={
               <>
@@ -222,48 +228,12 @@ export function ReleaseContent({
       {artifact && (
         <section className="guided-artifact" aria-label="Last saved archive">
           <ActionList>
-            <ActionRow
-              label={
-                <>
-                  <StatusHeading
-                    title={`Last saved ${kind === "game" ? "game" : "patch"} ZIP`}
-                    outcomeOf={build}
-                    state={
-                      !artifact.available
-                        ? "blocked"
-                        : artifact.current === false
-                          ? "outdated"
-                          : "done"
-                    }
-                  />
-                  <small>
-                    {artifact.size === null
-                      ? "Size unavailable"
-                      : size(artifact.size)}
-                    {artifact.saved
-                      ? ` · Saved ${new Date(artifact.saved).toLocaleString()}`
-                      : ""}
-                    {!artifact.available
-                      ? " · Missing or changed on disk"
-                      : artifact.current
-                        ? " · Matches the game"
-                        : ""}
-                  </small>
-                  <small>
-                    <PathText path={artifact.path} />
-                  </small>
-                  {artifact.available && !artifact.current && (
-                    <small>
-                      {artifact.current === false
-                        ? "Build again to include the changes."
-                        : "Later game edits are included only when you build again."}
-                    </small>
-                  )}
-                </>
-              }
-            >
-              {open}
-            </ActionRow>
+            <ReleaseArtifactRow
+              title={`Last saved ${kind === "game" ? "game" : "patch"} ZIP`}
+              artifact={artifact}
+              build={build}
+              open={open}
+            />
           </ActionList>
         </section>
       )}
@@ -271,16 +241,83 @@ export function ReleaseContent({
   );
 }
 
+/**
+ * A saved release ZIP: whether it is still on disk and matches the game, its
+ * size, when it was saved and where, with `open` to show its folder. `build`
+ * is the action key whose outcome its heading reports.
+ */
+export function ReleaseArtifactRow({
+  title,
+  artifact,
+  build,
+  open,
+}: {
+  title: string;
+  artifact: ReleaseArtifact;
+  build?: string;
+  open: ReactNode;
+}) {
+  return (
+    <ActionRow
+      label={
+        <>
+          <StatusHeading
+            title={title}
+            outcomeOf={build}
+            state={
+              !artifact.available
+                ? "blocked"
+                : artifact.current === false
+                  ? "outdated"
+                  : "done"
+            }
+          />
+          <small>
+            {artifact.size === null ? "Size unavailable" : size(artifact.size)}
+            {artifact.saved
+              ? ` · Saved ${new Date(artifact.saved).toLocaleString()}`
+              : ""}
+            {!artifact.available
+              ? " · Missing or changed on disk"
+              : artifact.current
+                ? " · Matches the game"
+                : ""}
+          </small>
+          <small>
+            <PathText path={artifact.path} />
+          </small>
+          {artifact.available && !artifact.current && (
+            <small>
+              {artifact.current === false
+                ? "Build again to include the changes."
+                : "Later game edits are included only when you build again."}
+            </small>
+          )}
+        </>
+      }
+    >
+      {open}
+    </ActionRow>
+  );
+}
+
+/** The parts of a release ZIP's review both workflows' reviews hold. */
+export type ReleaseReviewValue = Pick<
+  Preview,
+  "action" | "game_version" | "overwrite" | "destination" | "paths" | "package"
+>;
+
 export function ReleaseReview({
   preview,
   inspectOnly,
   busy,
   editAssets,
 }: {
-  preview: Preview;
+  preview: ReleaseReviewValue;
   inspectOnly: boolean;
   busy: boolean;
-  editAssets: () => void;
+  /** Opens the patch's runtime asset editor, where the workflow has one. */
+  editAssets?: () => void;
 }) {
   const patch = preview.action === "release_patch";
   return (
@@ -313,7 +350,7 @@ export function ReleaseReview({
         </p>
       )}
       {/* Only a patch has assets to edit; a bare count needs no panel. */}
-      {patch ? (
+      {patch && editAssets ? (
         <ActionList>
           <ActionRow
             label={

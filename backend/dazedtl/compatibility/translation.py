@@ -52,6 +52,38 @@ def provider_errors(function):
     return call
 
 
+# The engines besides RPG Maker whose patches GameUpdate installs: it copies a
+# patch's files over the game, so a patch laid out as the game updates it,
+# such as Unity's replaced assets or BepInEx plugin, a TyranoScript game's
+# resources/app or rebuilt app.asar and WOLF's loose Data files or packed
+# Data/*.wolf, except what gameupdate_refusal names. Other engines' layouts
+# were not checked.
+GAMEUPDATE_ENGINES = frozenset({"WOLF", "Unity", "TyranoScript"})
+
+
+def gameupdate_refusal(engine, files):
+    """Why GameUpdate would break a patch of these files, or None. In a WOLF
+    game it unpacks the game's Data.wolf into a loose Data folder and takes
+    the archive out, the Data.wolf a patch brings too, which the game would
+    then not read."""
+    if engine == "WOLF" and any(name.casefold() == "data.wolf" for name in files):
+        return (
+            "GameUpdate unpacks this WOLF game's Data.wolf into a loose Data "
+            "folder and takes the archive out, so players who update with it "
+            "would lose a repacked Data.wolf. Ship the translated files loose "
+            "in the Data folder instead of packing Data.wolf."
+        )
+    return None
+
+
+def _tracked(source):
+    """The files the game's translation branch tracks."""
+    from util.version_update.git_workflow import _run_git
+
+    listed = _run_git(Path(source), "ls-files", "-z").stdout
+    return set(listed.rstrip("\0").split("\0")) - {""}
+
+
 def with_dazedtl_files(source, manifest):
     """A runtime patch manifest with DazedTL's own files the game holds, such
     as GameUpdate's and the playtest's fixes, which every checkpoint and patch
@@ -716,6 +748,42 @@ class TranslationEngine:
             game.watch(data_path or "ace_json")
             return self._prepare(source, options, data_path, log)
 
+    def install_gameupdate(self, source, log=None):
+        """Installs GameUpdate's files in a game of an engine whose patches
+        GameUpdate installs (GAMEUPDATE_ENGINES), in one write to the game;
+        an RPG Maker game gets them from its preparation. DazedTL writes the
+        game's config once the files are there, as for RPG Maker."""
+        from util.len_patch_scope import setup_files
+        from util.project_preparation import install_gameupdate
+
+        from .game_write import write_game
+
+        root = Path(source)
+        engine = self.detect(root)
+        if engine in {"MVMZ", "ACE"}:
+            raise ValueError(
+                "An RPG Maker game gets GameUpdate from operation rpgmaker_prepare."
+            )
+        if engine not in GAMEUPDATE_ENGINES:
+            raise ValueError(
+                "GameUpdate installs only in games DazedTL recognizes as WOLF, "
+                "Unity or TyranoScript, whose patches it was checked with."
+            )
+        from util.paths import game_git_set_up
+
+        if refusal := gameupdate_refusal(
+            engine, _tracked(root) if game_git_set_up(root) else ()
+        ):
+            raise ValueError(refusal)
+        log = log or (lambda _line: None)
+        readme = not (root / "README.md").exists()
+        with write_game(root, log=log, pack=False) as game:
+            copied, errors = install_gameupdate(root, wolf=engine == "WOLF", log=log)
+            game.wrote(*setup_files(root), *(["README.md"] if readme else []))
+            if errors:
+                raise ValueError("GameUpdate copy failed. " + "; ".join(errors))
+        return {"engine": engine, "files": copied}
+
     def rpgmaker_prepare_release(self, staged, options, baseline, log=None):
         """Prepares a new version's copy staged for a game update, which is
         not the game, as the game's files were: `baseline` names the files
@@ -1074,21 +1142,52 @@ class TranslationEngine:
         if _takes_checkpoints(source):
             save(source, change, named)
 
-    def package(
-        self, source, options, manifest, destination, *, updater=True, original_names=()
-    ):
+    def _patch_scope(self, source, stamped=True):
+        """The files the translation branch tracks, DazedTL's own among them,
+        GameUpdate's config when the patch leaves it out and the public
+        version it stamps otherwise (release.public_version); without
+        `stamped`, the translation's files whatever the patch would stamp."""
+        from util.gameupdate_config import CONFIG
+        from util.paths import is_game_tool_file
+
+        from dazedtl.translation.release import public_version
+
+        tracked = _tracked(source)
+        # DazedTL's own files, such as the game's glossary and a VX Ace
+        # game's ace_json, are committed but never reach players, whatever
+        # an older .gitattributes says.
+        own = set(filter(is_game_tool_file, tracked))
+        if not stamped:
+            return tracked, own, set(), None
+        stamp = public_version(source) if CONFIG in tracked else None
+        omitted = {CONFIG} & tracked if not stamp else set()
+        return tracked, own, omitted, stamp
+
+    def patch_files(self, source, manifest, *, stamped=True):
+        """What a patch ZIP built now holds, for its review: the files the
+        translation branch tracks and those the runtime manifest adds at the
+        build's checkpoint, without DazedTL's own, and whether it stamps the
+        public version; without `stamped`, every file of the translation,
+        GameUpdate's config too, which a clean game ZIP decides on itself."""
+        tracked, own, omitted, stamp = self._patch_scope(Path(source), stamped)
+        named = set(self.runtime_paths(manifest))
+        return {
+            "files": sorted((tracked | named) - own - omitted),
+            "omitted": sorted(omitted),
+            "updater_stamp": stamp,
+        }
+
+    def package(self, source, options, manifest, destination, *, original_names=()):
         """A local ZIP of the committed patch, the files the translation
-        branch tracks. GameUpdate's config stays out unless the commit is the
-        verified public version, which the ZIP then stamps; ``updater=False``
-        always leaves it out. `original_names` lists the original game's
-        files a backup holds, for plugins Git's inventory leaves out."""
+        branch tracks, in `destination`, named by its commit. GameUpdate's
+        config follows release.public_version. `original_names` lists the
+        original game's files a backup holds, for plugins Git's inventory
+        leaves out."""
         import zipfile
 
         from util.ace.actions import patch_archive
-        from util.gameupdate_config import CONFIG
         from util.len_patch_scope import patch_manifest, patch_refusal
-        from util.paths import GAME_TOOL_ARCHIVE_EXCLUDES, is_game_tool_file
-        from util.release_package import ReleasePackageError, _release_patch_sha
+        from util.paths import GAME_TOOL_ARCHIVE_EXCLUDES
         from util.version_update.git_workflow import _run_git
 
         from dazedtl.translation.release import player_permissions
@@ -1103,13 +1202,7 @@ class TranslationEngine:
                 "The game changed while its patch was saved, or is off the "
                 "translation branch; build the patch again."
             )
-        tracked = set(
-            _run_git(source, "ls-files", "-z").stdout.rstrip("\0").split("\0")
-        )
-        # DazedTL's own files, such as the game's glossary and a VX Ace
-        # game's ace_json, are committed but never reach players, whatever
-        # an older .gitattributes says.
-        own = set(filter(is_game_tool_file, tracked))
+        tracked, own, omitted, patch_sha = self._patch_scope(source)
         missing = sorted(set(patch_manifest(manifest)) - tracked)
         if missing:
             raise ValueError(
@@ -1119,18 +1212,15 @@ class TranslationEngine:
             )
         if refusal := patch_refusal(source, tracked - own, original_names):
             raise ValueError(refusal)
+        # Players update a patch that carries GameUpdate with it.
+        if "gameupdate/patch.sh" in tracked and (
+            refusal := gameupdate_refusal(self.detect(source), tracked - own)
+        ):
+            raise ValueError(refusal)
         destination.mkdir(parents=True, exist_ok=True)
         output = destination / (status["translation_commit"] + ".zip")
         temporary = output.with_suffix(".zip.tmp")
         rebuilt = output.with_suffix(".archive.tmp")
-        try:
-            patch_sha = (
-                _release_patch_sha(source) if updater and CONFIG in tracked else None
-            )
-        except ReleasePackageError:
-            # Local delivery does not require publishing a remote branch.
-            patch_sha = None
-        omitted = {CONFIG} & tracked if not patch_sha else set()
         try:
             _run_git(
                 source,
@@ -1186,6 +1276,8 @@ class TranslationEngine:
             "game_version": status["original_version"],
             "files": len(packaged),
             "updater_stamp": bool(patch_sha),
+            # The game's files it was built from, which freshness compares.
+            "paths": [name for name in packaged if name in tracked],
         }
 
     def version(self, source, action, options):

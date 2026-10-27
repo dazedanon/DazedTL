@@ -428,6 +428,8 @@ class ExistingBackend:
         }
 
     def guided_release_preview(self, token, known):
+        from dazedtl.translation.release import summary
+
         from .guided import release_scope
 
         plan = self.workflows.previews[token]
@@ -437,17 +439,9 @@ class ExistingBackend:
             "label": plan["label"],
             "files": len(scope["files"]),
             "paths": sorted(scope["files"]),
-            "package": {
-                "included": len(scope["files"]) + bool(scope["updater_stamp"]),
-                "excluded": len(scope["exclusions"]),
-                "exclusions": scope["exclusions"],
-                "updater": "Verified public GameUpdate version included."
-                if scope["updater_stamp"]
-                else "GameUpdate configuration is omitted until a matching public version is verified.",
-                "generated": ["gameupdate/previous_patch_sha.txt"]
-                if scope["updater_stamp"]
-                else [],
-            },
+            "package": summary(
+                scope["files"], scope["exclusions"], scope["updater_stamp"]
+            ),
             "overwrite": plan["output_hash"] is not None,
             "confirmation": plan["output_hash"] is not None,
         }

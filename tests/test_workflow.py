@@ -1563,7 +1563,13 @@ class WorkflowTests(unittest.TestCase):
         self.engine.git_setup = setup
         self.engine.checkpoint = Mock()
         self.engine.outside_edits = Mock()
-        self.engine.package = Mock(return_value={"path": str(self.root / "patch.zip")})
+        (self.root / "patch.zip").write_bytes(b"patch")
+        self.engine.package = Mock(
+            side_effect=lambda *_args, **_kwargs: {
+                "path": str(self.root / "patch.zip"),
+                "paths": [],
+            }
+        )
         self.engine.detect = lambda _source: "Other engine"
         job = {"project_id": self.identity, "id": "b" * 32}
 

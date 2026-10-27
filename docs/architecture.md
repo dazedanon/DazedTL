@@ -171,6 +171,9 @@ Release freezes the runtime scope and the original and translation commits throu
 A VX Ace game ZIP's name must be ASCII: RGSS3's Game.exe reaches its library through the ANSI code page and fails as "RGSS301.dll File corrupted" from a Japanese-named folder on English Windows, and Explorer's Extract All adds a folder of the archive's name.
 The GameUpdate config belongs to the engine's [gameupdate_config](../backend/dazedtl/engine/util/gameupdate_config.py), and the [action guard](../backend/dazedtl/engine/desktop/backend/workflow_actions.py) leaves its settings record out, so writing it never marks saved work Outdated.
 Neither Apply nor packaging manufactures a user-review record or completes Len's report-based QA, and the project helper cannot invoke Guided packaging.
+Assistant-led's Release ([assistant_release](../backend/dazedtl/translation/assistant_release.py)) is Guided's release form on the same [release](../backend/dazedtl/translation/release.py) rules, for any engine: its clean game ZIP holds the game's recorded original files and the translation branch's, and its patch ZIP is `operation package`'s, with its checks, saved where the user chooses; its review saves the plan the build runs, which binds the contents and the destination, and only the app's own `project_release_*` methods reach it.
+`release.public_version` is the one rule for GameUpdate's config in every release ZIP: in only when the commit is the verified public version, which the ZIP stamps.
+GameUpdate copies a patch's files over the game, so outside RPG Maker the helper's `gameupdate` operation installs it only for the engines whose patch layouts were checked (`GAMEUPDATE_ENGINES` in [translation](../backend/dazedtl/compatibility/translation.py)), and a WOLF patch with GameUpdate refuses a repacked `Data.wolf`, which GameUpdate takes out for the loose `Data` folder.
 
 ## Plugins and images
 

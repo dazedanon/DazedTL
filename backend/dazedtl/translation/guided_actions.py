@@ -564,7 +564,7 @@ class GuidedActions:
 
     def confirm(self, context, plan):
         """Freezes a reviewed plan behind a one-use token."""
-        from util.paths import GAME_REPOSITORY_METADATA
+        from .release import patch_summary, public_version
 
         project_id, action = context.project_id, context.action
         project = context.project
@@ -599,13 +599,15 @@ class GuidedActions:
             if action == "release_patch" and native["engine"] == "ACE"
             else None
         )
-        # The translation version commits GameUpdate's config for publishing;
-        # the local patch ZIP leaves it out.
+        # The patch ZIP carries GameUpdate's config only when it stamps the
+        # verified public version (release.public_version).
         updater = "gameupdate/patch-config.txt"
-        omitted = action == "release_patch" and (
+        held = action == "release_patch" and (
             updater in paths or (Path(project["source"]) / updater).is_file()
         )
-        shown = [name for name in paths if name != updater] if omitted else paths
+        stamp = public_version(project["source"]) if held else None
+        omitted = [updater] if held and not stamp else []
+        shown = [name for name in paths if name not in omitted]
         return {
             "token": token,
             "action": action,
@@ -624,26 +626,7 @@ class GuidedActions:
             else None,
             "confirmation": not ACTIONS[action].one_click
             and not (action == "start" and options["mode"] == "estimate"),
-            "package": {
-                "included": len(shown),
-                "excluded": int(omitted),
-                "exclusions": [
-                    {
-                        "path": updater,
-                        "reason": "GameUpdate disabled in this local patch; the translation version keeps it for publishing",
-                    }
-                ]
-                if omitted
-                else [],
-                "updater": "GameUpdate configuration is omitted from local patches. Publishing is separate."
-                + (
-                    f" This game came encrypted, so the patch carries {archive} rebuilt with the translation; GameUpdate cannot update it."
-                    if archive
-                    else ""
-                ),
-                "generated": list(GAME_REPOSITORY_METADATA)
-                + ([archive] if archive else []),
-            }
+            "package": patch_summary(shown, omitted, stamp, archive)
             if action == "release_patch"
             else None,
             "overwrite": bool(options.get("output_hash"))

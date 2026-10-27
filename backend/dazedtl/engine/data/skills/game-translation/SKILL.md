@@ -70,7 +70,7 @@ For RPG Maker, use the same preparation steps as Workflow before translation: ru
 Then `operation git_setup` records the prepared untranslated baseline.
 `setup.md` loads Workflow's RPG Maker speaker, glossary, wrapping and investigation instructions for these games.
 For Ace, the operation first converts Data with RV2JSON and formats its JSON export (`data_path` if not in `ace_json`), leaving native Marshal files intact.
-Other engines keep their own preparation route.
+Other engines keep their own preparation route; for WOLF, Unity and TyranoScript, `operation gameupdate` installs GameUpdate so players can update the patch ([project-lifecycle.md](references/project-lifecycle.md)).
 Existing updater configuration, README and ignore rules are preserved on reinstall.
 Len's **Install Forge** checkbox defaults on for MV/MZ and is saved as `install_forge`.
 `operation rpgmaker_prepare` honors it through Workflow's bundled installer and saved playtest settings, and running it again on a prepared game applies a changed choice.

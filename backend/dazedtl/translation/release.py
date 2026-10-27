@@ -90,6 +90,7 @@ _TEMP_SUFFIXES = (
 _ADDED = "Not part of the game or its translation"
 _UPDATER_CONFIG = "gameupdate/patch-config.txt"
 _UPDATER_STATE = "gameupdate/previous_patch_sha.txt"
+UPDATER_OMITTED = "GameUpdate disabled in this local ZIP: no verified public version"
 # Windows refuses these names, so extracting a ZIP that holds one fails there.
 _WINDOWS_DEVICE = re.compile(r"(?:con|prn|aux|nul|(?:com|lpt)[0-9¹²³])(?:\..*)?")
 # Ace packing receipts from version 2 bind Game.ini, whose title packing
@@ -184,9 +185,7 @@ def inventory(source, updater_stamp=None, known=None):
                 else exclusion(relative)
             )
             if relative.casefold() == _UPDATER_CONFIG and not updater_stamp:
-                reason = (
-                    "GameUpdate disabled in this local ZIP: no verified public version"
-                )
+                reason = UPDATER_OMITTED
             if not reason and known is not None and _known_key(relative) not in keys:
                 reason = _ADDED
             if reason:
@@ -206,6 +205,53 @@ def inventory(source, updater_stamp=None, known=None):
         "updater_stamp": updater_stamp,
         "known": known,
     }
+
+
+def public_version(source):
+    """The one rule for GameUpdate's config in a release ZIP, a clean game
+    ZIP or a patch ZIP, whichever workflow builds it: the config goes in only
+    when the game's commit is the verified public version, the tip players
+    update from, which the ZIP then stamps as the version they have. This is
+    that commit, or None, and the ZIP leaves the config out, so a player's
+    first update fetches the published patch."""
+    from util.release_package import ReleasePackageError, _release_patch_sha
+
+    try:
+        return _release_patch_sha(Path(source))
+    except ReleasePackageError:
+        # Building a local ZIP never needs the version published.
+        return None
+
+
+def summary(files, exclusions, updater_stamp):
+    """What a release ZIP's review says it holds, for either kind."""
+    return {
+        "included": len(files) + bool(updater_stamp),
+        "excluded": len(exclusions),
+        "exclusions": exclusions,
+        "updater": "Verified public GameUpdate version included."
+        if updater_stamp
+        else "GameUpdate configuration is omitted until a matching public version is verified.",
+        "generated": [_UPDATER_STATE] if updater_stamp else [],
+    }
+
+
+def patch_summary(files, omitted, updater_stamp, archive=None):
+    """What a patch ZIP's review says it holds: its runtime `files`, the
+    GameUpdate config it leaves out (`omitted`) and the encrypted game's
+    `archive` it carries rebuilt, if any."""
+    value = summary(
+        files,
+        [{"path": name, "reason": UPDATER_OMITTED} for name in omitted],
+        updater_stamp,
+    )
+    if archive:
+        value["updater"] += (
+            f" This game came encrypted, so the patch carries {archive} rebuilt"
+            " with the translation; GameUpdate cannot update it."
+        )
+        value["generated"].append(archive)
+    return value
 
 
 def player_permissions(info):
@@ -239,6 +285,23 @@ def game_folder(output, engine):
     return name
 
 
+def destination_check(source, workspace, engine_source, output, kind, engine):
+    """Whether a release ZIP may be written to `output`, without writing:
+    the error and whether the archive name alone or the whole path is at
+    fault, or empty ones."""
+    try:
+        path = destination(source, workspace, engine_source, output)
+    except ValueError as exc:
+        return {"error": str(exc), "field": "path"}
+    if kind == "game":
+        # The archive's name becomes the game's folder inside it.
+        try:
+            game_folder(path, engine)
+        except ValueError as exc:
+            return {"error": str(exc), "field": "name"}
+    return {"error": "", "field": ""}
+
+
 def archive_stem(name, engine):
     """What a game's release ZIPs are named before the translator names them,
     as in "<stem>-game.zip": the game folder's *name* wherever game_folder
@@ -255,12 +318,12 @@ def archive_stem(name, engine):
     return "translated"
 
 
-def write_archive(source, target, scope, log, *, folder):
+def write_archive(source, target, scope, log, *, folder, stopped=None):
     if inventory(source, scope["updater_stamp"], scope["known"]) != scope:
         raise ValueError("The archive contents changed. Inspect and build again.")
     if not scope["files"]:
         raise ValueError("No runtime files are available to package.")
-    stopped = getattr(log, "stopped", lambda: False)
+    stopped = stopped or getattr(log, "stopped", lambda: False)
     with zipfile.ZipFile(
         target, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
     ) as archive:
@@ -279,6 +342,53 @@ def write_archive(source, target, scope, log, *, folder):
         raise ValueError(
             "The game changed during packaging. Its partial archive was discarded."
         )
+
+
+def game_scope(source, known):
+    """A clean game ZIP's inventory, with the public version it stamps."""
+    return inventory(source, public_version(source), known)
+
+
+def build_game(
+    source, output, scope, expected, log, *, engine, inputs, check=None, stopped=None
+):
+    """Builds the clean game ZIP whose review read `scope` (game_scope) at
+    `output`, which held the file of hash `expected` then. `check` runs
+    again once the archive is written, before it replaces the destination,
+    and `inputs` names the runtime files a later freshness check compares."""
+    output = Path(output)
+    folder = game_folder(output, engine)
+    stopped = stopped or getattr(log, "stopped", lambda: False)
+    if game_scope(source, scope["known"]) != scope:
+        raise ValueError(
+            "The package contents or public version changed. Build a new release preview."
+        )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with system.staging_folder(output.parent, ".dazedtl-release-") as temporary:
+        staged = temporary / output.name
+        write_archive(source, staged, scope, log, folder=folder, stopped=stopped)
+        if check:
+            check()
+        if game_scope(source, scope["known"]) != scope:
+            raise ValueError(
+                "The game or public version changed during packaging. Its partial archive was discarded."
+            )
+        # Later checks compare only the runtime files translation work
+        # changes, not the whole game. An applied image edited outside Images
+        # still packages; that archive just cannot be compared later.
+        try:
+            stamps = input_stamps(source, inputs())
+        except ValueError:
+            stamps = None
+        saved = publish(staged, output, expected, stopped=stopped)
+    return {
+        **saved,
+        "kind": "game",
+        "inputs": stamps,
+        "files": len(scope["files"]) + bool(scope["updater_stamp"]),
+        "excluded": len(scope["exclusions"]),
+        "updater_stamp": bool(scope["updater_stamp"]),
+    }
 
 
 def runtime_asset(source, relative):
@@ -305,25 +415,37 @@ def runtime_asset(source, relative):
     return relative
 
 
-def applied_assets(source):
+def applied_images(source):
+    """Each image the Image Manager applied to the game: its path and the
+    hash it was applied at, wherever its folder is."""
     root = Path(source)
     location = root / ".dazedtl/image_manager/guided/inventory.sqlite3"
     if not location.is_file():
-        return []
+        return {}
     index = project_path(root, location.relative_to(root).as_posix())
-    paths = []
+    found = {}
     with closing(sqlite3.connect(index.as_uri() + "?mode=ro", uri=True)) as db:
         for (raw,) in db.execute("SELECT data FROM assets"):
             row = json.loads(raw)
             applied = row.get("applied") or {}
             if applied.get("runtimeHash"):
-                relative = runtime_asset(root, row["runtime"])
-                if evidence(root, [relative])[relative] != applied["runtimeHash"]:
-                    raise ValueError(
-                        "An applied image changed. Review or restore it in Images before packaging: "
-                        + relative
-                    )
-                paths.append(relative)
+                found[row["runtime"]] = applied["runtimeHash"]
+    return found
+
+
+def applied_assets(source):
+    """The applied images a Guided patch carries, each a player image under
+    its engine's image folders and as it was applied."""
+    root = Path(source)
+    paths = []
+    for name, applied in applied_images(root).items():
+        relative = runtime_asset(root, name)
+        if evidence(root, [relative])[relative] != applied:
+            raise ValueError(
+                "An applied image changed. Review or restore it in Images before packaging: "
+                + relative
+            )
+        paths.append(relative)
     return sorted(set(paths))
 
 
@@ -548,7 +670,7 @@ def current(value, source):
     try:
         return all(
             _unchanged(source, path, saved) for path, saved in inputs.items()
-        ) and set(applied_assets(source)) <= set(inputs)
+        ) and set(applied_images(source)) <= set(inputs)
     except OSError, ValueError:
         return False
 

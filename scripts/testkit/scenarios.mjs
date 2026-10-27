@@ -23,6 +23,7 @@ import {
   applyTask,
   buildPatch,
 } from "./journey.mjs";
+import { entries } from "../zip.mjs";
 
 /** Runs a Python script of the scenario's checkout, as an assistant's shell does. */
 const run = (state, script, ...args) =>
@@ -1255,6 +1256,104 @@ export const scenarios = {
             );
           console.log(
             `\n  ${(await assistant(page, state, "archived-images")).trim().replaceAll("\n", "\n  ")}`,
+          );
+        },
+      ],
+    ],
+  },
+  "assistant-released": {
+    description:
+      "An Assistant-led project the assistant translated whole, wrote, checked and packaged; Progress's Patch phase shows the patch ZIP, and Release builds a clean game ZIP and saves the patch ZIP where it suggests.",
+    steps: () => [
+      [
+        "Open the game Assistant-led, the assistant translating, without image text",
+        async (context) => {
+          await assistantLed[0][1](context);
+          const { page } = context;
+          const project_id = (await page.call("workspace_snapshot")).application
+            .project.id;
+          const current = await page.call("translation_state", { project_id });
+          await page.call("translation_save", {
+            project_id,
+            revision: current.revision,
+            values: { ...current.options, include_images: false },
+          });
+        },
+      ],
+      assistantLed[1],
+      [
+        "The assistant translates all the text, writes it, reports QA done and packages the patch",
+        async ({ page, state }) => {
+          await assistant(page, state, "organize", "--complete");
+          const run = JSON.parse(await assistant(page, state, "translate"));
+          if (run.status !== "complete")
+            throw new Error(
+              `Run ${run.id}: ${run.status}, ${run.message || ""}`,
+            );
+          await assistant(page, state, "write");
+          console.log(
+            `\n  ${(await assistant(page, state, "package")).trim()}`,
+          );
+        },
+      ],
+      [
+        "Progress shows the patch; Release builds a clean game ZIP and the patch ZIP",
+        async ({ page, state }) => {
+          await page.waitText("Patch ZIP\nDone");
+          await page.locate("Open folder");
+          await page.click("Release");
+          const [folder, name] = await page.evaluate(
+            `[document.querySelector("[aria-label='Save in']").value, document.querySelector(".guided-package-fields input").value]`,
+          );
+          // Progress showed the assistant's patch, so each ZIP's own file
+          // says its build is done.
+          const built = (archive, kind) =>
+            until(
+              `the ${kind} ZIP`,
+              async () =>
+                fs.existsSync(path.join(folder, archive)) &&
+                !(await page.call("workspace_snapshot")).application.running &&
+                (await page.text()).includes(`Last saved ${kind} ZIP\nDone`),
+              5 * 60_000,
+            );
+          await page.click("Build clean game ZIP");
+          await built(name, "game");
+          const actors = path.join(
+            contentFolder([], state.game),
+            "data/Actors.json",
+          );
+          const written = fs.readFileSync(actors);
+          const game = new Map(
+            [...entries(fs.readFileSync(path.join(folder, name)))].map(
+              (entry) => [entry.path, entry.data],
+            ),
+          );
+          const top = name.replace(/\.zip$/, "");
+          if (!game.get(`${top}/data/Actors.json`)?.equals(written))
+            throw new Error(
+              "The clean game ZIP lacks the translated Actors.json.",
+            );
+          const own = [...game.keys()].filter((entry) =>
+            entry.startsWith(`${top}/.`),
+          );
+          if (own.length)
+            throw new Error(`The clean game ZIP holds ${own.join(", ")}.`);
+          await page.click(/^Patch ZIP/);
+          const patchName = await page.evaluate(
+            `document.querySelector(".guided-package-fields input").value`,
+          );
+          await page.click("Review & build patch ZIP");
+          await page.click(/^(Replace & build|Build) patch ZIP$/);
+          await built(patchName, "patch");
+          const patch = new Map(
+            [...entries(fs.readFileSync(path.join(folder, patchName)))].map(
+              (entry) => [entry.path, entry.data],
+            ),
+          );
+          if (!patch.get("data/Actors.json")?.equals(written))
+            throw new Error("The patch ZIP lacks the translated Actors.json.");
+          console.log(
+            `\n  Clean game ZIP: ${game.size} entries; patch ZIP: ${patch.size}`,
           );
         },
       ],
