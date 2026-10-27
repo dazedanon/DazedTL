@@ -887,42 +887,21 @@ function Manager({
   // their numbers follow the folder and search, as the grid does.
   const scoped = grid.views;
   const viewOptions: {
-    value: GridView;
+    value: Exclude<GridView, "">;
     label: string;
-    shown: boolean;
-    count: number;
+    /** The whole game's count, the most a folder or search leaves. */
+    whole: number;
   }[] = [
     {
       value: "list",
       // The user's own ticks are not recommendations.
       label: flow.investigated ? "Recommended" : "To translate",
-      shown: flow.listed > flow.applied,
-      count: scoped?.list ?? flow.listed - flow.applied,
+      whole: flow.listed - flow.applied,
     },
-    {
-      value: "uncertain",
-      label: "Unsure",
-      shown: !!counts.uncertain,
-      count: scoped?.uncertain ?? counts.uncertain,
-    },
-    {
-      value: "ready",
-      label: "Translated",
-      shown: !!counts.ready,
-      count: scoped?.ready ?? counts.ready,
-    },
-    {
-      value: "applied",
-      label: "Applied",
-      shown: !!counts.applied,
-      count: scoped?.applied ?? counts.applied,
-    },
-    {
-      value: "all",
-      label: "All images",
-      shown: true,
-      count: scoped?.all ?? counts.indexed,
-    },
+    { value: "uncertain", label: "Unsure", whole: counts.uncertain },
+    { value: "ready", label: "Translated", whole: counts.ready },
+    { value: "applied", label: "Applied", whole: counts.applied },
+    { value: "all", label: "All images", whole: counts.indexed },
   ];
   const editText = () =>
     void action.run(
@@ -1230,14 +1209,31 @@ function Manager({
               className="image-views"
               value={shown}
               options={viewOptions
-                .filter((option) => option.shown || option.value === shown)
+                .filter(
+                  (option) =>
+                    option.whole > 0 ||
+                    option.value === "all" ||
+                    option.value === shown,
+                )
                 .map((option) => ({
                   value: option.value,
                   label: (
                     <>
                       {option.label}
-                      <span className="image-view-count">
-                        {option.count.toLocaleString()}
+                      {/* The whole game's count holds the width, so the tabs
+                      stay put while folders and searches change counts. */}
+                      <span
+                        className="image-view-count"
+                        data-room={Math.max(
+                          option.whole,
+                          scoped?.[option.value] ?? 0,
+                        ).toLocaleString()}
+                      >
+                        <span>
+                          {(
+                            scoped?.[option.value] ?? option.whole
+                          ).toLocaleString()}
+                        </span>
                       </span>
                     </>
                   ),

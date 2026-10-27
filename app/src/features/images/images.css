@@ -167,9 +167,20 @@ main > .image-manager {
 }
 /* Each view names how many images it holds, quieter than its name. */
 .image-view-count {
+  display: inline-grid;
+  justify-items: end;
   margin-inline-start: var(--space-2);
   color: var(--color-muted);
   font-variant-numeric: tabular-nums;
+}
+/* The scoped count sits over the whole game's, which only holds the width. */
+.image-view-count::after {
+  content: attr(data-room);
+  visibility: hidden;
+}
+.image-view-count > span,
+.image-view-count::after {
+  grid-area: 1 / 1;
 }
 .image-views > .ui-button[aria-pressed="true"] .image-view-count {
   color: inherit;
