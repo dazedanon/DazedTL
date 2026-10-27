@@ -14,6 +14,7 @@ import re
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from util import rpgmaker_blocks as blocks
 from util.rpgmaker_markers import PluginList
 
 # Something runs the plugin, or its file could not be read, so players may
@@ -251,7 +252,7 @@ def _commands(document: Any):
         for child in document:
             yield from _commands(child)
     elif isinstance(document, dict):
-        if isinstance(document.get("code"), int) and isinstance(
+        if blocks.code(document) is not None and isinstance(
             document.get("parameters"), list
         ):
             yield document

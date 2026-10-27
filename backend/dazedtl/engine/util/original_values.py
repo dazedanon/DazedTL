@@ -32,6 +32,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
+from util import rpgmaker_blocks as blocks
 from util.rpgmaker_markers import plugin_list
 
 # A run's staged originals, beside its files folder.
@@ -199,7 +200,7 @@ def _key(command: Any) -> tuple:
     parameters = command.get("parameters")
     parameters = parameters if isinstance(parameters, list) else []
     return (
-        command.get("code"),
+        blocks.code(command),
         command.get("indent"),
         len(parameters),
         tuple(
@@ -215,14 +216,13 @@ def _units(commands: list) -> list[tuple[int, int]]:
     units = []
     index = 0
     while index < len(commands):
-        code = commands[index].get("code") if isinstance(commands[index], dict) else None
+        code = blocks.code(commands[index])
         end = index + 1
         row = _ROWS.get(code)
         while (
             row is not None
             and end < len(commands)
-            and isinstance(commands[end], dict)
-            and commands[end].get("code") == row
+            and blocks.code(commands[end]) == row
         ):
             end += 1
         units.append((index, end))

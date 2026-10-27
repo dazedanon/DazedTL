@@ -44,6 +44,7 @@ def find(document, original=lambda: None):
     a value without `_original` may hold a note."""
     # QA's inventory pairs each `_original` with the text the game shows;
     # importing its mapping keeps QA's extractor hash, and its tasks, current.
+    from util import rpgmaker_blocks as blocks
     from util.rpgmaker_qa_manifest import live_mapping, read_live, string_leaves
 
     found, covered, strings = [], set(), []
@@ -54,7 +55,7 @@ def find(document, original=lambda: None):
     # game file keeps at the same path.
     def walk(value, path, listed=None, index=None, notes=True, fields=True):
         if isinstance(value, dict):
-            code = value.get("code") if isinstance(value.get("code"), int) else None
+            code = blocks.code(value)
             if notes and value.get("_original") is not None:
                 for relative, source in string_leaves(value["_original"]):
                     mapping = live_mapping(value, path, relative, code, listed, index)

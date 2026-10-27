@@ -21,6 +21,7 @@ from typing import Any, Iterable
 
 from util import languages
 from util.original_values import Originals
+from util import rpgmaker_blocks as blocks
 from util.rpgmaker_blocks import command_lists
 from util.rpgmaker_markers import PluginList, comment_markers, lists_mz
 from util.rpgmaker_plugin_registry import PluginRegistryError, loaded_entries
@@ -312,7 +313,7 @@ class _Checks:
         for index, command in enumerate(commands):
             if not isinstance(command, dict):
                 continue
-            code, parameters = command.get("code"), command.get("parameters")
+            code, parameters = blocks.code(command), command.get("parameters")
             if not isinstance(parameters, list):
                 continue
             if code == 102 and parameters and isinstance(parameters[0], list):
@@ -483,7 +484,7 @@ class _Checks:
 
 def _page_text(command: dict[str, Any]) -> str:
     parameters = command.get("parameters") or []
-    code = command.get("code")
+    code = blocks.code(command)
     if code == 102 and parameters and isinstance(parameters[0], list):
         return " / ".join(str(value) for value in parameters[0])
     position = _PAGE_TEXT.get(code, 0)

@@ -146,7 +146,7 @@ def _walk(before, after, *, system=False):
         index = 0
         while index < len(before):
             item = before[index]
-            code = item.get("code") if isinstance(item, dict) else None
+            code = blocks.code(item)
             if code in _RUNS:
                 end = (blocks.run(before, index, _RUNS[code]) or (index,))[-1] + 1
                 old = [row["parameters"][0] for row in before[index:end]]
