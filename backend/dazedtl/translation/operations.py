@@ -456,6 +456,8 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
                 if arguments.get("patch_overlay")
                 else None
             )
+            # Only the record made here is named.
+            arguments = {**arguments, "prepared_record": None}
             if over or not arguments.get("patch_overlay"):
                 prepared = original_files.record(
                     source,

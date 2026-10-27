@@ -137,12 +137,12 @@ def _kept(key, read):
     return _READ[key]
 
 
-def _tip(root):
-    """The commit the ref names, read from the Git folder without a Git
-    process, or "" without one."""
+def _tip(root, ref=REF):
+    """The commit `ref`, the records' by default, names, read from the Git
+    folder without a Git process, or "" without one."""
     git = Path(root) / ".git"
     try:
-        return (git / REF).read_text(encoding="utf-8").strip()
+        return (git / ref).read_text(encoding="utf-8").strip()
     except OSError:
         pass
     try:
@@ -150,7 +150,7 @@ def _tip(root):
     except OSError:
         return ""
     for line in packed.splitlines():
-        if line.endswith(" " + REF):
+        if line.endswith(" " + ref):
             return line.split(" ", 1)[0]
     return ""
 
@@ -198,19 +198,39 @@ def prepared_record(root, commit=None):
     records were named, reads the newest record of its version label that
     waits for no name; without the branch, the newest of any version. None
     without one."""
-    from util.version_update.git_workflow import ORIGINAL_BRANCH, PREPARED_TRAILER
+    from util.version_update.git_workflow import ORIGINAL_BRANCH
 
     rows = [row for row in records(root) if row.kind == PREPARED]
     if not rows:
         return None
+    commit = commit or _tip(root, "refs/heads/" + ORIGINAL_BRANCH)
+    if not commit:
+        return labelled_record(root, None)
+    # A commit never changes, so what its history names is kept by it.
+    named, version = _kept((str(root), "named", commit), lambda: _named(root, commit))
+    if named:
+        return next((row for row in rows if row.commit == named), None)
+    return labelled_record(root, version)
+
+
+def labelled_record(root, version):
+    """The newest prepared record of the version label `version`, of any
+    version when None, that waits for no name: what a version none of whose
+    `original` commits name a record reads, as every version did before
+    records were named."""
+    rows = [row for row in records(root) if row.kind == PREPARED and not row.named]
+    if version is not None:
+        rows = [row for row in rows if row.version == version]
+    return rows[-1] if rows else None
+
+
+def _named(root, commit):
+    """The record the `original` commit `commit` or an older one of its
+    version names, or "", and its version label."""
+    from util.version_update.git_workflow import PREPARED_TRAILER
+
     log = _git(
-        root,
-        "log",
-        "--first-parent",
-        "--format=%x1e%B",
-        commit or ORIGINAL_BRANCH,
-        "--",
-        check=False,
+        root, "log", "--first-parent", "--format=%x1e%B", commit, "--", check=False
     )
     version = None
     for message in log.stdout.split("\x1e")[1:] if not log.returncode else ():
@@ -220,11 +240,8 @@ def prepared_record(root, commit=None):
         elif label != version:
             break
         if named := _trailer(message, PREPARED_TRAILER):
-            return next((row for row in rows if row.commit == named), None)
-    rows = [row for row in rows if not row.named]
-    if version is not None:
-        rows = [row for row in rows if row.version == version]
-    return rows[-1] if rows else None
+            return named, version
+    return "", version
 
 
 def recorded(root):

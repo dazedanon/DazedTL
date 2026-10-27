@@ -444,7 +444,7 @@ class _Game:
         tip = _git(root, "rev-parse", "--verify", "-q", ORIGINAL, check=False)
         self.original_tip = tip.stdout.strip() if tip.returncode == 0 else ""
         self.oldest = None
-        # The `original` commit the target's files are read against.
+        # The `original` commit of the target's version, "" without one.
         self.original_commit = ""
         self.original = self._original(target.version)
         self.recorded = self._recorded(target.version)
@@ -470,11 +470,16 @@ class _Game:
 
     def _recorded(self, version):
         """The recorded original game's files at `version`: the prepared
-        record of the `original` commit its files are read against, or for
-        the first version the game as DazedTL found it; None without either."""
+        record of the `original` commit of that version, by its label without
+        one, or for the first version the game as DazedTL found it; None
+        without either."""
         from . import original_files
 
-        row = original_files.prepared_record(self.root, self.original_commit or None)
+        row = (
+            original_files.prepared_record(self.root, self.original_commit)
+            if self.original_commit
+            else original_files.labelled_record(self.root, version)
+        )
         if row is None and version is not None and version == self.oldest:
             row = original_files.found_record(self.root)
         if row is None:
@@ -509,8 +514,8 @@ class _Game:
                 # Commits after the version's own, such as a completed
                 # original, belong to it while no newer version followed.
                 chosen = self.original_tip if recorded == newest else identity
-        self.original_commit = chosen or commit
-        return self.tree(self.original_commit)
+        self.original_commit = chosen or ""
+        return self.tree(chosen or commit)
 
     def wanted(self, path, tree):
         """The (mode, blob) the file has as of the target, (SAVED, path) when
