@@ -3,6 +3,12 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.38.1] - 2026-10-27
+
+### Fixed
+
+- **Translate:** in an RPG Maker MV/MZ game whose messages start with `\m[N]\z[N]` codes, the first line of a longer message is now translated instead of staying in Japanese however often you translate again. Cost estimates made before updating read as outdated once; runs you already approved or sent keep going as they were estimated.
+
 ## [2.38.0] - 2026-10-27
 
 ### Added
@@ -1174,6 +1180,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.38.1]: https://github.com/dazedanon/DazedTL/compare/v2.38.0...v2.38.1
 [2.38.0]: https://github.com/dazedanon/DazedTL/compare/v2.37.0...v2.38.0
 [2.37.0]: https://github.com/dazedanon/DazedTL/compare/v2.36.4...v2.37.0
 [2.36.4]: https://github.com/dazedanon/DazedTL/compare/v2.36.3...v2.36.4
