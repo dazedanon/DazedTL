@@ -399,8 +399,11 @@ class CompatibilityContracts(unittest.TestCase):
             self.assertIs(sys.modules["util"], util)
         self.assertIs(util.languages, languages)
         self.assertIs(sys.modules["util.languages"], languages)
-        with self.assertRaisesRegex(ValueError, "util is a package"):
-            replaced_modules({"util": ModuleType("util")}).start()
+        with (
+            self.assertRaisesRegex(ValueError, "util is a package"),
+            replaced_modules({"util": ModuleType("util")}),
+        ):
+            pass
         self.assertIs(sys.modules["util"], util)
 
     def test_frozen_worker_defaults_preserve_payloads_and_legacy_recovery(self):

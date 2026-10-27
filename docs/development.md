@@ -41,7 +41,7 @@ The budget is 10 seconds; `DAZEDTL_TEST_BUDGET` sets another in seconds, which [
 The Python and Node suites run at the same time, and Python keeps its compiled modules in `.runtime/test-bytecode` between runs, so a first run after a change compiles again.
 [tests/run.py](../tests/run.py) runs the Python tests in up to eight worker interpreters at once: each test module is one unit, a slow one split into parts, and the slowest start first, by the times the last passing run saved in `.runtime/test-times.json`.
 Tests that start a process of their own, such as the [probes](../tests/probe.py), start it while their module is imported, so their module stays whole and the other workers overlap it.
-A module's tests run after whatever other modules its worker ran before, so a test that puts stand-ins in `sys.modules` uses `replaced_modules` from [tests/engine.py](../tests/engine.py): it stands in only the modules it names, under their real packages and never for a package such as `util`, and leaves every module as it was.
+A module's tests run after whatever other modules its worker ran before, so a test that puts stand-ins in `sys.modules` uses `replaced_modules` from [tests/engine.py](../tests/engine.py), which stands in only the modules it names and leaves every module as it was.
 The runner reports the five slowest Python tests to make runtime regressions visible.
 If a Python process is still running a second before the budget ends, it prints every thread's stack, which names the test and line it waits on, and exits.
 Tests use temporary workspaces and controlled API responses; no provider, game folder or credentials are needed.

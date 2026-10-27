@@ -37,11 +37,7 @@ _MISSING = object()
 
 
 def _package(name):
-    """Whether the module `name` is a package, once the packages above it are
-    imported for real."""
-    parent = name.rpartition(".")[0]
-    if parent:
-        importlib.import_module(parent)
+    """Whether the module `name`, whose packages are imported, is a package."""
     if name in sys.modules:
         spec = getattr(sys.modules[name], "__spec__", None)
     else:
@@ -70,7 +66,9 @@ class replaced_modules:
 
     def start(self):
         for name in self.modules:
-            # Finding a module imports the packages above it.
+            parent = name.rpartition(".")[0]
+            if parent:
+                importlib.import_module(parent)
             if _package(name):
                 raise ValueError(
                     f"{name} is a package; stand in the modules inside it, or "
@@ -79,15 +77,13 @@ class replaced_modules:
         self.before = dict(sys.modules)
         # What each replaced module's parent package named it, if anything.
         self.named = {}
-        for name in self.modules:
-            parent, _, child = name.rpartition(".")
-            if parent:
-                self.named[name] = vars(sys.modules[parent]).get(child, _MISSING)
-        sys.modules.update(self.modules)
         for name, module in self.modules.items():
             parent, _, child = name.rpartition(".")
             if parent:
-                setattr(sys.modules[parent], child, module)
+                package = sys.modules[parent]
+                self.named[name] = vars(package).get(child, _MISSING)
+                setattr(package, child, module)
+        sys.modules.update(self.modules)
         return self
 
     def stop(self):
