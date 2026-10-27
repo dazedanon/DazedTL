@@ -125,6 +125,14 @@ def receipt_view(receipt):
     return view
 
 
+def _folder(value):
+    """The game-relative folder the list covers: the loose image folder the
+    user or an assistant chose, or the whole inventory when none is chosen,
+    as for RPG Maker MV/MZ's img folder."""
+    folder = (value.get("profile") or {}).get("imageRoot", "")
+    return "" if folder == "." else folder
+
+
 def _stopped(value):
     """Whether the user stopped the investigation to choose the images."""
     return value["discovery"].get("status") == "stopped"
@@ -396,14 +404,16 @@ class ImageService:
 
     def _index(self, project_id):
         if project_id not in self.indexes:
+            value = self._load(project_id)
             self.indexes[project_id] = Index(
                 project_path(
                     self.record(project_id)[1],
                     WORK + "/inventory.sqlite3",
                     exists=False,
-                )
+                ),
+                _folder(value),
             )
-            self.indexes[project_id].selected(self._load(project_id)["selection"])
+            self.indexes[project_id].selected(value["selection"])
         return self.indexes[project_id]
 
     def _profile(self, project_id, value=None):
@@ -637,7 +647,25 @@ class ImageService:
             return
         if self.jobs.get(project_id, {}).get("status") == "running":
             raise ValueError("Stop the current image scan before changing its folder.")
-        value["profile"] = {"imageRoot": profile["imageRoot"]}
+        self._read_from(project_id, value, {"imageRoot": profile["imageRoot"]})
+
+    def _read_from(self, project_id, value, profile):
+        """Saves the profile whose folder Images reads. The list, its view
+        and its scopes keep only the images in that folder; the others'
+        rows, applied files and receipts stay, and their rows return with
+        the folder."""
+        value["profile"] = profile
+        index = self._index(project_id)
+        index.folder = _folder(value)
+        value["selection"] = [
+            identity for identity in value["selection"] if index.holds(identity)
+        ]
+        index.selected(value["selection"])
+        if value["view"].get("folder") and not index.holds(value["view"]["folder"]):
+            value["view"]["folder"] = ""
+        value["discovery"]["folders"] = [
+            folder for folder in value["discovery"]["folders"] if index.holds(folder)
+        ]
 
     def _ids(self, project_id, identities, *, allow_empty=False):
         if (
@@ -653,7 +681,10 @@ class ImageService:
             )
         index = self._index(project_id)
         with index.connection() as db:
-            if any(index.get(identity, db) is None for identity in identities):
+            if any(
+                not index.holds(identity) or index.get(identity, db) is None
+                for identity in identities
+            ):
                 raise ValueError(
                     "An image is no longer in this project's inventory. Refresh the asset list."
                 )
@@ -1092,7 +1123,7 @@ class ImageService:
             profile = self._profile(project_id, value)
             if not profile["supported"]:
                 raise ValueError(profile["reason"])
-            value["profile"] = profile
+            self._read_from(project_id, value, profile)
             self._save(project_id, value)
             self.jobs[project_id] = {
                 "id": generation,
@@ -1170,8 +1201,10 @@ class ImageService:
                     return
                 if not event.is_set():
                     with index.connection() as db:
+                        within, values = index.within()
                         for record in db.execute(
-                            "SELECT data FROM assets WHERE generation!=?", (generation,)
+                            "SELECT data FROM assets WHERE generation!=? AND " + within,
+                            (generation, *values),
                         ).fetchall():
                             row = json.loads(record[0])
                             row.update(

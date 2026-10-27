@@ -1178,6 +1178,79 @@ class ImageFolderTests(unittest.TestCase):
         self.assertFalse(profile["supported"])
         self.assertIn("Image folder not found", profile["reason"])
 
+    def test_the_list_follows_a_changed_image_folder(self):
+        # An Ace game scanned at Graphics, then pointed at the folder an
+        # assistant decoded its archives into, kept counting Graphics' images.
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            game = root / "game"
+            write_bytes(game / "Graphics/Pictures/Title.png", png())
+            write_bytes(game / "decoded/Pictures/Menu.png", png((1, 2, 3, 100)))
+            projects = Projects(root / "profile")
+            identity = projects.open({"source": str(game), "engine": "ACE"})["id"]
+            backend = SimpleNamespace(
+                source=root / "engine", context=nullcontext, game_write=game_write
+            )
+            translation = SimpleNamespace(
+                workspace=root / "profile",
+                idle=lambda _: None,
+                clean_drafts=lambda _: None,
+                writable=lambda _: None,
+            )
+            service = ImageService(
+                projects,
+                translation,
+                SETTINGS,
+                backend,
+                adapter=ImageCompatibility(backend),
+            )
+
+            def scan(folder):
+                service.assistant(identity, "scan", folder)
+                deadline = time.monotonic() + SCAN_SECONDS
+                while service.state(identity)["job"]["status"] == "running":
+                    if time.monotonic() > deadline:
+                        self.fail("Fixture scan did not finish.")
+                    time.sleep(0.001)
+
+            scan("Graphics")
+            state = service.state(identity)
+            service.update(
+                identity,
+                state["revision"],
+                {
+                    "selection": ["Graphics/Pictures/Title.png"],
+                    "view": {"folder": "Graphics/Pictures"},
+                    "folders": ["Graphics/Pictures"],
+                },
+            )
+            scan("decoded")
+            state = service.state(identity)
+            self.assertEqual(state["selection"], [])
+            self.assertEqual(
+                (state["view"]["folder"], state["discovery"]["folders"]), ("", [])
+            )
+            self.assertEqual(
+                (state["counts"]["indexed"], state["counts"]["missing"]), (1, 0)
+            )
+            self.assertEqual(
+                state["folders"], [{"path": "decoded/Pictures", "count": 1}]
+            )
+            listed = service.list(identity)
+            self.assertEqual(
+                [row["id"] for row in listed["items"]], ["decoded/Pictures/Menu.png"]
+            )
+            self.assertEqual(
+                service.assistant(identity, "status")["counts"]["indexed"], 1
+            )
+            # The first folder's images come back, as they were, with it.
+            scan("Graphics")
+            self.assertEqual(
+                [row["id"] for row in service.list(identity)["items"]],
+                ["Graphics/Pictures/Title.png"],
+            )
+            self.assertEqual(service.state(identity)["counts"]["missing"], 0)
+
 
 class AppliedImagePatchTests(unittest.TestCase):
     """The Image Manager's own engine adapter on an MZ game whose Git is set

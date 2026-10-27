@@ -20,6 +20,7 @@ import {
   Search,
 } from "lucide-react";
 import { displayMarks, imageDisplay } from "../../ui/displayStatus";
+import { plural } from "../../ui/displayText";
 import { StatusIcon } from "../../ui/StatusIcon";
 import { imagesApi } from "../../api/images";
 import { messageOf } from "../../api/errors";
@@ -798,8 +799,7 @@ function Manager({
     "";
   // A report found on returning to the window and rejected says why first.
   const rejected = state.editing.rejected || state.discovery.rejected || "";
-  const imageCount = (count: number) =>
-    `${count.toLocaleString()} ${count === 1 ? "image" : "images"}`;
+  const imageCount = (count: number) => plural(count, "image");
   const cardState: AssistantTaskState = rejected
     ? "blocked"
     : waiting
@@ -839,7 +839,9 @@ function Manager({
               ? `${imageCount(counts.applied)} ${counts.applied === 1 ? "is" : "are"} in the game. ${
                   flow.untranslated > 0
                     ? `${flow.untranslated.toLocaleString()} more ${flow.untranslated === 1 ? "image in your list isn't" : "images in your list aren't"} translated; copy the translation task to translate ${flow.untranslated === 1 ? "it" : "them"} too.`
-                    : "Later tasks skip them unless the game's image changes."
+                    : counts.applied === 1
+                      ? "Later tasks skip it unless the game's image changes."
+                      : "Later tasks skip them unless the game's images change."
                 }`
               : counts.recommended || counts.uncertain
                 ? "Nothing is ticked to translate. Tick images to translate them."

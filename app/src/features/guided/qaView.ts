@@ -7,7 +7,7 @@ import type {
   QaUntranslatedSource,
 } from "../../api/contracts";
 import type { StepState } from "../../ui/StepProgress";
-import { sentence } from "../../ui/displayText.ts";
+import { plural, sentence } from "../../ui/displayText.ts";
 
 /** Where text QA stands on the page. */
 export type QaPhase =
@@ -194,9 +194,7 @@ export function qaSummary(qa: QaState) {
   const lines = qa.coverage?.lines || 0;
   const missing = qa.coverage?.not_reviewed || 0;
   const earlier = qaReviewedBefore(qa);
-  const counted = (count: number, word: string) =>
-    `${count.toLocaleString()} ${word}${count === 1 ? "" : "s"}`;
-  const corrections = (count: number) => counted(count, "correction");
+  const corrections = (count: number) => plural(count, "correction");
   const checked = lines - missing - earlier;
   return [
     qa.applied
@@ -209,7 +207,7 @@ export function qaSummary(qa: QaState) {
         ? `${corrections(total)} to apply`
         : "No corrections needed",
     qa.applied && applied && undone && `${undone.toLocaleString()} undone`,
-    lines && `${counted(checked, "line")} checked`,
+    lines && `${plural(checked, "line")} checked`,
     earlier && `${earlier.toLocaleString()} unchanged since earlier QA`,
   ]
     .filter(Boolean)

@@ -39,6 +39,10 @@ export function engineLabel(code: string) {
   return engines[code] || code;
 }
 
+/** A count and its noun, plural unless one: "1 image", "1,204 images". */
+export const plural = (count: number, word: string) =>
+  `${count.toLocaleString()} ${word}${count === 1 ? "" : "s"}`;
+
 /** "2 indexed · 1 examined": counts joined in order, leaving out zeros. */
 export function countSummary(
   parts: [count: number | undefined, label: string][],

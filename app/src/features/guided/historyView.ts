@@ -1,4 +1,5 @@
 import type { Job } from "../../api/contracts.ts";
+import { plural } from "../../ui/displayText.ts";
 import { activeRun, needsSubmissionReview } from "./translationView.ts";
 
 export type HistoryOutcome = {
@@ -19,8 +20,6 @@ export type HistoryOutcome = {
   label: string;
   detail: string;
 };
-const count = (value: number, noun: string) =>
-  `${value.toLocaleString()} ${noun}${value === 1 ? "" : "s"}`;
 /** History's lists: translation runs, estimates and other activity. */
 export type HistoryTab = "runs" | "estimates" | "operations";
 /** How History names each phase, so links can search for one stage's runs. */
@@ -56,8 +55,8 @@ export function historyOutcome(job: Job): HistoryOutcome {
   const partial = saved?.filter((name) => partialNames.has(name)) || [];
   const whole = saved?.filter((name) => !partialNames.has(name));
   const output = [
-    whole?.length ? `${count(whole.length, "file")} saved` : "",
-    partial.length ? `${count(partial.length, "partial file")} saved` : "",
+    whole?.length ? `${plural(whole.length, "file")} saved` : "",
+    partial.length ? `${plural(partial.length, "partial file")} saved` : "",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -75,7 +74,7 @@ export function historyOutcome(job: Job): HistoryOutcome {
   const evidence =
     [output, requestDetail].filter(Boolean).join(" · ") ||
     (prepared != null
-      ? `${count(prepared, "request")} prepared`
+      ? `${plural(prepared, "request")} prepared`
       : "Request counts not recorded");
   if (job.approval)
     return {
@@ -83,7 +82,7 @@ export function historyOutcome(job: Job): HistoryOutcome {
       label: "Review cost",
       detail:
         prepared != null
-          ? `${count(prepared, "request")} prepared`
+          ? `${plural(prepared, "request")} prepared`
           : "Approval required",
     };
   const atProvider = job.mode === "batch" && !!job.phase?.startsWith("poll");
@@ -104,7 +103,7 @@ export function historyOutcome(job: Job): HistoryOutcome {
       // Requests at the provider are submitted, not merely prepared.
       detail:
         atProvider && !output && !requestDetail && prepared != null
-          ? `${count(prepared, "request")} submitted`
+          ? `${plural(prepared, "request")} submitted`
           : evidence,
     };
   if (needsSubmissionReview(job))
@@ -112,7 +111,7 @@ export function historyOutcome(job: Job): HistoryOutcome {
       kind: "review",
       label: "Check submission",
       detail: process?.uncertain
-        ? `${count(process.uncertain, "uncertain request")}`
+        ? `${plural(process.uncertain, "uncertain request")}`
         : evidence,
     };
   if (job.status === "failed")
@@ -131,7 +130,7 @@ export function historyOutcome(job: Job): HistoryOutcome {
       label: "Estimate ready",
       detail:
         prepared != null
-          ? `${count(prepared, "request")} planned`
+          ? `${plural(prepared, "request")} planned`
           : "Request count not recorded",
     };
   const savedNames = new Set(saved);

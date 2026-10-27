@@ -29,7 +29,7 @@ import { Message } from "../../ui/Feedback";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { ForeignWork } from "../../ui/ForeignWork";
 import { Modal } from "../../ui/Modal";
-import { selectionNames } from "../../ui/displayText";
+import { plural, selectionNames } from "../../ui/displayText";
 import {
   pluginFilesBlocked,
   pluginFilesLeft,
@@ -37,8 +37,7 @@ import {
   recoveryRows,
 } from "./pluginTask";
 
-const fileCount = (count: number, noun = "file") =>
-  `${count} ${noun}${count === 1 ? "" : "s"}`;
+const fileCount = (count: number, noun = "file") => plural(count, noun);
 const labelCount = (count: number) => fileCount(count, "label");
 /** What a receipt did, in words; its backend status codes stay internal. */
 const receiptTitle = ({ mode, status, files }: PluginReceipt) => {

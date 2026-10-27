@@ -22,7 +22,7 @@ import { HelpPopover } from "../../ui/HelpPopover";
 import { Menu, MenuItem, MenuSeparator } from "../../ui/Menu";
 import { Modal } from "../../ui/Modal";
 import { StatusIcon } from "../../ui/StatusIcon";
-import { sentence } from "../../ui/displayText";
+import { plural, sentence } from "../../ui/displayText";
 import { VersionChanges } from "../translation/VersionChanges";
 import {
   blockedBy,
@@ -30,7 +30,6 @@ import {
   copyName,
   day,
   fileName,
-  plural,
   readKey,
   reportsBeside,
   runs,
