@@ -8,9 +8,9 @@ from datetime import UTC, datetime, timedelta
 from functools import partial
 from pathlib import Path
 from stat import S_ISREG
-from urllib.parse import urlsplit
 
 from dazedtl.freshness import Digests
+from dazedtl.settings.providers import native_openai
 from dazedtl.storage import WorkspaceError, WorkspaceLock, write_json
 from dazedtl.translation.files import digest, live_path, project_path, read_json
 
@@ -391,8 +391,7 @@ def reserve_clarification(root, plan, items, count, limit):
     """reserve for a Guided run's clarification Batch."""
     if (
         plan.get("batch_link")
-        or urlsplit(plan.get("settings", {}).get("api", "")).hostname
-        != "api.openai.com"
+        or not native_openai(plan.get("settings", {}).get("api", ""))
         or not limit
     ):
         yield True
@@ -599,7 +598,7 @@ class BatchWindow:
 def install_worker(
     root, plan, translation, providers, task_type, approve, recover, record, attempt
 ):
-    if urlsplit(plan.get("settings", {}).get("api", "")).hostname != "api.openai.com":
+    if not native_openai(plan.get("settings", {}).get("api", "")):
         return
     window = BatchWindow(root, plan, translation, providers, approve, recover, record)
 

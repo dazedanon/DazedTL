@@ -12,7 +12,6 @@ import random
 import unicodedata
 import tiktoken
 import urllib.request
-from urllib.parse import urlparse
 from importlib import import_module
 from types import SimpleNamespace
 import hashlib
@@ -2809,12 +2808,12 @@ def _submit_translation_batches_unlocked(file_set=None, cost_estimate=None):
         or str(previous_state.get("endpoint") or "").strip()
         or current_endpoint
     )
-    from urllib.parse import urlparse
+    from dazedtl.settings.providers import native_openai
 
-    native_openai = provider == "openai" and urlparse(submitted_endpoint).hostname == "api.openai.com"
+    native = provider == "openai" and native_openai(submitted_endpoint)
     token_costs = {}
     sequential_limit = previous_state.get("sequential_token_limit", 0)
-    if native_openai:
+    if native:
         limit = sequential_limit or _openai_batch_token_limit()
         token_costs = {
             key: _estimate_openai_batch_input_tokens(entry["params"])
@@ -4683,7 +4682,9 @@ def _is_official_openai_api(api_provider=None, api_url=None):
     ).strip()
     if provider != "openai" or not endpoint:
         return provider == "openai" and not endpoint
-    return (urlparse(endpoint).hostname or "").lower() == "api.openai.com"
+    from dazedtl.settings.providers import native_openai
+
+    return native_openai(endpoint)
 
 
 @extensions.point
