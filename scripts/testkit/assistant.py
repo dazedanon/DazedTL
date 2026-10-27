@@ -23,13 +23,16 @@ HELPER is a JSON list: the project helper's command without its subcommand.
 import argparse
 import hashlib
 import json
-import os
 import re
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 from PIL import Image
+
+# The engine's helpers, for the WolfDawn build bundled for this system.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend/dazedtl/engine"))
 
 JAPANESE = re.compile(r"[぀-ヿ一-鿿]")
 LATIN = re.compile(r"[A-Za-z]")
@@ -38,13 +41,8 @@ IDENTIFIER = re.compile(r"(?=[\w./-]*[\d_./])[\w./-]+")
 WORK = ".dazedtl/len-method/work"
 MANIFEST = f"{WORK}/manifest.json"
 # The folder a WOLF game's Data/Picture.wolf is decoded into, which the game
-# doesn't read, and the bundled WolfDawn that decodes and packs it.
+# doesn't read.
 DECODED = "decoded/Picture"
-WOLF = str(
-    Path(__file__).resolve().parents[2]
-    / "backend/dazedtl/engine/util/wolfdawn/bin"
-    / ("windows/wolf.exe" if os.name == "nt" else "linux/wolf")
-)
 # Where an assistant keeps its image recipes and the scripts they run.
 RESOURCES = ".dazedtl/image_translation_resources"
 RENDERER = f"{RESOURCES}/scripts/render.py"
@@ -225,9 +223,12 @@ class Assistant:
         if not found.returncode:
             raise SystemExit("images --status read images before they were decoded")
         print("Before decoding:", found.stderr.strip())
+        from util.wolfdawn import ensure_wolf_binary
+
+        wolf = str(ensure_wolf_binary())
         decoded = self.game / DECODED
         subprocess.run(
-            [WOLF, "unpack", str(self.game / "Data/Picture.wolf"), "-o", str(decoded)],
+            [wolf, "unpack", str(self.game / "Data/Picture.wolf"), "-o", str(decoded)],
             check=True,
             capture_output=True,
         )
@@ -301,7 +302,7 @@ class Assistant:
         print("Counts:", json.dumps(applied["counts"]))
         archive = self.game / "Data/Picture.wolf"
         subprocess.run(
-            [WOLF, "pack", str(decoded), "-o", str(archive)],
+            [wolf, "pack", str(decoded), "-o", str(archive)],
             check=True,
             capture_output=True,
         )
@@ -318,7 +319,7 @@ class Assistant:
                 ).stdout
             )
             subprocess.run(
-                [WOLF, "unpack", str(packed), "-o", str(Path(folder) / "out")],
+                [wolf, "unpack", str(packed), "-o", str(Path(folder) / "out")],
                 check=True,
                 capture_output=True,
             )
@@ -328,12 +329,15 @@ class Assistant:
                 ).read_bytes():
                     raise SystemExit(f"The patch's Picture.wolf differs at {name}")
         tracked = subprocess.run(
-            ["git", "-C", str(self.game), "ls-files"],
+            ["git", "-C", str(self.game), "ls-files", "-z"],
             capture_output=True,
             text=True,
             check=True,
-        ).stdout.split()
-        print("Patch:", ", ".join(name for name in tracked if not name.startswith(".")))
+        ).stdout.split("\0")
+        print(
+            "Patch:",
+            ", ".join(name for name in tracked if name and not name.startswith(".")),
+        )
         self.report("patch")
 
     def checkpoint(self, message="translation: write English"):

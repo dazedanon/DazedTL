@@ -246,6 +246,7 @@ export async function makeGame(names, game, change) {
   const [base, ...rest] = names[0] in bases ? names : ["mz", ...names];
   if (base === "wolf") {
     if (rest.length) throw new Error("No variant applies to the WOLF game.");
+    if (change) throw new Error("The WOLF game has no database to edit.");
     // Its pictures are packed from a folder beside the game, as the
     // developer's editor packs them.
     const pictures = `${game}.pictures`;

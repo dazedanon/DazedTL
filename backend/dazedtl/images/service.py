@@ -628,10 +628,16 @@ class ImageService:
         """Points a game without RPG Maker MV/MZ's img folder at the folder of
         loose images to index, the user's choice or the folder an assistant
         decoded the game's image archives into; the next scan reads it."""
+        root = text(root, "Loose image folder", 2000)
+        profile = self._profile(project_id, {**value, "profile": {"imageRoot": root}})
+        if not profile["supported"]:
+            raise ValueError(profile["reason"])
+        # Naming the folder it reads already changes nothing, even mid-scan.
+        if self._profile(project_id, value)["imageRoot"] == profile["imageRoot"]:
+            return
         if self.jobs.get(project_id, {}).get("status") == "running":
             raise ValueError("Stop the current image scan before changing its folder.")
-        value["profile"] = {"imageRoot": text(root, "Loose image folder", 2000)}
-        self._profile(project_id, value)
+        value["profile"] = {"imageRoot": profile["imageRoot"]}
 
     def _ids(self, project_id, identities, *, allow_empty=False):
         if (
@@ -1329,7 +1335,10 @@ class ImageService:
         profile = self.state(project_id)["profile"]
         if not profile["supported"]:
             raise ValueError(
-                "DazedTL found no folder of loose images in this game. If its "
+                profile["reason"]
+                + " Decode the game's images into it again, or name another folder with images --scan --root <folder>."
+                if profile["imageRoot"]
+                else "DazedTL found no folder of loose images in this game. If its "
                 "images sit in archives, decode them with Len's tools into a "
                 "folder in the game and run images --scan --root <folder>."
             )

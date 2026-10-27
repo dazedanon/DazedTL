@@ -1167,6 +1167,18 @@ class ImageTests(unittest.TestCase):
         self.assertEqual(state["folders"], [])
 
 
+class ImageFolderTests(unittest.TestCase):
+    def test_a_chosen_folder_that_is_gone_leaves_images_unsupported(self):
+        # An assistant cleaning up the folder it decoded a game's images into
+        # made every Images read, Progress's included, fail.
+        with TemporaryDirectory() as folder:
+            profile = ImageCompatibility(None).profile(
+                Path(folder), "WOLF", "decoded/Picture"
+            )
+        self.assertFalse(profile["supported"])
+        self.assertIn("Image folder not found", profile["reason"])
+
+
 class AppliedImagePatchTests(unittest.TestCase):
     """The Image Manager's own engine adapter on an MZ game whose Git is set
     up, its patch manifest naming one map alone."""
